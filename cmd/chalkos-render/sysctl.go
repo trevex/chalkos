@@ -11,11 +11,11 @@ import (
 // /etc/sysctl.d by file name, so it sorts after the image's 60-nixos.conf and its settings win.
 const sysctlFile = "90-chalkos-router.conf"
 
-// renderRouterSysctl writes the kernel settings of the node's Router to out/90-chalkos-router.conf:
-// forwarding of each family, the multipath hash of both, the connection table's size and that the
-// default VRF's sockets take no connections of a VRF's links. The firewall's reverse-path filter
-// covers both families, so the kernel's own IPv4 filter is off on every interface, also on those
-// that appear after systemd-sysctl ran.
+// renderRouterSysctl writes the Router's kernel settings to out/90-chalkos-router.conf: forwarding
+// of each family, both multipath hashes, the connection table's size, and that the default VRF's
+// sockets take no connections of a VRF's links. The firewall's reverse-path filter covers both
+// families, so the kernel's IPv4 filter is off on every interface, also those that appear after
+// systemd-sysctl ran.
 func renderRouterSysctl(in map[string]any, out string) error {
 	d, err := derive.Build(documents(in))
 	if err != nil {

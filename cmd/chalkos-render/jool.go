@@ -35,11 +35,10 @@ type joolPool4 struct {
 	PortRange string `json:"port range"`
 }
 
-// renderJool writes, for each NAT64 document, Jool's file to out/<name>.json, an instance of the
-// document's name in netfilter mode with the document's prefix as its pool6 and its pool as its
-// pool4, an entry per protocol, and its link's file to out/<name>.veth, which chalkos-nat64.service
-// reads to join the instance's namespace to its VRF. A node without NAT64 documents gets no file
-// and runs no instance.
+// renderJool writes Jool's out/<name>.json per NAT64 document, an instance in netfilter mode with
+// the document's prefix as pool6 and an entry per protocol of its pool as pool4, and
+// out/<name>.veth, from which chalkos-nat64.service joins the instance's namespace to its VRF.
+// Without NAT64 documents it writes nothing.
 func renderJool(in map[string]any, out string) error {
 	d, err := derive.Build(documents(in))
 	if err != nil {

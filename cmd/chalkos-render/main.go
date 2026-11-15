@@ -1,11 +1,8 @@
-// Command chalkos-render is the renderer of the outputs the helpers of chalkosLib.render build,
-// and of the built-in outputs networkd, router-networkd, router-sysctl, router-nftables, frr, jool,
-// unbound, kea and dhcp-relay. chalkd runs it in the sandbox of an output: it reads the output's
-// input as JSON on standard input, {"node": {"name": …}, "documents": {"<Kind>": [<document>, …]}},
-// and writes files into $OUT, the only path it may write. A router image's build runs it once more
-// for the image's fallback ruleset. It is the program of the validator router too, which chalkd
-// runs as chalkos-render validate router in a validator's sandbox: it reads the same input on
-// standard input and prints its refusals on standard output.
+// Command chalkos-render renders chalkd's built-in outputs and those of chalkosLib.render's
+// helpers, and is the program of the validator router. chalkd runs it in an output's or a
+// validator's sandbox with the input as JSON on standard input, {"node": {"name": …},
+// "documents": {"<Kind>": [<document>, …]}}; a renderer writes into $OUT, the only path it may
+// write. A router image's build runs it for the fallback ruleset.
 package main
 
 import (
@@ -41,43 +38,17 @@ const usage = `usage: chalkos-render template TEMPLATE FILE
        chalkos-render dhcp-relay
        chalkos-render validate router
 
-template executes the Go text/template TEMPLATE on the input and writes the result to $OUT/FILE;
-the template has the functions join, quote, json, default and refuse. documents writes each
-document of the kinds KIND as $OUT/<Kind>/<name>.json. networkd writes each Network, NetDev
-and Link document as the networkd unit $OUT/<name>.network, .netdev or .link, with the section
-and key names of the kinds' schemas in the directory SCHEMAS. router-networkd writes them as
-networkd does, with each VRF document's device as $OUT/00-vrf-<name>.netdev and .network and
-VRF= in the Network units of the links it holds. router-sysctl writes the kernel settings of
-the Router document as $OUT/90-chalkos-router.conf. router-nftables writes the firewall of the
-documents of the router kinds as the nftables table inet chalkos in $OUT/ruleset.nft, which
-accepts chalkd's TCP port PORT; router-nftables-fallback writes the table of a node without
-a rendered ruleset, which forwards nothing. frr writes FRR's config of the BGP documents as
-$OUT/frr.conf. jool writes Jool's config of each NAT64 document as $OUT/<name>.json. unbound
-writes Unbound's config of the Resolver document as $OUT/unbound.conf, with the root's trust
-anchor in the file TRUST-ANCHOR and the zone ipv4only.arpa in the file ZONE-FILE. kea writes the
-config of Kea's DHCPv4 and DHCPv6 servers of each VRF whose links DHCPSubnet documents serve as
-$OUT/kea-dhcp4.json and $OUT/kea-dhcp6.json for the default VRF and $OUT/kea-dhcp4-<vrf>.json
-and $OUT/kea-dhcp6-<vrf>.json for a VRF; a DHCPv6 server whose subnets delegate prefixes runs
-the program PD-HOOK on their leases. dhcp-relay writes the config of dnsmasq's DHCP relay of
-each VRF whose links DHCPRelay documents relay as $OUT/dnsmasq-relay.conf for the default VRF and
-$OUT/dnsmasq-relay-<vrf>.conf for a VRF. Every command prints a config it refuses as
-{"refusals": [{"kind": …, "name": …, "path": …, "message": …}]} on standard output, and fails.
-validate router reads the input of the router's kinds as a renderer does, prints the report of
-the refusals of the validator router on standard output, one of no refusals for a config it
-accepts, and succeeds; it fails on input it cannot read.`
+Each renderer reads the output's input on standard input and writes into $OUT; a config it
+refuses it prints as {"refusals": [...]} on standard output, and fails. validate router prints
+the validator's report on standard output.`
 
-// main runs the renderer. A config it refuses, a *refusals.Error, it prints as a report of
-// refusals on standard output for chalkd to report, and on standard error too, for the journal
-// and for a run by hand; any other error, an internal one or one of its command line, goes to
-// standard error alone, where chalkd shows it to no one but the node's journal, since it can echo
-// the documents. Either fails the renderer, so that a build that runs it, as the router's fallback
-// ruleset's does, fails too. A validator prints its report itself; on an error it prints none and
-// fails, so chalkd reports the failure by its exit status.
+// main prints a refused config, a *refusals.Error, as a report on standard output for chalkd, and
+// every error on standard error, which only the journal sees, since it can echo the documents.
+// Either fails the renderer, and so a build that runs it. A validator prints its report itself; on
+// an error it prints none and fails, and chalkd reports the exit status.
 func main() {
 	args := os.Args[1:]
 	if err := run(args, os.Stdin, os.Stdout, os.Getenv("OUT")); err != nil {
-		// A validator's error is its failure: it prints no report, so chalkd reports the failure by
-		// its exit status.
 		if r, ok := errors.AsType[*refusals.Error](err); ok && args[0] != "validate" {
 			printRefusal(os.Stdout, r)
 		}

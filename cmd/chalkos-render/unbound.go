@@ -27,13 +27,10 @@ const ipv4OnlyZone = "ipv4only.arpa."
 // and of characters that need no quoting.
 var storeFile = regexp.MustCompile(`^(/[A-Za-z0-9+._-]+)+$`)
 
-// renderUnbound writes Unbound's config of each Resolver, out/unbound.conf for the default VRF's
-// and out/unbound-<vrf>.conf for a VRF's: the addresses it answers on and the clients it answers,
-// DNSSEC validation with the root's trust anchor in the file trustAnchor, DNS64 with the zone
-// ipv4only.arpa of the file zoneFile, the local zones, the forwarders, and the control socket. A
-// node without a Resolver gets no file and runs no Unbound. The validator router refuses a listen
-// address that Network documents give only to links of other VRFs; the set check has refused two
-// resolvers of one VRF.
+// renderUnbound writes Unbound's config of each Resolver, out/unbound.conf for the default VRF and
+// out/unbound-<vrf>.conf for another: its addresses and clients, DNSSEC validation with the root's
+// trust anchor in trustAnchor, DNS64 with the zone ipv4only.arpa of zoneFile, the local zones, the
+// forwarders and the control socket. Without a Resolver the node runs no Unbound.
 func renderUnbound(trustAnchor, zoneFile string, in map[string]any, out string) error {
 	for _, f := range []string{trustAnchor, zoneFile} {
 		if !storeFile.MatchString(f) || filepath.Clean(f) != f {
@@ -150,11 +147,9 @@ func unboundConfig(name string, r derive.ResolverSpec, vrf, trustAnchor, zoneFil
 	return b.String(), nil
 }
 
-// resolverAddresses are the addresses the resolver r listens on and the ranges of the clients it
-// answers, masked, each once, as the set check has refused a repeat. Unbound's config and the
-// firewall's ruleset write them as netip prints them. It guards, with an internal error, an empty
-// listen or allow, for which the firewall would open port 53 on every address of the router or to
-// every client.
+// resolverAddresses are the addresses the resolver r listens on and the masked ranges of the
+// clients it answers, as netip prints them. It guards an empty listen or allow, for which the
+// firewall would open port 53 on every address or to every client.
 func resolverAddresses(r derive.ResolverSpec) ([]netip.Addr, []netip.Prefix, error) {
 	if len(r.Listen) == 0 {
 		return nil, nil, derive.InternalErrorf("listen names no address, so the firewall would accept DNS on every address of the router")
@@ -176,13 +171,11 @@ type renderedRecords struct {
 	types map[string]string
 }
 
-// localZoneLines are Unbound's local-zone line of z, the local zone at index zone of the Resolver
-// called resolver, and a local-data line per record, and adds z's records to seen. It refuses a
-// record that seen holds and a CNAME record of a name that holds another record, in any zone,
-// which the rules leave to the renderer, as they would compare the records in pairs. A zone's name
-// stands between double quotes, and a record between single quotes with a TXT record's text
-// between double quotes; it guards, with an internal error, names and data that would end those
-// quotes, start a comment or add a line.
+// localZoneLines are Unbound's local-zone line of z, the zone at index zone of the Resolver
+// resolver, and a local-data line per record; it adds z's records to seen. It refuses a record that
+// seen holds and a CNAME of a name that holds another record, in any zone. A zone's name stands
+// between double quotes and a record between single quotes, a TXT record's text between double
+// quotes; it guards names and data that would end those quotes, start a comment or add a line.
 func localZoneLines(resolver string, zone int, z derive.LocalZone, seen renderedRecords) ([]string, error) {
 	if !dns.IsName(z.Name) {
 		return nil, derive.InternalErrorf("%q is no DNS name in lower case without the root's dot", z.Name)

@@ -11,14 +11,12 @@ import (
 	"github.com/trevex/chalkos/pkg/router/derive"
 )
 
-// withWireGuardUnits is docs, the networkd documents with the VRFs' and NAT64s' units, with a
-// NetDev and a Network document 00-wg-<name> per WireGuard, as derive.Model.WireGuardInterfaces
-// checks them. The NetDev creates the interface with its port, its private key, a
-// [WireGuardPeer] section per peer and RouteTable=, which routes the peers' allowed IPs to the
-// interface in the table of its VRF, and the Network gives the link its addresses, its VRF and its
-// MTU. The keys are networkd's credentials @secret_<secret>.<key>, which chalkd loads from
-// the Secrets, so the units hold no key. It refuses a NetDev of byKind of a unit's name or that
-// creates a device of a WireGuard's name.
+// withWireGuardUnits is docs with a NetDev and a Network 00-wg-<name> per WireGuard. The NetDev
+// creates the interface with its port, private key, a [WireGuardPeer] per peer and RouteTable=,
+// which routes the peers' allowed IPs in its VRF's table; the Network gives the link its addresses,
+// VRF and MTU. Keys are networkd credentials @secret_<secret>.<key>, which chalkd loads from the
+// Secrets, so the units hold no key. It refuses a NetDev of a unit's name or that creates a device
+// of a WireGuard's name.
 func withWireGuardUnits(d derive.Model, byKind, docs map[string]any) (map[string]any, error) {
 	wgs, err := d.WireGuardInterfaces()
 	if err != nil || len(wgs) == 0 {

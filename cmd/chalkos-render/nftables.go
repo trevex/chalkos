@@ -66,12 +66,10 @@ type opening struct {
 	destinations []netip.Prefix
 }
 
-// bgpOpenings are the ports of each BGPPeer, on its interfaces, of its VRF, or from its address or
-// listen range alone: BGP's TCP port 179 and, with bfd, BFD's UDP ports 3784 and 3785 of
-// single-hop sessions, and 4784 of multi-hop ones from an address or a listen range, which may
-// hold neighbours beyond the link; a peer on a link is one hop away. A peer of a VRF is opened in
-// its VRF alone. The BGPPeer's rules make a peer name one of address, interface, interfaces and
-// listen, and the validator router refuses a peer on a VRF's device.
+// bgpOpenings are the ports of each BGPPeer, on its interfaces, in its VRF, or from its address or
+// listen range: TCP 179 and, with BFD, UDP 3784 and 3785 for single-hop sessions plus 4784 for
+// multi-hop ones from an address or listen range, which may hold neighbours beyond the link. A peer
+// on a link is one hop away.
 func bgpOpenings(peers []derive.Named[derive.PeerSpec]) ([]opening, error) {
 	var out []opening
 	for _, p := range peers {
@@ -201,7 +199,6 @@ func newFirewall(d derive.Model, port int, closed bool) (*firewall, error) {
 	}
 	devices := d.Devices()
 	f.vrfDevices = devices
-	// The validator router refuses a management interface that matches a VRF's device.
 	if m := f.router.Management.Interfaces; m != nil {
 		if err := checkInterfaces("Router: management.interfaces", m); err != nil {
 			return nil, err
@@ -234,8 +231,7 @@ func newFirewall(d derive.Model, port int, closed bool) (*firewall, error) {
 			f.ctZones = append(f.ctZones, ctZone{vrf: v.Name, zone: z, links: links})
 		}
 	}
-	// The validator router refuses a NAT rule's interface that matches no link but a VRF's device
-	// or a NAT64's link, which prerouting and postrouting never translate.
+	// prerouting and postrouting never translate on a VRF's device or a NAT64's link.
 	for _, n := range d.NAT {
 		for _, place := range natPlaces(n.Spec) {
 			if place.Interface != nil {
@@ -318,11 +314,8 @@ func (z zoneLinks) entries() []string {
 	return out
 }
 
-// zoneLinksOf finds where the hooks see each zone's connections. Without VRFs a zone's
-// interfaces are its in and its links, as before VRFs. The validator router has refused an
-// interface or glob that matches a VRF's device or a NAT64's link, and an interface that may be a
-// link of a VRF another zone holds, so a VRF a zone holds is the zone's own, whose device covers
-// its links. The uniqueness check refuses a VRF that two zones hold.
+// zoneLinksOf finds where the hooks see each zone's connections. Without VRFs a zone's interfaces
+// are its in and its links. A VRF a zone holds is the zone's own, whose device covers its links.
 func zoneLinksOf(d derive.Model) (map[string]zoneLinks, error) {
 	declared := map[string]bool{}
 	for _, v := range d.VRFs {
@@ -445,10 +438,10 @@ func writeChain(b *strings.Builder, name, header string, lines []string) {
 }
 
 // conntrackZones puts the connections through the links of each VRF with a conntrack zone in its
-// zone, at the raw priority before conntrack sees them. Prerouting sees a packet from a VRF's
-// link first with the link as iifname, which decides its zone, and output a packet the router
-// sends in a VRF first with the VRF's device, untracked, then with the link. A ruleset without
-// zones has neither chain.
+// zone, at the raw priority before conntrack sees them. Prerouting sees a packet from a VRF's link
+// first with the link as iifname, which decides its zone; output sees a packet the router sends in
+// a VRF first with the VRF's device, untracked, then with the link. Without zones there is neither
+// chain.
 func (f *firewall) conntrackZones(b *strings.Builder) {
 	if len(f.ctZones) == 0 {
 		return
@@ -462,13 +455,12 @@ func (f *firewall) conntrackZones(b *strings.Builder) {
 	}
 }
 
-// prerouting is the reverse-path filter, which NixOS's firewall applies on every other image.
-// The kernel's fib expression passes ICMPv6 from :: to link-scope addresses: the neighbour
-// solicitations of duplicate address detection and the MLD reports of an address not yet assigned.
-// A VRF's link passes neighbour discovery through prerouting a second time, with the VRF's device
-// as iif. There the strict check of a link-local source finds its route on the link, not on the
-// device, and fails, so the strict filter accepts neighbour discovery from link-local sources on
-// the VRFs' devices first. The hop limit of 255, which no router forwards, keeps it to the link.
+// prerouting is the reverse-path filter, which NixOS's firewall applies on every other image. fib
+// passes ICMPv6 from :: to link-scope addresses: duplicate address detection's solicitations and
+// MLD reports. A VRF's link passes neighbour discovery through prerouting a second time with the
+// VRF's device as iif, where the strict check of a link-local source fails, so neighbour discovery
+// from link-local sources on the VRFs' devices is accepted first. The hop limit of 255, which no
+// router forwards, keeps it to the link.
 func (f *firewall) prerouting(b *strings.Builder) {
 	var fib string
 	switch f.router.RPFilter {
@@ -535,11 +527,10 @@ func (f *firewall) input(b *strings.Builder) error {
 	return nil
 }
 
-// forward accepts everything while no policy goes between two zones and the ruleset is not
-// closed. Otherwise it accepts the protected traffic, the NAT64s' translated traffic into and out
-// of their links, which no policy filters, and destination-translated connections, hands each
-// connection to the policy of its pair of zones, and drops the rest, also from or to an interface
-// in no zone. A policy to a zone of no link has no line.
+// forward accepts everything while no policy goes between two zones and the ruleset is not closed.
+// Otherwise it accepts the protected traffic, the NAT64s' translated traffic, which no policy
+// filters, and destination-translated connections, hands each connection to its zones' policy, and
+// drops the rest, also to or from an interface in no zone.
 func (f *firewall) forward(b *strings.Builder) {
 	var between []derive.Named[derive.PolicySpec]
 	for _, p := range f.policies {
@@ -665,10 +656,8 @@ func (f *firewall) nat64Lines() []string {
 	return lines
 }
 
-// natLine renders a NATRule. The NATRule's rules check its place, to, family and ports; natLine
-// guards a rule without its place or to, and a zone without links, whose empty set
-// nftables would not load. The validator router refuses that zone, a to.address in a NAT64's pool
-// and a destination in a NAT64's prefix or pool.
+// natLine renders a NATRule. It guards a rule without its place or to, and a zone without links,
+// whose empty set nftables would not load.
 func (f *firewall) natLine(doc derive.Named[derive.NATSpec]) (string, error) {
 	n := doc.Spec
 	family := familyWords[n.Family]
@@ -814,10 +803,9 @@ func joinWords(parts ...string) string {
 	return strings.Join(kept, " ")
 }
 
-// addressMatch is the match of the source or destination a on the side dir, saddr or daddr, in
-// the family fam: of its AddressSet, or of its ranges of that family. ok is false when a has
-// addresses but none of fam; a nil a matches every address. The rules check that a names a set or
-// ranges, one of them.
+// addressMatch is the match of the source or destination a on the side dir, saddr or daddr, in the
+// family fam: of its AddressSet, or of its ranges of that family. ok is false when a has addresses
+// but none of fam; a nil a matches every address.
 func (f *firewall) addressMatch(fam derive.Family, dir string, a *derive.Addresses) (match string, ok bool, err error) {
 	switch {
 	case a == nil:
@@ -973,11 +961,10 @@ var (
 	anyIPv4   = netip.MustParsePrefix("0.0.0.0/0")
 )
 
-// dhcpOpenings are the DHCP ports of the DHCPv6 servers and of the relays on their links, in the
-// links' VRF: DHCPv6's UDP port 547 from link-local addresses on an IPv6 DHCPSubnet's link and on
-// a DHCPRelay's links with an IPv6 server, and DHCPv4's UDP port 67 on a DHCPRelay's links with
-// an IPv4 server. Kea's DHCPv4 server reads and answers on raw sockets ahead of the firewall and
-// needs none, and the servers' answers to the relay pass as replies to its requests.
+// dhcpOpenings are the DHCP ports of the DHCPv6 servers and the relays, in their links' VRF: UDP
+// 547 from link-local addresses on an IPv6 DHCPSubnet's link and on a DHCPRelay's links with an
+// IPv6 server, and UDP 67 on a DHCPRelay's links with an IPv4 server. Kea's DHCPv4 server uses raw
+// sockets ahead of the firewall, and the servers' answers to the relay pass as replies.
 func dhcpOpenings(d derive.Model) ([]opening, error) {
 	subnets, err := d.Subnets()
 	if err != nil {

@@ -43,14 +43,12 @@ const (
 // a private-use AS.
 var trackedCommunity = derive.Community{Value: "4200000000:0:1", Large: true}
 
-// renderFRR writes FRR's whole config to out/frr.conf: a BGP instance per BGP document, of the
-// default VRF or of another, with a peer group per BGPPeer of its VRF, the PrefixList,
-// CommunityList and RoutingPolicy documents as prefix-lists, community-lists and route-maps, and a
-// BFD profile of each instance's timers. A peer's family with defaultOriginateWhen sends its
-// default route while the instance, which redistributes the kernel's routes and the links'
-// prefixes that the list matches without announcing them, holds a route of the list. A peer's
-// password is a placeholder, @secret_<secret>.<key>@, that frr.service fills in from its
-// credentials. A node without a BGP document runs no BGP.
+// renderFRR writes frr.conf to out: a BGP instance per BGP document, a peer group per BGPPeer, the
+// PrefixList, CommunityList and RoutingPolicy documents as prefix-lists, community-lists and
+// route-maps, and a BFD profile of each instance's timers. A family with defaultOriginateWhen sends
+// its default route while the instance holds a route of the list. A password is a placeholder,
+// @secret_<secret>.<key>@, that frr.service fills in from its credentials. Without a BGP document
+// the node runs no BGP.
 func renderFRR(in map[string]any, out string) error {
 	d, err := derive.Build(documents(in))
 	if err != nil {
@@ -77,7 +75,6 @@ func frrConfig(d derive.Model, node string) (string, error) {
 		b.WriteString("hostname " + node + "\n")
 	}
 	b.WriteString("log syslog informational\nservice integrated-vtysh-config\n!\n")
-	// The BGPPeer's rules refuse a peer whose VRF has no BGP document.
 	switch {
 	case len(d.BGP) == 0 && len(d.Peers) > 0:
 		return "", derive.InternalErrorf("the config holds BGPPeer documents but no BGP document")
@@ -272,8 +269,7 @@ func newFRR(d derive.Model) (*frr, error) {
 			return nil, err
 		}
 	}
-	// The sessions of each peer, which the validator router has checked, and who names each
-	// neighbour in any VRF, so none takes a peer group's name.
+	// Who names each neighbour in any VRF, so none takes a peer group's name.
 	peerSessions, err := d.Sessions()
 	if err != nil {
 		return nil, err
@@ -281,8 +277,6 @@ func newFRR(d derive.Model) (*frr, error) {
 	sessions := map[string]string{}
 	for _, p := range d.Peers {
 		vrf := derive.VRFOf(p.Spec.VRF)
-		// The BGPPeer's rules refuse a peer of a VRF without a BGP document; without its
-		// instance the peer would have no block to sit in.
 		in := c.served(vrf)
 		if in == nil {
 			return nil, derive.InternalErrorf("BGPPeer %s runs in the VRF %s, which no BGP document serves", p.Name, vrf)
@@ -312,10 +306,9 @@ func newFRR(d derive.Model) (*frr, error) {
 	return c, nil
 }
 
-// newInstance takes a BGP document. The schemas and the BGP kind's rules check its AS number, its
-// router ID, counts and timers; frr.conf writes the VRF's name and the router ID unquoted, so it
-// guards both: the VRF is a VRF document's, whose name Build checked, unless it is the
-// default one, and the router ID is an IPv4 address, which FRR takes.
+// newInstance takes a BGP document. frr.conf writes the VRF's name and the router ID unquoted, so
+// it guards both: the VRF is a VRF document's unless it is the default one, and the router ID is an
+// IPv4 address.
 func newInstance(g derive.Named[derive.BGPSpec], vrfs []derive.Named[derive.VRFSpec]) (*instance, error) {
 	b := g.Spec
 	in := &instance{name: g.Name, vrf: derive.VRFOf(b.VRF), spec: b}
@@ -332,8 +325,7 @@ func newInstance(g derive.Named[derive.BGPSpec], vrfs []derive.Named[derive.VRFS
 }
 
 // checkNetworks guards an instance's networks: a policy that names no RoutingPolicy, whose name
-// frr.conf writes unquoted. The BGP kind's rules refuse a default route among the networks of a
-// VRF other than the default one and a policy of another family.
+// frr.conf writes unquoted.
 func (c *frr) checkNetworks(in *instance) error {
 	for _, n := range in.spec.Networks {
 		if n.Policy != nil {
@@ -346,10 +338,7 @@ func (c *frr) checkNetworks(in *instance) error {
 }
 
 // checkImports guards an instance's imports, whose VRFs and policy frr.conf writes unquoted: each
-// VRF is an instance's, whose name the documents' checks took, and the policy a RoutingPolicy's.
-// The BGP kind's rules refuse an import of its own VRF or of a VRF without a BGP document, and a
-// policy of another family; the VRF kind's rules an import into or out of a VRF with a conntrack
-// zone.
+// VRF must be an instance's and the policy a RoutingPolicy's.
 func (c *frr) checkImports(in *instance) error {
 	for _, f := range []struct {
 		family string
@@ -459,9 +448,7 @@ func (c *frr) prepends() error {
 
 // checkPolicy checks a RoutingPolicy's AS paths as bgpd compiles them, which no rule can, and
 // guards what frr.conf writes unquoted: the lists a term names and its AS path. It guards the
-// prepend's count too, which sizes a list. The RoutingPolicy's rules check the number of terms,
-// the PrefixLists' family, a rejecting term that sets nothing and an AS path's length; the
-// schema checks the actions and the communities, and derive decodes no others.
+// prepend's count too, which sizes a list.
 func (c *frr) checkPolicy(p derive.Named[derive.RoutingPolicySpec]) error {
 	for i, t := range p.Spec.Terms {
 		term := fmt.Sprintf("term %d", i+1)
@@ -501,8 +488,7 @@ func (c *frr) policy(name string) error {
 }
 
 // checkPeer guards what frr.conf writes of a peer unquoted, its password's Secret and key and its
-// description, and the RoutingPolicy and PrefixList documents its families name. The BGPPeer's
-// schema and rules check the rest of the peer, and derive.Model.Sessions its sessions.
+// description, and the RoutingPolicy and PrefixList documents its families name.
 func (c *frr) checkPeer(p derive.Named[derive.PeerSpec]) error {
 	s := p.Spec
 	if s.Password != nil && (!credential.MatchString(s.Password.SecretRef.Name) || !credential.MatchString(s.Password.SecretRef.Key)) {
@@ -546,11 +532,7 @@ func ipWord(family derive.Family) string {
 }
 
 // prefixEntries returns each of a PrefixList's entries as frr.conf writes it after the sequence
-// number: its action, its masked prefix, and its ge and le. The uniqueness check has refused two
-// entries of one prefix, ge and le, which FRR's prefix-list commands would take one for the
-// other, and the PrefixList's rules entries of another family and a ge or le outside the
-// prefix's length and the family's longest prefix, which mgmtd would refuse with every list and
-// route-map of the config.
+// number: its action, its masked prefix, and its ge and le.
 func prefixEntries(l derive.PrefixListSpec) []string {
 	var entries []string
 	for _, e := range l.Entries {
@@ -705,16 +687,13 @@ func (c *frr) routeMaps(b *strings.Builder) {
 	}
 }
 
-// trackingMaps renders the route-maps of the defaults sent while a route exists: do-<list> for
-// each PrefixList a peer tracks, and per instance and family track-<vrf>-<family>, through which
-// the instance redistributes the routes its peers track, and leak-<vrf>-<family> for an import
-// from a VRF that tracks routes of the family. Blackhole routes, the VRF tables' unreachable
-// defaults among them, count for nothing; zebra reads their kernel metric as a distance and a
-// metric of its own, so the route-map matches their type. A tracked path takes distance 255,
-// so a path a peer sends for the same prefix stays the best one, which bgpd installs, announces
-// and leaks. It takes weight 0 too: bgpd compares no distance against a network of the
-// instance, and the network keeps its weight of 32768, so it stays the best path even when its
-// policy prepends or lowers its local preference. It reports whether it rendered any.
+// trackingMaps renders the route-maps of the defaults sent while a route exists and reports whether
+// it rendered any. Blackhole routes, the VRF tables' unreachable defaults among them, count for
+// nothing: zebra reads their kernel metric as a distance and a metric of its own, so the route-maps
+// match their type. A tracked path takes distance 255, so a path a peer sends for the same prefix
+// stays the best one, which bgpd installs, announces and leaks. It takes weight 0 too: bgpd
+// compares no distance against a network of the instance, whose weight of 32768 would keep it the
+// best path even when its policy prepends or lowers its local preference.
 func (c *frr) trackingMaps(b *strings.Builder) bool {
 	lists := map[string]bool{}
 	for _, byFamily := range c.tracked {

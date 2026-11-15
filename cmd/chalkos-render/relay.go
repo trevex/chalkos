@@ -10,12 +10,8 @@ import (
 	"github.com/trevex/chalkos/pkg/router/services"
 )
 
-// The output dhcp-relay: the config of dnsmasq's DHCP relay of each VRF whose links DHCPRelay
-// documents relay, which forwards the DHCPv4 and DHCPv6 requests of the clients on the links to
-// the relays' servers through the VRF's table. The validator router checks what the kind's rules
-// cannot, with derive.Model.Relays: one VRF per relay, the router's address of each family the
-// servers have on each link, which the servers tell the link by, and that dnsmasq's sockets bind
-// beside Kea's. The set check has refused a link that two relays name.
+// The output dhcp-relay: dnsmasq's DHCP relay of each VRF whose links DHCPRelay documents relay,
+// which forwards the clients' DHCPv4 and DHCPv6 requests to the servers through the VRF's table.
 
 // relayVRF is the part of a relay's config of one VRF: the links it relays on and its dhcp-relay
 // lines, each the router's address on a link and a server.

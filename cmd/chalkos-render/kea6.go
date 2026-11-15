@@ -7,10 +7,8 @@ import (
 	"github.com/trevex/chalkos/pkg/router/keaconf"
 )
 
-// The DHCPv6 part of the output kea: Kea's DHCPv6 server of each VRF whose links IPv6 DHCPSubnet
-// documents serve. Kea answers DHCPv6 on UDP sockets of each link, and selects a subnet of a
-// client on a link by the link the subnet names, so an IPv6 subnet takes one link. Clients ask
-// the server when the link's router advertisements tell them to, which the link's Network sends.
+// The DHCPv6 part of the output kea. Kea selects an IPv6 subnet by the link it names, so an IPv6
+// subnet takes one link; clients ask the server when the link's router advertisements say so.
 
 // subnetID6 is Kea's number for the IPv6 subnet p: FNV-1a of its address and length, which
 // renderKea refuses should two subnets of a server share it.

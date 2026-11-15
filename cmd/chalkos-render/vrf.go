@@ -11,18 +11,8 @@ import (
 	"github.com/trevex/chalkos/pkg/router/derive"
 )
 
-// The units of the VRF documents, which the output networkd renders on router images beside the
-// networkd documents, and VRF= in the Networks of the links each VRF holds, as the model finds
-// them.
-
-// renderRouterNetworkd writes the networkd documents of in as renderNetworkd does, with the units
-// of the VRF documents: the device's 00-vrf-<name>.netdev, of Kind=vrf and the VRF's table, and
-// 00-vrf-<name>.network, which brings the device up, leaves it out of the node's online state
-// and ends the table in unreachable default routes, and VRF=<name> in the [Network] section of
-// each Network document that is the first to match links the VRF holds, a .network per NAT64
-// that leaves its link n64-<name> to chalkos-nat64, a .netdev and a .network per WireGuard, and
-// the kernel's rules of the PolicyRoute documents and the NextHop documents' tables in the
-// Networks of lo and of the next hops' links.
+// renderRouterNetworkd renders the networkd documents like renderNetworkd, plus the units of VRFs,
+// NAT64 links, WireGuard interfaces and policy routes.
 func renderRouterNetworkd(schemas string, in map[string]any, out string) error {
 	byKind := documents(in)
 	d, err := derive.Build(byKind)
@@ -45,11 +35,11 @@ func renderRouterNetworkd(schemas string, in map[string]any, out string) error {
 	return renderNetworkd(schemas, map[string]any{"node": in["node"], "documents": docs}, out)
 }
 
-// withVRFUnits is byKind with each VRF's NetDev and Network documents added and VRF= set in each
-// Network document that networks puts in a VRF without its own VRF= of it, which only a VRF
-// document's interfaces do. It refuses a networkd document of a VRF unit's name and a NetDev
-// that creates a device of a VRF's name, by any [NetDev] section and any value of its Name=, a
-// check the VRF's rules leave to it.
+// withVRFUnits is byKind with each VRF's 00-vrf-<name>.netdev, of Kind=vrf and the VRF's table, and
+// 00-vrf-<name>.network, which brings the device up, leaves it out of the online state and ends the
+// table in unreachable defaults, and VRF= in each Network that networks puts in a VRF and that sets
+// none itself. It refuses a networkd document of a VRF unit's name and a NetDev that creates a
+// device of a VRF's name by any [NetDev] section or Name= value.
 func withVRFUnits(vrfs []derive.Named[derive.VRFSpec], networks map[string]string, byKind map[string]any) (map[string]any, error) {
 	isVRF := func(name string) bool {
 		return slices.ContainsFunc(vrfs, func(v derive.Named[derive.VRFSpec]) bool { return v.Name == name })
@@ -112,11 +102,10 @@ func withVRFUnits(vrfs []derive.Named[derive.VRFSpec], networks map[string]strin
 	return out, nil
 }
 
-// withNAT64Units is docs, the networkd documents with the VRFs' units, with a Network document
-// 00-n64-<name> per NAT64 that leaves the link n64-<name> unmanaged: chalkos-nat64 configures the
-// link, and networkd would drop its addresses and routes once a Network of the node matched it. It
-// refuses a Network of byKind of such a unit's name or that networkd may pick for the link before
-// it, and a NetDev of byKind that creates a device of the link's name.
+// withNAT64Units is docs with a Network 00-n64-<name> per NAT64 that leaves the link n64-<name>
+// unmanaged: chalkos-nat64 configures it, and networkd would drop its addresses and routes. It
+// refuses a Network of such a unit's name or that networkd may pick for the link first, and a
+// NetDev that creates a device of the link's name.
 func withNAT64Units(d derive.Model, byKind, docs map[string]any) (map[string]any, error) {
 	if len(d.NAT64) == 0 {
 		return docs, nil

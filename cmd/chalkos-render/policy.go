@@ -40,13 +40,10 @@ type routeTarget struct {
 	mark  uint32
 }
 
-// policyTargets are the distinct tables of the PolicyRoute documents' targets, sorted by number,
-// each with its mark, (index+1)<<16. Rules that name one table share its mark: rules of one VRF,
-// of one table or of one NextHop. The schemas and rules keep the targets' tables apart: a VRF's
-// and a NextHop's table are their own, and a rule's table is neither. NextHop documents that no
-// rule names take no mark. It refuses more than 255 tables, which the mark's bits cannot tell
-// apart, a count that spans every document: the refusal names the rule whose target is the 256th
-// table, in the order of the documents and their rules, and counts them all.
+// policyTargets gives each distinct table of the PolicyRoute documents' targets, sorted by number,
+// its mark, (index+1)<<16; rules that name one table share it. NextHops that no rule names take no
+// mark. It refuses more than 255 tables, which the mark's 8 bits cannot tell apart, and names the
+// rule whose target is the 256th table.
 func policyTargets(d derive.Model, t derive.PolicyTables) ([]routeTarget, error) {
 	tables := map[uint32]bool{}
 	// past and pastRule name the rule whose target is the 256th table, if any.
@@ -123,12 +120,8 @@ func (f *firewall) policyLines(d derive.Model) ([]string, error) {
 }
 
 // policyHead matches where a PolicyRoute's traffic comes in, as prerouting sees it: the links of
-// its zone, its interfaces or, without in, every link. The kind's rules check that in names a zone
-// or interfaces, one of them. The validator router refuses a zone that holds no link, an interface
-// or glob that matches a VRF's device, which prerouting sees for a VRF's link only after the pass
-// that decides the mark, and a zone's link or an interface that matches a NAT64's link, whose
-// traffic Jool translates. policyHead guards a zone of no link, whose empty set nftables would
-// not load.
+// its zone, its interfaces or, without in, every link. It guards a zone of no link, whose empty set
+// nftables would not load.
 func (f *firewall) policyHead(p derive.Named[derive.PolicyRouteSpec]) (string, error) {
 	what := "PolicyRoute " + p.Name
 	in := p.Spec.In
@@ -193,16 +186,13 @@ func (f *firewall) policyMatches(r derive.PolicyRule) ([]string, error) {
 	return out, nil
 }
 
-// withPolicyRoutes is docs, the networkd documents with the VRFs' and NAT64s' units, with the
-// kernel's rules of the PolicyRoute documents' targets and the unreachable default routes of every
-// NextHop's table in the Network of lo, and the default route through each NextHop in the Network
-// of its link. A NextHop that no rule names gets its table too, so that the units do not depend on
-// which NextHops the rules name. A Network document that networkd picks for lo or for the link
-// takes them when it matches that link alone by its Name=; without one for lo, a Network
-// 00-policy-routing of lo holds them. It refuses a NextHop's link no Network matches, a Network
-// that may match a NextHop's link by other [Match] keys, or lo as loNetwork finds, or that matches
-// other links too, which would get the routes, and a Network document named 00-policy-routing.
-// Without PolicyRoute and NextHop documents it changes nothing.
+// withPolicyRoutes is docs with the kernel's rules of the PolicyRoute targets and every NextHop
+// table's unreachable defaults in the Network of lo, and each NextHop's default route in its link's
+// Network. A NextHop that no rule names gets its table too, so the units do not depend on the
+// rules. A Network that matches lo or the link alone by Name= takes them; without one for lo, a
+// Network 00-policy-routing holds them. It refuses a NextHop link no Network matches, a Network
+// that may match it or lo by other [Match] keys or matches other links too, and a Network document
+// named 00-policy-routing. Without PolicyRoute and NextHop documents it changes nothing.
 func withPolicyRoutes(d derive.Model, docs map[string]any) (map[string]any, error) {
 	tables, err := d.PolicyTables()
 	if err != nil {
@@ -304,11 +294,10 @@ func policyDocuments(d derive.Model) string {
 	return strings.Join(parts, " and ")
 }
 
-// loNetwork is the Network document that networkd picks for lo, "" when the unit of the
-// policy routing holds its sections. Without a Network that matches lo by its Name= alone, that
-// unit joins the units as networkd sorts them, so that a Network of other [Match] keys refuses
-// only when it sorts before the unit, which it may shadow, or when its Name= matches lo, which the
-// unit may shadow. A refusal names the Network; a device named lo is a VRF's of that name.
+// loNetwork is the Network that networkd picks for lo, "" when the policy-routing unit holds its
+// sections. Without a Network that matches lo by Name= alone, that unit joins the units in
+// networkd's order, so a Network of other [Match] keys refuses only when it sorts first, which it
+// may shadow, or when its Name= matches lo. A device named lo is a VRF's of that name.
 func loNetwork(units []derive.Unit) (string, error) {
 	if slices.ContainsFunc(units, func(u derive.Unit) bool { return !u.Narrowed && u.Match.Matches("lo") }) {
 		return soleNetwork(units, "lo", "VRF", "lo", "metadata.name")

@@ -17,16 +17,10 @@ import (
 	"github.com/trevex/chalkos/pkg/router/services"
 )
 
-// The output kea: the config of Kea's DHCPv4 and DHCPv6 servers of each VRF whose links
-// DHCPSubnet documents serve, on the links the subnets name. The kind's rules check each subnet
-// on its own, and the validator router, with derive.Model.Subnets, what spans documents: one VRF
-// per subnet, one subnet of each family per link, no overlap within a server, the router's
-// addresses in each subnet, what a subnet delegates, and router advertisements that send IPv6
-// clients to the DHCPv6 server. The renderer refuses two subnets of a server that get one number
-// in Kea. The output's check runs Kea's own, kea-dhcp4 -t and kea-dhcp6 -t, on each config,
-// which refuses pools that run backwards, overlap or leave the subnet, a reservation outside the
-// subnet and a lease past 4294967295 seconds; the renderer guards what Kea's check passes and
-// would panic, or what Kea would read as more values.
+// The output kea: Kea's DHCPv4 and DHCPv6 servers of each VRF whose links DHCPSubnet documents
+// serve. kea-dhcp4 -t and kea-dhcp6 -t check each config; the renderer refuses two subnets of a
+// server that get one number in Kea and guards what Kea's check passes but Kea would panic on or
+// read as more values.
 
 // keaServer is one of Kea's servers: that of a VRF and a family.
 type keaServer struct {
@@ -86,11 +80,11 @@ func (s servedSubnet) server() keaServer {
 	return keaServer{vrf: s.VRF, v6: s.Is6()}
 }
 
-// renderKea writes the config of Kea's DHCPv4 and DHCPv6 servers of each VRF whose links
+// renderKea writes the configs of Kea's DHCPv4 and DHCPv6 servers of each VRF whose links
 // DHCPSubnet documents serve: out/kea-dhcp4.json and out/kea-dhcp6.json for the default VRF,
-// out/kea-dhcp4-<vrf>.json and out/kea-dhcp6-<vrf>.json for a VRF. A node without a DHCPSubnet
-// gets no file and runs no server. pdHook is the program Kea's run_script hook runs for an IPv6
-// server that delegates prefixes.
+// out/kea-dhcp4-<vrf>.json and out/kea-dhcp6-<vrf>.json for another. Without a DHCPSubnet it writes
+// nothing. pdHook is the program Kea's run_script hook runs for an IPv6 server that delegates
+// prefixes.
 func renderKea(pdHook string, in map[string]any, out string) error {
 	if !strings.HasPrefix(pdHook, "/") {
 		return fmt.Errorf("%q is no absolute path of the program that records delegated prefixes", pdHook)

@@ -15,12 +15,11 @@ import (
 // unitSuffix is the file suffix of each networkd kind's units, in the order they are rendered.
 var unitSuffix = []struct{ kind, suffix string }{{"Link", ".link"}, {"NetDev", ".netdev"}, {"Network", ".network"}}
 
-// renderNetworkd writes each Link, NetDev and Network document of in as a networkd unit file,
-// named as the document with its kind's suffix. Section and key names come from the
+// renderNetworkd writes each Link, NetDev and Network document of in as a networkd unit named as
+// the document with its kind's suffix. Section and key names come from the
 // x-chalkos-networkd-section and x-chalkos-networkd-key annotations of the kinds' schemas in the
-// directory schemas, the image's, so a unit says on the node exactly what networkd's own names
-// would. [Match] comes first and other sections follow by name; keys are in name order, and a
-// repeated section or key keeps the order of its list.
+// directory schemas. [Match] comes first and the other sections follow by name; keys are in name
+// order, and a repeated section or key keeps its list's order.
 func renderNetworkd(schemas string, in map[string]any, out string) error {
 	byKind := documents(in)
 	for _, k := range unitSuffix {
