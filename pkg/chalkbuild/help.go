@@ -6,7 +6,7 @@ package chalkbuild
 const rootLong = `chalkbuild prepares the images Nix builds for a chalkos cluster's nodes, on the machine that
 holds the Secure Boot db key. Nix builds images unsigned, so the key never enters the Nix store or
 a binary cache. chalkbuild sign signs a copy of an image directory or of an OCI image layout, which
-chalkbuild oci and mkImages's oci outputs write, and chalkbuild push pushes a signed layout to a
+chalkbuild oci and an image's oci attribute write, and chalkbuild push pushes a signed layout to a
 registry. The inventory names a signed image directory, or the reference push prints. chalkbuild
 never talks to nodes, and its commands need no secrets file or client file.`
 
@@ -23,7 +23,7 @@ artifact type application/vnd.chalkos.image.v1. Its config is the image's header
 hash, architecture, platform, revision and tag. Its layers, uncompressed, are the store data the
 root hash covers, the hash tree, the UKI, the boot loader and the contract, a tar of metadata.json,
 schemas/, repart.d/ and facts/. The same image directory always makes the same layout, and
-mkImages's oci outputs run this command. The layout directory must not exist; when anything
+an image's oci attribute runs this command. The layout directory must not exist; when anything
 fails, or Ctrl-C stops the command, it is removed again. The command needs no secrets file or
 client file.`
 

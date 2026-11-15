@@ -28,9 +28,9 @@ in
     default = null;
     description = ''
       The OS CA the image carries, from which chalkd in maintenance mode accepts client
-      certificates; null accepts any client until the node is installed. mkImages sets it, in
-      every image and the installer, from its [`osCA`](mkimages.md#osca) argument, which
-      describes the file; the image's build checks the file's version again.
+      certificates; null accepts any client until the node is installed. mkImage and mkInstaller
+      set it, in every image and the installer, from their [`osCA`](mkimages.md#osca) argument,
+      which describes the file; the image's build checks the file's version again.
     '';
   };
 

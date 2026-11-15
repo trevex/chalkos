@@ -5,7 +5,7 @@
 # bird announces the addresses of the Speaker's interfaces, such as the node's address and the
 # Kubernetes API's routed VIP on a dummy interface, and installs the default route its peers send.
 # A Peer's password comes from a Secret: bird gets it as a credential, and the rendered config
-# names the credential, never the value. A variant that carries this module accepts Speaker and
+# names the credential, never the value. An image that carries this module accepts Speaker and
 # Peer documents. The comments # --8<-- mark the sections the guides include.
 {
   chalkosLib,

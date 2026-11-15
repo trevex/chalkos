@@ -26,7 +26,7 @@ const metadataVersion = 0
 type Metadata struct {
 	SchemaVersion int    `json:"schemaVersion"`
 	ID            string `json:"id"`
-	// Revision and Tag are the git revision and tag the image was built from, as mkImages was
+	// Revision and Tag are the git revision and tag the image was built from, as mkImage was
 	// given them; empty when it was not. They say where the image came from and decide nothing.
 	Revision string `json:"revision"`
 	Tag      string `json:"tag"`

@@ -1,4 +1,4 @@
-# The image directory mkImages returns: the raw image with slot A labelled by its root hash,
+# The image directory mkImage returns: the raw image with slot A labelled by its root hash,
 # repart's report, the system region's repart definitions, the schemas, the facts of the image's
 # layers and metadata.json. Its build fails when the image leaves no room for the next one, or
 # when a derivation of chalkos.imageDirectory.checks fails, such as the image's rules check.
@@ -88,7 +88,7 @@ in
       type = lib.types.nullOr lib.types.str;
       default = null;
       description = ''
-        The git revision `metadata.json` records; mkImages sets it from its
+        The git revision `metadata.json` records; mkImage sets it from its
         [`revision`](mkimages.md#revision) argument.
       '';
     };
@@ -96,7 +96,7 @@ in
       type = lib.types.nullOr lib.types.str;
       default = null;
       description = ''
-        The git tag `metadata.json` records; mkImages sets it from its [`tag`](mkimages.md#tag)
+        The git tag `metadata.json` records; mkImage sets it from its [`tag`](mkimages.md#tag)
         argument.
       '';
     };

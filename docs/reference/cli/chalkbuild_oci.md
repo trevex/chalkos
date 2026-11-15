@@ -14,7 +14,7 @@ artifact type application/vnd.chalkos.image.v1. Its config is the image's header
 hash, architecture, platform, revision and tag. Its layers, uncompressed, are the store data the
 root hash covers, the hash tree, the UKI, the boot loader and the contract, a tar of metadata.json,
 schemas/, repart.d/ and facts/. The same image directory always makes the same layout, and
-mkImages's oci outputs run this command. The layout directory must not exist; when anything
+an image's oci attribute runs this command. The layout directory must not exist; when anything
 fails, or Ctrl-C stops the command, it is removed again. The command needs no secrets file or
 client file.
 

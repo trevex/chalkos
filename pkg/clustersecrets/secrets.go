@@ -44,8 +44,8 @@ type Secrets struct {
 	Recipients []string `json:"recipients,omitempty"`
 }
 
-// Public is the public half of the secrets file, secrets.pub.json, which mkImages's osCA names to
-// bake the OS CA into images.
+// Public is the public half of the secrets file, secrets.pub.json, which the osCA of mkImage and
+// mkImages names to bake the OS CA into images.
 type Public struct {
 	Version    int              `json:"version"`
 	OSCA       pki.CertKey      `json:"osCA"`

@@ -1,6 +1,6 @@
 # The Hardware kind, which records who made a node's server and which model it is, and a unit
 # that logs it. The documents reach the unit as an output: an environment file rendered from a
-# template, which a test renders from the example in hardware-examples. A variant that
+# template, which a test renders from the example in hardware-examples. An image that
 # carries this module accepts Hardware documents.
 {
   chalkosLib,

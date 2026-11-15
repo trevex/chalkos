@@ -296,9 +296,9 @@ already. Nodes have no logins; use them from a privileged pod on the node, for e
 Type: path or null · Default: `null` · Declared in: [modules/node/chalkd.nix](https://github.com/trevex/chalkos/blob/main/modules/node/chalkd.nix)
 
 The OS CA the image carries, from which chalkd in maintenance mode accepts client
-certificates; null accepts any client until the node is installed. mkImages sets it, in
-every image and the installer, from its [`osCA`](mkimages.md#osca) argument, which
-describes the file; the image's build checks the file's version again.
+certificates; null accepts any client until the node is installed. mkImage and mkInstaller
+set it, in every image and the installer, from their [`osCA`](mkimages.md#osca) argument,
+which describes the file; the image's build checks the file's version again.
 
 ## Set by mkImage { #set-by-mkimage }
 
@@ -326,14 +326,14 @@ platform, and translates its config for its own.
 
 Type: string or null · Default: `null` · Declared in: [modules/node/base/image-directory.nix](https://github.com/trevex/chalkos/blob/main/modules/node/base/image-directory.nix)
 
-The git revision `metadata.json` records; mkImages sets it from its
+The git revision `metadata.json` records; mkImage sets it from its
 [`revision`](mkimages.md#revision) argument.
 
 ### `chalkos.provenance.tag` { #chalkosprovenancetag }
 
 Type: string or null · Default: `null` · Declared in: [modules/node/base/image-directory.nix](https://github.com/trevex/chalkos/blob/main/modules/node/base/image-directory.nix)
 
-The git tag `metadata.json` records; mkImages sets it from its [`tag`](mkimages.md#tag)
+The git tag `metadata.json` records; mkImage sets it from its [`tag`](mkimages.md#tag)
 argument.
 
 Sources: the option declarations of the node modules in `modules/node/`, through

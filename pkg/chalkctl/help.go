@@ -32,7 +32,7 @@ const genSecretsLong = `Generates the cluster's secrets once: the OS CA, the nod
 the secret that nodes' recovery keys derive from. They go to secrets.age, encrypted to the age
 recipients --recipient gives (age public keys, SSH public keys or age plugin recipients), or with
 --plaintext to secrets.json unencrypted. The public half goes to secrets.pub.json, or to
---public-out, which the osCA argument of mkImages names. See
+--public-out, which the osCA argument of mkImage and mkImages names. See
 https://trevex.github.io/chalkos/how-it-works/node/certificates/.
 
 The command refuses to overwrite any of these files, because new secrets would lock out every

@@ -1,5 +1,5 @@
 # Adds pkgs.chalkos: the Go toolchain go.mod names, buildGoProgram, and a package per file of
-# nix/packages. Updating Go is a change to go.mod's go line. mkImages applies the overlay to the
+# nix/packages. Updating Go is a change to go.mod's go line. mkImage applies the overlay to the
 # images' nixpkgs, so images of another nixpkgs build chalkos's programs with this Go too.
 { go-overlay }:
 final: _: {

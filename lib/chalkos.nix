@@ -1,5 +1,5 @@
 # chalkosLib, the module argument every image's NixOS modules get, and the flake's lib besides
-# mkImages: the types of extension kinds' fields, the renderers of chalkos.outputs, the validators
+# mkImage and mkImages: the types of extension kinds' fields, the renderers of chalkos.outputs, the validators
 # of chalkos.validators and the common effects. It holds no store paths, since lib does not depend
 # on pkgs: a renderer is a value that chalkos.outputs.<name>.render turns into its program's
 # command, as a validator is for chalkos.validators.<name>.program.

@@ -1,5 +1,5 @@
-# The Rack kind, which records a node's rack position, and a unit that reads it on the node. A
-# variant that carries this module accepts Rack documents. A node that was surveyed, whose
+# The Rack kind, which records a node's rack position, and a unit that reads it on the node. An
+# image that carries this module accepts Rack documents. A node that was surveyed, whose
 # rack-survey tool wrote where it found the node, takes no other location than that once it runs;
 # an install reads no facts and takes any.
 {
