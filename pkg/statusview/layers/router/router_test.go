@@ -2,34 +2,18 @@ package router
 
 import (
 	"bytes"
-	"flag"
 	"math"
-	"os"
 	"path/filepath"
 	"testing"
 
 	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
+	"github.com/trevex/chalkos/pkg/internal/golden"
 )
 
-var update = flag.Bool("update", false, "rewrite the golden files")
-
-// golden compares got with testdata/name, or writes it there with -update.
-func golden(t *testing.T, name, got string) {
+// goldenFile compares got with the golden file of the name.
+func goldenFile(t *testing.T, name, got string) {
 	t.Helper()
-	path := filepath.Join("testdata", name)
-	if *update {
-		if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		return
-	}
-	want, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != string(want) {
-		t.Errorf("the output differs from %s; run go test ./pkg/statusview/layers/router -run %s -update and review the diff:\n%s", path, t.Name(), got)
-	}
+	golden.Check(t, filepath.Join("testdata", name), got)
 }
 
 // TestWrite writes a router's BGP sessions, its NAT64 instance, its resolvers, its DHCP servers
@@ -54,5 +38,5 @@ func TestWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	golden(t, "router.golden", b.String())
+	goldenFile(t, "router.golden", b.String())
 }

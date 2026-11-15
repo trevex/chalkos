@@ -1,17 +1,12 @@
 package addons
 
 import (
-	"bytes"
-	"encoding/json"
-	"flag"
-	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/trevex/chalkos/pkg/internal/golden"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 )
-
-var update = flag.Bool("update", false, "rewrite the golden files")
 
 // TestRenderGolden renders the addons of clusters that differ in their families and their pod
 // network, each from its testdata/<setup>/cluster.json: dual stack with flannel, an MTU and ranges
@@ -37,28 +32,7 @@ func TestRenderGolden(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			var b bytes.Buffer
-			enc := json.NewEncoder(&b)
-			enc.SetEscapeHTML(false)
-			enc.SetIndent("", "  ")
-			if err := enc.Encode(objects); err != nil {
-				t.Fatal(err)
-			}
-			got := b.Bytes()
-			golden := filepath.Join(dir, "addons.json")
-			if *update {
-				if err := os.WriteFile(golden, got, 0o644); err != nil {
-					t.Fatal(err)
-				}
-				return
-			}
-			want, err := os.ReadFile(golden)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if string(got) != string(want) {
-				t.Errorf("the addons differ from %s; run go test ./pkg/kubernetes/addons -update and review the diff:\n%s", golden, got)
-			}
+			golden.Check(t, filepath.Join(dir, "addons.json"), golden.JSON(t, objects))
 		})
 	}
 }

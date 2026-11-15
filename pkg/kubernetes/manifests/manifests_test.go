@@ -2,10 +2,8 @@ package manifests
 
 import (
 	"encoding/json"
-	"flag"
 	"maps"
 	"net/netip"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -13,13 +11,12 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
+	"github.com/trevex/chalkos/pkg/internal/golden"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/kubetest"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 )
-
-var update = flag.Bool("update", false, "rewrite the golden files")
 
 func testCluster() kubernetes.Cluster {
 	return kubetest.Cluster(kubernetes.KindControlPlane, func(c *kubernetes.Cluster) {
@@ -87,23 +84,7 @@ func TestStaticPodsGolden(t *testing.T) {
 			t.Fatalf("pods %v", names)
 		}
 		for _, name := range names {
-			golden := filepath.Join("testdata", setup, name)
-			if *update {
-				if err := os.MkdirAll(filepath.Dir(golden), 0o755); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(golden, pods[name], 0o644); err != nil {
-					t.Fatal(err)
-				}
-				continue
-			}
-			want, err := os.ReadFile(golden)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if string(pods[name]) != string(want) {
-				t.Errorf("%s differs from %s; run go test ./pkg/kubernetes/manifests -update and review the diff:\n%s", name, golden, pods[name])
-			}
+			golden.Check(t, filepath.Join("testdata", setup, name), string(pods[name]))
 		}
 	}
 }

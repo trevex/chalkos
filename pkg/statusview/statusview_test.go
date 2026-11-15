@@ -2,10 +2,8 @@ package statusview
 
 import (
 	"bytes"
-	"flag"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -15,27 +13,13 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/internal/golden"
 )
 
-var update = flag.Bool("update", false, "rewrite the golden files")
-
-// golden compares got with testdata/name, or writes it there with -update.
-func golden(t *testing.T, name, got string) {
+// goldenFile compares got with the golden file of the name.
+func goldenFile(t *testing.T, name, got string) {
 	t.Helper()
-	path := filepath.Join("testdata", name)
-	if *update {
-		if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		return
-	}
-	want, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != string(want) {
-		t.Errorf("the output differs from %s; run go test ./pkg/statusview -run %s -update and review the diff:\n%s", path, t.Name(), got)
-	}
+	golden.Check(t, filepath.Join("testdata", name), got)
 }
 
 // fakeInventory says what chalkctl's inventory says of a node, in words the test can find.
@@ -103,7 +87,7 @@ func TestWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	golden(t, "status.golden", b.String())
+	goldenFile(t, "status.golden", b.String())
 }
 
 // Without an inventory, as on the console, the lines compare nothing.
@@ -132,7 +116,7 @@ func TestWriteDisks(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	golden(t, "disks.golden", b.String())
+	goldenFile(t, "disks.golden", b.String())
 }
 
 // status names each output with the start of its hash and why its last render failed, or that

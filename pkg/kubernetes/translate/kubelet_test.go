@@ -60,9 +60,9 @@ func identityOn(s *config.Set, name, platform string) (identity.Identity, error)
 	return id, nil
 }
 
-// golden is the identity testdata/homelab-<node>-identity.json holds for the homelab's node, which
+// goldenIdentity is the identity testdata/homelab-<node>-identity.json holds for the homelab's node, which
 // the node's documents must give.
-func golden(t *testing.T, node string) identity.Identity {
+func goldenIdentity(t *testing.T, node string) identity.Identity {
 	t.Helper()
 	data, err := os.ReadFile("testdata/homelab-" + node + "-identity.json")
 	if err != nil {
@@ -78,7 +78,7 @@ func golden(t *testing.T, node string) identity.Identity {
 func TestIdentityMatchesTheGoldenIdentity(t *testing.T) {
 	for _, node := range []string{"cp1", "w1"} {
 		t.Run(node, func(t *testing.T) {
-			want := golden(t, node)
+			want := goldenIdentity(t, node)
 			got, err := identityOn(homelabSet(t, node), node, want.Platform)
 			if err != nil {
 				t.Fatal(err)
