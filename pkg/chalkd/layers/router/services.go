@@ -20,8 +20,8 @@ import (
 )
 
 // How long chalkd router services waits for the devices of all the instances it runs, and then
-// for all the instances it started, and how often it looks again. Tests shorten them.
-var (
+// for all the instances it started, and how often it looks again.
+const (
 	deviceWait   = 30 * time.Second
 	startWait    = 30 * time.Second
 	pollInterval = 200 * time.Millisecond
