@@ -93,7 +93,7 @@ lists what to do.
 [If something goes wrong](upgrade.md#if-something-goes-wrong) on the upgrade page lists the
 messages and their fixes.
 
-On the shipped variant, the run also stops at a control plane whose reboot would cost etcd its
+With the Kubernetes layer, the run also stops at a control plane whose reboot would cost etcd its
 quorum, and at a drain that does not finish.
 [Upgrade Kubernetes](../kubernetes/upgrade-kubernetes.md#if-something-goes-wrong) covers those.
 
@@ -139,7 +139,7 @@ An install or upgrade from a registry fails, with an error that names the source
 endpoint needs a `Registry` of its host with `insecure: true`.
 [Registries and mirrors](registries.md) covers credentials and mirrors.
 
-!!! note "On the shipped variant, pods pull with the same documents"
+!!! note "With the Kubernetes layer, pods pull with the same documents"
 
     Pods that stay in `ErrImagePull` or `ImagePullBackOff` pull through containerd. Read
     `containerd.service`'s log for the URL that failed. `chalkos-registry-mirrors.service` writes
@@ -150,7 +150,7 @@ endpoint needs a `Registry` of its host with `insecure: true`.
 
 ## A Kubernetes symptom
 
-On the shipped variant, symptoms of Kubernetes show in the status's Kubernetes line or in
+With the Kubernetes layer, symptoms of Kubernetes show in the status's Kubernetes line or in
 kubectl: a node with no address, a control plane that waits for bootstrap or does not finish
 joining, failing `kubectl logs`, pending kubelet certificate requests, pods that cannot reach each
 other, a Node without a pod range, a control plane that refuses the cluster's families, and a

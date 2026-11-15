@@ -38,7 +38,7 @@ flowchart LR
 The table lists the partitions in disk order. The first column is the systemd-repart
 definition file that describes each one. The system region's sizes are the defaults of the
 image's `chalkos.disk` options, which [Image options](image-options.md#disk) describes. They are
-fixed when the image is built, so every node that runs an image of one variant has the same
+fixed when the image is built, so every node that runs one image has the same
 system region.
 
 | Definition | Label | Size | File system | Encryption | Created by |
@@ -207,19 +207,20 @@ maintenance mode.
 ## Outputs of an image build
 
 An image directory is what
-[`mkImages`](mkimages.md) builds as `images.<variant>-<platform>`, such as `nix build .#node-kvm`
-in the lab template, whose flake exposes `images.node-kvm`. It holds six entries:
+[`mkImage`](mkimages.md) returns, and `mkImages` returns by the image's name, such as
+`nix build .#node-kvm` in the lab template, whose flake exposes `images.node-kvm`. It holds six entries:
 
 | Entry | What it is |
 | --- | --- |
 | `chalkos.raw` | The raw disk image: the ESP, with the UKI as `/EFI/Linux/chalkos_1.efi`, and slot A labelled with its root hash, with no slot B and no STATE. |
 | `repart-output.json` | systemd-repart's description of the raw image's partitions: type, label, UUID, offset, size and the store's root hash, with slot A's labels as the raw image carries them. `chalkbuild sign` and `chalkctl install` find the partitions with it. |
 | `repart.d` | The system region's definitions, `00-esp.conf` to `50-state.conf`, as the image carries them in `/etc/chalkos/repart.d`. |
-| `metadata.json` | What the image is: `schemaVersion` of this file (0), the image ID, variant, platform and the store's root hash (`rootHash`), the `revision` and `tag` mkImages was given, null without them, and `kinds`, the config kinds the image accepts, each with its `apiVersion`, `kind` and whether a node may hold several documents of it (`multiple`). chalkctl reads the root hash and the platform from it, and sends the revision and tag with the image when the file names its root hash; chalkctl warns of a file it ignores. |
+| `metadata.json` | What the image is: `schemaVersion` of this file (0), the image ID, the image's `name`, its `platform` and the store's root hash (`rootHash`), the `revision` and `tag` mkImages was given, null without them, and `kinds`, the config kinds the image accepts, each with its `apiVersion`, `kind` and whether a node may hold several documents of it (`multiple`). chalkctl reads the root hash and the platform from it, and sends the revision and tag with the image when the file names its root hash; chalkctl warns of a file it ignores. |
 | `schemas` | One JSON Schema (draft 2020-12, the schema dialect of OpenAPI 3.1) per kind, named `<group>_<version>_<kind>.json`, as the image carries them in `/etc/chalkos/schemas`. |
 | `facts` | The facts of the image's layers, one `<layer>.json` for each layer that sets [`chalkos.imageDirectory.facts`](extension-api.md#chalkosimagedirectoryfacts); empty on an image without such layers. On an image with Kubernetes, `facts/kubernetes.json` is what the image fixes about Kubernetes, the file the image carries as `/etc/chalkos/kubernetes/image.json`: the release of its kubelet and its pod network (`{"version": "1.37.2", "cni": "flannel"}`). An install from the installer sends the facts with `schemas`, or the installer reads both from the contract layer of an image it pulls, so the installer translates the node's config for the image it writes to lay out the target disk; an upgrade checks each node's config from the inventory against both before it drains a node, and chalkd checks the config it carries against those of the image it wrote. |
 
-[Config kinds](kinds.md) lists the fields of the kinds in the default variant's `schemas`.
+[Config kinds](kinds.md) lists the fields of the kinds in the `schemas` of an image with the
+Kubernetes layer and of a router image.
 
 The definitions of an image with the default sizes read:
 
@@ -252,12 +253,12 @@ whose `repart.d` was changed by other means.
 The installer's directory holds `chalkos-installer.raw` and its `repart-output.json`, the hybrid
 ISO `chalkos-installer.iso`, `chalkos-installer.iso.json`, which describes the ISO's partitions
 as `repart-output.json` does, and a `metadata.json` of the same fields, with the ID
-`chalkos-installer`, no variant or platform, and the installer's root hash, revision and tag.
+`chalkos-installer`, no name or platform, and the installer's root hash, revision and tag.
 
 ## OCI artifact { #oci-artifact }
 
-An OCI artifact holds an image for publishing to a registry. `mkImages` builds it as
-`oci.<variant>-<platform>`, and [`chalkbuild oci`](cli/chalkbuild_oci.md) writes it from an image
+An OCI artifact holds an image for publishing to a registry. An image of `mkImage` carries it as
+`oci`, such as `images.node-kvm.oci`, and [`chalkbuild oci`](cli/chalkbuild_oci.md) writes it from an image
 directory. Both write an OCI image layout: the file `oci-layout`, an `index.json` that names one
 manifest, and the blobs below `blobs/sha256/`. The manifest has the artifact type
 `application/vnd.chalkos.image.v1`, and no index wraps it.

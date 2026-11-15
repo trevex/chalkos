@@ -79,15 +79,15 @@ image does not accept. [Config travels with the image](#config-travels-with-the-
 config that only the new image accepts.
 
 The run also stops before it sends anything when a node runs another platform than its image in
-the inventory. Changing a node's platform is a reinstall. chalkctl compares no variant: a node
-whose image in the inventory is another variant's build gets that image, and chalkctl prints the
-change.
+the inventory. Changing a node's platform is a reinstall. A node whose image in the inventory has another name
+than the image it runs gets that image, and chalkctl prints the change.
 
 ## Install a prebuilt image
 
 `--image` names an image directory, or a raw image with `repart-output.json` next to it. chalkctl
-installs it on the nodes that run that image's variant, or on the nodes `--nodes` names. Nodes on
-another platform are skipped and named.
+installs it on the nodes that run an image of its name, or on the nodes `--nodes` names. Nodes on
+another platform are skipped and named. A renamed image matches no node that runs the image
+before it, so its first upgrade names the nodes with `--nodes`.
 
 ```sh
 chalkctl upgrade --image=images/node-metal-signed --secrets secrets.age
@@ -108,10 +108,10 @@ A lab catches a broken image before it reaches the cluster. This routine works f
 1. Change the flake and build the images into `images/` again.
 2. Sign copies of them into the `-signed` directories with `chalkbuild sign`.
 3. Run `chalkctl validate`.
-4. Upgrade a lab that runs the same variants, with copies that `chalklab sign` signed.
+4. Upgrade a lab that runs the same software, with copies that `chalklab sign` signed.
 5. Run `chalkctl upgrade` on the cluster, which gives each node its image in the inventory.
 
-A lab runs the kvm platform's build of each variant. It tests the variant's modules, config and
+A lab runs a kvm image with each metal image's modules. It tests the images' modules, config and
 Kubernetes, but not the drivers and firmware of the cluster's machines.
 [Sign images for a lab](../build/sign-images.md#sign-images-for-a-lab) shows the lab's upgrade.
 
@@ -121,8 +121,8 @@ Run the command in the inventory's directory, or name the inventory with `--inve
 
 ```console
 $ chalkctl upgrade --secrets secrets.age
-upgrading node on metal to <new>: node1, node2, node3
-upgrading router on metal to <new-router>: router
+upgrading node-metal on metal to <new>: node1, node2, node3
+upgrading router-metal on metal to <new-router>: router
 node1: installing <new>
 node1: config unchanged
 node1: installed <new>, staged as .staged-chalkos_2.efi
@@ -150,7 +150,7 @@ pods. `.staged-chalkos_2.efi` is the staged UKI on a node that was installed wit
 `chalkos_1.efi`, and `chalkos_2+3.efi` the boot entry its activation gives it: generation 2, with
 three tries.
 
-The first lines name each image's variant and platform and the nodes that get it. `...` stands
+The first lines name each image and its platform and the nodes that get it. `...` stands
 for the lines of node2 and node3, which repeat node1's. The control planes go first, one at a time.
 The homelab's nodes reach each other and the Kubernetes API through the router alone, so its
 reboot pauses that traffic; `--nodes router` upgrades the router in a run of its own, at a time
@@ -167,7 +167,7 @@ that suits. Each node shows its steps:
 
 The last line counts the nodes upgraded.
 
-!!! note "On the shipped variant, chalkctl also drains each node and guards etcd's quorum"
+!!! note "With the Kubernetes layer, chalkctl also drains each node and guards etcd's quorum"
 
     The `cordoned` and `uncordoned` lines belong to Kubernetes. chalkctl drains a node once its
     image is staged, and activates the image only after the drain, so a refused drain leaves the
@@ -185,7 +185,7 @@ The last line counts the nodes upgraded.
 
 ```console
 $ chalkctl upgrade --nodes node3 --until stage --secrets secrets.age
-upgrading node on metal to <new>: node3
+upgrading node-metal on metal to <new>: node3
 node3: installing <new>
 node3: config unchanged
 node3: installed <new>, staged as .staged-chalkos_2.efi
@@ -246,7 +246,7 @@ the Kubernetes layer. These flags change which nodes go and how:
 Raise `--max-unavailable` when the workloads have spare capacity, because each batch takes its
 nodes away for one reboot. A batch that fails stops the run after the batch's other nodes finish.
 
-The shipped variant adds `--allow-downtime` and `--delete-emptydir-data`, which
+The Kubernetes layer adds `--allow-downtime` and `--delete-emptydir-data`, which
 [Upgrade Kubernetes](../kubernetes/upgrade-kubernetes.md#choose-the-flags-for-kubernetes) lists.
 
 ## Config travels with the image

@@ -5,9 +5,11 @@ description: "What a Kubernetes node adds to the node OS: its components by node
 
 # How Kubernetes runs on a node
 
-chalkos runs upstream Kubernetes in the layout kubeadm uses, without kubeadm. The `Node` document
-of a node gives its type, and the type decides which components run. The diagram shows the
-components of each type of node.
+chalkos runs upstream Kubernetes in the layout kubeadm uses, without kubeadm, on images with the
+Kubernetes layer. The layer is a predefined set of NixOS modules that chalkos ships,
+`chalkos.nixosModules.kubernetes`, which an image lists in its modules like any other module. The
+`Node` document of a node gives its type, and the type decides which components run. The diagram
+shows the components of each type of node.
 
 ```mermaid
 flowchart TB
@@ -21,7 +23,7 @@ flowchart TB
     subgraph worker["Worker"]
         wkubelet["containerd and the kubelet"]
     end
-    subgraph plain["Node of a variant without Kubernetes"]
+    subgraph plain["Node of an image without the Kubernetes layer"]
         pchalkd["chalkd, no Kubernetes"]
     end
     wkubelet -->|registers at the cluster endpoint| pods

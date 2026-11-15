@@ -24,8 +24,8 @@ until nobody can say what a node runs. A failed upgrade leaves a machine that so
 the console. chalkos changes a node only by replacing its whole image. Each node boots the exact
 image that was built and signed, and it has no login through which anyone could change it.
 
-A Nix flake calls `mkImages`, which builds one image per variant and platform from NixOS
-modules. An image holds a read-only Nix store on dm-verity and a unified kernel image (UKI) that
+A Nix flake calls `mkImages`, which builds each image the flake names, for its platform, from
+NixOS modules. An image holds a read-only Nix store on dm-verity and a unified kernel image (UKI) that
 Secure Boot verifies. YAML documents in the style of Kubernetes objects configure each node.
 chalkctl delivers the documents and the images to the nodes and never runs Nix. chalkd, the agent
 on each node, applies the config and writes an upgrade into the inactive one of two A/B slots.
@@ -52,7 +52,7 @@ returns to the image before when none of them comes up healthy.
 :material-puzzle: __Extend with NixOS modules__
 { .card }
 
-A variant is a set of ordinary NixOS modules, so it can add any software, driver or kernel
+An image is built from ordinary NixOS modules, so it can add any software, driver or kernel
 setting. A module can also declare a config kind of its own, render a service's config files
 from it, and reload or restart the service when those files change.
 

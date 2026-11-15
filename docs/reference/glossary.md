@@ -58,7 +58,7 @@ to nodes. See [its commands](cli/chalkbuild.md) and
 The command on every node that prints the node's [config documents](#config-document). It reads
 them from `/run/chalkos/config` and prints them by kind and
 name, as names, JSON, YAML, a jsonpath expression or a Go template. It has no network access and
-never prints `Secret`s or the documents of withheld kinds, such as `Addon`s. A variant's NixOS modules build its commands with
+never prints `Secret`s or the documents of withheld kinds, such as `Addon`s. An image's NixOS modules build its commands with
 [`chalkos.kinds.<Kind>.get`](extension-api.md#chalkoskindsget), which checks a path against the kind's
 options when the image is evaluated. See [its commands](cli/chalkcfg.md).
 
@@ -153,8 +153,8 @@ slots of images no UKI on the ESP boots any more, so a node holds at most two. S
 
 ## Contract { #contract }
 
-What an image accepts as [config](#config): its variant, platform, kind schemas and what it fixes
-about Kubernetes. The variant and platform are the ones the image was built for, and the schemas
+What an image accepts as [config](#config): its name, platform, kind schemas and what it fixes
+about Kubernetes. The name and platform are the ones the image was built with, and the schemas
 are the JSON Schemas of its [kinds](#kind). The image carries the schemas in
 `/etc/chalkos/schemas` and the Kubernetes facts in `/etc/chalkos/kubernetes/image.json`, and its
 [image directory](#image-directory) has them as `schemas/` and `facts/kubernetes.json`. chalkctl
@@ -222,8 +222,8 @@ plane](../how-it-works/kubernetes/control-plane.md).
 ## Extension { #extension }
 <!-- abbr: extensions, Extensions -->
 
-NixOS modules outside chalkos that add services to a variant's images and may declare config
-kinds. An extension sits in a [variant](#variant)'s modules and declares its [kinds](#kind) under
+NixOS modules outside chalkos that add services to an image and may declare config
+kinds. An extension sits in an [image](#image)'s modules and declares its [kinds](#kind) under
 [`chalkos.kinds`](extension-api.md#chalkoskinds), whose documents a node's YAML files then carry. The
 services read those documents through a [grant](#grant) or as [outputs](#output) rendered from
 them, and [effects](#effect) restart them when they change. chalkos's own Kubernetes support
@@ -290,18 +290,20 @@ same way to check it. See [Image and partition layout](image-layout.md#files-on-
 <!-- abbr: none -->
 
 The whole operating system of a node as one unsigned raw disk image. It has the ESP and slot A
-filled and is built by `chalkos.lib.mkImages` for one [variant](#variant) on one
-[platform](#platform). Every node that runs it boots the same bytes; what differs between nodes
-travels in their [config](#config). Its build output is an [image directory](#image-directory).
+filled and is built by `chalkos.lib.mkImage`, or `chalkos.lib.mkImages` for a list of images,
+from a name, a [platform](#platform) and NixOS modules, a [layer](#layer) among them. Its name is
+`CHALKOS_IMAGE` in its os-release and `name` in its `metadata.json`, and
+`chalkctl upgrade --image` gives it to the nodes that run an image of that name. Every node that
+runs it boots the same bytes; what differs between nodes travels in their [config](#config). Its build output is an [image directory](#image-directory).
 See [The image](../how-it-works/node/image.md).
 
 ## Image directory { #image-directory }
 <!-- abbr: image directories, Image directories -->
 
 The build output of an [image](#image): the raw disk image with its metadata and config schemas.
-It is `images.<variant>-<platform>` of `chalkos.lib.mkImages` and holds the raw image,
-systemd-repart's report of its partitions, the definitions of the system region,
-`metadata.json`, which names the image's variant, platform, [root hash](#root-hash),
+It is what `chalkos.lib.mkImage` returns, such as `images.node-metal` of `chalkos.lib.mkImages`,
+and holds the raw image, systemd-repart's report of its partitions, the definitions of the system
+region, `metadata.json`, which names the image's name, platform, [root hash](#root-hash),
 [provenance](#provenance) and kinds, the kinds' JSON Schemas in `schemas/` and the facts of its
 layers in `facts/`. An image with Kubernetes has `facts/kubernetes.json`, which names the release
 of its kubelet and its pod network. The [inventory](#inventory) names the image directory in an
@@ -313,8 +315,7 @@ See [Image and partition layout](image-layout.md#outputs-of-an-image-build).
 
 An image that always boots into [maintenance mode](#maintenance-mode) and writes a node's image to
 a disk of the machine. `chalkos.lib.mkImages` builds one, as a raw image and a hybrid ISO, with
-[`installer.modules`](mkimages.md#installermodules); it installs images of every variant and
-platform. See [Architecture](../how-it-works/node/architecture.md).
+[`installer.modules`](mkimages.md#installermodules); it installs images of every platform. See [Architecture](../how-it-works/node/architecture.md).
 
 ## Inventory { #inventory }
 
@@ -337,7 +338,7 @@ and its fields in [Config kinds](kinds.md#inventory).
 
 The type of a [config document](#config-document), named by its `kind` and its `apiVersion`'s
 group and version. chalkos declares its own kinds in `chalkos.dev` and its subdomains; an [extension](#extension) declares more under
-[`chalkos.kinds`](extension-api.md#chalkoskinds) in a variant's NixOS modules, with a group of its own.
+[`chalkos.kinds`](extension-api.md#chalkoskinds) in an image's NixOS modules, with a group of its own.
 An image accepts the kinds its modules declare and refuses any other. A unit reads the documents
 of the kinds it is [granted](#grant). See
 [Config and the inventory](../how-it-works/node/config.md#chalkoss-kinds-live-in-the-group-chalkosdev) and
@@ -362,6 +363,16 @@ keys, logs, kubeconfig, client file and an inventory that reaches the nodes at f
 lives in `$XDG_STATE_HOME/chalklab/<name>`, after the lab file's `metadata.name`. See the
 [quick start](../get-started/quick-start.md) and [Config kinds](kinds.md#lab).
 
+## Layer { #layer }
+<!-- abbr: nolower, Layers, Kubernetes layer, router layer -->
+
+A predefined set of NixOS modules that chalkos ships, which an [image](#image) lists in its
+modules like any other module to take on a role. `chalkos.nixosModules.kubernetes` enables
+chalkos's Kubernetes modules, and `chalkos.nixosModules.router` its router modules. An image
+lists one layer at most, and an image without one runs chalkos's base alone. A layer marks the
+image in `/etc/chalkos/layers`, and chalkd and chalkctl run the layer's plugin for it. See
+[mkImages](mkimages.md#layers).
+
 ## Maintenance mode { #maintenance-mode }
 
 The mode chalkd runs in on a node that is not installed. In it, chalkd serves a self-signed
@@ -376,7 +387,7 @@ A named set of kernel modules an [image](#image) carries. Modules declare groups
 in [`chalkos.kernel.moduleGroups`](image-options.md#chalkoskernelmodulegroups). Every image
 carries the base groups `storage`, `network`, `virtualisation`, `filesystems`, `firewall` and
 `platform`. An image with Kubernetes adds `kubernetes`. `gpu`, `sound`, `media`, `wireless`,
-`infiniband`, `can` and `industrial` are added in a variant's or platform's modules. See
+`infiniband`, `can` and `industrial` are added in an image's modules. See
 [The image](../how-it-works/node/image.md).
 
 ## Node { #node }
@@ -464,7 +475,7 @@ same key and not after a change to Secure Boot. See
 The kind of machine an image is built for, such as `metal` or `kvm`, which each [image](#image)
 names in its [`platform`](mkimages.md#imagesplatform). chalkos has NixOS modules of its own for
 `metal` and `kvm`, which only that platform's images carry, with its drivers and agents. A node
-refuses an image of another platform than the one it runs. See [Variants and platforms](../build/variants-and-platforms.md#a-platform-builds-an-image-per-kind-of-machine).
+refuses an image of another platform than the one it runs. See [Images and platforms](../build/images-and-platforms.md#a-platform-builds-an-image-per-kind-of-machine).
 
 ## Previous config { #previous-config }
 
@@ -615,17 +626,6 @@ The partition mounted at `/var` that holds what a node writes. That includes etc
 the kubelet and logs. The node's [`SystemDisk`](kinds.md#systemdisk) document sizes it; by
 default it fills the rest of the system disk, and it is encrypted like [STATE](#state). See
 [Storage and encryption](../how-it-works/node/storage.md).
-
-## Variant { #variant }
-<!-- abbr: variants, Variants -->
-
-A named set of NixOS modules that several [images](#image) carry, one per [platform](#platform).
-Each of its images is an entry of the [`images`](mkimages.md#images) argument: for example one
-variant for most nodes and one with GPU drivers. Control planes and workers can run the same
-variant. Each of its images has a name, such as `<variant>-<platform>`, which is `CHALKOS_IMAGE`
-in the image's os-release and `name` in its `metadata.json`. A node may change the image it runs
-through an [upgrade](#upgrade), and the new image's schemas decide which [config](#config) it
-takes. See [Variants and platforms](../build/variants-and-platforms.md#a-second-variant-builds-a-second-image).
 
 ## VIP { #vip }
 <!-- abbr: VIPs -->

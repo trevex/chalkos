@@ -157,8 +157,8 @@ the image's schemas, without a node:
 ```console
 $ nix build .#node-kvm -o images/node-kvm
 $ chalkctl validate
-cp1: valid for the image node-kvm (node on kvm, root hash c118f05709bc), config eca90aeb75db9d1ee363991f8e01e59fd04ffbb36823f8947a5ac8d938c12867
-w1: valid for the image node-kvm (node on kvm, root hash c118f05709bc), config bbb7e69c2ce5c5d34e483d16ca6b8ff9941c2065319684d8399dbfa818c31a4d
+cp1: valid for the image node-kvm (node-kvm on kvm, root hash c118f05709bc), config eca90aeb75db9d1ee363991f8e01e59fd04ffbb36823f8947a5ac8d938c12867
+w1: valid for the image node-kvm (node-kvm on kvm, root hash c118f05709bc), config bbb7e69c2ce5c5d34e483d16ca6b8ff9941c2065319684d8399dbfa818c31a4d
 ```
 
 The first build takes most of the tutorial's time. The template's `.gitignore` keeps `images/`
@@ -418,8 +418,8 @@ the secrets file, which `--secrets` names; a client file does not suffice:
 
 ```console
 $ chalkctl validate
-cp1: valid for the image node-kvm (node on kvm, root hash c118f05709bc), config 536473926d2f73ff319ee4039268c45cc4a560fbed6c66ddea6fb302274bae8d
-w1: valid for the image node-kvm (node on kvm, root hash c118f05709bc), config b487fd854345430128ae7c6638e9397596502d2d2f430996daa528c1803a9615
+cp1: valid for the image node-kvm (node-kvm on kvm, root hash c118f05709bc), config 536473926d2f73ff319ee4039268c45cc4a560fbed6c66ddea6fb302274bae8d
+w1: valid for the image node-kvm (node-kvm on kvm, root hash c118f05709bc), config b487fd854345430128ae7c6638e9397596502d2d2f430996daa528c1803a9615
 $ chalkctl config apply cp1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml --secrets secrets.json
 cp1: config 1 added, 0 removed, 0 changed
 restarted chalkos-chrony-dhcp.service
@@ -444,14 +444,17 @@ slot and reboots into it; if the new image does not become
 healthy, the node falls back to the image it ran before.
 
 Any change to an image's modules makes a new image, which its store's root hash tells apart from
-the one before; there is no version to raise. Edit `flake.nix` so the variant `node` turns on
+the one before; there is no version to raise. Edit `flake.nix` so the image `node-kvm` turns on
 [`chalkos.debug.tools`](../reference/image-options.md#chalkosdebugtools), which adds the tools
 `kubectl debug` uses on a node:
 
 ```diff
--        variants.node = { };
-+        # The tools for kubectl debug.
-+        variants.node.modules = [ { chalkos.debug.tools = true; } ];
+-            modules = [ chalkos.nixosModules.kubernetes ];
++            modules = [
++              chalkos.nixosModules.kubernetes
++              # The tools for kubectl debug.
++              { chalkos.debug.tools = true; }
++            ];
 ```
 
 Commit the change and build the image again; `images/node-kvm` then points at the new build. The
@@ -475,12 +478,13 @@ signed images/node-kvm-signed/chalkos.raw with the db key of the lab lab
 ```
 
 [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) with `--image` gives the signed copy to
-the nodes that run its variant and rolls it through the cluster, one node at a time:
+the nodes that run an image of its name, `node-kvm`, and rolls it through the cluster, one node at
+a time:
 
 ```console
 $ chalkctl upgrade --image images/node-kvm-signed \
   --inventory ~/.local/state/chalklab/lab/chalkos.yaml --allow-downtime
-upgrading node on kvm to 7c25ff03dff7 (7fbd2b83f4b9): cp1, w1
+upgrading node-kvm on kvm to 7c25ff03dff7 (7fbd2b83f4b9): cp1, w1
 cp1: installing 7c25ff03dff7 (7fbd2b83f4b9)
 cp1: config unchanged
 cp1: installed 7c25ff03dff7 (7fbd2b83f4b9), which boots next as chalkos_2+3.efi

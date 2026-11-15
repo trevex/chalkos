@@ -1,82 +1,104 @@
 ---
-title: "Variants and platforms"
+title: "Images and platforms"
 description: "Build images for nodes that run other software or other machines, and set the order of their modules"
 ---
 
-# Variants and platforms
+# Images and platforms
 
 This page is for an image author whose nodes do not all run the same software, or do not all run
-on the same kind of machine. At the end your flake builds one image per variant and platform, and
-the inventory gives each node the image it needs. It starts from the flake of
+on the same kind of machine. At the end your flake builds one image for each group of nodes, and the
+inventory gives each node the image it needs. It starts from the flake of
 [Your first image flake](first-image.md).
 
-A variant is a named set of NixOS modules: the software a group of nodes runs. A platform is the
-kind of machine an image runs on, such as `metal` or `kvm`. `mkImages` builds every variant for
-every platform, so two variants on two platforms are four images.
+An image has a name, a platform and NixOS modules. The modules are the software a group of nodes
+runs. A platform is the kind of machine an image runs on, such as `metal` or `kvm`. `mkImages`
+builds the images its `images` list names.
 
-## A second variant builds a second image
+## Each image is an entry of the list
 
-This call builds a `node` variant and a `storage` variant without Kubernetes, each for `metal` and
-`kvm`:
+This call builds three images: Kubernetes nodes for `metal` and `kvm`, and storage nodes without
+Kubernetes for `metal`:
 
 ```nix
 images = chalkos.lib.mkImages {
   osCA = ./secrets.pub.json;
-  platforms = [ "metal" "kvm" ];
-  # Every variant's images carry these.
+  # Every image carries these.
   modules = [ ./site.nix ];
-  variants = {
-    node = { };
-    storage = {
-      kubernetes = false;
+  images = [
+    {
+      name = "node-metal";
+      platform = "metal";
+      modules = [ chalkos.nixosModules.kubernetes ];
+    }
+    {
+      name = "node-kvm";
+      platform = "kvm";
+      modules = [ chalkos.nixosModules.kubernetes ];
+    }
+    {
+      name = "storage-metal";
+      platform = "metal";
       modules = [ ./storage.nix ];
-    };
-  };
+    }
+  ];
 };
 ```
 
-It returns `images.node-metal`, `images.node-kvm`, `images.storage-metal` and
-`images.storage-kvm`. `variants` replaces the default, a single `node` variant, so the call names
-`node` to keep it. Expose each image the cluster runs as a package, as the first flake exposes
-`node-metal`, and build it the same way:
+It returns `images.node-metal`, `images.node-kvm`, `images.storage-metal` and `images.installer`.
+Expose each image the cluster runs as a package, as the first flake exposes `node-metal`, and
+build it the same way:
 
 ```sh
 nix build .#storage-metal -o images/storage-metal
 ```
 
-A variant declares three things:
+An entry of `images` sets three things:
 
-- `modules`, the NixOS modules of the variant's images: a monitoring agent, a storage daemon, more
+- `name`, which names the image in the flake, in its os-release and in `chalkctl upgrade`.
+- `platform`, the kind of machine it runs on.
+- `modules`, the NixOS modules of the image: a layer, a monitoring agent, a storage daemon, more
   kernel module groups or an extension's kinds and services.
-- `kubernetes`, whether the variant's images carry the Kubernetes layer, `true` by default. An
-  image without it runs no kubelet, etcd or containerd, and its nodes accept none of the kinds of
-  `kubernetes.chalkos.dev`: `Node`, `Cluster`, `Flannel` and `Addon`.
-- `router`, whether the variant's images carry the router layer, `false` by default. Its images
-  forward IPv4 and IPv6 packets between their interfaces, accept the kinds of
-  `router.chalkos.dev`, filter with the router's own firewall in place of NixOS's and run FRR
-  for BGP, Jool for NAT64, Unbound and Kea, unless the variant
-  [leaves router features out](#leave-router-features-out).
+
+A name is lower-case letters, digits and dashes, and starts with a letter or digit. It becomes
+`CHALKOS_IMAGE` in the image's os-release and `name` in its `metadata.json`. `mkImages` refuses
+two entries of one name, and an entry named `installer`, which names the installer. The names
+above end in their platform by choice: the platform is the one `platform` names, whatever the
+name says.
+
+`chalkctl upgrade --image` without `--nodes` installs the image on the nodes that run an image of
+the same name. A renamed image matches no running node, so its first upgrade names the nodes with
+`--nodes`.
+
+## Layers are NixOS modules
+
+A layer is a predefined set of NixOS modules that chalkos ships. An image lists it in its
+`modules` like any other module, and it enables chalkos's own modules for the layer:
+
+- `chalkos.nixosModules.kubernetes` enables the Kubernetes layer. Its images run containerd and
+  the kubelet, with etcd on control planes, and accept the kinds of `kubernetes.chalkos.dev`:
+  `Node`, `Cluster`, `Flannel` and `Addon`.
+- `chalkos.nixosModules.router` enables the router layer. Its images forward IPv4 and IPv6
+  packets between their interfaces, accept the kinds of `router.chalkos.dev`, filter with the
+  router's own firewall in place of NixOS's and run FRR for BGP, Jool for NAT64, Unbound and Kea,
+  unless the image [leaves router features out](#leave-router-features-out).
   [How a router works](../how-it-works/router/overview.md) describes the layer.
 
-An image carries one layer at most. A router variant therefore also sets `kubernetes = false`, and
-`mkImages` refuses a variant with both layers and names it.
-
-A variant's name is lower-case letters, digits and dashes, and starts with a letter or digit. It
-becomes `CHALKOS_VARIANT` in its images' os-release and `variant` in their `metadata.json`. A name
-with a dash can collide with another on a platform with a dash, such as variant `a-b` on `metal`
-and variant `a` on `b-metal`; `mkImages` refuses that pair and names it.
+An image lists one layer at most, and the build refuses an image with both. An image without a
+layer, such as `storage-metal` above, runs chalkos's base alone: chalkd, config, storage,
+networking and upgrades, with no kubelet, etcd or containerd.
 
 ## Leave router features out
 
-A router variant's images carry every router feature unless the variant leaves one out. Each
-feature has an image option, `true` by default. Set it to `false` in the variant's modules to
-leave the feature's software, kinds, outputs, units and diagnostics out of its images:
+A router image carries every router feature unless its modules leave one out. Each feature has
+an image option, `true` by default. Set it to `false` in the image's modules to leave the
+feature's software, kinds, outputs, units and diagnostics out of the image:
 
 ```nix
-variants.edge = {
-  kubernetes = false;
-  router = true;
+{
+  name = "edge-metal";
+  platform = "metal";
   modules = [
+    chalkos.nixosModules.router
     {
       chalkos.router = {
         nat64.enable = false;
@@ -85,7 +107,7 @@ variants.edge = {
       };
     }
   ];
-};
+}
 ```
 
 | Option | Leaves out | Kinds the nodes refuse |
@@ -109,7 +131,7 @@ an upgrade to such an image while the node's config holds them. To drop a featur
 nodes, remove its documents from their config with `chalkctl config apply` first, then upgrade
 them to the new image. `chalkctl status` prints no line of a feature the image leaves out.
 
-## Add a variant only for other software
+## Add an image only for other software
 
 An image fixes the software a node runs. The node's config sets every value that names the
 cluster, the node or its surroundings:
@@ -117,7 +139,7 @@ cluster, the node or its surroundings:
 | Fixed when the image is built | Set at runtime by the node's config |
 | --- | --- |
 | Kernel, kernel modules and initrd | Hostname |
-| NixOS services and the variant's modules | systemd-networkd units: `Network`, `NetDev` and `Link` documents |
+| NixOS services and the image's modules | systemd-networkd units: `Network`, `NetDev` and `Link` documents |
 | The OS CA for maintenance mode, from `osCA` | Storage: system disk, VAR, volumes and encryption |
 | Partition sizes of the system region, from `chalkos.disk` | Time servers and whether DHCP may add more |
 | Boot tries and health timeout, from `chalkos.upgrade` | `Secret` documents and documents of the kinds extensions declare |
@@ -127,10 +149,11 @@ A change in the left column is a new image and an upgrade. A change in the right
 the node with `chalkctl config apply` and needs no reboot; a storage change that would destroy
 data is refused there and needs `chalkctl storage reset`.
 
-So a cluster needs a second variant only for nodes that run other software, such as storage nodes
-with a daemon the others should not carry, or GPU nodes with drivers. A cluster whose nodes run
-the same software has one variant, and its nodes differ only in config. Because no cluster value
-is in the image, a cluster of fifty nodes on one platform builds one image.
+So a cluster needs a second image on a platform only for nodes that run other software, such as
+storage nodes with a daemon the others should not carry, or GPU nodes with drivers. A cluster
+whose nodes run the same software has one image per platform, and its nodes differ only in
+config. Because no cluster value is in the image, a cluster of fifty nodes on one platform builds
+one image.
 
 !!! note "Kubernetes: what the image fixes and what config sets"
 
@@ -140,7 +163,7 @@ is in the image, a cluster of fifty nodes on one platform builds one image.
     addresses, and the cluster's endpoint and Kubernetes settings: the images of every other
     component, ranges, VIP, extra flags, flannel's MTU, registry mirrors and addons.
 
-    So one image of a variant with Kubernetes serves control planes and workers. Each node's
+    So one image with Kubernetes serves control planes and workers. Each node's
     [`Node`](../reference/kinds.md#node) document makes it one or the other.
 
 ## Choose the kubelet's release
@@ -148,13 +171,18 @@ is in the image, a cluster of fifty nodes on one platform builds one image.
 An image with Kubernetes runs the kubelet of one Kubernetes release. By default it is the release
 nixpkgs packages, whose kubelet the binary cache holds.
 [`chalkos.kubernetes.version`](../reference/image-options.md#chalkoskubernetesversion) picks
-another of the three newest minor releases, the ones Kubernetes supports. Set it in a variant's
+another of the three newest minor releases, the ones Kubernetes supports. Set it in the image's
 modules:
 
 ```nix
-variants.node = {
-  modules = [ { chalkos.kubernetes.version = "1.36"; } ];
-};
+{
+  name = "node-metal";
+  platform = "metal";
+  modules = [
+    chalkos.nixosModules.kubernetes
+    { chalkos.kubernetes.version = "1.36"; }
+  ];
+}
 ```
 
 chalkos pins each of the two older minors to one patch release, 1.36.6 and 1.35.10. The binary
@@ -177,7 +205,7 @@ sets both to different minors fails to build and names both.
 ## The inventory gives each node its image
 
 A node runs the image the [inventory](../reference/kinds.md#inventory) names for it. Add the new
-variant's image to `spec.images`, beside `node-metal`, and name it on the node that runs it, here
+image to `spec.images`, beside `node-metal`, and name it on the node that runs it, here
 `storage1`:
 
 ```yaml title="chalkos.yaml"
@@ -200,23 +228,23 @@ chalkctl refuses the inventory when a node is in two groups that name different 
 a node ends up with no image. Several storage nodes can share a group with
 `imageName: storage-metal` instead.
 
-No check compares variants. A node may move to another variant's image with an upgrade. The node
-checks the config the upgrade carries against the new image's schemas before the image becomes
-its next boot, so an image that does not accept the node's config never boots.
+No check compares the software of two images. A node may move to another image with an upgrade.
+The node checks the config the upgrade carries against the new image's schemas before the image
+becomes its next boot, so an image that does not accept the node's config never boots.
 
 ## A platform builds an image per kind of machine
 
 A platform's NixOS modules add what one kind of machine needs and other machines do not: drivers,
-firmware, agents and the console. chalkos has modules for two platforms:
+firmware, agents and the console. chalkos has modules for two platforms, which an image of the
+platform carries before its own modules:
 
 - `metal` sets the kernel's consoles to the first serial port and the screen, the screen last.
 - `kvm` sets the kernel's console to the first serial port alone, adds the virtio disk drivers to
   the initrd and runs a QEMU guest agent, which starts only under KVM. The host may ask the agent
   about the node and shut it down. It never runs commands or reads and writes files on the node.
 
-`platforms` names the platforms every variant is built for. A list names them: `[ "metal" ]`
-builds metal images alone. An attribute set also gives each platform modules of its own. This
-call adds modules for one server model as a platform `r650`:
+Any other name is a platform of the image's own modules. This image adds modules for one server
+model as a platform `r650`:
 
 ```nix title="platforms/r650.nix"
 {
@@ -229,24 +257,21 @@ call adds modules for one server model as a platform `r650`:
 ```
 
 ```nix
-images = chalkos.lib.mkImages {
-  platforms = {
-    metal = [ ];
-    r650 = [ ./platforms/r650.nix ];
-  };
-  variants.node = { };
-};
+{
+  name = "node-r650";
+  platform = "r650";
+  modules = [
+    ./platforms/r650.nix
+    chalkos.nixosModules.kubernetes
+  ];
+}
 ```
 
-It builds `images.node-metal` and `images.node-r650`. Only the `r650` images carry the module and
-the consoles. Here the BMC's serial-over-LAN on the second serial port is the console people
-watch, so that port comes last. Either form of `platforms` replaces the default, so a platform is
-built only when it is named: `metal` is built here because it is named.
-
-`metal` and `kvm` carry chalkos's own modules for them before the ones given. A platform of your
-own starts from chalkos's node modules alone, without `metal`'s, and its consoles default to
-`metal`'s. Its name follows the rules of a variant's name and becomes `CHALKOS_PLATFORM` in its
-images' os-release.
+Only `node-r650` carries the module and the consoles. Here the BMC's serial-over-LAN on the
+second serial port is the console people watch, so that port comes last. A platform of your own
+starts from chalkos's node modules alone, without `metal`'s, and its consoles default to
+`metal`'s. Its name follows the rules of an image's name and becomes `CHALKOS_PLATFORM` in the
+image's os-release.
 
 A node refuses an image of a platform other than the one it runs, so a node changes platform only
 by being installed again. Its config files stay as they are on any platform. One image per
@@ -272,8 +297,8 @@ itself; an image without the console shows chalkd's lines there. While the last 
 serial port, chalkd's lines reach it as `/dev/console`.
 
 A machine whose BMC's serial-over-LAN is the console people watch can put that port last, so the
-boot's status and the emergency shell appear there too. Set it in a variant's or the platform's
-modules, or in `modules` for every image:
+boot's status and the emergency shell appear there too. Set it in the image's modules, or in
+`modules` for every image:
 
 ```nix
 {
@@ -288,33 +313,63 @@ The build refuses a `console=` entry in `boot.kernelParams` and names `chalkos.c
 
 ## Modules apply in a fixed order
 
-An image of a variant on a platform is one NixOS system, evaluated from four lists of modules in
-this order:
+An image is one NixOS system, evaluated from four lists of modules in this order:
 
 ```mermaid
 flowchart LR
     node["chalkos node modules"] --> platform["Platform modules"]
     platform --> every["modules"]
-    every --> variant["Variant modules"]
-    variant --> system["NixOS system of the image"]
+    every --> own["The image's modules"]
+    own --> system["NixOS system of the image"]
 ```
 
 1. chalkos's node modules.
-2. The platform's modules: chalkos's own for `metal` and `kvm`, then those `platforms` gives.
-3. `modules`, which every variant carries.
-4. The variant's own `modules`.
+2. chalkos's modules of the platform, for `metal` and `kvm`.
+3. `modules`, which every image of the `mkImages` call carries.
+4. The image's own `modules`, with its layer.
 
 The order decides the order of list entries such as `boot.kernelParams`, and nothing else. NixOS
-merges a value by priority, not by module order. So a variant that sets a value its platform also
+merges a value by priority, not by module order. So an image that sets a value its platform also
 sets plainly gets a conflict. It overrides that value with `lib.mkForce`. A value the platform
 forces itself, such as the `kvm` platform's `ExecStart` of the guest agent, needs
 `lib.mkOverride` with a priority below 50, for example `lib.mkOverride 40`. `lib.mkBefore` and
 `lib.mkAfter` place a list's entries.
 
 The installer is a system of its own, built from chalkos's node modules, its installer modules and
-`installer.modules`. It carries no variant's modules and no `modules`, because it holds no config
+`installer.modules`. It carries no image's modules and no `modules`, because it holds no config
 for an extension to read. It belongs to no platform: one installer writes images of every
 platform. [Customise the installer](customise-installer.md) adds to it.
+
+## mkImage builds one image
+
+`mkImages` builds each entry with `chalkos.lib.mkImage` and the installer with
+`chalkos.lib.mkInstaller`. A flake can call them itself, with the same shared arguments:
+
+```nix
+let
+  shared = {
+    osCA = ./secrets.pub.json;
+    revision = self.rev or self.dirtyRev or null;
+  };
+in
+{
+  packages.x86_64-linux = {
+    node-metal = chalkos.lib.mkImage (
+      shared
+      // {
+        name = "node-metal";
+        platform = "metal";
+        modules = [ chalkos.nixosModules.kubernetes ];
+      }
+    );
+    installer = chalkos.lib.mkInstaller (shared // { modules = [ ./installer-network.nix ]; });
+  };
+}
+```
+
+`mkImage` takes `modules` as the image's own, after its platform's. It returns the same image as
+`mkImages` would. The [mkImages reference](../reference/mkimages.md) lists the arguments of all
+three functions.
 
 ## The OS CA ties images to one cluster
 
@@ -335,17 +390,19 @@ which copies a flake's tracked files.
 
 ## Limits
 
-- One image serves every node of its variant and platform. A per-node kernel parameter, package or
-  driver needs a variant or a platform of its own.
+- One image serves every node it is given. A per-node kernel parameter, package or driver needs
+  an image of its own.
 - `mkImages` builds images for one Nix `system` per call. A cluster of x86-64 and arm64 machines
   calls it once for each.
+- `mkImages` builds the list it is given. A flake that builds the same software for several
+  platforms writes an entry for each, or maps over a list of platforms itself.
 - A flake rebuilds an image whenever its modules or `flake.lock` change. A build whose store
   changed has a new root hash and is a new image to `chalkctl upgrade`. A build whose store did not
   change is the image the nodes run already.
 
 ## What next
 
-- [Add software, drivers and kernel modules](add-software.md) writes the modules a variant or
+- [Add software, drivers and kernel modules](add-software.md) writes the modules an image or
   platform carries.
 - [mkImages](../reference/mkimages.md) documents every argument, and [Image options](../reference/image-options.md) every option of the node modules.
 - [Upgrade nodes](../operate/upgrade.md) rolls new images out.

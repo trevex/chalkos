@@ -49,7 +49,7 @@ first answer counts. A machine without a serial port shows the prompt on its scr
 keyboard answers it. The boot's status around the prompt, such as the unit that waits, shows only
 on the last console of [`chalkos.consoles`](../reference/image-options.md#chalkosconsoles), which
 is the screen unless the image puts a serial port last;
-[Variants and platforms](../build/variants-and-platforms.md#the-last-console-is-devconsole)
+[Images and platforms](../build/images-and-platforms.md#the-last-console-is-devconsole)
 describes the choice. A volume that asks after the boot shows its prompt in the console on the
 screen, as [The console answers password requests](console.md#the-console-answers-password-requests)
 describes.
@@ -162,7 +162,7 @@ chalkctl verifies the expired certificate as of its start date, so it trusts the
 explains the risk. Fix the reason the renewal failed too, or the certificate expires again next
 year.
 
-!!! note "On the shipped variant, two more recoveries concern Kubernetes"
+!!! note "With the Kubernetes layer, two more recoveries concern Kubernetes"
 
     A worker whose VAR lost its data may hold an expired kubelet certificate.
     [The kubelet certificate was lost with VAR](../kubernetes/troubleshooting.md#the-kubelet-certificate-was-lost-with-var)
@@ -196,7 +196,7 @@ A reinstall gives the node a new disk layout, new keys sealed to its TPM and a f
 config in the inventory's files. Everything on its disks is lost. The node keeps its name and its
 recovery key, and gets new certificates.
 [Reinstall a node on its machine](add-remove-nodes.md#reinstall-a-node-on-its-machine) gives the
-steps, including the Kubernetes steps of the shipped variant.
+steps, including the steps of the Kubernetes layer.
 
 ## The secrets file is lost
 
@@ -219,7 +219,7 @@ nodes and move the workloads across.
 [Back up what you cannot rebuild](workstation.md#back-up-what-you-cannot-rebuild) lists the
 secrets file among the files to keep in a second place.
 
-!!! note "On the shipped variant, Kubernetes access runs out too"
+!!! note "With the Kubernetes layer, Kubernetes access runs out too"
 
     `bootstrap` and the etcd commands keep working with client files, and the kubelets keep
     renewing their certificates. Existing kubeconfigs work until they expire, and no new ones can

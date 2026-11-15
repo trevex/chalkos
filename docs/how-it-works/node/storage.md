@@ -52,7 +52,7 @@ STATE is small and holds what makes the node itself:
 VAR, mounted at `/var`, holds what the node writes while it runs, such as container images and
 the journal. The root file system is a tmpfs, so nothing else survives a reboot.
 
-!!! note "On the shipped variant, STATE and VAR also hold Kubernetes data"
+!!! note "With the Kubernetes layer, STATE and VAR also hold Kubernetes data"
 
     STATE holds the node's Kubernetes share, and on a control plane its etcd markers and pinned
     addresses. VAR holds etcd's data, containerd's images and the kubelet's state.

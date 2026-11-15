@@ -6,7 +6,7 @@ description: "Install, upgrade, recover and troubleshoot chalkos nodes"
 # Operate nodes
 
 These pages are for operators who install and run chalkos nodes with chalkctl, YAML files and
-signed images. They assume the shipped variant, which runs Kubernetes on each node;
+signed images. They assume images with the Kubernetes layer, which runs Kubernetes on each node;
 [Run Kubernetes](../kubernetes/index.md) adds the steps that set up and run the cluster.
 
 ## Set up

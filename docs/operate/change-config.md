@@ -45,10 +45,10 @@ the inventory, offline:
 
 ```console
 $ chalkctl validate
-node1: valid for the image node-metal (node on metal, root hash 5f1e60980b55), config c04e79c2726bc0d17aff06773776d277c6980e9cb4779e0cb5edf1270d46cd6b
-node2: valid for the image node-metal (node on metal, root hash 5f1e60980b55), config 9d424712803fbe8efa6b62cdd9af677a6d73ec4e492ea3d2742098811c20a88b
-node3: valid for the image node-metal (node on metal, root hash 5f1e60980b55), config f82e12bd691afbff1f0859703566973a50973dff6cd344b158516e428010186b
-router: valid for the image router-metal (router on metal, root hash e9be19557973), config a8d132f3d5517185654d573c02c543497ab42d0068131d25bbfe8405d5761093
+node1: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config c04e79c2726bc0d17aff06773776d277c6980e9cb4779e0cb5edf1270d46cd6b
+node2: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config 9d424712803fbe8efa6b62cdd9af677a6d73ec4e492ea3d2742098811c20a88b
+node3: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config f82e12bd691afbff1f0859703566973a50973dff6cd344b158516e428010186b
+router: valid for the image router-metal (router-metal on metal, root hash befe5273a465), config b77dea492acd11e559461e079cdbb9bc53de8c8e46400672645d6a262719faa9
 ```
 
 The config hash of each Kubernetes node differs from the one before the change, and the router's

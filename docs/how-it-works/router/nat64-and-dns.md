@@ -439,7 +439,7 @@ Unbound side by side, and the questions to each have 5 seconds together.
 
 When a question fails, the status gives its error, and the status's other parts stand.
 
-An image whose variant sets
+An image whose modules set
 [`chalkos.router.nat64.enable`](../../reference/image-options.md#chalkosrouternat64enable) to
 `false` carries no Jool and refuses the kind NAT64. One that sets
 [`chalkos.router.resolver.enable`](../../reference/image-options.md#chalkosrouterresolverenable)

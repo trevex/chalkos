@@ -46,7 +46,7 @@ three about 860 MiB, and a worker about 0.3 GiB. The end-to-end tests run contro
 ### System disk
 
 The system disk holds a fixed system region and VAR, which takes the rest of the disk by default.
-The sizes of the system region are options of a variant's NixOS modules; VAR's is the node's config.
+The sizes of the system region are options of an image's NixOS modules; VAR's is the node's config.
 
 | Partition | Default size | Option |
 | --- | --- | --- |

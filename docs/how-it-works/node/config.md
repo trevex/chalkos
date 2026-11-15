@@ -32,7 +32,7 @@ spec:
 ```
 
 A node's config is the set of YAML documents that makes it this node. It gives the host name,
-disks, network, time servers and the values of extensions, and on the shipped variant the
+disks, network, time servers and the values of extensions, and with the Kubernetes layer the
 Kubernetes settings. The image is the same on many nodes, and the config is what differs. An
 inventory names the cluster's nodes and, for each, the address chalkctl reaches it at, the image
 it runs and the files whose documents form its config. chalkctl checks the config against the
@@ -81,7 +81,7 @@ mirror networkd's units one to one, as
 [Network documents map one to one onto networkd units](networking.md#network-documents-map-one-to-one-onto-networkd-units)
 describes.
 
-!!! note "On the shipped variant, four kinds describe the cluster"
+!!! note "With the Kubernetes layer, four kinds describe the cluster"
 
     Images with Kubernetes also accept the kinds of the group `kubernetes.chalkos.dev`. A node holds
     exactly one `Cluster`, with the cluster's endpoint, families, ranges and VIP, and exactly one
@@ -95,7 +95,7 @@ describes.
     explains them.
 
 An image declares only the kinds its modules bring. An extension adds kinds of its own in a group
-outside `chalkos.dev`, declared in the NixOS modules of a variant, as
+outside `chalkos.dev`, declared in the NixOS modules of an image, as
 [Declare a config kind](../../build/declare-a-kind.md) shows. Their documents go into the same files
 as chalkos's. The `Rack` kind of the
 [extensions example](https://github.com/trevex/chalkos/tree/main/examples/extensions) records
@@ -171,7 +171,7 @@ The name feeds:
 - the node's recovery key, derived from the secrets file and the name;
 - the `node.name` of the [change rules](../../build/guard-changes.md), the effects and the renderers
   of outputs;
-- on the shipped variant, the Kubernetes node name, by which the kubelet registers and the node's
+- with the Kubernetes layer, the Kubernetes node name, by which the kubelet registers and the node's
   etcd member is called.
 
 A node keeps its name for its whole life. Renaming one takes a reinstall, because its certificates
@@ -208,7 +208,7 @@ Beyond the schemas, chalkctl and chalkd translate the set as the node will use i
 what a schema cannot express: overlapping ranges, a VIP outside the node's networks, a volume that
 does not fit its disk, an extra flag that would override one chalkos sets.
 
-!!! note "On the shipped variant, every node holds the same Cluster and Flannel specs"
+!!! note "With the Kubernetes layer, every node holds the same Cluster and Flannel specs"
 
     Each node builds the cluster from its own documents, so chalkctl refuses an inventory whose
     nodes hold different `Cluster` or `Flannel` specs, naming the first field that differs.
@@ -219,10 +219,10 @@ does not fit its disk, an extra flag that would override one chalkos sets.
 
 The inventory's `spec.images` names each image the nodes run and the image directory of its build
 in `source.directory`, relative to the inventory's directory. The directory is what `nix build`
-writes for one variant on one platform, such as `images/node-kvm` in the lab template. Where nodes
+writes for one image, such as `images/node-kvm` in the lab template. Where nodes
 enforce Secure Boot, it is the copy of the build that
 [`chalkbuild sign`](../../reference/cli/chalkbuild_sign.md) signed. Its `metadata.json` names the
-image's variant, platform and root hash, and its `schemas/` holds the schemas of the kinds the
+image's name, platform and root hash, and its `schemas/` holds the schemas of the kinds the
 image accepts.
 
 An image published to a registry is named by its reference in `source.oci` instead, as
@@ -268,11 +268,11 @@ It prints a line for each node whose config is valid and names each error, and i
 whose `SystemDisk` leaves STATE unencrypted. For the lab template:
 
 ```text
-cp1: valid for the image node-kvm (node on kvm, root hash 1044caccb099), config 7080d0996b95ef02999ede113b5fe02895fc1a3b87749fb5ad4a3ab28a105986
-w1: valid for the image node-kvm (node on kvm, root hash 1044caccb099), config 0505d3467f8f64576cd78a10ed1c82f904e09f9229d588f402f630d2458f3861
+cp1: valid for the image node-kvm (node-kvm on kvm, root hash 1044caccb099), config 7080d0996b95ef02999ede113b5fe02895fc1a3b87749fb5ad4a3ab28a105986
+w1: valid for the image node-kvm (node-kvm on kvm, root hash 1044caccb099), config 0505d3467f8f64576cd78a10ed1c82f904e09f9229d588f402f630d2458f3861
 ```
 
-Each line names the image's variant and platform, the start of its root hash, and the hash of the
+Each line names the image's own name and platform, the start of its root hash, and the hash of the
 node's config that [`chalkctl status`](../../reference/cli/chalkctl_status.md) compares. The commands
 that deliver config run the same check first, each against the image the config is for:
 
@@ -504,7 +504,7 @@ storage kinds' rules take:
 A node refuses the whole set when one of its rules fails, applies none of it, and names what the
 change needs, as [Guard changes with rules and facts](../../build/guard-changes.md) shows.
 
-!!! note "On the shipped variant, the Kubernetes share fixes a node's type and the cluster's ranges"
+!!! note "With the Kubernetes layer, the Kubernetes share fixes a node's type and the cluster's ranges"
 
     The Kubernetes share is machine state too. Once a node holds it, the rules refuse a
     `Node.spec.type` other than the one the node was installed with, which takes a reinstall as the
@@ -594,7 +594,7 @@ value as a systemd credential, and no other service sees it, as
 [Pass secrets to a service](../../build/pass-secrets.md) describes. Status, chalkcfg and the
 config's hash never show a secret value.
 
-!!! note "On the shipped variant, a Registry's password reaches the kubelet"
+!!! note "With the Kubernetes layer, a Registry's password reaches the kubelet"
 
     `chalkos-registry-credentials.service` writes a `Registry`'s password to a file only root
     reads, and the kubelet uses it for every pod's pulls from the `Registry`'s host.
@@ -642,7 +642,7 @@ image with other defaults does not change it.
 
 - [The config pipeline](config-pipeline.md) for how a delivery passes rules, outputs and effects.
 - [Declare a config kind](../../build/declare-a-kind.md) for how an extension declares a kind, and
-  [Variants and platforms](../../build/variants-and-platforms.md) for the images that accept the
+  [Images and platforms](../../build/images-and-platforms.md) for the images that accept the
   config.
 - [Architecture](architecture.md) for where the inventory and the image directories meet chalkctl.
 - [Guard changes with rules and facts](../../build/guard-changes.md) for how an image decides which

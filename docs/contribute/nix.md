@@ -19,8 +19,8 @@ and checks it.
 | Path | What it holds |
 | --- | --- |
 | `flake.nix` | The flake's inputs and outputs. Each output is built in a file the flake imports. |
-| `lib/` | The flake's `lib`: chalkosLib plus `mkImages` (`default.nix`). chalkosLib (`chalkos.nix`) is a function of nixpkgs's `lib` alone, with no `pkgs` and no store paths. `mkImages` (`images.nix`) evaluates a cluster's images; its arguments are declared in `images-arguments.nix`. |
-| `modules/` | The NixOS modules of the images: `node/` (every image, plus the Kubernetes and router layers), `platforms/`, `installer/` and `testing/`. |
+| `lib/` | The flake's `lib`: chalkosLib plus `mkImage`, `mkInstaller`, `mkImages` and their helpers (`default.nix`), and the layers, which the flake exports as `nixosModules` (`layers.nix`). chalkosLib (`chalkos.nix`) is a function of nixpkgs's `lib` alone, with no `pkgs` and no store paths. `mkImage` (`images.nix`) evaluates one image and `mkImages` a cluster's; their arguments are declared in `images-arguments.nix`. |
+| `modules/` | The NixOS modules of the images: `node/` (every image, plus the modules of the Kubernetes and router layers, which `nixosModules.kubernetes` and `nixosModules.router` enable), `platforms/`, `installer/` and `testing/`. |
 | `test/nix/` | The evaluation tests, which the `eval` and `eval-kinds` checks run. |
 | `nix/` | How the repository builds and checks chalkos, one entry per kind of file. |
 
@@ -44,7 +44,7 @@ Every module of an image gets these arguments in addition to NixOS's own:
   [extension API](../reference/extension-api.md#chalkoslib) and `chalkosLib.internal`.
   `lib/images.nix` passes it as a special argument, so `imports` and option declarations can use
   it. Submodules do not receive it. Code inside a module, submodules included, uses the module's
-  argument, the same way it uses `pkgs` and `config`. mkImages refuses a `specialArgs.chalkosLib`
+  argument, the same way it uses `pkgs` and `config`. mkImage refuses a `specialArgs.chalkosLib`
   of its caller.
 - `pkgs`, with `pkgs.chalkos`: chalkos's programs, its Go toolchain `pkgs.chalkos.go`, the Go
   program builder `pkgs.chalkos.buildGoProgram` and `pkgs.chalkos.treeGoPaths`, the source paths
@@ -53,9 +53,9 @@ Every module of an image gets these arguments in addition to NixOS's own:
   types and CEL of the router kinds, and `routerLib.kinds` loads a part's kinds file.
   `modules/node/router/default.nix` sets it on every image, but it is internal to the router
   layer and not part of the extension API.
-- The `specialArgs` given to mkImages.
+- The `specialArgs` given to mkImage or mkImages.
 
-The flake exports the overlay that adds `pkgs.chalkos` as `overlays.default`. mkImages adds it
+The flake exports the overlay that adds `pkgs.chalkos` as `overlays.default`. mkImage adds it
 to an image's nixpkgs with `lib.mkBefore`, so the image's own overlays can override chalkos's
 packages with `pkgs.chalkos.overrideScope`.
 
@@ -104,7 +104,7 @@ New Nix code follows these practices:
 - Every option has a type and a description, plus an example when its value is not obvious.
 - A module refuses bad input with `chalkosLib.internal.refuse`, which reports every problem in
   one message, rather than with a bare `throw` or `assert`.
-- A feature that a variant can leave out sets its config under `lib.mkIf` of its `enable`
+- A feature that an image can leave out sets its config under `lib.mkIf` of its `enable`
   option, so a disabled feature leaves nothing in the image.
 - chalkosLib holds no store paths. Anything that needs `pkgs` is a package in the scope.
 - An evaluation test in `test/nix/` covers option behaviour, and a unit check covers a script. A VM

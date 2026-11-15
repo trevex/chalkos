@@ -188,11 +188,11 @@ not declare fails the evaluation.
 
 ## nix flake check runs the tests
 
-`mkImages` returns each image's tests as `checks.<variant>-<platform>`, and the homelab's flake
-exports them as its checks:
+Each image `mkImages` returns carries its tests as `tests`. `chalkos.lib.testsOf` collects them by
+the images' names, and the homelab's flake exports them as its checks:
 
 ```nix
-checks.${system} = images.checks;
+checks.${system} = chalkos.lib.testsOf images;
 ```
 
 `nix flake check` then builds every image's tests, along with the flake's other checks:
@@ -221,7 +221,7 @@ nix build .#checks.x86_64-linux.node-metal
 
 The image's build runs no tests by default, and the tests change neither the image's content nor
 its root hash. To make the build of an image fail when one of its tests fails, set
-`chalkos.testsOnBuild` in its variant's modules:
+`chalkos.testsOnBuild` in its modules:
 
 ```nix
 chalkos.testsOnBuild = true;

@@ -44,7 +44,7 @@ of the Go version nixpkgs ships. `nix/overlay/default.nix` selects it from `go.m
 `fromGoModStrict`, which fails when go-overlay lacks that exact release, and adds it to nixpkgs
 as `pkgs.chalkos.go`, in the scope of chalkos's packages. The development shell, every Go
 package, the `go-unit` and `go-lint` checks and the programs in the images use it, and the
-shell's gopls and staticcheck, which `go-lint` runs too, are built with it. `mkImages` applies the
+shell's gopls and staticcheck, which `go-lint` runs too, are built with it. `mkImage` applies the
 same overlay to the images' nixpkgs, so images built from another nixpkgs still get
 chalkos's programs built with this Go.
 
@@ -69,7 +69,7 @@ To move to another Go release:
 | `modules/platforms/` | The `metal` and `kvm` platforms. |
 | `modules/installer/` | The installer image and its ISO. |
 | `modules/testing/` | The test probe and the test image's small partitions. |
-| `lib/` | `mkImages` and the module of its arguments. |
+| `lib/` | `mkImage`, `mkInstaller`, `mkImages` and the module of their arguments, and the layers, the flake's `nixosModules`. |
 | `nix/` | Tooling: packages, apps, checks, the development shell, the docs build, and the test images and their secrets in `nix/testing/`. |
 | `templates/lab/` | The lab template the quick start uses. |
 | `examples/homelab/` | The home lab of the guide Build a home lab: a flake that builds a router image and a node image with the bird extension, the installer, an inventory and its YAML, which the `example-homelab` check builds and validates. |
@@ -109,17 +109,17 @@ a lab run it there.
 
 ## Build images
 
-A cluster's flake builds its images with `chalkos.lib.mkImages`, whose `images.<variant>-<platform>`
-it exposes as packages. The repository's own flake exposes its test images, which
+A cluster's flake builds its images with `chalkos.lib.mkImages`, which returns each image by its
+name, and exposes them as packages. The repository's own flake exposes its test images, which
 `nix/testing/images.nix` builds, as packages:
 
 | Package | What it is |
 | --- | --- |
-| `test-image` | The `test` variant on `metal`, with small partitions and the test probe; most VM tests boot it. |
+| `test-image` | The image `test-metal`, with small partitions and the test probe; most VM tests boot it. |
 | `test-installer` | The test images' installer. |
-| `test-kubernetes-image` | The `k8s` variant on `kvm`, which the Kubernetes test's control plane and worker boot. |
-| `test-kubernetes-ha-image` | The `k8s` variant on `metal`, which the HA test's control planes boot. |
-| `test-router-image` | The `router` variant on `kvm`, which the router test's routers boot. |
+| `test-kubernetes-image` | The image `k8s-kvm`, with the Kubernetes layer, which the Kubernetes test's control plane and worker boot. |
+| `test-kubernetes-ha-image` | The image `k8s-metal`, which the HA test's control planes boot. |
+| `test-router-image` | The image `router-kvm`, with the router layer, which the router test's routers boot. |
 | `test-upgrade-image`, `test-unhealthy-image`, `test-kubernetes-ha-upgrade-image` | Images the upgrade tests install. |
 | `installer` | An installer of a cluster without an OS CA, which accepts any client until it installs a node. |
 

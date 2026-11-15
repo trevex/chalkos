@@ -13,7 +13,7 @@ reads them as credentials, and no file that chalkos renders holds a key.
 ## Before you begin
 
 You need a router set up as [Set up a router](set-up.md) describes, and the secrets file. Its
-image must accept the WireGuard kinds. Router images do unless their variant sets the image option
+image must accept the WireGuard kinds. Router images do unless their modules set the image option
 [`chalkos.router.wireguard.enable`](../reference/image-options.md#chalkosrouterwireguardenable)
 to `false`. An image without WireGuard refuses the kinds: `chalkctl validate` reports that it
 `does not accept kind "WireGuard"`.

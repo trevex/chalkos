@@ -69,7 +69,7 @@ These pages list how an image is built, what it holds and how a node boots it.
 
     ---
 
-    The options of chalkos's node modules that a variant's NixOS modules set.
+    The options of chalkos's node modules that an image's NixOS modules set.
 
     [:octicons-arrow-right-24: Read](image-options.md)
 
@@ -150,7 +150,7 @@ the ports it opens.
 
 ## Kubernetes
 
-This page lists what the shipped variant adds to run Kubernetes on a node.
+This page lists what the Kubernetes layer adds to run Kubernetes on a node.
 
 <div class="grid cards" markdown>
 

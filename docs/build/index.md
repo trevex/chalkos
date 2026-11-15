@@ -9,13 +9,13 @@ These pages are for image authors who build a cluster's images in Nix with
 `chalkos.lib.mkImages`. They assume some Nix and NixOS modules, and no earlier knowledge of chalkos.
 
 Start here: [Your first image flake](first-image.md), then
-[Variants and platforms](variants-and-platforms.md), then
+[Images and platforms](images-and-platforms.md), then
 [Add software, drivers and kernel modules](add-software.md). Every later page builds on the
 flake from these three.
 
 ## Build
 
-These pages build an image a node can install: the flake, its variants and platforms, and the
+These pages build an image a node can install: the flake, its images and platforms, and the
 software it carries.
 
 <div class="grid cards" markdown>
@@ -29,14 +29,14 @@ software it carries.
 
     [:octicons-arrow-right-24: Read](first-image.md)
 
--   :material-layers: __Variants and platforms__
+-   :material-layers: __Images and platforms__
 
     ---
 
     Build images for nodes that run other software or other machines, and set the order of their
     modules.
 
-    [:octicons-arrow-right-24: Read](variants-and-platforms.md)
+    [:octicons-arrow-right-24: Read](images-and-platforms.md)
 
 -   :material-expansion-card: __Add software, drivers and kernel modules__
 

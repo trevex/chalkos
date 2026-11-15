@@ -16,7 +16,7 @@ both.
 
 You need a router set up as [Set up a router](set-up.md) describes, and the secrets file. Its
 image must carry Jool for NAT64 and Unbound for the resolver. Router images do unless their
-variant sets the image option
+modules set the image option
 [`chalkos.router.nat64.enable`](../reference/image-options.md#chalkosrouternat64enable) or
 [`chalkos.router.resolver.enable`](../reference/image-options.md#chalkosrouterresolverenable)
 to `false`. An image without one refuses its documents: `chalkctl validate` reports that it

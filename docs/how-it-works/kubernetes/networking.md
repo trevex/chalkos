@@ -96,7 +96,7 @@ kubernetes worker: preparation failed: no ipv4 node address matches validSubnets
 ## A routing daemon can provide the node's addresses
 
 A node's addresses do not have to come from networkd. A routing daemon, such as a BGP speaker an
-extension adds to a variant, can announce an address on a loopback or dummy interface. Such a unit
+extension adds to an image, can announce an address on a loopback or dummy interface. Such a unit
 orders itself before `chalkos-node-addresses.target`, which every image defines, and is wanted by
 it. The preparation starts after the target and still waits up to `nodeIP.timeout` for the
 addresses.
@@ -199,7 +199,7 @@ a worker, which never holds the VIP.
 
 In the `routed` mode, set with `vip: {addresses: [...], mode: routed}`, the holder adds the VIPs the
 same way but sends no gratuitous ARP and no neighbour advertisements. A routing daemon on the node,
-such as a BGP speaker an extension adds to a variant, announces the addresses of the interface
+such as a BGP speaker an extension adds to an image, announces the addresses of the interface
 instead, and withdraws them when the holder removes them. Every control plane names that interface in
 `vip.interface`, usually a dummy interface the routing daemon announces, and chalkctl and chalkd
 refuse a routed VIP on a control plane without one. The `Network` document of that interface sets
@@ -269,9 +269,9 @@ spec:
 A cluster has at most one `Flannel` document, and every node holds the same one. chalkctl refuses an
 inventory whose nodes hold different `Flannel` specs. Only images whose pod network is flannel
 accept the document; for another image it is an unknown kind. An image built with
-`chalkos.cni.provider = "none"` in its variant's modules installs no pod network and ships every CNI
+`chalkos.cni.provider = "none"` in its modules installs no pod network and ships every CNI
 reference plugin, for clusters whose `Addon` documents bring their own. Opening that network's ports
-is then up to the variant's NixOS modules.
+is then up to the image's NixOS modules.
 
 ## The firewall accepts VXLAN only for the node's own addresses
 

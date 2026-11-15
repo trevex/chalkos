@@ -55,7 +55,7 @@ config delivery, without a reboot.
 | Fixed when the image is built | Delivered at runtime, in the config |
 | --- | --- |
 | Kernel, kernel modules and initrd | Hostname, in `Host`, and whether the node is a control plane or a worker, in `Node` |
-| NixOS services and the variant's modules, the services of extensions among them | systemd-networkd units, in `Network`, `NetDev` and `Link` |
+| NixOS services and the image's modules, the services of extensions among them | systemd-networkd units, in `Network`, `NetDev` and `Link` |
 | Kubernetes release, the images of its components and the CNI provider | The cluster's endpoint and its Kubernetes settings: ranges, VIP, extra flags and addons, in `Cluster`, `Flannel` and `Addon`, and registry mirrors in `Mirror` |
 | The OS CA for maintenance mode, from the `osCA` argument of mkImages | The kubelet's addresses, labels and taints, in `Node` too |
 | Partition sizes of the system region | Storage: system disk, VAR, volumes and encryption, in `SystemDisk` and `Volume` |

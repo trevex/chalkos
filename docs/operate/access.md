@@ -49,7 +49,7 @@ expires, or until the nodes no longer trust the OS CA it chains to. To take acce
   before the rotation stops working. Issue new files at the rotation's first pause to everyone who
   keeps access.
 
-!!! note "On the shipped variant, kubeconfigs are revoked with the Kubernetes CA"
+!!! note "With the Kubernetes layer, kubeconfigs are revoked with the Kubernetes CA"
 
     A kubeconfig chains to the Kubernetes CA, which an OS CA rotation does not touch.
     [Revoke Kubernetes access](../kubernetes/rotate-kubernetes-cas.md#revoke-kubernetes-access)
@@ -60,11 +60,11 @@ expires, or until the nodes no longer trust the OS CA it chains to. To take acce
 Each node serves a node certificate, which chalkctl verifies. It is valid for a year, and never
 beyond the node CA that issued it.
 
-On the shipped variant, a node renews its own certificate. chalkd checks about every hour. Once two
-thirds of the certificate's lifetime have passed, it creates a new key and asks a control plane at
-the cluster endpoint for a certificate. A control plane signs its own with the node CA it holds.
-A failed attempt keeps the current certificate and retries later. Nothing needs doing until
-`chalkctl status` reports a problem on the `node` line under `certificates:`.
+With the Kubernetes layer, a node renews its own certificate. chalkd checks about every hour.
+Once two thirds of the certificate's lifetime have passed, it creates a new key and asks a
+control plane at the cluster endpoint for a certificate. A control plane signs its own with the
+node CA it holds. A failed attempt keeps the current certificate and retries later. Nothing needs
+doing until `chalkctl status` reports a problem on the `node` line under `certificates:`.
 
 A control plane renews a certificate only while it can read the revoked nodes from its API
 server, so that it never renews a revoked node's. During a long outage of the API server, no
@@ -91,8 +91,8 @@ in the node's network path could receive the new certificate. Renewing before ex
 
 ## Rotate the node CA before it expires
 
-The node CA issues every node certificate, and on the shipped variant the control planes hold it to
-renew them. It is valid for five years. No node certificate outlives it, so control planes warn
+The node CA issues every node certificate, and with the Kubernetes layer the control planes hold
+it to renew them. It is valid for five years. No node certificate outlives it, so control planes warn
 once less than 18 months remain, with `node CA expires <date>; run chalkctl rotate node-ca`.
 
 `chalkctl rotate node-ca` issues a new node CA from the OS CA, delivers it to the nodes that hold
@@ -133,7 +133,7 @@ chain to.
 ## Choose what to rotate
 
 `chalkctl rotate` replaces one of five kinds of value across the cluster. Three of them exist only
-on the shipped variant's Kubernetes:
+on the Kubernetes layer:
 
 | Kind | What it replaces | What it revokes |
 | --- | --- | --- |
@@ -150,7 +150,7 @@ Kubernetes kinds.
 
 ## Revocation cuts off one node without a rotation
 
-On the shipped variant, `chalkctl node revoke` cuts off one node by name, at once. The cluster
+With the Kubernetes layer, `chalkctl node revoke` cuts off one node by name, at once. The cluster
 keeps running as it is, and no CA changes. A rotation replaces a CA and with it every certificate
 it issued, so it cuts off everyone who holds an old one. Choose by what was lost:
 
@@ -251,8 +251,8 @@ os-ca: every node applied the refresh phase
 Every node serves a certificate of the new node CA and trusts the old and the new OS CA. Client files from before the rotation cannot verify the nodes any more and are refused after the finish: issue new ones with chalkctl client new. Build images and installer media again from secrets.pub.json; older ones trust the old OS CA alone, and installing from them fails. Then remove the old OS CA with chalkctl rotate os-ca --finish.
 ```
 
-The switch gives the new node CA to the nodes that renew node certificates: on the shipped variant,
-the control planes. The refresh gives every node a certificate of it. A node renewed earlier shows
+The switch gives the new node CA to the nodes that renew node certificates: with the
+Kubernetes layer, the control planes. The refresh gives every node a certificate of it. A node renewed earlier shows
 `serves a certificate of the new node CA already`.
 
 Commit the new `secrets.pub.json`, and have the installer and the images you keep for installs built

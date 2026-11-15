@@ -5,8 +5,8 @@ description: "Set up chalkos nodes as routers: forwarding, the node API's interf
 
 # Run a router
 
-These pages are for operators who run nodes of a router image, one whose variant sets
-`router = true`. They build on [Operate nodes](../operate/index.md): a router installs, upgrades
+These pages are for operators who run nodes of a router image, one whose modules list the router
+layer, `chalkos.nixosModules.router`. They build on [Operate nodes](../operate/index.md): a router installs, upgrades
 and recovers like any node, and its interfaces and addresses are `Network` documents as on any
 node. A router's own documents, of `router.chalkos.dev`, set how it forwards, what its firewall
 lets through, whom it exchanges routes with over BGP, which links share a routing table, how it

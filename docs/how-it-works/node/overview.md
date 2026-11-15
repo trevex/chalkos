@@ -65,7 +65,7 @@ stateDiagram-v2
         state "Installed" as Installed
         state "Bootstrapped or joined" as Joined
         [*] --> Installed
-        Installed --> Joined: shipped variant only
+        Installed --> Joined: Kubernetes layer only
     }
     state "Staged" as Staged
     state "Counted boot" as Counted
@@ -88,8 +88,8 @@ The sections below follow these stages in order. Each one links the page that ex
 
 ## Nix builds an image and chalkbuild signs it
 
-A flake calls `chalkos.lib.mkImages`, which builds one image directory per variant and
-platform. The image directory holds an unsigned raw disk image and the JSON Schemas of the config
+A flake calls `chalkos.lib.mkImages`, which builds one image directory for each image the flake
+lists, each with a name and a platform. The image directory holds an unsigned raw disk image and the JSON Schemas of the config
 the image accepts. chalkbuild then signs a copy of the image directory on the
 machine that holds the db key, so the key never enters `/nix/store`. Every file of the store is
 covered by the signature, because the signed UKI carries the store's root hash and dm-verity
@@ -114,7 +114,7 @@ applied before the network comes up, and chalkd starts in normal mode with the n
 from STATE. [Boot, health and rollback](boot-and-rollback.md) follows the boot chain.
 [Storage and encryption](storage.md) explains STATE, VAR and the unlock.
 
-!!! note "On the shipped variant, the nodes form a Kubernetes cluster after their first boot"
+!!! note "With the Kubernetes layer, the nodes form a Kubernetes cluster after their first boot"
 
     `chalkctl bootstrap` starts etcd and the control plane on the first control plane, once per
     cluster. Further control planes and workers join on their own.
@@ -173,7 +173,7 @@ another node does not trust yet. Renewal needs no rotation: it issues a node a n
 from the same CA before the old one expires. [Certificates](certificates.md) explains renewal,
 rotation and revocation.
 
-!!! note "On the shipped variant, chalkctl node revoke shuts out one node"
+!!! note "With the Kubernetes layer, chalkctl node revoke shuts out one node"
 
     A revoked node's certificates renew no more, and the API server denies its kubelet every
     write.
@@ -196,5 +196,5 @@ rotation and revocation.
 - Nothing revokes a single client certificate or kubeconfig. One works until it expires or its CA
   is rotated out, as
   [Access is revoked by rotating its CA](certificates.md#access-is-revoked-by-rotating-its-ca)
-  explains. On the shipped variant, `chalkctl node revoke` shuts out a node's writes and renewals
+  explains. With the Kubernetes layer, `chalkctl node revoke` shuts out a node's writes and renewals
   by name.

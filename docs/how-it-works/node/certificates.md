@@ -26,7 +26,7 @@ page explains what each one issues, how the certificates are renewed, how a CA i
 why a node's clock decides what it accepts. [Certificates](../../reference/certificates.md) in the
 reference lists every CA and certificate with its lifetime and renewal point.
 
-!!! note "On the shipped variant, three more CAs and two keys serve Kubernetes"
+!!! note "With the Kubernetes layer, three more CAs and two keys serve Kubernetes"
 
     The secrets file also holds the Kubernetes, front-proxy and etcd CAs, the service-account key
     and the encryption key. [Kubernetes certificates](../kubernetes/certificates.md) explains what
@@ -77,7 +77,7 @@ lives one hour and exists only in memory.
 
 chalkd checks its node certificate about hourly on every node in normal mode. Once two thirds of
 its lifetime have passed, the certificate is due. An image whose layer issues node certificates,
-Kubernetes on the shipped variant, then renews it, and any other image reports it.
+Kubernetes with the Kubernetes layer, then renews it, and any other image reports it.
 
 On a Kubernetes node, chalkd creates a new key and asks a control plane for a certificate through
 the Kubernetes layer's [RenewNodeCertificate](../../reference/api.md#kubernetes-method-renewnodecertificate), on
@@ -163,7 +163,7 @@ again to the recipients recorded inside it.
 [`chalkctl rotate node-ca`](../../reference/cli/chalkctl_rotate.md) replaces the node CA alone, in
 one go without pausing, on every kind of node. The accept and the finish change nothing on the
 nodes, because they trust the OS CA the new node CA chains to. The switch delivers the new node CA
-to the nodes that hold it, the control planes on the shipped variant; on a cluster without
+to the nodes that hold it, the control planes with the Kubernetes layer; on a cluster without
 Kubernetes no node holds it. The refresh issues every node a certificate of it from the secrets
 file. Control planes come first, then the other nodes by name. Node certificates of the old node CA
 stay valid until they expire, because they chain to the same OS CA.
@@ -199,7 +199,7 @@ matters.
 `chalkctl rotate node-ca` revokes nothing: chalkd trusts every node CA the OS CA signed, so only
 an `os-ca` rotation retires the certificates of the old node CA.
 
-!!! note "On the shipped variant, chalkctl node revoke shuts out one node"
+!!! note "With the Kubernetes layer, chalkctl node revoke shuts out one node"
 
     A node is revoked by name with `chalkctl node revoke`. Its certificates then renew no more, and
     the API server denies its kubelet every write. The certificates themselves stay valid until

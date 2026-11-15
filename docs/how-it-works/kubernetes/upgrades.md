@@ -136,7 +136,7 @@ A run over a cluster of three control planes prints this, shortened. On cp1 a po
 controller, `default/debug`, stays where it is:
 
 ```text
-upgrading node on metal to 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6): cp1, cp2, cp3
+upgrading node-metal on metal to 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6): cp1, cp2, cp3
 cp1: installing 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)
 cp1: installed 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6), staged as .staged-chalkos_2.efi
 cp1: cordoned, evicted 2 pods, kept 7

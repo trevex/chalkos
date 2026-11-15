@@ -190,7 +190,7 @@ The image author declares the outputs, as
 
 ## The Kubernetes line shows the node's part in the cluster
 
-On the shipped variant, `kubernetes worker: joined, node ready: True` names the node's kind, its
+With the Kubernetes layer, `kubernetes worker: joined, node ready: True` names the node's kind, its
 state and whether its Node is Ready. A control plane adds its VIP role, `vip holder` or
 `vip standby`, and `control plane current` when its API server and etcd serve the current
 certificates and the API server answers ready. A Node that is not Ready adds the reason and the
@@ -243,7 +243,7 @@ needs doing:
 
 `expiry unknown` in the second column means the node could not read the certificate's expiry.
 
-On the shipped variant the Kubernetes certificates follow: its CAs, a control plane's own
+With the Kubernetes layer, the Kubernetes certificates follow: its CAs, a control plane's own
 certificates and the kubelet's. `Kubernetes CA expires <date>` warns a year ahead.
 `less than a tenth of its lifetime remains, though the kubelet renews it itself` means the kubelet
 did not renew its certificate. [Troubleshoot Kubernetes](../kubernetes/troubleshooting.md) and
@@ -292,7 +292,7 @@ These units cover most of a node's own work:
 | `chalkos-health.service` | Decides whether a boot after an upgrade is healthy. |
 | `chalkos-chrony-dhcp.service` | Passes time servers that DHCP offers to chrony. |
 
-The shipped variant adds `chalkos-kubernetes.service`, which prepares the node's addresses and
+The Kubernetes layer adds `chalkos-kubernetes.service`, which prepares the node's addresses and
 Kubernetes files before the kubelet starts, and `kubelet.service` and `containerd.service`.
 `chalkos-registry-credentials.service` and `chalkos-registry-mirrors.service` write the
 credentials and mirrors for the pods' image pulls.
@@ -391,7 +391,7 @@ The machine's screen and its serial console show the boot: the boot loader, the 
 messages and a passphrase prompt for an encrypted disk. systemd's boot status and the emergency
 shell appear on the last of the image's kernel consoles alone: the screen on `metal` and the
 installer, the serial port on `kvm`, as
-[Variants and platforms](../build/variants-and-platforms.md#the-last-console-is-devconsole)
+[Images and platforms](../build/images-and-platforms.md#the-last-console-is-devconsole)
 describes. Once chalkd serves, the screen shows [the console](console.md) in place of a login
 prompt. The serial console goes on to show chalkd's lines, which `chalkos-serial-log@` copies
 there from the journal while the screen is the last console. In maintenance mode, chalkd prints
@@ -419,10 +419,10 @@ The lab's console is read-only, so a lab node cannot answer a passphrase prompt.
 
 Nodes have no logins and no SSH. systemd, bash, less, nftables and kmod are on every image. An
 image built with `chalkos.debug.tools` adds coreutils, grep, sed, findutils, procps, iproute2 and
-util-linux, and crictl on the shipped variant. The image author sets the option, and it reaches
+util-linux, and crictl with the Kubernetes layer. The image author sets the option, and it reaches
 running nodes with an upgrade to the new image.
 
-On the shipped variant, a privileged pod on the node reaches the tools through the host's root:
+With the Kubernetes layer, a privileged pod on the node reaches the tools through the host's root:
 
 ```sh
 kubectl debug node/node1 -it --profile=sysadmin --image=busybox -- \
@@ -434,7 +434,7 @@ profile leaves the pod without their capabilities. A node has no `/bin/bash`, so
 the bash of the system path.
 
 This needs the node's kubelet and the API server. A node that has not joined the cluster has
-`chalkctl logs`, `chalkctl node diag` and its console. On a variant without Kubernetes, the image
+`chalkctl logs`, `chalkctl node diag` and its console. On an image without the Kubernetes layer, the image
 author adds diagnostics for its services, as [Add a diagnostic](../build/add-a-diagnostic.md)
 describes.
 

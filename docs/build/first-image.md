@@ -32,22 +32,26 @@ kinds:
 
 The flake takes chalkos as an input and calls `chalkos.lib.mkImages`. `flake.lock` pins the
 chalkos version, so the images change only when the lock file or the flake's own modules change.
-The call sets three arguments:
+The call sets two arguments:
 
-- `revision` is the commit the image is built from. chalkctl shows it beside the image's root
+- `revision` is the commit the images are built from. chalkctl shows it beside an image's root
   hash.
-- `platforms` names the kinds of machine to build for, here `metal` alone.
-- `variants` names two variants. `router` runs the router layer in place of Kubernetes, and
-  `node.modules` adds the extension's NixOS modules to the variant `node`.
+- `images` lists the images to build, each with its name, its platform and its NixOS modules.
+  Both are for bare metal. `router-metal` lists the router layer, `chalkos.nixosModules.router`.
+  `node-metal` lists the Kubernetes layer, `chalkos.nixosModules.kubernetes`, and the extension's
+  modules in `./extensions`.
 
-`mkImages` returns each image as `images.<variant>-<platform>`, such as `images.node-metal`, and
-the flake exposes them as packages of the same names, beside the installer. `images.checks` holds
-each image's tests, which the flake exports as its checks, so `nix flake check` runs them, as
-[Test an extension](test-an-extension.md) describes. The flake's shell, which
-`nix develop` enters, holds chalkctl and chalkbuild of the chalkos that `flake.lock` pins. One image
-serves every node of its variant and platform. What differs between
-nodes, from their addresses to the cluster's endpoint, is their config: YAML documents that
-chalkctl delivers, which [Config and the inventory](../how-it-works/node/config.md) describes.
+A layer is a predefined set of NixOS modules that chalkos ships, listed like any other module.
+An image lists one layer at most, and an image without one runs chalkos's base alone.
+
+`mkImages` returns each image by its name, such as `images.node-metal`, and the installer as
+`images.installer`. The flake exposes them as packages of the same names. `chalkos.lib.testsOf`
+collects each image's tests, which the flake exports as its checks, so `nix flake check` runs
+them, as [Test an extension](test-an-extension.md) describes. The flake's shell, which
+`nix develop` enters, holds chalkctl and chalkbuild of the chalkos that `flake.lock` pins. One
+image serves every node the inventory gives it. What differs between nodes, from their
+addresses to the cluster's endpoint, is their config: YAML documents that chalkctl delivers,
+which [Config and the inventory](../how-it-works/node/config.md) describes.
 
 ## mkImages checks its arguments as module options
 
@@ -55,9 +59,8 @@ chalkctl delivers, which [Config and the inventory](../how-it-works/node/config.
 
 | Argument | Default | What it sets |
 | --- | --- | --- |
-| `variants` | `{ node = { }; }` | The variants to build, each with its NixOS modules and whether its images run Kubernetes |
-| `platforms` | `[ "metal" "kvm" ]` | The platforms every variant is built for, as a list of names or with each platform's modules |
-| `modules` | `[ ]` | NixOS modules every variant's images carry |
+| `images` | `[ ]` | The images to build, each with its `name`, `platform` and NixOS `modules` |
+| `modules` | `[ ]` | NixOS modules every image carries, before its own |
 | `osCA` | `null` | The public part of the cluster's secrets, whose OS CA the images and the installer trust in maintenance mode |
 | `installer.modules` | `[ ]` | The installer's own NixOS modules |
 | `nixpkgs` | the nixpkgs chalkos is tested against | The nixpkgs the images are evaluated and built from |
@@ -68,8 +71,7 @@ chalkctl delivers, which [Config and the inventory](../how-it-works/node/config.
 
 The arguments are module options, so a misspelled argument fails the evaluation and names the
 argument. The [mkImages reference](../reference/mkimages.md) documents each one.
-[Variants and platforms](variants-and-platforms.md) covers `variants`, `platforms`, `modules` and
-`osCA`.
+[Images and platforms](images-and-platforms.md) covers `images`, `modules` and `osCA`.
 
 `revision` and `tag` say where an image came from. Nix cannot read git tags, so whatever builds a
 release passes the tag:
@@ -78,7 +80,13 @@ release passes the tag:
 images = chalkos.lib.mkImages {
   revision = self.rev or self.dirtyRev or null;
   tag = "v1.5.0";
-  platforms = [ "metal" ];
+  images = [
+    {
+      name = "node-metal";
+      platform = "metal";
+      modules = [ chalkos.nixosModules.kubernetes ];
+    }
+  ];
 };
 ```
 
@@ -142,7 +150,7 @@ The build writes six entries:
   the root hash. chalkctl reads the store, the hash tree and the UKI at those offsets.
 - `repart.d` holds the partition definitions of the system region, which the installer lays out
   on a target disk.
-- `metadata.json` names the image's root hash, variant and platform, the revision and tag it was
+- `metadata.json` names the image's root hash, name and platform, the revision and tag it was
   built from, and the kinds it accepts.
 - `schemas` holds the JSON Schema of each kind the image accepts.
 - `facts` holds a `<layer>.json` for each of the image's layers that has facts. On an image with
@@ -162,52 +170,57 @@ the key never enters `/nix/store`.
 chalkos does not wrap image conversion. `qemu-img convert -f raw -O qcow2` makes a qcow2 disk for
 KVM, `zstd` compresses the raw image for transport, and `dd` or a USB writer puts it on a disk.
 
-## mkImages returns four sets of outputs
+## An image carries its OCI layout, NixOS system and tests
 
-The homelab exposes two images and the installer, but `mkImages` returns four attribute sets.
-Each is built only when something asks for it:
+The homelab exposes two images and the installer by name. Each image `mkImages` returns is its
+image directory, and carries the other forms of the image as attributes. Each is built only when
+something asks for it:
 
 ```mermaid
 flowchart LR
     flake["flake.nix and flake.lock"] -->|calls| mk["mkImages"]
     mods["Your NixOS modules"] -->|arguments| mk
-    mk --> images["images.node-metal"]
-    mk --> oci["oci.node-metal"]
-    mk --> installer["installer"]
-    mk --> nixos["nixos.node-metal"]
-    images -->|nix build| dir["Image directory"]
+    mk --> image["images.node-metal"]
+    mk --> installer["images.installer"]
+    image -->|nix build| dir["Image directory"]
+    image -->|.oci| oci["OCI layout"]
     oci -->|chalkbuild push| registry["Registry"]
 ```
 
-The diagram shows the flake and its modules passing through `mkImages` into its four outputs.
-The image directory is what the inventory names; the OCI layout goes to a registry.
+The diagram shows the flake and its modules passing through `mkImages` into each image and the
+installer. The image directory is what the inventory names; the OCI layout goes to a registry.
 
-- `images.<variant>-<platform>` is the image directory of a variant on a platform, such as
-  `images.node-metal`.
-- `oci.<variant>-<platform>` is the same image as an OCI image layout, as `chalkbuild oci` writes
+- `images.node-metal` is the image directory. Its `name` and `platform` are the entry's, and its
+  `layer` is `"kubernetes"`, `"router"` or null.
+- `images.node-metal.oci` is the same image as an OCI image layout, as `chalkbuild oci` writes
   it. [Publish images to a registry](publish-images.md) pushes it.
-- `installer` is one directory with a raw image and a hybrid ISO, which installs images of every
-  platform. [Customise the installer](customise-installer.md) adds to it.
-- `nixos.<variant>-<platform>` and `nixos.installer` are the evaluated NixOS systems. They read an
-  image's options, such as `nixos.node-metal.config.chalkos.kubernetes.package.version`, and
-  their `config.system.build` holds parts of the image that build on their own, such as its
-  schemas, `chalkosSchemas`.
+- `images.node-metal.nixos` is the evaluated NixOS system. It reads the image's options, such as
+  `images.node-metal.nixos.config.chalkos.kubernetes.package.version`, and its
+  `config.system.build` holds parts of the image that build on their own, such as its schemas,
+  `chalkosSchemas`.
+- `images.node-metal.tests` builds the image's tests, its `chalkos.tests`.
+- `images.installer` is one directory with a raw image and a hybrid ISO, which installs images of
+  every platform. [Customise the installer](customise-installer.md) adds to it.
 
-A flake exposes whichever it needs. The homelab's exposes its two image directories and the
-installer by name. A flake can also expose every image directory and the installer at once:
-
-```nix
-packages.x86_64-linux = images.images // { inherit (images) installer; };
-```
-
-The homelab's flake also exports the NixOS systems, as `nixosConfigurations`:
+`chalkos.lib` has helpers that map over the images and leave the installer out. `ociOf`,
+`nixosOf` and `testsOf` return each image's `oci`, `nixos` and `tests` by its name.
+`selectImages` picks the images whose `platform` or `layer` match, so a flake can expose every
+Kubernetes image as a package:
 
 ```nix
-nixosConfigurations = images.nixos;
+packages.x86_64-linux = chalkos.lib.selectImages { layer = "kubernetes"; } images;
 ```
 
-The guides use them to build one part of an image without the rest, such as its schemas with
-`nix build .#nixosConfigurations.node-metal.config.system.build.chalkosSchemas`.
+The homelab's flake exports the NixOS systems as `nixosConfigurations` and the tests as its
+checks:
+
+```nix
+nixosConfigurations = chalkos.lib.nixosOf images;
+checks.${system} = chalkos.lib.testsOf images;
+```
+
+The guides use the NixOS systems to build one part of an image without the rest, such as its
+schemas with `nix build .#nixosConfigurations.node-metal.config.system.build.chalkosSchemas`.
 
 ## Check that it worked
 
@@ -222,10 +235,10 @@ For the homelab it prints a line per node, with the image's root hash and the ha
 config:
 
 ```text
-node1: valid for the image node-metal (node on metal, root hash d871203debfe), config c2bef3c1242a847b16346d3e1f6de732a86832fa8294ce90e923bad30c85e6bf
-node2: valid for the image node-metal (node on metal, root hash d871203debfe), config afa765d5e8029dbe3aea1a589d2dafdf260de42fff21692656891ddde062d567
-node3: valid for the image node-metal (node on metal, root hash d871203debfe), config 719604db3fd2c0634df350fc6b7760bba57de0ec82ac3fb9a9b2dcf532cfdc43
-router: valid for the image router-metal (router on metal, root hash e9be19557973), config a8d132f3d5517185654d573c02c543497ab42d0068131d25bbfe8405d5761093
+node1: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config 228343216657e1b2015b346b5a8e582a69c65cf0ef037786e443dcf2fd832f4b
+node2: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config c45d7f3395eb69e67f555de1dd915133f24dea76554d492266eea6d42f721f3d
+node3: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config 3473dd3e12e4ca9a93d4a1444678d97aa1b41ed77f8a71c2d979955b68e3c1b0
+router: valid for the image router-metal (router-metal on metal, root hash befe5273a465), config b77dea492acd11e559461e079cdbb9bc53de8c8e46400672645d6a262719faa9
 ```
 
 A document of a kind the image does not declare, or a misspelled field, fails here. The image is
@@ -235,7 +248,7 @@ nodes with [Upgrade nodes](../operate/upgrade.md).
 
 ## What next
 
-- [Variants and platforms](variants-and-platforms.md) builds images for nodes that run other
+- [Images and platforms](images-and-platforms.md) builds images for nodes that run other
   software or other machines.
 - [Add software, drivers and kernel modules](add-software.md) adds to the image.
 - [The image](../how-it-works/node/image.md) explains what the raw image holds and how it boots.

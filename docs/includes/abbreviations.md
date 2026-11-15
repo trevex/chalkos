@@ -6,6 +6,7 @@
 *[Cluster endpoint]: The URL of the cluster's API server, which kubelets, kubeconfigs and joining control planes use.
 *[Config documents]: One object of a node's config, written in YAML like a Kubernetes object.
 *[Fallback keyslot]: The second keyslot of every encrypted partition, which unlocks it when the TPM does not.
+*[Kubernetes layer]: A predefined set of NixOS modules that chalkos ships, which an image lists in its modules like any other module to take on a role.
 *[Kubernetes share]: The Kubernetes secrets a node receives at install.
 *[Maintenance mode]: The mode chalkd runs in on a node that is not installed.
 *[Node certificate]: The certificate chalkd serves and authenticates with.
@@ -52,6 +53,7 @@
 *[module group]: A named set of kernel modules an image carries.
 *[recovery key]: The default fallback keyslot of every encrypted partition, used when the TPM does not unseal.
 *[revoked node]: A node shut out of the cluster by name with chalkctl node revoke.
+*[router layer]: A predefined set of NixOS modules that chalkos ships, which an image lists in its modules like any other module to take on a role.
 *[secrets file]: The file that holds every secret of a cluster, written once by chalkctl gen secrets.
 *[Change rule]: A CEL expression that a config must make true for the image to accept it.
 *[Client file]: A JSON file that lets someone operate nodes without the secrets file.
@@ -68,19 +70,19 @@
 *[etcd member]: A control plane that belongs to the cluster's etcd.
 *[normal mode]: The mode chalkd runs in on an installed node.
 *[Diagnostic]: A read-only command of an image that chalkd runs on a node for a client, such as ip route get.
-*[Extensions]: NixOS modules outside chalkos that add services to a variant's images and may declare config kinds.
+*[Extensions]: NixOS modules outside chalkos that add services to an image and may declare config kinds.
 *[Generation]: The number in a UKI's file name that orders a node's boot entries, the highest first.
 *[Node names]: A node's key in the inventory's spec.nodes, such as cp1.
 *[Provenance]: The git revision and tag an image was built from.
 *[chalkbuild]: The command that prepares the images Nix builds for a cluster's nodes.
 *[db and dbx]: The UEFI firmware's Secure Boot databases: db lists what the firmware boots, dbx what it refuses.
 *[diagnostic]: A read-only command of an image that chalkd runs on a node for a client, such as ip route get.
-*[extensions]: NixOS modules outside chalkos that add services to a variant's images and may declare config kinds.
+*[extensions]: NixOS modules outside chalkos that add services to an image and may declare config kinds.
 *[generation]: The number in a UKI's file name that orders a node's boot entries, the highest first.
 *[node names]: A node's key in the inventory's spec.nodes, such as cp1.
 *[provenance]: The git revision and tag an image was built from.
 *[Bootstrap]: The one-time start of a cluster's etcd on its first control plane.
-*[Extension]: NixOS modules outside chalkos that add services to a variant's images and may declare config kinds.
+*[Extension]: NixOS modules outside chalkos that add services to an image and may declare config kinds.
 *[Installer]: An image that always boots into maintenance mode and writes a node's image to a disk of the machine.
 *[Inventory]: The file that tells chalkctl about a cluster: its nodes, their addresses, images and config files.
 *[Node name]: A node's key in the inventory's spec.nodes, such as cp1.
@@ -90,38 +92,35 @@
 *[Rotations]: The replacement of a CA or key, in phases, with chalkctl rotate.
 *[bootstrap]: The one-time start of a cluster's etcd on its first control plane.
 *[dm-verity]: The kernel's block-level integrity check, which makes a modified block of the store fail to read.
-*[extension]: NixOS modules outside chalkos that add services to a variant's images and may declare config kinds.
+*[extension]: NixOS modules outside chalkos that add services to an image and may declare config kinds.
 *[installer]: An image that always boots into maintenance mode and writes a node's image to a disk of the machine.
 *[inventory]: The file that tells chalkctl about a cluster: its nodes, their addresses, images and config files.
 *[node name]: A node's key in the inventory's spec.nodes, such as cp1.
 *[platforms]: The kind of machine an image is built for, such as metal or kvm, which each image names in its platform.
 *[root hash]: The top hash of the store's dm-verity hash tree.
 *[rotations]: The replacement of a CA or key, in phases, with chalkctl rotate.
-*[Contract]: What an image accepts as config: its variant, platform, kind schemas and what it fixes about Kubernetes.
+*[Contract]: What an image accepts as config: its name, platform, kind schemas and what it fixes about Kubernetes.
 *[Platform]: The kind of machine an image is built for, such as metal or kvm, which each image names in its platform.
 *[Rollback]: The return to the previous image after a new one used up its boot tries without a blessed boot.
 *[Rotation]: The replacement of a CA or key, in phases, with chalkctl rotate.
-*[Variants]: A named set of NixOS modules that several images carry, one per platform.
 *[chalkcfg]: The command on every node that prints the node's config documents.
 *[chalkctl]: The command-line client of chalkos.
 *[chalklab]: The command that runs a cluster's kvm nodes as QEMU virtual machines on one machine.
-*[contract]: What an image accepts as config: its variant, platform, kind schemas and what it fixes about Kubernetes.
+*[contract]: What an image accepts as config: its name, platform, kind schemas and what it fixes about Kubernetes.
 *[platform]: The kind of machine an image is built for, such as metal or kvm, which each image names in its platform.
 *[rollback]: The return to the previous image after a new one used up its boot tries without a blessed boot.
 *[rotation]: The replacement of a CA or key, in phases, with chalkctl rotate.
-*[variants]: A named set of NixOS modules that several images carry, one per platform.
 *[Effects]: An action on the node's services after a delivery is applied, such as a unit restart.
 *[Node CA]: An intermediate CA under the OS CA that may issue only server and client certificates.
-*[Variant]: A named set of NixOS modules that several images carry, one per platform.
 *[Volumes]: A partition beyond VAR, declared by a Volume document in a node's config.
 *[Workers]: A node that runs containerd and the kubelet but no control plane components.
 *[effects]: An action on the node's services after a delivery is applied, such as a unit restart.
 *[node CA]: An intermediate CA under the OS CA that may issue only server and client certificates.
-*[variant]: A named set of NixOS modules that several images carry, one per platform.
 *[volumes]: A partition beyond VAR, declared by a Volume document in a node's config.
 *[workers]: A node that runs containerd and the kubelet but no control plane components.
 *[Effect]: An action on the node's services after a delivery is applied, such as a unit restart.
 *[Grants]: The config kinds a unit may read at runtime.
+*[Layers]: A predefined set of NixOS modules that chalkos ships, which an image lists in its modules like any other module to take on a role.
 *[Volume]: A partition beyond VAR, declared by a Volume document in a node's config.
 *[Worker]: A node that runs containerd and the kubelet but no control plane components.
 *[chalkd]: The agent on every node.
@@ -130,6 +129,7 @@
 *[worker]: A node that runs containerd and the kubelet but no control plane components.
 *[Facts]: Node state that a change rule reads.
 *[Grant]: The config kinds a unit may read at runtime.
+*[Layer]: A predefined set of NixOS modules that chalkos ships, which an image lists in its modules like any other module to take on a role.
 *[OS CA]: The root certificate authority of a cluster's node API: chalkd and chalkctl trust only certificates that chain to it.
 *[PCR 7]: The TPM register that measures the Secure Boot state.
 *[STATE]: A small partition that holds a node's config, certificates and keys.

@@ -90,12 +90,12 @@ Check the new node's config against its image:
 
 ```console
 $ chalkctl validate node4
-node4: valid for the image node-metal (node on metal, root hash 5f1e60980b55), config 538df9b7dbb63277743c9cba429aa98fb6994f92dc4c20f7f0d632a880804b7c
+node4: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config 538df9b7dbb63277743c9cba429aa98fb6994f92dc4c20f7f0d632a880804b7c
 ```
 
 Adding a node changes no other node's config, so the other nodes need no `config apply`.
 
-On the shipped variant, the `Node` document sets the node's type. `type: worker` makes `node4` a
+With the Kubernetes layer, the `Node` document sets the node's type. `type: worker` makes `node4` a
 worker. A node with `type: controlplane` joins etcd and the control plane. Grow the control planes
 to an odd number, as [Add a control plane](../kubernetes/ha-control-plane.md#add-a-control-plane)
 explains.
@@ -111,7 +111,7 @@ chalkctl install node4 --secrets=secrets.age --address=<address> --fingerprint=<
 
 `<address>` and `<fingerprint>` are the ones the console shows.
 
-!!! note "On the shipped variant, the new node joins on its own"
+!!! note "With the Kubernetes layer, the new node joins on its own"
 
     The cluster runs already, so the new node needs no bootstrap. A worker registers with the
     cluster endpoint with the kubelet certificate chalkctl gave it. A control plane joins etcd
@@ -124,7 +124,7 @@ node's config in the inventory's files. Everything on its disks is lost. chalkct
 that wipes or resets a whole node. An installed node runs no maintenance mode, so chalkctl
 cannot reach it for an install until it boots the installer again.
 
-!!! note "On the shipped variant, take the node out of Kubernetes before step 1"
+!!! note "With the Kubernetes layer, take the node out of Kubernetes before step 1"
 
     Drain a worker with `kubectl drain node4`, and uncordon it with `kubectl uncordon node4` once it is
     `Ready` again. Its kubelet registers its Node again. Take a control plane out of etcd with
@@ -153,10 +153,10 @@ volume, not the node. [Reset a volume](storage-volumes.md#reset-a-volume) covers
 
 ## Remove a node from the cluster
 
-Removing a node takes it out of the inventory and the repository. On the shipped variant it also
+Removing a node takes it out of the inventory and the repository. With the Kubernetes layer, it also
 revokes the node, so the machine cannot come back with the certificates it still holds.
 
-!!! note "On the shipped variant, take the node out of Kubernetes before step 1"
+!!! note "With the Kubernetes layer, take the node out of Kubernetes before step 1"
 
     Drain a worker with `kubectl drain node4`. Take a control plane out of etcd with
     `chalkctl etcd leave`, which refuses when the remaining voters would lose their quorum.
@@ -167,7 +167,7 @@ revokes the node, so the machine cannot come back with the certificates it still
 
 To remove `node4`:
 
-1. On the shipped variant, revoke the node with `chalkctl node revoke node4`, as
+1. With the Kubernetes layer, revoke the node with `chalkctl node revoke node4`, as
    [Revoke a removed node](#revoke-a-removed-node) describes.
 2. Power the machine off.
 3. Delete its entry from `spec.nodes` in `chalkos.yaml`.
@@ -194,7 +194,7 @@ new node CA. [Choose what to rotate](access.md#choose-what-to-rotate) describes 
 
 ## Revoke a removed node
 
-On the shipped variant, a removed node can still renew its node certificate through a control
+With the Kubernetes layer, a removed node can still renew its node certificate through a control
 plane, and its kubelet client certificate stays valid for up to a year. With them, the machine
 could register its Node again. `chalkctl node revoke` cuts the node off by name, at once and
 without a rotation:
@@ -321,11 +321,11 @@ four nodes before it and `node4`:
 
 ```console
 $ chalkctl validate
-node1: valid for the image node-metal (node on metal, root hash 5f1e60980b55), config c2bef3c1242a847b16346d3e1f6de732a86832fa8294ce90e923bad30c85e6bf
-node2: valid for the image node-metal (node on metal, root hash 5f1e60980b55), config afa765d5e8029dbe3aea1a589d2dafdf260de42fff21692656891ddde062d567
-node3: valid for the image node-metal (node on metal, root hash 5f1e60980b55), config 719604db3fd2c0634df350fc6b7760bba57de0ec82ac3fb9a9b2dcf532cfdc43
-node4: valid for the image node-metal (node on metal, root hash 5f1e60980b55), config 538df9b7dbb63277743c9cba429aa98fb6994f92dc4c20f7f0d632a880804b7c
-router: valid for the image router-metal (router on metal, root hash e9be19557973), config a8d132f3d5517185654d573c02c543497ab42d0068131d25bbfe8405d5761093
+node1: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config 228343216657e1b2015b346b5a8e582a69c65cf0ef037786e443dcf2fd832f4b
+node2: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config c45d7f3395eb69e67f555de1dd915133f24dea76554d492266eea6d42f721f3d
+node3: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config 3473dd3e12e4ca9a93d4a1444678d97aa1b41ed77f8a71c2d979955b68e3c1b0
+node4: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config 538df9b7dbb63277743c9cba429aa98fb6994f92dc4c20f7f0d632a880804b7c
+router: valid for the image router-metal (router-metal on metal, root hash befe5273a465), config b77dea492acd11e559461e079cdbb9bc53de8c8e46400672645d6a262719faa9
 ```
 
 `chalkctl status node4` shows the new node's config, image and volumes, as
@@ -337,4 +337,4 @@ removed again, `validate` lists the other four alone.
 - [Install a node](install.md) covers maintenance mode, the system disk and `--wipe-disk`.
 - [Recover a node](recover-node.md) helps a node that no longer unlocks, boots or rejoins.
 - [Run a highly available control plane](../kubernetes/ha-control-plane.md) adds and removes
-  control planes on the shipped variant.
+  control planes with the Kubernetes layer.

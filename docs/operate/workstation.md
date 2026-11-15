@@ -157,7 +157,7 @@ Give `secrets.pub.json` to the image author, who names it in the `osCA` argument
 `osCA = ./secrets.pub.json;`. The image author then builds the images and the installer again.
 Their chalkd in maintenance mode accepts only clients with a certificate from this cluster's OS
 CA, so nobody else can install an image on a machine that waits for its install.
-[The OS CA ties images to one cluster](../build/variants-and-platforms.md#the-os-ca-ties-images-to-one-cluster)
+[The OS CA ties images to one cluster](../build/images-and-platforms.md#the-os-ca-ties-images-to-one-cluster)
 describes the argument, and [Your first image flake](../build/first-image.md) shows the flake that
 takes it.
 
@@ -234,7 +234,7 @@ its pending config, else carries its own config over, as
 [Operator upgrades carry no config](../how-it-works/node/upgrades.md#operator-upgrades-carry-no-config)
 explains.
 
-!!! note "On the shipped variant, the Kubernetes commands need credentials too"
+!!! note "With the Kubernetes layer, the Kubernetes commands need credentials too"
 
     `bootstrap`, `etcd remove-member` and `etcd leave` need an admin client file or the secrets
     file. `etcd members` needs a reader client file. `kubeconfig` needs the secrets file. During an
@@ -303,7 +303,7 @@ Back up these files to a place apart from the workstation:
   back, as [Go back to the previous image](upgrade.md#go-back-to-the-previous-image) describes.
 - The password of each node whose encryption fallback is a password. Nothing else holds it.
 
-On the shipped variant, the cluster's state lives in etcd on the control planes. chalkos has no
+With the Kubernetes layer, the cluster's state lives in etcd on the control planes. chalkos has no
 etcd backup or restore yet; the [roadmap](../contribute/roadmap.md#smaller-items) lists it. Three
 control planes survive the loss of a machine, but they do not bring back an object that someone
 deleted. Back up what the workloads keep with a tool that works at the Kubernetes level.

@@ -276,8 +276,8 @@ metadata: {name: default}
 spec: {hostname: node1-shelf-a}
 ```
 
-The `Host` document changes the hostname alone. The node's name, its certificate and, on the
-shipped variant, its Kubernetes node name stay as the inventory gives them.
+The `Host` document changes the hostname alone. The node's name, its certificate and, with the
+Kubernetes layer, its Kubernetes node name stay as the inventory gives them.
 
 ## TimeSync names the time servers
 
@@ -331,10 +331,10 @@ the set lacks.
 [Secret documents hold the services' secrets](workstation.md#secret-documents-hold-the-services-secrets)
 says where to keep the files that hold them.
 
-!!! note "On the shipped variant, every node also holds a Cluster and a Node document"
+!!! note "With the Kubernetes layer, every node also holds a Cluster and a Node document"
 
-    The shipped variant runs Kubernetes. Each node's set then holds exactly one `Cluster`
-    document, the same on every node, and one `Node` document with the node's type,
+    An image with the Kubernetes layer runs Kubernetes. Each node's set then holds exactly one
+    `Cluster` document, the same on every node, and one `Node` document with the node's type,
     `controlplane` or `worker`. The homelab puts the `Cluster` in `cluster/cluster.yaml` and each
     `Node` in the node's own file.
     [Configure Kubernetes](../kubernetes/configure.md) covers both.
@@ -346,13 +346,13 @@ as chalkd will. It reaches no node and needs no credentials, so it also runs in 
 
 ```console
 $ chalkctl validate
-node1: valid for the image node-metal (node on metal, root hash 5f1e60980b55), config c2bef3c1242a847b16346d3e1f6de732a86832fa8294ce90e923bad30c85e6bf
-node2: valid for the image node-metal (node on metal, root hash 5f1e60980b55), config afa765d5e8029dbe3aea1a589d2dafdf260de42fff21692656891ddde062d567
-node3: valid for the image node-metal (node on metal, root hash 5f1e60980b55), config 719604db3fd2c0634df350fc6b7760bba57de0ec82ac3fb9a9b2dcf532cfdc43
-router: valid for the image router-metal (router on metal, root hash e9be19557973), config a8d132f3d5517185654d573c02c543497ab42d0068131d25bbfe8405d5761093
+node1: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config 228343216657e1b2015b346b5a8e582a69c65cf0ef037786e443dcf2fd832f4b
+node2: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config c45d7f3395eb69e67f555de1dd915133f24dea76554d492266eea6d42f721f3d
+node3: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config 3473dd3e12e4ca9a93d4a1444678d97aa1b41ed77f8a71c2d979955b68e3c1b0
+router: valid for the image router-metal (router-metal on metal, root hash befe5273a465), config b77dea492acd11e559461e079cdbb9bc53de8c8e46400672645d6a262719faa9
 ```
 
-Each line names the node's image, its variant and platform, the first 12 hex characters of its
+Each line names the node's image, its own name and platform, the first 12 hex characters of its
 root hash, and the hash of the node's config. `chalkctl status` later compares that hash with the
 config the node runs. `chalkctl validate node1` checks `node1` alone.
 
@@ -378,7 +378,7 @@ job puts the unsigned build of the same image in that directory instead.
 names the document and the field:
 
 ```text
-node1: valid for the image node-metal (node on metal, root hash 5f1e60980b55), config c2bef3c1242a847b16346d3e1f6de732a86832fa8294ce90e923bad30c85e6bf
+node1: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config 228343216657e1b2015b346b5a8e582a69c65cf0ef037786e443dcf2fd832f4b
 chalkctl: the config of 1 node is invalid:
 node node2: Network "30-node0": - at '/spec/network': additional properties 'keepconfiguration' not allowed
 ```

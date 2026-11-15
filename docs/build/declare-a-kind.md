@@ -52,10 +52,10 @@ reaches a node. For the same reason, a `strMatching` pattern keeps each name of 
 the characters of an interface name.
 
 Put the module where the nodes that carry `Peer` documents get it. The homelab's nodes run the
-variant `node`, so `extensions/default.nix`, which imports `bgp.nix`, sits in
-`variants.node.modules`, and the router's image takes no `Peer`. A module in `modules` reaches
-every variant. A node whose image lacks the kind refuses a config that holds
-a document of it.
+image `node-metal`, so `extensions/default.nix`, which imports `bgp.nix`, sits in that image's
+`modules`, and the router's image takes no `Peer`. A module in the `modules` of `mkImages`
+reaches every image. A node whose image lacks the kind refuses a config that holds a document of
+it.
 
 ## A kind can hold one document per node
 
@@ -195,7 +195,7 @@ You can look at a schema without building the image. The schemas are a build out
 `nixosConfigurations`:
 
 ```nix
-nixosConfigurations = images.nixos;
+nixosConfigurations = chalkos.lib.nixosOf images;
 ```
 
 Build the node image's schemas and print the `asn` field of `Peer`:
@@ -527,14 +527,14 @@ chalkctl validate
 router among them:
 
 ```text
-node1: valid for the image node-metal (node on metal, root hash d871203debfe), config c2bef3c1242a847b16346d3e1f6de732a86832fa8294ce90e923bad30c85e6bf
-node2: valid for the image node-metal (node on metal, root hash d871203debfe), config afa765d5e8029dbe3aea1a589d2dafdf260de42fff21692656891ddde062d567
-node3: valid for the image node-metal (node on metal, root hash d871203debfe), config 719604db3fd2c0634df350fc6b7760bba57de0ec82ac3fb9a9b2dcf532cfdc43
-router: valid for the image router-metal (router on metal, root hash e9be19557973), config a8d132f3d5517185654d573c02c543497ab42d0068131d25bbfe8405d5761093
+node1: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config 228343216657e1b2015b346b5a8e582a69c65cf0ef037786e443dcf2fd832f4b
+node2: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config c45d7f3395eb69e67f555de1dd915133f24dea76554d492266eea6d42f721f3d
+node3: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config 3473dd3e12e4ca9a93d4a1444678d97aa1b41ed77f8a71c2d979955b68e3c1b0
+router: valid for the image router-metal (router-metal on metal, root hash befe5273a465), config b77dea492acd11e559461e079cdbb9bc53de8c8e46400672645d6a262719faa9
 ```
 
 `chalkctl validate` refuses a document of a kind the image does not declare. If it names `Peer`
-as unknown, the node's image lacks the module: check the variant's `modules`, and that git
+as unknown, the node's image lacks the module: check the image's `modules`, and that git
 tracks the new file.
 
 ## What next

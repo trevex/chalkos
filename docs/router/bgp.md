@@ -13,7 +13,7 @@ FRR's config.
 ## Before you begin
 
 You need a router set up as [Set up a router](set-up.md) describes, and the secrets file. Its
-image must carry FRR. Router images do unless their variant sets the image option
+image must carry FRR. Router images do unless their modules set the image option
 [`chalkos.router.bgp.enable`](../reference/image-options.md#chalkosrouterbgpenable) to `false`.
 An image without FRR does not accept the BGP kinds: `chalkctl validate` reports that it
 `does not accept kind "BGP"`. Ask the image author for an image with BGP.

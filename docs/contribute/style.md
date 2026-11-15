@@ -109,7 +109,7 @@ stateDiagram-v2
 
 A chalkos node does not need Kubernetes. First say how a node behaves on its own. Then say what
 Kubernetes adds. Material that only applies to Kubernetes goes in Run Kubernetes or in the
-Kubernetes layer of How chalkos works, so another variant can add a section of its own.
+Kubernetes layer of How chalkos works, so another layer can add a section of its own.
 
 ## Terms and links
 

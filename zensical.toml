@@ -62,7 +62,7 @@ nav = [
   { "Build images" = [
     "build/index.md",
     "build/first-image.md",
-    "build/variants-and-platforms.md",
+    "build/images-and-platforms.md",
     "build/add-software.md",
     "build/declare-a-kind.md",
     "build/read-config.md",

@@ -11,7 +11,7 @@ and the interfaces on which it answers the node API.
 ## Before you begin
 
 You need a router image, which an image author builds as
-[Variants and platforms](../build/variants-and-platforms.md) describes, the secrets file, and a
+[Images and platforms](../build/images-and-platforms.md) describes, the secrets file, and a
 node installed as [Install a node](../operate/install.md) describes. The examples use the router
 `r1`.
 

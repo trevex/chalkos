@@ -15,10 +15,9 @@ this page is for changing it.
 Go code never evaluates Nix itself. Nix builds images; everything about a cluster or a node is
 YAML that Go reads. They meet in these places:
 
-- The image directory. `chalkos.lib.mkImages` builds one per
-  variant and platform
+- The image directory. `chalkos.lib.mkImage` builds one per image a flake names
   from the node modules (`lib/images.nix`, `modules/node`): the raw image with its partitions,
-  `metadata.json` (variant, platform, root hash, revision and tag), `facts/`, a
+  `metadata.json` (name, platform, root hash, revision and tag), `facts/`, a
   `<layer>.json` for each layer that sets `chalkos.imageDirectory.facts` (the Kubernetes layer's
   `kubernetes.json` says what the image fixes about Kubernetes), and `schemas/`, the JSON Schemas
   of the config kinds the image accepts. chalkctl and chalklab read
@@ -28,7 +27,7 @@ YAML that Go reads. They meet in these places:
   outputs a node renders in `outputs.json`, the validators it runs in `validators.json`, what a
   delivery restarts or reloads in `effects.json`, the system region's repart definitions in
   `repart.d`
-  and the OS CA certificate in `os-ca.crt` when `mkImages` has
+  and the OS CA certificate in `os-ca.crt` when `mkImage` has
   an `osCA`; and the image's own description in `/etc/os-release`. `pkg/contract` loads the
   schemas and the definition files as one contract: chalkd loads the running image's once as it
   starts, and that of an image it checks config for from the image's own `/etc/chalkos`.
@@ -221,9 +220,11 @@ the [Node API](../reference/api.md) page, so they are written for users.
 
 ## Layer plugins
 
-A layer, such as Kubernetes or the router, is a plugin compiled into chalkd and chalkctl. The
-image says which layers it carries with its markers in `/etc/chalkos/layers`, and a node's Info
-names them.
+A layer, such as Kubernetes or the router, is a predefined set of NixOS modules that chalkos
+ships, `chalkos.nixosModules.kubernetes` or `chalkos.nixosModules.router`. An image lists it in
+its modules like any other module, and it enables the layer's modules in `modules/node`. Its Go
+side is a plugin compiled into chalkd and chalkctl. The image says which layers it carries with
+its markers in `/etc/chalkos/layers`, and a node's Info names them.
 
 `pkg/chalkd/layer` declares chalkd's side. A `Plugin` has a name, its API's handler, the
 permissions of its methods and the background loops it starts in normal mode. Optional hooks,
@@ -449,33 +450,33 @@ it has no `completion` command.
 | Directory | What it holds |
 | --- | --- |
 | `modules/node/` | The NixOS modules of every image: `base/` (appliance, closure, disk, image directory, storage), `kinds/` (`chalkos.kinds`, `chalkos.facts`, networkd's kinds and the kinds every image accepts), `runtime/` (grants, `chalkos.outputs`, `chalkos.effects`, chalkcfg on the system path), kernel, chalkd, time, the CNI, `kubernetes/` (the kubelet, its kinds, effects, containerd, registries, firewall), `router/` (the router layer), upgrade. |
-| `modules/node/router/` | The router layer: `default.nix` (its option, marker and forwarding), the Router kind (`kinds.nix`) and its output `router-sysctl` (`sysctl.nix`), `lib.nix`, what the router's parts share and get as the module argument `routerLib` (the enable option of a feature, the kinds the image declares, the sandbox of the units, the loader of a part's kinds file and, as `routerLib.types`, the types the router kinds share from `types.nix`), traceroute (`diagnostics.nix`) and the validator router (`validator.nix`). `routerLib` belongs to the router layer and is not part of the extension API, although every image's modules can read it. Each part of the router has a directory: `kinds.nix` holds its kinds, `diagnostics.nix` its diagnostics when they have a file of their own, and `default.nix` the rest. Every router image carries `firewall/`, `vrf/` and `policy-routing/`; a variant can leave out `bgp/`, `nat64/`, `resolver/`, `dhcp/`, `dhcp-relay/` and `wireguard/` with `chalkos.router.<feature>.enable`. |
+| `modules/node/router/` | The router layer: `default.nix` (its option, marker and forwarding), the Router kind (`kinds.nix`) and its output `router-sysctl` (`sysctl.nix`), `lib.nix`, what the router's parts share and get as the module argument `routerLib` (the enable option of a feature, the kinds the image declares, the sandbox of the units, the loader of a part's kinds file and, as `routerLib.types`, the types the router kinds share from `types.nix`), traceroute (`diagnostics.nix`) and the validator router (`validator.nix`). `routerLib` belongs to the router layer and is not part of the extension API, although every image's modules can read it. Each part of the router has a directory: `kinds.nix` holds its kinds, `diagnostics.nix` its diagnostics when they have a file of their own, and `default.nix` the rest. Every router image carries `firewall/`, `vrf/` and `policy-routing/`; an image can leave out `bgp/`, `nat64/`, `resolver/`, `dhcp/`, `dhcp-relay/` and `wireguard/` with `chalkos.router.<feature>.enable`. |
 | `modules/platforms/` | `metal` and `kvm`. |
 | `modules/installer/` | The installer image and its ISO. |
 | `modules/testing/` | The test probe, the test image's partition sizes and the test-only config kind `Greeting` with its output and effect. |
-| `lib/` | `mkImages` (`images.nix`), its arguments as module options (`images-arguments.nix`), `chalkos.nix`, which builds `chalkosLib`, the module argument of every image's modules and, beside `mkImages`, the flake's `lib`, and the functions the modules share, which they reach through `chalkosLib.internal` alone: `kinds/` (the JSON Schema converter, the chalkcfg commands of `get`, the option types both recognise, the API groups of chalkos's own kinds, and the check of the kinds a grant, an output, a validator or an effect names, which lists every kind the image does not declare, Secret and withheld kinds), `cel.nix` (CEL that effect rules share) and `refuse.nix` (`refuse`, which throws every problem a module finds in one message, and the phrases the messages share). |
+| `lib/` | `mkImage`, `mkInstaller`, `mkImages` and the helpers over their result (`images.nix`), their arguments as module options (`images-arguments.nix`), the layers, which the flake exports as `nixosModules` (`layers.nix`), `chalkos.nix`, which builds `chalkosLib`, the module argument of every image's modules and, beside `mkImages`, the flake's `lib`, and the functions the modules share, which they reach through `chalkosLib.internal` alone: `kinds/` (the JSON Schema converter, the chalkcfg commands of `get`, the option types both recognise, the API groups of chalkos's own kinds, and the check of the kinds a grant, an output, a validator or an effect names, which lists every kind the image does not declare, Secret and withheld kinds), `cel.nix` (CEL that effect rules share) and `refuse.nix` (`refuse`, which throws every problem a module finds in one message, and the phrases the messages share). |
 
 ## Layout rules
 
 The layout follows these rules, so each change has one place to go:
 
-- An extension is a NixOS module in a variant's
+- An extension is a NixOS module in an image's
   `modules`: its kinds, its units, their outputs and their effects, together.
 - A part of the router layer is a directory of `modules/node/router`. `kinds.nix` is a function
   of `{ chalkosLib, lib, routerLib }` that returns the part's kinds, which `default.nix` loads
   with `routerLib.kinds ./kinds.nix` and sets under one condition with the part's outputs,
   effects and units. A part whose diagnostics have a file of their own keeps them in
   `diagnostics.nix`, a module that `default.nix` imports, under the same condition. A feature
-  that a variant can leave out declares its option `chalkos.router.<feature>.enable` in
+  that an image can leave out declares its option `chalkos.router.<feature>.enable` in
   `default.nix`. An output that reads another feature's kinds filters them by the kinds the image
   declares.
 - The node modules declare the image options; `lib/images-arguments.nix` declares the
-  arguments of `mkImages`. Everything about a cluster or a node is a config kind, not an option.
+  arguments of `mkImage` and `mkImages`. Everything about a cluster or a node is a config kind, not an option.
 - Go code reads a node's config documents and the image's files alone.
 - `nix/` holds how the repository builds and checks chalkos: the packages, the overlay, the
   flake outputs, the docs build, the checks and the test images. `nix/overlay/default.nix` adds
   `pkgs.chalkos`, the scope of chalkos's programs and Go toolchain, which the flake exports as
-  `overlays.default` and mkImages applies to the images' nixpkgs. The node modules take
+  `overlays.default` and mkImage applies to the images' nixpkgs. The node modules take
   chalkos's programs and scripts from that scope and decide where and with which arguments an
   image runs them. A script a module builds from its config, such as the control plane's ports,
   sits next to that module.

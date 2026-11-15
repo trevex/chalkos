@@ -128,7 +128,7 @@ When the last source fails too, the error names the source it ended at, followed
 
 ## Container images use the same documents
 
-On the shipped variant, containerd pulls the pods' container images through the endpoints of the
+With the Kubernetes layer, containerd pulls the pods' container images through the endpoints of the
 same `Mirror` documents. The same `Registry` gives every pod on the node the images of its host,
 without `imagePullSecrets`.
 [Pods pull private images with node credentials](../how-it-works/kubernetes/overview.md#pods-pull-private-images-with-node-credentials)
@@ -140,7 +140,7 @@ hold them all. Besides the workloads' images, these are the images the `images` 
 the scheduler, kube-proxy, etcd, CoreDNS, the pod sandbox and, on an image with flannel, flannel.
 The mirror serves each under the repository and the tag or digest the reference names.
 
-!!! warning "On the shipped variant, a mirror receives the registry's credentials"
+!!! warning "With the Kubernetes layer, a mirror receives the registry's credentials"
 
     The kubelet gives containerd the credentials for the image's registry without the host they
     belong to. containerd sends them to every endpoint that asks for credentials, and to the token
@@ -173,7 +173,7 @@ The node pulls the image with the delivered config. A run that ends with
   the registry or an endpoint redirected to plain HTTP.
 - The registry refuses the pull with 401 or 403: compare the `Registry`'s `host` with the host as the
   image reference names it, port included.
-- On the shipped variant, pods stay in `ErrImagePull` or `ImagePullBackOff`.
+- With the Kubernetes layer, pods stay in `ErrImagePull` or `ImagePullBackOff`.
   [Troubleshooting](troubleshooting.md#image-pulls-fail) reads the units that write the
   credentials and the mirrors.
 

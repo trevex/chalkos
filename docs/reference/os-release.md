@@ -20,7 +20,7 @@ An image carries one os-release file in two places with the same content:
 
 The UKI's Secure Boot signature covers its `.osrel` section, so on a node with
 Secure Boot enforced, an image cannot claim another
-variant or platform than the one it was signed
+name or platform than the one it was signed
 with. chalkctl and chalkd read the UKI's copy of an image they are
 about to install, and `/etc/os-release` for the image a node runs.
 

@@ -22,7 +22,7 @@ A chalkos node configures its interfaces with systemd-networkd from documents li
 filters traffic with nftables, and keeps its clock with chrony. All three come from the node's
 config and the image, and none of them needs Kubernetes.
 
-!!! note "On the shipped variant, Kubernetes picks its addresses from these interfaces"
+!!! note "With the Kubernetes layer, Kubernetes picks its addresses from these interfaces"
 
     A node with Kubernetes picks one address per IP family of the cluster from the addresses its
     interfaces hold, and control planes can share a VIP. flannel connects pods across nodes with
@@ -98,7 +98,7 @@ route back to.
 A router image has no NixOS firewall. The router layer's own table, rendered from the node's
 router documents, takes its place, as [The router's firewall](../router/firewall.md) describes.
 
-!!! note "On the shipped variant, Kubernetes opens more ports"
+!!! note "With the Kubernetes layer, Kubernetes opens more ports"
 
     A node with Kubernetes also accepts the kubelet's port, the NodePort range and VXLAN sent to its
     own addresses. A control plane accepts the API server's and etcd's ports.
@@ -135,8 +135,8 @@ explains.
 
 - The network kinds accept the keys of the image's own networkd. A key that only a newer systemd
   knows is refused until the image carries that systemd.
-- The firewall opens only the ports chalkos's modules open. A service a variant adds opens its
-  ports in the variant's NixOS modules. On a router image, a `FirewallPolicy` to `local` opens
+- The firewall opens only the ports chalkos's modules open. A service an image adds opens its
+  ports in the image's NixOS modules. On a router image, a `FirewallPolicy` to `local` opens
   them.
 - Time servers that DHCP announces are not authenticated.
 

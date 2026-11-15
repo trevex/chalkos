@@ -309,7 +309,7 @@ by the name of its peer group. A neighbour of a listen range is in its peer's gr
 status names it by its address. When vtysh fails, the status gives its error, and the status's
 other parts stand.
 
-An image whose variant sets
+An image whose modules set
 [`chalkos.router.bgp.enable`](../../reference/image-options.md#chalkosrouterbgpenable) to `false`
 carries no FRR and refuses the kinds BGP, BGPPeer, PrefixList, CommunityList and RoutingPolicy.
 chalkd finds no `/etc/frr/frr.conf` there and asks vtysh nothing. The status sets `bgp_absent`,

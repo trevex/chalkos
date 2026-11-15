@@ -116,7 +116,8 @@ between networks.
 
 ## Kubernetes layer
 
-These pages describe what chalkos adds to a node to run Kubernetes on the shipped variant.
+These pages describe what chalkos adds to a node to run Kubernetes on images with the
+Kubernetes layer.
 
 <div class="grid cards" markdown>
 

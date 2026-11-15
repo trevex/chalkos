@@ -146,7 +146,7 @@ The mounts are `nofail`, so a missing disk does not stop the boot. They are not 
 `local-fs.target`, so nothing waits for them. A service that writes below a mount point needs
 `RequiresMountsFor=` on that path in its image, or it writes into the directory on VAR underneath.
 
-!!! note "On the shipped variant, a pod can start before a volume is mounted"
+!!! note "With the Kubernetes layer, a pod can start before a volume is mounted"
 
     The kubelet is not ordered after the mounts. A pod with a host path below a mount point can
     start before its volume is mounted, and write to VAR.

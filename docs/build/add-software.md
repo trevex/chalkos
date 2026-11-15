@@ -20,7 +20,7 @@ You need the flake that builds the cluster's images with `chalkos.lib.mkImages`.
 driver you need a way to see the hardware: a Linux live system booted on the machine, or the
 vendor's specification of the card.
 
-## A module adds a service to every variant
+## A module adds a service to every image
 
 A module of the images is an ordinary NixOS module. This one runs a service on every node, with
 the tool it calls in its own `path`:
@@ -39,20 +39,29 @@ the tool it calls in its own `path`:
 }
 ```
 
-Add it to `modules` in `flake.nix`. Every variant's images carry `modules`, after their
-platform's modules and before the variant's own:
+Add it to `modules` in `flake.nix`. Every image carries `modules`, after its platform's modules
+and before its own:
 
 ```nix
 images = chalkos.lib.mkImages {
-  platforms = [ "metal" ];
   modules = [ ./modules/disk-report.nix ];
-  variants.node.modules = [ ./extensions/bgp.nix ];
+  images = [
+    {
+      name = "node-metal";
+      platform = "metal";
+      modules = [
+        chalkos.nixosModules.kubernetes
+        ./extensions/bgp.nix
+      ];
+    }
+  ];
 };
 ```
 
-A module that only some nodes need goes into one variant's `modules` instead, so the other nodes'
-images stay without it. A module that belongs to a kind of machine goes into a platform.
-[Variants and platforms](variants-and-platforms.md) covers both and the order the modules apply in.
+A module that only some nodes need goes into one image's `modules` instead, so the other nodes'
+images stay without it. A module that belongs to a kind of machine goes into the modules of
+that platform's images.
+[Images and platforms](images-and-platforms.md) covers both and the order the modules apply in.
 
 Nodes have no logins, so the system path holds none of NixOS's default packages. It holds what the
 image's own modules put there, such as systemd, bash, less, nftables, kmod and the mount helpers,
@@ -83,8 +92,9 @@ $ modinfo -n mt7921e
 
 `drivers/net/wireless` belongs to the `wireless` group. Next, check whether the image carries the
 module. The image's module tree is a build output of its own, so this needs no full image build.
-A flake that exports the images' NixOS systems, `nixosConfigurations = images.nixos;` as the
-homelab's does, builds the tree alone. Build it and look for the module:
+A flake that exports the images' NixOS systems,
+`nixosConfigurations = chalkos.lib.nixosOf images;` as the homelab's does, builds the tree alone.
+Build it and look for the module:
 
 ```console
 $ nix build .#nixosConfigurations.node-metal.config.system.build.chalkosKernelModules
@@ -93,7 +103,7 @@ $ find result/ -name 'mt7921e*'
 
 No output means the image lacks the module. A module the image carries prints its path, such as
 `result/lib/modules/6.18.63/kernel/drivers/net/ethernet/mellanox/mlx5/core/mlx5_core.ko.xz`.
-Replace `node-metal` with the variant and platform of the node's image.
+Replace `node-metal` with the name of the node's image.
 
 ## Kernel module groups select whole driver directories
 
@@ -115,18 +125,23 @@ The base groups keep about a third of the kernel's 7,300 modules, about 45 MiB o
 for the cluster's pod network. The further groups are `gpu`, `sound`, `media`, `wireless`,
 `infiniband`, `can` and `industrial`. Your own modules can declare more groups in
 [`chalkos.kernel.groups`](../reference/image-options.md#chalkoskernelgroups). Add a group or
-single modules in the modules of the variant whose nodes need them, here a `gpu` variant:
+single modules in the modules of the image whose nodes need them, here an image `gpu-metal`:
 
 ```nix
-variants.gpu.modules = [
-  {
-    chalkos.kernel.moduleGroups = [ "gpu" ];
-    chalkos.kernel.extraModules = [ "kvm_amd" ];
-  }
-];
+{
+  name = "gpu-metal";
+  platform = "metal";
+  modules = [
+    chalkos.nixosModules.kubernetes
+    {
+      chalkos.kernel.moduleGroups = [ "gpu" ];
+      chalkos.kernel.extraModules = [ "kvm_amd" ];
+    }
+  ];
+}
 ```
 
-Every image of the variant carries them. In `modules`, they go to every variant. The groups you
+Only that image carries them. In `modules`, they go to every image. The groups you
 set add to the base groups. `lib.mkForce` replaces the base groups, for an image that carries
 less.
 
@@ -182,11 +197,12 @@ mediatek/WIFI_MT7961_patch_mcu_1a_2_hdr.bin
 mediatek/WIFI_RAM_CODE_MT7961_1a.bin
 ```
 
-The driver serves several chips. The MT7922 above needs the two files that name it. A variant
-`edge`, for the machines that have the card, takes the group and those files:
+The driver serves several chips. The MT7922 above needs the two files that name it. An image
+`edge-metal`, for the machines that have the card, takes the group and those files in its
+modules:
 
 ```nix
-variants.edge.modules = [
+modules = [
   (
     { pkgs, ... }:
     {
@@ -266,20 +282,21 @@ anything, and these settings break the node or are refused:
 - The outputs `networkd` and `chrony` render the node's network and time servers. They own
   `/run/systemd/network` and `/run/chalkos/outputs/chrony`, so your outputs take other names and
   directories. The evaluation refuses a directory that two outputs share.
-- `mkImages` sets `chalkos.image.name`, `chalkos.platform.name`, `chalkos.kubernetes.enable`,
-  `chalkos.maintenance.osCA` and `chalkos.provenance`. Set the variant's and platform's names, the
-  variant's `kubernetes` and the arguments `osCA`, `revision` and `tag` instead.
+- `mkImage` sets `chalkos.image.name`, `chalkos.platform.name`, `chalkos.maintenance.osCA` and
+  `chalkos.provenance`. Set the image's `name` and `platform` and the arguments `osCA`, `revision`
+  and `tag` instead. A layer's module sets `chalkos.kubernetes.enable` or `chalkos.router.enable`,
+  so list `chalkos.nixosModules.kubernetes` or `chalkos.nixosModules.router` instead.
 - The partition sizes under `chalkos.disk` are laid out when a node is installed. A changed size
   applies only to nodes installed afterwards.
-- On a variant without Kubernetes, a boot is healthy only when no unit that `multi-user.target` or
+- On an image without Kubernetes, a boot is healthy only when no unit that `multi-user.target` or
   `sysinit.target` pulls in failed. A unit of yours that fails makes the next upgrade roll back.
   Jobs that timers and sockets start never count, and
   [`chalkos.upgrade.healthIgnoreUnits`](../reference/image-options.md#chalkosupgradehealthignoreunits)
   lists units whose failure does not count.
 
 Your own image options take a namespace of their own, such as `rack.*` or `chalkos.rack.*`. Under
-`chalkos`, these names are taken: `cni`, `debug`, `disk`, `effects`, `facts`, `kernel`, `kinds`,
-`kubernetes`, `maintenance`, `outputs`, `platform`, `provenance`, `upgrade` and `variant`.
+`chalkos`, these names are taken: `cni`, `debug`, `disk`, `effects`, `facts`, `image`, `kernel`,
+`kinds`, `kubernetes`, `maintenance`, `outputs`, `platform`, `provenance`, `router` and `upgrade`.
 
 ## Keep the image within its slot
 
@@ -294,14 +311,14 @@ fails when:
 - three UKIs, both slots' and an upgrade's temporary copy, take more than 80% of the ESP,
   `chalkos.disk.espSize`, 1 GiB by default.
 
-The message names the variant. Here `<size>` stands for the store's size in bytes, and the slot
+The message names the image. Here `<size>` stands for the store's size in bytes, and the slot
 is the default 3 GiB:
 
 ```text
-error: node: the store's data takes <size> bytes, more than 80% of its slot of 3221225472 (chalkos.disk.storeSize)
+error: node-metal: the store's data takes <size> bytes, more than 80% of its slot of 3221225472 (chalkos.disk.storeSize)
 ```
 
-Leave out what the variant does not need first. Raising `chalkos.disk.storeSize` helps only nodes
+Leave out what the image does not need first. Raising `chalkos.disk.storeSize` helps only nodes
 installed afterwards: a node's partitions are laid out at install, and a node refuses an upgrade
 whose store does not fit its slot.
 
@@ -327,6 +344,6 @@ initrd, which the console shows.
 
 ## What next
 
-- [Variants and platforms](variants-and-platforms.md) puts a driver on the nodes that need it.
+- [Images and platforms](images-and-platforms.md) puts a driver on the nodes that need it.
 - [The image](../how-it-works/node/image.md) explains the module tree, the store and the slots.
 - [Customise the installer](customise-installer.md) adds the same drivers to the installer.

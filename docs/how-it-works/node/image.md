@@ -6,8 +6,8 @@ description: "What an image holds: the erofs store on dm-verity, the signed UKI 
 # The image
 
 An image is the whole operating system of a node in one unsigned raw disk image: systemd-boot, a
-UKI with the kernel and initrd, and a read-only Nix store. `chalkos.lib.mkImages` builds one per
-variant and platform, and every node of that variant and platform boots the same bytes. The
+UKI with the kernel and initrd, and a read-only Nix store. `chalkos.lib.mkImages` builds one for
+each image a flake lists, by name and platform, and every node that runs it boots the same bytes. The
 diagram shows a node's system disk after an upgrade, with the image it runs in slot A and the new
 one in slot B.
 
@@ -217,19 +217,19 @@ whole.
 
 The system path holds none of NixOS's default packages, because nodes have no logins. It holds
 what the image's own modules put there, such as systemd, bash, less, nftables, kmod and the mount
-helpers, and what a variant adds. Each service names the tools it runs in its own path.
+helpers, and what the image's modules add. Each service names the tools it runs in its own path.
 [`chalkos.debug.tools`](../../reference/image-options.md#chalkosdebugtools) adds coreutils, grep, sed,
 findutils, procps, iproute2 and util-linux, and crictl on images with Kubernetes.
 [Status, logs and the console](../../operate/status-and-logs.md#debug-tools-reach-the-node-through-kubectl-debug)
 shows how they are reached.
 
-A platform's modules come before the variant's in each of its images. chalkos's `metal` platform
+A platform's modules come before the image's own in each of its images. chalkos's `metal` platform
 sets the kernel's consoles to the first serial port and the screen, the screen last, so the screen
 is `/dev/console`. Its `kvm` platform sets the kernel's console to the first serial port alone and
 adds the QEMU guest agent, about 6 MiB of store, limited to reporting on the node and shutting it
 down.
 [Add software, drivers and kernel modules](../../build/add-software.md) and
-[Variants and platforms](../../build/variants-and-platforms.md#a-platform-builds-an-image-per-kind-of-machine)
+[Images and platforms](../../build/images-and-platforms.md#a-platform-builds-an-image-per-kind-of-machine)
 show how an image author changes each of these.
 
 ## Every build leaves room for the next image
@@ -258,8 +258,8 @@ slot sizes it was installed with, and refuses a store that does not fit them.
 its partitions and the config it accepts. The inventory names the directory, and chalkctl reads it
 when it validates, installs or upgrades a node. The image is unsigned, and the signing key never
 enters `/nix/store`. `chalkbuild sign` signs a copy of the directory, the boot loader and the UKIs
-on its ESP, and nodes that enforce Secure Boot get the signed copy. mkImages also builds each image
-as an OCI artifact, which `chalkbuild push` pushes to a registry for the nodes to pull.
+on its ESP, and nodes that enforce Secure Boot get the signed copy. Each image also builds as an
+OCI artifact, its `oci`, which `chalkbuild push` pushes to a registry for the nodes to pull.
 [Your first image flake](../../build/first-image.md), [Sign images for Secure Boot](../../build/sign-images.md)
 and [Publish images to a registry](../../build/publish-images.md) cover the build.
 
@@ -270,7 +270,7 @@ and [Publish images to a registry](../../build/publish-images.md) cover the buil
 - An upgrade never replaces systemd-boot. A node keeps the boot loader it was installed with.
 - Slot sizes are fixed at install. A store that outgrows the slots of installed nodes cannot be
   installed on them.
-- The image carries no firmware unless a variant or platform adds it with NixOS's
+- The image carries no firmware unless its modules add it with NixOS's
   `hardware.firmware`.
 
 ## Related pages

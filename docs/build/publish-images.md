@@ -33,14 +33,15 @@ You need:
 ## Expose the layout
 
 An OCI image layout is the directory form of an OCI image, which registries and tools such as
-skopeo copy. `mkImages` returns, beside each image directory `images.<variant>-<platform>`, its
-layout as `oci.<variant>-<platform>`. Each layout is built only when something asks for it.
-Expose the one to publish as a package of the cluster's flake, where `images` is the result of
-`mkImages`:
+skopeo copy. Each image `mkImages` returns carries its layout as `oci`, such as
+`images.node-metal.oci`. Each layout is built only when something asks for it. Expose the one to
+publish as a package of the cluster's flake, where `images` is the result of `mkImages`:
 
 ```nix
-packages.x86_64-linux.node-metal-oci = images.oci.node-metal;
+packages.x86_64-linux.node-metal-oci = images.node-metal.oci;
 ```
+
+`chalkos.lib.ociOf images` returns every image's layout by the image's name.
 
 ## Build the layout
 
@@ -198,7 +199,7 @@ For each node whose config is valid it prints a line of this form, where `<root-
 first 12 hex digits of the image's root hash and `<hash>` the hash of the node's config:
 
 ```text
-node1: valid for the image node-metal at ghcr.io/example/node-metal@sha256:<digest> (node on metal, root hash <root-hash>), config <hash>
+node1: valid for the image node-metal at ghcr.io/example/node-metal@sha256:<digest> (node-metal on metal, root hash <root-hash>), config <hash>
 ```
  The digest is that of the manifest chalkctl read, so it names
 the image that was checked even when the inventory names a tag.

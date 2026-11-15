@@ -21,7 +21,7 @@ checker accepted the node's config. Activating the image gives its UKI a boot en
 fixed number of tries. The node then boots the new image, and an image that does not become
 healthy is replaced by the one before. This page follows one node's upgrade.
 
-!!! note "On the shipped variant, chalkctl rolls the upgrade through the cluster"
+!!! note "With the Kubernetes layer, chalkctl rolls the upgrade through the cluster"
 
     chalkctl upgrades the control planes first, one at a time, while etcd keeps its quorum, and
     drains each node before it reboots. [Kubernetes upgrades](../kubernetes/upgrades.md) describes
@@ -63,9 +63,9 @@ stays on the operator's machine, so a new build changes no node's config, and an
 `chalkctl config apply` after it.
 
 With `--image`, chalkctl takes a prebuilt image: a raw image with `repart-output.json` beside it,
-or an image directory. It installs the image on the nodes that run the image's variant, or on the
+or an image directory. It installs the image on the nodes that run an image of its name, or on the
 nodes `--nodes` names, whatever they run. Nodes on another platform than the image's are skipped
-and named. chalkctl prints each node that gets an image of another variant than the one it runs.
+and named. chalkctl prints each node that gets an image of another name than the one it runs.
 The check of the node's config against the image's schemas decides whether such an image suits
 it. In both cases chalkctl sends the image as the directory holds it, a copy that
 `chalkbuild sign` signed, so the signing key stays on the machine that ran chalkbuild. Without an
@@ -88,7 +88,7 @@ Before it sends anything, chalkctl checks each image against the nodes:
 
 - the UKI boots the store the image holds: its `usrhash=` equals the store's root hash;
 - the UKI's os-release sets `IMAGE_VERSION` empty, so systemd-boot orders the node's entries by
-  generation, and names a variant and platform;
+  generation, and names the image and its platform;
 - the config the inventory gives each node that gets the image suits the `schemas/` and
   `facts/` in the image's directory, as an install checks the config it delivers.
 

@@ -66,18 +66,18 @@ stateDiagram-v2
     Blank --> Maintenance: boots the installer or its image
     Maintenance --> Installed: chalkctl install
     Installed --> Maintenance: boots the installer to reinstall
-    Installed --> Bootstrapped: first control plane, shipped variant
-    Installed --> Joined: other nodes, shipped variant
+    Installed --> Bootstrapped: first control plane, Kubernetes layer
+    Installed --> Joined: other nodes, Kubernetes layer
 ```
 
 The diagram shows a machine's states. A machine reaches maintenance mode in one of two ways:
 
 - It boots the installer, which writes the node's image to the system disk. One installer serves
-  every variant and platform of the cluster.
+  every image and platform of the cluster.
 - A VM boots the node's image from its disk. The image finds no installed node and starts chalkd
   in maintenance mode, and the install happens in place.
 
-On the shipped variant, which runs Kubernetes, the first control plane is bootstrapped once. The
+With the Kubernetes layer, which runs Kubernetes, the first control plane is bootstrapped once. The
 other nodes join the cluster on their own.
 
 ## Sign the image for machines that enforce Secure Boot
@@ -130,7 +130,7 @@ before you install or upgrade with it. A node that does not enforce Secure Boot 
 A VM runs the `kvm` platform's image, which writes its console to the first serial port alone and
 runs the QEMU guest agent. The image author adds `kvm` to the flake's platforms and exposes its
 image as a package, such as `node-kvm`, as
-[Variants and platforms](../build/variants-and-platforms.md#a-platform-builds-an-image-per-kind-of-machine)
+[Images and platforms](../build/images-and-platforms.md#a-platform-builds-an-image-per-kind-of-machine)
 describes.
 
 The homelab runs on metal. The examples of this section install a VM `vm1` of another cluster,
@@ -535,13 +535,13 @@ against the image's schemas. It also sends a node certificate, the OS CA and the
 second keyslot. chalkctl refuses a node that is installed already, with
 `node1 at <address> is installed already`.
 
-!!! note "On the shipped variant, the install carries the node's Kubernetes share"
+!!! note "With the Kubernetes layer, the install carries the node's Kubernetes share"
 
     chalkctl also sends a node with Kubernetes its Kubernetes share, its part of the cluster's
     Kubernetes secrets. A control plane gets the CAs with their keys, a worker a kubelet client
     certificate.
 
-!!! note "On the shipped variant, a revoked name is refused"
+!!! note "With the Kubernetes layer, a revoked name is refused"
 
     Before it installs the node, chalkctl asks the other control planes of the inventory for the
     revoked nodes, and refuses a name that
@@ -688,7 +688,7 @@ covers the prompt.
 Install the remaining nodes the same way. Boot each into maintenance mode, note the address and
 the fingerprint, choose the disk and run `chalkctl install`.
 
-!!! note "On the shipped variant, only the first control plane needs a bootstrap"
+!!! note "With the Kubernetes layer, only the first control plane needs a bootstrap"
 
     Once `node1` is back up in normal mode, [Bootstrap and get a kubeconfig](../kubernetes/bootstrap.md)
     starts the cluster on it. The other nodes need no bootstrap. Workers join at the cluster
@@ -743,4 +743,4 @@ covers a node that does not come up after the reboot.
 - [Sign images for Secure Boot](../build/sign-images.md) covers the key's life and why it must
   not change for an installed node.
 
-On the shipped variant, continue at [Bootstrap and get a kubeconfig](../kubernetes/bootstrap.md).
+With the Kubernetes layer, continue at [Bootstrap and get a kubeconfig](../kubernetes/bootstrap.md).

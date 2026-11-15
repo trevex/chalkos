@@ -35,18 +35,18 @@ chalkd on every node. The sections below take them in that order.
 
 Nix builds the software a node runs: the operating system, Kubernetes and chalkd.
 [`chalkos.lib.mkImages`](../../reference/mkimages.md#mkimages-arguments) evaluates one NixOS system
-per variant and platform. Each system comes from chalkos's node modules, the platform's modules,
-the modules every variant shares and the variant's own. Nix builds each into an unsigned raw disk
-image in an image directory. It also builds one installer, which installs images of every
-platform. mkImages takes no node, address or cluster setting. Its only input of a cluster is the
+per image the flake lists, each with a name and a platform. Each system comes from chalkos's node
+modules, the platform's modules, the modules every image shares and the image's own. Nix builds
+each into an unsigned raw disk image in an image directory. It also builds one installer, which
+installs images of every platform. mkImages takes no node, address or cluster setting. Its only input of a cluster is the
 optional public part of its secrets, for the OS CA. So one image serves every node the
 [inventory](../../reference/kinds.md#inventory) runs on it, control planes and workers alike.
-[Variants and platforms](../../build/variants-and-platforms.md) explains variants, platforms and
+[Images and platforms](../../build/images-and-platforms.md) explains images, platforms and
 the order of their modules.
 
-Everything that differs between nodes is config, delivered at runtime. The split keeps one image
-per variant and platform, so a cluster of three control planes and fifty workers of one variant
-builds and signs one image per platform. A change to what the image fixes, such as the kernel or a
+Everything that differs between nodes is config, delivered at runtime. The split keeps the images
+few, so a cluster of three control planes and fifty workers that run the same software builds and
+signs one image per platform. A change to what the image fixes, such as the kernel or a
 service, is a new image and an [upgrade](upgrades.md). A change to the config, such as the
 hostname or the time servers, is a change to YAML files, delivered with
 [`chalkctl config apply`](../../reference/cli/chalkctl_config_apply.md) without a reboot. A storage
@@ -55,7 +55,7 @@ change that would destroy data is refused there and takes a reset or a reinstall
 describes.
 [Boot and the image](../../reference/boot.md#what-an-image-fixes-and-what-config-delivers) lists
 what falls on each side, and
-[Variants and platforms](../../build/variants-and-platforms.md#add-a-variant-only-for-other-software)
+[Images and platforms](../../build/images-and-platforms.md#add-an-image-only-for-other-software)
 draws the line in detail. [Config and the inventory](config.md) explains the config side.
 
 ## chalkctl and chalklab run on the operator's machine
@@ -102,7 +102,7 @@ The machine's screen shows chalkos-console, the [console](../../operate/console.
 login prompt. It reaches chalkd through a local socket and calls the node API there, for the reads
 and the few actions the console may call. It changes nothing on the node itself.
 
-!!! note "On the shipped variant, chalkd also runs the control plane"
+!!! note "With the Kubernetes layer, chalkd also runs the control plane"
 
     On a control plane, chalkd renders the static pods of etcd, the API server, the
     controller-manager and the scheduler. It holds the VIP when elected, renews the node
@@ -112,11 +112,12 @@ and the few actions the console may call. It changes nothing on the node itself.
 ## An image carries the base and at most one layer
 
 Every image carries the base: chalkd, the config pipeline, storage, upgrades and the node API. A
-layer adds one role on top of it. The Kubernetes layer runs containerd and the kubelet and makes a
-node a control plane or a worker. An image carries it when its modules list
-[`chalkos.nixosModules.kubernetes`](../../reference/mkimages.md#layers). The router layer, which
-[`chalkos.nixosModules.router`](../../reference/mkimages.md#layers) adds, forwards packets between
-the node's interfaces. An image carries one layer at most, and one that lists two fails to build.
+layer is a predefined set of NixOS modules that chalkos ships, which an image lists in its modules
+like any other module. It enables chalkos's modules of one role on top of the base. The
+Kubernetes layer, [`chalkos.nixosModules.kubernetes`](../../reference/mkimages.md#layers), runs
+containerd and the kubelet and makes a node a control plane or a worker. The router layer,
+[`chalkos.nixosModules.router`](../../reference/mkimages.md#layers), forwards packets between the
+node's interfaces. An image carries one layer at most, and one that lists two fails to build.
 
 Each layer writes an empty marker, `/etc/chalkos/layers/<layer>`. chalkd reads the directory when
 it starts and reports the layers in `Info` and `Contract`.
@@ -198,7 +199,7 @@ explains. [Roles and credentials](../../reference/access.md) lists what each rol
 
 ## Related pages
 
-- [Variants and platforms](../../build/variants-and-platforms.md),
+- [Images and platforms](../../build/images-and-platforms.md),
   [Config and the inventory](config.md) and [The image](image.md) for what Nix builds and what a
   node receives.
 - [Security model](security.md) for the client roles and what Secure Boot and the TPM protect.

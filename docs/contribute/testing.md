@@ -19,7 +19,7 @@ Start at the top of the table and go down only when the level above cannot show 
 | --- | --- | --- | --- |
 | Go unit test | next to the code, `*_test.go` in `pkg/` and `cmd/` | logic, parsing, error paths, command output | seconds |
 | Namespace or disk-image test | `pkg/kubernetes/vip`, `pkg/install/parts_test.go`, `pkg/upgrade/lab_test.go`, the `vxlan-rule`, `router-firewall`, `router-policy-routing` and `router-nat64` checks | network rules, partition tables and file systems written by the real tools | seconds |
-| Evaluation test | `test/nix/eval.nix`, `test/nix/kinds.nix` | the arguments of `mkImages`, option defaults, assertions, what a module sets in an image, config kinds | one evaluation |
+| Evaluation test | `test/nix/eval.nix`, `test/nix/kinds.nix` | the arguments of `mkImage` and `mkImages`, option defaults, assertions, what a module sets in an image, config kinds | one evaluation |
 | Image test | `chalkos.tests` of a module, with golden files such as those in `modules/node/router/tests` | the files an image renders from a config, the refusals it gives and the effects a change takes | one run of the image's renderers and validators |
 | Build check | `nix/checks/` | what an image build produces: kernel modules, sizes, the bootspec | one image build |
 | End-to-end test | `test/e2e/` | behaviour that needs a booted node: firmware, Secure Boot, the TPM, the initrd, a cluster | minutes and 2 GiB or more per VM |
@@ -110,7 +110,7 @@ Prefer this level for anything about partitions, firewall rules or interfaces.
 
 `test/nix/eval.nix` holds evaluation tests in the form of `lib.runTests`: each `test*`
 attribute has an `expr` and an `expected` value. They evaluate images with `mkImages` and check
-its arguments, the images' options and assertions, and what the images set; a test that an
+their arguments, the images' options and assertions, and what the images set; a test that an
 evaluation fails uses `builtins.tryEval`. The `eval` check fails with the list of failures, and
 `eval-kinds` does the same for `test/nix/kinds.nix`, the tests of config kinds, outputs,
 effects, facts and validators. Both take their helpers from `test/nix/lib.nix`: `fails`,

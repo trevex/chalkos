@@ -17,14 +17,14 @@ links, serves IPv6, delegates prefixes, relays requests and checks the leases.
 ## Before you begin
 
 You need a router set up as [Set up a router](set-up.md) describes, and the secrets file. Its
-image must carry Kea. Router images do unless their variant sets the image option
+image must carry Kea. Router images do unless their modules set the image option
 [`chalkos.router.dhcp.enable`](../reference/image-options.md#chalkosrouterdhcpenable) to `false`.
 An image without Kea does not accept `DHCPSubnet` documents: `chalkctl validate` reports that it
 `does not accept kind "DHCPSubnet"`. Ask the image author for an image with DHCP;
-[Leave router features out](../build/variants-and-platforms.md#leave-router-features-out) lists
+[Leave router features out](../build/images-and-platforms.md#leave-router-features-out) lists
 the options of every router feature.
 
-Relays need dnsmasq, which router images carry unless their variant sets
+Relays need dnsmasq, which router images carry unless their modules set
 [`chalkos.router.dhcpRelay.enable`](../reference/image-options.md#chalkosrouterdhcprelayenable)
 to `false`. An image without it refuses `DHCPRelay` documents the same way.
 

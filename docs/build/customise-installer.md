@@ -14,8 +14,8 @@ The installer takes its addresses by DHCP on every Ethernet port and carries the
 base module groups. A machine without DHCP on its network, on a VLAN, with a bond, or with a card
 the installer cannot drive needs NixOS modules of its own in the installer. The
 [`installer.modules`](../reference/mkimages.md#installermodules) argument of `chalkos.lib.mkImages`
-adds them. They change the installer alone: the variants' images and the installed nodes stay as
-they are. `mkImages` builds one installer, which installs the images of every platform.
+adds them. They change the installer alone: the images and the installed nodes stay as they are.
+`mkImages` builds one installer, which installs the images of every platform.
 
 The settings go into the installer's image because the kernel command line is part of the UKI.
 Under Secure Boot the UKI is signed, so the boot menu cannot add `ip=` or a driver option, and
@@ -45,7 +45,13 @@ installer to build:
 ```nix
 images = chalkos.lib.mkImages {
   osCA = ./secrets.pub.json;
-  platforms = [ "metal" ];
+  images = [
+    {
+      name = "node-metal";
+      platform = "metal";
+      modules = [ chalkos.nixosModules.kubernetes ];
+    }
+  ];
   installer.modules = [ ./installer.nix ];
 };
 ```
@@ -54,7 +60,7 @@ images = chalkos.lib.mkImages {
 packages.x86_64-linux.installer = images.installer;
 ```
 
-The installer does not carry `modules`, the modules every variant gets. It holds no config, so
+The installer does not carry `modules`, the modules every image gets. It holds no config, so
 modules that read config have nothing to do there.
 
 ## Give a machine a static address
@@ -175,8 +181,7 @@ The build fails on a module name the kernel does not have, so a typo shows at bu
 `linux-firmware` holds the firmware of every vendor and adds several hundred MiB.
 [Add software, drivers and kernel modules](add-software.md) shows how to find the right module and
 take only the firmware files a card needs. The installer only needs to reach the network and see
-the target disk. The image the node runs needs the same drivers, in its variant's or platform's
-modules.
+the target disk. The image the node runs needs the same drivers in its own modules.
 
 ## Change the console
 
@@ -198,7 +203,7 @@ second port lists that port:
 
 A serial port put last becomes `/dev/console` and shows the boot's status and the emergency
 shell too, as
-[Variants and platforms](variants-and-platforms.md#the-last-console-is-devconsole)
+[Images and platforms](images-and-platforms.md#the-last-console-is-devconsole)
 describes.
 
 ## The installer keeps chalkd in installer mode

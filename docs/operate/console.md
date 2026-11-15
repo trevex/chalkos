@@ -32,15 +32,15 @@ The rows at the top stay on every tab. On an installed node they read:
 
 ```text
 node1  node n1  normal  up 3h 12m
-image 81bd81bd81bd generation 7  worker on metal
+image 81bd81bd81bd generation 7  node-metal on metal
 healthy
  1 Overview   2 Network   3 Storage   4 Logs
 ```
 
 The first row names the hostname, the node's name, its mode and how long the machine has run.
 The second names the image by the first 12 hex characters of its root hash, its boot entry's
-generation, and the variant and platform it was built for. The last row lists the tabs, the one on
-screen highlighted.
+generation, and the image's name and the platform it was built for. The last row lists the tabs,
+the one on screen highlighted.
 
 The third row is the node's health. It reads `healthy`, or lists what needs attention, separated by
 semicolons:
@@ -266,7 +266,7 @@ answers the request itself. The question takes the screen below the header, in p
 
 ```text
 node1  node n1  normal  up 3h 12m
-image 81bd81bd81bd generation 7  worker on metal
+image 81bd81bd81bd generation 7  node-metal on metal
 healthy
 systemd asks for a password
 
@@ -405,7 +405,7 @@ The image author turns the console off, or its actions alone, with two image opt
   the actions on its console socket.
 
 Each option takes effect on a node with an upgrade to an image built with it.
-[Variants and platforms](../build/variants-and-platforms.md) shows where an image's options are
+[Images and platforms](../build/images-and-platforms.md) shows where an image's options are
 set.
 
 ## Related pages

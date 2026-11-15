@@ -18,7 +18,7 @@ The second step builds on [Upgrade nodes](../operate/upgrade.md), which covers t
 config and rollback. A run of `chalkctl upgrade` on three control planes and a worker reads:
 
 ```text
-upgrading node on kvm to 23112865089f (v2): cp1, cp2, cp3, w1
+upgrading node-kvm on kvm to 23112865089f (v2): cp1, cp2, cp3, w1
 cp1: installing 23112865089f (v2)
 cp1: config unchanged
 cp1: installed 23112865089f (v2), staged as .staged-chalkos_2.efi
@@ -58,8 +58,8 @@ The output comes from a lab cluster. `...` stands for cp2's and cp3's lines, whi
 ## A new Kubernetes release takes two steps
 
 The image fixes the kubelet's release. The image author sets it in the image's modules, as
-[Choose the kubelet's release](../build/variants-and-platforms.md#choose-the-kubelets-release) describes,
-and every variant with Kubernetes gets a new image. The control plane, kube-proxy, CoreDNS and the
+[Choose the kubelet's release](../build/images-and-platforms.md#choose-the-kubelets-release) describes,
+and every image with the Kubernetes layer is built again. The control plane, kube-proxy, CoreDNS and the
 pod sandbox run the images the `Cluster` document names, as
 [Images name every component but the kubelet](configure.md#images-name-every-component-but-the-kubelet)
 describes.
@@ -281,7 +281,7 @@ write. Right after the previous control plane came back, etcd may need a moment,
 the check again for up to a minute. With cp3 down, an upgrade of cp1 stops there:
 
 ```text
-upgrading node on kvm to c3a9674a8c68: cp1
+upgrading node-kvm on kvm to c3a9674a8c68: cp1
 chalkctl: without cp1 etcd has 1 healthy voter of 3, fewer than the 2 its quorum needs
 ```
 
@@ -386,7 +386,7 @@ room for the pods, or change the budget, then run the same command again. It ski
 run the new image and drains w1 again:
 
 ```text
-upgrading node on kvm to 23112865089f (v2): cp1, cp2, cp3, w1
+upgrading node-kvm on kvm to 23112865089f (v2): cp1, cp2, cp3, w1
 cp1: runs 23112865089f (v2), found healthy
 cp2: runs 23112865089f (v2), found healthy
 cp3: runs 23112865089f (v2), found healthy

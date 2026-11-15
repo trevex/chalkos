@@ -31,7 +31,7 @@ The db key and the OS CA's key never reach a node. Control planes hold the node 
 intermediate of the OS CA that may issue only node certificates.
 [Certificates](certificates.md) describes what each CA issues.
 
-!!! note "On the shipped variant, the Kubernetes CAs are anchors too"
+!!! note "With the Kubernetes layer, the Kubernetes CAs are anchors too"
 
     The Kubernetes, front-proxy and etcd CAs live in the secrets file, and a control plane holds
     them in its Kubernetes share. They vouch for the control plane's certificates, the kubelets'
@@ -175,7 +175,7 @@ at once.
 Control planes hold the node CA's key on their disks. A former control plane, or a stolen copy of
 its disk, can still issue node certificates until a rotation of `os-ca` retires that node CA.
 
-!!! note "On the shipped variant, chalkctl node revoke shuts out a node by name"
+!!! note "With the Kubernetes layer, chalkctl node revoke shuts out a node by name"
 
     `chalkctl node revoke` adds the node's name to a list in the cluster's Kubernetes API. Control
     planes then refuse to renew its certificates, and the API server denies its kubelet every
@@ -239,7 +239,7 @@ virtio-serial channel. It answers only `guest-sync-delimited`, `guest-sync`, `gu
 `guest-network-get-interfaces` and `guest-shutdown`. It never runs commands, or reads or writes
 files, for the host, so the hypervisor's admin gets no shell on the node through it.
 
-!!! note "On the shipped variant, a privileged pod debugs a node"
+!!! note "With the Kubernetes layer, a privileged pod debugs a node"
 
     A node with Kubernetes is debugged from a privileged pod, started with
     `kubectl debug node/<node>`, which sees the node's file systems.
@@ -286,8 +286,8 @@ runs no console, and chalkd serves no console socket.
   built with [`osCA`](../../reference/mkimages.md#osca).
 - There is no certificate revocation list. A leaked client file or kubeconfig stays valid until it
   expires or its CA is rotated, as [Certificates](certificates.md#access-is-revoked-by-rotating-its-ca)
-  explains. On the shipped variant, revoking a node shuts out that node alone, with the gaps listed
-  under [Revocation leaves reads and the certificates valid](../kubernetes/certificates.md#revocation-leaves-reads-and-the-certificates-valid).
+  explains. With the Kubernetes layer, revoking a node shuts out that node alone, with the gaps
+  listed under [Revocation leaves reads and the certificates valid](../kubernetes/certificates.md#revocation-leaves-reads-and-the-certificates-valid).
 - The console asks nobody for a credential. Anyone at the machine's keyboard, or with its BMC,
   reads what the console shows and uses its actions, unless the image turns the actions off.
 - The TPM unseals without a PIN for every boot under the same Secure Boot state, so a machine
@@ -302,8 +302,8 @@ runs no console, and chalkd serves no console socket.
   valid certificates and accepts expired ones until chrony sets it, as
   [The clock decides whether a certificate is valid](certificates.md#the-clock-decides-whether-a-certificate-is-valid)
   explains.
-- On the shipped variant, a `Registry`'s credentials serve the image pulls of every pod on the node.
-  chalkd keeps them in a `credentials.json` that only root reads, but the kubelet hands them to
+- With the Kubernetes layer, a `Registry`'s credentials serve the image pulls of every pod on the
+  node. chalkd keeps them in a `credentials.json` that only root reads, but the kubelet hands them to
   containerd for any pod whose image names the `Registry`'s host, and containerd sends them to that
   host's mirror endpoints as well, as
   [How Kubernetes runs on a node](../kubernetes/overview.md#pods-pull-private-images-with-node-credentials)

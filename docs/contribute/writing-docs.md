@@ -62,9 +62,9 @@ These pages are generated and never edited by hand:
 | Page | Generated from | By |
 | --- | --- | --- |
 | `docs/reference/cli/` | the command trees of chalkctl, chalklab, chalkbuild and chalkcfg, with their help in `pkg/chalkctl/help.go`, `pkg/chalkctl/layers/*/help.go`, `pkg/chalklab/help.go`, `pkg/chalkbuild/help.go` and `pkg/chalkcfg/help.go` | `docgen cli` |
-| `docs/reference/kinds.md` | the JSON Schemas of the default variant's kinds and of a router image's, declared in `modules/node/kinds/builtin/`, `modules/node/kubernetes/kinds.nix` and the `kinds.nix` files of `modules/node/router/`, and of the inventory and the lab file, `pkg/inventory/chalkctl.chalkos.dev_v1alpha1_Inventory.json` and `pkg/chalklab/chalklab.chalkos.dev_v1alpha1_Lab.json` | `docgen kinds` |
-| `docs/reference/mkimages.md`, `docs/reference/image-options.md`, `docs/reference/extension-api.md` | the arguments of `mkImages` in `lib/images-arguments.nix` and the option declarations of the node modules, as nixosOptionsDoc's JSON; their openings, and the table of `chalkosLib` that ends the extension API, in `nix/docs/templates` | `docgen options` |
-| `docs/reference/builtins.md` | the schemas, `facts.json`, `outputs.json` and `effects.json` of an image of the default variant and of one with `kubernetes = false`, which the node modules in `modules/node/` declare | `docgen builtins` |
+| `docs/reference/kinds.md` | the JSON Schemas of the kinds of an image with the Kubernetes layer and of a router image's, declared in `modules/node/kinds/builtin/`, `modules/node/kubernetes/kinds.nix` and the `kinds.nix` files of `modules/node/router/`, and of the inventory and the lab file, `pkg/inventory/chalkctl.chalkos.dev_v1alpha1_Inventory.json` and `pkg/chalklab/chalklab.chalkos.dev_v1alpha1_Lab.json` | `docgen kinds` |
+| `docs/reference/mkimages.md`, `docs/reference/image-options.md`, `docs/reference/extension-api.md` | the arguments of `mkImage` and `mkImages` in `lib/images-arguments.nix` and the option declarations of the node modules, as nixosOptionsDoc's JSON; their openings, and the table of `chalkosLib` that ends the extension API, in `nix/docs/templates` | `docgen options` |
+| `docs/reference/builtins.md` | the schemas, `facts.json`, `outputs.json` and `effects.json` of an image with the Kubernetes layer, of one without a layer and of a router image, which the node modules in `modules/node/` declare | `docgen builtins` |
 | `docs/reference/api.md` | the proto files of the node API and of each layer's API, `api/chalkos/*/v1/*.proto`, through the template `api/markdown.tmpl` | protoc-gen-doc in `buf.gen.yaml` |
 | the navigation region of `zensical.toml` | the command trees | `docgen cli` |
 | `docs/includes/abbreviations.md` | the first sentence of each entry of `docs/reference/glossary.md` | `docgen abbr` |
@@ -214,7 +214,7 @@ nix develop -c go run ./cmd/docgen check docs
 `docgen yaml` reads every `yaml` block and checks each document whose group is `chalkos.dev`, a
 subdomain of it, or the group of a kind the examples declare, such as `rack.example.org` or
 `bgp.example.org`, as `chalkctl validate` checks a node's files: against the schemas of an
-image of the default variant with the examples' kinds, and of the inventory and the lab file. A
+image with the Kubernetes layer and the examples' kinds, and of the inventory and the lab file. A
 kind the image does not declare, a misspelled field or a value of the wrong type fails, and the
 error names the page's line the document starts on. Documents of other groups, such as Kubernetes
 objects, fragments without an `apiVersion` and documents that are not objects are not checked.

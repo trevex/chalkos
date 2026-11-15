@@ -25,14 +25,15 @@ flowchart LR
 
 ## Nix builds images
 
-A flake calls `chalkos.lib.mkImages`, which builds one image per
-variant and platform. A
-variant, such as the lab's `node`, is a set of NixOS modules: the software its nodes run, such as
-the Kubernetes release, drivers and the services of extensions. A platform, `metal` or `kvm`, adds
-the console, agents and drivers of a kind of machine. Each build is an
+A flake calls `chalkos.lib.mkImages` with a list of images. Each has a name, such as the lab's
+`node-kvm`, a platform and NixOS modules: the software its nodes run, such as the Kubernetes
+release, drivers and the services of extensions. A layer is a predefined set of NixOS modules
+that chalkos ships, `chalkos.nixosModules.kubernetes` or `chalkos.nixosModules.router`, which an
+image lists in its modules like any other module to run Kubernetes or route packets. A platform,
+`metal` or `kvm`, adds the console, agents and drivers of a kind of machine. Each build is an
 image directory holding the raw disk image and the JSON
 Schemas of the config the image accepts. One image serves control planes and workers alike, and
-every node of a variant and platform boots the same bytes, so an image holds nothing about a
+every node that runs an image boots the same bytes, so an image holds nothing about a
 particular cluster or node. An image has no version: its store's
 root hash identifies it, and the git revision the flake
 passes to `mkImages` says which commit it was built from. The flake's `flake.lock` pins the
@@ -127,9 +128,9 @@ node certificate needs `chalkctl node renew`. A CA or key changes only when an o
 ## Where chalkos fits
 
 chalkos suits machines that should run as appliances, on bare metal or as virtual machines under
-KVM. Every node of a variant boots the same verified image, and nobody logs in to change it. An
+KVM. Every node that runs an image boots the same verified bytes, and nobody logs in to change it. An
 upgrade either becomes healthy or rolls back by itself. Today its nodes run Kubernetes. It suits
-teams that already describe systems in Nix, because a variant can use any NixOS module. Only the
+teams that already describe systems in Nix, because an image can use any NixOS module. Only the
 images need Nix. chalkctl reads the YAML files and the image directories a build produced, so the
 machine that installs and operates the nodes needs no Nix, an airgapped one included.
 
@@ -147,7 +148,7 @@ election. It differs where Nix changes the trade-offs:
 | Topic | Talos | chalkos |
 | --- | --- | --- |
 | Configuration | One machine configuration per node in Talos's own YAML schema, applied through the API. | YAML documents in the style of Kubernetes objects, one kind per concern, such as `Node`, `Network`, `SystemDisk` and `Cluster`, which an inventory assigns to nodes. chalkctl and chalkd check them against the JSON Schemas the image carries, and a NixOS module in the image can declare a kind of its own. |
-| Images | One image for every node, extended with signed system extensions. | One image per variant and platform, built from NixOS modules, so a GPU variant carries the GPU drivers and the others do not. The kernel is nixpkgs's, with its modules filtered per image, so the binary cache keeps working. |
+| Images | One image for every node, extended with signed system extensions. | One image per kind of node and platform, built from NixOS modules, so a GPU image carries the GPU drivers and the others do not. The kernel is nixpkgs's, with its modules filtered per image, so the binary cache keeps working. |
 | Node certificates | Control planes hold the root CA's key. | Control planes hold a node CA, an intermediate that may issue only server and client certificates. The OS CA's key stays in the secrets file. |
 | Upgrades | The node pulls an installer image from a registry. | chalkctl streams an image Nix built to chalkd, or chalkd pulls it from a registry by the digest chalkctl names, and writes it into the inactive slot. |
 | Maturity | Released, with images for many clouds, hypervisors and boards. | Unreleased; bare metal and KVM on x86-64. |
@@ -162,7 +163,7 @@ image that was built and signed. A change to its software becomes a new image. c
 into the inactive slot and boots it with boot counting, and a boot that does not become healthy
 returns to the image before without anyone at the console.
 
-The module system stays from NixOS. A variant's modules are ordinary NixOS modules, so services,
+The module system stays from NixOS. An image's modules are ordinary NixOS modules, so services,
 kernel settings and packages are declared as on any NixOS machine. The cost is that every change
 to a node's software is an image upgrade with a reboot. Only a node's config changes without one:
 hostname, network, labels, taints, storage, time servers, the cluster's Kubernetes settings and
