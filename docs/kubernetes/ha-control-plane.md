@@ -102,9 +102,11 @@ The default mode of the VIP, `l2`, needs the control planes on one layer-2 segme
 announces the VIP there with gratuitous ARP and unsolicited neighbour advertisements. When the
 control planes sit on different links, or the nodes announce their addresses to a fabric over BGP,
 set `spec.vip.mode` to `routed`. The holder then adds the VIP to an interface as a /32 or /128 host
-address and announces nothing on the link. A routing daemon on each control plane, such as bird
-or FRR from an extension, announces the addresses of that interface to its peers. chalkos does not
-configure the daemon.
+address and announces nothing on the link. A routing daemon on each control plane announces the
+addresses of that interface to its peers: the Kubernetes layer's BGP speaker, FRR, which the
+[`BGPSpeaker`](../reference/kinds.md#bgpspeaker) and
+[`BGPPeer`](../reference/kinds.md#bgppeer-kubernetes) documents configure, or a daemon from an
+extension, such as bird, which chalkos does not configure.
 
 The `Cluster` document names the mode beside the addresses:
 
@@ -153,8 +155,8 @@ Configure the routing daemon to announce the addresses of `node0`. The VIP's rou
 holder: when a new control plane wins the election, the old holder's daemon withdraws the route and
 the new holder's announces it. A failover takes the election's time plus the time the daemons and
 their peers need to move the route. `chalkctl status` shows `vip holder` and `vip standby` as with
-an `l2` VIP. The homelab announces its VIP this way, with bird over BGP on both ports of each
-node, as [Build a home lab](../guides/home-lab.md) sets up.
+an `l2` VIP. The homelab announces its VIP this way, with the Kubernetes layer's BGP speaker over
+both ports of each node, as [Build a home lab](../guides/home-lab.md) sets up.
 
 chalkd adds an IPv6 VIP with a preferred lifetime of 0, so the node never uses it as a source
 address. `ip -6 addr` shows it as `deprecated`, and routing daemons announce it all the same.

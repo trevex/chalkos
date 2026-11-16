@@ -6,8 +6,10 @@ description: "Build the homelab's bird extension from an empty module, test each
 # Write a BGP extension
 
 This tutorial builds the homelab's BGP extension, `extensions/bgp.nix`, from an empty module. The
-extension runs bird on each node, with two config kinds of its own: `Speaker` for the node's side
-of its sessions and `Peer` for its neighbours. At the end the nodes' image declares both kinds,
+homelab's nodes run the Kubernetes layer's built-in BGP speaker; the extension does the same job
+with bird, in the image `node-bird-metal`, which leaves the built-in speaker out. The extension
+runs bird on each node, with two config kinds of its own: `Speaker` for the node's side of its
+sessions and `Peer` for its neighbours. At the end `node-bird-metal` declares both kinds,
 renders `bird.conf` from them, runs bird with the sessions' password, reloads it on a change,
 refuses config bird cannot run, and shows bird's sessions to an operator. Each step adds one part,
 shows how to look at what it produced, and tests it before the next. The last part debugs the
@@ -27,9 +29,10 @@ You need:
   [Prepare the files](home-lab.md#prepare-the-files) and [Get the tools](home-lab.md#get-the-tools)
   of the home lab set it up. Run every command of this page in that shell, in the repository;
 - some Nix: NixOS modules, options and `let` bindings;
-- for the last part, a node that runs the image `node-metal`. [Build a home lab](home-lab.md)
-  installs three. The extension needs a BGP neighbour on an IPv6 network, which the quick start's
-  lab of virtual machines lacks, so that lab can run the steps up to the node but not the sessions.
+- for the last part, a node of the home lab, which [Try it on a node](#try-it-on-a-node) moves to
+  `node-bird-metal`. [Build a home lab](home-lab.md) installs three. The extension needs a BGP
+  neighbour on an IPv6 network, which the quick start's lab of virtual machines lacks, so that lab
+  can run the steps up to the node but not the sessions.
 
 The steps up to [Try it on a node](#try-it-on-a-node) need no node: they run in the Nix sandbox.
 
@@ -43,14 +46,16 @@ git mv extensions extensions.done
 mkdir extensions
 ```
 
-`flake.nix` puts the directory into the nodes' image, and leaves it out of the router's:
+`flake.nix` puts the directory into the image `node-bird-metal`, which turns the Kubernetes layer's
+BGP speaker off, and leaves it out of the router's image and the nodes':
 
 ```nix
 {
-  name = "node-metal";
+  name = "node-bird-metal";
   platform = "metal";
   modules = [
     chalkos.nixosModules.kubernetes
+    { chalkos.kubernetes.bgp.enable = false; }
     ./extensions
   ];
 }
@@ -59,8 +64,8 @@ mkdir extensions
 `extensions/default.nix` imports the extension:
 
 ```nix title="extensions/default.nix"
-# The homelab's extension for the nodes' image: BGP with bird, its Speaker and Peer kinds and the
-# config rendered from them.
+# The homelab's BGP extension, bird with its Speaker and Peer kinds and the config rendered from
+# them, which the image node-bird-metal carries in place of the built-in speaker.
 {
   imports = [ ./bgp.nix ];
 }
@@ -125,9 +130,10 @@ Add `Speaker`, of which a node holds one, since it has no `multiple`:
 chalkctl refuses a second `Speaker` on a node. `export.interfaces` is a nested field: an attribute
 set of options in `spec` becomes an object of the schema. The rule of `routerID` refuses
 `0.0.0.0`, which the pattern of an IPv4 address accepts. Each node needs a router ID of its own,
-so its `Speaker` sits in its own file:
+so its `Speaker` sits in a file of that node alone. node1's holds the fields of its built-in
+`BGPSpeaker`:
 
-```yaml title="nodes/node1.yaml"
+```yaml
 apiVersion: bgp.example.org/v1alpha1
 kind: Speaker
 metadata: {name: bgp}
@@ -143,7 +149,7 @@ The schemas are a build output of their own, which takes seconds and needs no im
 and print a field:
 
 ```console
-$ nix build .#nixosConfigurations.node-metal.config.system.build.chalkosSchemas
+$ nix build .#nixosConfigurations.node-bird-metal.config.system.build.chalkosSchemas
 $ jq .properties.spec.properties.asn result/bgp.example.org_v1alpha1_Peer.json
 {
   "description": "AS number of the neighbour.",
@@ -168,32 +174,88 @@ $ jq .properties.spec.properties.asn result/bgp.example.org_v1alpha1_Peer.json
 not compile or a misspelled option fails this build, with the option's path in the message. It is
 the fastest check of a kind: run it after each change to one.
 
-### Validate the nodes' files
+### Validate a node's files
 
-The homelab's files hold `Speaker` and `Peer` documents: `bgp/fabric.yaml` the `Peer` and the
-ports' `Network` documents, and each `nodes/node<n>.yaml` its node's `Speaker`. Every node peers
-with the same router on the same two ports, so the inventory's group `nodes` gives every node
-`bgp/fabric.yaml`. A node with other neighbours or port names leaves that file out and brings its
-own `Peer` and `Network` documents. `chalkctl validate`
-checks them against the schemas of the image the inventory names. It reads the built image, so
-build it first:
+The homelab's files hold the built-in `BGPSpeaker` and `BGPPeer` documents, which
+`node-bird-metal` does not accept. Give node1 a file of its own with the extension's documents in
+their place. Start from its current file:
 
 ```sh
-nix build .#node-metal -o images/node-metal
+cp nodes/node1.yaml nodes/node1-bird.yaml
+```
+
+In `nodes/node1-bird.yaml`, replace the `BGPSpeaker` document with the `Speaker` above, and add
+the ports' `Network` documents of `bgp/fabric.yaml` and a `Peer` for the router. bird runs a
+session on each interface of the `Peer`, both to the router's first address:
+
+```yaml
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-enp1s0}
+spec:
+  match: {name: enp1s0}
+  network: {ipv6AcceptRA: true}
+  ipv6AcceptRA: {useGateway: false}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-enp2s0}
+spec:
+  match: {name: enp2s0}
+  network: {ipv6AcceptRA: true}
+  ipv6AcceptRA: {useGateway: false}
+---
+apiVersion: bgp.example.org/v1alpha1
+kind: Peer
+metadata: {name: router}
+spec:
+  address: "fdc8:a1b2:c3d4:1::1"
+  asn: 65000
+  interfaces: [enp1s0, enp2s0]
+  password: {secretRef: {name: bgp, key: password}}
+```
+
+In `chalkos.yaml`, add the image and give node1 that image and its files, outside the group
+`nodes`, whose `bgp/fabric.yaml` holds `BGPPeer` documents:
+
+```yaml title="chalkos.yaml"
+apiVersion: chalkctl.chalkos.dev/v1alpha1
+kind: Inventory
+metadata: {name: homelab}
+spec:
+  images:
+    router-metal: {source: {directory: images/router-metal}}
+    node-metal: {source: {directory: images/node-metal}}
+    node-bird-metal: {source: {directory: images/node-bird-metal}}
+  groups:
+    router: {imageName: router-metal, files: [router/*.yaml]}
+    nodes: {imageName: node-metal, files: [cluster/*.yaml, bgp/fabric.yaml, bgp/secrets.yaml]}
+  nodes:
+    router: {address: 192.168.1.2, groups: [router]}
+    node1:
+      address: "fdc8:a1b2:c3d4:ff::11"
+      imageName: node-bird-metal
+      files: [cluster/*.yaml, bgp/secrets.yaml, nodes/node1-bird.yaml]
+    node2: {address: "fdc8:a1b2:c3d4:ff::12", groups: [nodes], files: [nodes/node2.yaml]}
+    node3: {address: "fdc8:a1b2:c3d4:ff::13", groups: [nodes], files: [nodes/node3.yaml]}
+```
+
+`chalkctl validate` checks each node's documents against the schemas of the image the inventory
+names. It reads the built image, so build it first:
+
+```sh
+nix build .#node-bird-metal -o images/node-bird-metal
 chalkctl validate
 ```
 
 The image build takes minutes, so keep it for the files of the nodes. With `asn` misspelled as
-`asm` in `bgp/fabric.yaml`, `chalkctl validate` refuses all three nodes:
+`asm` in the `Peer`, `chalkctl validate` refuses node1:
 
 ```console
 $ chalkctl validate
-chalkctl: the config of 3 nodes is invalid:
+...
+chalkctl: the config of 1 node is invalid:
 node node1: Peer "router": - at '/spec': additional properties 'asm' not allowed
-- at '/spec': missing property 'asn'
-node node2: Peer "router": - at '/spec': additional properties 'asm' not allowed
-- at '/spec': missing property 'asn'
-node node3: Peer "router": - at '/spec': additional properties 'asm' not allowed
 - at '/spec': missing property 'asn'
 ```
 
@@ -237,8 +299,8 @@ the delivery when one fails. The same renderer and check run in the image's test
 ### See what the output renders
 
 A test gives the image a config and records what the image makes of it. Copy the example config of
-a homelab node, which holds a `Speaker`, the `Peer`, the `Secret` with the password and the
-`Network` documents of the ports, and declare a test of it in the body:
+a homelab node that runs the extension, which holds a `Speaker`, the `Peer`, the `Secret` with the
+password and the `Network` documents of the ports, and declare a test of it in the body:
 
 ```sh
 mkdir extensions/bgp-examples
@@ -254,7 +316,7 @@ Build the results of the image's tests. The build takes seconds, needs no image,
 whatever the tests got:
 
 ```console
-$ nix build .#nixosConfigurations.node-metal.config.system.build.chalkosTestResults
+$ nix build .#nixosConfigurations.node-bird-metal.config.system.build.chalkosTestResults
 $ cat result/summary.txt
 PASS bgp-fabric
 PASS chrony-empty
@@ -294,7 +356,7 @@ The refusal names the output and the exit status alone, as on a node, because a 
 echo the documents. What bird printed is in the build's log. Build with `-L` to print it:
 
 ```console
-$ nix build -L .#nixosConfigurations.node-metal.config.system.build.chalkosTestResults
+$ nix build -L .#nixosConfigurations.node-bird-metal.config.system.build.chalkosTestResults
 ...
 chalkos-test-results> 2026/11/16 07:52:35 output bird-conf: its check /nix/store/39kg0jfg9wiagx56jrf3hpnwjvh6xv44-chalkos-output-bird-conf-check failed (exit 1): "bird: 2026-11-16 07:52:35.151 [0000] <FATAL> /build/chalkos-tests-2581098952/.staging/bird-conf.1551592570/bird.conf:4:1 syntax error, unexpected PROTOCOL, expecting ';'"
 ...
@@ -371,7 +433,7 @@ Build the image. The build checks what the evaluation cannot, such as a granted 
 nothing:
 
 ```sh
-nix build .#node-metal -o images/node-metal
+nix build .#node-bird-metal -o images/node-bird-metal
 ```
 
 ## Reload bird on a change
@@ -548,16 +610,18 @@ git rm -r extensions.done
 
 ## Try it on a node
 
-Build the image and check the nodes' files against it, then upgrade one node first:
+Build the image and check node1's files against it, as in
+[Validate a node's files](#validate-a-nodes-files), then move node1 to the image with an upgrade,
+which carries node1's files:
 
 ```sh
-nix build .#node-metal -o images/node-metal
+nix build .#node-bird-metal -o images/node-bird-metal
 chalkctl validate
 chalkctl upgrade --nodes node1 --secrets=secrets.age
 ```
 
 The node checks its config with the new image's validators, renderers and checks before it
-installs anything, and boots the image with bird. Change the documents alone, such as a new `Peer`, with
+installs anything, and boots the image with bird in place of the built-in speaker. Change the documents alone, such as a new `Peer`, with
 `chalkctl config apply`, which needs no new image.
 
 ## Debug on the node

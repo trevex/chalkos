@@ -369,7 +369,8 @@ tcp-connect           operator  Opens a TCP connection to an address and port, c
 Each diagnostic names the least role that runs it. Readers run those that read the node's state.
 `ping`, `dns-query` and `tcp-connect` send traffic from the node, and `nft-ruleset` shows its
 firewall, so they need an operator. A parameter in brackets may be left out. `bird-protocols`
-comes from the homelab's BGP extension. Every image has the others.
+comes from the homelab's BGP extension, which the image `node-bird-metal` carries. Every image has
+the others.
 
 Name the diagnostic and give each parameter as `<parameter>=<value>`:
 

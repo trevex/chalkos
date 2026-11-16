@@ -9,8 +9,9 @@ This page is for an image author who builds a cluster's images with Nix. At the 
 flake that builds unsigned images into the directories the cluster's inventory names, such as
 `images/node-metal`, and you know what the build writes there and what else `mkImages` returns.
 The page follows the
-[homelab example](https://github.com/trevex/chalkos/tree/main/examples/homelab): two images for
-bare metal, one for its router and one that its three Kubernetes nodes run.
+[homelab example](https://github.com/trevex/chalkos/tree/main/examples/homelab): images for bare
+metal, one for its router and one that its three Kubernetes nodes run, and a third that carries
+an extension.
 
 ## Before you begin
 
@@ -23,8 +24,8 @@ needs that directory and no Nix.
 
 ## The flake calls mkImages
 
-The homelab's flake builds two images. The nodes' carries an extension that adds two config
-kinds:
+The homelab's flake builds three images. The third, `node-bird-metal`, is the nodes' image with
+an extension that adds two config kinds in place of the Kubernetes layer's BGP speaker:
 
 ```nix title="flake.nix"
 --8<-- "examples/homelab/flake.nix"
@@ -37,8 +38,9 @@ The call sets two arguments:
 - `revision` is the commit the images are built from. chalkctl shows it beside an image's root
   hash.
 - `images` lists the images to build, each with its name, its platform and its NixOS modules.
-  Both are for bare metal. `router-metal` lists the router layer, `chalkos.nixosModules.router`.
-  `node-metal` lists the Kubernetes layer, `chalkos.nixosModules.kubernetes`, and the extension's
+  All are for bare metal. `router-metal` lists the router layer, `chalkos.nixosModules.router`.
+  `node-metal` lists the Kubernetes layer, `chalkos.nixosModules.kubernetes`. `node-bird-metal`
+  lists the Kubernetes layer, a module that turns its BGP speaker off, and the extension's
   modules in `./extensions`.
 
 A layer is a predefined set of NixOS modules that chalkos ships, listed like any other module.
@@ -175,7 +177,7 @@ KVM, `zstd` compresses the raw image for transport, and `dd` or a USB writer put
 
 ## An image carries its OCI layout, NixOS system and tests
 
-The homelab exposes two images and the installer by name. Each image `mkImages` returns is its
+The homelab exposes three images and the installer by name. Each image `mkImages` returns is its
 image directory, and carries the other forms of the image as attributes. Each is built only when
 something asks for it:
 

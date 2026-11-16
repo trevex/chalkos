@@ -209,9 +209,9 @@ dynamic, so networkd may otherwise remove the VIP when it configures the link ag
 planes then need no shared L2 network, and clients reach the VIP through the routers that learn
 the route. A failover takes the election's time plus the time the routing daemons need to
 withdraw the route on the old holder, announce it from the new one and pass the change through
-their peers. The homelab example works this way: bird on each control plane announces the
-addresses of its dummy interface `node0`, the node's own and the VIP while it holds it, to the
-router over BGP.
+their peers. The homelab example works this way: FRR, the Kubernetes layer's BGP speaker, on each
+control plane announces the addresses of its dummy interface `node0`, the node's own and the VIP
+while it holds it, to the router over BGP.
 
 The election runs on an etcd lease of 10 seconds, and every control plane checks its API server
 every 2 seconds. The diagram shows the states of one control plane's chalkd.

@@ -9,7 +9,9 @@ This page is for an image author whose changed image is ready to reach running n
 the image has passed its build checks and its tests, every node's config has passed
 `chalkctl validate`, the nodes run the image, and `chalkctl status` and `chalkctl logs` show that
 the outputs rendered and the services read them. The page uses the homelab and its BGP extension,
-`extensions/bgp.nix`.
+`extensions/bgp.nix`, in the image `node-bird-metal`, which node1 runs as
+[Validate a node's files](../guides/bgp-extension.md#validate-a-nodes-files) of the BGP guide sets
+it up.
 
 A change reaches a node in one of two ways. A changed image reaches it with
 [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md), which brings the node's config along.
@@ -32,7 +34,7 @@ You need:
 Build the image:
 
 ```sh
-nix build .#node-metal -o images/node-metal
+nix build .#node-bird-metal -o images/node-bird-metal
 ```
 
 The build fails before any node gets the image when one of these checks fails:
@@ -72,22 +74,21 @@ names for it. It also runs the image's rules that read no facts, and reaches no 
 
 ```console
 $ chalkctl validate
-node1: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config 228343216657e1b2015b346b5a8e582a69c65cf0ef037786e443dcf2fd832f4b
-node2: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config c45d7f3395eb69e67f555de1dd915133f24dea76554d492266eea6d42f721f3d
-node3: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config 3473dd3e12e4ca9a93d4a1444678d97aa1b41ed77f8a71c2d979955b68e3c1b0
-router: valid for the image router-metal (router-metal on metal, root hash befe5273a465), config b77dea492acd11e559461e079cdbb9bc53de8c8e46400672645d6a262719faa9
+node1: valid for the image node-bird-metal (node-bird-metal on metal, root hash ae887bd49725), config 38e7cd6bdfc746bba5396dcbfe574ee517083219fbd82cd9ababf6d5b96a9e00
+node2: valid for the image node-metal (node-metal on metal, root hash 3b80d0bf1243), config 0e5fead5c865778e811c07598b1c003e06d141e83ffd1f8ab3c7337ffc15d909
+node3: valid for the image node-metal (node-metal on metal, root hash 3b80d0bf1243), config 83a325ede9d2edf4ccc06720aa0289b594c00fa48a580d7fad2bed8e8b62de14
+router: valid for the image router-metal (router-metal on metal, root hash cd7ac91cb655), config dc6178bbae55b1fe0e6af7b10502a1099f708c995b7be242ee95bb92050f87e6
 ```
 
 Each line names the image as the inventory names it, the name and platform it was built with, the
 start of its root hash, and the hash of the config the node would get. A `Peer` with `asn: 0`, below
-the kind's minimum of 1, fails on every node that gets the file:
+the kind's minimum of 1, fails on every node that gets the file, here node1 alone:
 
 ```console
 $ chalkctl validate
-chalkctl: the config of 3 nodes is invalid:
+...
+chalkctl: the config of 1 node is invalid:
 node node1: Peer "router": - at '/spec/asn': minimum: got 0, want 1
-node node2: Peer "router": - at '/spec/asn': minimum: got 0, want 1
-node node3: Peer "router": - at '/spec/asn': minimum: got 0, want 1
 ```
 
 Rules that compare with the config a node runs, such as the `Peer` rule that keeps `asn`, and

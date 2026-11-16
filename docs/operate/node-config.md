@@ -315,9 +315,9 @@ encryption and which changes a node accepts.
 
 ## Keep secret values in Secret documents
 
-A `Secret` document holds secret values by key in `spec.data`. A field of an extension's kind
-references one of its keys instead of holding the value. The homelab's `Peer` for `router` in
-`bgp/fabric.yaml` does so with `password: {secretRef: {name: bgp, key: password}}`, and
+A `Secret` document holds secret values by key in `spec.data`. A field of a kind, built in or an
+extension's, references one of its keys instead of holding the value. The homelab's `BGPPeer`
+documents in `bgp/fabric.yaml` do so with `password: {secretRef: {name: bgp, key: password}}`, and
 `bgp/secrets.yaml` holds the `Secret` named `bgp`. chalkctl refuses a set in which a reference names a `Secret` or a key that
 the set lacks.
 

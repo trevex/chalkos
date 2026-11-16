@@ -200,7 +200,7 @@ shell functions the check scripts call: `fail`, `retry` and `refuses`, and for t
 | `template-lab` | The lab template's image builds, and `chalkctl validate` accepts the template's YAML with it. |
 | `template-router-lab` | The router lab template's two images build, and `chalkctl validate` accepts the template's YAML with them. |
 | `template-cluster-metal` | The metal cluster template's image and installer build, and `chalkctl validate` accepts the template's YAML with the image. |
-| `example-homelab` | The homelab example's image builds, and `chalkctl validate` accepts its YAML, `Peer` documents included, with it. |
+| `example-homelab` | The homelab example's images build, and `chalkctl validate` accepts its YAML, `BGPSpeaker` and `BGPPeer` documents included, with them. The image with the bird extension evaluates. |
 | `example-extensions` | The extensions example's image builds, and `chalkctl validate` accepts its YAML, `Rack` and `Hardware` documents included, with it. |
 | `image-contract` | An image directory describes itself and carries a schema for each kind it lists. |
 | `image-oci` | The test image's OCI layout: one manifest of the chalkos artifact type, whose header names the image directory's root hash and platform, whose layers are the image's parts and contract in order, and whose contract holds the directory's `metadata.json`. |
@@ -330,7 +330,7 @@ Every check builds with `nix build`, and a change runs the checks of the parts i
 | End-to-end tests in `test/e2e` | `go-lint`, and the end-to-end checks of the changed tests |
 | `api/chalkos/*/v1/*.proto` | `api-generated`, `docs-generated`, `go-unit`, `go-lint` |
 | Command help, option descriptions | `docs-generated`, `docs` |
-| Pages in `docs/` | `docs`, and `example-homelab-validator-docs` for `validate-config.md` and `test-an-extension.md` |
+| Pages in `docs/` | `docs`, and `example-homelab-validator-docs` for `guides/bgp-extension.md` |
 | Modules in `modules/` or `lib/` | `eval`, `eval-kinds`, `image-tests`, and the build and end-to-end checks of what the module does |
 | `examples/homelab` | `example-homelab`, `example-homelab-validator-docs`, `image-tests` |
 | `examples/extensions` | `example-extensions`, `image-tests` |
