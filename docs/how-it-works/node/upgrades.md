@@ -282,22 +282,25 @@ node and waits until it runs the new image's root hash in a new boot, as the boo
 tells, and its boot was found healthy: the entry is blessed, and the node's status, which runs the
 health check's checks when chalkctl asks, finds the boot itself healthy. The status check also
 covers the boot of an entry blessed before, which systemd-boot does not count.
-`chalkctl node reboot` runs the same step. Once the boot has settled, after systemd finished starting it and
-the image's health timeout passed, chalkctl stops when the boot stays unhealthy for a minute. A
-check that fails once, such as an etcd health check that answered late, does not stop it, and a
-healthy look starts the minute over. systemd-boot counts the new entry's tries, and the
+`chalkctl node reboot` runs the same step. Once the boot has settled, after systemd finished
+starting it and the image's health timeout passed, chalkctl stops when the boot stays unhealthy for
+a minute. A check that fails once, such as an etcd health check that answered late, does not stop
+it, and a healthy look starts the minute over. systemd-boot counts the new entry's tries, and the
 health check blesses the entry once the boot is good.
 [Boot, health and rollback](boot-and-rollback.md) explains the counted tries, the health check,
 the blessed boot and the fallback.
 
-chalkctl upgrades nodes without Kubernetes in batches of `--max-unavailable`, 1 by default. Within
-each group the nodes go in the order of their names, and a node without Kubernetes counts with the
-workers. A batch that fails stops the run once the batch's other nodes finish. With
+chalkctl upgrades the nodes that act for the others, such as Kubernetes control planes, one at a
+time, and then the other nodes in batches of `--max-unavailable`, 1 by default. A node without
+Kubernetes counts among the other nodes. Within each of the two groups the nodes go in the order
+of their names. A batch that fails stops the run once the batch's other nodes finish. With
 `--until stage`, it stages the image on every node and stops, and `chalkctl node activate` later
 makes it boot next. With `--until activate`, it stages and activates the image on every node
 without holding or rebooting it, and each node boots the new image at its next reboot. A node that
 has the image staged or active already gets the image again only when the config kept for it is
 not the inventory's. The node then replaces that config without writing the image again.
+Staging another image replaces a staged one. An image the run leaves staged or active boots with
+the config the upgrade gave it, unless a later `config apply` changes it.
 
 ## A rolled-back node stops the run
 

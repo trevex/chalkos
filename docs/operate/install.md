@@ -49,10 +49,10 @@ A physical machine boots the installer from a USB stick larger than the installe
 !!! note "Installing without Secure Boot"
 
     The steps work on machines with Secure Boot off: leave out the signing, and keep the
-    inventory on the unsigned image directory. The node then checks no signatures and seals its
-    disk keys to the Secure-Boot-off state of PCR 7. Anyone who holds an operator certificate can
-    then run an image of their own on it.
-    [Security model](../how-it-works/node/security.md) explains why.
+    inventory on the unsigned image directory. Anyone who holds an operator certificate can then
+    run an image of their own on the node, as
+    [Secure Boot limits a node to images the key holder signed](../how-it-works/node/security.md#secure-boot-limits-a-node-to-images-the-key-holder-signed)
+    explains.
 
 A machine passes through maintenance mode once: it boots the installer, which has no config,
 `chalkctl install` gives it its config and secrets, and it reboots as an installed node in normal
@@ -62,10 +62,10 @@ shows the whole life of a node.
 ## Sign the image for machines that enforce Secure Boot
 
 Skip this step on a machine that does not enforce Secure Boot: it takes the unsigned
-`images/node-metal` as it is. The image author's build writes the unsigned image directory, such as `images/node-metal`. The
-firmware of a machine that enforces Secure Boot boots only a boot loader and a UKI signed by a
-certificate in its db. Sign a copy of the build into `images/node-metal-signed` with
-[`chalkbuild sign`](../reference/cli/chalkbuild_sign.md):
+`images/node-metal` as it is. The firmware of a machine that enforces Secure Boot boots only a
+boot loader and a UKI signed by a certificate in its db. Sign a copy of the build with
+[`chalkbuild sign`](../reference/cli/chalkbuild_sign.md), which also checks the copy against
+`db.crt`:
 
 ```console
 $ rm -rf images/node-metal-signed
@@ -73,14 +73,10 @@ $ chalkbuild sign --key keys/db.key --cert keys/db.crt images/node-metal images/
 signed images/node-metal-signed/chalkos.raw
 ```
 
-chalkbuild signs the copy's boot loader and UKI and checks them against `db.crt`. The output
-directory must not exist, so `rm -rf` removes the signed copy of an earlier build first.
-
-Point the inventory's image at the signed copy, `images/node-metal-signed`, as
+The output directory must not exist, so `rm -rf` removes the copy of an earlier build. Point the
+inventory's image at the signed copy, as
 [Point the inventory at the signed copy](../build/sign-images.md#point-the-inventory-at-the-signed-copy)
-shows for the homelab. Signing leaves the store and its root hash as they are, and
-`chalkctl validate` checks the config against the signed copy. Sign every new build again before
-you install or upgrade with it.
+shows, and sign every new build again before you install or upgrade with it.
 
 ## Boot the machine into maintenance mode
 
@@ -92,27 +88,22 @@ $ ls installer/
 chalkos-installer.iso  chalkos-installer.iso.json  chalkos-installer.raw  metadata.json  repart-output.json
 ```
 
-The `.iso` is a hybrid image. It boots from a CD, from virtual media and written to a USB
-stick. The `.raw` is the same system as a plain disk image, for machines that boot better from
-one. The installer takes its addresses by DHCP on every Ethernet port, and by SLAAC where a
-router sends advertisements.
-[Customise the installer](../build/customise-installer.md) gives it static addresses, VLANs,
-bonds or extra drivers.
+The `.iso` boots from a CD, from virtual media and written to a USB stick. The `.raw` is the same
+system as a plain disk image, for machines that boot better from one. The installer takes its
+addresses by DHCP and SLAAC; [Customise the installer](../build/customise-installer.md) gives it
+static addresses, VLANs, bonds or extra drivers. Use the cluster's installer: the generic one of
+the chalkos flake, `github:trevex/chalkos#installer`, has no OS CA and accepts any client.
 
-The generic installer of the chalkos flake, `github:trevex/chalkos#installer`, has no OS CA
-and accepts any client until it installs a node, so use the cluster's own.
-
-The firmware boots the installer only when its boot loader and UKI are signed by a
-certificate in db. Sign a copy of the installer's directory, its raw image and its ISO:
+Sign a copy of the installer's directory, its raw image and its ISO, with the same key as the
+images:
 
 ```sh
 rm -rf installer-signed
 chalkbuild sign --key keys/db.key --cert keys/db.crt installer installer-signed
 ```
 
-Sign the installer with the same key as the images. An image signed with another key boots, but
-its first boot asks for the recovery key, as
-[Sign the installer](../build/sign-images.md#sign-the-installer) explains.
+An image signed with another key than the installer boots, but its first boot asks for the
+recovery key, as [Sign the installer](../build/sign-images.md#sign-the-installer) explains.
 
 Write the signed ISO to the whole stick, not to a partition of it:
 
@@ -125,10 +116,9 @@ sudo dd if=installer-signed/chalkos-installer.iso of=/dev/<usb-disk> \
 command overwrites everything on the stick. With a BMC, mount
 `installer-signed/chalkos-installer.iso` as virtual media instead.
 
-Boot the machine from the stick through the firmware's boot menu. The installer's kernel
-writes to the screen and to the first serial port, where a BMC's serial-over-LAN shows it.
-The screen shows the boot's status and then the console; chalkd's lines appear on the
-serial port.
+Boot the machine from the stick through the firmware's boot menu. The screen shows the boot's
+status and then the console. The first serial port, which a BMC's serial-over-LAN shows, gets the
+kernel's and chalkd's lines.
 
 ## Note the address and the fingerprint
 
@@ -144,20 +134,11 @@ fingerprint <fingerprint>
 addresses 192.168.1.50
 ```
 
-chalkd prints its mode and the fingerprint on the serial console too, then its addresses with the
-fingerprint whenever they change:
-
-```text
-chalkd: maintenance mode, accepting clients of the OS CA; certificate fingerprint <fingerprint>
-chalkd: addresses 192.168.1.50; certificate fingerprint <fingerprint>
-```
-
-`<fingerprint>` is 64 hex characters. Note it and the address. The fingerprint tells chalkctl that
-it talks to this machine and not to something in the network path. chalkd keeps the certificate
-in memory, so a reboot into maintenance mode shows a new one.
-
-When chalkd's first line on the serial console says `accepting any client`, the installer or
-image has no OS CA. It is the generic installer, or the flake's `mkImages` has no `osCA`.
+`<fingerprint>` is 64 hex characters. Note it and the address. A reboot into maintenance mode
+shows a new fingerprint. chalkd prints both on the serial console too, as
+[A node in maintenance mode is trusted by its fingerprint](../how-it-works/node/security.md#a-node-in-maintenance-mode-is-trusted-by-its-fingerprint)
+shows. When its first line there says `accepting any client`, the installer or image has no OS CA:
+it is the generic installer, or the flake's `mkImages` has no `osCA`.
 
 In maintenance mode the machine takes its addresses by DHCP, and by SLAAC where a router sends
 advertisements. Such an address is not yet the one the inventory names, so the commands below
@@ -220,20 +201,12 @@ and the fingerprint:
 chalkctl install node1 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint>
 ```
 
-`--fingerprint` pins the node's certificate from the first connection. When reading the console
-is impractical, `--insecure` accepts any certificate. It prints the fingerprint it saw, as
-`chalkctl: the node's certificate fingerprint is <fingerprint>`, for you to compare with the
-console afterwards. chalkctl then sends the secrets over a second connection pinned to that
-fingerprint.
-
-chalkctl sends the node its config, a node certificate, the OS CA and the secret of the second
-keyslot. It refuses a node that is installed already, with `node1 at <address> is installed already`.
-
-!!! note "With the Kubernetes layer, the install carries the node's Kubernetes share"
-
-    chalkctl also sends a node with Kubernetes its Kubernetes share, its part of the cluster's
-    Kubernetes secrets. A control plane gets the CAs with their keys, a worker a kubelet client
-    certificate.
+When reading the console is impractical, `--insecure` accepts any certificate and prints
+`chalkctl: the node's certificate fingerprint is <fingerprint>`. Compare it with the console
+afterwards. chalkctl sends the node its config, certificates and secrets, with the Kubernetes layer
+its [Kubernetes share](../how-it-works/kubernetes/overview.md#the-kubernetes-share-holds-the-secrets-of-a-node)
+too. It refuses a node that is installed already, with
+`node1 at <address> is installed already`.
 
 !!! note "With the Kubernetes layer, a revoked name is refused"
 
@@ -241,9 +214,10 @@ keyslot. It refuses a node that is installed already, with `node1 at <address> i
     name that `chalkctl node revoke` revoked, with
     `node3 is revoked since <time>, and install installs node3 only once chalkctl node unrevoke node3
     lets it back in, or with --force`.
-    It also refuses while bootstrapped control planes do not say which nodes are revoked. A control
-    plane still in maintenance mode does not count, so the first nodes install. `--force` installs
-    without asking.
+    It also refuses while control planes were bootstrapped and none says which nodes are revoked.
+    A control plane that does not answer as an installed node, such as one in maintenance mode or
+    switched off, counts as not installed yet, so the cluster's first nodes install while the
+    others wait. `--force` installs without asking.
     [Reuse a removed node's name](add-remove-nodes.md#reuse-a-removed-nodes-name) frees the name.
 
 The installer gets the image as well, from the directory of the node's image in the inventory or
@@ -292,7 +266,8 @@ boots nothing.
 
 An install with another image that lays the disk out the same way continues on it too, while
 STATE holds neither an installed node nor the earlier image's config, as after a refused config.
-The installer writes the new image over slot A and removes the earlier image's UKI. Once an
+The installer writes the new image over slot A and removes the earlier image's UKI, whatever its
+image ID, as [Files on the ESP](../reference/image-layout.md#files-on-the-esp) describes. Once an
 earlier attempt wrote the node's config to STATE, another image needs `--wipe-disk`.
 
 ## Replace what a disk holds
@@ -308,8 +283,6 @@ the target disk /dev/nvme0n1 (model "...", size ..., serial "...") holds an inst
 slot A of the target disk /dev/nvme0n1 (model "...", size ..., serial "...") holds the store 3df89200aef8615c of another image, whose config STATE holds; pass --wipe-disk to replace it
 ```
 
-`--wipe-disk` lets the installer clear the disk's partition tables and lay it out anew.
-
 !!! danger "--wipe-disk destroys the disk's data"
 
     With `--wipe-disk`, the installer replaces whatever the disk holds, an installed node
@@ -322,9 +295,8 @@ cluster.
 
 ## Keep the recovery keys at hand
 
-Each node's encrypted volumes have a second keyslot, by default its recovery key. It unlocks them
-on the day the TPM does not: after a firmware update that changes dbx, a change of the Secure Boot
-keys, or a replaced mainboard. [`chalkctl recovery-key`](../reference/cli/chalkctl_recovery-key.md)
+Each node's encrypted volumes have a second keyslot, by default its recovery key, which unlocks
+them when the TPM does not. [`chalkctl recovery-key`](../reference/cli/chalkctl_recovery-key.md)
 derives the key from the secrets file:
 
 ```sh
@@ -332,8 +304,7 @@ chalkctl recovery-key node1 --secrets=secrets.age
 ```
 
 No file stores the keys, and installing never changes the secrets file, so a backup of the
-secrets file backs up every recovery key. Keep the nodes' keys where you can read them at a
-node's console, such as in a password manager.
+secrets file backs up every recovery key. Keep the nodes' keys where you can read them at a node's console, such as in a password manager.
 [The console asks for a passphrase at boot](recover-node.md#the-console-asks-for-a-passphrase-at-boot)
 covers the prompt.
 

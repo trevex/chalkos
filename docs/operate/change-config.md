@@ -331,11 +331,14 @@ error's code. Its message part looks like this:
 the config takes chalkctl storage reset: Volume scratch: format xfs instead of ext4; reset it with chalkctl storage reset node1 scratch
 ```
 
-[Add storage volumes](storage-volumes.md) lists which storage changes a running node makes, and [Reset a volume](storage-volumes.md#reset-a-volume) wipes one.
+[Add storage volumes](storage-volumes.md) lists which storage changes a running node makes, and
+[Reset a volume](storage-volumes.md#reset-a-volume) wipes one.
 [Reinstall a node on its machine](add-remove-nodes.md#reinstall-a-node-on-its-machine) covers the
-reinstall. An image's own kinds bring their own rules and messages, which only `--dry-run` shows
-before a delivery. [Guard changes with rules and facts](../build/guard-changes.md) explains how
-image authors write them.
+reinstall. An image's own kinds bring their own rules and messages. `--diff` runs no rules, and
+`chalkctl validate` runs only those that read no node facts, so a refusal by a rule that reads
+node facts shows before a delivery only with `--dry-run`.
+[Guard changes with rules and facts](../build/guard-changes.md) explains how image authors write
+them.
 
 Other common failures:
 

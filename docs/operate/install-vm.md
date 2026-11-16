@@ -291,7 +291,7 @@ cannot copy disk images to.
 Install the node as a physical machine is installed, from
 [Note the address and the fingerprint](install.md#note-the-address-and-the-fingerprint) on. A VM
 of the `kvm` platform shows chalkd's mode, fingerprint and addresses on the serial console alone,
-and its disk is always `/dev/vda`:
+and a virtio disk is always `/dev/vda`:
 
 ```sh
 chalkctl install vm1 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint>

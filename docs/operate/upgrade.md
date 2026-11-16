@@ -14,6 +14,7 @@ router and its three Kubernetes nodes.
 In short:
 
 ```sh
+rm -rf images/node-metal-signed
 chalkbuild sign --key keys/db.key --cert keys/db.crt images/node-metal images/node-metal-signed
 chalkctl validate
 chalkctl upgrade --nodes node3 --secrets secrets.age
@@ -277,10 +278,6 @@ commit and `flake.lock`, and keep its directory until the new image has proven i
 older image can read what the newer one wrote is for you to check in either case, such as etcd's
 data after a Kubernetes upgrade.
 
-A new Kubernetes release takes two steps, the control plane first: `chalkctl config apply`
-delivers the release's images in the `Cluster` document, then `chalkctl upgrade` installs images
-with the new kubelet. [Upgrade Kubernetes](../kubernetes/upgrade-kubernetes.md) covers both.
-
 ## If it fails
 
 ### A node rolled back during the upgrade
@@ -328,5 +325,6 @@ the other messages that stop an upgrade or a rollback, and their fixes.
 
 - [Change a node's config](change-config.md) delivers YAML changes without a new image.
 - [Upgrade Kubernetes](../kubernetes/upgrade-kubernetes.md) moves a cluster to a new Kubernetes
-  release.
+  release in two steps, the control plane first: `chalkctl config apply` delivers the release's
+  images in the `Cluster` document, then `chalkctl upgrade` installs images with the new kubelet.
 - [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) lists every flag.

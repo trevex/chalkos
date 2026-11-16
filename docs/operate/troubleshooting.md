@@ -113,7 +113,8 @@ config from before the trial again.
 - `node1 runs config <previous-version> again: config <version> was rolled back`: the image's
   layers did not find the node serving by the deadline. On a Kubernetes node whose Node is not
   Ready for another reason than a missing CNI, deliver a config meant to fix the node without
-  `--try`. A config that changes the API server's version goes to a control plane on trial even
+  `--try`: the node then applies the config for good, and chalkctl waits for no layer and no
+  health check. A config that changes the API server's version goes to a control plane on trial even
   then, so mend the node with a config that keeps the version first.
 - `chalkctl: warning: node1: units failed already: late.service; the trial rolls back at its deadline unless they recover, the image ignores them or --ignore-unit leaves them out`:
   a unit failed before the trial, and any failed unit keeps the node from confirming. Leave it
