@@ -197,8 +197,9 @@ lists every case.
 ## Check that it worked
 
 Build the image, which compiles every rule and checks the fields each reads against the kind's
-schema, as [Change rules](../reference/extension-runtime.md#change-rule-variables) describes. Then run `chalkctl validate`, which runs the rules of
-kinds and the field rules that read neither `oldSelf` nor facts:
+schema, as [Change rules](../reference/extension-runtime.md#change-rule-variables) describes.
+Then run `chalkctl validate`, which runs the rules of kinds and the field rules that read neither
+`oldSelf` nor facts:
 
 ```sh
 chalkctl validate

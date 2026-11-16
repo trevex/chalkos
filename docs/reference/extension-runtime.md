@@ -65,21 +65,29 @@ kind's schema:
   not declare, such as `self.modle`, fails the build with `undefined field 'modle'`.
 - An `attrsOf` is a map, whose keys a rule reads as they come; a `listOf` is a list of its items'
   type.
-- A string, an enum of strings, a bool and an int are themselves, so `self.port == "22"` on an int fails the build
-  with `found no matching overload`.
+- A string, an enum of strings, a bool and an int are themselves, so `self.port == "22"` on an
+  int fails the build with `found no matching overload`. `<`, `<=`, `>` and `>=` compare an int
+  with a double, as in `self.count > 1.5`, but `==` and `!=` between an int and a double fail
+  the build.
 - A `nullOr` submodule is the object or `null`. Every other value is `dyn`, which the build does
   not check: a float, a `nullOr` of anything but a submodule, a port range and an embedded
   Kubernetes object.
 
 `config`, `oldConfig`, `document()` and facts are `dyn`.
 
+A submodule is no map. The build refuses a rule that loops over one, takes its `size()`, tests a
+key with `in` or compares it with a map literal, as `self.sub.all(k, ...)`, `size(self.sub)`,
+`"a" in self.sub` and `self.sub != {}` do. Test each field with `has()` instead, or read the
+submodule as a map with `dyn(self.sub)`. Only a `nullOr` field compares with `null`:
+`self.model != null` on a string that is not `nullOr` fails the build.
+
 A rule reads a field whose name CEL reserves, such as `in`, by index: `self["in"]`. The build
 checks a name given as a string literal as it checks a select. An index by another string, such
 as `self.podCIDRs[family]`, yields `dyn`.
 
-A field the schema declares can still be absent from a document, such as a field that the running
-config's document has from an image that did not declare it yet. Reading it fails the rule at
-run time, so test such a field with `has()` before reading it.
+A field the schema declares can still be absent from a document, such as one that the running
+config's document lacks because its image did not declare the field yet. Reading it fails the
+rule at run time, so test such a field with `has()` before reading it.
 
 ### Effect conditions { #effect-condition-variables }
 
@@ -182,7 +190,9 @@ A refusal does not leak a secret or a fact's content that the rule only compared
 - A rule that reads a field the schema declares and the document lacks names the field, a name
   from the schema rather than a value:
   `cannot check: Peer/router: spec: a rule cannot be evaluated: no such key: asn, a field the config leaves out; test it with has() first`.
-  A missing key of a map stays unnamed, since the key is a value.
+  A rule that looks a key up by a value, as `self.labels[self.name]` does, names no missing key,
+  since the key can be a value. A loop's lookup of `documents[n]` or `oldDocuments[n]` counts as
+  none.
 - A `messageExpression` that fails gives the same kind of error after the message.
 - A rule that yields no bool says which type it yields.
 - A command fact that fails shows its exit status alone: `cannot check: fact disks: the command
