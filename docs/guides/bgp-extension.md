@@ -663,6 +663,8 @@ still runs an image without it.
 ## What next
 
 - [Test an extension](../build/test-an-extension.md) lists every field of a test.
+- [Develop and debug an extension](../build/develop-an-extension.md) runs the checks from the
+  fastest build to a node and lists the common errors.
 - [Read config in a service](../build/read-config.md) gives a unit the documents themselves, for a
   service that reads JSON.
 - [The config pipeline](../how-it-works/node/config-pipeline.md) shows where the schemas, rules,

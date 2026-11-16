@@ -361,5 +361,7 @@ removed the lab in /home/alice/.local/state/chalklab/lab
   validator, secrets and a diagnostic.
 - [How an extension fits together](index.md#how-an-extension-fits-together) shows where each part
   runs and which parts can refuse a delivery.
+- [Develop and debug an extension](develop-an-extension.md) runs the checks from the fastest
+  build to a node and lists the common errors.
 - [Declare a config kind](declare-a-kind.md) starts the how-to pages, one task each.
 - The [extension API](../reference/extension-api.md) lists every option and `chalkosLib` helper.
