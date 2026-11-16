@@ -140,6 +140,8 @@ means the node still runs an image without it.
 
 ## What next
 
+- [Test and roll out an image](test-and-roll-out.md) takes the image with the extension to the
+  nodes.
 - [Built-ins](../reference/builtins.md#diagnostics) lists the diagnostics every image declares.
 - [Extension API](../reference/extension-api.md#diagnostics) lists the options of
   `chalkos.diagnostics`.

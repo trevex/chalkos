@@ -235,10 +235,10 @@ the node alone:
 
 ## What next
 
+- [Guard changes with rules and facts](guard-changes.md) refuses a change with a CEL rule, which
+  chalkctl checks before it sends anything.
 - [Test an extension](test-an-extension.md) tests the files, refusals and effects of a config.
 - [Render config files](render-config.md) renders `bird.conf` from the `Speaker` and `Peer`
   documents.
-- [Guard changes with rules and facts](guard-changes.md) refuses a change with a CEL rule, which
-  chalkctl checks before it sends anything.
 - [The config pipeline](../how-it-works/node/config-pipeline.md) shows where the validators run in
   a delivery.

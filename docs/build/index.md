@@ -11,7 +11,63 @@ These pages are for image authors who build a cluster's images in Nix with
 Start here: [Your first image flake](first-image.md), then
 [Images and platforms](images-and-platforms.md), then
 [Add software, drivers and kernel modules](add-software.md). Every later page builds on the
-flake from these three.
+flake from these three. [Write your first extension](first-extension.md) then adds a config kind
+and a unit that reads it, on the lab of the quick start.
+
+## How an extension fits together
+
+An extension is a NixOS module that adds config kinds and the parts that act on their documents.
+The diagram follows a node's YAML from a delivery to the units that read it.
+
+```mermaid
+flowchart LR
+    yaml["YAML documents"] --> schema["Kind schema"]
+    schema --> rules["Change rules"]
+    facts["Facts"] -.->|read by| rules
+    rules --> validators["Validators"]
+    validators --> outputs["Outputs: render and check"]
+    outputs --> swap["Config slot and dir swap"]
+    swap --> effects["Effects"]
+    effects -->|restart, reload| units["Units"]
+    swap --> grants["Grants and credentials"]
+    grants -->|files, credentials| units
+    diag["Diagnostics"] -.->|chalkctl node diag| units
+    tests["chalkos.tests in the Nix sandbox"] -.->|run the same checks| schema
+```
+
+The schema, the change rules, the validators and the outputs can each refuse a delivery. The node
+then keeps the config it runs. Once all four pass, chalkd writes the config slot, swaps the
+documents and rendered files in, and takes the effects. Diagnostics stand apart: an operator runs
+them on demand. The tests run the same checks as a delivery, without a node.
+
+Each part is an option of the image's modules. A part that chalkctl runs refuses a mistake before
+anything reaches the node.
+
+| Option | Where it runs | Can refuse a delivery | Page |
+| --- | --- | --- | --- |
+| `chalkos.kinds` | chalkctl and the node, against the kind's schema | yes | Declare a config kind |
+| `chalkos.kinds.<name>.rules`, `specRules` | chalkctl, for the rules that read no facts; the node, for every rule | yes | Guard changes with rules and facts |
+| `chalkos.facts` | the node, when a rule or an effect's `when` reads the fact | no | Guard changes with rules and facts |
+| `chalkos.validators` | the node; chalkctl runs only the router layer's `router` | yes | Validate config with a program |
+| `chalkos.outputs` | the node, before a delivery changes anything, and at boot | yes | Render config files |
+| `chalkos.effects` | the node, once a delivery is applied | no | React to changes |
+| `systemd.services.<unit>.chalkos.kinds` | the node, for the unit the grant names | no | Read config in a service, Pass secrets to a service |
+| `chalkos.diagnostics` | the node, on `chalkctl node diag` | no | Add a diagnostic |
+| `chalkos.tests` | the build, in the Nix sandbox, by `nix flake check` | no; a failing test fails the check | Test an extension |
+
+!!! note "The fast loop"
+
+    Three builds check an extension without a node. Run them in the image flake, with `<image>`
+    the name of an image of its `mkImages`:
+
+    ```sh
+    # The kinds' JSON Schemas, as chalkctl checks documents against them.
+    nix build .#nixosConfigurations.<image>.config.system.build.chalkosSchemas
+    # What each test rendered and refused; -L prints the errors of renderers and checks.
+    nix build -L .#nixosConfigurations.<image>.config.system.build.chalkosTestResults
+    # Every image's tests, compared with what they expect.
+    nix flake check
+    ```
 
 ## Build
 
@@ -50,11 +106,20 @@ software it carries.
 
 ## Configure services
 
-These pages give the services in an image their configuration: a config kind for each node's
-YAML, the files and secrets a unit reads, the effects and rules that apply when a delivery
-changes them, and the tests that check them before a node does.
+These pages give the services in an image their configuration, in the order an extension grows: a
+config kind for each node's YAML, the files a unit reads, the tests that check them, the effects
+of a change, its secrets and the checks that refuse a config a node cannot run.
 
 <div class="grid cards" markdown>
+
+-   :material-school: __Write your first extension__
+
+    ---
+
+    A tutorial of about 15 minutes: add a config kind, a rendered file, a test and a unit to the
+    quick start's lab, then change the config on a node.
+
+    [:octicons-arrow-right-24: Follow](first-extension.md)
 
 -   :material-shape-plus: __Declare a config kind__
 
@@ -81,6 +146,15 @@ changes them, and the tests that check them before a node does.
 
     [:octicons-arrow-right-24: Read](render-config.md)
 
+-   :material-test-tube: __Test an extension__
+
+    ---
+
+    Check what an image renders, refuses and reloads for a config, with tests that nix flake
+    check runs.
+
+    [:octicons-arrow-right-24: Read](test-an-extension.md)
+
 -   :material-refresh: __React to changes__
 
     ---
@@ -89,14 +163,6 @@ changes them, and the tests that check them before a node does.
     condition.
 
     [:octicons-arrow-right-24: Read](react-to-changes.md)
-
--   :material-stethoscope: __Add a diagnostic__
-
-    ---
-
-    Declare a read-only command that operators run on a node with `chalkctl node diag`.
-
-    [:octicons-arrow-right-24: Read](add-a-diagnostic.md)
 
 -   :material-key-chain: __Pass secrets to a service__
 
@@ -107,15 +173,6 @@ changes them, and the tests that check them before a node does.
 
     [:octicons-arrow-right-24: Read](pass-secrets.md)
 
--   :material-shield-check: __Guard changes with rules and facts__
-
-    ---
-
-    Refuse a config change a node cannot make, with CEL rules on your kind and facts about the
-    node.
-
-    [:octicons-arrow-right-24: Read](guard-changes.md)
-
 -   :material-check-decagram: __Validate config with a program__
 
     ---
@@ -125,14 +182,30 @@ changes them, and the tests that check them before a node does.
 
     [:octicons-arrow-right-24: Read](validate-config.md)
 
--   :material-test-tube: __Test an extension__
+-   :material-shield-check: __Guard changes with rules and facts__
 
     ---
 
-    Check what an image renders, refuses and reloads for a config, with tests that nix flake
-    check runs.
+    Refuse a config change a node cannot make, with CEL rules on your kind and facts about the
+    node.
 
-    [:octicons-arrow-right-24: Read](test-an-extension.md)
+    [:octicons-arrow-right-24: Read](guard-changes.md)
+
+</div>
+
+## Diagnose
+
+This page gives operators a way to look into a service on a node.
+
+<div class="grid cards" markdown>
+
+-   :material-stethoscope: __Add a diagnostic__
+
+    ---
+
+    Declare a read-only command that operators run on a node with `chalkctl node diag`.
+
+    [:octicons-arrow-right-24: Read](add-a-diagnostic.md)
 
 </div>
 

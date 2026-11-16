@@ -288,7 +288,7 @@ It ends with `all checks passed!`. After
 
 ## What next
 
-- [Test and roll out an image](test-and-roll-out.md) takes the tested image to the nodes.
-- [Validate config with a program](validate-config.md) for the refusals a validator gives.
 - [React to changes](react-to-changes.md) for the effects a change takes.
+- [Validate config with a program](validate-config.md) for the refusals a validator gives.
+- [Test and roll out an image](test-and-roll-out.md) takes the tested image to the nodes.
 - The [extension API](../reference/extension-api.md#chalkostests) for every field of a test.

@@ -344,6 +344,8 @@ initrd, which the console shows.
 
 ## What next
 
+- [Write your first extension](first-extension.md) gives the image a config kind and a unit that
+  reads it.
 - [Images and platforms](images-and-platforms.md) puts a driver on the nodes that need it.
 - [The image](../how-it-works/node/image.md) explains the module tree, the store and the slots.
 - [Customise the installer](customise-installer.md) adds the same drivers to the installer.

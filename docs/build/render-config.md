@@ -439,12 +439,12 @@ renderer that writes without end fills that tmpfs and not `/run`.
 
 ## What next
 
+- [Test an extension](test-an-extension.md) takes `bird.conf` as a golden file, which every
+  `nix flake check` compares.
 - [React to changes](react-to-changes.md) reloads bird when `bird.conf` changes.
 - [Guard changes with rules and facts](guard-changes.md) refuses a `Peer` change before any
   render.
 - [Validate config with a program](validate-config.md) refuses an interface the node does not
   configure.
-- [Test an extension](test-an-extension.md) takes `bird.conf` as a golden file, which every
-  `nix flake check` compares.
 - [The config pipeline](../how-it-works/node/config-pipeline.md) shows where rendering sits in a
   delivery, at boot and after an upgrade.

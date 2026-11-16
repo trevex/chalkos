@@ -424,9 +424,9 @@ failed command fact wrote.
 
 ## What next
 
+- [Add a diagnostic](add-a-diagnostic.md) lets an operator look into the service on a node.
 - [Validate config with a program](validate-config.md) for a check no rule can make.
 - [Test an extension](test-an-extension.md) to keep the rules' refusals in the image's tests.
 - [React to changes](react-to-changes.md) for `when`, which uses the same CEL and facts.
 - [The config pipeline](../how-it-works/node/config-pipeline.md) for where rules run in a
   delivery.
-- [Config and the inventory](../how-it-works/node/config.md) for the changes a node accepts.

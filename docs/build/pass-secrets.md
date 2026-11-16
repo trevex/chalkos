@@ -230,6 +230,8 @@ of letters, digits, '.', '_' and '-' alone" needs a `Secret` name and key of tho
 
 ## What next
 
+- [Validate config with a program](validate-config.md) refuses a config with a program of
+  the image.
 - [Guard changes with rules and facts](guard-changes.md) refuses a change a node cannot make, and
   sees a `Secret`'s values as hashes.
 - [Read config in a service](read-config.md) for the other documents a grant gives a unit.
