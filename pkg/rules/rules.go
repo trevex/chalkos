@@ -38,9 +38,9 @@ type Program struct {
 	Transition bool
 
 	check, message cel.Program
-	// fields are the fields of the kind's schema the rule and its message read, sorted, which
-	// an error of their evaluation may name.
-	fields []string
+	// checkFields and messageFields are the fields of the kind's schema the rule and its message
+	// read, as kindTypes.fieldsRead gives them, which an error of their evaluation may name.
+	checkFields, messageFields []string
 }
 
 // Where names the kind or field that declares the rule.
@@ -140,15 +140,13 @@ func compile(apiVersions map[string]string, kt *kindTypes, k schema.Kind, path [
 	}
 	check, message := parsed[0], parsed[1]
 	p.Facts = facts
-	if p.check, p.fields, err = program(e, check, cel.BoolType); err != nil {
+	if p.check, p.checkFields, err = program(e, check, cel.BoolType); err != nil {
 		return nil, fail("%v", err)
 	}
 	if message != nil {
-		var fields []string
-		if p.message, fields, err = program(e, message, cel.StringType); err != nil {
+		if p.message, p.messageFields, err = program(e, message, cel.StringType); err != nil {
 			return nil, fail("messageExpression: %v", err)
 		}
-		p.fields = slices.Compact(slices.Sorted(slices.Values(append(p.fields, fields...))))
 	}
 	p.Transition = path != nil && reads(check, "oldSelf")
 	return p, nil

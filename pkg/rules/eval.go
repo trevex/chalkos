@@ -154,7 +154,7 @@ func (p *Program) evaluate(vars map[string]any, cfg, oldCfg, node map[string]any
 	if doc != "" {
 		where = refusals.Refusal{Kind: p.Kind.Kind, Name: doc, Path: strings.Join(p.Path, ".")}.Where()
 	}
-	ok, err := evalBool(p.check, vars, p.fields, &factErr)
+	ok, err := evalBool(p.check, vars, p.checkFields, &factErr)
 	// A fact that could not be loaded is returned as it is, outside the cannot-check wrap.
 	if factErr != nil {
 		return nil, factErr
@@ -178,7 +178,7 @@ func (p *Program) evaluate(vars map[string]any, cfg, oldCfg, node map[string]any
 			f.Message = refusals.Printable(string(s))
 		} else if f.Message == "" {
 			f.Message = "the config does not meet a rule of " + p.Where() + ", whose messageExpression fails"
-			if why := messageError(msg, err, p.fields); why != "" {
+			if why := messageError(msg, err, p.messageFields); why != "" {
 				f.Message += ": " + why
 			}
 		}

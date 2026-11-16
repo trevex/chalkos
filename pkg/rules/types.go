@@ -137,12 +137,29 @@ func (k *kindTypes) indexes() cel.EnvOption {
 }
 
 // fieldsRead returns the fields of object types a checked expression reads, by a select or a
-// string literal index, sorted: names from the schema, which an error may show. It refuses an
-// index by a string literal the object type declares no field of, as the check refuses such a
-// select.
+// string literal index, sorted: names from the schema, which an error may show. It returns none
+// for an expression that looks a key up by a value, whose missing key a select's cannot be told
+// from, other than a name of documents or oldDocuments over which it loops. It refuses an index
+// by a string literal the object type declares no field of, as the check refuses such a select.
 func (k *kindTypes) fieldsRead(checked *cel.Ast) ([]string, error) {
 	a := checked.NativeRep()
 	var read, errs []string
+	byValue := false
+	// names are the loop variables over documents and oldDocuments, by the variable looped over.
+	names := map[string][]string{}
+	celast.PreOrderVisit(a.Expr(), celast.NewExprVisitor(func(e celast.Expr) {
+		if e.Kind() != celast.ComprehensionKind {
+			return
+		}
+		c := e.AsComprehension()
+		if r := c.IterRange(); r.Kind() == celast.IdentKind {
+			names[r.AsIdent()] = append(names[r.AsIdent()], c.IterVar())
+		}
+	}))
+	isName := func(m, key celast.Expr) bool {
+		return m.Kind() == celast.IdentKind && (m.AsIdent() == "documents" || m.AsIdent() == "oldDocuments") &&
+			key.Kind() == celast.IdentKind && slices.Contains(names[m.AsIdent()], key.AsIdent())
+	}
 	celast.PreOrderVisit(a.Expr(), celast.NewExprVisitor(func(e celast.Expr) {
 		var operand celast.Expr
 		var field string
@@ -153,6 +170,9 @@ func (k *kindTypes) fieldsRead(checked *cel.Ast) ([]string, error) {
 			args := e.AsCall().Args()
 			var isLiteral bool
 			if field, isLiteral = stringLiteral(args[1]); !isLiteral {
+				if a.GetType(args[0].ID()).Kind() != types.ListKind && !isName(args[0], args[1]) {
+					byValue = true
+				}
 				return
 			}
 			operand = args[0]
@@ -172,6 +192,9 @@ func (k *kindTypes) fieldsRead(checked *cel.Ast) ([]string, error) {
 	}))
 	if len(errs) > 0 {
 		return nil, errors.New(strings.Join(errs, "\n"))
+	}
+	if byValue {
+		return nil, nil
 	}
 	slices.Sort(read)
 	return read, nil

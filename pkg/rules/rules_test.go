@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -440,26 +441,61 @@ func TestEvaluateKindRuleError(t *testing.T) {
 }
 
 // A rule that reads a declared field the config leaves out names the field, which comes from the
-// schema; a map's missing key, which comes from a value, stays unnamed.
+// schema. A rule that looks a key up by a value names no missing key, even one spelt like a field
+// it reads; a loop over documents looks its names up by no value.
 func TestEvaluateNamesMissingField(t *testing.T) {
 	spec := closed(map[string]any{
 		"name":   map[string]any{"type": "string"},
 		"labels": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}},
 		"peer":   closed(map[string]any{"address": map[string]any{"type": "string"}}),
 	})
-	for name, tc := range map[string]struct{ rule, want string }{
-		"field":    {`self.peer.address != ""`, "no such key: address, a field the config leaves out; test it with has() first"},
-		"index":    {`self.peer["address"] != ""`, "no such key: address, a field the config leaves out; test it with has() first"},
-		"map key":  {`self.labels[self.name] != ""`, "no such key"},
-		"declared": {`self.labels.s3cret != "" || self.peer.address != ""`, "no such key"},
+	const named = "no such key: address, a field the config leaves out; test it with has() first"
+	for name, tc := range map[string]struct{ rule, kindRule, want string }{
+		"field":       {rule: `self.peer.address != ""`, want: "spec: a rule cannot be evaluated: " + named},
+		"index":       {rule: `self.peer["address"] != ""`, want: "spec: a rule cannot be evaluated: " + named},
+		"map key":     {rule: `self.labels[self.name] != ""`, want: "spec: a rule cannot be evaluated: no such key"},
+		"field name":  {rule: `self.labels[self.name] != "" || self.peer.address != ""`, want: "spec: a rule cannot be evaluated: no such key"},
+		"map literal": {rule: `self.labels.s3cret != "" || self.peer.address != ""`, want: "spec: a rule cannot be evaluated: no such key"},
+		"kind rule":   {kindRule: `documents.all(n, documents[n].spec.peer.address != "")`, want: "a rule cannot be evaluated: " + named},
 	} {
 		t.Run(name, func(t *testing.T) {
-			set := compiled(t, closedKind(withRules(spec, rule(tc.rule, "")), nil))
-			_, err := set.Evaluate(Input{Documents: config.Redact([]config.Document{doc(t, "Demo", "a", `{"name": "s3cret", "labels": {}, "peer": {}}`)})})
-			if want := "cannot check: Demo/a: spec: a rule cannot be evaluated: " + tc.want; err == nil || err.Error() != want {
+			s, kindRules := maps.Clone(spec), []any(nil)
+			if tc.rule != "" {
+				withRules(s, rule(tc.rule, ""))
+			} else {
+				kindRules = []any{rule(tc.kindRule, "")}
+			}
+			set := compiled(t, closedKind(s, kindRules))
+			_, err := set.Evaluate(Input{Documents: config.Redact([]config.Document{doc(t, "Demo", "a", `{"name": "address", "labels": {}, "peer": {}}`)})})
+			where := "Demo/a: "
+			if tc.kindRule != "" {
+				where = "Demo: "
+			}
+			if want := "cannot check: " + where + tc.want; err == nil || err.Error() != want {
 				t.Errorf("err = %v, want %q", err, want)
 			}
 		})
+	}
+}
+
+// A nullOr submodule holding null reads as null.
+func TestEvaluateNullSubmodule(t *testing.T) {
+	spec := withRules(closed(map[string]any{
+		"peer": map[string]any{"anyOf": []any{
+			closed(map[string]any{"address": map[string]any{"type": "string"}}),
+			map[string]any{"type": "null"},
+		}},
+	}), rule(`self.peer == null || self.peer.address != ""`, "a peer has an address"))
+	set := compiled(t, closedKind(spec, nil))
+	for _, tc := range []struct {
+		spec string
+		want []string
+	}{
+		{`{"peer": null}`, nil},
+		{`{"peer": {"address": "a"}}`, nil},
+		{`{"peer": {"address": ""}}`, []string{"Demo/a: spec: a peer has an address"}},
+	} {
+		wantFailures(t, set, Input{Documents: config.Redact([]config.Document{doc(t, "Demo", "a", tc.spec)})}, tc.want)
 	}
 }
 
@@ -683,6 +719,9 @@ func TestCompileRefusesUnknownField(t *testing.T) {
 	spec := func(rules ...any) map[string]any {
 		s := closed(map[string]any{
 			"model":  map[string]any{"type": "string"},
+			"count":  map[string]any{"type": "integer"},
+			"mode":   map[string]any{"enum": []any{"a", "b"}},
+			"hosts":  map[string]any{"type": "object", "additionalProperties": closed(map[string]any{"x": map[string]any{"type": "string"}})},
 			"labels": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}},
 			"extra":  object(map[string]any{"a": map[string]any{"type": "string"}}),
 			"ports":  map[string]any{"type": "array", "items": closed(map[string]any{"port": map[string]any{"type": "integer"}})},
@@ -701,14 +740,18 @@ func TestCompileRefusesUnknownField(t *testing.T) {
 		rules []any
 		want  string
 	}{
-		"field rule":     {spec(rule("self.modle == oldSelf.modle", "")), nil, `Demo spec: rule "self.modle == oldSelf.modle": ERROR: <input>:1:5: undefined field 'modle'`},
-		"list item":      {spec(rule("self.ports.all(p, p.prot > 0)", "")), nil, "undefined field 'prot'"},
-		"nullable":       {spec(rule("self.peer == null || self.peer.adress != ''", "")), nil, "undefined field 'adress'"},
-		"kind rule":      {spec(), []any{rule("documents.all(n, documents[n].spec.modle != '')", "")}, `Demo: rule "documents.all(n, documents[n].spec.modle != '')": ERROR: <input>:1:35: undefined field 'modle'`},
-		"field type":     {spec(rule("self.model == 1", "")), nil, "found no matching overload for '_==_' applied to '(string, int)'"},
-		"metadata field": {spec(), []any{rule("documents.all(n, documents[n].metadata.nmae != '')", "")}, "undefined field 'nmae'"},
-		"literal index":  {spec(rule("self['modle'] == ''", "")), nil, "ERROR: <input>:1:5: undefined field 'modle'"},
-		"message":        {spec(rule("true", "", "messageExpression", "self.modle")), nil, "messageExpression: ERROR: <input>:1:5: undefined field 'modle'"},
+		"field rule":        {spec(rule("self.modle == oldSelf.modle", "")), nil, `Demo spec: rule "self.modle == oldSelf.modle": ERROR: <input>:1:5: undefined field 'modle'`},
+		"list item":         {spec(rule("self.ports.all(p, p.prot > 0)", "")), nil, "undefined field 'prot'"},
+		"nullable":          {spec(rule("self.peer == null || self.peer.adress != ''", "")), nil, "undefined field 'adress'"},
+		"kind rule":         {spec(), []any{rule("documents.all(n, documents[n].spec.modle != '')", "")}, `Demo: rule "documents.all(n, documents[n].spec.modle != '')": ERROR: <input>:1:35: undefined field 'modle'`},
+		"field type":        {spec(rule("self.model == 1", "")), nil, "found no matching overload for '_==_' applied to '(string, int)'"},
+		"metadata field":    {spec(), []any{rule("documents.all(n, documents[n].metadata.nmae != '')", "")}, "undefined field 'nmae'"},
+		"literal index":     {spec(rule("self['modle'] == ''", "")), nil, "ERROR: <input>:1:5: undefined field 'modle'"},
+		"message":           {spec(rule("true", "", "messageExpression", "self.modle")), nil, "messageExpression: ERROR: <input>:1:5: undefined field 'modle'"},
+		"map value":         {spec(rule("self.hosts['a'].y == ''", "")), nil, "undefined field 'y'"},
+		"enum":              {spec(rule("self.mode == 1", "")), nil, "found no matching overload for '_==_' applied to '(string, int)'"},
+		"integer":           {spec(rule("self.count == '1'", "")), nil, "found no matching overload for '_==_' applied to '(int, string)'"},
+		"int equals double": {spec(rule("self.count == 1.5", "")), nil, "found no matching overload for '_==_' applied to '(int, double)'"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := Compile(schemasOf(t, closedKind(tc.spec, tc.rules)))
@@ -720,6 +763,7 @@ func TestCompileRefusesUnknownField(t *testing.T) {
 	sch := closedKind(spec(
 		rule("self.labels.anything == 'x' && self.extra.b == 'y' && self.model == oldSelf.model", ""),
 		rule("has(self.peer) && self.peer != null && self.peer.address != '' && self.ports.all(p, p.port > 0)", ""),
+		rule("self.count > 1.5 && self.count < 2u && self.mode == 'a' && self.hosts['a'].x != ''", ""),
 	), []any{rule("documents.all(n, documents[n].spec.model != '' && documents[n].metadata.name != '')", "")})
 	if _, err := Compile(schemasOf(t, sch)); err != nil {
 		t.Error(err)
