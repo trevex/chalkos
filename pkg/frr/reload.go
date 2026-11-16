@@ -2,6 +2,7 @@ package frr
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -78,6 +79,11 @@ func apply(ctx context.Context, r tool.Runner, vtysh, dir string, plan Plan) err
 	if err := f.Close(); err != nil {
 		return err
 	}
-	_, err = tool.Run(ctx, r, vtysh, "-f", f.Name())
-	return err
+	// vtysh repeats a line it fails on, a password among them, on standard error, which reaches
+	// the journal only through hide.
+	_, err = r.Exec(ctx, tool.Cmd{Name: vtysh, Args: []string{"-f", f.Name()}, Quiet: true})
+	if err != nil {
+		return errors.New(hide(err.Error()))
+	}
+	return nil
 }

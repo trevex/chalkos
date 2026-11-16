@@ -15,7 +15,7 @@ frr.overrideAttrs (old: {
   '';
   postFixup = (old.postFixup or "") + ''
     for file in $out/lib/libfrr.so.*.*.* $out/bin/vtysh; do
-      grep -aoE "$NIX_STORE/[a-z0-9]{32}-([^/\"' ]*-dev|python3-[0-9.]+|frr-clippy-helper-[0-9.]+)" "$file" |
+      { grep -aoE "$NIX_STORE/[a-z0-9]{32}-([^/\"' ]*-dev|python3-[0-9.]+|frr-clippy-helper-[0-9.]+)" "$file" || true; } |
         sort -u | while read -r ref; do remove-references-to -t "$ref" "$file"; done
     done
   '';

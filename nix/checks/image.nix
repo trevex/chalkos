@@ -165,8 +165,9 @@ in
         check() {
           local name=$1 raw=$2 partitions=$3 uki=$4 closure=$5 sizes verity data hash over=()
           local -A ceiling=([storeData]=$6 [hashTree]=$7 [uki]=$8)
-          # Python takes over 100 MiB; a package that names it, as FRR's build did, brings it in.
-          if grep -- '-python3-[0-9]' "$closure/store-paths" >python; then
+          # Python takes over 100 MiB; a package that names it, as FRR's build did, brings it in:
+          # python3-3.x, python3-minimal and the like, or a package of Python's, python3.x-*.
+          if grep -E -- '-python3[.-]' "$closure/store-paths" >python; then
             echo "error: $name's closure holds Python: $(cat python)" >&2
             failed=1
           fi

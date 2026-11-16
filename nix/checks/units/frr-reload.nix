@@ -22,10 +22,42 @@ let
       sed -e 's/^\( neighbor peer-fabric password\) .*/\1 rotated/' \
         -e '/^route-map rp-nat64 deny 65535$/,/^exit$/d' ${edge} >$out
     '';
+    # The network's route-map renamed, which the reload changes in place.
+    router-edge-renamed = pkgs.runCommand "edge-renamed.conf" { } ''
+      sed 's/rp-nat64\b/rp-nat64-v2/' ${edge} >$out
+    '';
+    # A community-list of three entries, which FRR keys by value; the same list without its
+    # first, whose entries shift down one sequence number; and the list reordered.
+    router-edge-list = communities [
+      "65001:666"
+      "65001:667"
+      "65001:668"
+    ];
+    router-edge-list-shifted = communities [
+      "65001:667"
+      "65001:668"
+    ];
+    router-edge-list-reordered = communities [
+      "65001:668"
+      "65001:666"
+      "65001:667"
+    ];
   };
+  # The edge golden with the community-list cl-blackhole of these communities.
+  communities =
+    values:
+    pkgs.runCommand "edge-communities.conf" { } ''
+      awk '/^bgp community-list standard cl-blackhole / {
+        ${lib.concatImapStrings (
+          i: v: ''print "bgp community-list standard cl-blackhole seq ${toString (5 * i)} permit ${v}"; ''
+        ) values}
+        next
+      } { print }' ${edge} >$out
+    '';
   # Pairs of goldens, the first FRR starts on and the second it reloads to: peers, peer groups,
   # route-map entries, lists, address families, interfaces, BFD profiles and VRF instances that
-  # come and go, and a new AS number.
+  # come and go, a renamed route-map, a community-list's entries that shift or reorder, and a new
+  # AS number.
   transitions = [
     [
       "router-none"
@@ -42,6 +74,26 @@ let
     [
       "router-edge"
       "router-edge-changed"
+    ]
+    [
+      "router-edge"
+      "router-edge-renamed"
+    ]
+    [
+      "router-edge"
+      "router-edge-list"
+    ]
+    [
+      "router-edge-list"
+      "router-edge-list-shifted"
+    ]
+    [
+      "router-edge-list"
+      "router-edge-list-reordered"
+    ]
+    [
+      "router-edge-list-shifted"
+      "router-edge-list"
     ]
     [
       "router-edge"
@@ -93,10 +145,11 @@ let
     ]
   ];
   # FRR's running config as lines that each name their contexts, sorted: FRR orders some
-  # commands by when they were given.
+  # commands by when they were given. The hostname, which a plan sets and a start leaves as the
+  # VM's, is left out.
   running = pkgs.writeShellScript "frr-running" ''
     vtysh -c 'show running-config' | ${lib.getExe pkgs.gawk} '
-      /^(Building configuration|Current configuration:|frr version )/ || /^ *(!|exit|exit-address-family|exit-vrf|end)$/ || NF == 0 { next }
+      /^(Building configuration|Current configuration:|frr version |hostname )/ || /^ *(!|exit|exit-address-family|exit-vrf|end)$/ || NF == 0 { next }
       {
         match($0, /^ */)
         depth = RLENGTH
@@ -152,7 +205,7 @@ in
             machine.succeed(f"install -m 644 {goldens[b]} /run/frr/frr.conf")
             out = machine.succeed("${reload} /run/frr/frr.conf 2>&1")
             print(out)
-            if "refused" in out or "pass 2" in out:
+            if "vtysh refused commands" in out or "pass 2" in out:
                 raise Exception(f"{a} reloaded to {b} in more than one clean pass")
             got = machine.succeed("${running}")
             if got != fresh[b]:

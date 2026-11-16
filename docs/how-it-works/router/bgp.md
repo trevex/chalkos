@@ -260,19 +260,26 @@ before the helper runs.
 The effect of `frr` reloads `frr.service` once the delivery is stored. The reload fills in the
 passwords again and runs `chalkos-frr-reload`, which compares the new config with the running
 config that `vtysh` shows and applies the difference with `vtysh -f`, so a session that the change
-leaves alone stays up. A command whose value changes, such as a password or a peer's route-map, is
-given its new value without being deleted first. Commands, peers, peer groups and instances that
-the new config lacks are deleted before the new ones are added. Route-map entries, BFD profiles
-and lists go last, once nothing names them. Afterwards `chalkos-frr-reload` reads the running
-config again. A deleted peer group takes its members and their config with it, so a second pass
-may follow.
+leaves alone stays up. A command whose value changes, such as a password, a peer's route-map or
+the route-map of a network, is given its new value without being deleted first. Commands, peers,
+peer groups and instances that the new config lacks are deleted before the new ones are added.
+FRR keeps a community list's or AS path list's entries by value, so an entry that moves to
+another sequence number is deleted before the entries are added. Route-map entries, BFD profiles,
+prefix lists and lists the new config drops go last, once nothing names them. Afterwards
+`chalkos-frr-reload` reads the running config again. A deleted peer group takes its members and
+their config with it, so a second pass may follow.
+
+FRR shows the system's hostname, so the comparison leaves the hostname out. A reload that
+changes something sets the new config's hostname as well, and a new hostname alone takes effect
+at the next such reload or at a restart.
 
 `chalkos-frr-reload` knows the commands the renderer writes and the lines FRR shows for them. It
 fails the reload on a line it does not know, in either config, and when the running config still
-differs after two passes. Its log in the journal names the commands it ran, with the passwords
-hidden. A reload that fails fails the delivery, with the config stored, and FRR keeps running
-what it ran. A restart of `frr.service` loads the new config whole. A failed `frr.service` is
-restarted instead of reloaded.
+differs after two passes or after 90 seconds. Its log in the journal names the commands it ran
+and those `vtysh` refused, with the passwords hidden. A reload that fails fails the delivery,
+with the config stored. FRR keeps the commands the reload applied, and a restart of
+`frr.service` loads the new config whole. A failed `frr.service` is restarted instead of
+reloaded.
 
 chalkd reloads the units of one delivery in one `systemctl reload`. `frr.service` orders after
 `chalkos-firewall.service`, so the firewall accepts a new peer's ports before FRR dials it.

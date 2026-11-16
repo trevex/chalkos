@@ -32,10 +32,24 @@ type rule struct {
 	// ignore marks a line the reload leaves alone on both sides: FRR writes it, or shows another
 	// value than frr.conf's.
 	ignore bool
-	// defines is "group" for the line that creates a peer group n, "member" for the line that
-	// creates neighbour n in a peer group; deleting either deletes the neighbour and its config.
-	defines string
+	// defines marks the line that creates a neighbour n or a peer group n; deleting it deletes
+	// the neighbour and its config.
+	defines defines
+	// byValue marks an entry of a community-list or as-path access-list, which FRR keys by its
+	// value: it refuses a value the list holds already, at any sequence number, and deletes an
+	// entry by its value alone. The entry's group list names its list and value its value.
+	byValue bool
 }
+
+type defines int
+
+const (
+	definesNothing defines = iota
+	// definesGroup is the line that creates a peer group.
+	definesGroup
+	// definesMember is the line that creates a neighbour in a peer group.
+	definesMember
+)
 
 func r(pattern string) rule { return rule{re: regexp.MustCompile("^" + pattern + "$")} }
 
@@ -47,7 +61,9 @@ func (r rule) hiding(line string) rule { r.hidden = line; return r }
 
 func (r rule) ignored() rule { r.ignore = true; return r }
 
-func (r rule) defining(what string) rule { r.defines = what; return r }
+func (r rule) defining(what defines) rule { r.defines = what; return r }
+
+func (r rule) keyedByValue() rule { r.byValue = true; return r }
 
 // multipath is the number of paths FRR's build installs at most, --enable-multipath, the default
 // of maximum-paths, which FRR's running config leaves out.
@@ -55,12 +71,14 @@ const multipath = "64"
 
 var (
 	addressFamily = &kind{name: "address-family", exit: "exit-address-family", rules: []rule{
-		r(`network \S+( route-map \S+)?`),
-		r(`redistribute (kernel|connected) route-map \S+`),
+		// A route-map of a network, a redistribution or a default route changes in place; one
+		// added or removed makes another command.
+		r(`network (?P<p>\S+)(?:(?P<rm> route-map) \S+)?`).slotted("network ${p}${rm}"),
+		r(`redistribute (?P<t>kernel|connected) route-map \S+`).slotted("redistribute $t"),
 		r(`maximum-paths \d+`).slotted("maximum-paths").hiding("maximum-paths " + multipath),
 		r(`maximum-paths ibgp \d+`).slotted("maximum-paths ibgp").hiding("maximum-paths ibgp " + multipath),
 		r(`neighbor (?P<n>\S+) activate`),
-		r(`neighbor (?P<n>\S+) default-originate( route-map \S+)?`),
+		r(`neighbor (?P<n>\S+) default-originate(?:(?P<rm> route-map) \S+)?`).slotted("neighbor ${n} default-originate${rm}"),
 		r(`neighbor (?P<n>\S+) route-map \S+ (?P<d>in|out)`).slotted("neighbor $n route-map $d"),
 		r(`neighbor (?P<n>\S+) maximum-prefix \d+`).slotted("neighbor $n maximum-prefix"),
 		r(`import vrf route-map \S+`).slotted("import vrf route-map"),
@@ -73,8 +91,8 @@ var (
 		r(`bgp bestpath as-path multipath-relax`),
 		r(`bgp graceful-restart`),
 		r(`bgp listen range \S+ peer-group \S+`),
-		r(`neighbor (?P<n>\S+) peer-group`).defining("group"),
-		r(`neighbor (?P<n>\S+) (interface )?peer-group (?P<g>\S+)`).defining("member"),
+		r(`neighbor (?P<n>\S+) peer-group`).defining(definesGroup),
+		r(`neighbor (?P<n>\S+) (interface )?peer-group (?P<g>\S+)`).defining(definesMember),
 		r(`neighbor (?P<n>\S+) remote-as \S+`).slotted("neighbor $n remote-as"),
 		r(`neighbor (?P<n>\S+) description .+`).slotted("neighbor $n description"),
 		r(`neighbor (?P<n>\S+) password \S+`).slotted("neighbor $n password"),
@@ -127,12 +145,14 @@ var (
 		r(`frr version .+`).ignored(),
 		r(`frr defaults \S+`).ignored(),
 		r(`service integrated-vtysh-config`).ignored(),
-		// FRR shows the system's host name, whatever frr.conf sets.
+		// FRR shows the system's host name, whatever frr.conf sets; Parse keeps frr.conf's in
+		// Config.hostname.
 		r(`hostname \S+`).ignored(),
 		r(`log syslog \S+`).slotted("log syslog"),
+		// A prefix-list keys its entries by sequence number.
 		r(`(?P<l>(ip|ipv6) prefix-list \S+ seq \d+) (permit|deny) \S+( ge \d+)?( le \d+)?`).slotted("$l"),
-		r(`(?P<l>bgp (community-list|large-community-list) standard \S+ seq \d+) (permit|deny) .+`).slotted("$l"),
-		r(`(?P<l>bgp as-path access-list \S+ seq \d+) (permit|deny) .+`).slotted("$l"),
+		r(`bgp (?P<list>(community-list|large-community-list) standard \S+) seq \d+ (?P<value>(permit|deny) .+)`).keyedByValue(),
+		r(`bgp (?P<list>as-path access-list \S+) seq \d+ (?P<value>(permit|deny) .+)`).keyedByValue(),
 	}}
 )
 
@@ -141,8 +161,9 @@ type Line struct {
 	Text string
 	rule *rule
 	// slot is what the command sets, neighbour the neighbour or peer group it configures, and
-	// group the peer group a member's line puts it in.
-	slot, neighbour, group string
+	// group the peer group a member's line puts it in. list and value are a list entry's that
+	// FRR keys by value.
+	slot, neighbour, group, list, value string
 }
 
 // A Context is a context of FRR's config, such as a route-map entry or a BGP instance's address
@@ -160,6 +181,8 @@ type Context struct {
 type Config struct {
 	Contexts []*Context
 	byID     map[string]*Context
+	// hostname is the config's hostname line, which the comparison leaves out.
+	hostname string
 }
 
 func (c *Config) context(keys, ids []string, k *kind) *Context {
@@ -202,7 +225,7 @@ func (r *rule) line(text string, m []int) Line {
 		}
 		return ""
 	}
-	l := Line{Text: text, rule: r, slot: text, neighbour: group("n"), group: group("g")}
+	l := Line{Text: text, rule: r, slot: text, neighbour: group("n"), group: group("g"), list: group("list"), value: group("value")}
 	if r.slot != "" {
 		l.slot = string(r.re.ExpandString(nil, r.slot, text, m))
 	}
@@ -237,6 +260,8 @@ func Parse(text string) (*Config, error) {
 		switch {
 		case rl == nil:
 			return nil, &UnknownError{Line: n + 1, Text: line, Context: top.ctx.describe()}
+		case strings.HasPrefix(line, "hostname ") && top.ctx.kind == root:
+			c.hostname = line
 		case rl.opens != nil:
 			ids := append(slices.Clone(top.ids), rl.line(line, m).slot)
 			keys := append(slices.Clone(top.ctx.Keys), line)

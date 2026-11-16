@@ -8,7 +8,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
+	"time"
 
 	"github.com/trevex/chalkos/pkg/frr"
 	"github.com/trevex/chalkos/pkg/tool"
@@ -28,11 +31,22 @@ func main() {
 		flag.Usage()
 		os.Exit(2)
 	}
-	if err := run(context.Background(), *vtysh, flag.Arg(0), *dryRun); err != nil {
+	// A signal, or a reload that outlasts the timeout, kills vtysh and ends the reload with the
+	// plan's file removed, before systemd's TimeoutSec of frr.service, 120 seconds, kills the
+	// helper.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	err := run(ctx, *vtysh, flag.Arg(0), *dryRun)
+	cancel()
+	stop()
+	if err != nil {
 		log.Print(err)
 		os.Exit(1)
 	}
 }
+
+// timeout bounds a reload.
+const timeout = 90 * time.Second
 
 func run(ctx context.Context, vtysh, file string, dryRun bool) error {
 	text, err := os.ReadFile(file)

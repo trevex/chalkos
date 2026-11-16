@@ -59,8 +59,11 @@ func (p Plan) Script() string {
 
 var password = regexp.MustCompile(`( password )\S+`)
 
+// hide replaces the passwords of the peers' password lines in s.
+func hide(s string) string { return password.ReplaceAllString(s, "${1}<hidden>") }
+
 // String is the script without the peers' passwords, for the log.
-func (p Plan) String() string { return password.ReplaceAllString(p.Script(), "${1}<hidden>") }
+func (p Plan) String() string { return hide(p.Script()) }
 
 func negate(cmd string) string {
 	if c, ok := strings.CutPrefix(cmd, "no "); ok {
@@ -102,20 +105,20 @@ func deletedNeighbours(rc, tc *Context) neighbours {
 	n := neighbours{gone: map[string]bool{}}
 	groupOf := map[string]string{}
 	for _, l := range rc.Lines {
-		if l.rule.defines == "member" {
+		if l.rule.defines == definesMember {
 			groupOf[l.neighbour] = l.group
 		}
 	}
 	for _, l := range rc.Lines {
-		if l.rule.defines != "" && !tc.has(l.Text) {
+		if l.rule.defines != definesNothing && !tc.has(l.Text) {
 			n.gone[l.neighbour] = true
 		}
 	}
 	for _, l := range rc.Lines {
 		switch {
-		case l.rule.defines == "group" && n.gone[l.neighbour]:
+		case l.rule.defines == definesGroup && n.gone[l.neighbour]:
 			n.groups = append(n.groups, rc.op(negate(l.Text)))
-		case l.rule.defines == "member" && !tc.has(l.Text) && !n.gone[l.group]:
+		case l.rule.defines == definesMember && !tc.has(l.Text) && !n.gone[l.group]:
 			n.members = append(n.members, rc.op(negate(l.Text)))
 		}
 	}
@@ -127,12 +130,31 @@ func deletedNeighbours(rc, tc *Context) neighbours {
 	return n
 }
 
+// instanceID is the id of the BGP instance an id of its context starts with.
+func instanceID(id string) string {
+	instance, _, _ := strings.Cut(id, "\n")
+	return instance
+}
+
 // Diff is the plan that turns the running config into the target. A command whose slot the
 // target fills with another value is no deletion: the target's replaces it, so that a route-map
-// or a password changes without a moment in which none applies.
+// or a password changes without a moment in which none applies. An entry of a list that FRR keys
+// by value goes unless the target holds it at the same sequence number, before the adds, as FRR
+// would refuse its value again and delete a new entry of it with the old.
+//
+// A non-empty plan sets the target's hostname, which the comparison leaves out, as FRR shows the
+// system's: a new hostname alone changes nothing until the next reload that changes more, or a
+// restart.
 func Diff(running, target *Config) Plan {
 	var p Plan
-	var lines, mainLines, members, groups, vrfInstances, instances []Op
+	var values, lines, mainLines, members, groups, vrfInstances, instances []Op
+	// The lists frr.conf holds entries of, keyed by value.
+	lists := map[string]bool{}
+	for _, l := range target.byID[""].Lines {
+		if l.rule.byValue {
+			lists[l.list] = true
+		}
+	}
 	// The neighbours each BGP instance both configs hold deletes, by its key.
 	deleted := map[string]neighbours{}
 	for _, rc := range running.Contexts {
@@ -159,7 +181,7 @@ func Diff(running, target *Config) Plan {
 				continue
 			case addressFamily:
 				// An instance frr.conf lacks goes whole.
-				if target.byID[strings.SplitN(rc.id, "\n", 2)[0]] == nil {
+				if target.byID[instanceID(rc.id)] == nil {
 					continue
 				}
 			}
@@ -174,17 +196,19 @@ func Diff(running, target *Config) Plan {
 				continue
 			}
 			op := rc.op(negate(l.Text))
-			switch rc.kind {
-			case root:
+			switch {
+			case l.rule.byValue && lists[l.list]:
+				values = append(values, op)
+			case rc.kind == root:
 				p.Drop = append(p.Drop, op)
-			case bgp:
+			case rc.kind == bgp:
 				mainLines = append(mainLines, op)
 			default:
 				lines = append(lines, op)
 			}
 		}
 	}
-	p.Remove = slices.Concat(lines, mainLines, members, groups, vrfInstances, instances)
+	p.Remove = slices.Concat(values, lines, mainLines, members, groups, vrfInstances, instances)
 
 	for _, tc := range target.Contexts {
 		rc := running.byID[tc.id]
@@ -202,6 +226,9 @@ func Diff(running, target *Config) Plan {
 				p.Add = append(p.Add, tc.op(l.Text))
 			}
 		}
+	}
+	if !p.Empty() && target.hostname != "" {
+		p.Add = slices.Insert(p.Add, 0, target.byID[""].op(target.hostname))
 	}
 	return p
 }

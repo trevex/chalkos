@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
 )
 
@@ -42,7 +43,7 @@ func TestReload(t *testing.T) {
 		name:    "a config that does not change fails after two passes",
 		shows:   []string{base},
 		calls:   []string{vtyshShow, vtyshApply, vtyshShow, vtyshApply, vtyshShow},
-		wantErr: "still differs from frr.conf after two passes, by:\nrouter bgp 64512\n neighbor peer-a password <hidden>",
+		wantErr: "still differs from frr.conf after two passes, by:\nhostname r1\nrouter bgp 64512\n neighbor peer-a password <hidden>",
 	}, {
 		name:    "a running config of another command fails",
 		shows:   []string{"router bgp 64512\n neighbor x ebgp-multihop 2\nexit\n"},
@@ -71,7 +72,7 @@ func TestReload(t *testing.T) {
 				if err != nil || fi.Mode().Perm() != 0o600 {
 					t.Errorf("vtysh -f reads %s: %v, %v", file, fi, err)
 				}
-				if b, _ := os.ReadFile(file); string(b) != "router bgp 64512\n neighbor peer-a password two\nexit\n" {
+				if b, _ := os.ReadFile(file); string(b) != "hostname r1\nrouter bgp 64512\n neighbor peer-a password two\nexit\n" {
 					t.Errorf("vtysh -f reads %q", b)
 				}
 			}
@@ -92,5 +93,34 @@ func TestReload(t *testing.T) {
 				t.Errorf("the reload left %v", left)
 			}
 		})
+	}
+}
+
+// vtysh repeats a line it fails on on standard error, which the reload runs quietly and logs
+// without the password.
+func TestReloadHidesPasswordsOfRefusedLines(t *testing.T) {
+	const secret = "s3cret-value"
+	target := edit(t, " neighbor peer-a password one", " neighbor peer-a password "+secret)
+	r := &tooltest.Runner{Rules: []tooltest.Rule{
+		{Prefix: vtyshShow, Out: base},
+		{Prefix: vtyshApply, Err: &tool.Error{Command: "vtysh -f", Code: 2, Stderr: "line 3: Failure to communicate[13] to bgpd, line:  neighbor peer-a password " + secret + "\n"}},
+	}}
+	var logged strings.Builder
+	err := Reload(context.Background(), r, "vtysh", t.TempDir(), mustParse(t, target), log.New(&logged, "", 0))
+	if err == nil {
+		t.Fatal("Reload() succeeded with a config FRR does not take")
+	}
+	for _, s := range []string{logged.String(), err.Error()} {
+		if strings.Contains(s, secret) {
+			t.Errorf("the reload shows the password:\n%s", s)
+		}
+	}
+	if !strings.Contains(logged.String(), "line:  neighbor peer-a password <hidden>") {
+		t.Errorf("the log lacks vtysh's refusal:\n%s", logged.String())
+	}
+	for _, c := range r.Cmds {
+		if strings.HasPrefix(c.String(), vtyshApply) && !c.Quiet {
+			t.Errorf("%s runs with its standard error on the console", c)
+		}
 	}
 }
