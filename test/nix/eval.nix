@@ -3679,7 +3679,8 @@ lib.runTests {
     in
     {
       expr = {
-        names = lib.attrNames node;
+        # The worker adds FRR's diagnostics, which testKubernetesBGPOptional covers.
+        names = lib.intersectLists names (lib.attrNames node);
         installer = lib.attrNames inInstaller;
         inStore = lib.all (d: lib.hasPrefix "/nix/store/" (lib.head d.command)) (lib.attrValues node);
         ip = lib.hasSuffix "-iproute2-ip-${pkgs.iproute2.version}/bin/ip" (lib.head node.route-get.command);
@@ -3868,6 +3869,130 @@ lib.runTests {
         declared = [ "NAT64" ];
       };
       worker = true;
+    };
+  };
+  # A Kubernetes image carries BGP unless it leaves the feature out. Without it, the image lacks
+  # BGP's kinds, output, effect and tests, FRR's unit, user, groups, package, files and
+  # diagnostics, the BFD port and networkd's leave of zebra's routes; nothing else changes, and its
+  # build allocates the IDs of the same users and groups.
+  testKubernetesBGPOptional =
+    let
+      names = lib.attrNames;
+      parts = c: {
+        kinds = names c.chalkos.kinds;
+        outputs = names c.chalkos.outputs;
+        effects = names c.chalkos.effects;
+        tests = names c.chalkos.tests;
+        services = names c.systemd.services;
+        users = names c.users.users;
+        groups = names c.users.groups;
+        diagnostics = names c.chalkos.diagnostics;
+        chalkd = map lib.getName c.systemd.services.chalkd.path;
+        packages = map lib.getName c.environment.systemPackages;
+        etc = names c.environment.etc;
+        udpPorts = map toString c.networking.firewall.allowedUDPPorts;
+        networkd = names (
+          lib.filterAttrs (n: _: lib.hasPrefix "ManageForeign" n) c.systemd.network.config.networkConfig
+        );
+      };
+      without = worker [ { chalkos.kubernetes.bgp.enable = false; } ];
+      diff = a: b: lib.filterAttrs (_: v: v != [ ]) (lib.mapAttrs (k: v: lib.subtractLists b.${k} v) a);
+    in
+    {
+      expr = {
+        removed = diff (parts w) (parts without);
+        added = diff (parts without) (parts w);
+        ids = unpinned without == unpinned w;
+      };
+      expected = {
+        removed = {
+          kinds = [
+            "BGPPeer"
+            "BGPSpeaker"
+          ];
+          outputs = [ "bgp" ];
+          effects = [ "bgp" ];
+          tests = [
+            "kubernetes-bgp-address"
+            "kubernetes-bgp-address-interface"
+            "kubernetes-bgp-address-two-interfaces"
+            "kubernetes-bgp-match-glob"
+            "kubernetes-bgp-mixed"
+            "kubernetes-bgp-new-asn"
+            "kubernetes-bgp-new-password"
+            "kubernetes-bgp-no-router-id"
+            "kubernetes-bgp-none"
+            "kubernetes-bgp-peer-without-speaker"
+            "kubernetes-bgp-unconfigured-export"
+            "kubernetes-bgp-unconfigured-peer-interface"
+            "kubernetes-bgp-unnumbered"
+          ];
+          services = [ "frr" ];
+          users = [ "frr" ];
+          groups = [
+            "frr"
+            "frrvty"
+          ];
+          diagnostics = [
+            "bfd-peers"
+            "bgp-neighbor"
+            "bgp-route"
+            "bgp-summary"
+          ];
+          packages = [ "frr" ];
+          etc = [
+            "frr/daemons"
+            "frr/frr.conf"
+            "frr/vtysh.conf"
+          ];
+          udpPorts = [ "3784" ];
+          networkd = [
+            "ManageForeignNextHops"
+            "ManageForeignRoutes"
+          ];
+        };
+        added = { };
+        ids = true;
+      };
+    };
+  # On a Kubernetes image FRR runs the output bgp's config, which vtysh checks, reloads when it
+  # changes, loads the BGPPeers' passwords, and announces the node's addresses before the
+  # Kubernetes preparation picks them.
+  testKubernetesBGP = {
+    expr =
+      let
+        frr = w.systemd.services.frr;
+        bgp = w.chalkos.outputs.bgp;
+      in
+      {
+        option = w.chalkos.kubernetes.bgp.enable;
+        check = lib.hasInfix "vtysh --dryrun" bgp.check;
+        render = lib.hasSuffix " kubernetes-frr" bgp.render;
+        inherit (bgp) inputs;
+        reload = w.chalkos.effects.bgp.reload;
+        grant = frr.chalkos.kinds;
+        before = lib.elem "chalkos-node-addresses.target" frr.before;
+        wantedBy = lib.elem "chalkos-node-addresses.target" frr.wantedBy;
+        prepareAfter = lib.elem "chalkos-node-addresses.target" w.systemd.services.chalkos-kubernetes.after;
+        filled = w.environment.etc."frr/frr.conf".source;
+        condition = frr.unitConfig.ConditionPathIsDirectory;
+      };
+    expected = {
+      option = true;
+      check = true;
+      render = true;
+      inputs = [
+        "BGPPeer"
+        "BGPSpeaker"
+        "Node"
+      ];
+      reload = [ "frr.service" ];
+      grant = [ "BGPPeer" ];
+      before = true;
+      wantedBy = true;
+      prepareAfter = true;
+      filled = "/run/frr/frr.conf";
+      condition = "/run/chalkos/credentials/frr";
     };
   };
 }

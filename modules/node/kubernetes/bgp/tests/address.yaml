@@ -1,0 +1,39 @@
+# A dual-stack node that peers with a top-of-rack switch at an address of each family, each
+# session carrying its family's routes; the IPv4 peer gives the node no routes, and the speaker
+# takes the Node's IPv4 address as its router ID.
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: default}
+spec:
+  type: worker
+  nodeIP: {addresses: [192.0.2.11, "2001:db8::11"]}
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: BGPSpeaker
+metadata: {name: bgp}
+spec:
+  asn: 65001
+  export: {interfaces: [eth0]}
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: BGPPeer
+metadata: {name: tor-v4}
+spec:
+  asn: 65000
+  address: 192.0.2.1
+  bfd: false
+  import: none
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: BGPPeer
+metadata: {name: tor-v6}
+spec:
+  asn: 65000
+  address: "2001:db8::1"
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-eth0}
+spec:
+  match: {name: eth0}
+  network: {address: [192.0.2.11/24, "2001:db8::11/64"]}

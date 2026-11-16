@@ -264,7 +264,8 @@ in
   # effect on a unit the image lacks and a diagnostic whose regex does not compile fail the check
   # of their image. A router image checks its rules and holds the modules of its firewall and
   # Jool, its firewall check refuses what the kernel would, its FRR check what vtysh would, its
-  # Jool check what jool would and its Unbound check what unbound-checkconf would. A router image
+  # Jool check what jool would and its Unbound check what unbound-checkconf would. A Kubernetes
+  # image's FRR check refuses what vtysh would. A router image
   # without BGP, NAT64, the resolver, DHCP, the DHCP relay or WireGuard, and one without all six,
   # checks its rules. image-tests renders the images' outputs.
   rules =
@@ -383,6 +384,18 @@ in
         sed -i 's/^ neighbor peer-fabric bfd$/ neighbor peer-fabric bfd sometimes/' frr/frr.conf
         refuses "the router's FRR check" 'Unknown command' env OUT=$PWD/frr "$check" </dev/null
         grep -qF 'neighbor peer-fabric bfd sometimes' refused.log || fail "the router's FRR check refused another command: $(cat refused.log)"
+        # The check of the Kubernetes layer's FRR config passes the homelab's nodes' and that of
+        # unnumbered and address sessions side by side, and refuses a command no daemon takes,
+        # with vtysh alone.
+        check=$(jq -r .bgp.check ${examplesBuild.chalkosOutputs})
+        mkdir bgp
+        install -m 644 ${../../modules/node/kubernetes/bgp/tests/mixed/bgp/frr.conf} bgp/frr.conf
+        OUT=$PWD/bgp $check </dev/null
+        install -m 644 ${../../modules/node/kubernetes/bgp/tests/address-interface/bgp/frr.conf} bgp/frr.conf
+        OUT=$PWD/bgp $check </dev/null
+        sed -i 's/^ neighbor peer-router-enp1s0 bfd$/ neighbor peer-router-enp1s0 bfd sometimes/' bgp/frr.conf
+        refuses "the Kubernetes FRR check" 'Unknown command' env OUT=$PWD/bgp "$check" </dev/null
+        grep -qF 'neighbor peer-router-enp1s0 bfd sometimes' refused.log || fail "the Kubernetes FRR check refused another command: $(cat refused.log)"
         # The check of Jool's instances passes the edge example's and refuses a port past 65535,
         # with jool alone. It gets the edge example's instance file without its .veth.
         check=$(jq -r .jool.check ${routerBuild.chalkosOutputs})

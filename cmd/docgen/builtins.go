@@ -153,7 +153,7 @@ func writeBuiltins(page, def, plain, router string) error {
 // every image, which every image declares, runs or renders as verb says, those images with
 // Kubernetes add, and those router images add or declare otherwise. write writes a subsection of
 // them, and of reads the sort from an image.
-func writePart[T any](b *strings.Builder, sort, heading, intro, verb string, d, p, r builtinImage, write func(b *strings.Builder, anchor, intro string, names, changed []string, img builtinImage), of func(builtinImage) map[string]T) error {
+func writePart[T any](b *strings.Builder, sort, heading, intro, verb string, d, p, r builtinImage, write func(b *strings.Builder, anchor, intro string, names, anchored []string, img builtinImage), of func(builtinImage) map[string]T) error {
 	every, kube, err := splitEvery(sort, of(d), of(p))
 	if err != nil {
 		return err
@@ -166,7 +166,10 @@ func writePart[T any](b *strings.Builder, sort, heading, intro, verb string, d, 
 	fmt.Fprintf(b, "\n## %s { #%s }\n\n%s", heading, plural, intro)
 	write(b, plural+"-every-image", "The "+plural+" every image "+verb+".", every, nil, d)
 	write(b, plural+"-kubernetes", "The "+plural+" images with Kubernetes add.", kube, nil, d)
-	write(b, plural+"-router-images", layerIntro("The "+plural+" router images add", sort, "router images", changed), sortedUnion(router, changed), changed, r)
+	// A built-in that both layers' images add, such as FRR's diagnostics, takes the router
+	// section's anchor there, as its row with images with Kubernetes keeps the plain one.
+	both := slices.DeleteFunc(slices.Clone(router), func(n string) bool { return !slices.Contains(kube, n) })
+	write(b, plural+"-router-images", layerIntro("The "+plural+" router images add", sort, "router images", changed), sortedUnion(router, changed), sortedUnion(changed, both), r)
 	return nil
 }
 
@@ -304,11 +307,12 @@ func sortedUnion(a, b []string) []string {
 	return slices.Sorted(slices.Values(append(slices.Clone(a), b...)))
 }
 
-// rowAnchor is the anchor of a built-in's row: <prefix>-<name>, or, for a built-in of every image
-// that the section's images declare otherwise and whose own row has that anchor already, the
-// section's anchor and the name, such as #outputs-router-images-networkd.
-func rowAnchor(prefix, section, name string, changed []string) string {
-	if slices.Contains(changed, name) {
+// rowAnchor is the anchor of a built-in's row: <prefix>-<name>, or, for one of anchored, the
+// section's anchor and the name, such as #outputs-router-images-networkd. anchored are the
+// built-ins whose rows take the section's anchor: those of every image the section's images
+// declare otherwise, and those another layer's section lists too.
+func rowAnchor(prefix, section, name string, anchored []string) string {
+	if slices.Contains(anchored, name) {
 		return section + "-" + name
 	}
 	return prefix + "-" + name
@@ -430,7 +434,7 @@ func codes(items []string) []string {
 
 // writeFacts writes a section of facts, and which of the default image's kinds and effects read
 // each.
-func writeFacts(b *strings.Builder, anchor, intro string, names, changed []string, img builtinImage) {
+func writeFacts(b *strings.Builder, anchor, intro string, names, anchored []string, img builtinImage) {
 	writeSubsection(b, anchor, intro, len(names))
 	if len(names) == 0 {
 		return
@@ -492,12 +496,12 @@ func writeFacts(b *strings.Builder, anchor, intro string, names, changed []strin
 		if len(by) > 0 {
 			readBy = sentence(strings.Join(by, ", and "))
 		}
-		fmt.Fprintf(b, "| `%s`{ #%s } | %s | %s |\n", name, strings.ToLower(rowAnchor("fact", anchor, name, changed)), tableCell(sentence(reads)), readBy)
+		fmt.Fprintf(b, "| `%s`{ #%s } | %s | %s |\n", name, strings.ToLower(rowAnchor("fact", anchor, name, anchored)), tableCell(sentence(reads)), readBy)
 	}
 }
 
 // writeOutputs writes a section of outputs.
-func writeOutputs(b *strings.Builder, anchor, intro string, names, changed []string, img builtinImage) {
+func writeOutputs(b *strings.Builder, anchor, intro string, names, anchored []string, img builtinImage) {
 	defs := img.outputs
 	writeSubsection(b, anchor, intro, len(names))
 	if len(names) == 0 {
@@ -511,13 +515,13 @@ func writeOutputs(b *strings.Builder, anchor, intro string, names, changed []str
 			check = "yes"
 		}
 		fmt.Fprintf(b, "| `%s`{ #%s } | %s | %s | %s | %s |\n",
-			name, rowAnchor("output", anchor, name, changed), strings.Join(codes(o.Inputs), ", "), code(o.Dir), tableCell(renderer(o.Render)), check)
+			name, rowAnchor("output", anchor, name, anchored), strings.Join(codes(o.Inputs), ", "), code(o.Dir), tableCell(renderer(o.Render)), check)
 	}
 }
 
 // writeValidators writes a section of validators, each with the kinds it reads and the command
 // chalkd runs it as: its program with validate and its name.
-func writeValidators(b *strings.Builder, anchor, intro string, names, changed []string, img builtinImage) {
+func writeValidators(b *strings.Builder, anchor, intro string, names, anchored []string, img builtinImage) {
 	defs := img.validators
 	writeSubsection(b, anchor, intro, len(names))
 	if len(names) == 0 {
@@ -527,7 +531,7 @@ func writeValidators(b *strings.Builder, anchor, intro string, names, changed []
 	for _, name := range names {
 		v := defs[name]
 		command := strings.Join(append(strings.Fields(stripStore(v.Program)), "validate", name), " ")
-		fmt.Fprintf(b, "| `%s`{ #%s } | %s | %s |\n", name, rowAnchor("validator", anchor, name, changed), strings.Join(codes(v.Inputs), ", "), code(command))
+		fmt.Fprintf(b, "| `%s`{ #%s } | %s | %s |\n", name, rowAnchor("validator", anchor, name, anchored), strings.Join(codes(v.Inputs), ", "), code(command))
 	}
 }
 
@@ -547,7 +551,7 @@ func renderer(render string) string {
 }
 
 // writeEffects writes a section of effects, each with when it fires and what it does.
-func writeEffects(b *strings.Builder, anchor, intro string, names, changed []string, img builtinImage) {
+func writeEffects(b *strings.Builder, anchor, intro string, names, anchored []string, img builtinImage) {
 	defs := img.effects
 	writeSubsection(b, anchor, intro, len(names))
 	if len(names) == 0 {
@@ -609,14 +613,14 @@ func writeEffects(b *strings.Builder, anchor, intro string, names, changed []str
 			does = append(does, "Runs chalkd's action "+code(e.Chalkd)+".")
 		}
 		fmt.Fprintf(b, "| `%s`{ #%s } | %s | %s |\n",
-			name, rowAnchor("effect", anchor, name, changed), tableCell(sentence(strings.Join(fires, ", or "))), tableCell(strings.Join(does, " ")))
+			name, rowAnchor("effect", anchor, name, anchored), tableCell(sentence(strings.Join(fires, ", or "))), tableCell(strings.Join(does, " ")))
 	}
 	b.WriteString(strings.Join(after, ""))
 }
 
 // writeDiagnostics writes a section of diagnostics, each with what it shows and runs, its
 // parameters, its role and the capabilities of its run.
-func writeDiagnostics(b *strings.Builder, anchor, intro string, names, changed []string, img builtinImage) {
+func writeDiagnostics(b *strings.Builder, anchor, intro string, names, anchored []string, img builtinImage) {
 	defs := img.diagnostics
 	writeSubsection(b, anchor, intro, len(names))
 	if len(names) == 0 {
@@ -653,7 +657,7 @@ func writeDiagnostics(b *strings.Builder, anchor, intro string, names, changed [
 		if len(d.Capabilities) > 0 {
 			caps = strings.Join(codes(d.Capabilities), ", ")
 		}
-		fmt.Fprintf(b, "| `%s`{ #%s } | %s | %s | %s | %s |\n", name, rowAnchor("diagnostic", anchor, name, changed), tableCell(does), tableCell(params), d.Role, caps)
+		fmt.Fprintf(b, "| `%s`{ #%s } | %s | %s | %s | %s |\n", name, rowAnchor("diagnostic", anchor, name, anchored), tableCell(does), tableCell(params), d.Role, caps)
 	}
 	b.WriteString(strings.Join(after, ""))
 }

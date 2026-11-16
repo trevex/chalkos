@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/trevex/chalkos/pkg/diagnostics"
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/schema"
 )
@@ -227,6 +228,23 @@ func editedImage(t *testing.T, name, file string, edit func(string) string) stri
 		t.Fatal(err)
 	}
 	return dir
+}
+
+// A diagnostic both layers add keeps the plain anchor with images with Kubernetes and takes the
+// section's with router images.
+func TestWritePartAnchorsWhatBothLayersAdd(t *testing.T) {
+	def := diagnostics.Definition{Description: "Sessions.", Command: []string{"/bin/vtysh"}, Role: "reader"}
+	d := builtinImage{diagnostics: map[string]diagnostics.Definition{"bgp-summary": def}}
+	r := builtinImage{diagnostics: map[string]diagnostics.Definition{"bgp-summary": def}}
+	var b strings.Builder
+	if err := writePart(&b, "diagnostic", "Diagnostics", "intro\n", "declares", d, builtinImage{}, r, writeDiagnostics, func(i builtinImage) map[string]diagnostics.Definition { return i.diagnostics }); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"`bgp-summary`{ #diagnostic-bgp-summary }", "`bgp-summary`{ #diagnostics-router-images-bgp-summary }"} {
+		if strings.Count(b.String(), want) != 1 {
+			t.Errorf("the page holds %q %d times:\n%s", want, strings.Count(b.String(), want), b.String())
+		}
+	}
 }
 
 // A kind whose name two groups share takes its group in the anchor of its rules.

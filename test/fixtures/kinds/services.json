@@ -24,5 +24,10 @@
       "Mirror",
       "Registry"
     ]
+  },
+  "frr": {
+    "kinds": [
+      "BGPPeer"
+    ]
   }
 }

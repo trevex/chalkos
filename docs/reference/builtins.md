@@ -1506,7 +1506,11 @@ The outputs every image renders.
 
 ### Images with Kubernetes { #outputs-kubernetes }
 
-None.
+The outputs images with Kubernetes add.
+
+| Output | Inputs | Directory | Renderer | Check |
+| --- | --- | --- | --- | --- |
+| `bgp`{ #output-bgp } | `BGPPeer`, `BGPSpeaker`, `Node` | `/run/chalkos/outputs/bgp` | Command `chalkos-render kubernetes-frr` | yes |
 
 ### Router images { #outputs-router-images }
 
@@ -1552,6 +1556,7 @@ The effects images with Kubernetes add.
 
 | Effect | Fires when | Does |
 | --- | --- | --- |
+| `bgp`{ #effect-bgp } | The output `bgp` changed. | Reloads `frr.service`. |
 | `chalkd-cluster`{ #effect-chalkd-cluster } | The `when` after the table holds, which reads the documents of `Cluster` and `Flannel` and the fact `cluster`. | Runs chalkd's action `kubernetes:restart`. |
 | `chalkd-share`{ #effect-chalkd-share } | The `when` after the table holds, which reads the documents of `Addon`, `Cluster`, `Flannel` and `Node` and the facts `cluster` and `share`. | Runs chalkd's action `kubernetes:reload`. |
 | `containerd-config`{ #effect-containerd-config } | The `when` after the table holds, which reads the documents of `Cluster`. | Restarts `chalkos-containerd-config.service` and `containerd.service`. |
@@ -1660,11 +1665,7 @@ fi
 
 ### Images with Kubernetes { #diagnostics-kubernetes }
 
-None.
-
-### Router images { #diagnostics-router-images }
-
-The diagnostics router images add.
+The diagnostics images with Kubernetes add.
 
 | Diagnostic | Does | Parameters | Role | Capabilities |
 | --- | --- | --- | --- | --- |
@@ -1672,6 +1673,17 @@ The diagnostics router images add.
 | `bgp-neighbor`{ #diagnostic-bgp-neighbor } | One BGP session in detail, as show bgp neighbors prints it: its state, timers, capabilities and routes. Runs `vtysh -c show bgp vrf {vrf} neighbors {peer}`. | `peer`, pattern `^([0-9A-Fa-f:.]+|[A-Za-z0-9_.:@-]{1,15})$`; `vrf`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, default `default` | reader | — |
 | `bgp-route`{ #diagnostic-bgp-route } | One VRF's BGP paths to a prefix, as show bgp prints them: each path's AS path, next hop and attributes, and the best. Runs `vtysh -c show bgp vrf {vrf} {family} unicast {prefix}`. | `prefix`, prefix; `vrf`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, default `default`; `family`, enum of `ipv4` or `ipv6`, default `ipv6` | reader | — |
 | `bgp-summary`{ #diagnostic-bgp-summary } | One VRF's BGP sessions of each address family, as show bgp summary prints them. Runs `vtysh -c show bgp vrf {vrf} summary`. | `vrf`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, default `default` | reader | — |
+
+### Router images { #diagnostics-router-images }
+
+The diagnostics router images add.
+
+| Diagnostic | Does | Parameters | Role | Capabilities |
+| --- | --- | --- | --- | --- |
+| `bfd-peers`{ #diagnostics-router-images-bfd-peers } | One VRF's BFD sessions and their state, as show bfd peers prints them. Runs `vtysh -c show bfd vrf {vrf} peers`. | `vrf`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, default `default` | reader | — |
+| `bgp-neighbor`{ #diagnostics-router-images-bgp-neighbor } | One BGP session in detail, as show bgp neighbors prints it: its state, timers, capabilities and routes. Runs `vtysh -c show bgp vrf {vrf} neighbors {peer}`. | `peer`, pattern `^([0-9A-Fa-f:.]+|[A-Za-z0-9_.:@-]{1,15})$`; `vrf`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, default `default` | reader | — |
+| `bgp-route`{ #diagnostics-router-images-bgp-route } | One VRF's BGP paths to a prefix, as show bgp prints them: each path's AS path, next hop and attributes, and the best. Runs `vtysh -c show bgp vrf {vrf} {family} unicast {prefix}`. | `prefix`, prefix; `vrf`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, default `default`; `family`, enum of `ipv4` or `ipv6`, default `ipv6` | reader | — |
+| `bgp-summary`{ #diagnostics-router-images-bgp-summary } | One VRF's BGP sessions of each address family, as show bgp summary prints them. Runs `vtysh -c show bgp vrf {vrf} summary`. | `vrf`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, default `default` | reader | — |
 | `dhcp-leases`{ #diagnostic-dhcp-leases } | The leases of the DHCPv4 and DHCPv6 servers of every VRF, or of one subnet or MAC address: each lease's VRF, subnet, address or delegated prefix, MAC address, host name and end, as Kea's lease commands report them. Runs `bash -c <script> dhcp-leases --subnet={subnet} --mac={mac}`, with the script after the table. | `subnet`, pattern `^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`, optional; `mac`, pattern `^[0-9a-f]{2}(:[0-9a-f]{2}){5}$`, optional | operator | — |
 | `nat64-sessions`{ #diagnostic-nat64-sessions } | A NAT64 instance's sessions, as jool session display prints them: each translated TCP, UDP and ICMP connection's IPv6 and IPv4 addresses and ports, and when it expires. Runs `bash -c <script> nat64-sessions {instance}`, with the script after the table. | `instance`, pattern `^[a-z0-9]([-a-z0-9.]{0,9}[a-z0-9])?$` | operator | `CAP_NET_ADMIN` |
 | `traceroute`{ #diagnostic-traceroute } | The routers on the path to an address, as traceroute -n prints them: one probe a hop, 30 hops at most. Runs `traceroute -n -m 30 -q 1 -w 2 {address}`. | `address`, address | operator | — |

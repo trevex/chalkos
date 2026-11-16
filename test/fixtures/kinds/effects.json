@@ -1,4 +1,19 @@
 {
+  "bgp": {
+    "chalkd": "",
+    "hint": null,
+    "kinds": [],
+    "outputs": [
+      "bgp"
+    ],
+    "reload": [
+      "frr.service"
+    ],
+    "restart": [],
+    "run": "",
+    "start": false,
+    "when": ""
+  },
   "chalkd-cluster": {
     "chalkd": "kubernetes:restart",
     "hint": null,

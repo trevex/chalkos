@@ -5,7 +5,8 @@ let
   secrets = import ./secrets.nix { inherit pkgs; };
   # Every image has the test image's small partitions and the probe the tests read. test, which
   # most VM tests boot, carries chalklab's Greeting kind; k8s is the image of the Kubernetes
-  # tests' control planes and workers; router that of the router test's routers.
+  # tests' control planes and workers, on metal without BGP for the HA test; router that of the
+  # router test's routers.
   shared = {
     osCA = "${secrets}/secrets.pub.json";
     modules = [ ../../modules/testing/test-image.nix ];
@@ -37,6 +38,10 @@ let
       }
     ];
   };
+  # The HA test's control planes leave BGP out, so a cluster's lifecycle runs without FRR too.
+  withoutBGP = {
+    chalkos.kubernetes.bgp.enable = false;
+  };
   # The image of modules.<base> on a platform, <base>-<platform>.
   image = base: platform: {
     name = "${base}-${platform}";
@@ -49,7 +54,11 @@ let
       images = [
         (image "test" "metal")
         (image "test" "kvm")
-        (image "k8s" "metal")
+        {
+          name = "k8s-metal";
+          platform = "metal";
+          modules = modules.k8s ++ [ withoutBGP ];
+        }
         (image "k8s" "kvm")
         (image "router" "kvm")
       ];
@@ -116,6 +125,6 @@ images
     };
   };
   # The Kubernetes image the HA test's rolling upgrade installs.
-  haUpgradeImage = imageAs "k8s" "upgrade" { };
+  haUpgradeImage = imageAs "k8s" "upgrade" withoutBGP;
   kubernetesImages = import ./kubernetes-images.nix { inherit pkgs; };
 }

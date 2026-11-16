@@ -9,9 +9,10 @@
       hashTree = 2.2;
       uki = 51;
     };
+    # FRR and the Python of frr-reload.py take about 98 MiB of the Kubernetes image's store.
     k8s-kvm = {
-      storeData = 290;
-      hashTree = 2.3;
+      storeData = 389;
+      hashTree = 3.1;
       uki = 51;
     };
     # FRR and the Python of frr-reload.py take about 100 MiB of the router image's store.

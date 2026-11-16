@@ -32,6 +32,7 @@ const usage = `usage: chalkos-render template TEMPLATE FILE
        chalkos-render router-nftables PORT
        chalkos-render router-nftables-fallback PORT
        chalkos-render frr
+       chalkos-render kubernetes-frr
        chalkos-render jool
        chalkos-render unbound TRUST-ANCHOR ZONE-FILE
        chalkos-render kea PD-HOOK
@@ -100,6 +101,8 @@ func run(args []string, stdin io.Reader, stdout io.Writer, out string) error {
 		return renderRouterNftables(args[1], true, in, out)
 	case args[0] == "frr" && len(args) == 1:
 		return renderFRR(in, out)
+	case args[0] == "kubernetes-frr" && len(args) == 1:
+		return renderKubernetesFRR(in, out)
 	case args[0] == "jool" && len(args) == 1:
 		return renderJool(in, out)
 	case args[0] == "unbound" && len(args) == 3:

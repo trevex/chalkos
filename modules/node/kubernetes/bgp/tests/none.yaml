@@ -1,0 +1,7 @@
+# A node without BGP documents: FRR runs no BGP.
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-eth0}
+spec:
+  match: {name: eth0}
+  network: {dhcp: "yes"}

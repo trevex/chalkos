@@ -1,4 +1,5 @@
-# The tests of BGP on Kubernetes images: the refusals of the kinds' rules.
+# The tests of BGP on Kubernetes images: the frr.conf each config renders, the refusals of the
+# kinds' rules and the reload a new password takes.
 let
   # A test of tests/<name>.yaml with the refusals given.
   refused = name: refusals: {
@@ -9,8 +10,29 @@ let
   };
   unconfigured = i: what: "${i} has no Network document whose [Match] Name= names it; ${what}";
   sessions = "FRR runs sessions on interfaces the node configures";
+  # A test of tests/<name>.yaml whose output bgp renders tests/<name>/bgp.
+  rendered = name: {
+    "kubernetes-bgp-${name}" = {
+      config = ./tests + "/${name}.yaml";
+      outputs.bgp = ./tests + "/${name}/bgp";
+    };
+  };
 in
-{
+# The frr.conf of each example, which vtysh's check passes.
+rendered "unnumbered"
+// rendered "address-interface"
+// rendered "address"
+// rendered "mixed"
+// rendered "none"
+// {
+  # A new password leaves frr.conf as it was, which names the credential alone, and FRR reloads to
+  # load the credential anew.
+  kubernetes-bgp-new-password = {
+    before = ./tests/address-interface.yaml;
+    config = ./tests/address-interface-new-password.yaml;
+    outputs.bgp = ./tests/address-interface/bgp;
+    effects = [ "bgp" ];
+  };
   # A speaker keeps its AS number.
   kubernetes-bgp-new-asn = {
     before = ./tests/unnumbered.yaml;
