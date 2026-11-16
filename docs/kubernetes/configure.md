@@ -18,6 +18,22 @@ with your settings, delivered with the rest of their config. The page builds on 
 Every other field takes its default. [Config kinds](../reference/kinds.md#cluster) lists every
 field of the four kinds.
 
+The images of the `Cluster` document must suit the kubelet that the node's image carries. The image
+directory names that kubelet's release in `facts/kubernetes.json`:
+
+```console
+$ cat images/node-kvm/facts/kubernetes.json
+{"cni":"flannel","version":"1.37.2"}
+```
+
+On a running node, `chalkctl status` shows it in the line `kubernetes versions: API server 1.37.2,
+kubelet 1.37.2`. The tags of `apiServer`, `controllerManager`, `scheduler` and `proxy` must stay
+within the [skew policy](#keep-the-versions-within-the-skew-policy) of that release. The lab
+template's
+[`cluster/cluster.yaml`](https://github.com/trevex/chalkos/blob/main/templates/lab/cluster/cluster.yaml)
+holds a set of references, pinned by digest, that the `template-lab` check validates against the
+template's image. Start from it when the image comes from the same chalkos revision.
+
 ## Before you begin
 
 You need the workstation that [Set up your workstation](../operate/workstation.md) describes, and

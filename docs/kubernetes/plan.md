@@ -28,6 +28,10 @@ spec:
   --8<-- "examples/homelab/cluster/cluster.yaml:images"
 ```
 
+The references of `images` must suit the kubelet release of the nodes' image, which the image
+directory names in `facts/kubernetes.json`. [Configure Kubernetes](configure.md) shows near its top
+how to read it, and where to find a set of references that matches.
+
 ## Before you begin
 
 You need the workstation that [Set up your workstation](../operate/workstation.md) describes: the
