@@ -1,53 +1,41 @@
 ---
 title: "Architecture for developers"
-description: "Where the code lives: the Go packages, the Nix modules and how they talk to each other"
+description: "Where Nix and Go meet, how a layer splits across the code, and where to make each kind of change"
 ---
 
 # Architecture for developers
 
 chalkos is two halves: Nix modules that build a cluster's images, and Go programs that read the
-cluster's YAML and install and operate the nodes. This page maps both to the repository and shows
-where they meet. [Architecture](../how-it-works/node/architecture.md) explains the system as a user sees it;
-this page is for changing it.
+cluster's YAML and install and operate the nodes. This page shows where the halves meet, how a
+layer spreads across both and where each kind of change goes.
+[Architecture](../how-it-works/node/architecture.md) explains the system as a user sees it.
 
 ## Nix and Go meet at the image and the node's config
 
-Go code never evaluates Nix itself. Nix builds images; everything about a cluster or a node is
-YAML that Go reads. They meet in these places:
+Go code never evaluates Nix. Nix builds images, and everything about a cluster or a node is YAML
+that Go reads. They meet in four places:
 
-- The image directory. `chalkos.lib.mkImage` builds one per image a flake names
-  from the node modules (`lib/images.nix`, `modules/node`): the raw image with its partitions,
-  `metadata.json` (name, platform, root hash, revision and tag), `facts/`, a
-  `<layer>.json` for each layer that sets `chalkos.imageDirectory.facts` (the Kubernetes layer's
-  `kubernetes.json` says what the image fixes about Kubernetes), and `schemas/`, the JSON Schemas
-  of the config kinds the image accepts. chalkctl and chalklab read
-  them from there, or from a running node through the Contract method.
-- Files the image carries in `/etc/chalkos`, written by the node modules: the same
-  Kubernetes facts as `kubernetes/image.json`, `schemas`, the units granted each kind in `services.json`, the
-  outputs a node renders in `outputs.json`, the validators it runs in `validators.json`, what a
-  delivery restarts or reloads in `effects.json`, the system region's repart definitions in
-  `repart.d`
-  and the OS CA certificate in `os-ca.crt` when `mkImage` has
-  an `osCA`; and the image's own description in `/etc/os-release`. `pkg/contract` loads the
-  schemas and the definition files as one contract: chalkd loads the running image's once as it
-  starts, and that of an image it checks config for from the image's own `/etc/chalkos`.
-- A node's config: the YAML
-  config documents an inventory gives the node,
-  which chalkctl reads (`pkg/inventory`), checks against the schemas of the image the inventory
-  names for the node and translates into the identity the
-  node applies (`pkg/config`). `pkg/config` translates what every image gives a node, and each
-  layer of the image adds its part through a translator, such as `pkg/kubernetes/translate` for
-  Kubernetes, which stores it in the identity's `layers` by the layer's name.
-  chalkctl delivers the documents to
-  chalkd, which checks them again against its own image's
-  schemas, keeps them on STATE and translates them the same
-  way.
-- The node's Kubernetes cluster, which chalkd writes from the `Cluster` and `Flannel`
-  documents and the image's `kubernetes/image.json` into `/run/chalkos/kubernetes/cluster.json`. chalkd renders
-  chalkos's add-ons (RBAC, kube-proxy, flannel, CoreDNS) and the kubelet's configuration from it
-  in Go (`pkg/kubernetes/addons`, `pkg/kubernetes/node`) and applies the objects of the
-  `Addon` documents after the add-ons.
+- The image directory. `chalkos.lib.mkImage` (`lib/images.nix`) builds one per image from the node
+  modules (`modules/node`). Beside the raw image it holds `metadata.json`, `facts/` and `schemas/`,
+  the JSON Schemas of the config kinds the image accepts. chalkctl and chalklab read them there,
+  or from a running node through the Contract method.
+- The files the image carries in `/etc/chalkos`, which the node modules write, and its
+  `/etc/os-release`. `pkg/contract` loads the schemas and the definition files as one contract.
+  chalkd loads the running image's contract once as it starts. For an image it checks config
+  for, it loads the contract from that image's own `/etc/chalkos`.
+- A node's config. chalkctl reads the documents an inventory gives the node (`pkg/inventory`) and
+  checks them against the schemas of the image the inventory names. `pkg/config` translates them
+  into the identity the node applies. Each layer adds its part through a translator, such as
+  `pkg/kubernetes/translate`, which stores it in the identity's `layers` by the layer's name.
+  chalkd checks the documents again against its own image's schemas, keeps them on STATE and
+  translates them the same way.
+- The node's Kubernetes cluster. chalkd writes `/run/chalkos/kubernetes/cluster.json` from the
+  `Cluster` and `Flannel` documents and the image's `kubernetes/image.json`. From it, Go code
+  renders chalkos's add-ons and the kubelet's configuration (`pkg/kubernetes/addons`,
+  `pkg/kubernetes/node`). chalkd applies the objects of the `Addon` documents after the add-ons.
 
+[Outputs of an image build](../reference/image-layout.md#outputs-of-an-image-build) and
+[Paths on a running node](../reference/image-layout.md#paths-on-a-running-node) list the files.
 The diagram follows an image and a node's YAML to a running node.
 
 ```mermaid
@@ -60,468 +48,86 @@ flowchart LR
     chalkd -->|config| state["STATE"]
 ```
 
-## Programs in cmd
+## A layer spans Nix modules and four Go plugins
 
-Each directory of `cmd/` is a main that wires a package up; the logic lives in `pkg/`.
+A layer, such as Kubernetes or the router, is a set of NixOS modules plus a Go plugin in each
+program that serves it. `lib/layers.nix` exports the layers as the flake's `nixosModules`. An
+image lists one in its modules, which enables the layer's modules in `modules/node` and writes
+the layer's marker to `/etc/chalkos/layers`.
 
-| Program | What its main does |
-| --- | --- |
-| `cmd/chalkctl` | Runs `chalkctl.NewCommand()` with a context that Ctrl+C cancels. |
-| `cmd/chalklab` | The same for `chalklab.NewCommand()`. |
-| `cmd/chalkbuild` | The same for `chalkbuild.NewCommand()`. |
-| `cmd/chalkcfg` | Runs `chalkcfg.NewCommand()` on a node. |
-| `cmd/chalkd` | Builds chalkd's cobra command tree with `chalkd.NewCommand` and runs it with `chalkd.Execute`: `serve` (chalkd.service), `load-config` (chalkos-config.service), `health` (chalkos-health.service), `check` (an image's checker, which another image's chalkd runs) and each layer's commands as `chalkd <layer> <command>`, such as `chalkd kubernetes prepare` (chalkos-kubernetes.service). Lists the layer plugins compiled into chalkd in `plugins.go`, and loads the credentials `serve` starts with. |
-| `cmd/chalkos-console` | Runs the console on tty1, in place of a login prompt, and lists the layer tabs compiled into it in `layers.go`. `CHALKOS_CONSOLE_ACTIONS=1` in its unit's environment offers the actions. |
-| `cmd/chalkos-networkd-schema` | Writes the spec schemas of the networkd kinds from systemd's gperf tables, for the image build. |
-| `cmd/chalkos-render` | Renders the outputs of the `chalkosLib.render.template` and `.documents` renderers and the built-in outputs `networkd` (with `router-networkd` on router images), `router-sysctl`, `router-nftables`, `frr`, `jool`, `unbound`, `kea` and `dhcp-relay` on a node, in an output's sandbox, and a router image's fallback ruleset and FRR config when the image is built. Runs the validator router as `chalkos-render validate router`. The renderers trust what the schemas, the rules and the validators check, refuse what only they see, such as networkd's unit names, and keep guards, as internal errors, where a bad value would break their output. |
-| `cmd/chalkos-rules` | `check` checks an image when it is built: every rule compiles within the cost limit and reads facts the image declares, the effects act on units, outputs and kinds the image has, every output and validator is a program of its store, and every diagnostic is one chalkd can run. `test` runs the image's tests, `chalkos.tests`, through `pkg/check` as chalkd checks a delivery, and writes the files, refusals and effects each test got. |
-| `cmd/chalkos-storage` | Opens STATE and sets up the volumes in the initrd, runs as a systemd generator for the other volumes, and prints the storage facts the storage kinds' rules read. |
-| `cmd/docgen` | Writes the command reference and checks the commands the documentation shows. |
+| Program | The layer's plugin | Listed in |
+| --- | --- | --- |
+| chalkd | `pkg/chalkd/layers/<layer>`: the layer's API, loops, hooks, commands and actions | `cmd/chalkd/plugins.go` |
+| chalkctl | `pkg/chalkctl/layers/<layer>`: commands, status, delivery, upgrade and rotation hooks | `pkg/chalkctl/layers.go` |
+| Console | `pkg/console/layers/<layer>`: the layer's tab | `cmd/chalkos-console/layers.go` |
+| Status view | `pkg/statusview/layers/<layer>`: the layer's section of a node's status | used by the chalkctl plugin and the console tab |
 
-## Packages in pkg
-
-| Package | What it does |
-| --- | --- |
-| `api/kubernetes/v1`, `api/node/v1`, `api/router/v1` | The messages and Connect clients and servers of the node API and of the Kubernetes and router layers' APIs, generated by `buf generate`. |
-| `api/check/v1` | What chalkd and an image's checker exchange: the `Input` chalkd writes to `chalkd check`, the `Result` it reads back, and FactsService, which serves the checker the node's facts. Generated by `buf generate`. |
-| `arch` | The architectures chalkos builds images for, with every name and number each goes by. |
-| `askpassword` | A systemd password agent: answers the password requests that `ask.*` files in `/run/systemd/ask-password` name. |
-| `atomicfile` | Replaces a file in one step through a synced temporary file, and syncs directories, so a crash leaves the old content or the new. Writes a new file that must not exist yet, and takes the file locks that keep two processes apart. |
-| `chalkbuild` | The chalkbuild command tree. |
-| `chalkcfg` | The chalkcfg command tree: reads the documents below `/run/chalkos/config` and the kinds the image's schemas name, and prints them. |
-| `chalkctl` | The chalkctl command tree, and the list of its layer plugins in `layers.go`. |
-| `chalkctl/layer` | The interfaces of chalkctl's layer plugins: the plugin, its optional hooks and the `Host` through which a plugin reaches the cluster and its nodes. |
-| `chalkctl/layers/kubernetes` | chalkctl's Kubernetes layer: the commands that run Kubernetes and etcd and revoke nodes, the Kubernetes section of a node's status, the facts of its images, the share it delivers, the quorum checks, drains and uncordons of the reboot step that `upgrade` and `node reboot` share, and the rotations of the Kubernetes secrets. |
-| `chalkctl/layers/router` | chalkctl's router layer: `chalkctl node routes`, the router's section of a node's status and the validator router, which it links. |
-| `chalkd` | The node API server, with the permissions of each NodeService method; the registry of layer plugins it mounts, starts and asks for hooks; and chalkd's work at boot: the node certificate's renewal and the health check. |
-| `chalkd/layer` | The interfaces of chalkd's layer plugins, their optional hooks and the registry of the compiled and active plugins. |
-| `chalkd/layers/kubernetes` | chalkd's Kubernetes layer: KubernetesService, the node's Kubernetes loops, the control plane's, the join and the VIP election, the issuer of node certificates, and the `chalkd kubernetes` commands and actions. |
-| `chalkd/layers/router` | chalkd's router layer: RouterService, with the state of the node's FRR, Jool and Unbound and the kernel's routes. |
-| `chalkd/renewal` | Renews a certificate, or a set of them, once it is due, for the node certificate and a layer's own; without anything to renew it with, it logs once that the certificate is due. |
-| `chalklab` | The chalklab command tree. |
-| `check` | Checks a node's config as an image does, in four stages, the methods of `check.Image`: `Translate`, `Rules`, `Validate` and `Render`. Each returns a `*check.Refusal` for a config it refuses. `Run` runs them in order and plans the effects, for `chalkd check` and an install in place. A delivery runs them between chalkd's checks of the machine, and chalkctl runs the first three without the node's facts and with the validators it links. |
-| `client` | Connections to chalkd, each with one way to verify the node: by fingerprint in maintenance mode, by the OS CA otherwise; the names chalkd's status gives the OS's certificates and trusted values. |
-| `clustersecrets` | The secrets file: the OS CA and node CA with their keys, the Kubernetes secrets, the recovery secret, the file's age encryption, the rotation of what it holds, and the lock and in-place replacement of the file, which keeps its previous version. |
-| `command` | Runs a program of the image's store with bounded output, for command facts and outputs; a failure keeps standard error out of its error. It also follows a path's links within an image's store, and stops a transient unit or reads why one failed. |
-| `config` | Config documents: parsing, the rules of a set, defaults, the redacted form that programs read, the hash, and the translation into the identity the node applies, which runs the translators of the image's layers after the common part. |
-| `config/slot` | Keeps a node's config on STATE, a slot per image with its identity, and writes it for the node's units: the documents below `/run/chalkos/config` and the secrets the granted units load as credentials. |
-| `console` | The console on a machine's screen: a live view of the node that chalkd serves on its console socket, with a header of the node's identity and health, tabs for its status, network, storage and logs, the tabs of the image's layers, and actions for a node that chalkctl cannot reach. |
-| `console/layers/kubernetes` | The console's Kubernetes tab: the layer's section of the node's status, and the warning before a reboot, a shutdown or a rollback, which skip chalkctl's drain. |
-| `console/layers/router` | The console's Router tab: the router layer's section of the node's status, and the DHCP leases and WireGuard peers that the image's diagnostics show. |
-| `contract` | Loads an image's contract from one directory, `/etc/chalkos` on a node or the directory `chalkos-rules` checks: the schemas, the facts, effects, services, outputs, validators and diagnostics they declare, each definition checked as chalkd needs it. It compiles the change rules and the effects' rules once, when they are first asked for. |
-| `diagnostics` | Reads the image's `diagnostics.json`, checks a call's arguments against their parameters' types, builds the command line, and runs it as a transient systemd unit with a sandbox of its own. |
-| `dns` | The syntax of the DNS names and record data of a `Resolver`'s local zones, which the rules' `isDNSName()` and `isRecordData()` check and the output `unbound` guards with, so the two cannot drift apart. |
-| `effects` | Reads the image's `services.json`, the units granted config kinds, and `effects.json`, what a delivery does to those units and to chalkd, and refuses an effect chalkd could not carry out. Carries out the due effects on the units: the reloads, the commands and the restarts, in the units' order. |
-| `esp` | Lists the UKIs on an ESP with the image and generation each boots, writes a UKI under a temporary name, reads the UKI of an image staged in the inactive slot, and removes and names UKIs, for an install and an upgrade. |
-| `facts` | Loads the facts change rules read: files, and commands of the image's store run in a sandbox. |
-| `identity` | The node's identity, the form its config translates to, which the node applies at boot: the hostname, platform, network and storage every image has, and a part for each layer that adds one, by the layer's name. The package does not interpret the layers' parts. |
-| `image` | Reads a disk image: its partitions from `repart-output.json`, its store and hash tree, the UKI and boot loader off its ESP, and the provenance `metadata.json` names. |
-| `imagecheck` | Runs an image's `chalkd check` from the image's own store in a sandboxed transient unit, with the image's store over `/nix/store`, and serves it the node's facts over a Unix socket. |
-| `imagepart` | Describes the parts an image is sent in, its store, hash tree, UKI and boot loader, by size and SHA-256, and receives them from a stream. |
-| `imageref` | Reads container image references as config names them: a repository with its registry, a tag, a digest, or both. A tag of the form vX.Y.Z carries the version of what the image runs. |
-| `imagesign` | Signs an image's boot loader and UKIs, in place or in a signed copy of an image directory. |
-| `install` | Installs a node in place or from the installer, step by step and repeatable: STATE, the ESP, the UEFI boot entries, wiping the target and the system region's definitions each have a file, and `parts.go` holds the steps of an install from the installer. |
-| `internal/cli` | What the command trees of chalkctl, chalkd, chalklab, chalkbuild and chalkcfg share: usage errors and their exit status, the root and group commands, positional argument checks and flags that take one of a set of values. |
-| `internal/filecopy` | Copies a disk image without its holes and a plain file to a new one, for chalklab, the lab and image signing. |
-| `internal/poll` | Checks a condition again and again until it passes, a timeout passes or the context ends, keeping the last check's error. |
-| `internal/strs` | Joins values into the lists of messages and flags: by their `String`, or names as prose, such as "a, b and c". |
-| `inventory` | Reads chalkctl's inventory: the cluster's nodes, the address chalkctl reaches each at, the image each runs and the config files each gets. It passes each node's documents through the filters its caller gives, which chalkctl takes from its layers, and names no layer. |
-| `jsonfile` | Reads a JSON file an image may leave out, such as `facts.json`, `effects.json` or `outputs.json`, with each definition by name checked, and decodes JSON that must hold one value of known fields. |
-| `kubernetes` | The node's Kubernetes cluster as `kubernetes/translate` builds it from the config and the image's facts, its flags and address ranges, the node as the Kubernetes part of its identity (`NodeIdentity`) names it, the kinds of Kubernetes nodes (control plane and worker), and the control plane's ports and paths on a node. |
-| `kubernetes/addons` | Renders the objects chalkos applies to every cluster before its own manifests: RBAC for chalkos's identities, kube-proxy, flannel and CoreDNS. |
-| `kubernetes/apply` | Server-side apply of manifests and approval of kubelet serving certificates. |
-| `kubernetes/credprovider` | The kubelet's image credential provider: writes its config and the node's registry credentials from the Registry documents, and answers the kubelet's requests. |
-| `kubernetes/etcd` | etcd membership: learners, promotion, quorum-safe removal, the node's own member; finds the members from etcd's mirror pods and counts encrypted values by key. |
-| `kubernetes/manifests` | The control plane's static pods. |
-| `kubernetes/node` | The node's Kubernetes files at boot: addresses, kubelet credentials and flags, control-plane certificates, the check that they are prepared, the removal of the static pods. |
-| `kubernetes/nodeip` | Picks the node's address of each family. |
-| `kubernetes/pki` | The Kubernetes certificates: the share, the control plane's leaves, admin kubeconfigs, and the names chalkd's status gives them. |
-| `kubernetes/revoked` | The ConfigMap of revoked nodes, which control planes read before they renew a node certificate, and the admission policy that shuts those nodes out. |
-| `kubernetes/translate` | The Kubernetes layer's part of a config's translation: builds the cluster from the Node, Cluster and Flannel documents and the image's facts, adds the node's Kubernetes settings to its identity, and reads the sandbox image and the Addon objects. For chalkctl and chalklab it reads a node's type, leaves the Addon documents to control planes, and checks that an inventory's nodes hold the same Cluster and Flannel specs, whose endpoint it returns. |
-| `kubernetes/vip` | The etcd election of the control plane that holds the VIPs; adds a VIP to an interface and announces it. |
-| `kubernetes/vxlan` | The nftables table `chalkos-vxlan`: marks VXLAN to the node's addresses for the firewall and drops pods' VXLAN to the source ranges. |
-| `lab` | QEMU VMs, swtpm, the lab switch and console and the lab's supervisor, for chalklab and the end-to-end tests. |
-| `layers` | Reads the layers an image carries from their markers in `/etc/chalkos/layers`, for the plugins chalkd activates and the `layers` of Info and Contract. |
-| `networkdschema` | Generates the spec schemas of the networkd kinds from systemd's gperf tables. |
-| `nodeconfig` | Applies the running image's config slot, chosen by `usrhash=`, at boot (`chalkd load-config`) and after every apply: the hostname and `/run/chalkos/node.json`; writes the config's documents and secrets for the granted units, and renders the outputs at boot, networkd's units and chrony's servers among them. |
-| `ociimage` | Reads, writes, pulls and pushes chalkos images as OCI artifacts: one manifest whose config is the image header and whose layers are the store, hash tree, UKI, boot loader and contract. |
-| `outputs` | Runs the programs of an image that read a node's config, renderers and validators, on one input and with one runner: in a sandbox of their own, as an unprivileged user, with their reports of refusals read alike. It swaps rendered outputs in by a symlink rename and records their hashes and failures, and runs the validators chalkctl links in-process on the same input. |
-| `pki` | The OS CA and node CA, client and node certificates and their checks, client roles, PEM keys and certificate bundles. |
-| `refusals` | The format in which an output's renderer or a validator reports what it refuses of a node's documents: one JSON object on standard output, each refusal naming a document's kind and name and a field's path. |
-| `router` | Reads a router's state: its BGP sessions and paths of each VRF from vtysh's JSON, its NAT64 instances, counters and pools from jool's CSV, the kernel's routes from netlink, and the filter of a `Routes` call. |
-| `router/derive` | The router's model of a node's config: the router kinds' documents and what the Network and VRF documents say together, such as each link's VRF, the .network units in networkd's order, the NAT64 instances and the tables of policy routing. The router's outputs render from it. It holds the checks of the validator router, `Validate`, which refuses what the outputs would apply otherwise than the documents say and reports every fault it finds, each once, the VRFs' links first and what reads them once those pass. `chalkos-render validate router` runs it, and chalkctl links it. It takes the standard library and the package `refusals` alone. |
-| `router/keaconf` | The part of Kea's DHCPv4 and DHCPv6 configs that the output `kea` writes: the renderer marshals these types, and chalkd reads the rendered files back into them. |
-| `router/services` | The names of the files, units and runtime directories of the router's services that run once per VRF: Kea, Unbound and dnsmasq's DHCP relay. The renderer, the router modules and chalkd share them. |
-| `rules` | Compiles the change rules of an image's schemas, with chalkos's CEL functions, and evaluates them against a config, the config it replaces and the node's facts. |
-| `schema` | Reads an image's `metadata.json` and the JSON Schemas of its kinds, checks documents against them and fills in their defaults. |
-| `secureboot` | Checks an EFI binary's Authenticode signature as Secure Boot firmware does, against db and dbx read from the firmware or against given certificates. |
-| `statusview` | Writes a node's status as people read it: what `chalkctl status` prints and the console shows, and the disks of `chalkctl disks`. |
-| `statusview/layers/kubernetes` | Writes the Kubernetes layer's section of a node's status, for `chalkctl status` and the console's Kubernetes tab. |
-| `statusview/layers/router` | Writes the router layer's section of a node's status, for `chalkctl status` and the console's Router tab. |
-| `storage` | Storage sections, disk references and pins, repart definitions, and the changes a delivered section makes to the recorded one. |
-| `storage/gpt` | Reads and changes partition tables with sfdisk under the disk's lock, waiting a bounded time for it, and names the partition types of the system region. |
-| `storage/hostops` | The host operations the installer, an upgrade and the storage code share: mounts, LUKS and dm-verity volumes, the mount table, and the blkid probe. `Ops` is the interface the installer, an upgrade and the storage setup call, and that tests replace with a fake. `Tools` implements it and runs mount, umount, systemd-cryptsetup and veritysetup; it is the one place their command lines are written. `Probe`, `Content` and `Type` run blkid on a `tool.Runner`. |
-| `storage/node` | Storage on the node: STATE, volumes, VAR and the generator's units; the storage changes chalkd makes and the volumes an install creates and enrols. |
-| `storeslot` | The store slots of a disk and the writer an upgrade and an install share: retire a slot, write and verify the store, activate the slot. |
-| `tool` | Runs the command-line tools chalkd, the installer and the storage code drive, such as cryptsetup, sfdisk and systemctl. |
-| `tool/systemctl` | Asks systemd about units through the tool runner: their properties, whether they are active, the failed units and the units of a target. |
-| `uki` | Reads a UKI's os-release and command line and an EFI binary's architecture, and refuses an image version systemd-boot would order its entry by. |
-| `upgrade` | Writes an image into the inactive slot and stages it there (`Install`), makes the staged image the next boot (`Activate`), or both (`Upgrade`); the image header and the checks of its UKI and boot loader an install shares; the booted entry and the provenance record. |
-| `verity` | Reads and checks dm-verity hash trees. |
-
-Test helpers live in packages of their own:
-
-- `uki/ukitest`: small UKIs.
-- `image/imagetest`: small disk images, db signers and `sbsign`.
-- `askpassword/askpasswordtest`: password requests made as systemd makes them, which record the
-  answers.
-- `chalkd/chalkdtest`: the layers chalkd compiles in and the Kubernetes image's effects, for the
-  tests that run chalkd's server.
-- `chalkd/layer/layertest`: checks of a layer's API against its plugin's permissions.
-- `chalkd/layers/kubernetes/kubernetestest`: a node's Kubernetes files, shares and CAs, and
-  stand-ins for the preparation, the API server's Node and chalkd.
-- `chalkd/renewal/renewaltest`: runs a renewal in a synctest bubble and hands the test each check.
-- `console/consoletest`: a fake client and test nodes for the console, and helpers that run it on
-  a terminal of 80 columns and 25 lines and compare its screen.
-- `internal/cli/clitest`: checks of the programs' cobra command trees.
-- `internal/golden`: compares a test's output with a golden file, which `go test -update` rewrites.
-- `internal/netnstest`: runs a test in a user and network namespace of its own.
-- `internal/testwait`: `Eventually` waits in real time for a condition, and `Bubble` runs a test
-  in a synctest bubble with a fake clock.
-- `kubernetes/etcd/etcdtest`: in-process etcd members.
-- `kubernetes/kubetest`: a cluster and its images, a node, and the Cluster and Node documents that
-  describe them.
-- `ociimage/ocitest`: in-memory OCI registries and small chalkos images.
-- `pki/pkitest`: node CAs.
-- `router/derive/derivetest`: a router's documents by kind, and the scenarios that the router
-  outputs and the validator router both test.
-- `schema/schematest`: the fixture schemas of `test/fixtures`.
-- `secureboot/secureboottest`: TPM event logs as firmware writes them.
-- `storage/hostops/hostopstest`: a fake host that keeps its mounts and device-mapper volumes in maps.
-- `storage/storagetest`: the sysfs, udev and `/dev` trees of a host's disks.
-- `tool/tooltest`: a fake tool runner that records commands and answers them by prefix.
-- `upgrade/upgradetest`: a small image that a UKI boots, and a partition of a disk image as a
-  file.
-
-## Programs read config redacted
-
-Rules, renderers, validators, command facts and an image's checker read a node's config as
-`config.Redacted`: the documents with each value of a `Secret`, and of each Secret object a
-document embeds, such as a Kubernetes Secret in an `Addon`, replaced by its SHA-256. The
-packages that hand documents to programs, `rules`, `outputs`, `check` and `imagecheck`, take
-`config.Redacted` and no plain documents, so the compiler refuses a call that would pass secret
-values to a program.
-
-Only these functions return a `config.Redacted`:
-
-- `config.Redact` hides the values of documents that hold them.
-- `config.RedactedObjects` and `config.ParseRedacted` read documents that `Redact` hid where they
-  were written: chalkd's baseline of the effects, the input chalkd gives an image's checker, and
-  the config GetConfig serves.
-- `Redacted.Defaulted` and `config.TranslateRedacted` fill in the defaults of an image's schemas.
-
-The type makes every source of redacted documents explicit: each is one of these calls.
-`RedactedObjects` and `ParseRedacted` check nothing; they trust their callers to pass documents
-that were redacted when they were written. `Redact` takes plain documents, and a
-`config.Redacted` does not convert to them, so no value is hashed twice. The config's version,
-`config.Hash`, is the SHA-256 of the redacted documents in canonical JSON, and
-`config.KindHashes`, which the effects compare, hashes each kind's redacted documents the same
-way.
-
-## The node API
-
-The API is defined in four files below `api/chalkos/`: `node/v1/node.proto` holds NodeService,
-which every image serves, and `kubernetes/v1/kubernetes.proto` and `router/v1/router.proto` hold
-the APIs of the Kubernetes and router layers. `check/v1/check.proto` holds what chalkd and an
-image's checker exchange, which no client calls and the API reference leaves out. chalkd serves
-NodeService over Connect on TCP port 50000 with mutual TLS, and mounts each compiled layer
-plugin's service beside it. Which client role may call a method, and in which mode, is one table
-per API: `permissions` in `pkg/chalkd/server.go` for NodeService, and each plugin's
-`Permissions`, such as that of `pkg/chalkd/layers/kubernetes`.
-
-```go
-nodev1connect.NodeServiceInfoProcedure: {Modes: layer.AnyMode, Role: pki.RoleReader},
-kubernetesv1connect.KubernetesServiceBootstrapProcedure: {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
-```
-
-A new method needs an entry there; the authoriser refuses a method without one. It refuses a
-method of a layer the image lacks with `UNIMPLEMENTED` before it checks the mode. A handler of a
-layer's method therefore runs only on a node in normal mode whose image carries that layer, and
-does not check for a missing layer itself. One check sits outside the tables: `Upgrade` needs
-the admin role when its header carries config or a fallback secret, as `ApplyConfig` does. The
-table cannot see the header, so `Upgrade` checks that itself. Comments in the proto files become
-the [Node API](../reference/api.md) page, so they are written for users.
-
-## Layer plugins
-
-A layer, such as Kubernetes or the router, is a predefined set of NixOS modules that chalkos
-ships, `chalkos.nixosModules.kubernetes` or `chalkos.nixosModules.router`. An image lists it in
-its modules like any other module, and it enables the layer's modules in `modules/node`. Its Go
-side is a plugin compiled into chalkd and chalkctl. The image says which layers it carries with
-its markers in `/etc/chalkos/layers`, and a node's Info names them.
-
-`pkg/chalkd/layer` declares chalkd's side. A `Plugin` has a name, its API's handler, the
-permissions of its methods and the background loops it starts in normal mode. Optional hooks,
-which chalkd finds by type assertion, add what else the layer does:
-
-| Hook | What the layer adds |
-| --- | --- |
-| `Health` | Its check of a new boot's health. |
-| `Certificates` | Its certificates and trusted CAs in Status. |
-| `Delivery` | The payloads it takes with a delivery and its part of the identity. |
-| `nodeconfig.Layer` | What it writes from the running slot's documents, at boot and after each delivery. |
-| `Issuer` | The issuing of node certificates on renewal; an image has one issuer at most. |
-| `ImageFacts` | The facts of its images, from which it adds its translator to the target that config is translated for. |
-| `Commands` | Cobra subcommands, run as `chalkd <layer> <command>`. |
-| `Actions` | Actions on what the running chalkd holds, which effects name as `<layer>:<action>`. |
-
-`cmd/chalkd/plugins.go` lists the compiled plugins, and `layer.Registry` sorts them into the
-compiled and the active ones. chalkd mounts the API of every compiled plugin, so the authoriser
-can answer for a missing layer, and runs the commands of every compiled plugin. It starts only
-the active plugins, whose layers the image carries, and asks them for most hooks. For what may
-belong to another image, it asks every compiled plugin: the facts of the image an upgrade or an
-install writes, the identity an upgrade's slot keeps, and the payloads the installer takes. The
-comment of each hook in `pkg/chalkd/layer/layer.go` names the plugins chalkd asks. The plugins
-live in `pkg/chalkd/layers/kubernetes` and `pkg/chalkd/layers/router`.
-
-`pkg/chalkctl/layer` declares chalkctl's side in the same way: a `Plugin` with hooks for commands,
-a node's status section, image facts, the payloads of a delivery and their admission, the
-coordinators that upgrade and rotate take first, an upgrade's checks, the rotation kinds a layer
-runs and the validators it links. `Inventory` filters the documents each node of an inventory
-gets and checks the inventory's nodes together; chalkctl passes the filters to `inventory.Load`
-and runs the checks on every inventory it loads. `UpgradeFlags` adds a layer's flags to
-`chalkctl upgrade` and `chalkctl node reboot`, such as the Kubernetes plugin's
-`--allow-downtime`, and the layer's hooks of the reboot step read them back. A plugin also names
-the nodes every rotation leaves out and those that hold the node CA. chalkctl runs the rotations
-of the OS CA and the node CA itself, in `pkg/chalkctl/rotate_ca.go`, since every node takes part
-in them, and asks the plugins for their kinds. For what the inventory and
-the secrets file drive, such as commands, payloads and rotations, it asks every compiled plugin,
-and it asks each for the validators that an image of the node's schemas runs. For what it reads
-from a node's layer services, such as the node's status section and its part in an upgrade, it
-asks only the plugins of the layers the node's Info names. A plugin reaches the cluster and its
-nodes through the `Host` chalkctl gives it. `pkg/chalkctl/layers.go` lists the plugins, which live
-in `pkg/chalkctl/layers/kubernetes` and `pkg/chalkctl/layers/router`.
-
-The console and the status view have layer plugins too. A layer's section of a node's status is
-written once, in `pkg/statusview/layers/<layer>`, which chalkctl's plugin prints for
-`chalkctl status` and the console's tab shows. The console's side is a `console.Tab` in
-`pkg/console/layers/<layer>`, which shows only when the node's Info passes its `Applies`.
-`cmd/chalkos-console/layers.go` lists the tabs compiled into the console.
-
-## chalkd runs with a narrow sandbox
-
-The unit `chalkd.service` is declared in `modules/node/chalkd.nix`. chalkd runs as root with its
-capabilities, because it partitions disks, enrols TPM keyslots, writes EFI variables, mounts
-volumes the host must see and sets the hostname. Its unit therefore has no file system or
-hostname namespace. `ProtectKernelLogs` stays off too, because systemd would give chalkd a mount
-namespace for it, and chalkd's mounts would not reach the host.
-
-The sandbox it does have:
-
-- `RestrictAddressFamilies` allows only the socket families chalkd uses: Unix, IPv4, IPv6,
-  netlink, the kernel crypto API (`AF_ALG`, for cryptsetup and systemd-cryptenroll) and packet
-  sockets (`AF_PACKET`, for the gratuitous ARP of a VIP).
-- `NoNewPrivileges` forbids new privileges.
-- `SystemCallArchitectures=native` fixes the system call architecture.
-- `ProtectClock` protects the clock, and `LockPersonality` and `RestrictRealtime` are on.
-
-`Restart=always` with no start limit restarts chalkd whenever it stops, because it is the only
-way to reach the node: nodes have no SSH and no login.
-
-## An install runs in fixed steps
-
-`pkg/install` turns a node in maintenance mode into an installed node, and `pkg/chalkd/install.go`
-serves it as the node API's Install method. Every step finds what an earlier, interrupted attempt
-did and continues from there, so running the same `chalkctl install` again continues an install.
-
-[`chalkctl install`](../reference/cli/chalkctl_install.md) connects to the node, compares its
-certificate with the fingerprint from the console, and sends what makes the machine this node.
-[Security model](../how-it-works/node/security.md) explains how the fingerprint and `--insecure`
-protect the secrets on the way.
-
-On a node that runs its image already, the install happens in place (`Installer.InPlace`), and
-chalkctl sends no image. chalkd recreates STATE if its encryption differs from the node's
-`SystemDisk`, opens it, creates VAR and the volumes, and enrols the second keyslot of every
-encrypted volume unless the fallback is `none`. It then writes the config and certificates, gives
-the ESP a random partition UUID and writes the `installed` marker.
-
-On a node that runs the installer (`Installer.FromParts`), chalkctl also sends the image the
-inventory names for the node, or the one `--image` gives, in the same parts an upgrade sends,
-plus the boot loader. The sequence shows what the installer does with them. When the inventory
-names the image in a registry, the header carries the image's reference by digest in place of the
-schemas, layer facts and repart definitions, and no parts follow it. The installer then reads
-those from the artifact's contract layer before it touches the disk. It pulls the store, hash
-tree, UKI and boot loader from the registry in the steps where the sequence receives them from
-chalkctl.
-
-```mermaid
-sequenceDiagram
-    participant chalkctl
-    participant chalkd as chalkd on the installer
-    participant disk as Target disk and TPM
-    participant fw as Firmware
-    chalkd-->>chalkd: console shows fingerprint and addresses
-    chalkctl->>chalkd: Install header: config, the image's schemas and layer facts, node certificate, OS CA, fallback secret, Kubernetes share, image header, repart definitions
-    chalkd->>disk: check the disk is empty or an unfinished install
-    chalkd->>disk: lay out ESP, slot A, slot B and STATE with systemd-repart, STATE sealed to PCR 7
-    chalkctl->>chalkd: store and hash tree
-    chalkd->>disk: write slot A, verify it against the root hash, activate it
-    chalkctl->>chalkd: UKI and boot loader
-    chalkd->>disk: check the UKI, write it to the ESP
-    chalkd->>disk: mount slot A through dm-verity, run the image's checker on the config
-    chalkd->>disk: open STATE, create VAR, enrol the fallback key, write the config
-    chalkd->>disk: write the boot loader
-    chalkd->>fw: add a boot entry and set BootNext
-    chalkd->>disk: write the installed marker
-    chalkd-->>chalkctl: done, rebooting
-```
-
-Before anything is written, the installer translates the config with its own code and the
-image's schemas, for the storage section it lays the disk out by, and checks that the image is
-built for the machine's architecture. It plans the layers' payloads against that translation's
-identity, so a payload no layer takes, or a Kubernetes share for another node, is refused with the
-disk untouched. With Secure Boot enforced, it checks the UKI's and the boot loader's signatures
-against the firmware's db and dbx, as the firmware will at the next boot. It checks each when it
-receives it: after slot A is written and before the boot loader is.
-
-The image checks its config itself, as an upgrade's image does. Once slot A holds the store and the
-ESP the UKI, `Installer.checkConfig` mounts the store read-only through dm-verity
-(`upgrade.OpenStore`) and calls `PartsRequest.Check`, which chalkd's `installCheck` serves with
-`checkWithImage`. The image's `chalkd check` runs in `chalkos-check.service` with the image's
-schemas, rules, validators and renderers, and chalkd loads the facts the image's `facts.json`
-declares from the installer's machine, which the node runs on. The identity the checker returns
-must have the storage section the disk was laid out by, or the install is refused
-(`sectionDifference`). STATE gets the config slot the checker returned, and the layers' payloads
-are planned again against its identity, which STATE records them with. A refusal comes before
-STATE, the boot loader and the boot entry, so the disk boots nothing, and an install continues on
-it, of the same image or another.
-
-Every config slot is therefore written only after the image that boots it checked it: in place the
-running image, from the installer the image's own checker, on upgrades and deliveries as
-[An upgrade stages an image, then activates it](#an-upgrade-stages-an-image-then-activates-it)
-describes. `chalkos-config.service` renders the outputs at boot and runs no validators.
-
-The installer takes the disk the node's `SystemDisk` names when blkid finds nothing on it but at
-most an empty GPT, or when it holds an unfinished install of the node, which it continues. It
-takes any other disk only with `--wipe-disk`. Until the boot loader is written the firmware finds
-nothing to boot on the target, so an interrupted install never boots a half-installed node.
-
-The image travels as its parts: the compressed store, its hash tree, the UKI and systemd-boot.
-For an image with Kubernetes that is about 300 MiB, instead of the multi-gigabyte raw image.
-
-After the reboot, the initrd unseals STATE and VAR with the TPM, `chalkos-config.service` applies
-the config, and chalkd finds the `installed` marker and starts in normal mode with the node
-certificate from STATE.
-
-## An upgrade stages an image, then activates it
-
-The image in a node's inactive slot is staged or active. `upgrade.Node.Install` writes the store,
-has chalkd's `CheckStore` run the image's own checker on the config it keeps for the image, gives
-the slot its partition UUIDs and names the UKI `.staged-<id>_<generation>.efi`
-(`esp.StagedName`), which systemd-boot does not boot and an upgrade's sweep of temporary UKIs
-leaves. `upgrade.Node.Activate` checks the staged UKI again and renames it to its counted entry
-name; `upgrade.Node.Upgrade` runs both. chalkd's `Upgrade` stages and, unless the header's
-`stage_only` is set, activates; `ActivateImage` activates alone. The ESP and the partition table
-say which state the slot is in, so both survive a restart of chalkd and a reboot.
-
-Everything in chalkd that reads or writes the image in the inactive slot treats both states
-alike: `stagedEntry` in `pkg/chalkd/staged.go` finds the active entry or else the staged UKI, and
-`config apply --staged`, `GetConfig`, Status, the recheck of an image sent again and the record
-of installed images use it. The known-good image a rollback stages keeps the config it last ran,
-and that image is always active.
-
-A config slot is written only once the image that boots it checked the config. A plain
-`ApplyConfig` therefore goes to the staged image too: `planSecond` in `pkg/chalkd/staged.go` has
-that image's checker (`planSlot`, `checkWithImage`) check the config against the storage the
-running image's delivery records, after `planDelivery` checked it for the running image and before
-`commit` changes anything; `secondWrite.write` writes the staged slot once `commit` succeeded. On
-a node without a staged image it replaces the pending config instead. A trial holds both back:
-`holdBack` keeps the checked slot at `/state/chalkd/trial-staged`, the trial's record names it,
-and `ConfirmConfig` writes it once it removed the record; every other end of the trial removes the
-copy with the record. An
-image's checker compares with the running slot's delivered documents and fills in its own
-defaults (`config.Redacted.Defaulted`), as chalkctl's `checkRules` does.
-
-chalkctl runs the steps through the same calls. `pkg/chalkctl/upgrade.go` stages each node's
-image with `stage_only`, then hands the node to the reboot step in `pkg/chalkctl/reboot.go`, which
-holds the node through its layers, activates the image, reboots the node, waits for a new boot ID
-and a healthy boot, and releases the node. `chalkctl node reboot` runs the same reboot step
-without an activation, and `chalkctl node activate` calls `ActivateImage`.
-
-## Storage partitions are matched deterministically
-
-`pkg/config/storage.go` renders the systemd-repart definitions of a node's VAR and volumes, and
-`pkg/storage/node` runs systemd-repart once per disk to create and grow the partitions. repart
-assigns existing partitions to definitions, so three choices keep that matching deterministic:
-
-- Each partition gets its own GPT type UUID, derived from its label. repart assigns existing
-  partitions to definitions by type, so a new volume can never take over another volume's
-  partition.
-- Definition files are ordered: VAR first, then the system disk's volumes in name order. A disk of
-  its own holds one volume.
-- Partition UUIDs derive from a seed of the node's name and the disk, passed as `--seed`. The same
-  definition yields the same partition UUID on every run, and the node opens volumes on other
-  disks by that UUID.
-
-A `Volume`'s `repart` field passes further repart.d keys through. The keys the typed fields set
-(`Type`, `Label`, `Encrypt`, `Format`, `SizeMinBytes`, `SizeMaxBytes` and `MountPoint`) are refused
-there.
-
-## The command-line programs
-
-chalkctl, chalklab, chalkbuild and chalkcfg are cobra command trees in importable packages:
-`pkg/chalkctl`, `pkg/chalklab`, `pkg/chalkbuild` and `pkg/chalkcfg` each export `NewCommand()`,
-which returns the root command, and `Execute(ctx, root)`, which runs it and returns the exit code.
-Another program can add their trees to its own, and tests run commands in-process with their
-output captured. These four and chalkd share `pkg/internal/cli`: its `Execute` prints a command's error and
-exits with 2 and the command's usage after a usage error, such as a wrong number of arguments, an
-unknown flag or a required flag not set, and with 1 after another error. chalkctl also exits with
-130 after an error once Ctrl+C cancelled it. chalkd's tree in `cmd/chalkd` runs through the same
-`Execute`, by way of `chalkd.Execute`, which prints each error a failed command joins on a line of
-its own. Each package keeps its help texts in `help.go`, and a test requires a short and a long
-description and an example on every visible command, because they become the
-[command reference](../reference/cli/index.md). chalkcfg runs on nodes, which have no logins, so
-it has no `completion` command.
-
-## Nix modules
-
-[Nix code](nix.md) says where a new helper goes and which practices the Nix code follows.
-
-| Directory | What it holds |
-| --- | --- |
-| `modules/node/` | The NixOS modules of every image: `base/` (appliance, closure, disk, image directory, storage), `kinds/` (`chalkos.kinds`, `chalkos.facts`, networkd's kinds and the kinds every image accepts), `runtime/` (grants, `chalkos.outputs`, `chalkos.effects`, chalkcfg on the system path), kernel, chalkd, time, the CNI, `kubernetes/` (the kubelet, its kinds, effects, containerd, registries, firewall), `router/` (the router layer), upgrade. |
-| `modules/node/router/` | The router layer: `default.nix` (its option, marker and forwarding), the Router kind (`kinds.nix`) and its output `router-sysctl` (`sysctl.nix`), `lib.nix`, what the router's parts share and get as the module argument `routerLib` (the enable option of a feature, the kinds the image declares, the sandbox of the units, the loader of a part's kinds file and, as `routerLib.types`, the types the router kinds share from `types.nix`), traceroute (`diagnostics.nix`) and the validator router (`validator.nix`). `routerLib` belongs to the router layer and is not part of the extension API, although every image's modules can read it. Each part of the router has a directory: `kinds.nix` holds its kinds, `diagnostics.nix` its diagnostics when they have a file of their own, and `default.nix` the rest. Every router image carries `firewall/`, `vrf/` and `policy-routing/`; an image can leave out `bgp/`, `nat64/`, `resolver/`, `dhcp/`, `dhcp-relay/` and `wireguard/` with `chalkos.router.<feature>.enable`. |
-| `modules/platforms/` | `metal` and `kvm`. |
-| `modules/installer/` | The installer image and its ISO. |
-| `modules/testing/` | The test probe, the test image's partition sizes and the test-only config kind `Greeting` with its output and effect. |
-| `lib/` | `mkImage`, `mkInstaller`, `mkImages` and the helpers over their result (`images.nix`), their arguments as module options (`images-arguments.nix`), the layers, which the flake exports as `nixosModules` (`layers.nix`), `chalkos.nix`, which builds `chalkosLib`, the module argument of every image's modules and, beside `mkImages`, the flake's `lib`, and the functions the modules share, which they reach through `chalkosLib.internal` alone: `kinds/` (the JSON Schema converter, the chalkcfg commands of `get`, the option types both recognise, the API groups of chalkos's own kinds, and the check of the kinds a grant, an output, a validator or an effect names, which lists every kind the image does not declare, Secret and withheld kinds), `cel.nix` (CEL that effect rules share) and `refuse.nix` (`refuse`, which throws every problem a module finds in one message, and the phrases the messages share). |
+Common code names no layer. `pkg/inventory` takes its filters from chalkctl's plugins, and
+`pkg/identity` keeps each layer's part without interpreting it.
+[Layer plugins](internals/layer-plugins.md) describes the hooks.
 
 ## Layout rules
 
 The layout follows these rules, so each change has one place to go:
 
-- An extension is a NixOS module in an image's
-  `modules`: its kinds, its units, their outputs and their effects, together.
-- A part of the router layer is a directory of `modules/node/router`. `kinds.nix` is a function
-  of `{ chalkosLib, lib, routerLib }` that returns the part's kinds, which `default.nix` loads
-  with `routerLib.kinds ./kinds.nix` and sets under one condition with the part's outputs,
-  effects and units. A part whose diagnostics have a file of their own keeps them in
-  `diagnostics.nix`, a module that `default.nix` imports, under the same condition. A feature
-  that an image can leave out declares its option `chalkos.router.<feature>.enable` in
-  `default.nix`. An output that reads another feature's kinds filters them by the kinds the image
-  declares.
-- The node modules declare the image options; `lib/images-arguments.nix` declares the
-  arguments of `mkImage` and `mkImages`. Everything about a cluster or a node is a config kind,
-  not an option.
+- An extension is a NixOS module in an image's `modules`: its kinds, its units, their outputs and
+  their effects, together.
+- A part of the router layer is a directory of `modules/node/router`, laid out as
+  [Nix code](nix.md#what-the-modules-and-lib-hold) describes.
+- The node modules declare the image options; `lib/images-arguments.nix` declares the arguments
+  of `mkImage` and `mkImages`. Everything about a cluster or a node is a config kind, not an
+  option.
 - Go code reads a node's config documents and the image's files alone.
-- `nix/` holds how the repository builds and checks chalkos: the packages, the overlay, the
-  flake outputs, the docs build, the checks and the test images. `nix/overlay/default.nix` adds
-  `pkgs.chalkos`, the scope of chalkos's programs and Go toolchain, which the flake exports as
-  `overlays.default` and mkImage applies to the images' nixpkgs. The node modules take
-  chalkos's programs and scripts from that scope and decide where and with which arguments an
-  image runs them. A script a module builds from its config, such as the control plane's ports,
-  sits next to that module.
+- `nix/` holds how the repository builds and checks chalkos: the packages, the overlay, the flake
+  outputs, the docs build, the checks and the test images.
+- `nix/overlay/default.nix` adds `pkgs.chalkos`, the scope of chalkos's programs and Go
+  toolchain. The flake exports it as `overlays.default`, and mkImage applies it to the images'
+  nixpkgs. The node modules take chalkos's programs and scripts from that scope and decide where
+  and with which arguments an image runs them.
+- A script a module builds from its config, such as the control plane's ports, sits next to that
+  module.
 - `cmd/` holds the mains, which wire packages up; logic worth testing lives in `pkg/`.
 
-[Development setup](development.md) lists the commands of a development loop and
-[Testing](testing.md) the tests each part has.
+## Where to change what
+
+Each row names where a change goes and the checks that cover it. `nix build
+.#checks.x86_64-linux.<check>` runs one check.
+
+| To change | Edit | Check with |
+| --- | --- | --- |
+| A NodeService method | `api/chalkos/node/v1/node.proto`, then `buf generate`; the handler and its `permissions` entry in `pkg/chalkd` | `api-generated`, `docs-generated`, `go-unit`, `go-lint` |
+| A layer's API method | `api/chalkos/<layer>/v1/<layer>.proto`; the handler and `Permissions` in `pkg/chalkd/layers/<layer>` | `api-generated`, `docs-generated`, `go-unit`, `go-lint` |
+| A chalkctl command or flag | `pkg/chalkctl` or `pkg/chalkctl/layers/<layer>` and its `help.go`, then `nix run .#docgen` | `go-unit`, `docs-generated`, `docs` |
+| A chalklab or chalkbuild command | `pkg/chalklab` or `pkg/chalkbuild` and its `help.go`, then `nix run .#docgen` | `go-unit`, `docs-generated` |
+| Parsing or translating config | `pkg/config`, or a layer's translator such as `pkg/kubernetes/translate` | `go-unit`, `go-lint` |
+| A kind every image accepts | `modules/node/kinds/` | `eval-kinds`, `eval`, `image-tests`, `docs-generated` |
+| The CEL functions of change rules | `pkg/rules` | `go-unit`, `rules` |
+| How a delivery is checked and applied | `pkg/check`, `pkg/outputs`, `pkg/effects`, `pkg/chalkd/apply.go` | `go-unit`, `image-tests` |
+| An image's checker | `pkg/imagecheck`, `chalkd check` in `pkg/chalkd` | `image-checker`, `go-unit`, `e2e-upgrade` |
+| The install | `pkg/install`, `pkg/chalkd/install.go` | `go-unit`, `e2e-install`, `e2e-installer` |
+| Staging, activation or an upgrade | `pkg/upgrade`, `pkg/chalkd/staged.go`, `pkg/chalkctl/upgrade.go` | `go-unit`, `e2e-upgrade` |
+| Disks, STATE, VAR or volumes | `pkg/storage` and its subpackages, `pkg/config/storage.go`, `cmd/chalkos-storage` | `go-unit`, `e2e-image` |
+| Secure Boot checks or signing | `pkg/secureboot`, `pkg/imagesign` | `go-unit`, `e2e-secureboot` |
+| OCI images | `pkg/ociimage`, `pkg/chalkbuild` | `go-unit`, `image-oci` |
+| Kubernetes on a node | `pkg/kubernetes` and its subpackages, `pkg/chalkd/layers/kubernetes`, `modules/node/kubernetes/` | `go-unit`, `eval`, `e2e-kubernetes`, `e2e-kubernetes-ha` |
+| containerd or registries | `modules/node/kubernetes/containerd.nix`, `registries.nix`, `registry-mirrors.nix` | `containerd-config`, `registry-mirrors` |
+| The node's clock | `modules/node/time.nix` | `chrony-dhcp`, `image-tests` |
+| A router feature | `modules/node/router/<feature>/`, its renderer in `cmd/chalkos-render`, `pkg/router/derive` | `rules`, `image-tests`, `eval-kinds`, the feature's `router-<feature>` check, `e2e-router` |
+| Status or the console | `pkg/statusview`, `pkg/console` and their `layers/<layer>` | `go-unit` |
+| The arguments of mkImage and mkImages | `lib/images.nix`, `lib/images-arguments.nix` | `eval`, `image-tests`, `docs-generated` |
+| Kernel modules or the closure | `modules/node/kernel.nix`, `modules/node/base/closure.nix` | `kernel-modules`, `image-size`, `bootspec` |
+| The lab template | `templates/lab` | `template-lab` |
+| A documentation page | `docs/` | `docs` |
+
+[Testing](testing.md#flake-checks) maps more parts to their checks.
+
+## Read further
+
+- [Packages and programs](packages.md) lists every directory of `cmd/` and `pkg/`.
+- [Nix code](nix.md) describes the modules and `lib/`.
+- [Internals](internals/index.md) maps the node API, layer plugins, config redaction, chalkd's
+  sandbox, the install, staging and storage matching to their code.
+- [Development setup](development.md) lists the commands of a development loop.
+
+An install runs in fixed steps, which [The install in code](internals/install.md) follows.
+{ #an-install-runs-in-fixed-steps }

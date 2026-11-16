@@ -32,9 +32,27 @@ touches.
 
     ---
 
-    Where the code lives: the Go packages, the Nix modules and how they talk to each other.
+    Where Nix and Go meet, how a layer splits across the code, and where to make each kind of
+    change.
 
     [:octicons-arrow-right-24: Read](architecture.md)
+
+-   :material-package-variant: __Packages and programs__
+
+    ---
+
+    Every Go program in `cmd/` and package in `pkg/`, grouped by area.
+
+    [:octicons-arrow-right-24: Read](packages.md)
+
+-   :material-cog-outline: __Internals__
+
+    ---
+
+    The code behind the node API, layer plugins, redaction, the sandbox, the install, staging
+    and storage matching.
+
+    [:octicons-arrow-right-24: Read](internals/index.md)
 
 -   :material-nix: __Nix code__
 
