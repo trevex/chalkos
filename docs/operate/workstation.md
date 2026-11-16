@@ -7,8 +7,8 @@ description: "Get chalkctl, lay out the repository, generate the cluster's secre
 
 This page is for an operator who prepares the machine they run chalkctl on. At the end you have
 chalkctl, a repository laid out like the
-[homelab example](https://github.com/trevex/chalkos/tree/main/examples/homelab), the cluster's
-secrets file encrypted with age, and a client file for everyday commands. You also know which
+[`cluster-metal` template](https://github.com/trevex/chalkos/tree/main/templates/cluster-metal), the
+cluster's secrets file encrypted with age, and a client file for everyday commands. You also know which
 credential each command needs.
 
 ## Before you begin
@@ -23,6 +23,22 @@ The images come from an image author, who builds them with Nix as
 [Your first image flake](../build/first-image.md) shows. chalkctl needs the image directories the
 builds write, and no Nix. chalkos publishes no prebuilt images yet, so without an image author you
 build them yourself from a template or an example with `nix build`.
+
+!!! note "If you are both operator and image author"
+
+    The operator pages hand these edits of the cluster's `flake.nix` to the image author. Each is a
+    line or two of Nix:
+
+    - `osCA = ./secrets.pub.json;` in the arguments of `mkImages` ties the images and the installer
+      to the cluster, as [Tie the images to one cluster](../build/images-and-platforms.md#tie-the-images-to-one-cluster)
+      shows. The templates set it already.
+    - An image with `platform = "kvm";` runs the nodes as virtual machines, as
+      [List the images](../build/images-and-platforms.md#list-the-images) shows.
+    - `chalkos.debug.tools = true;` in an image's modules adds the tools `kubectl debug` uses, as
+      [Add the debug tools](../build/add-software.md#add-the-debug-tools) shows.
+    - The options `chalkos.router.<feature>.enable` leave router features out of an image, as
+      [Leave router features out](../build/images-and-platforms.md#leave-router-features-out)
+      lists.
 
 ## Get chalkctl from the chalkos flake
 
@@ -44,39 +60,38 @@ To run chalkctl on a machine without Nix, copy its program and install mtools, a
 
 ## Lay out the repository
 
-A cluster lives in one repository. The homelab's looks like this once its images are built and its
-secrets are generated:
+A cluster lives in one repository. That of the `cluster-metal` template looks like this once its
+image and installer are built and its secrets are generated:
 
 ```text
-homelab/
-├── .gitignore         keeps images/ and nix build's result links out of git
-├── flake.nix          the image author's flake, which builds the images and the installer
-├── extensions/        the image author's NixOS modules that add kinds
+cluster/
+├── .gitignore         keeps images/, the installer and nix build's result links out of git
+├── flake.nix          the image author's flake, which builds the image and the installer
+├── flake.lock         the chalkos revision the flake pins
 ├── chalkos.yaml       the inventory
-├── router/            the router's config files
-│   ├── router.yaml
-│   └── secrets.yaml
-├── cluster/           config files every Kubernetes node gets
+├── cluster/           config files every node gets
 │   └── cluster.yaml
-├── bgp/               the ports, BGP neighbour and password every Kubernetes node gets
-│   ├── fabric.yaml
-│   └── secrets.yaml
-├── nodes/             each Kubernetes node's own config file
-│   ├── node1.yaml
-│   ├── node2.yaml
-│   └── node3.yaml
+├── nodes/             each node's own config file
+│   ├── cp1.yaml
+│   ├── cp2.yaml
+│   └── cp3.yaml
 ├── images/            image directories, outside git
-│   ├── router-metal   the builds, which nix build links here
-│   └── node-metal
+│   └── node-metal     the build, which nix build links here
+├── installer          the installer's build, outside git
 ├── secrets.age        the secrets file, encrypted with age
 └── secrets.pub.json   the public half of the secrets file
 ```
+
+A larger cluster adds directories of its own. The
+[homelab example](https://github.com/trevex/chalkos/tree/main/examples/homelab) gives its router
+and its Kubernetes nodes separate directories and images, and keeps its NixOS extensions in
+`extensions/`.
 
 The inventory, `chalkos.yaml`, names the cluster's nodes, the address chalkctl reaches each at,
 the image each runs and the config files each gets:
 
 ```yaml title="chalkos.yaml"
---8<-- "examples/homelab/chalkos.yaml"
+--8<-- "templates/cluster-metal/chalkos.yaml"
 ```
 
 chalkctl reads `chalkos.yaml` in the current directory, so you run chalkctl from the repository's
@@ -86,7 +101,7 @@ precedence over `./chalkos.yaml`. Paths in the inventory are relative to its dir
 
 `images/` holds the image directories. `nix build` links a build there, and
 `chalkbuild sign` writes a signed copy beside it, such as `images/node-metal-signed`, for nodes
-that enforce Secure Boot. Both are outside git: the homelab's `.gitignore` lists `images/`.
+that enforce Secure Boot. Both are outside git: the template's `.gitignore` lists `images/`.
 
 Commit the inventory, the config files and `secrets.pub.json`. A flake that names
 `secrets.pub.json` in `osCA` reads it, and a flake sees only the files git tracks. `secrets.age`
@@ -163,8 +178,8 @@ takes it.
 
 Images built without `osCA` accept any client until they are installed, as an admin. Anyone on
 the machine's network may then install it, reboot it and run every diagnostic on it, those for
-operators such as `nft-ruleset` included. The homelab's flake leaves `osCA` out, so that it builds
-before any cluster has secrets, and
+operators such as `nft-ruleset` included. The templates name `osCA` already. The homelab's flake
+leaves it out, so that it builds before any cluster has secrets, and
 [Build a home lab](../guides/home-lab.md#generate-the-clusters-secrets) adds it.
 
 ## Keep the services' secrets in Secret documents
@@ -241,8 +256,8 @@ lists. With none of them, the command stops and says so.
 `$CHALKOSCONFIG` and `$CHALKOSINVENTORY` let you keep the files of several clusters apart:
 
 ```sh
-export CHALKOSCONFIG=~/clusters/homelab/alice.json
-export CHALKOSINVENTORY=~/clusters/homelab/chalkos.yaml
+export CHALKOSCONFIG=~/clusters/cluster/alice.json
+export CHALKOSINVENTORY=~/clusters/cluster/chalkos.yaml
 ```
 
 A client file names no cluster. Its OS CA ties it to one: a node of another cluster fails the TLS
