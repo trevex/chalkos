@@ -1,9 +1,9 @@
 ---
-title: "Style guide"
+title: "Docs style guide"
 description: "How chalkos documentation is written: readers, voice, examples, diagrams, terms and page templates"
 ---
 
-# Style guide
+# Docs style guide
 
 This guide sets the rules for every hand-written page of the chalkos documentation. Generated
 reference text follows the voice and word rules too; it is written in command help, option
@@ -81,6 +81,8 @@ some Nix but has not met chalkos. An operator does not need Nix, so operator pag
 
 - Name the thing or the stage: "Rollback after a failed boot", "Install the first control
   plane". Use sentence case, without a full stop, parentheses, code font or "you".
+- On a how-to, write each H2 as an imperative step: "Choose the system disk". Explanation pages
+  may use statements: "Every slot is checked by the image that boots it".
 - Question headings belong only in Troubleshooting, where the reader arrives with a symptom.
 - One H1, equal to the front matter's `title`. Go no deeper than H3 on task pages.
 - Put text under every heading. Drop "Overview" and "Introduction" headings.

@@ -53,7 +53,7 @@ touches.
 
     [:octicons-arrow-right-24: Read](writing-docs.md)
 
--   :material-format-text: __Style guide__
+-   :material-format-text: __Docs style guide__
 
     ---
 

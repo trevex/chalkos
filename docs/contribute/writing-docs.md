@@ -10,7 +10,7 @@ the Markdown pages in `docs/`. Part of the reference is generated from the code.
 it is out of date or when a page shows a command that does not exist, so the pages cannot drift
 from what chalkos does. This page explains how the site is organised, built, generated, checked
 and published. What goes into a page, and how it is worded, is the
-[style guide](style.md)'s subject.
+[docs style guide](style.md)'s subject.
 
 ## Site sections
 
@@ -22,13 +22,14 @@ The navigation has one section per reader and two that every reader shares:
 | Guides | `guides/` | an operator or image author who follows one project through | tutorial |
 | Operate nodes | `operate/` | operator | how-to |
 | Run Kubernetes | `kubernetes/` | operator running Kubernetes | how-to |
+| Run a router | `router/` | operator running routers | how-to |
 | Build images | `build/` | image author | how-to |
-| How chalkos works | `how-it-works/node/`, `how-it-works/kubernetes/` | everyone | explanation |
+| How chalkos works | `how-it-works/node/`, `how-it-works/kubernetes/`, `how-it-works/router/` | everyone | explanation |
 | Reference | `reference/` | everyone | reference |
 | Contribute | `contribute/` | contributor | how-to, explanation |
 
 Each section starts with an index page with a card for each of its pages. The
-[style guide](style.md#audiences) describes the readers, and the
+[docs style guide](style.md#audiences) describes the readers, and the
 [page templates](style.md#page-templates) describe the kinds of page.
 
 `zensical.toml` sets the site's name, theme and navigation. The navigation lists every page;
@@ -230,8 +231,8 @@ builds the image's schemas and provides nixfmt.
 
 1. Create the Markdown file in its section's directory, starting with front matter of a `title`
    and a `description` and an H1 equal to the title, as the
-   [style guide](style.md#front-matter-and-file-names) shows.
-2. Write it from the template of its kind in the [style guide](style.md#page-templates).
+   [docs style guide](style.md#front-matter-and-file-names) shows.
+2. Write it from the template of its kind in the [docs style guide](style.md#page-templates).
 3. Add it to the navigation in `zensical.toml`, outside the generated region, and to its
    section's index page.
 4. `git add` it, then run the `docs` check.
