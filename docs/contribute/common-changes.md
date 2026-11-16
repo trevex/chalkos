@@ -108,7 +108,9 @@ as `dhcpRelay`.
       carries = "<what the images carry>";
       kinds = lib.attrNames kinds;
     };
-    config = lib.mkIf (config.chalkos.router.enable && cfg.enable) { ... };
+    config = lib.mkIf (config.chalkos.router.enable && cfg.enable) {
+      chalkos.kinds = kinds;
+    };
     ```
 
 3. Add the name to `features` in `modules/node/router/lib.nix`. `routerLib.feature` refuses a
