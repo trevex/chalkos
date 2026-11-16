@@ -102,7 +102,7 @@ the field out. A renderer never sees a `Secret`'s value, as
 that the environment variable `OUT` names.
 [Program input](../reference/extension-runtime.md#program-input) lists the rules of the input.
 
-A renderer reads nothing but this input, because every boot renders the outputs again.
+A renderer must read nothing but this input, because every boot renders the outputs again.
 [Every boot renders the outputs again](../how-it-works/node/config-pipeline.md#every-boot-renders-the-outputs-again)
 explains why.
 

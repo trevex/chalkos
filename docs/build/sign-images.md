@@ -17,7 +17,7 @@ whole read-only store, through the root hash on its command line. Nix builds ima
 chalkbuild signs a copy on the machine that holds the key, so the key never enters `/nix/store`
 or a binary cache, and nodes never hold it.
 
-## When images need a signature
+## Decide whether to sign
 
 Sign the images when a machine enforces Secure Boot: Secure Boot is on, and the firmware is not
 in Setup Mode. chalkd checks signatures only then.
@@ -38,7 +38,7 @@ You need:
   from `chalkos.packages.${system}.chalkbuild` in the cluster flake's dev shell.
 
 Plan the keys once for the cluster's lifetime.
-[The key stays the same for an installed node](#the-key-stays-the-same-for-an-installed-node)
+[Keep one key for every installed node](#keep-one-key-for-every-installed-node)
 explains why.
 
 ## Create the keys
@@ -166,7 +166,7 @@ value PCR 7 has while the installer runs. An image signed with another key boots
 from a registry. [Publish images to a registry](publish-images.md#sign-the-layout) builds the
 layout and signs it.
 
-## chalkbuild and the node check the signatures
+## Let chalkbuild and the node check the signatures
 
 `chalkbuild sign` checks the UKI and the boot loader of each image it signed against `--cert`, as
 firmware with that certificate in db would. A wrong key or certificate therefore fails on the
@@ -194,7 +194,7 @@ chalkctl upgrade --image images/node-kvm-signed \
 
 `chalklab status` names the lab's db key and certificate. They are test keys of that lab alone.
 
-## The key stays the same for an installed node
+## Keep one key for every installed node
 
 A node's STATE, VAR and encrypted volumes are sealed to PCR 7, which includes the db certificate
 that verified the boot binaries. An image signed with the same key unlocks the disks without
