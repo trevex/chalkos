@@ -13,6 +13,9 @@ refuses config bird cannot run, and shows bird's sessions to an operator. Each s
 shows how to look at what it produced, and tests it before the next. The last part debugs the
 extension on a running node. Plan about an hour, most of it for builds.
 
+For a smaller first step, [Write your first extension](../build/first-extension.md) adds one kind,
+a rendered file, a test and a unit to the quick start's lab in about 15 minutes.
+
 The [Build images](../build/index.md) pages explain each part in depth. This page puts them in the
 order of the work and links to them where the details matter.
 

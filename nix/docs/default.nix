@@ -20,7 +20,12 @@ let
       "router"
       "bgp"
     ];
-    "examples/extensions" = [ "rack.nix" ];
+    "examples/extensions" = [
+      "rack.nix"
+      "hardware.nix"
+      "hardware.env.tmpl"
+      "hardware-examples"
+    ];
     "templates/lab" = [ "cluster" ];
   };
   src = lib.fileset.toSource {
