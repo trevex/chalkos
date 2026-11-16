@@ -33,7 +33,7 @@ func withWireGuardUnits(d derive.Model, byKind, docs map[string]any) (map[string
 	netdevs, networks = slices.Clone(netdevs), slices.Clone(networks)
 	for _, w := range wgs {
 		what := "WireGuard " + w.Name
-		key, err := credentialOf("key", w.Spec.PrivateKey)
+		key, err := routerCredential("key", w.Spec.PrivateKey)
 		if err != nil {
 			return nil, derive.Within(what, err)
 		}
@@ -50,7 +50,7 @@ func withWireGuardUnits(d derive.Model, byKind, docs map[string]any) (map[string
 				peer["persistentKeepalive"] = number(*k)
 			}
 			if p.Spec.PresharedKey != nil {
-				psk, err := credentialOf("key", *p.Spec.PresharedKey)
+				psk, err := routerCredential("key", *p.Spec.PresharedKey)
 				if err != nil {
 					return nil, derive.Within("WireGuardPeer "+p.Name, err)
 				}

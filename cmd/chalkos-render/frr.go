@@ -220,14 +220,24 @@ func checkASPath(r string) error {
 // which frr.service's helper reads with a pattern of these characters.
 var credential = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
-// credentialOf is the placeholder @secret_<secret>.<key> of the Secret's key, which names it as a
-// credential; a name of other characters than credential's is an internal error about what.
-func credentialOf(what string, r derive.SecretRef) (string, error) {
-	name, key := r.SecretRef.Name, r.SecretRef.Key
+// credentialOf is the placeholder @secret_<secret>.<key> of a Secret's key, which names it as a
+// credential; a name of other characters than credential's is an error, which the caller makes
+// an internal error about the field.
+func credentialOf(name, key string) (string, error) {
 	if !credential.MatchString(name) || !credential.MatchString(key) {
-		return "", derive.InternalErrorf("the %s's Secret %q and key %q are letters, digits, '.', '_' and '-' alone", what, name, key)
+		return "", fmt.Errorf("Secret %q and key %q are letters, digits, '.', '_' and '-' alone", name, key)
 	}
 	return "@secret_" + name + "." + key, nil
+}
+
+// routerCredential is credentialOf of a router document's Secret's key, an internal error about
+// what.
+func routerCredential(what string, r derive.SecretRef) (string, error) {
+	c, err := credentialOf(r.SecretRef.Name, r.SecretRef.Key)
+	if err != nil {
+		return "", derive.InternalErrorf("the %s's %w", what, err)
+	}
+	return c, nil
 }
 
 // families are the address families in the order frr.conf takes them.
@@ -519,7 +529,7 @@ func (c *frr) policy(name string) error {
 func (c *frr) checkPeer(p derive.Named[derive.PeerSpec]) error {
 	s := p.Spec
 	if s.Password != nil {
-		if _, err := credentialOf("password", *s.Password); err != nil {
+		if _, err := routerCredential("password", *s.Password); err != nil {
 			return err
 		}
 	}
@@ -797,7 +807,7 @@ func (c *frr) router(b *strings.Builder, in *instance) {
 		}
 		if s.Password != nil {
 			// checkPeer checked the credential.
-			cred, _ := credentialOf("password", *s.Password)
+			cred, _ := routerCredential("password", *s.Password)
 			fmt.Fprintf(b, " neighbor %s password %s@\n", group, cred)
 		}
 		if s.BFD {

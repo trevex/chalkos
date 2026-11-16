@@ -292,11 +292,11 @@ func bgpSessionOf(d bgpDocument[bgpPeer]) (bgpSession, error) {
 		return bgpSession{}, bgpInternalf("%s: import %q is neither default nor none", what, p.Import)
 	}
 	if pw := p.Password; pw != nil {
-		name, key := pw.SecretRef.Name, pw.SecretRef.Key
-		if !credential.MatchString(name) || !credential.MatchString(key) {
-			return bgpSession{}, bgpInternalf("%s: the password's Secret %q and key %q are letters, digits, '.', '_' and '-' alone", what, name, key)
+		c, err := credentialOf(pw.SecretRef.Name, pw.SecretRef.Key)
+		if err != nil {
+			return bgpSession{}, bgpInternalf("%s: the password's %w", what, err)
 		}
-		s.password = "@secret_" + name + "." + key + "@"
+		s.password = c + "@"
 	}
 	return s, nil
 }
