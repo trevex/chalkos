@@ -87,7 +87,6 @@ address. The plan adds these protocols, each as a feature an image can leave out
 
 | Item | What it adds |
 | --- | --- |
-| BGP announcement of VIPs | A VIP mode besides `l2`, and one in which an extension announces the addresses. |
 | Delta transfers | Upgrades that send only the changed parts of the store, instead of the whole store to every node. |
 | Signed PCR 11 policies | Keys sealed to the signed image as well as to PCR 7. |
 | KMS and SSH unlock | Unlocking encrypted partitions in the initrd through a key management service, or over SSH, besides the TPM and the recovery key. |
@@ -131,7 +130,8 @@ These limits hold in the current code, grouped by area.
 - Packets a node receives lose the packet mark bit 0x02000000, which the firewall's rule for the
   control plane's ports uses, so a network plugin of the cluster's own
   (`chalkos.cni.provider = "none"`) must not use it.
-- VIPs are announced on the local network alone, with ARP and IPv6 neighbour advertisements.
+- The Kubernetes layer's BGP speaker announces the addresses of interfaces alone, such as the
+  node's address and a routed VIP: no pod ranges and no LoadBalancer addresses.
 
 [Ports and firewall](../reference/ports-and-firewall.md) lists the rules and
 [Kubernetes networking](../how-it-works/kubernetes/networking.md) the design behind them.

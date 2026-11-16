@@ -95,11 +95,12 @@ kubernetes worker: preparation failed: no ipv4 node address matches validSubnets
 
 ## A routing daemon can provide the node's addresses
 
-A node's addresses do not have to come from networkd. A routing daemon, such as a BGP speaker an
-extension adds to an image, can announce an address on a loopback or dummy interface. Such a unit
-orders itself before `chalkos-node-addresses.target`, which every image defines, and is wanted by
-it. The preparation starts after the target and still waits up to `nodeIP.timeout` for the
-addresses.
+A node's addresses do not have to come from networkd. A routing daemon, such as the Kubernetes
+layer's BGP speaker or one an extension adds to an image, can announce an address on a loopback or
+dummy interface. Such a unit orders itself before `chalkos-node-addresses.target`, which every
+image defines, and is wanted by it. The preparation starts after the target and still waits up to
+`nodeIP.timeout` for the addresses. The BGP speaker's `frr.service` orders itself this way, so the
+node announces its address before the preparation picks it.
 
 An address on a loopback interface needs the `Flannel` document's `spec.mtu`, because flannel would
 take the loopback's MTU. When it is set, a dummy interface holding a node's address needs an MTU of
@@ -199,8 +200,9 @@ a worker, which never holds the VIP.
 
 In the `routed` mode, set with `vip: {addresses: [...], mode: routed}`, the holder adds the VIPs the
 same way but sends no gratuitous ARP and no neighbour advertisements. A routing daemon on the node,
-such as a BGP speaker an extension adds to an image, announces the addresses of the interface
-instead, and withdraws them when the holder removes them. Every control plane names that interface in
+the Kubernetes layer's BGP speaker or one an extension adds to an image, announces the addresses
+of the interface instead, and withdraws them when the holder removes them. Every control plane
+names that interface in
 `vip.interface`, usually a dummy interface the routing daemon announces, and chalkctl and chalkd
 refuse a routed VIP on a control plane without one. The `Network` document of that interface sets
 `keepConfiguration: "yes"`, `KeepConfiguration=yes`, so that networkd keeps addresses it did not
@@ -211,7 +213,8 @@ the route. A failover takes the election's time plus the time the routing daemon
 withdraw the route on the old holder, announce it from the new one and pass the change through
 their peers. The homelab example works this way: FRR, the Kubernetes layer's BGP speaker, on each
 control plane announces the addresses of its dummy interface `node0`, the node's own and the VIP
-while it holds it, to the router over BGP.
+while it holds it, to the router over BGP. [Announce addresses with BGP](../../kubernetes/bgp.md)
+sets it up.
 
 The election runs on an etcd lease of 10 seconds, and every control plane checks its API server
 every 2 seconds. The diagram shows the states of one control plane's chalkd.
@@ -314,13 +317,27 @@ It does this at boot and whenever the `Node` document changes, through a table o
 `chalkos-controlplane`, that marks the ports for the firewall to accept.
 [Ports and firewall](../../reference/ports-and-firewall.md) lists the ports and the tables.
 
+## The BGP speaker announces interfaces
+
+The output `bgp` renders FRR's config from the node's `BGPSpeaker`, its `BGPPeer` documents and its
+`Node`. FRR redistributes the connected routes of the speaker's export interfaces through a
+route-map that matches those interfaces, so an address added to one of them, the VIP among them,
+is announced at once and withdrawn when it goes. chalkd adds an IPv6 VIP with a preferred lifetime
+of 0, and zebra announces such a deprecated address like any other. Each `BGPPeer` becomes a peer
+group. Its outbound route-map passes only the routes with an empty AS path, those the node
+originates, and its inbound route-map passes the default routes or nothing. A password reaches FRR
+as a credential of `frr.service`, which fills in the placeholder of the rendered config. A change
+of the documents reloads FRR through `chalkos-frr-reload`, which applies the difference and keeps
+the sessions it leaves alone. Routers run the same FRR build and reload, which
+[BGP on a router](../router/bgp.md#a-delivery-reloads-frr) describes.
+
 ## Limits
 
 - An `l2` VIP needs the control planes on one L2 network, through which clients reach the VIP,
   because its holder announces it with ARP and neighbour advertisements. A `routed` VIP needs no
-  shared network, but chalkos does not announce it itself: it needs a routing daemon on every
-  control plane, and its failover takes as long as that daemon and its peers need to move the
-  route. A load balancer or a DNS name in front of the control planes works instead of either.
+  shared network, but chalkd does not announce it itself: it needs the BGP speaker, or another
+  routing daemon, on every control plane, and its failover takes as long as that daemon and its
+  peers need to move the route. A load balancer or a DNS name in front of the control planes works instead of either.
 - On control planes, etcd's ports 2379 and 2380 are open to every source, not only to the
   cluster's nodes. etcd accepts only clients and peers with a certificate of its CA there.
 - Packets a control plane receives lose the packet mark bit `0x02000000`, which the firewall's rule

@@ -964,6 +964,8 @@ network. After a delivery to the router, the tunnel works again once the worksta
 - [Run a router](../router/index.md) covers the router's firewall, BGP, NAT64 and WireGuard.
 - [Run a highly available control plane](../kubernetes/ha-control-plane.md) explains the VIP's
   election, and how to replace a control plane.
+- [Announce addresses with BGP](../kubernetes/bgp.md) covers the nodes' BGP speaker: its peers,
+  the default route, its diagnostics and the deliveries it refuses.
 - [Declare a config kind](../build/declare-a-kind.md) follows the homelab's bird extension, which
   declares the `Speaker` and `Peer` kinds.
 

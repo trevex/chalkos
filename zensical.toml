@@ -65,6 +65,7 @@ nav = [
       "kubernetes/bootstrap.md",
       "kubernetes/configure.md",
       "kubernetes/ha-control-plane.md",
+      "kubernetes/bgp.md",
     ] },
     { "Maintain" = [
       "kubernetes/upgrade-kubernetes.md",

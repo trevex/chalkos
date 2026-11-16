@@ -89,8 +89,9 @@ Choose one:
 - A VIP, `spec.vip.addresses`, which chalkd holds on one healthy control plane at a time. By
   default the holder announces it with gratuitous ARP and unsolicited neighbour advertisements, so
   the control planes must share one layer-2 segment. Use it for machines in one rack or VLAN. With
-  `spec.vip.mode: routed`, a routing daemon on each control plane announces the VIP instead, as the
-  homelab's nodes do over BGP, and the control planes may sit on different links. The endpoint is
+  `spec.vip.mode: routed`, a routing daemon on each control plane announces the VIP instead, such
+  as the Kubernetes layer's [BGP speaker](bgp.md), and the control planes may sit on different
+  links. The endpoint is
   the VIP or a name that resolves to it; `chalkctl validate` refuses an endpoint address that is
   none of the VIPs, with `vip: the endpoint https://192.0.2.11:6443 is none of the virtual
   addresses`.

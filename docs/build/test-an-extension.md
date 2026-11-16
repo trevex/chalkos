@@ -62,7 +62,9 @@ same, only its files are not compared. The
 
 Besides the extension's tests, an image carries chalkos's tests of its `chrony` and `networkd`
 outputs, one per config file of `modules/node/examples`, such as `chrony-servers` and
-`networkd-vlan`.
+`networkd-vlan`. An image with the Kubernetes layer's BGP speaker also carries the speaker's tests,
+whose names start with `kubernetes-bgp-`, such as `kubernetes-bgp-unnumbered` and
+`kubernetes-bgp-new-asn`.
 
 ## Golden files hold what an output renders
 

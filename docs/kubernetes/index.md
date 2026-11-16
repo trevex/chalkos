@@ -10,11 +10,13 @@ layer. They build on [Operate nodes](../operate/index.md): they assume a worksta
 secrets file, and nodes installed as [Install a node](../operate/install.md) describes. Plan the
 cluster before you install its nodes, because a few of its settings are fixed once it runs. The
 other pages follow in order: bootstrap the cluster, configure it, run its control plane on several
-nodes, upgrade Kubernetes, rotate its CAs and keys, and find out why it misbehaves.
+nodes, announce its addresses over BGP, upgrade Kubernetes, rotate its CAs and keys, and find out
+why it misbehaves.
 
 ## Set up
 
-These pages take a cluster from its plan to a highly available control plane.
+These pages take a cluster from its plan to a highly available control plane, whose nodes may
+announce their addresses over BGP.
 
 <div class="grid cards" markdown>
 
@@ -52,6 +54,15 @@ These pages take a cluster from its plan to a highly available control plane.
     Run three control planes behind a virtual IP, and add, replace or remove one.
 
     [:octicons-arrow-right-24: Read](ha-control-plane.md)
+
+-   :material-transit-connection-variant: __Announce addresses with BGP__
+
+    ---
+
+    Announce the nodes' addresses and the routed VIP to the fabric's routers, and take the
+    default route they send.
+
+    [:octicons-arrow-right-24: Read](bgp.md)
 
 </div>
 

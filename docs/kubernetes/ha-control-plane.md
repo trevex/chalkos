@@ -30,9 +30,8 @@ The output on this page comes from a lab cluster whose control planes `cp1`, `cp
 - You made the decisions of [Plan a cluster](plan.md): three control planes and a VIP as the
   cluster endpoint.
 - The three machines share one layer-2 segment. Each has a static address, and one free address on
-  the segment is left for the VIP. Control planes on different links announce the VIP with a
-  routing daemon instead, as [Announce the VIP with a routing daemon](#announce-the-vip-with-a-routing-daemon)
-  describes.
+  the segment is left for the VIP. Control planes on different links announce the VIP over BGP
+  instead, as [Announce the VIP over BGP](#announce-the-vip-over-bgp) describes.
 - Each machine is booted into the installer, as [Install a node](../operate/install.md) describes.
 
 ## Define three control planes and the VIP
@@ -96,17 +95,16 @@ document can name another interface in `spec.vip.interface`. A cluster takes at 
 family, and an endpoint that is an IP address must be one of the VIPs. Check the files with
 `chalkctl validate`.
 
-## Announce the VIP with a routing daemon
+## Announce the VIP over BGP
 
 The default mode of the VIP, `l2`, needs the control planes on one layer-2 segment. Its holder
 announces the VIP there with gratuitous ARP and unsolicited neighbour advertisements. When the
 control planes sit on different links, or the nodes announce their addresses to a fabric over BGP,
 set `spec.vip.mode` to `routed`. The holder then adds the VIP to an interface as a /32 or /128 host
 address and announces nothing on the link. A routing daemon on each control plane announces the
-addresses of that interface to its peers: the Kubernetes layer's BGP speaker, FRR, which the
-[`BGPSpeaker`](../reference/kinds.md#bgpspeaker) and
-[`BGPPeer`](../reference/kinds.md#bgppeer-kubernetes) documents configure, or a daemon from an
-extension, such as bird, which chalkos does not configure.
+addresses of that interface to its peers. By default this is the Kubernetes layer's BGP speaker,
+FRR, which [Announce addresses with BGP](bgp.md) sets up. An image that leaves the speaker out
+can carry another daemon from an extension, such as bird, which chalkos does not configure.
 
 The `Cluster` document names the mode beside the addresses:
 
@@ -151,7 +149,9 @@ IPv6 VIP with a preferred lifetime of 0, which networkd would otherwise remove a
 it did not configure. The rest of the file stays as above. `chalkctl validate` refuses a control plane without
 `vip.interface` in a cluster with a routed VIP. A worker needs none.
 
-Configure the routing daemon to announce the addresses of `node0`. The VIP's route then follows the
+Name `node0` in the `BGPSpeaker`'s export interfaces, as
+[Announce the VIP](bgp.md#announce-the-vip) shows, or configure the extension's daemon to announce
+the addresses of `node0`. The VIP's route then follows the
 holder: when a new control plane wins the election, the old holder's daemon withdraws the route and
 the new holder's announces it. A failover takes the election's time plus the time the daemons and
 their peers need to move the route. `chalkctl status` shows `vip holder` and `vip standby` as with

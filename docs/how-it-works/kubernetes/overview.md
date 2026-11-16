@@ -100,6 +100,11 @@ group `kubernetes.chalkos.dev`:
 - Any number of [`Addon`](../../reference/kinds.md#addon) documents, which hold Kubernetes objects
   the control planes apply.
 
+Two more kinds of the group configure the node's BGP speaker on images that carry it: one
+[`BGPSpeaker`](../../reference/kinds.md#bgpspeaker) and any number of
+[`BGPPeer`](../../reference/kinds.md#bgppeer-kubernetes) documents. They describe the node's
+routing, and a node without them runs no BGP.
+
 The cluster's documents go into the files the inventory gives every node, so all nodes hold the
 same ones. A node's `Node` goes into its own file, as
 [Config and the inventory](../node/config.md#the-inventory-gives-each-node-a-set-of-files)

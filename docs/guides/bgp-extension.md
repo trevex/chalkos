@@ -6,7 +6,8 @@ description: "Build the homelab's bird extension from an empty module, test each
 # Write a BGP extension
 
 This tutorial builds the homelab's BGP extension, `extensions/bgp.nix`, from an empty module. The
-homelab's nodes run the Kubernetes layer's built-in BGP speaker; the extension does the same job
+homelab's nodes run the Kubernetes layer's built-in BGP speaker, which
+[Announce addresses with BGP](../kubernetes/bgp.md) describes; the extension does the same job
 with bird, in the image `node-bird-metal`, which leaves the built-in speaker out. The extension
 runs bird on each node, with two config kinds of its own: `Speaker` for the node's side of its
 sessions and `Peer` for its neighbours. At the end `node-bird-metal` declares both kinds,
