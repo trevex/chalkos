@@ -57,6 +57,38 @@ reports a finding in `pkg/`, `cmd/` or `test/`. It compiles the end-to-end tests
 them, so it also catches their dead code. [Development setup](development.md#format-and-lint)
 shows how to run the same tools in the development shell.
 
+### Compare output with a golden file
+
+A test whose output is long, such as a rendered status or a list of Kubernetes objects, compares
+it with a golden file through `pkg/internal/golden`. `golden.Check` compares the output with the
+file and fails with the output when they differ. `golden.JSON` turns a value into indented JSON
+first. Golden files live in the package's `testdata/`, such as
+`pkg/statusview/testdata/status.golden`. After a change of the output, rewrite them and review
+the diff before you commit it:
+
+```sh
+go test ./pkg/statusview/ -run TestX -update
+```
+
+The router's renderers in `cmd/chalkos-render` keep their golden files in
+`cmd/chalkos-render/testdata/router` and take `-update` the same way.
+
+## Wait in tests
+
+Tests wait for events, never for a fixed time: no test calls `time.Sleep` to let something
+happen. `pkg/internal/testwait` gives the two ways to wait:
+
+| Wait | Use it for | How it works |
+| --- | --- | --- |
+| `testwait.Bubble(t, f)` | Timers, channels and polling loops inside the test's own process. | Runs `f` in a `testing/synctest` bubble with a fake clock that starts at the real time, so certificates the test issues are valid. A sleep in the bubble costs no wall time, and `synctest.Wait` returns once every other goroutine of the bubble is blocked. |
+| `testwait.Eventually(t, what, check)` | Real I/O that no fake clock reaches: servers, sockets and child processes. | Calls `check` until it holds, after 1 ms and then twice as long each time up to 100 ms. It fails the test, naming `what`, after a minute. |
+
+Inside a bubble, `f` must not call `t.Run` or `t.Parallel`. A test with subtests starts a bubble in
+each subtest's body instead.
+
+Production code keeps no clock seams and no timing knobs for tests. Durations are constants, and a
+test that needs time to pass runs in a bubble. Add a seam only when production needs it.
+
 ## Tests in a namespace or on a disk image
 
 Some behaviour depends on the kernel or on real tools, but not on a booted node. These tests
@@ -156,6 +188,7 @@ shell functions the check scripts call: `fail`, `retry` and `refuses`, and for t
 | `vxlan-rule` | The VXLAN firewall rule, in network namespaces. |
 | `router-firewall` | A router's firewall unit and rulesets, in network namespaces. |
 | `router-policy-routing` | A router's policy routing: the example's ruleset with the kernel's rules and next-hop tables, in network namespaces. |
+| `router-vrf` | A router's `chalkos-vrf`: the VRFs it removes and keeps, the unreachable defaults it flushes, and its reloads of networkd and `chalkos-resolvers`, with stubs of systemctl and networkctl, in a network namespace. |
 | `router-nat64` | A router's `chalkos-nat64.service`, with a stub of `jool`, in network namespaces. |
 | `router-dhcp` | A router's `kea-dhcp4.service` and the diagnostic `dhcp-leases`, in network namespaces. |
 | `router-dhcp6` | A router's `kea-dhcp6` servers, the records and routes of delegated prefixes and the firewall's DHCPv6 opening, in network namespaces. |
@@ -241,6 +274,24 @@ test or a group of them:
 | `e2e-kubernetes-ha` | Three control planes of an IPv6-only cluster behind a VIP: joins, failover, reinstalls and a rolling upgrade. | 3 |
 | `e2e-router` | Two routers through chalklab, peering unnumbered over BGP with BFD and a password: the session in their status, a default route and the NAT64 prefix learned, a diagnostic, a delivery FRR reloads without ending the session, DNS64's answer for `ipv4only.arpa`, and a connection through a NAT64 with an empty pool, in its own namespace, and QEMU's user-mode network to a listener of the test, with its session in the status and in `nat64-sessions`, both routers' session in a VRF with its table, a route imported into the default VRF, the unreachable defaults that end its table, a resolver of the VRF running before and after a change of the VRF's table, chalkd still reachable, and a policy's rules, next-hop table and chain on a router before and after its boot, and a DHCP server in a VRF that leases the other router its reserved address on a macvlan link, with the lease kept and renewed across the server's boot, and a DHCPv6 server there that delegates it a prefix, which the server's router routes to it before and after its boot. | 2 |
 
+Each test lives in a file of its own in `test/e2e`; the other files hold the steps the tests share:
+
+| File | Holds | Run by |
+| --- | --- | --- |
+| `image_test.go`, `storage_test.go` | `TestImageBootsWithoutSecureBoot`, `TestStorageVolumes` | `e2e-image` |
+| `secureboot_test.go` | `TestSecureBootRejectsUnsignedImage`, `TestVerityRejectsTamperedStore` | `e2e-secureboot` |
+| `install_test.go` | `TestInstallInPlace` | `e2e-install` |
+| `installer_test.go` | `TestInstallerInstallsOntoLVMDisk`, `TestInstallerISOBoots` | `e2e-installer`, `e2e-iso` |
+| `upgrade_test.go` | `TestUpgrade` | `e2e-upgrade` |
+| `kubernetes_test.go` | `TestKubernetesCluster` | `e2e-kubernetes` |
+| `kubernetes_ha_test.go` | `TestKubernetesHA` | `e2e-kubernetes-ha` |
+| `router_test.go` | `TestRouterLab` | `e2e-router` |
+| `helpers_test.go`, `chalkd_test.go` | `TestMain`, starting a node's VM, reaching its chalkd and running chalkctl | every check |
+| `lab_test.go` | labs that chalklab runs | `e2e-kubernetes`, `e2e-router` |
+| `registry_test.go` | registries the tests serve, of container images and of chalkos images | `e2e-installer`, `e2e-upgrade`, `e2e-kubernetes`, `e2e-kubernetes-ha` |
+| `ntp_test.go` | an NTP server for the nodes' clocks | `e2e-kubernetes`, `e2e-router` |
+| `certificates_test.go`, `rotation_test.go` | certificate renewals and CA rotations | `e2e-kubernetes` |
+
 A VM gets 2 CPUs and 2 GiB of memory unless its test asks for less, on a 16 GiB sparse disk.
 The Kubernetes test gives its control plane 2048 MiB and its worker 1024 MiB; the HA test gives
 each control plane 1536 MiB, 4.5 GiB for the three. The router test gives each router 768 MiB.
@@ -290,6 +341,12 @@ Every check builds with `nix build`, and a change runs the checks of the parts i
 | The router's policy routing: the `PolicyRoute` and `NextHop` kinds, their chain and units | `router-policy-routing`, `router-firewall`, `rules`, `image-tests`, `eval`, `eval-kinds`, `go-unit`, `e2e-router` |
 | The router's DHCP and relays: the `DHCPSubnet` and `DHCPRelay` kinds, the `kea` and `dhcp-relay` outputs, their units, `pkg/router` | `router-dhcp`, `router-dhcp6`, `router-dhcp-relay`, `router-firewall`, `rules`, `image-tests`, `eval`, `eval-kinds`, `go-unit`, `e2e-router` |
 | An image's checker: `pkg/imagecheck`, `chalkd check` | `image-checker`, `go-unit`, `go-lint`, `e2e-upgrade` |
+| containerd or registries: `modules/node/kubernetes/containerd.nix`, `registries.nix`, `registry-mirrors.nix` | `containerd-config`, `registry-mirrors`, `eval`, `image-tests`, `e2e-kubernetes` |
+| The node's clock: `modules/node/time.nix`, the `TimeSync` kind | `chrony-dhcp`, `eval`, `eval-kinds`, `image-tests` |
+| OCI images: `pkg/ociimage`, `pkg/chalkbuild` | `go-unit`, `go-lint`, `image-oci`, `e2e-installer`, `e2e-upgrade` |
+| The console: `pkg/console`, `cmd/chalkos-console` | `go-unit`, `go-lint`, `e2e-image` |
+| Status: `pkg/statusview` and its `layers/<layer>` | `go-unit`, `go-lint`, and its golden files in `testdata/` |
+| A new or removed directory of Go code in `cmd/` or `pkg/` | `docs`, which wants a row for each directory in `docs/contribute/packages.md` |
 | `templates/lab` | `template-lab` |
 | `.github/workflows` | `workflows` |
 
