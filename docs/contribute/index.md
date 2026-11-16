@@ -20,6 +20,24 @@ touches.
 
     [:octicons-arrow-right-24: Read](development.md)
 
+-   :material-format-list-checks: __Common changes__
+
+    ---
+
+    Checklists for an API method, a chalkctl command, a built-in kind, a router feature and a
+    layer.
+
+    [:octicons-arrow-right-24: Read](common-changes.md)
+
+-   :material-gavel: __Code conventions__
+
+    ---
+
+    Compatibility, layout, layers, feature toggles, refusals, comments, golden files, generated
+    files and commit messages.
+
+    [:octicons-arrow-right-24: Read](conventions.md)
+
 -   :material-test-tube: __Testing__
 
     ---
@@ -93,9 +111,10 @@ touches.
 
 Start with [First change in 10 minutes](development.md#first-change-in-10-minutes): it takes a
 small change from a fresh clone to a commit. Then read
-[Architecture for developers](architecture.md) for where things live. The
-[roadmap](roadmap.md) lists what chalkos does not do yet and the known limits of what it does;
-either is a place to find work.
+[Architecture for developers](architecture.md) for where things live, and
+[Common changes](common-changes.md) for the steps of a frequent change. The
+[roadmap](roadmap.md) lists [good first changes](roadmap.md#good-first-changes), what chalkos does
+not do yet and the known limits of what it does.
 
 ## What a change needs
 
@@ -114,25 +133,6 @@ A change needs:
   staticcheck lint the Go code.
 - The flake checks of what it touches, which [Testing](testing.md#flake-checks) maps to the
   parts of the repository.
+- The generated files its sources produce, and a commit message of the form the
+  [code conventions](conventions.md#commit-messages) give.
 
-## Generated files are committed
-
-Generated code and pages live in the repository, so a change that alters their sources
-commits what they generate too. A check fails when they differ.
-
-| Source | Command | Generated | Check |
-| --- | --- | --- | --- |
-| `api/chalkos/*/v1/*.proto` | `buf generate` | `pkg/api/*/v1/`, `docs/reference/api.md` | `api-generated`, `docs-generated` |
-| Command help, option declarations, the kinds' JSON Schemas, the proto files | `nix run .#docgen` | `docs/reference/cli/`, `docs/reference/mkimages.md`, `docs/reference/image-options.md`, `docs/reference/extension-api.md`, `docs/reference/kinds.md`, `docs/reference/api.md`, the navigation in `zensical.toml` | `docs-generated` |
-| `docs/reference/glossary.md` | `nix run .#docgen` | `docs/includes/abbreviations.md` | `docs-generated` |
-| `go.mod`, `go.sum` | `nix build .#chalkctl`, with `vendorHash` set to `lib.fakeHash` first | `vendorHash` in `nix/overlay/build-go-program.nix` | every Go package's build |
-
-## Commit messages
-
-Commits follow [Conventional Commits](https://www.conventionalcommits.org/): a type, an
-optional scope and a summary in the imperative, such as
-`fix(chalkctl): check every node of an image's name before skipping it` or
-`docs(chalklab): describe chalklab's commands`.
-The body, when there is one, says what changed and why. Commit messages and code comments stand
-on their own for a reviewer: they carry no trailers and no references to plans, tasks or
-milestones.
