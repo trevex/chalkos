@@ -120,27 +120,7 @@ From the input above, the template renders this file:
 ```text title="bird.conf"
 # bird's config for node1, rendered by chalkos from its Speaker and Peer documents.
 router id 0.0.0.11;
-
-protocol device {
-}
-
-# The addresses of the Speaker's interfaces, which every session announces.
-protocol direct node_addresses {
-  ipv6;
-  interface "node0";
-}
-
-# The default route the peers send, installed into the kernel with a next hop per session.
-protocol kernel {
-  ipv6 {
-    import none;
-    export where source = RTS_BGP;
-  };
-  merge paths on;
-}
-
-protocol bfd {
-}
+...
 
 protocol bgp 'router_enp1s0' {
   local as 65001;
@@ -160,26 +140,12 @@ protocol bgp 'router_enp1s0' {
     export where proto = "node_addresses";
   };
 }
-
-protocol bgp 'router_enp2s0' {
-  local as 65001;
-  neighbor fdc8:a1b2:c3d4:1::1 as 65000;
-  interface "enp2s0";
-  direct;
-  connect retry time 5;
-  bfd on;
-  authentication md5;
-  password 'secret_bgp.password';
-  ipv6 {
-    # The router sends a link-local next hop beside its global one. bird would resolve the global
-    # one through the first port on the fabric's prefix for every session; the link-local one
-    # keeps each session's routes on its own port.
-    next hop prefer local;
-    import where net = ::/0;
-    export where proto = "node_addresses";
-  };
-}
+...
 ```
+
+This excerpt shows the session of the `Peer` named `router` on `enp1s0`. The file has a second
+session on `enp2s0`, and the blocks for the node's addresses and the kernel. The
+[BGP extension guide](../guides/bgp-extension.md#see-what-the-output-renders) shows the whole file.
 
 The `Speaker` gives the router ID, the AS number of every session and the interfaces of
 `node_addresses`, whose addresses each session announces. Each `Peer` gets a session per

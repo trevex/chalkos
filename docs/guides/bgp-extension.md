@@ -241,13 +241,13 @@ PASS networkd-vlan
 The `chrony-*` and `networkd-*` tests are chalkos's own, which every image carries. `bgp-fabric`
 passes because it expects nothing yet beyond an accepted config. Read what the output rendered:
 
-```sh
-cat result/bgp-fabric/outputs/bird-conf/bird.conf
+```console
+$ cat result/bgp-fabric/outputs/bird-conf/bird.conf
+--8<-- "examples/homelab/extensions/tests/fabric/bird-conf/bird.conf"
 ```
 
-It holds a `protocol bgp` per interface of the `Peer`, as
-[Render config files](../build/render-config.md#a-template-renders-one-file) shows in full. After each
-change to the template, build the results again and read the new file.
+It holds a `protocol bgp` per interface of the `Peer`. The test's node is named `example`. After
+each change to the template, build the results again and read the new file.
 
 ### Find out why a render fails
 

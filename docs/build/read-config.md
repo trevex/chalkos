@@ -23,13 +23,13 @@ A grant names the kinds a unit reads, in `systemd.services.<unit>.chalkos.kinds`
 the address of each of the node's neighbours when it starts:
 
 ```nix
-systemd.services.bgp-peers = {
+systemd.services.peer-log = {
   wantedBy = [ "multi-user.target" ];
   chalkos.kinds = [ "Peer" ];
   serviceConfig = {
     Type = "oneshot";
     RemainAfterExit = true;
-    ExecStart = pkgs.writeShellScript "bgp-peers" ''
+    ExecStart = pkgs.writeShellScript "peer-log" ''
       for address in $(${config.chalkos.kinds.Peer.get { path = "spec.address"; }}); do
         echo "peer $address"
       done
@@ -161,7 +161,7 @@ names the option. Roll the image out with [Upgrade nodes](../operate/upgrade.md)
 then read the unit's journal:
 
 ```sh
-chalkctl logs node1 --unit=bgp-peers.service
+chalkctl logs node1 --unit=peer-log.service
 ```
 
 It shows a line `peer fdc8:a1b2:c3d4:1::1`. A unit that logs nothing found no

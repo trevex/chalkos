@@ -72,6 +72,9 @@ which [Config and the inventory](../how-it-works/node/config.md) describes.
 The arguments are module options, so a misspelled argument fails the evaluation and names the
 argument. The [mkImages reference](../reference/mkimages.md) documents each one.
 [Images and platforms](images-and-platforms.md) covers `images`, `modules` and `osCA`.
+The homelab's flake sets no `osCA`, which suits only a lab on a private network.
+[The home lab guide](../guides/home-lab.md#prepare-the-files) adds it in the step that generates
+the secrets.
 
 `revision` and `tag` say where an image came from. Nix cannot read git tags, so whatever builds a
 release passes the tag:
@@ -210,6 +213,10 @@ Kubernetes image as a package:
 ```nix
 packages.x86_64-linux = chalkos.lib.selectImages { layer = "kubernetes"; } images;
 ```
+
+`chalkos.lib` is the library a flake calls, with `mkImages` and these helpers. Image modules get
+another one as a module argument, [`chalkosLib`](../reference/extension-api.md#chalkoslib), with
+helpers such as `types`, `mkOption`, `render`, `validate` and `reloadOn`.
 
 The homelab's flake exports the NixOS systems as `nixosConfigurations` and the tests as its
 checks:

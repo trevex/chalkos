@@ -51,7 +51,7 @@ images = chalkos.lib.mkImages {
       platform = "metal";
       modules = [
         chalkos.nixosModules.kubernetes
-        ./extensions/bgp.nix
+        ./extensions
       ];
     }
   ];

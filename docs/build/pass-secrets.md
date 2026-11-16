@@ -139,8 +139,15 @@ bird starts. The template names the constant `'secret_<secret>.<key>'`, as the c
 named:
 
 ```text title="extensions/bird.conf.tmpl"
---8<-- "examples/homelab/extensions/bird.conf.tmpl"
+...
+{{- with $peer.spec.password }}
+  authentication md5;
+  password 'secret_{{ .secretRef.name }}.{{ .secretRef.key }}';
+{{- end }}
+...
 ```
+
+The [BGP extension guide](../guides/bgp-extension.md#render-birdconf) shows the whole template.
 
 The unit's settings run a small program, `bird-credentials`, before bird starts and on each
 reload:

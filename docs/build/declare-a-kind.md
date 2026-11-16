@@ -86,37 +86,20 @@ spec:
 
 The image build converts the options into a JSON Schema, draft 2020-12. It writes the schema
 into the image directory's `schemas/` and into the image itself, at `/etc/chalkos/schemas`. Here
-is `images/node-metal/schemas/bgp.example.org_v1alpha1_Peer.json`, trimmed to the `spec` and the
-kind. The document's `required`, `additionalProperties` and `metadata`, the fields' `examples`
-and the `description` of `password` are left out:
+is an excerpt of `images/node-metal/schemas/bgp.example.org_v1alpha1_Peer.json`, with two fields of
+the `spec`. `...` stands for the parts left out, and the fields lack their `examples`:
 
 ```json
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Peer",
-  "description": "A BGP neighbour that the node's bird runs a session with on each of the given interfaces.",
-  "type": "object",
-  "properties": {
-    "apiVersion": {"const": "bgp.example.org/v1alpha1"},
-    "kind": {"const": "Peer"},
+  ...
     "spec": {
       "type": "object",
       "additionalProperties": false,
       "required": ["address", "asn", "interfaces"],
       "properties": {
-        "address": {
-          "type": "string",
-          "format": "ip",
-          "description": "IPv6 address of the neighbour, on the subnet of the interfaces the sessions run on.",
-          "x-chalkos-rules": [
-            {
-              "rule": "ip(self).family() == \"ipv6\"",
-              "description": "A neighbour has an IPv6 address.",
-              "messageExpression": "self + \" is no IPv6 address; bird runs IPv6 sessions alone\"",
-              "takes": "refuse"
-            }
-          ]
-        },
+        ...
         "asn": {
           "type": "integer",
           "minimum": 1,
@@ -138,34 +121,7 @@ and the `description` of `password` are left out:
           "description": "Interfaces on which bird runs a session with the neighbour, one each, bound to the interface.",
           "x-chalkos-unique": [{"across": "list", "hint": "list each interface once"}]
         },
-        "password": {
-          "anyOf": [
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["secretRef"],
-              "properties": {
-                "secretRef": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "required": ["key", "name"],
-                  "properties": {
-                    "key": {"type": "string", "minLength": 1},
-                    "name": {"type": "string", "minLength": 1}
-                  }
-                }
-              },
-              "x-chalkos-ref": {"apiVersion": "chalkos.dev/v1alpha1", "kind": "Secret", "key": true}
-            },
-            {"type": "null"}
-          ],
-          "default": null
-        },
-        "bfd": {
-          "type": "boolean",
-          "default": true,
-          "description": "Whether BFD watches each session, so that bird ends it within about a second of its link failing."
-        }
+        ...
       }
     }
   },
