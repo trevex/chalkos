@@ -20,6 +20,7 @@ nav = [
     "get-started/what-is-chalkos.md",
     "get-started/quick-start.md",
     "get-started/requirements.md",
+    "get-started/decisions.md",
   ] },
   { "Guides" = [
     "guides/index.md",

@@ -8,7 +8,8 @@ description: "What chalkos needs from machines, firmware, disks and networks, an
 This page lists what chalkos needs from a node and the network around it, and from the machines
 an operator builds images, runs chalkctl and runs a lab on. The sizes and defaults come from the
 image options and the [config kinds](../reference/kinds.md); the memory figures were measured in
-the end-to-end tests.
+the end-to-end tests. [Decisions before you install](decisions.md) lists the choices to make
+before the first install, such as Secure Boot and the number of control planes.
 
 ## Nodes and network
 

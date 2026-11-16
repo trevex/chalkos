@@ -8,6 +8,8 @@ description: "Longer walks through a whole setup: a home lab on real machines an
 These pages follow one project from start to end, across the roles of the other sections. Each
 builds on the homelab example, a router and three Kubernetes nodes on real machines, and links to
 the how-to pages for the details of each step.
+[Decisions before you install](../get-started/decisions.md) lists the choices that each guide makes
+for you, with what each one costs.
 
 <div class="grid cards" markdown>
 

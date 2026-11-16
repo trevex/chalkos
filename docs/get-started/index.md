@@ -38,4 +38,13 @@ to a home lab on real machines.
 
     [:octicons-arrow-right-24: Read](requirements.md)
 
+-   :material-source-branch: __Decisions before you install__
+
+    ---
+
+    Secure Boot, the control planes, the VIP, the secrets file and the platform: each choice
+    with its consequence.
+
+    [:octicons-arrow-right-24: Read](decisions.md)
+
 </div>

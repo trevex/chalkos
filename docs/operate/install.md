@@ -32,6 +32,9 @@ The image and the installer carry the cluster's OS CA, as
 describes. A machine in maintenance mode then accepts only a chalkctl that holds the secrets file
 or a client file of this cluster.
 
+[Decisions before you install](../get-started/decisions.md) lists the choices to make before the
+first install, such as whether the machines enforce Secure Boot.
+
 Each machine needs UEFI firmware, Secure Boot and a TPM 2.0. The
 [requirements](../get-started/requirements.md) list the rest. For a machine that enforces Secure
 Boot, you also need:
