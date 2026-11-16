@@ -524,6 +524,24 @@ func TestImageLineOfAStagedImage(t *testing.T) {
 	if got := (nodeInventory{c, "n1"}).ImageLine(&nodev1.BootStatus{Running: running, Staged: &nodev1.BootImage{RootHash: bytes.Repeat([]byte{0xee}, 32), Generation: 2}, StagedState: nodev1.SlotState_SLOT_STATE_ACTIVE}); strings.Contains(got, "node reboot") || !strings.Contains(got, "chalkctl upgrade --nodes n1 installs that image") {
 		t.Errorf("the line of another image staged = %q", got)
 	}
+	knownGood := &nodev1.BootStatus{Running: running, Staged: active.Staged, StagedState: nodev1.SlotState_SLOT_STATE_ACTIVE, StagedKnownGood: true}
+	if got := (nodeInventory{c, "n1"}).ImageLine(knownGood); !strings.Contains(got, "it has "+testRootHash[:12]+" (v1.5.0) active as its known-good image, which it boots with the config it last ran at its next reboot: chalkctl node reboot n1") {
+		t.Errorf("the line of a known-good image = %q", got)
+	}
+	// The config line follows the image line: a node on another image gets the config with the
+	// inventory's image, and another image in the inactive slot checks each delivery too.
+	otherStaged := &nodev1.BootStatus{Running: &nodev1.BootImage{RootHash: want}, Staged: &nodev1.BootImage{RootHash: other, Generation: 2}, StagedState: nodev1.SlotState_SLOT_STATE_STAGED}
+	for boot, wantState := range map[*nodev1.BootStatus]string{
+		active:             "not the inventory's; it comes with the image test-metal in the inactive slot",
+		staged:             "not the inventory's; it comes with the image test-metal in the inactive slot",
+		knownGood:          "not the inventory's; the node boots the image test-metal next with the config it last ran; once it runs it, chalkctl config apply n1 delivers it",
+		otherStaged:        "not the inventory's; chalkctl config apply n1 delivers it if the image " + hex.EncodeToString(other)[:12] + " in the inactive slot, which is not the inventory's, accepts it too",
+		{Running: running}: "not the inventory's; chalkctl upgrade --nodes n1 delivers it with the image test-metal",
+	} {
+		if got := (nodeInventory{c, "n1"}).ConfigState(&nodev1.StatusResponse{ConfigVersion: "old", Boot: boot}); got != wantState {
+			t.Errorf("the config line of %v = %q, want %q", boot, got, wantState)
+		}
+	}
 	if err := os.Remove(filepath.Join(dir, "images", "test-metal", "metadata.json")); err != nil {
 		t.Fatal(err)
 	}

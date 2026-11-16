@@ -216,16 +216,27 @@ func (a *app) confirmConfig(ctx context.Context, n nodeFlags, name string) error
 	return a.confirmTrial(ctx, t, tr.Version, tr.PreviousVersion, deadline, !time.Now().Before(deadline))
 }
 
-// trialOpen refuses a change to a node on trial, which the node refuses too. A trial whose node
-// runs the config from before it again, after a failed rollback at the deadline, holds nothing
-// back: the node finishes that rollback first. An unreadable trial record holds back every change
-// but a rollback.
-func trialOpen(name string, st *nodev1.StatusResponse) error {
-	if e := st.GetTrialError(); e != "" {
-		return &layer.NodeError{Node: name, Err: fmt.Errorf("%s: the record of a config's trial cannot be read: %s; other changes are refused until chalkctl config rollback %s restores the previous config", name, e, name), Named: true}
+// trialHold says what of the status st holds back changes to a node, as the node refuses them: an
+// unreadable trial record, which holds back every change but a rollback, or else tr, an open
+// trial. A trial whose node runs the config from before it again, after a failed rollback at the
+// deadline, holds nothing back: the node finishes that rollback first.
+func trialHold(st *nodev1.StatusResponse) (tr *nodev1.ConfigTrial, unreadable bool) {
+	if st.GetTrialError() != "" {
+		return nil, true
 	}
-	tr := st.GetTrial()
-	if tr == nil || st.GetConfigVersion() == tr.PreviousVersion {
+	if tr = st.GetTrial(); tr == nil || st.GetConfigVersion() == tr.PreviousVersion {
+		return nil, false
+	}
+	return tr, false
+}
+
+// trialOpen refuses a change to a node that trialHold holds back, which the node refuses too.
+func trialOpen(name string, st *nodev1.StatusResponse) error {
+	tr, unreadable := trialHold(st)
+	if unreadable {
+		return &layer.NodeError{Node: name, Err: fmt.Errorf("%s: the record of a config's trial cannot be read: %s; other changes are refused until chalkctl config rollback %s restores the previous config", name, st.GetTrialError(), name), Named: true}
+	}
+	if tr == nil {
 		return nil
 	}
 	return &layer.NodeError{Node: name, Err: fmt.Errorf("%s runs config %s on trial until %s; confirm it with chalkctl config confirm %s, or roll it back with chalkctl config rollback %s, first",
