@@ -104,7 +104,8 @@ or a new API version. The upgrade carries documents of the new form to the new i
 rollback boots the image before with documents of the old form, which it still understands. An
 operator can also stage config for an image that is not running yet, with
 `chalkctl config apply --staged`. See
-[A node keeps one config slot per image](../how-it-works/node/config.md#a-node-keeps-one-config-slot-per-image).
+[A node keeps one config slot per image](../how-it-works/node/config.md#a-node-keeps-one-config-slot-per-image), and
+[Change a kind incompatibly](../build/change-a-kind.md) for a rollout of such a change.
 
 ## The secrets file stays with the operator
 
