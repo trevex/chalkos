@@ -7,8 +7,8 @@ description: "The role each node API method needs, the modes it is served in, an
 
 This page is for operators who hand out client files or read a refusal of the node API. It lists
 the least role each method of the node API needs, the modes chalkd serves it in, what the console
-on the machine's screen may call, and the order in which chalkctl looks for the credentials of a
-command.
+on the machine's screen may call, the credential each chalkctl command needs, and the order in
+which chalkctl looks for the credentials of a command.
 
 ## Roles
 
@@ -106,6 +106,29 @@ image's layers and the mode as for any call, then the Console column in place of
 chalkd serves the socket only on an image built with
 [`chalkos.console.enable`](image-options.md#chalkosconsoleenable) set to true, the default.
 chalkctl has no command that calls Shutdown.
+
+## Commands
+
+Some chalkctl commands issue certificates or deliver keys and config, so they need the secrets
+file. The others take a client file of a high enough role, or the secrets file, which counts as
+admin:
+
+| Command | Secrets file | Admin client file | Operator client file | Reader client file |
+| --- | --- | --- | --- | --- |
+| `install`, `config apply`, `client new` | yes | no | no | no |
+| `recovery-key`, `node renew`, `rotate` | yes | no | no | no |
+| `storage reset` | yes | yes | no | no |
+| `upgrade` with config, `upgrade --diff` | yes | yes | no | no |
+| `upgrade` without config, `reboot` | yes | yes | yes | no |
+| `status`, `logs`, `disks` | yes | yes | yes | yes |
+| `bootstrap`, `etcd remove-member`, `etcd leave` (Kubernetes) | yes | yes | no | no |
+| `etcd members` (Kubernetes) | yes | yes | yes | yes |
+| `kubeconfig` (Kubernetes) | yes | no | no | no |
+
+`validate` and `gen secrets` need neither. A command that needs the secrets file says so when
+`--secrets` is missing, whatever client file there is:
+`pass the secrets file with --secrets FILE, or --secrets - to read it from standard input`. During
+an upgrade, the operator role also lets chalkctl drain and uncordon the nodes.
 
 ## Where chalkctl finds its credentials
 

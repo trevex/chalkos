@@ -26,10 +26,9 @@ Then find the symptom below.
 
 ## The console asks for a passphrase
 
-The TPM did not unseal the keys of STATE, usually after a change to Secure Boot or the firmware.
-Type the node's recovery key from `chalkctl recovery-key`.
+The node stops early in the boot and asks for the passphrase of `state`.
 [The console asks for a passphrase at boot](recover-node.md#the-console-asks-for-a-passphrase-at-boot)
-explains the causes and how to make the prompt go away.
+gives the causes, the recovery key that unlocks the node and how to make the prompt go away.
 
 ## The node is in maintenance mode after the install
 

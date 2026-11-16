@@ -208,20 +208,11 @@ describes how to take access away.
 
 ## Each command needs the secrets file or a client file
 
-Some commands issue certificates or deliver keys and config, so they need the secrets file. The
-others take a client file of a high enough role, or the secrets file, which counts as admin:
-
-| Command | Secrets file | Admin client file | Operator client file | Reader client file |
-| --- | --- | --- | --- | --- |
-| `install`, `config apply`, `client new` | yes | no | no | no |
-| `recovery-key`, `node renew`, `rotate` | yes | no | no | no |
-| `storage reset` | yes | yes | no | no |
-| `upgrade` with config, `upgrade --diff` | yes | yes | no | no |
-| `upgrade` without config, `reboot` | yes | yes | yes | no |
-| `status`, `logs`, `disks` | yes | yes | yes | yes |
-
-`validate` and `gen secrets` need neither. A command that needs the secrets file says so when
-`--secrets` is missing, whatever client file you have:
+Pass the secrets file with `--secrets` to the commands that issue certificates or deliver keys and
+config: `install`, `config apply`, `client new`, `recovery-key`, `node renew` and `rotate`. Run the
+others with a client file of a high enough role, or with the secrets file, which counts as admin.
+[Commands](../reference/access.md#commands) lists the credential each command needs. A command
+that needs the secrets file says so when `--secrets` is missing:
 
 ```text
 chalkctl: pass the secrets file with --secrets FILE, or --secrets - to read it from standard input
@@ -231,12 +222,6 @@ chalkctl: pass the secrets file with --secrets FILE, or --secrets - to read it f
 its pending config, else carries its own config over, as
 [Operator upgrades carry no config](../how-it-works/node/upgrades.md#operator-upgrades-carry-no-config)
 explains.
-
-!!! note "With the Kubernetes layer, the Kubernetes commands need credentials too"
-
-    `bootstrap`, `etcd remove-member` and `etcd leave` need an admin client file or the secrets
-    file. `etcd members` needs a reader client file. `kubeconfig` needs the secrets file. During an
-    upgrade, the operator role also lets chalkctl drain and uncordon the nodes.
 
 chalkd on each node enforces the roles. A call that the role does not allow fails
 with a message that names the role it needs, such as
@@ -249,11 +234,7 @@ The commands that need the secrets file read it only from `--secrets`. chalkctl 
 secrets file on its own. The commands that accept a client file take the first credential they
 find, in the order
 [Where chalkctl finds its credentials](../reference/access.md#where-chalkctl-finds-its-credentials)
-lists. With none of them, the command stops:
-
-```text
-chalkctl: there is no client file at /home/alice/.config/chalkos/config; pass --config or --secrets
-```
+lists. With none of them, the command stops and says so.
 
 `$CHALKOSCONFIG` lets you keep the files of several clusters apart:
 
