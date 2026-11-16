@@ -32,7 +32,7 @@ changes nothing.
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
-| `--inventory`{ #flag-inventory } | string | chalkos.yaml in the current directory | Inventory naming the nodes and their config files. |
+| `--inventory`{ #flag-inventory } | string | $CHALKOSINVENTORY, else chalkos.yaml in the current directory | Inventory naming the nodes and their config files. |
 
 ## Examples
 

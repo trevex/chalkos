@@ -6,9 +6,9 @@ description: "Install and operate chalkos clusters"
 # chalkctl
 
 chalkctl installs and operates the nodes of a chalkos cluster. It reads the cluster from an
-inventory, chalkos.yaml in the current directory or --inventory, which names each node, its
-address, its image and its config files. It talks to chalkd on each node over mutual TLS, and never
-builds or signs images.
+inventory, which names each node, its address, its image and its config files: the file --inventory
+names, else the file $CHALKOSINVENTORY names, else chalkos.yaml in the current directory. It
+talks to chalkd on each node over mutual TLS, and never builds or signs images.
 
 Commands authenticate with the cluster's secrets file, which holds every CA key and which only
 --secrets names, or with a client file of the admin, operator or reader role, which chalkctl client

@@ -694,8 +694,9 @@ func TestCommandsDescribed(t *testing.T) {
 	clitest.CheckDescribed(t, newCommand(a))
 }
 
-// TestPrintNext names the lab's client file in an export of CHALKOSCONFIG, so the chalkctl
-// commands after it name no client file, and the kubeconfig only once a control plane runs.
+// TestPrintNext names the lab's client file and inventory in exports of CHALKOSCONFIG and
+// CHALKOSINVENTORY, so the chalkctl commands after it name neither, and the kubeconfig only once a
+// control plane runs.
 func TestPrintNext(t *testing.T) {
 	a, out := testApp()
 	l := &lab.Lab{Dir: "/state/lab", Name: "lab", Nodes: []lab.Node{{Name: "cp1", Kind: "controlplane"}, {Name: "w1", Kind: "worker"}}}
@@ -704,14 +705,15 @@ func TestPrintNext(t *testing.T) {
 the lab lab runs cp1, w1; next:
   export KUBECONFIG=/state/lab/kubeconfig
   export CHALKOSCONFIG=/state/lab/chalkctl.json
+  export CHALKOSINVENTORY=/state/lab/chalkos.yaml
   kubectl get nodes
-  chalkctl status cp1 --inventory /state/lab/chalkos.yaml
+  chalkctl status cp1
   chalklab status
   chalklab destroy
 The lab's inventory names unsigned images, which its firmware refuses; upgrade with a copy
 signed by the lab's db key:
   chalklab sign <image dir> --out <signed dir>
-  chalkctl upgrade --image <signed dir> --inventory /state/lab/chalkos.yaml --allow-downtime
+  chalkctl upgrade --image <signed dir> --allow-downtime
 `
 	if out.String() != want {
 		t.Errorf("output:\n%s\nwant:\n%s", out, want)

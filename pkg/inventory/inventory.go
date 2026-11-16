@@ -27,9 +27,11 @@ const (
 	// APIVersion and Kind identify an inventory.
 	APIVersion = "chalkctl.chalkos.dev/v1alpha1"
 	Kind       = "Inventory"
-	// DefaultFile is the inventory chalkctl reads in the current directory when --inventory
-	// names none.
+	// DefaultFile is the inventory chalkctl reads in the current directory when neither
+	// --inventory nor $CHALKOSINVENTORY names one.
 	DefaultFile = "chalkos.yaml"
+	// Env is the environment variable that names the inventory when --inventory does not.
+	Env = "CHALKOSINVENTORY"
 	// schemaFile is the name of the inventory's JSON Schema, as an image names its kinds'.
 	schemaFile = "chalkctl.chalkos.dev_v1alpha1_Inventory.json"
 )

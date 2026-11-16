@@ -13,9 +13,11 @@ import (
 	"time"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/install"
+	"github.com/trevex/chalkos/pkg/inventory"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -541,5 +543,37 @@ func TestPartialClusterRefusals(t *testing.T) {
 		if err := ta.run(context.Background(), tc.args); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s = %v, want %q", strings.Join(tc.args, " "), err, tc.want)
 		}
+	}
+}
+
+// $CHALKOSINVENTORY names the inventory of a command without --inventory, validate's included, and
+// --inventory wins over it.
+func TestInventoryFromEnvironment(t *testing.T) {
+	ta := newTestApp(t)
+	ta.withoutSecrets(t)
+	path := writeInventory(t, ta.dir)
+	missing := filepath.Join(ta.dir, "missing.yaml")
+	ctx := context.Background()
+
+	t.Setenv(inventory.Env, path)
+	if c, err := loadCluster(ctx, layer.ClusterFlags{}); err != nil || c.Partial() || c.name != "lab" {
+		t.Errorf("loadCluster with $%s = %+v, %v, want the lab", inventory.Env, c, err)
+	}
+	if err := ta.run(ctx, []string{"validate"}); err != nil {
+		t.Errorf("validate with $%s: %v", inventory.Env, err)
+	}
+
+	t.Setenv(inventory.Env, missing)
+	if _, err := loadCluster(ctx, layer.ClusterFlags{}); err == nil || !strings.Contains(err.Error(), missing) {
+		t.Errorf("loadCluster with $%s of a missing file: %v, want an error naming it", inventory.Env, err)
+	}
+	if err := ta.run(ctx, []string{"validate"}); err == nil || !strings.Contains(err.Error(), missing) {
+		t.Errorf("validate with $%s of a missing file: %v, want an error naming it", inventory.Env, err)
+	}
+	if c, err := loadCluster(ctx, layer.ClusterFlags{Inventory: path}); err != nil || c.Partial() {
+		t.Errorf("loadCluster with --inventory over $%s = %+v, %v, want the lab", inventory.Env, c, err)
+	}
+	if err := ta.run(ctx, []string{"validate", "--inventory", path}); err != nil {
+		t.Errorf("validate with --inventory over $%s: %v", inventory.Env, err)
 	}
 }

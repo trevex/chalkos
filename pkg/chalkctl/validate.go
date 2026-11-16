@@ -1,9 +1,11 @@
 package chalkctl
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 
@@ -26,7 +28,7 @@ func (a *app) validateCommand() *cobra.Command {
 		Example: validateExample,
 		Args:    cobra.ArbitraryArgs,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.validate(ctx, f, pos) })
-	cmd.Flags().StringVar(&f.inventory, "inventory", "", "inventory naming the nodes and their config files (default "+inventory.DefaultFile+" in the current directory)")
+	cmd.Flags().StringVar(&f.inventory, "inventory", "", "inventory naming the nodes and their config files (default $"+inventory.Env+", else "+inventory.DefaultFile+" in the current directory)")
 	return cmd
 }
 
@@ -34,10 +36,7 @@ func (a *app) validateCommand() *cobra.Command {
 // compiled layers check the nodes together first, as every command does on loading the inventory. A
 // config that leaves the node's secrets unencrypted draws a warning.
 func (a *app) validate(ctx context.Context, f validateFlags, names []string) error {
-	path := f.inventory
-	if path == "" {
-		path = inventory.DefaultFile
-	}
+	path := cmp.Or(f.inventory, os.Getenv(inventory.Env), inventory.DefaultFile)
 	c, err := readInventory(ctx, path)
 	if err != nil {
 		return err

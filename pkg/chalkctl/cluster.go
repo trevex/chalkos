@@ -30,11 +30,11 @@ type cluster struct {
 // Partial reports whether the cluster comes without an inventory.
 func (c *cluster) Partial() bool { return c.inv == nil }
 
-// loadCluster reads the inventory --inventory names, or else ./chalkos.yaml; without either the
-// cluster is partial.
+// loadCluster reads the inventory --inventory or $CHALKOSINVENTORY names, or else ./chalkos.yaml;
+// without any the cluster is partial.
 func loadCluster(ctx context.Context, f layer.ClusterFlags) (*cluster, error) {
-	if f.Inventory != "" {
-		return loadInventory(ctx, f.Inventory)
+	if path := f.Path(); path != "" {
+		return loadInventory(ctx, path)
 	}
 	switch _, err := os.Stat(inventory.DefaultFile); {
 	case err == nil:

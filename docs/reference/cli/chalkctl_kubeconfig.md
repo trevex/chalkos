@@ -24,7 +24,7 @@ kubeconfig's cluster, user and context are named after the inventory's metadata.
 | `--context`{ #flag-context } | string | the inventory's metadata.name | Name of the kubeconfig's cluster, user and context. |
 | `--force`{ #flag-force } | boolean | `false` | Replace an existing file. |
 | `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |
-| `--inventory`{ #flag-inventory } | string | chalkos.yaml in the current directory, when it exists | Inventory naming the cluster's nodes, their addresses and their config files. |
+| `--inventory`{ #flag-inventory } | string | $CHALKOSINVENTORY, else chalkos.yaml in the current directory, when it exists | Inventory naming the cluster's nodes, their addresses and their config files. |
 | `--name`{ #flag-name } | string | `admin` | User name in the admin certificate. |
 | `--out`{ #flag-out } | string | `kubeconfig` | File to write, - for standard output. |
 | `--secrets`{ #flag-secrets } | string | — | Secrets file, encrypted with age or not, or - to read it from standard input. |

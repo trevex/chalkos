@@ -466,19 +466,20 @@ func (a *app) setUp(ctx context.Context, f createFlags, l *lab.Lab) error {
 	return nil
 }
 
-// printNext prints the commands that use the lab, after exporting KUBECONFIG (with Kubernetes) and
-// CHALKOSCONFIG, so they name neither, and how to upgrade with a signed copy of an image.
+// printNext prints the commands that use the lab, after exporting KUBECONFIG (with Kubernetes),
+// CHALKOSCONFIG and CHALKOSINVENTORY, so they name none of the files, and how to upgrade with a
+// signed copy of an image.
 func (a *app) printNext(l *lab.Lab, withKubernetes bool) {
-	inventory := filepath.Join(l.Dir, inventoryFile)
 	fmt.Fprintf(a.stdout, "\nthe lab %s runs %s; next:\n", l.Name, strings.Join(l.NodeNames(), ", "))
 	if withKubernetes {
 		fmt.Fprintf(a.stdout, "  export KUBECONFIG=%s\n", filepath.Join(l.Dir, kubeconfigFile))
 	}
 	fmt.Fprintf(a.stdout, "  export CHALKOSCONFIG=%s\n", filepath.Join(l.Dir, clientFile))
+	fmt.Fprintf(a.stdout, "  export CHALKOSINVENTORY=%s\n", filepath.Join(l.Dir, inventoryFile))
 	if withKubernetes {
 		fmt.Fprintln(a.stdout, "  kubectl get nodes")
 	}
-	fmt.Fprintf(a.stdout, "  chalkctl status %s --inventory %s\n  chalklab status\n  chalklab destroy\n", l.Nodes[0].Name, inventory)
+	fmt.Fprintf(a.stdout, "  chalkctl status %s\n  chalklab status\n  chalklab destroy\n", l.Nodes[0].Name)
 	// One or two control planes lose etcd's quorum while one reboots, which an upgrade accepts
 	// only with --allow-downtime.
 	controlPlanes := 0
@@ -491,8 +492,8 @@ func (a *app) printNext(l *lab.Lab, withKubernetes bool) {
 	if controlPlanes == 1 || controlPlanes == 2 {
 		downtime = " --allow-downtime"
 	}
-	fmt.Fprintf(a.stdout, "The lab's inventory names unsigned images, which its firmware refuses; upgrade with a copy\nsigned by the lab's db key:\n  chalklab sign <image dir> --out <signed dir>\n  chalkctl upgrade --image <signed dir> --inventory %s%s\n",
-		inventory, downtime)
+	fmt.Fprintf(a.stdout, "The lab's inventory names unsigned images, which its firmware refuses; upgrade with a copy\nsigned by the lab's db key:\n  chalklab sign <image dir> --out <signed dir>\n  chalkctl upgrade --image <signed dir>%s\n",
+		downtime)
 }
 
 // maintenanceFingerprint waits for a node's chalkd to come up in maintenance mode, and returns

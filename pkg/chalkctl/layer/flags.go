@@ -1,7 +1,9 @@
 package layer
 
 import (
+	"cmp"
 	"errors"
+	"os"
 	"slices"
 	"strings"
 
@@ -13,14 +15,18 @@ import (
 
 // ClusterFlags name the cluster a command operates.
 type ClusterFlags struct {
-	// Inventory is --inventory; empty for the default file, when it exists.
+	// Inventory is --inventory; empty for $CHALKOSINVENTORY's, else the default file, when it exists.
 	Inventory string
 }
 
 // Register registers --inventory.
 func (f *ClusterFlags) Register(fs *pflag.FlagSet) {
-	fs.StringVar(&f.Inventory, "inventory", "", "inventory naming the cluster's nodes, their addresses and their config files (default "+inventory.DefaultFile+" in the current directory, when it exists)")
+	fs.StringVar(&f.Inventory, "inventory", "", "inventory naming the cluster's nodes, their addresses and their config files (default $"+inventory.Env+", else "+inventory.DefaultFile+" in the current directory, when it exists)")
 }
+
+// Path is the inventory --inventory names, else the one $CHALKOSINVENTORY names; empty when neither
+// names one.
+func (f ClusterFlags) Path() string { return cmp.Or(f.Inventory, os.Getenv(inventory.Env)) }
 
 // SecretsFlags say where the secrets file is and how to decrypt it.
 type SecretsFlags struct {

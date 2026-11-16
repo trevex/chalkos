@@ -38,8 +38,10 @@ with chalkctl install --fingerprint. When the lab has a control plane, chalklab 
 first one and writes a kubeconfig that reaches its API server through the forwarded port.
 chalkctl reads the lab's inventory, chalkos.yaml in the lab's state directory: the lab file's
 inventory with its nodes at their forwarded ports. It names no secrets file: chalklab passes
-chalkctl --secrets. The closing output exports the client file as $CHALKOSCONFIG, which chalkctl
-reads when a command names no --config or --secrets, so the commands it prints name neither.
+chalkctl --secrets. The closing output exports the client file as $CHALKOSCONFIG and the
+inventory as $CHALKOSINVENTORY. chalkctl reads the first when a command names no --config or
+--secrets, and the second when it names no --inventory, so the commands it prints name none of
+them.
 
 The command needs the cluster's secrets file, --secrets, which chalkctl reads to install the
 nodes and to write the kubeconfig and the client file.`

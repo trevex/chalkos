@@ -59,7 +59,7 @@ operator client file or the secrets file.
 | `--diff`{ #flag-diff } | boolean | `false` | Print what each node's config changes against the config of the image it runs, document by document and field by field, and change nothing; needs the admin role. |
 | `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |
 | `--image`{ #flag-image } | string | the directory of each node's image in the inventory | Image to install on the nodes running an image of its name, or on the nodes --nodes names whatever they run: a raw image with repart-output.json next to it, or an image directory. |
-| `--inventory`{ #flag-inventory } | string | chalkos.yaml in the current directory, when it exists | Inventory naming the cluster's nodes, their addresses and their config files. |
+| `--inventory`{ #flag-inventory } | string | $CHALKOSINVENTORY, else chalkos.yaml in the current directory, when it exists | Inventory naming the cluster's nodes, their addresses and their config files. |
 | `--max-unavailable`{ #flag-max-unavailable } | integer | `1` | How many nodes upgrade at once after the nodes that act for the others, such as Kubernetes control planes, which upgrade one at a time. |
 | `--nodes`{ #flag-nodes } | string | every node of the cluster, or with --image every node running an image of its name | Comma-separated nodes to upgrade. |
 | `--password-file`{ #flag-password-file } | string | — | File holding the password of a node whose fallback is a password. |

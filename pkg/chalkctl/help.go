@@ -5,9 +5,9 @@ package chalkctl
 // description and its examples, in the order of the command tree.
 
 const rootLong = `chalkctl installs and operates the nodes of a chalkos cluster. It reads the cluster from an
-inventory, chalkos.yaml in the current directory or --inventory, which names each node, its
-address, its image and its config files. It talks to chalkd on each node over mutual TLS, and never
-builds or signs images.
+inventory, which names each node, its address, its image and its config files: the file --inventory
+names, else the file $CHALKOSINVENTORY names, else chalkos.yaml in the current directory. It
+talks to chalkd on each node over mutual TLS, and never builds or signs images.
 
 Commands authenticate with the cluster's secrets file, which holds every CA key and which only
 --secrets names, or with a client file of the admin, operator or reader role, which chalkctl client
@@ -368,8 +368,9 @@ units that failed. The command needs a reader client file or the secrets file.`
 const statusExample = `  chalkctl status cp1
 
   # With the inventory and the client file a lab writes.
-  chalkctl status cp1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml \
-    --config ~/.local/state/chalklab/lab/chalkctl.json`
+  export CHALKOSINVENTORY=~/.local/state/chalklab/lab/chalkos.yaml
+  export CHALKOSCONFIG=~/.local/state/chalklab/lab/chalkctl.json
+  chalkctl status cp1`
 
 const logsLong = `Prints a node's journal of the current boot, of every unit or of --unit alone; with --follow it
 keeps printing new entries until interrupted. The command needs a reader client file or the
