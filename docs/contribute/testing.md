@@ -75,8 +75,7 @@ The router's renderers in `cmd/chalkos-render` keep their golden files in
 
 ## Wait in tests
 
-Tests wait for events, never for a fixed time: no test calls `time.Sleep` to let something
-happen. `pkg/internal/testwait` gives the two ways to wait:
+A test waits for an event: no test calls `time.Sleep` to let something happen. `pkg/internal/testwait` gives the two ways to wait:
 
 | Wait | Use it for | How it works |
 | --- | --- | --- |
