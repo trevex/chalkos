@@ -24,6 +24,9 @@ You need:
 
 You do not need root. [Requirements](requirements.md#lab-host) lists the details.
 
+chalkos publishes no prebuilt images yet. This tutorial builds its image from the `lab` template
+with `nix build`, which is why it needs Nix.
+
 ## Create the lab's files
 
 The `lab` template holds a cluster that chalklab can run. Create a directory for it and

@@ -21,7 +21,8 @@ person who will hold the secrets file needs one, and so does an offline backup.
 
 The images come from an image author, who builds them with Nix as
 [Your first image flake](../build/first-image.md) shows. chalkctl needs the image directories the
-builds write, and no Nix.
+builds write, and no Nix. chalkos publishes no prebuilt images yet, so without an image author you
+build them yourself from a template or an example with `nix build`.
 
 ## chalkctl comes from the chalkos flake
 
@@ -38,11 +39,8 @@ chalkctl --help
 `locked.rev`. A cluster's flake can add chalkctl to its development shell instead, as the lab
 template does, so that `nix develop` gives the chalkctl of the pinned revision.
 
-The package's `bin/chalkctl` is a wrapper script that puts mtools on the `PATH` and runs the
-program `bin/.chalkctl-wrapped`. `install` and `upgrade` run mtools' `mdir` and `mcopy` to read
-the ESP of an image directory. The program is built without cgo, so it is a static binary. To run
-chalkctl on a machine without Nix, an airgapped one included, copy `bin/.chalkctl-wrapped` there as
-`chalkctl` and install the distribution's mtools package.
+To run chalkctl on a machine without Nix, copy its program and install mtools, as
+[Requirements](../get-started/requirements.md#workstation) describes.
 
 ## The repository holds the inventory, the config files and the images
 

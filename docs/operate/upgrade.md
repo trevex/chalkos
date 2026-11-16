@@ -82,7 +82,7 @@ The run also stops before it sends anything when a node runs another platform th
 inventory. Changing a node's platform is a reinstall. A node whose image in the inventory has
 another name than the image it runs gets that image, and chalkctl prints the change.
 
-## Install a prebuilt image
+## Upgrade from a given image directory
 
 `--image` names an image directory, or a raw image with `repart-output.json` next to it. chalkctl
 installs it on the nodes that run an image of its name, or on the nodes `--nodes` names. Nodes on
@@ -477,76 +477,10 @@ data after a Kubernetes upgrade.
 
 ## Upgrade Kubernetes
 
-A new Kubernetes release takes two steps, the control plane first:
-
-1. Change the references of `images` in the `Cluster` document to the new release and deliver the
-   config to the cluster's nodes with `chalkctl config apply node1 node2 node3`. chalkctl rolls
-   the new API server, controller-manager and scheduler out to the control planes one at a time,
-   then delivers the config to the other nodes. No node reboots.
-2. Build images with the new kubelet and run `chalkctl upgrade`, as the sections above describe.
-
-The control plane goes first because a kubelet must not be newer than the API server it talks to.
-The image's checker refuses a config whose API server is older than its kubelet, and
-`chalkctl upgrade` refuses an image whose kubelet would be newer than the oldest API server the
-control planes run:
-
-```text
-chalkctl: node3: the image's kubelet 1.38.0 would be newer than the API server 1.37.3 that node2 runs, the oldest of the cluster; upgrade the control plane first: name the new release's images in the Cluster document and deliver it with chalkctl config apply
-```
-
-The [Kubernetes version skew policy](https://kubernetes.io/releases/version-skew-policy/) bounds
-the versions, minor releases compared:
-
-| Component | Allowed versions |
-| --- | --- |
-| API servers | at most one minor apart from each other |
-| kubelet | no newer than the API server, at most three minors older |
-| controller-manager, scheduler | no newer than the API server, at most one minor older |
-| kube-proxy | no newer than the API server, at most three minors older |
-
-The image's checker holds the config to them against its own kubelet, as
-[The image's checker holds the versions to the skew policy](../kubernetes/configure.md#the-images-checker-holds-the-versions-to-the-skew-policy)
-describes. `chalkctl config apply` checks the config's API server against the versions every node
-runs, and `chalkctl upgrade` checks each image's kubelet against the oldest API server. Move one
-minor release at a time; `chalkctl config apply --allow-downgrade` lets the config name an API
-server one minor older than the control planes run.
-
-A patch release of the control plane is the first step alone, and a patch release of the kubelet
-is the second step alone.
-
-The two steps run apart. An upgrade delivers each node's config with its image, so
-`chalkctl upgrade` refuses a config whose API server differs from the one a node runs, before it
-sends any image, and names `chalkctl config apply` to deliver the config first.
-
-kube-proxy moves when the first control plane gets the config, because that control plane applies
-the add-ons. In a minor upgrade, kube-proxy then runs one minor ahead of the API servers not yet
-rolled, which the skew policy does not allow, until the rollout reaches the last control plane, so
-run the rollout to the end in one command.
-
-A run of the first step on the homelab's three control planes reads:
-
-```text
-node1: config 0 added, 0 removed, 1 changed
-node1: delivering config <version> on trial until <deadline>
-restarted chalkos-kubernetes.service
-restarted kubelet.service
-node1 runs config <version> on trial; it rolls back to config <previous-version> by itself unless confirmed within 10m0s
-node1: waiting for its layers to serve with the config
-node1: waiting for a new connection and the node's health to confirm config <version>
-node1 keeps config <version>: the trial is confirmed
-node2: config 0 added, 0 removed, 1 changed
-...
-node3 keeps config <version>: the trial is confirmed
-```
-
-`...` stands for the lines of node2 and node3, which repeat node1's. When the first
-step fails, the run stops at that node, rolls its config back and prints which nodes run which API
-server, such as `API server 1.37.2: node2, node3`. `chalkctl status node2` shows the node's
-versions in its `kubernetes versions` line. Fix the reference or the registry, then run the same
-command again: it skips the nodes that run the config already. When the second step fails, the
-node rolls back as
-[A node that fails its health check rolls back](#a-node-that-fails-its-health-check-rolls-back)
-describes. [Upgrade Kubernetes](../kubernetes/upgrade-kubernetes.md) covers both steps in full.
+A new Kubernetes release takes two steps, the control plane first. `chalkctl config apply` delivers
+the new release's images in the `Cluster` document, then `chalkctl upgrade` installs images with
+the new kubelet. [Upgrade Kubernetes](../kubernetes/upgrade-kubernetes.md) covers both steps, the
+version skew checks and the drain.
 
 ## If something goes wrong
 

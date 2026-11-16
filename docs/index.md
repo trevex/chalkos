@@ -109,7 +109,8 @@ machines on one host.
     ---
 
     Install, upgrade, recover and troubleshoot nodes with chalkctl and YAML files. The machine
-    that runs chalkctl needs no Nix.
+    that runs chalkctl needs no Nix. chalkos publishes no prebuilt images yet, so build them from
+    a template or an example with `nix build` first.
 
     [:octicons-arrow-right-24: Operate](operate/index.md)
 
