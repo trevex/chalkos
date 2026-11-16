@@ -12,8 +12,11 @@ details.
    where the code lives.
 3. [Testing](https://trevex.github.io/chalkos/contribute/testing/), for which test to write and
    which checks to run.
-4. The [roadmap](https://trevex.github.io/chalkos/contribute/roadmap/), for what chalkos does not
-   do yet.
+4. [Common changes](https://trevex.github.io/chalkos/contribute/common-changes/), for the
+   steps of an API method, a command, a kind, a router feature or a layer, and
+   [Code conventions](https://trevex.github.io/chalkos/contribute/conventions/).
+5. The [roadmap](https://trevex.github.io/chalkos/contribute/roadmap/), for good first changes and
+   what chalkos does not do yet.
 
 ## Set up
 
