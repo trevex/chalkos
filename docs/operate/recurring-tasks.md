@@ -6,8 +6,8 @@ description: "What expires when, how to check it, what to back up, and how to mo
 # Recurring tasks
 
 A cluster's certificates and CAs expire, and a few of its files exist only where you keep them.
-This page lists what to do and when, and
-how to move the cluster to a newer chalkos. It links to the task pages for each step.
+This page lists what to do and when, and how to move the cluster to a newer chalkos. It links to
+the task pages for each step.
 
 In short:
 
