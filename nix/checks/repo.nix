@@ -255,12 +255,10 @@ in
       images."images/node-metal" = example.packages.${pkgs.stdenv.hostPlatform.system}.node-metal;
     };
 
-  # validate-config.md shows the report of the refusal that the homelab's test
-  # bgp-unconfigured-peer-interface expects of its validator bgp-peers. The page keeps the report
-  # on one line of its own that starts with {"refusals": [{"kind": "Peer", "name": "router", which
-  # is how the check finds it. test-an-extension.md shows the refusals of the test bgp-new-asn as
-  # refusals.json holds them, on one line of its own that starts with
-  # [{"kind":"Peer","name":"router","path":"spec.asn".
+  # The BGP guide shows the refusals that the homelab's tests bgp-unconfigured-peer-interface, of
+  # its validator bgp-peers, and bgp-new-asn, of a change rule, expect, as refusals.json holds
+  # them. Each sits on one line of its own that starts with [{"kind":"Peer","name":"router","path":
+  # and the test's field, spec.interfaces[2] or spec.asn, which is how the check finds it.
   example-homelab-validator-docs =
     let
       inherit (homelab.nixosConfigurations.node-metal.config.chalkos) tests;
@@ -268,32 +266,26 @@ in
     pkgs.runCommand "chalkos-example-homelab-validator-docs"
       {
         nativeBuildInputs = [ pkgs.jq ];
-        page = ../../docs/build/validate-config.md;
-        expected = builtins.toJSON { inherit (tests.bgp-unconfigured-peer-interface) refusals; };
-        testPage = ../../docs/build/test-an-extension.md;
+        page = ../../docs/guides/bgp-extension.md;
+        validatorRefusals = builtins.toJSON tests.bgp-unconfigured-peer-interface.refusals;
         changeRefusals = builtins.toJSON tests.bgp-new-asn.refusals;
       }
       ''
-        documented=$(grep '^{"refusals": \[{"kind": "Peer", "name": "router"' "$page" | jq -cS .)
-        if [ -z "$documented" ]; then
-          echo "error: $page shows no report of the Peer router" >&2
-          exit 1
-        fi
-        expected=$(jq -cS . <<<"$expected")
-        if [ "$documented" != "$expected" ]; then
-          echo "error: $page shows $documented, not the test's $expected" >&2
-          exit 1
-        fi
-        documented=$(grep '^\[{"kind":"Peer","name":"router","path":"spec\.asn"' "$testPage" | jq -cS . || true)
-        if [ -z "$documented" ]; then
-          echo "error: $testPage shows no refusals of the test bgp-new-asn" >&2
-          exit 1
-        fi
-        expected=$(jq -cS . <<<"$changeRefusals")
-        if [ "$documented" != "$expected" ]; then
-          echo "error: $testPage shows $documented, not the refusals $expected of the test bgp-new-asn" >&2
-          exit 1
-        fi
+        shows() {
+          local test=$1 field=$2 expected documented
+          expected=$(jq -cS . <<<"$3")
+          documented=$(grep "^\[{\"kind\":\"Peer\",\"name\":\"router\",\"path\":\"$field\"" "$page" | jq -cS . || true)
+          if [ -z "$documented" ]; then
+            echo "error: $page shows no refusals of the test $test" >&2
+            exit 1
+          fi
+          if [ "$documented" != "$expected" ]; then
+            echo "error: $page shows $documented, not the refusals $expected of the test $test" >&2
+            exit 1
+          fi
+        }
+        shows bgp-unconfigured-peer-interface 'spec\.interfaces\[2\]' "$validatorRefusals"
+        shows bgp-new-asn 'spec\.asn' "$changeRefusals"
         touch $out
       '';
 

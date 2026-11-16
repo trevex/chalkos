@@ -1,4 +1,4 @@
-# The Peer names enp3s0, which no Network document configures: the refusal validate-config.md shows.
+# The Peer names enp3s0, which no Network document configures: the refusal the BGP guide shows.
 ---
 apiVersion: bgp.example.org/v1alpha1
 kind: Speaker

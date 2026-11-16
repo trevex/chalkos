@@ -109,13 +109,32 @@ chalkctl and chalkd check every document against. Add `Peer` to the module's bod
 
 Each field is a NixOS option. The type decides what the schema accepts, so pick the narrowest one:
 every value here lands in `bird.conf`, and `chalkosLib.types.address` and `interfaceName` keep a
-value from adding a statement of its own. A field without a default is required. `rules` and
-`unique` need `chalkosLib.mkOption` in place of `lib.mkOption`.
+value from adding a statement of its own. Without them, a value such as
+`fdc8:a1b2:c3d4:1::1; import all` would add a statement to `bird.conf`. The rule of `address`
+keeps it to IPv6, and the pattern of `interfaceName` keeps each name of `interfaces` to the
+characters of an interface name. A field without a default is required. `password` and `bfd`
+have defaults, so a `Peer` may leave both out. `rules` and `unique` need `chalkosLib.mkOption` in
+place of `lib.mkOption`.
 
 Add `Speaker`, of which a node holds one, since it has no `multiple`:
 
 ```nix
 --8<-- "examples/homelab/extensions/bgp.nix:speaker"
+```
+
+chalkctl refuses a second `Speaker` on a node. `export.interfaces` is a nested field: an attribute
+set of options in `spec` becomes an object of the schema. The rule of `routerID` refuses
+`0.0.0.0`, which the pattern of an IPv4 address accepts. Each node needs a router ID of its own,
+so its `Speaker` sits in its own file:
+
+```yaml title="nodes/node1.yaml"
+apiVersion: bgp.example.org/v1alpha1
+kind: Speaker
+metadata: {name: bgp}
+spec:
+  asn: 65001
+  routerID: 0.0.0.11
+  export: {interfaces: [node0]}
 ```
 
 ### Look at the schemas
@@ -152,7 +171,10 @@ the fastest check of a kind: run it after each change to one.
 ### Validate the nodes' files
 
 The homelab's files hold `Speaker` and `Peer` documents: `bgp/fabric.yaml` the `Peer` and the
-ports' `Network` documents, and each `nodes/node<n>.yaml` its node's `Speaker`. `chalkctl validate`
+ports' `Network` documents, and each `nodes/node<n>.yaml` its node's `Speaker`. Every node peers
+with the same router on the same two ports, so the inventory's group `nodes` gives every node
+`bgp/fabric.yaml`. A node with other neighbours or port names leaves that file out and brings its
+own `Peer` and `Network` documents. `chalkctl validate`
 checks them against the schemas of the image the inventory names. It reads the built image, so
 build it first:
 
@@ -247,8 +269,16 @@ $ cat result/bgp-fabric/outputs/bird-conf/bird.conf
 --8<-- "examples/homelab/extensions/tests/fabric/bird-conf/bird.conf"
 ```
 
-It holds a `protocol bgp` per interface of the `Peer`. The test's node is named `example`. After
+It holds a `protocol bgp` per interface of the `Peer`, named after the `Peer` and the interface
+and bound to that interface. The `Speaker` gives the router ID, the AS number of every session
+and the interfaces of `node_addresses`, whose addresses each session announces. A session takes
+the default route alone from the neighbour, and `merge paths` installs it with a next hop per
+session, so the node keeps it while one port works. The test's node is named `example`. After
 each change to the template, build the results again and read the new file.
+
+The template's first lines refuse `Peer` documents on a node without a `Speaker`, whose AS
+number every session needs. `refuse` prints a refusal that names the first `Peer`, and the
+delivery is refused.
 
 ### Find out why a render fails
 
@@ -313,14 +343,23 @@ turns the sessions' password into bird constants. Add it to the `let` bindings:
 --8<-- "examples/homelab/extensions/bgp.nix:credentials"
 ```
 
+`bird-credentials` runs before bird starts and on each reload. It reads each `secret_*` file in
+`$CREDENTIALS_DIRECTORY` and writes a line `define 'secret_bgp.password' = "...";` to
+`/run/bird/credentials.conf`, which only bird's user may read. bird's config includes that file
+before the rendered one. chalkd accepts more characters in a `Secret`'s name and key than
+`bird-credentials` does, so keep both to letters, digits, `.`, `_` and `-`.
+
 A renderer never sees a secret's value, so `bird.conf` names the password by its credential,
-`'secret_bgp.password'`. A grant of the `Peer` kind has chalkd hand bird the values that the
-`Peer` documents' `password` fields name, as systemd credentials:
+`'secret_bgp.password'`, and the constant resolves it. A grant of the `Peer` kind has chalkd hand
+bird the values that the `Peer` documents' `password` fields name, as systemd credentials:
 
 ```nix
 --8<-- "examples/homelab/extensions/bgp.nix:grant"
 ```
 
+The homelab keeps the password in `bgp/secrets.yaml`, a file of its own, so that the file with
+the `Peer` can go into a public repository. The router's side of the sessions needs the same
+password, which `router/secrets.yaml` holds in a `Secret` of the router's own.
 Last, two settings outside bird: networkd leaves the routes bird installs alone, and the
 firewall lets BFD's packets in:
 
@@ -424,8 +463,21 @@ git add extensions
 ```
 
 The program reads the same input as a renderer, and prints a report of refusals, one per
-interface that no `Network` names. Test it with a config whose `Peer` names a third interface, `enp3s0`, without a
-`Network` document:
+interface that no `Network` names:
+
+```text title="extensions/bgp-peers.jq"
+--8<-- "examples/homelab/extensions/bgp-peers.jq"
+```
+
+A section of a networkd document may be one object or a list of them, and a key one value or a
+list, so the program reads `name` from every `[Match]` section, and splits a value that holds
+several names. It compares the names as written. A glob such as `enp*` may or may not match an
+interface, so the program takes it for no name, and a `Peer` on such an interface is refused.
+
+The program also refuses `Peer` documents without a `Speaker`, as the template does. The
+validators run before the renderers, so the operator sees the validator's refusal.
+Test this one with a config whose `Peer` names a third interface, `enp3s0`, without a `Network`
+document:
 
 ```sh
 cp extensions.done/tests/unconfigured-peer-interface.yaml extensions/tests/
@@ -445,6 +497,16 @@ chalkos.tests.bgp-unconfigured-peer-interface = {
   ];
 };
 ```
+
+`result/bgp-unconfigured-peer-interface/refusals.json` holds what the test got:
+
+```console
+$ cat result/bgp-unconfigured-peer-interface/refusals.json
+[{"kind":"Peer","name":"router","path":"spec.interfaces[2]","message":"enp3s0 has no Network document; bird binds the session to an interface the node configures"}]
+```
+
+`chalkctl validate` accepts this config, because chalkctl runs no validator of the image. The node
+refuses it on delivery.
 
 The finished extension tests the validator on more configs: interfaces matched by lists, globs and
 names separated by spaces, a `Peer` without a `Speaker`, and a node without any `Peer`. It declares
@@ -557,7 +619,8 @@ chalkctl logs node1 --secrets=secrets.age --unit=bird.service
 ```
 
 `bird takes no password with a quote or a line break` needs another value in the `Secret`.
-`chalkctl status` names a unit that failed as `failed unit bird.service`. `--follow` keeps printing
+`bird takes a credential name of letters, digits, '.', '_' and '-' alone` needs a `Secret` name
+and key of those characters. `chalkctl status` names a unit that failed as `failed unit bird.service`. `--follow` keeps printing
 new entries while you deliver a change, so a reload shows as it happens.
 
 ### A session does not come up
@@ -618,7 +681,7 @@ These pages explain the steps of this tutorial in more depth:
 - [React to changes](../build/react-to-changes.md) covers restarts, commands and conditions.
 - [Guard changes with rules and facts](../build/guard-changes.md) covers rules over several
   fields, over all of a kind's documents, and rules that read the node's state.
-- [Validate config with a program](../build/validate-config.md) walks through the validator.
+- [Validate config with a program](../build/validate-config.md) covers validators in general.
 - [Add a diagnostic](../build/add-a-diagnostic.md) lists the parameter types and the sandbox the
   command runs in.
 - [Test and roll out an image](../build/test-and-roll-out.md) covers the rollout to the other
