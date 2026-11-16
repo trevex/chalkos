@@ -353,7 +353,8 @@ func TestInstallTakesItsImageFromTheInventory(t *testing.T) {
 }
 
 // TestStatusComparesWithTheInventory reports whether a node runs the config the inventory gives
-// it, which a new build of its image leaves as it is, and the platform of the node's image.
+// it, which a new build of its image leaves as it is, what delivers a changed config, and the
+// platform of the node's image.
 func TestStatusComparesWithTheInventory(t *testing.T) {
 	ta := newTestApp(t)
 	path := writeInventory(t, ta.dir)
@@ -382,6 +383,16 @@ func TestStatusComparesWithTheInventory(t *testing.T) {
 		t.Errorf("status after a new build of the image = %q", out)
 	}
 	writeFile(t, filepath.Join(ta.dir, "nodes", "n1.yaml"), strings.Join([]string{n1SystemDisk, strings.Replace(n1Network, "10.0.0.11", "10.0.0.12", 1)}, "---\n"))
+	ta.stdout.Reset()
+	if err := ta.run(context.Background(), args("status", "n1")); err != nil {
+		t.Fatal(err)
+	}
+	// config apply checks the config against the image the node runs, so a node on another image
+	// than the inventory's gets the config with the upgrade.
+	if out := ta.stdout.String(); !strings.Contains(out, "(not the inventory's; chalkctl upgrade --nodes n1 delivers it with the image test-metal)") {
+		t.Errorf("status after a change on another image = %q", out)
+	}
+	writeImageDir(t, filepath.Join(ta.dir, "images", "test-metal"), "test-metal", "metal", testRootHash, false)
 	ta.stdout.Reset()
 	if err := ta.run(context.Background(), args("status", "n1")); err != nil {
 		t.Fatal(err)

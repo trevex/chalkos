@@ -18,7 +18,9 @@ import (
 // fakeInventory says what chalkctl's inventory says of a node, in words the test can find.
 type fakeInventory struct{}
 
-func (fakeInventory) ConfigState(v string) string { return "inventory on " + v }
+func (fakeInventory) ConfigState(s *nodev1.StatusResponse) string {
+	return "inventory on " + s.ConfigVersion
+}
 func (fakeInventory) StagedConfigState(*nodev1.StatusResponse) string {
 	return "inventory on the staged"
 }

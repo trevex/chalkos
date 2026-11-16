@@ -1,7 +1,6 @@
 package chalkctl
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -84,18 +83,18 @@ func (i nodeInventory) PlatformLine(reported string) string {
 	return fmt.Sprintf("platform %s (the inventory's)", reported)
 }
 
-// ConfigState says whether the running image's slot of a node holds the config chalkctl delivers
-// to it.
-func (i nodeInventory) ConfigState(version string) string {
-	name := i.name
-	return i.slotState(version, func(string) string { return "chalkctl config apply " + name + " delivers it" })
+// ConfigState says whether the running image's slot of the node the status s describes holds the
+// config chalkctl delivers to it, as runningAdvice advises.
+func (i nodeInventory) ConfigState(s *nodev1.StatusResponse) string {
+	name, img := i.name, i.imageOf(s.Boot)
+	return i.slotState(s.ConfigVersion, func(want string) string { return runningAdvice(name, want, img, s) })
 }
 
 // StagedConfigState says whether the slot of the image the status s names as staged holds the
 // config chalkctl delivers to the node, as stagedAdvice advises.
 func (i nodeInventory) StagedConfigState(s *nodev1.StatusResponse) string {
-	name := i.name
-	return i.slotState(s.StagedConfigVersion, func(want string) string { return stagedAdvice(name, want, s) })
+	name, img := i.name, i.imageOf(s.Boot)
+	return i.slotState(s.StagedConfigVersion, func(want string) string { return stagedAdvice(name, want, img, s) })
 }
 
 // slotState says whether a slot of the node holds version, the config chalkctl delivers to it, and
@@ -115,12 +114,30 @@ func (i nodeInventory) slotState(version string, advice func(want string) string
 	return "the inventory's"
 }
 
+// runningAdvice says what delivers want, the inventory's config, to the running image's slot.
+// config apply checks the config against the image the node runs, which need not accept the
+// config of another image, so a node that runs another image than the inventory's gets the config
+// with the inventory's image.
+func runningAdvice(name, want string, img inventoryImage, s *nodev1.StatusResponse) string {
+	switch {
+	case s.Trial != nil:
+		return "the node takes no delivery until the trial of config " + s.Trial.Version + " ends"
+	case img.runs:
+		return "chalkctl config apply " + name + " delivers it"
+	case img.stages:
+		return "it comes with the image " + img.name + " in the inactive slot"
+	}
+	return "chalkctl upgrade --nodes " + name + " delivers it with the image " + img.name
+}
+
 // stagedAdvice says what delivers want, the inventory's config, to the staged image's slot. A plain
 // config apply writes both slots, except that of a rollback's known-good image, which keeps its
 // config until the boot is found healthy, as the status names it. During a trial the advice is its
-// confirmation when want is on trial and its end otherwise. When the running image runs want
-// already, config apply --staged writes the staged slot alone.
-func stagedAdvice(name, want string, s *nodev1.StatusResponse) string {
+// confirmation when want is on trial and its end otherwise. config apply --staged writes the staged
+// slot alone, checked against the inventory's image; it is the advice when the running image runs
+// want already, or is not the inventory's image and may refuse want. With neither image the
+// inventory's, the upgrade delivers want.
+func stagedAdvice(name, want string, img inventoryImage, s *nodev1.StatusResponse) string {
 	b := s.Boot
 	switch {
 	case b.GetStagedKnownGood():
@@ -129,40 +146,66 @@ func stagedAdvice(name, want string, s *nodev1.StatusResponse) string {
 		return "the confirmation of its trial writes it: chalkctl config confirm " + name
 	case s.Trial != nil:
 		return "the node takes no delivery until the trial of config " + s.Trial.Version + " ends"
-	case s.ConfigVersion == want:
+	case !img.runs && !img.stages:
+		return "chalkctl upgrade --nodes " + name + " delivers it with the image " + img.name
+	case s.ConfigVersion == want || !img.runs:
 		return "chalkctl config apply --staged " + name + " delivers it"
 	}
 	return "chalkctl config apply " + name + " delivers it"
+}
+
+// inventoryImage is what a node's boot status says of the image the inventory names for it.
+type inventoryImage struct {
+	// name and rootHash are the image's name in the inventory and its root hash.
+	name, rootHash string
+	// runs says whether the node runs the image, and is true when either root hash is unknown, as
+	// status then compares no image; stages says whether the inactive slot holds it.
+	runs, stages bool
+	// err says why the inventory's image directory cannot be read.
+	err error
+}
+
+// imageOf compares the images boot reports with the image the inventory names for the node.
+func (i nodeInventory) imageOf(boot *nodev1.BootStatus) inventoryImage {
+	running := boot.GetRunning().GetRootHash()
+	if i.c.Partial() || len(running) == 0 {
+		return inventoryImage{runs: true}
+	}
+	nc, md, err := i.c.image(i.name)
+	switch {
+	case nc == nil:
+		return inventoryImage{runs: true}
+	case err != nil:
+		return inventoryImage{name: nc.ImageName, runs: true, err: err}
+	}
+	staged := boot.GetStaged().GetRootHash()
+	return inventoryImage{
+		name:     nc.ImageName,
+		rootHash: md.RootHash,
+		runs:     hex.EncodeToString(running) == md.RootHash,
+		stages:   len(staged) > 0 && hex.EncodeToString(staged) == md.RootHash,
+	}
 }
 
 // ImageLine is the status line of a node whose store has another root hash than the image the
 // inventory names for it, or whose image directory cannot be read; empty when it has that image,
 // or when the node or its config is unknown, which the config line reports.
 func (i nodeInventory) ImageLine(boot *nodev1.BootStatus) string {
-	c, name := i.c, i.name
-	running := boot.GetRunning().GetRootHash()
-	if c.Partial() || len(running) == 0 {
-		return ""
-	}
-	nc, err := c.config(name)
-	if err != nil {
-		return ""
-	}
-	md, err := nc.Resolve()
+	img := i.imageOf(boot)
 	switch {
-	case err != nil:
-		return fmt.Sprintf("its store is not compared with its image in the inventory: %v", err)
-	case hex.EncodeToString(running) == md.RootHash:
+	case img.err != nil:
+		return fmt.Sprintf("its store is not compared with its image in the inventory: %v", img.err)
+	case img.runs:
 		return ""
 	}
-	line := fmt.Sprintf("its store's root hash is %x, not that of the image %s the inventory names, %s", running, nc.ImageName, md.RootHash)
+	line := fmt.Sprintf("its store's root hash is %x, not that of the image %s the inventory names, %s", boot.GetRunning().GetRootHash(), img.name, img.rootHash)
 	// After an upgrade --until stage the image waits for its activation, after --until activate for
 	// the node's next boot.
-	if want, err := hex.DecodeString(md.RootHash); err == nil && bytes.Equal(boot.GetStaged().GetRootHash(), want) {
-		if boot.GetStagedState() == nodev1.SlotState_SLOT_STATE_STAGED {
-			return fmt.Sprintf("%s; it has %s staged: chalkctl node activate %s makes it boot next", line, statusview.BootImageName(boot.GetStaged()), name)
-		}
-		return fmt.Sprintf("%s; it has %s active, which it boots with its next reboot: chalkctl node reboot %s", line, statusview.BootImageName(boot.GetStaged()), name)
+	switch {
+	case img.stages && boot.GetStagedState() == nodev1.SlotState_SLOT_STATE_STAGED:
+		return fmt.Sprintf("%s; it has %s staged: chalkctl node activate %s makes it boot next", line, statusview.BootImageName(boot.GetStaged()), i.name)
+	case img.stages:
+		return fmt.Sprintf("%s; it has %s active, which it boots with its next reboot: chalkctl node reboot %s", line, statusview.BootImageName(boot.GetStaged()), i.name)
 	}
-	return fmt.Sprintf("%s; chalkctl upgrade --nodes %s installs that image", line, name)
+	return fmt.Sprintf("%s; chalkctl upgrade --nodes %s installs that image", line, i.name)
 }

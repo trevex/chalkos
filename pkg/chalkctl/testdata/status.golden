@@ -1,4 +1,4 @@
-config 3fa9c1e2b7d04e5f (not the inventory's; chalkctl config apply n1 delivers it)
+config 3fa9c1e2b7d04e5f (not the inventory's; the node takes no delivery until the trial of config 3fa9c1e2b7d04e5f ends)
 config 3fa9c1e2b7d04e5f on trial until 2026-11-13T15:04:00Z: it rolls back to config 77aa01bc23de45f6 unless config confirm confirms it; its health check leaves out late.service; an attempt to roll the config back failed and is tried again each minute: output demo failed
 the record of a config's trial cannot be read: parse chalkd/trial: unexpected end of JSON input; other changes are refused until config rollback restores the previous config
 previous config 77aa01bc23de45f6 (config rollback restores it)

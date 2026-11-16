@@ -18,8 +18,9 @@ import (
 // Inventory compares what a node reports with what the inventory gives it. chalkctl compares;
 // the console has no inventory.
 type Inventory interface {
-	// ConfigState says whether the running image's slot holds the config chalkctl delivers.
-	ConfigState(version string) string
+	// ConfigState says whether the running image's slot of the node s describes holds the config
+	// chalkctl delivers.
+	ConfigState(s *nodev1.StatusResponse) string
 	// StagedConfigState says the same of the slot of the image s names as staged.
 	StagedConfigState(s *nodev1.StatusResponse) string
 	// PlatformLine is the status line of the platform the node reports.
@@ -50,7 +51,7 @@ func Write(w io.Writer, s *nodev1.StatusResponse, o Options) error {
 	// A node installed before config documents runs an identity alone.
 	config := "config " + cmp.Or(s.ConfigVersion, "none")
 	if o.Inventory != nil {
-		config += " (" + o.Inventory.ConfigState(s.ConfigVersion) + ")"
+		config += " (" + o.Inventory.ConfigState(s) + ")"
 	}
 	fmt.Fprintln(w, config)
 	if s.Trial != nil {
