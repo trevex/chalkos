@@ -75,6 +75,8 @@ type kindSchema struct {
 	schemas     *schema.Schemas
 	// rules is the number of rules the kind has, as rules.Compile compiles them.
 	rules int
+	// anchor is the kind's anchor on the page, kindAnchor's.
+	anchor string
 }
 
 // row is a field in a kind's table.
@@ -118,12 +120,18 @@ func writeKinds(page, dir string, files []string) error {
 	for _, k := range kinds {
 		anchors[groupAnchor(k.group)] = true
 	}
-	for _, k := range kinds {
-		anchor := strings.ToLower(k.decl.Kind)
+	decls := make([]schema.Kind, len(kinds))
+	for i, k := range kinds {
+		decls[i] = k.decl
+	}
+	shared := sharedKindNames(decls)
+	for i, k := range kinds {
+		anchor := kindAnchor(k.decl, shared)
 		if anchors[anchor] {
 			return fmt.Errorf("two kinds named %s would share the anchor #%s", k.decl.Kind, anchor)
 		}
 		anchors[anchor] = true
+		kinds[i].anchor = anchor
 	}
 	for _, k := range kinds {
 		if k.description == "" {
@@ -151,6 +159,39 @@ func writeKinds(page, dir string, files []string) error {
 	}
 	b.WriteString(kindsSources)
 	return os.WriteFile(page, []byte(b.String()), 0o644)
+}
+
+// sharedKindNames are the kind names that kinds of more than one API group carry, whose anchors
+// tell them apart by group.
+func sharedKindNames(kinds ...[]schema.Kind) map[string]bool {
+	groups := map[string]map[string]bool{}
+	for _, ks := range kinds {
+		for _, k := range ks {
+			if groups[k.Kind] == nil {
+				groups[k.Kind] = map[string]bool{}
+			}
+			groups[k.Kind][k.Group()] = true
+		}
+	}
+	shared := map[string]bool{}
+	for name, gs := range groups {
+		if len(gs) > 1 {
+			shared[name] = true
+		}
+	}
+	return shared
+}
+
+// kindAnchor is a kind's anchor on the page of config kinds: its name in lower case, followed,
+// for a name kinds of several API groups share, by its group's first label, such as
+// bgppeer-router.
+func kindAnchor(k schema.Kind, shared map[string]bool) string {
+	a := strings.ToLower(k.Kind)
+	if shared[k.Kind] {
+		label, _, _ := strings.Cut(k.Group(), ".")
+		a += "-" + label
+	}
+	return a
 }
 
 // groupAnchor is the anchor of an API group's section: its name with hyphens for its dots, which
@@ -187,7 +228,7 @@ func kindSchemas(s *schema.Schemas, dir string) ([]kindSchema, error) {
 // sections.
 func writeKind(b *strings.Builder, k kindSchema) {
 	fmt.Fprintf(b, "\n### %s { #%s }\n\n%s\n\n`apiVersion: %s/%s`\n\n",
-		k.decl.Kind, strings.ToLower(k.decl.Kind), k.description, k.group, k.version)
+		k.decl.Kind, k.anchor, k.description, k.group, k.version)
 	var counts []string
 	if !k.file {
 		if k.decl.Multiple {
@@ -199,11 +240,11 @@ func writeKind(b *strings.Builder, k kindSchema) {
 			counts = append(counts, "The kind is [withheld](../how-it-works/node/config.md#withheld-kinds-stay-out-of-run): no service reads its documents, and chalkcfg prints none.")
 		}
 	}
-	// The page of built-ins lists the rules of each kind under #rules-<kind>.
+	// The page of built-ins lists the rules of each kind under #rules-<anchor>.
 	if k.rules == 1 {
-		counts = append(counts, fmt.Sprintf("It has a [change rule](builtins.md#rules-%s).", strings.ToLower(k.decl.Kind)))
+		counts = append(counts, fmt.Sprintf("It has a [change rule](builtins.md#rules-%s).", k.anchor))
 	} else if k.rules > 1 {
-		counts = append(counts, fmt.Sprintf("It has %d [change rules](builtins.md#rules-%s).", k.rules, strings.ToLower(k.decl.Kind)))
+		counts = append(counts, fmt.Sprintf("It has %d [change rules](builtins.md#rules-%s).", k.rules, k.anchor))
 	}
 	s := walkSpec(k)
 	// A kind's own declarations mark its spec, each a tuple of the spec's fields.

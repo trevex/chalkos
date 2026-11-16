@@ -64,6 +64,38 @@ A node's config may hold several, each with a name of its own. The kind is [with
 | --- | --- | --- | --- |
 | `spec.objects` | list of Kubernetes object | required | Kubernetes objects the control planes apply with server-side apply after chalkos's own, in this order; the objects of several Addon documents in the order of their names. chalkctl delivers them to control planes alone, and a worker applies none. |
 
+### BGPPeer { #bgppeer-kubernetes }
+
+A BGP neighbour of the node: its AS number, the address or interfaces of its sessions, their password and BFD, and the routes the node takes from it.
+
+`apiVersion: kubernetes.chalkos.dev/v1alpha1`
+
+A node's config may hold several, each with a name of its own. It has 8 [change rules](builtins.md#rules-bgppeer-kubernetes).
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `spec.address` | IP address or null | `null` | Unicast address of the neighbour, IPv4 or IPv6, neither loopback nor link-local: one session to it, over the route the kernel picks, or bound to the one interface of `interfaces`. Null for unnumbered sessions on `interfaces`. A session to an IPv4 address carries IPv4 routes alone, and one to an IPv6 address without an interface IPv6 routes alone; bound to an interface, a session to an IPv6 address carries both, IPv4 routes with IPv6 next hops. |
+| `spec.asn` | integer from 1 to 4294967295 | required | AS number of the neighbour. |
+| `spec.bfd` | boolean | `true` | Whether BFD watches each session, so that FRR ends it within about a second of its link failing. |
+| `spec.import` | one of `default`, `none` | `"default"` | Routes the node takes from the neighbour: `default` its default routes, 0.0.0.0/0 and ::/0, alone; `none` nothing. zebra installs a default route from BGP only while the node has no other, such as one from a router advertisement. |
+| `spec.interfaces` | list of string or null | `null` | Interfaces of the sessions, each named by a Network document's [Match] Name=. Without `address`, an unnumbered session on each, to the neighbour's IPv6 link-local address, which carries IPv4 and IPv6 routes; with `address`, the one interface its session is bound to. FRR sends router advertisements on these interfaces, which find the neighbour of an unnumbered session, with a router lifetime of 0, so no host on the link takes the node as its default router. Each item is unique within the list. |
+| `spec.password` | secret reference or null | `null` | Key of a Secret that holds the sessions' TCP MD5 password, of 1 to 80 printable characters without white space; null for none. The Secret's name and key hold letters, digits, `.`, `_` and `-` alone. |
+
+### BGPSpeaker { #bgpspeaker }
+
+The node's side of its BGP sessions: its AS number, its router ID and the interfaces whose addresses FRR announces to every BGPPeer.
+
+`apiVersion: kubernetes.chalkos.dev/v1alpha1`
+
+A node's config holds at most one. It has 4 [change rules](builtins.md#rules-bgpspeaker).
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `spec.asn` | integer from 1 to 4294967295 | required | AS number of the node. It stays while the node holds a BGPSpeaker; a new one takes a delivery without the BGPSpeaker first. |
+| `spec.export` | object | required |  |
+| `spec.export.interfaces` | list of string | required | Interfaces whose addresses FRR announces to every BGPPeer, each named by a Network document's [Match] Name=: an address of /32 or /128 as itself, another as its subnet. The VIP is announced while the node holds it on one of them, its Node's vip.interface. Each item is unique within the list. |
+| `spec.routerID` | string or null | `null` | Router ID in the form of an IPv4 address other than 0.0.0.0, unique within the node's AS; null takes the first IPv4 address of the Node's nodeIP.addresses, which a node without one cannot. |
+
 ### Cluster { #cluster }
 
 The Kubernetes cluster the node belongs to: its API server's endpoint, its address families and ranges, its VIP, the images of its components and the flags of its control-plane components.
@@ -366,13 +398,13 @@ A node's config may hold several, each with a name of its own. It has 8 [change 
 | `spec.routerID` | string | required | Router ID, an IPv4 address other than 0.0.0.0, a multicast address and 255.255.255.255, which the router's peers know it by; give an IPv6-only router one too. |
 | `spec.vrf` | name of a VRF, or `default` | `"default"` | VRF document whose instance this is; `default` for the default VRF, which holds every link no VRF holds. Unique among the BGP documents. |
 
-### BGPPeer { #bgppeer }
+### BGPPeer { #bgppeer-router }
 
 A BGP neighbour of the router, or the neighbours on a set of interfaces or of a prefix: where to reach them, their AS, and what the router accepts from them and sends them in each address family.
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 14 [change rules](builtins.md#rules-bgppeer).
+A node's config may hold several, each with a name of its own. It has 14 [change rules](builtins.md#rules-bgppeer-router).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |

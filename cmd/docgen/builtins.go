@@ -93,6 +93,8 @@ type builtinImage struct {
 	outputs     map[string]outputs.Definition
 	effects     map[string]effects.Definition
 	diagnostics map[string]diagnostics.Definition
+	// declared are the kinds of the image's schemas.
+	declared []schema.Kind
 }
 
 // writeBuiltins writes the built-ins page from three rules images, as
@@ -128,9 +130,10 @@ func writeBuiltins(page, def, plain, router string) error {
 	}
 	fmt.Fprintf(&b, "\n## Change rules { #change-rules }\n\n%s", rulesIntro)
 	taken := map[string]bool{}
-	writeRulesSection(&b, "rules-every-image", "The rules of the kinds every image accepts.", everyRules, taken)
-	writeRulesSection(&b, "rules-kubernetes", "The rules of the kinds that images with Kubernetes accept, and those they add to other kinds.", kubeRules, taken)
-	writeRulesSection(&b, "rules-router-images", "The rules of the kinds that router images accept, and those they add to other kinds.", routerRules, taken)
+	shared := sharedKindNames(d.declared, p.declared, r.declared)
+	writeRulesSection(&b, "rules-every-image", "The rules of the kinds every image accepts.", everyRules, taken, shared)
+	writeRulesSection(&b, "rules-kubernetes", "The rules of the kinds that images with Kubernetes accept, and those they add to other kinds.", kubeRules, taken, shared)
+	writeRulesSection(&b, "rules-router-images", "The rules of the kinds that router images accept, and those they add to other kinds.", routerRules, taken, shared)
 
 	parts := []error{
 		writePart(&b, "fact", "Facts", factsIntro, "declares", d, p, r, writeFacts, func(i builtinImage) map[string]facts.Definition { return i.facts }),
@@ -188,6 +191,7 @@ func readBuiltinImage(dir string) (builtinImage, error) {
 		return img, fmt.Errorf("%s: %w", dir, err)
 	}
 	img.kinds = kindsRules(set)
+	img.declared = c.Schemas.Kinds()
 	img.facts, img.validators, img.outputs, img.effects, img.diagnostics = c.Facts, c.Validators, c.Outputs, c.Effects, c.Diagnostics
 	return img, nil
 }
@@ -327,8 +331,9 @@ func textBlock(s string) string {
 
 // writeRulesSection writes a section of change rules: a heading and a table per kind. A kind's
 // anchor is #rules-<kind>, or #<anchor>-<kind>, such as #rules-kubernetes-<kind>, for the rules a
-// layer adds to a kind whose anchor is in taken already.
-func writeRulesSection(b *strings.Builder, anchor, intro string, kinds []kindRules, taken map[string]bool) {
+// layer adds to a kind whose anchor is in taken already. A kind whose name another group's kind
+// carries takes the group in its anchor, as on the page of config kinds.
+func writeRulesSection(b *strings.Builder, anchor, intro string, kinds []kindRules, taken, shared map[string]bool) {
 	fmt.Fprintf(b, "\n### %s { #%s }\n\n", sectionHeading(anchor), anchor)
 	if len(kinds) == 0 {
 		b.WriteString("None.\n")
@@ -336,9 +341,9 @@ func writeRulesSection(b *strings.Builder, anchor, intro string, kinds []kindRul
 	}
 	b.WriteString(intro + "\n")
 	for _, k := range kinds {
-		id := "rules-" + strings.ToLower(k.kind.Kind)
+		id := "rules-" + kindAnchor(k.kind, shared)
 		if taken[id] {
-			id = anchor + "-" + strings.ToLower(k.kind.Kind)
+			id = anchor + "-" + kindAnchor(k.kind, shared)
 		}
 		taken[id] = true
 		fmt.Fprintf(b, "\n#### %s { #%s }\n\n", k.kind.Kind, id)

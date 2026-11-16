@@ -61,6 +61,7 @@ let
 in
 {
   inherit delivered family;
+  inherit (cel) matchNames;
   # An interface's name, or a glob of names: a prefix and `*`, the one wildcard nftables matches.
   interface = types.strMatching "[A-Za-z0-9_.:@-]{1,15}|[A-Za-z0-9_.:@-]{0,14}[*]";
   interfaceText = "by name or glob, a glob being a prefix followed by `*`";
@@ -136,15 +137,6 @@ in
       description = "Destination addresses: the ranges of an AddressSet in `set`, or address ranges in `cidrs`; null matches every destination.";
     };
   };
-  # The names and globs of Name= in the [Match] sections of the Network documents of the config c,
-  # each value, or each of a list, as one string between spaces: systemd splits a value at spaces
-  # and tabs. A list of names would cost a loop more than a string.
-  matchNames =
-    c:
-    let
-      networks = cel.documents c apiVersions.networkd "Network";
-    in
-    ''cel.bind(nets, ${networks}, cel.bind(matches, dyn(nets.map(n, "match" in nets[n].spec ? ${cel.oneOrMany "nets[n].spec.match"} : []).flatten()), " " + dyn(matches.map(m, "name" in m ? ${cel.oneOrMany "m.name"} : []).flatten()).join(" ").replace("\t", " ") + " "))'';
 
   # The rule that the field p holds a NAT64 prefix, as RFC 6052 gives them and Jool and Unbound
   # take them: an IPv6 range of one of its lengths, no IPv4-mapped one, of no link-local,

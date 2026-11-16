@@ -1,0 +1,29 @@
+# unnumbered.yaml without the documents of node0, the interface the speaker exports.
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: BGPSpeaker
+metadata: {name: bgp}
+spec:
+  asn: 65001
+  routerID: 0.0.0.11
+  export: {interfaces: [node0]}
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: BGPPeer
+metadata: {name: fabric}
+spec:
+  asn: 65000
+  interfaces: [fabric0, fabric1]
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-fabric0}
+spec:
+  match: {name: fabric0}
+  network: {ipv6AcceptRA: false}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-fabric1}
+spec:
+  match: {name: fabric1}
+  network: {ipv6AcceptRA: false}

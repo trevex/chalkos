@@ -94,6 +94,12 @@ Example: `[ "gpu" ]`
 
 Whether an image runs Kubernetes, the packages and images it runs it with, and its CNI.
 
+### `chalkos.kubernetes.bgp.enable` { #chalkoskubernetesbgpenable }
+
+Type: boolean · Default: `true` · Declared in: [modules/node/kubernetes/bgp/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/bgp/default.nix)
+
+Whether Kubernetes images carry FRR, which runs BGP and BFD, with the Python of frr-reload.py, and accept the kinds `BGPPeer` and `BGPSpeaker`. Only with the Kubernetes layer; set it false in an image's modules to leave the feature out of it.
+
 ### `chalkos.kubernetes.enable` { #chalkoskubernetesenable }
 
 Type: boolean · Default: `false` · Declared in: [modules/node/kubernetes/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/default.nix)

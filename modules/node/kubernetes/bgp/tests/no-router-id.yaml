@@ -1,0 +1,21 @@
+# An IPv6-only node whose speaker gives no router ID.
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: default}
+spec:
+  type: worker
+  nodeIP: {addresses: ["2001:db8::11"]}
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: BGPSpeaker
+metadata: {name: bgp}
+spec:
+  asn: 65001
+  export: {interfaces: [eth0]}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-eth0}
+spec:
+  match: {name: eth0}
+  network: {address: ["2001:db8::11/64"]}

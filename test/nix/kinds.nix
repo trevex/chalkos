@@ -1050,6 +1050,8 @@ lib.runTests {
     expr = lib.sort lib.lessThan (kindNames kubernetesImage);
     expected = [
       "Addon"
+      "BGPPeer"
+      "BGPSpeaker"
       "Cluster"
       "Flannel"
       "Host"
@@ -1064,6 +1066,32 @@ lib.runTests {
       "TimeSync"
       "Volume"
     ];
+  };
+  # BGP's kinds belong to Kubernetes images that carry the feature: an image that leaves it out
+  # and an image without a layer accept neither.
+  testKubernetesBGPKinds = {
+    expr = {
+      groups = map (k: kubernetesImage.chalkos.kinds.${k}.group) [
+        "BGPSpeaker"
+        "BGPPeer"
+      ];
+      without = lib.intersectLists [
+        "BGPSpeaker"
+        "BGPPeer"
+      ] (kindNames (worker [ { chalkos.kubernetes.bgp.enable = false; } ]));
+      plain = lib.intersectLists [
+        "BGPSpeaker"
+        "BGPPeer"
+      ] (kindNames plainImage);
+    };
+    expected = {
+      groups = [
+        "kubernetes.chalkos.dev"
+        "kubernetes.chalkos.dev"
+      ];
+      without = [ ];
+      plain = [ ];
+    };
   };
   testImageWithoutKubernetesHasNoNode = {
     expr = lib.elem "Node" (kindNames plainImage);
@@ -1088,7 +1116,9 @@ lib.runTests {
       fixtures = map (
         file: lib.removeSuffix ".json" (lib.removePrefix "router.chalkos.dev_v1alpha1_" file)
       ) (lib.attrNames (builtins.readDir ../fixtures/kinds/router));
-      kubernetes = lib.intersectLists routerKinds (kindNames kubernetesImage);
+      kubernetes = lib.attrNames (
+        lib.filterAttrs (_: k: k.group == "router.chalkos.dev") kubernetesImage.chalkos.kinds
+      );
       plain = lib.intersectLists routerKinds (kindNames plainImage);
     };
     expected = {

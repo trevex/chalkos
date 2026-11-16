@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/facts"
+	"github.com/trevex/chalkos/pkg/schema"
 )
 
 func TestWriteBuiltins(t *testing.T) {
@@ -226,4 +227,15 @@ func editedImage(t *testing.T, name, file string, edit func(string) string) stri
 		t.Fatal(err)
 	}
 	return dir
+}
+
+// A kind whose name two groups share takes its group in the anchor of its rules.
+func TestWriteRulesSectionAnchorsASharedName(t *testing.T) {
+	var b strings.Builder
+	kind := schema.Kind{APIVersion: "router.chalkos.dev/v1alpha1", Kind: "BGPPeer"}
+	rules := []kindRules{{kind, []builtinRule{{Rule: schema.Rule{Rule: "self == oldSelf"}, field: "spec.asn"}}}}
+	writeRulesSection(&b, "rules-router-images", "The rules.", rules, map[string]bool{}, map[string]bool{"BGPPeer": true})
+	if !strings.Contains(b.String(), "#### BGPPeer { #rules-bgppeer-router }") {
+		t.Errorf("section:\n%s\nlacks the rules of BGPPeer by its group", b.String())
+	}
 }

@@ -1,0 +1,36 @@
+# unnumbered.yaml whose fabric ports one Network document matches by a glob, which names no
+# interface for the peer.
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: BGPSpeaker
+metadata: {name: bgp}
+spec:
+  asn: 65001
+  routerID: 0.0.0.11
+  export: {interfaces: [node0]}
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: BGPPeer
+metadata: {name: fabric}
+spec:
+  asn: 65000
+  interfaces: [fabric0, fabric1]
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-fabric}
+spec:
+  match: {name: "fabric*"}
+  network: {ipv6AcceptRA: false}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: NetDev
+metadata: {name: 30-node0}
+spec:
+  netDev: {name: node0, kind: dummy}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 30-node0}
+spec:
+  match: {name: node0}
+  network: {address: ["fdc8:a1b2:c3d4:ff::11/128"], keepConfiguration: "yes"}

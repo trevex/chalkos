@@ -163,17 +163,33 @@ func TestWriteKindsRefusesAKindWithoutADescription(t *testing.T) {
 	}
 }
 
-func TestWriteKindsRefusesASharedAnchor(t *testing.T) {
-	dir := t.TempDir()
-	for _, group := range []string{"a.example.org", "b.example.org"} {
-		schema := `{"description": "A rack.", "x-chalkos-kind": {"group": "` + group + `", "version": "v1", "kind": "Rack"}}`
-		if err := os.WriteFile(filepath.Join(dir, group+"_v1_Rack.json"), []byte(schema), 0o644); err != nil {
-			t.Fatal(err)
+// Kinds of one name in two groups take their groups' first labels in their anchors and their
+// rules' links; kinds of one name in groups of one first label still share an anchor.
+func TestWriteKindsAnchorsASharedNameByGroup(t *testing.T) {
+	write := func(t *testing.T, groups ...string) (string, error) {
+		dir := t.TempDir()
+		for _, group := range groups {
+			schema := `{"description": "A rack.", "x-chalkos-kind": {"group": "` + group + `", "version": "v1", "kind": "Rack"}}`
+			if err := os.WriteFile(filepath.Join(dir, group+"_v1_Rack.json"), []byte(schema), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		page := filepath.Join(t.TempDir(), "kinds.md")
+		err := writeKinds(page, dir, nil)
+		data, _ := os.ReadFile(page)
+		return string(data), err
+	}
+	got, err := write(t, "a.example.org", "b.example.org")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"### Rack { #rack-a }", "### Rack { #rack-b }"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the page lacks %q:\n%s", want, got)
 		}
 	}
-	err := writeKinds(filepath.Join(t.TempDir(), "kinds.md"), dir, nil)
-	if err == nil || !strings.Contains(err.Error(), "#rack") {
-		t.Errorf("error %v, want one naming the anchor #rack", err)
+	if _, err := write(t, "a.example.org", "a.example.net"); err == nil || !strings.Contains(err.Error(), "#rack-a") {
+		t.Errorf("error %v, want one naming the anchor #rack-a", err)
 	}
 }
 
