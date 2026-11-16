@@ -58,6 +58,29 @@ A rule binds `self` to a path through the properties of objects. It cannot sit o
 list or the values of a map. A rule on a list or a map compares it
 whole. Lists are not matched item by item by a key.
 
+The build types `self`, `oldSelf` and the documents of `documents` and `oldDocuments` from the
+kind's schema:
+
+- A submodule is an object of the fields it declares. A rule that reads a field the schema does
+  not declare, such as `self.modle`, fails the build with `undefined field 'modle'`.
+- An `attrsOf` is a map, whose keys a rule reads as they come; a `listOf` is a list of its items'
+  type.
+- A string, an enum of strings, a bool and an int are themselves, so `self.port == "22"` on an int fails the build
+  with `found no matching overload`.
+- A `nullOr` submodule is the object or `null`. Every other value is `dyn`, which the build does
+  not check: a float, a `nullOr` of anything but a submodule, a port range and an embedded
+  Kubernetes object.
+
+`config`, `oldConfig`, `document()` and facts are `dyn`.
+
+A rule reads a field whose name CEL reserves, such as `in`, by index: `self["in"]`. The build
+checks a name given as a string literal as it checks a select. An index by another string, such
+as `self.podCIDRs[family]`, yields `dyn`.
+
+A field the schema declares can still be absent from a document, such as a field that the running
+config's document has from an image that did not declare it yet. Reading it fails the rule at
+run time, so test such a field with `has()` before reading it.
+
 ### Effect conditions { #effect-condition-variables }
 
 An effect's `when` reads these variables:
@@ -132,8 +155,10 @@ effects have no `document()`.
 ## Cost limits and build checks { #cost-limits }
 
 The image build runs `chalkos-rules check` over the image's schemas, facts, effects and outputs.
-It fails on a rule that does not parse or type-check, on a rule that reads a fact no module
-declares, and on a command fact that is no program of the store. It also limits a rule's cost:
+It fails on a rule that does not parse or type-check, which includes a rule that reads a field the
+kind's schema does not declare, as [Change rules](#change-rule-variables) describes. It fails on a
+rule that reads a fact no module declares, and on a command fact that is no program of the store.
+It also limits a rule's cost:
 
 - The build refuses a rule whose estimated cost exceeds 10,000,000, estimated with 256 elements
   in every list, map and string. A loop over a kind's documents inside another loop over them
@@ -154,6 +179,10 @@ A refusal does not leak a secret or a fact's content that the rule only compared
   `conversion error`. An error of chalkos's functions names the function, such as
   `ip: the argument is not an address`. Of any other error the refusal says only
   `a rule cannot be evaluated`.
+- A rule that reads a field the schema declares and the document lacks names the field, a name
+  from the schema rather than a value:
+  `cannot check: Peer/router: spec: a rule cannot be evaluated: no such key: asn, a field the config leaves out; test it with has() first`.
+  A missing key of a map stays unnamed, since the key is a value.
 - A `messageExpression` that fails gives the same kind of error after the message.
 - A rule that yields no bool says which type it yields.
 - A command fact that fails shows its exit status alone: `cannot check: fact disks: the command
