@@ -39,9 +39,17 @@ These pages go from a new workstation to the first installed node.
 
     ---
 
-    Boot a physical machine or a VM into maintenance mode and install a node on it.
+    Boot a physical machine from the installer and install a node on it.
 
     [:octicons-arrow-right-24: Read](install.md)
+
+-   :material-monitor-dashboard: __Install a node in a VM__
+
+    ---
+
+    Run a node under QEMU, libvirt or Proxmox from the kvm image, installed in place.
+
+    [:octicons-arrow-right-24: Read](install-vm.md)
 
 </div>
 

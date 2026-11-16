@@ -31,6 +31,7 @@ nav = [
     "operate/workstation.md",
     "operate/node-config.md",
     "operate/install.md",
+    "operate/install-vm.md",
     "operate/change-config.md",
     "operate/add-remove-nodes.md",
     "operate/upgrade.md",

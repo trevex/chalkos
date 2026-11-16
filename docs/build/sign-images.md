@@ -236,8 +236,8 @@ and keep the entries already there. Use the way your hardware offers:
 - The vendor's tools, such as the server vendor's command-line utilities that write firmware
   settings from the running operating system.
 - Virtual machines. Their UEFI variables are a file you prepare.
-  [Install a node](../operate/install.md#boot-the-machine-into-maintenance-mode) shows how
-  for QEMU, libvirt and Proxmox.
+  [Create the VM](../operate/install-vm.md#create-the-vm) shows how for QEMU, libvirt and
+  Proxmox.
 
 ## Sign the image
 

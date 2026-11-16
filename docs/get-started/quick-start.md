@@ -643,8 +643,8 @@ follow the operator guides in order:
    secrets and choose the credentials each command needs.
 2. [Write a node's config](../operate/node-config.md): name the nodes in an inventory and give
    each its files and image.
-3. [Install a node](../operate/install.md): boot a physical machine or a VM into maintenance mode
-   and install it.
+3. [Install a node](../operate/install.md): boot a physical machine into maintenance mode and
+   install it, or [install it in a VM](../operate/install-vm.md).
 
 To follow one fixed path on real machines instead, [Build a home lab](../guides/home-lab.md) turns four
 machines and a switch into a router and three control planes.
