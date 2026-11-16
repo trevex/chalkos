@@ -12,6 +12,10 @@ cluster before you install its nodes, because a few of its settings are fixed on
 other pages follow in order: bootstrap the cluster, configure it, run its control plane on several
 nodes, upgrade Kubernetes, rotate its CAs and keys, and find out why it misbehaves.
 
+## Set up
+
+These pages take a cluster from its plan to a highly available control plane.
+
 <div class="grid cards" markdown>
 
 -   :material-clipboard-text-outline: __Plan a cluster__
@@ -48,6 +52,14 @@ nodes, upgrade Kubernetes, rotate its CAs and keys, and find out why it misbehav
     Run three control planes behind a virtual IP, and add, replace or remove one.
 
     [:octicons-arrow-right-24: Read](ha-control-plane.md)
+
+</div>
+
+## Maintain
+
+These pages keep a running cluster current and fix what goes wrong.
+
+<div class="grid cards" markdown>
 
 -   :material-update: __Upgrade Kubernetes__
 

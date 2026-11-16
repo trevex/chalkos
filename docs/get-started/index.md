@@ -9,6 +9,10 @@ These pages are for readers new to chalkos. They explain the model of a cluster,
 cluster or a lab router on one machine and list what real machines need. The
 [guides](../guides/index.md) go on to a cluster on real machines.
 
+## Understand chalkos
+
+This page explains the model of a cluster before any command.
+
 <div class="grid cards" markdown>
 
 -   :material-lightbulb-on-outline: __What is chalkos__
@@ -20,23 +24,39 @@ cluster or a lab router on one machine and list what real machines need. The
 
     [:octicons-arrow-right-24: Read](what-is-chalkos.md)
 
--   :material-rocket-launch: __Quick start__
+</div>
+
+## Quick starts
+
+Each quick start runs a lab of virtual machines on one machine in about 15 minutes.
+
+<div class="grid cards" markdown>
+
+-   :material-rocket-launch: __Quick start: Kubernetes__
 
     ---
 
     Run a cluster of two QEMU virtual machines on one machine with chalklab, upgrade it and
     remove it, in about 15 minutes.
 
-    [:octicons-arrow-right-24: Start](quick-start.md)
+    [:octicons-arrow-right-24: Start](quick-start-kubernetes.md)
 
--   :material-router-network: __Quick start: a router__
+-   :material-router-network: __Quick start: router__
 
     ---
 
     Run a router and a client on its LAN as QEMU virtual machines, check its DHCP, DNS and
     masquerade, and change its firewall on trial, in about 15 minutes.
 
-    [:octicons-arrow-right-24: Start](router-quick-start.md)
+    [:octicons-arrow-right-24: Start](quick-start-router.md)
+
+</div>
+
+## Before you install
+
+These pages prepare an install on real machines.
+
+<div class="grid cards" markdown>
 
 -   :material-clipboard-check-outline: __Requirements__
 

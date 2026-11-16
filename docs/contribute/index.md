@@ -10,6 +10,10 @@ against `main` on [GitHub](https://github.com/trevex/chalkos). A change is ready
 its tests, the documentation it affects, formatted code, and passing flake checks for what it
 touches.
 
+## Start
+
+These pages take a first change from setup to commit.
+
 <div class="grid cards" markdown>
 
 -   :material-laptop: __Development setup__
@@ -46,6 +50,14 @@ touches.
 
     [:octicons-arrow-right-24: Read](testing.md)
 
+</div>
+
+## Code
+
+These pages map the code, its packages and its internals.
+
+<div class="grid cards" markdown>
+
 -   :material-sitemap: __Architecture for developers__
 
     ---
@@ -81,6 +93,14 @@ touches.
 
     [:octicons-arrow-right-24: Read](nix.md)
 
+</div>
+
+## Docs
+
+These pages explain how the documentation is built and written.
+
+<div class="grid cards" markdown>
+
 -   :material-file-document-edit: __Writing documentation__
 
     ---
@@ -96,6 +116,14 @@ touches.
     The rules every documentation page follows.
 
     [:octicons-arrow-right-24: Read](style.md)
+
+</div>
+
+## Plans
+
+This page lists what chalkos does not do yet.
+
+<div class="grid cards" markdown>
 
 -   :material-map-marker-path: __Roadmap and known limits__
 

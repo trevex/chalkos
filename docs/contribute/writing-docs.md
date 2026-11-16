@@ -28,7 +28,10 @@ The navigation has one section per reader and two that every reader shares:
 | Reference | `reference/` | everyone | reference |
 | Contribute | `contribute/` | contributor | how-to, explanation |
 
-Each section starts with an index page with a card for each of its pages. The
+Each section is a tab in the site's header, so the sidebar lists the pages of one section at a time.
+A section of more than about six pages splits them into groups of two to seven, such as Set up,
+Day 2 and Diagnose and recover in Operate nodes. Each section starts with an index page whose
+headings are its groups, with a card for each page. The
 [docs style guide](style.md#audiences) describes the readers, and the
 [page templates](style.md#page-templates) describe the kinds of page.
 
@@ -233,8 +236,8 @@ builds the image's schemas and provides nixfmt.
    and a `description` and an H1 equal to the title, as the
    [docs style guide](style.md#front-matter-and-file-names) shows.
 2. Write it from the template of its kind in the [docs style guide](style.md#page-templates).
-3. Add it to the navigation in `zensical.toml`, outside the generated region, and to its
-   section's index page.
+3. Add it to its group in the navigation in `zensical.toml`, outside the generated region, and
+   under the same group's heading on its section's index page.
 4. `git add` it, then run the `docs` check.
 
 ## Publishing
