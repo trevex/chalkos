@@ -11,12 +11,13 @@ end every node is `Ready` in Kubernetes, and you hold a kubeconfig for the API s
 uses the homelab's control planes `node1`, `node2` and `node3`, behind the VIP
 `fdc8:a1b2:c3d4:ff::10`.
 
-```console
-$ chalkctl bootstrap node1 --secrets=secrets.age
-bootstrapping node1; the control plane pulls its images and starts
-node1 is bootstrapped; applied 19 objects
-$ chalkctl kubeconfig --secrets=secrets.age
-wrote kubeconfig; its certificate is valid for 8760h0m0s
+In short:
+
+```sh
+chalkctl status node1 --secrets=secrets.age
+chalkctl bootstrap node1 --secrets=secrets.age
+chalkctl kubeconfig --secrets=secrets.age
+kubectl --kubeconfig kubeconfig get nodes
 ```
 
 ## Before you begin

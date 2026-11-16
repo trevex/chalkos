@@ -8,6 +8,15 @@ description: "Configure a router node's interfaces, its Router document and the 
 This page shows how to configure a node of a router image: its interfaces, its `Router` document
 and the interfaces on which it answers the node API.
 
+In short:
+
+```sh
+chalkctl validate
+chalkctl config apply r1 --secrets secrets.age --try 2m
+chalkctl node diag r1 --secrets secrets.age nft-ruleset
+chalkctl node diag r1 --secrets secrets.age traceroute address=2001:db8:2::1
+```
+
 ## Before you begin
 
 You need a router image, which an image author builds as
