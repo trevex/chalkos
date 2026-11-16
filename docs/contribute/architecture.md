@@ -103,7 +103,7 @@ Each row names where a change goes and the checks that cover it. `nix build
 | A kind every image accepts | `modules/node/kinds/` | `eval-kinds`, `eval`, `image-tests`, `docs-generated` |
 | The CEL functions of change rules | `pkg/rules` | `go-unit`, `rules` |
 | How a delivery is checked and applied | `pkg/check`, `pkg/outputs`, `pkg/effects`, `pkg/chalkd/apply.go` | `go-unit`, `image-tests` |
-| An image's checker | `pkg/imagecheck`, `chalkd check` in `pkg/chalkd` | `image-checker`, `go-unit`, `e2e-upgrade` |
+| An image's checker | `pkg/imagecheck`, `chalkd check` in `cmd/chalkd/main.go`, `pkg/chalkd/imagecheck.go` | `image-checker`, `go-unit`, `e2e-upgrade` |
 | The install | `pkg/install`, `pkg/chalkd/install.go` | `go-unit`, `e2e-install`, `e2e-installer` |
 | Staging, activation or an upgrade | `pkg/upgrade`, `pkg/chalkd/staged.go`, `pkg/chalkctl/upgrade.go` | `go-unit`, `e2e-upgrade` |
 | Disks, STATE, VAR or volumes | `pkg/storage` and its subpackages, `pkg/config/storage.go`, `cmd/chalkos-storage` | `go-unit`, `e2e-image` |
@@ -112,7 +112,7 @@ Each row names where a change goes and the checks that cover it. `nix build
 | Kubernetes on a node | `pkg/kubernetes` and its subpackages, `pkg/chalkd/layers/kubernetes`, `modules/node/kubernetes/` | `go-unit`, `eval`, `e2e-kubernetes`, `e2e-kubernetes-ha` |
 | containerd or registries | `modules/node/kubernetes/containerd.nix`, `registries.nix`, `registry-mirrors.nix` | `containerd-config`, `registry-mirrors` |
 | The node's clock | `modules/node/time.nix` | `chrony-dhcp`, `image-tests` |
-| A router feature | `modules/node/router/<feature>/`, its renderer in `cmd/chalkos-render`, `pkg/router/derive` | `rules`, `image-tests`, `eval-kinds`, the feature's `router-<feature>` check, `e2e-router` |
+| A router feature | `modules/node/router/<feature>/`, its renderer in `cmd/chalkos-render`, `pkg/router/derive` | `rules`, `image-tests`, `eval-kinds`, its `router-<feature>` check where one exists, `e2e-router` |
 | Status or the console | `pkg/statusview`, `pkg/console` and their `layers/<layer>` | `go-unit` |
 | The arguments of mkImage and mkImages | `lib/images.nix`, `lib/images-arguments.nix` | `eval`, `image-tests`, `docs-generated` |
 | Kernel modules or the closure | `modules/node/kernel.nix`, `modules/node/base/closure.nix` | `kernel-modules`, `image-size`, `bootspec` |

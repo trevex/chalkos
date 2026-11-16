@@ -45,7 +45,7 @@ defaults (`config.Redacted.Defaulted`), as chalkctl's `checkRules` does.
 
 ## A trial holds the staged slot back
 
-A trial writes neither slot in step 4. `holdBack` in `pkg/chalkd/trial.go` keeps the checked slot
+A trial holds back both writes of step 4: the staged slot and the pending config. `holdBack` in `pkg/chalkd/trial.go` keeps the checked slot
 at `/state/chalkd/trial-staged`, and the trial's record names it. `ConfirmConfig` writes it once
 it removed the record. Every other end of the trial removes the copy with the record.
 
