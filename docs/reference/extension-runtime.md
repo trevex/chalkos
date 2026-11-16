@@ -46,6 +46,7 @@ config is the baseline also when the delivered config is for another image, as i
 | `config` | every | The whole delivered config by apiVersion, kind and name: `config["bgp.example.org/v1alpha1"].Peer["router"]`. |
 | `oldConfig` | every | The running config, in the same shape. |
 | `node.name` | every | The node's name in the inventory, which its node certificate carries. |
+| `node.addresses` | every | The node's static addresses in the delivered config: the `Address=` values of its Network documents that are IP addresses, without prefix length, in the order of the networks' names, as its node certificate names them. A list of strings; compare them with `ip()`, which takes every spelling of an address alike. |
 | `facts.<name>` | every | The fact of that name. |
 
 Every value of a `Secret` is its SHA-256 in these variables, so a rule can tell that a secret
@@ -98,6 +99,7 @@ An effect's `when` reads these variables:
 | `config` | The config the node runs once the delivery is applied, by apiVersion, kind and name: `config["bgp.example.org/v1alpha1"].Peer["router"]`. |
 | `oldConfig` | The config before the delivery, in the same shape. |
 | `node.name` | The node's name, which its node certificate carries. |
+| `node.addresses` | The node's static addresses in the config it runs once the delivery is applied, as rules read them. |
 | `facts.<name>` | A fact once the delivery is applied. |
 | `oldFacts.<name>` | The same fact before the delivery changed anything. |
 

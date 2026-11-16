@@ -32,7 +32,7 @@ func CompileEffect(name, when string) (*EffectRule, error) {
 	fail := func(format string, args ...any) error {
 		return fmt.Errorf("%s: rule %q: %s", e.Where(), when, fmt.Sprintf(format, args...))
 	}
-	base, err := newEnv("config", "oldConfig", "node")
+	base, err := newEnv("config", "oldConfig")
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +52,8 @@ func CompileEffect(name, when string) (*EffectRule, error) {
 // node's facts after the delivery and before it.
 type EffectInput struct {
 	Documents, Old config.Redacted
-	// Node is the node's name, which effects read as node.name.
+	// Node is the node's name, which effects read as node.name; they read the static addresses
+	// of Documents as node.addresses.
 	Node            string
 	Facts, OldFacts Facts
 }
@@ -62,7 +63,7 @@ type EffectInput struct {
 // errs say why.
 func Due(effects []*EffectRule, in EffectInput) (due []*EffectRule, errs []error) {
 	cfg, oldCfg := ConfigOf(in.Documents), ConfigOf(in.Old)
-	node := map[string]any{"name": in.Node}
+	node := nodeOf(in.Node, in.Documents.Documents())
 	for _, e := range effects {
 		ok, err := e.evaluate(cfg, oldCfg, node, in.Facts, in.OldFacts)
 		if err != nil {

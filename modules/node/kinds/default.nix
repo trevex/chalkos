@@ -183,7 +183,7 @@ let
             Change rules over the node's documents of the kind, CEL expressions that are true for
             every config the node accepts. `documents` and `oldDocuments` map document names to
             the documents of the kind in the delivered config and in the running one; `config`,
-            `oldConfig`, `node.name` and `facts` are as for every rule. A rule that is false
+            `oldConfig`, `node` and `facts` are as for every rule. A rule that is false
             refuses the config, or says it takes a reset or a reinstall.
           '';
         };
@@ -201,7 +201,7 @@ let
           description = ''
             Change rules of each document's spec, in the shape of `rules`. `self` is the spec of
             one delivered document and `oldSelf` the spec of the running config's document of the
-            same name, as for a field's rules; `config`, `oldConfig`, `node.name` and `facts` are
+            same name, as for a field's rules; `config`, `oldConfig`, `node` and `facts` are
             as for every rule. A rule here compares the fields of one document, a list with
             another list among them, at the cost of a loop less than the same rule over
             `documents`. Its message starts with the kind, the document's name and `spec`.

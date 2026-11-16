@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/netip"
 	"regexp"
 	"slices"
 	"strings"
@@ -34,7 +35,8 @@ type Input struct {
 	// that read oldSelf do not run and the rules of kinds see no oldDocuments.
 	Old config.Redacted
 	// Node is the node's name, which rules read as node.name: the inventory's name of the node,
-	// which its node certificate carries.
+	// which its node certificate carries. Rules read the static addresses of Documents as
+	// node.addresses.
 	Node string
 	// Facts is nil where no facts can be read, as in chalkctl: rules that read facts do not run.
 	Facts Facts
@@ -64,7 +66,7 @@ func (e *FactError) Unwrap() error { return e.Err }
 func (s *Set) Evaluate(in Input) ([]Failure, error) {
 	next, old := in.Documents.Documents(), in.Old.Documents()
 	cfg, oldCfg := ConfigOf(in.Documents), ConfigOf(in.Old)
-	node := map[string]any{"name": in.Node}
+	node := nodeOf(in.Node, next)
 	var failures []Failure
 	for _, p := range s.Programs {
 		if len(p.Facts) > 0 && in.Facts == nil {
@@ -103,6 +105,19 @@ func (s *Set) Evaluate(in Input) ([]Failure, error) {
 		}
 	}
 	return failures, nil
+}
+
+// nodeOf is the node as rules read it: node.name, its name, and node.addresses, the static
+// addresses of docs that are IP addresses, as its node certificate names them, so ip() takes
+// every one.
+func nodeOf(name string, docs config.Documents) map[string]any {
+	addresses := []any{}
+	for _, a := range config.StaticAddresses(docs) {
+		if addr, err := netip.ParseAddr(a); err == nil && addr.Zone() == "" {
+			addresses = append(addresses, a)
+		}
+	}
+	return map[string]any{"name": name, "addresses": addresses}
 }
 
 // bindFacts binds <ident>.<name> in vars for each of the names to a function that loads the fact

@@ -52,7 +52,7 @@ The other fields say what the test expects:
 | `refusals` | `[ ]` | The refusals the config gets. The default expects it accepted. |
 | `before` | `null` | The documents before `config`, which make the test one of a change. |
 | `effects` | `null` | The names of the effects the change takes. `null` leaves them unchecked. |
-| `node` | `example` | The node's name, which rules read as `node.name` and programs as `.node.name`. |
+| `node` | `example` | The node's name, which rules read as `node.name` and programs as `.node.name`. Rules read the node's static addresses as `node.addresses`, from `config`. |
 | `facts`, `oldFacts` | `{ }` | The facts that rules and effects' `when` read, by name, after and before the change. |
 
 The refusals are always compared, so every test also checks that its config is accepted or

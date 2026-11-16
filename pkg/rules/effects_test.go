@@ -76,6 +76,20 @@ func TestEffectNodeName(t *testing.T) {
 	}
 }
 
+// An effect sees the static addresses of the config the node runs as node.addresses.
+func TestEffectNodeAddresses(t *testing.T) {
+	e := effect(t, `node.addresses == ["10.0.0.11", "fd00::11", "10.0.1.5"]`)
+	if got, errs := dueUnits([]*EffectRule{e}, EffectInput{Documents: config.Redact(networks(t))}); len(errs) > 0 || len(got) != 1 {
+		t.Errorf("with the networks: due = %v, %v", got, errs)
+	}
+	if got, errs := dueUnits([]*EffectRule{e}, EffectInput{Old: config.Redact(networks(t))}); len(errs) > 0 || len(got) != 0 {
+		t.Errorf("with the networks before the delivery alone: due = %v, %v", got, errs)
+	}
+	if _, err := CompileEffect("demo", `size(node.adresses) > 0`); err == nil || !strings.Contains(err.Error(), "undefined field 'adresses'") {
+		t.Errorf("a misspelt field of node: err = %v", err)
+	}
+}
+
 // An effect loads a fact when it reads it, from the facts after the delivery or from those before
 // it, so one whose first operand of || holds loads none.
 func TestEffectLoadsFactsLazily(t *testing.T) {

@@ -69,7 +69,7 @@ let
       node = lib.mkOption {
         type = lib.types.str;
         default = "example";
-        description = "Name of the node, which rules read as `node.name` and renderers and validators as `.node.name`.";
+        description = "Name of the node, which rules read as `node.name` and renderers and validators as `.node.name`. Rules read the node's static addresses as `node.addresses`, from the test's `config`.";
       };
       facts = lib.mkOption {
         type = factValues;

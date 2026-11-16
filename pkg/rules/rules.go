@@ -127,7 +127,7 @@ func compile(apiVersions map[string]string, kt *kindTypes, k schema.Kind, path [
 	} else {
 		opts = append(opts, cel.Variable("self", self), cel.Variable("oldSelf", self))
 	}
-	base, err := newEnv("config", "oldConfig", "node")
+	base, err := newEnv("config", "oldConfig")
 	if err == nil {
 		base, err = base.Extend(opts...)
 	}

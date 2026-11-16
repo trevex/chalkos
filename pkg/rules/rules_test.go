@@ -296,6 +296,37 @@ func TestNodeName(t *testing.T) {
 	}
 }
 
+// networks are Network documents that give the node the static addresses 10.0.0.11, fd00::11
+// and 10.0.1.5, in the order of the networks' names, and two Address= values that are no IP
+// addresses a certificate names.
+func networks(t *testing.T) []config.Document {
+	t.Helper()
+	return []config.Document{
+		builtinDoc(t, config.NetworkdAPI, "Network", "20-b", `{"network": {"address": ["10.0.1.5/24", "not-an-address/24", "fe80::1%eth0/64"]}}`),
+		builtinDoc(t, config.NetworkdAPI, "Network", "10-a", `{"network": [{"address": "10.0.0.11/24"}, {"address": ["fd00::11/64"]}]}`),
+	}
+}
+
+// Every rule sees the node's static addresses as node.addresses: the Address= values of the
+// delivered Network documents without prefix length that are IP addresses, in the order of the
+// networks' names; none without a Network. A field node does not have fails the rule's check.
+func TestNodeAddresses(t *testing.T) {
+	set := compiled(t, kindSchema("Demo", true, object(nil), []any{
+		rule(`node.addresses == ["10.0.0.11", "fd00::11", "10.0.1.5"]`, "the node has the addresses"),
+		rule(`node.addresses.exists(a, ip(a) == ip("FD00:0::11"))`, "the node has fd00::11"),
+	}))
+	demo := doc(t, "Demo", "a", `{}`)
+	failures, err := set.Evaluate(Input{Documents: config.Redact(append(networks(t), demo))})
+	if err != nil || len(failures) != 0 {
+		t.Errorf("with the networks: %q, %v", messages(failures), err)
+	}
+	failures, err = set.Evaluate(Input{Documents: config.Redact([]config.Document{demo})})
+	want := []string{"the node has the addresses", "the node has fd00::11"}
+	if got := messages(failures); err != nil || !slices.Equal(got, want) {
+		t.Errorf("without a network: %q, %v; want %q", got, err, want)
+	}
+}
+
 // A messageExpression's message has its control characters, C1 and bidirectional controls among
 // them, as spaces, so that a value it quotes cannot act on the operator's terminal.
 func TestMessageExpressionPrintable(t *testing.T) {
@@ -752,6 +783,9 @@ func TestCompileRefusesUnknownField(t *testing.T) {
 		"enum":              {spec(rule("self.mode == 1", "")), nil, "found no matching overload for '_==_' applied to '(string, int)'"},
 		"integer":           {spec(rule("self.count == '1'", "")), nil, "found no matching overload for '_==_' applied to '(int, string)'"},
 		"int equals double": {spec(rule("self.count == 1.5", "")), nil, "found no matching overload for '_==_' applied to '(int, double)'"},
+		"node field":        {spec(rule("size(node.adresses) > 0", "")), nil, "undefined field 'adresses'"},
+		"node in kind rule": {spec(), []any{rule("node.nmae != ''", "")}, "undefined field 'nmae'"},
+		"node addresses":    {spec(rule("node.addresses.exists(a, a == 1)", "")), nil, "found no matching overload for '_==_' applied to '(string, int)'"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := Compile(schemasOf(t, closedKind(tc.spec, tc.rules)))

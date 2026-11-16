@@ -34,11 +34,11 @@ type kindTypes struct {
 }
 
 func newKindTypes(kind string) (*kindTypes, error) {
-	reg, err := types.NewRegistry()
+	provider, err := newNodeProvider()
 	if err != nil {
 		return nil, err
 	}
-	return &kindTypes{Provider: reg, kind: kind, named: map[*jsonschema.Schema]*types.Type{}, fields: map[string]map[string]*types.Type{}}, nil
+	return &kindTypes{Provider: provider, kind: kind, named: map[*jsonschema.Schema]*types.Type{}, fields: map[string]map[string]*types.Type{}}, nil
 }
 
 // of is the type of a value of s, the schema at field. An object type is named by the kind and
