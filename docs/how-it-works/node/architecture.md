@@ -95,8 +95,7 @@ check decides whether a new image is healthy.
 chalkd runs as root, because it partitions disks, enrols TPM keyslots, writes EFI variables,
 mounts volumes and sets the hostname. It restarts whenever it stops, with no limit, because it is
 the only way to reach the node.
-[Architecture for developers](../../contribute/architecture.md#chalkd-runs-with-a-narrow-sandbox)
-describes its sandbox.
+[chalkd's sandbox](../../contribute/internals/sandbox.md) lists what its unit allows.
 
 The machine's screen shows chalkos-console, the [console](../../operate/console.md), in place of a
 login prompt. It reaches chalkd through a local socket and calls the node API there, for the reads
@@ -206,5 +205,5 @@ explains. [Roles and credentials](../../reference/access.md) lists what each rol
 - [Install a node](../../operate/install.md) for the install as a task.
 - [`chalkctl install`](../../reference/cli/chalkctl_install.md) and the
   [node API](../../reference/api.md) for the details.
-- [Architecture for developers](../../contribute/architecture.md) for the code's layout, chalkd's
-  sandbox and the steps of an install.
+- [Architecture for developers](../../contribute/architecture.md) for the code's layout, and
+  [The install in code](../../contribute/internals/install.md) for the steps of an install.

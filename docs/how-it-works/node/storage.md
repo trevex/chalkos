@@ -102,10 +102,17 @@ whose partitions all have types of this disk's definitions. A disk with other da
 with a message naming what it carries, and nothing is written to it.
 
 systemd-repart then creates and grows the partitions, once per disk, from definitions chalkos
-renders for the node. The definitions give each partition its own GPT type and a partition UUID
-that stays the same across runs, so a new volume never takes over another volume's partition.
-[Architecture for developers](../../contribute/architecture.md#storage-partitions-are-matched-deterministically)
-explains how.
+renders for the node. repart assigns existing partitions to definitions, and three choices keep
+that matching deterministic:
+
+- Each partition gets its own GPT type UUID, derived from its label. repart matches existing
+  partitions to definitions by type, so a new volume never takes over another volume's partition.
+- The definitions are ordered: VAR first, then the system disk's volumes in name order. A disk of
+  its own holds one volume.
+- Partition UUIDs derive from a seed of the node's name and the disk's. The same definition yields
+  the same partition UUID on every run, and the node opens volumes on other disks by that UUID.
+
+[Storage partition matching](../../contribute/internals/storage-matching.md) maps this to the code.
 
 ## The TPM seals the disk keys to PCR 7
 
