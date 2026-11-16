@@ -299,7 +299,7 @@ func (rl *routerLab) bgp(t *testing.T) {
 }
 
 // reload has r1 announce its edge0's address: a dry run plans FRR's reload, and the delivery
-// reaches r2 while the session stays up.
+// reaches r2 while the session stays up, applied by chalkos-frr-reload in one clean pass.
 func (rl *routerLab) reload(t *testing.T) {
 	// A dry run of the delivery plans FRR's reload on its output, and changes nothing.
 	plan := regexp.MustCompile(`(?m)^  (?:effects:  | {10})frr: reload frr\.service \(output frr\)$`)
@@ -321,6 +321,16 @@ func (rl *routerLab) reload(t *testing.T) {
 	// seconds FRR rounds its uptime to.
 	if elapsed := time.Since(start); after.State != "Established" || after.UptimeSeconds+2 < before.UptimeSeconds+uint64(elapsed.Seconds()) {
 		t.Errorf("the session restarted: up %ds before the delivery, %s and up %ds %v later", before.UptimeSeconds, after.State, after.UptimeSeconds, elapsed.Round(time.Second))
+	}
+	// chalkos-frr-reload applied the delivery in one pass that vtysh took whole.
+	out, err := chalkctl(t, rl.nodes["r1"], "announce", "logs", "r1", "--unit", "frr.service")
+	switch {
+	case err != nil:
+		t.Errorf("frr.service's journal of r1: %v", err)
+	case !strings.Contains(out, "chalkos-frr-reload: pass 1 applies:") || !strings.Contains(out, "chalkos-frr-reload: FRR runs frr.conf"):
+		t.Errorf("r1's journal shows no reload by chalkos-frr-reload")
+	case strings.Contains(out, "chalkos-frr-reload: pass 2") || strings.Contains(out, "refused"):
+		t.Errorf("chalkos-frr-reload took more than one clean pass on r1")
 	}
 }
 
