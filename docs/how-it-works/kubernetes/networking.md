@@ -99,8 +99,9 @@ A node's addresses do not have to come from networkd. A routing daemon, such as 
 layer's BGP speaker or one an extension adds to an image, can announce an address on a loopback or
 dummy interface. Such a unit orders itself before `chalkos-node-addresses.target`, which every
 image defines, and is wanted by it. The preparation starts after the target and still waits up to
-`nodeIP.timeout` for the addresses. The BGP speaker's `frr.service` orders itself this way, so the
-node announces its address before the preparation picks it.
+`nodeIP.timeout` for the addresses. `frr.service`, the BGP speaker's unit, is ordered this way: it
+starts before the target, so FRR is running before the preparation looks for the node's
+addresses.
 
 An address on a loopback interface needs the `Flannel` document's `spec.mtu`, because flannel would
 take the loopback's MTU. When it is set, a dummy interface holding a node's address needs an MTU of
@@ -337,7 +338,8 @@ the sessions it leaves alone. Routers run the same FRR build and reload, which
   because its holder announces it with ARP and neighbour advertisements. A `routed` VIP needs no
   shared network, but chalkd does not announce it itself: it needs the BGP speaker, or another
   routing daemon, on every control plane, and its failover takes as long as that daemon and its
-  peers need to move the route. A load balancer or a DNS name in front of the control planes works instead of either.
+  peers need to move the route. A load balancer or a DNS name in front of the control planes
+  works instead of either.
 - On control planes, etcd's ports 2379 and 2380 are open to every source, not only to the
   cluster's nodes. etcd accepts only clients and peers with a certificate of its CA there.
 - Packets a control plane receives lose the packet mark bit `0x02000000`, which the firewall's rule

@@ -75,10 +75,10 @@ A layer is a predefined set of NixOS modules that chalkos ships. An image lists 
 
 - `chalkos.nixosModules.kubernetes` enables the Kubernetes layer. Its images run containerd and
   the kubelet, with etcd on control planes, and accept the kinds of `kubernetes.chalkos.dev`:
-  `Node`, `Cluster`, `Flannel`, `Addon`, and `BGPSpeaker` and `BGPPeer` for FRR, the layer's BGP
-  speaker. An image whose modules set
+  `Node`, `Cluster`, `Flannel` and `Addon`. They also run FRR, the layer's BGP speaker, and accept
+  its kinds `BGPSpeaker` and `BGPPeer`, unless the image's modules set
   [`chalkos.kubernetes.bgp.enable`](../reference/image-options.md#chalkoskubernetesbgpenable) to
-  `false` carries no FRR and refuses the two BGP kinds.
+  `false`.
 - `chalkos.nixosModules.router` enables the router layer. Its images forward IPv4 and IPv6
   packets between their interfaces, accept the kinds of `router.chalkos.dev`, filter with the
   router's own firewall in place of NixOS's and run FRR for BGP, Jool for NAT64, Unbound and Kea,

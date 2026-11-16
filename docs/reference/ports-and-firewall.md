@@ -28,6 +28,7 @@ which [Router images](#router-images) describes.
 | 10250 | TCP | kubelet | control planes and workers | the API server |
 | 30000–32767 | TCP | NodePort services | control planes and workers | clients of NodePort services |
 | 8472 | UDP | flannel's VXLAN | control planes and workers, with flannel | the other nodes |
+| 3784 | UDP | BFD, FRR's bfdd: single-hop control | control planes and workers whose image carries the BGP speaker | the BGP neighbours of a `BGPPeer` with `bfd` |
 
 Ports 2379 and 2380 accept only certificates of the cluster's etcd CA, but a control plane's
 firewall opens them to every source, not only to the other control planes' addresses.
@@ -79,6 +80,7 @@ connections from other machines. They are reachable from the node itself.
 | 10256 | TCP | kube-proxy's health, kube-proxy's default | every address | control planes and workers |
 | 10257 | TCP | kube-controller-manager | `127.0.0.1` | control planes |
 | 10259 | TCP | kube-scheduler | `127.0.0.1` | control planes |
+| 179 | TCP | BGP, FRR's bgpd; the node opens its sessions itself | every address | control planes and workers whose image carries the BGP speaker |
 
 CoreDNS answers on port 53 inside the pod network, at the cluster's DNS service addresses; it
 opens no port on the node.
@@ -192,12 +194,14 @@ between the nodes.
 | The other control planes | 2379, 2380 | TCP | etcd membership and replication. |
 | The other Kubernetes nodes | 10250 | TCP | The API server reaching kubelets, from control planes. |
 | The other Kubernetes nodes | 8472 | UDP | flannel's VXLAN. |
+| The neighbours of the node's `BGPPeer` documents | 179 | TCP | BGP sessions, which the node opens. |
+| The neighbours of the node's `BGPPeer` documents with `bfd` | 3784 | UDP | BFD's control packets. |
 
 [Config kinds](kinds.md) describes the `Mirror`, `Registry` and `TimeSync` documents.
 
 A VIP needs no port of its own: chalkd adds the address to an interface of the
 control plane that holds it and announces it to the neighbours with ARP or IPv6 neighbour
-advertisements.
+advertisements. A routed VIP travels in the BGP sessions above.
 
 Sources: the firewall rules of `modules/node/chalkd.nix`, `modules/node/kubernetes`,
 `modules/node/router`, `cmd/chalkos-render/nftables.go` and `pkg/kubernetes/vxlan`, and the

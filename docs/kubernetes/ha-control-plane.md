@@ -151,9 +151,8 @@ it did not configure. The rest of the file stays as above. `chalkctl validate` r
 
 Name `node0` in the `BGPSpeaker`'s export interfaces, as
 [Announce the VIP](bgp.md#announce-the-vip) shows, or configure the extension's daemon to announce
-the addresses of `node0`. The VIP's route then follows the
-holder: when a new control plane wins the election, the old holder's daemon withdraws the route and
-the new holder's announces it. A failover takes the election's time plus the time the daemons and
+the addresses of `node0`. The VIP's route then follows the holder: when a new control plane wins
+the election, the old holder's daemon withdraws the route and the new holder's announces it. A failover takes the election's time plus the time the daemons and
 their peers need to move the route. `chalkctl status` shows `vip holder` and `vip standby` as with
 an `l2` VIP. The homelab announces its VIP this way, with the Kubernetes layer's BGP speaker over
 both ports of each node, as [Build a home lab](../guides/home-lab.md) sets up.

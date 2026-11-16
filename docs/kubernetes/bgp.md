@@ -1,6 +1,6 @@
 ---
 title: "Announce addresses with BGP"
-description: "Run the Kubernetes layer's BGP speaker: announce a node's address and the routed VIP, and take a default route"
+description: "Announce a Kubernetes node's addresses and the routed VIP with the layer's BGP speaker"
 ---
 
 # Announce addresses with BGP
@@ -8,13 +8,12 @@ description: "Run the Kubernetes layer's BGP speaker: announce a node's address 
 This page shows how to announce a Kubernetes node's addresses to the routers of its network over
 BGP. Each node runs FRR, the Kubernetes layer's BGP speaker. It announces the addresses of the
 interfaces its config names, such as the node's own address on a dummy interface and the API's VIP
-while the node holds it, and installs the default route its peers send. Use it when the nodes sit
+while the node holds it, and takes the default route its peers send. Use it when the nodes sit
 on a routed fabric instead of one layer-2 segment, when a node's address should stay reachable
 over whichever of its ports works, or when the VIP runs in the `routed` mode.
 
-Images with the Kubernetes layer carry the speaker by default. FRR runs no BGP until the node's config holds
-a `BGPSpeaker`. The speaker announces interfaces' addresses and nothing it derives from the
-cluster, so it announces no pod ranges and no LoadBalancer addresses.
+Images with the Kubernetes layer carry the speaker by default. FRR runs no BGP until the node's
+config holds a `BGPSpeaker`.
 
 ## Before you begin
 
@@ -77,6 +76,9 @@ A `BGPPeer` is a neighbour of the node. A peer takes one of three forms:
 | `address` and one interface | One session to the address, bound to the interface. |
 | `address` alone | One session to the address, over the route the kernel picks. |
 
+Each interface a peer names needs a `Network` document whose `match.name` names it, as an export
+interface does.
+
 Unnumbered sessions need no addresses on the links. This peer runs a session on each of the node's
 two ports:
 
@@ -108,13 +110,20 @@ spec:
   asn: 64512
   address: "fd00:300::1"
   password: {secretRef: {name: bgp, key: fabric}}
+---
+apiVersion: chalkos.dev/v1alpha1
+kind: Secret
+metadata: {name: bgp}
+spec:
+  data: {fabric: lab-s3cret}
 ```
 
 `asn` is the neighbour's AS number, which the node refuses to change in place; a neighbour in
 another AS is a peer of another name. `password` names a key of a `Secret` that holds the
 sessions' TCP MD5 password, of 1 to 80 printable characters without white space.
 [Keep the services' secrets in Secret documents](../operate/workstation.md#keep-the-services-secrets-in-secret-documents)
-shows the homelab's. `bfd`, on by default, ends a session within about a second of its link failing.
+shows the homelab's. `bfd`, on by default, ends a session within about a second of its link
+failing.
 `import` sets what the node takes from the neighbour: `default`, the default, takes its default
 routes alone, and `none` takes nothing.
 
@@ -125,8 +134,9 @@ only the routes it originates, so it never passes one peer's routes on to anothe
 
 ## Take the default route from the peers
 
-With `import: default`, FRR takes the default routes the peers send and installs them as one route
-with a next hop per session. zebra installs a default route from BGP only while the node has no
+With `import: default`, FRR takes the default routes the peers send. From peers in one AS it
+installs them as one route with a next hop per session; from peers in different ASes it installs
+the best path alone. zebra installs a default route from BGP only while the node has no
 other one. A default route from a router advertisement or a DHCP lease wins, and the BGP route
 stays in FRR's table unused.
 
@@ -159,11 +169,11 @@ interface's `Network` keeps the VIP when networkd configures the interface again
 
 ## Deliver and check the sessions
 
-Validate the files and deliver them:
+Validate the files and deliver them to each node, such as cp1:
 
 ```sh
 chalkctl validate
-chalkctl config apply cp1
+chalkctl config apply cp1 --secrets=secrets.age
 ```
 
 The node's status lists no BGP sessions. Four diagnostics show FRR's state: `bgp-summary` the
@@ -188,7 +198,7 @@ A session that is up shows the number of prefixes received, here r1's default ro
 session that is down shows its state, such as `Active` or `Connect`. `PfxSnt` counts the
 announced addresses: the node's own and the VIP. `bgp-neighbor` takes the neighbour's address or,
 for an unnumbered session, the interface. Its output names the peer group, `peer-` and the
-`BGPPeer`'s name, and shows the password and BFD:
+`BGPPeer`'s name, and shows whether the session has a password and BFD:
 
 ```console
 $ chalkctl node diag k1 bgp-neighbor peer=fd00:300::1
@@ -218,6 +228,13 @@ BFD Peers:
             Diagnostics: ok
             Remote diagnostics: ok
             Peer Type: dynamic
+            RTT min/avg/max: 0/0/0 usec
+            Local timers:
+                    Detect-multiplier: 3
+                    Receive interval: 300ms
+                    Transmission interval: 300ms
+                    Transmission interval (actual with jitter): 294ms
+                    Detection timeout: 900ms
 ...
 ```
 
@@ -258,7 +275,7 @@ A delivery that changes the `BGPSpeaker`, a `BGPPeer` or a password reloads `frr
 dry run adds the dummy interface `lb0` to `k1`'s export interfaces:
 
 ```console
-$ chalkctl config apply --dry-run k1
+$ chalkctl config apply k1 --secrets=secrets.age --dry-run
 k1: config 2 added, 0 removed, 1 changed
 ~ BGPSpeaker "bgp"
     spec.export.interfaces[1]: (none) → "lb0"
@@ -290,13 +307,15 @@ k1 chalkos-frr-reload[2501]: chalkos-frr-reload: FRR runs frr.conf
 k1 systemd[1]: Reloaded FRRouting.
 ```
 
-A reload that FRR does not complete fails the delivery, and a restart of `frr.service` loads the
-config whole. [A delivery reloads FRR](../how-it-works/router/bgp.md#a-delivery-reloads-frr)
+A reload that fails fails the delivery, with the config stored, and a restart of `frr.service`
+loads the config whole.
+[A delivery reloads FRR](../how-it-works/router/bgp.md#a-delivery-reloads-frr)
 explains the reload, which routers share.
 
 ## Fix a refused delivery
 
-chalkctl and the node refuse a config that FRR could not run, before anything changes:
+chalkctl and the node refuse a config that FRR could not run, before anything changes. The most
+common refusals:
 
 | Refusal | Cause |
 | --- | --- |
@@ -307,7 +326,7 @@ chalkctl and the node refuse a config that FRR could not run, before anything ch
 | `the Node's nodeIP.addresses hold no IPv4 address, which FRR would take as its router ID; ...` | An IPv6-only node gives no router ID. |
 | `a node with BGPPeer documents needs a BGPSpeaker document, ...` | The node has peers but no speaker. |
 | `FRR binds a session to an address to one interface, ...` | A peer with an address names two interfaces. |
-| `spec.address "fdc8:a1b2:c3d4:1::1" is not unique; FRR runs one session per neighbour address; ...` | Two peers name one address. |
+| `BGPPeer/router-enp1s0, BGPPeer/router-enp2s0: spec.address "fdc8:a1b2:c3d4:1::1" is not unique; FRR runs one session per neighbour address; ...` | Two peers name one address. |
 | `fabric1 carries the unnumbered sessions of another BGPPeer too; ...` | Two peers run unnumbered sessions on one interface. |
 
 To change the node's AS number, deliver the config without the `BGPSpeaker` and its `BGPPeer`s,
@@ -320,7 +339,8 @@ An image whose modules set
 `false` carries no FRR. Its nodes refuse the kinds `BGPSpeaker` and `BGPPeer`, and it has no
 output or effect `bgp` and no diagnostics `bgp-summary`, `bgp-neighbor`, `bgp-route` or
 `bfd-peers`. Its firewall leaves BFD's port closed. Use such an image for nodes that need no BGP,
-or that run another routing daemon an extension adds. [Write a BGP extension](../guides/bgp-extension.md)
+or that run another routing daemon an extension adds.
+[Write a BGP extension](../guides/bgp-extension.md)
 builds such an image with bird in place of FRR.
 
 ## Limits
@@ -328,8 +348,8 @@ builds such an image with bird in place of FRR.
 - The node's status lists no BGP sessions; the diagnostics show them.
 - The speaker announces the addresses of interfaces alone: no pod ranges, no LoadBalancer
   addresses and no routing policy beyond `import`.
-- A peer's address must be on a subnet of one of the node's interfaces. The sessions are eBGP
-  with a TTL of 1, without multihop.
+- A peer's address must be on a subnet of one of the node's interfaces: eBGP runs with a TTL of
+  1, without multihop.
 - To carry IPv4 routes over a session to an IPv6 address, name the peer's interface. A session to
   an IPv6 address alone carries IPv6.
 - FRR runs one session per neighbour address, and one unnumbered session per interface.

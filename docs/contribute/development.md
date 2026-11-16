@@ -167,7 +167,7 @@ name, and exposes them as packages. The repository's own flake exposes its test 
 | `test-image` | The image `test-metal`, with small partitions and the test probe; most VM tests boot it. |
 | `test-installer` | The test images' installer. |
 | `test-kubernetes-image` | The image `k8s-kvm`, with the Kubernetes layer, which the Kubernetes test's control plane and worker boot. |
-| `test-kubernetes-ha-image` | The image `k8s-metal`, which the HA test's control planes boot. |
+| `test-kubernetes-ha-image` | The image `k8s-metal`, without BGP, which the HA test's control planes boot. |
 | `test-router-image` | The image `router-kvm`, with the router layer, which the router test's routers boot. |
 | `test-upgrade-image`, `test-unhealthy-image`, `test-kubernetes-ha-upgrade-image` | Images the upgrade tests install. |
 | `installer` | An installer of a cluster without an OS CA, which accepts any client until it installs a node. |
