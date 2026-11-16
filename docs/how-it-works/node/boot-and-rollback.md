@@ -263,7 +263,7 @@ chalkd reads the boot from the ESP whenever it reports status: the entry it boot
 boot was blessed, an entry of the image with tries left that boots next, and a used-up entry it
 fell back from. The used-up UKI stays on the ESP until the next upgrade removes it. The record on
 VAR is removed once a counted boot is found healthy.
-[Status, logs and the console](../../operate/status-and-logs.md#the-platform-and-image-lines-name-what-the-node-booted)
+[Status, logs and the console](../../operate/status-and-logs.md#read-the-platform-and-image-lines)
 explains each image line. `chalkctl upgrade` stops at a node that rolled back, as
 [Upgrades](upgrades.md#a-rolled-back-node-stops-the-run) describes.
 

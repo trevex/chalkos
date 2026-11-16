@@ -53,7 +53,7 @@ with flannel, flannel. containerd pulls them through the `Registry` and `Mirror`
 The tags of the API server, the controller-manager, the scheduler and kube-proxy name their
 Kubernetes version. The image's checker holds these versions to Kubernetes's version skew policy
 against the image's kubelet, so a config whose control plane is older than the kubelet is refused.
-[Configure Kubernetes](../../kubernetes/configure.md#images-name-every-component-but-the-kubelet)
+[Configure Kubernetes](../../kubernetes/configure.md#name-the-images-of-the-components)
 lists the rules. An upgrade of the kubelet is an image upgrade, which
 [Kubernetes upgrades](upgrades.md) describes.
 

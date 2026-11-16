@@ -24,8 +24,8 @@ chalkctl status w1
 ```
 
 The line starts with `kubernetes worker:` or `kubernetes controlplane:`, followed by the node's
-state. [The Kubernetes line shows the node's part in the
-cluster](../operate/status-and-logs.md#the-kubernetes-line-shows-the-nodes-part-in-the-cluster)
+state. [Read the Kubernetes
+line](../operate/status-and-logs.md#read-the-kubernetes-line)
 explains the rest of it. Then find the symptom below.
 
 ## The node has no address
@@ -45,8 +45,8 @@ document, or the cluster's `nodeIP.validSubnets`. It found none, so it runs neit
 nor static pods.
 
 Check the node's `Network` documents and its DHCP lease, and that the subnets include the network
-the node is on. [Network documents configure the
-interfaces](../operate/node-config.md#network-documents-configure-the-interfaces) shows the
+the node is on. [Configure the
+interfaces](../operate/node-config.md#configure-the-interfaces) shows the
 documents, and [Configure Kubernetes](configure.md) shows `nodeIP`. Deliver the corrected
 documents, or reboot the node once the network is right:
 
@@ -83,8 +83,8 @@ Check that:
 - the VIP is held, when the endpoint is a VIP: another control plane's line shows `vip holder`;
 - the node reaches port 6443 at the endpoint, through any load balancer in between.
 
-[The cluster endpoint reaches the API server and
-chalkd](plan.md#the-cluster-endpoint-reaches-the-api-server-and-chalkd) lists what the endpoint
+[Choose the cluster
+endpoint](plan.md#choose-the-cluster-endpoint) lists what the endpoint
 must reach.
 
 ## A control plane does not finish joining
@@ -158,8 +158,8 @@ Pod traffic between nodes travels in flannel's VXLAN, on UDP port 8472. Three ca
   minus 20 when IPv6 is in use. IPv6 VXLAN takes 70 bytes of each packet, and IPv4 VXLAN 50.
 - A firewall between the nodes drops UDP port 8472.
 
-[Flannel sets the pod network's MTU and VXLAN
-sources](configure.md#flannel-sets-the-pod-networks-mtu-and-vxlan-sources) shows the document.
+[Set the pod network's MTU and VXLAN
+sources](configure.md#set-the-pod-networks-mtu-and-vxlan-sources) shows the document.
 
 ## A Node has no pod range
 
@@ -175,8 +175,8 @@ document names a family the cluster was not created with. That happens when a ne
 installed after `ipFamilies` changed in the inventory. Running nodes refuse that change, but an
 install has no running config to compare with. Restore the original `ipFamilies` and reinstall
 the worker, as [Reinstall a node on its
-machine](../operate/add-remove-nodes.md#reinstall-a-node-on-its-machine) describes. [IP families
-and ranges are fixed at creation](plan.md#ip-families-and-ranges-are-fixed-at-creation) explains
+machine](../operate/add-remove-nodes.md#reinstall-a-node-on-its-machine) describes. [Choose the IP families
+and ranges](plan.md#choose-the-ip-families-and-ranges) explains
 why.
 
 ## A control plane refuses the cluster's families

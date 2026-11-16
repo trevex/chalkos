@@ -9,7 +9,7 @@ This page is for an operator who changes the YAML files of nodes that are instal
 At the end each node runs the new config, and the services that read what changed have restarted
 or reloaded. A config change needs no new image and no reboot. The page gives the homelab's
 Kubernetes nodes their own time servers, as
-[Write a node's config](node-config.md#timesync-names-the-time-servers) describes.
+[Write a node's config](node-config.md#name-the-time-servers) describes.
 
 In short:
 
@@ -361,7 +361,7 @@ config that an upgrade refuses.
 
 A trial whose rollback at the deadline fails, or whose record the node cannot read, shows on the
 trial's line of `chalkctl status` with the command that ends it, as
-[The config line compares the node with the inventory](status-and-logs.md#the-config-line-compares-the-node-with-the-inventory)
+[Read the config line](status-and-logs.md#read-the-config-line)
 lists.
 
 ## What next

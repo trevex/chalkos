@@ -42,7 +42,7 @@ fixes.
 The console shows the node stopping in the initrd because it finds no system disk. Or a network
 card is missing from `chalkctl node diag w1 links`, or a disk from `lsblk` in a shell on the node.
 `lsblk` and `dmesg` are on images built with `chalkos.debug.tools`, as
-[Debug tools reach the node through kubectl debug](status-and-logs.md#debug-tools-reach-the-node-through-kubectl-debug)
+[Reach the node's tools through kubectl debug](status-and-logs.md#reach-the-nodes-tools-through-kubectl-debug)
 describes. The image lacks the device's driver, or the firmware the driver loads, and `dmesg`
 names a firmware file that failed to load. A disk controller's driver must also be in the initrd.
 The image author adds it, as [Add software, drivers and kernel modules](../build/add-software.md)
@@ -67,7 +67,7 @@ a wrong interface comes from the node's network documents, which
 [Write a node's config](node-config.md) covers. A route that is right while `ping` and
 `tcp-connect` fail points at the network past the node, or at a firewall. `nft-ruleset` shows the
 node's own. `ping`, `dns-query`, `tcp-connect` and `nft-ruleset` need an operator client file.
-[chalkctl node diag runs the image's diagnostics](status-and-logs.md#chalkctl-node-diag-runs-the-images-diagnostics)
+[Run the image's diagnostics with chalkctl node diag](status-and-logs.md#run-the-images-diagnostics-with-chalkctl-node-diag)
 lists every diagnostic.
 
 ## A volume is missing or not mounted
@@ -221,7 +221,7 @@ the last delivery. Preview and deliver the change, as
 
 The certificates section has a third column, such as `less than a third of its lifetime remains`
 or `renewal failing: ...`.
-[The certificates section warns before an expiry](status-and-logs.md#the-certificates-section-warns-before-an-expiry)
+[Read the certificates section](status-and-logs.md#read-the-certificates-section)
 says what each warning asks for. An expired node certificate makes every command against the node
 fail. [The node certificate expired](recover-node.md#the-node-certificate-expired) brings it back.
 
@@ -231,7 +231,7 @@ The status says `time: not synchronised; certificates are checked against this c
 reached none of its servers. With the default servers, NTS needs the node to reach them on TCP
 port 4460 and UDP port 123. A network that blocks both needs internal servers in the node's
 `TimeSync` document, as
-[TimeSync names the time servers](node-config.md#timesync-names-the-time-servers) shows.
+[Name the time servers](node-config.md#name-the-time-servers) shows.
 
 ## A unit failed
 
@@ -242,7 +242,7 @@ chalkctl logs w1 --unit=<unit>
 ```
 
 `<unit>` is the unit the status names.
-[chalkctl logs prints a unit's journal](status-and-logs.md#chalkctl-logs-prints-a-units-journal)
+[Follow a unit's journal with chalkctl logs](status-and-logs.md#follow-a-units-journal-with-chalkctl-logs)
 lists the units of chalkos.
 
 ## Image pulls fail

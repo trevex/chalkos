@@ -109,7 +109,7 @@ endpoint is reached over HTTPS only. An `http://` endpoint needs a `Registry` of
 
 chalkd reads the `Mirror` documents from the same config as the `Registry` documents.
 
-## A failing endpoint passes the pull on
+## Expect a failing endpoint to pass the pull on
 
 chalkd passes over an endpoint and asks the next source when the endpoint:
 
@@ -126,7 +126,7 @@ the next source.
 When the last source fails too, the error names the source it ended at, followed by
 `after the mirror <endpoint>: <error>` for each endpoint it passed over.
 
-## Container images use the same documents
+## Pull container images with the same documents
 
 With the Kubernetes layer, containerd pulls the pods' container images through the endpoints of the
 same `Mirror` documents. The same `Registry` gives every pod on the node the images of its host,

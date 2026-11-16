@@ -21,7 +21,7 @@ secrets file. The diagnostics that send traffic from the node or show its firewa
 operator's. The boot and the serial console need the machine's BMC, a screen, or
 `chalklab console` in a lab.
 
-## chalkctl status reads the node from the top
+## Read chalkctl status from the top
 
 `chalkctl status` asks the node's chalkd for what it checks, and compares the node's config and
 image with the inventory. A healthy `node1` reads:
@@ -73,7 +73,7 @@ The placeholders stand for values that differ on every node:
 The sections below explain the lines in this order. A section that has nothing to show leaves
 its lines out.
 
-## The config line compares the node with the inventory
+## Read the config line
 
 `config <version> (the inventory's)` means the node runs the config the inventory gives it. The
 parentheses say otherwise when they differ:
@@ -129,7 +129,7 @@ config rollback restores the previous config` takes the line's place when the no
 read the record of its trial.
 [Try a config change](change-config.md#try-a-config-change) describes trials.
 
-## The platform and image lines name what the node booted
+## Read the platform and image lines
 
 `platform metal (the inventory's)` names the platform the node's image was built for. A node
 whose image in the inventory is built for another platform shows
@@ -163,7 +163,7 @@ still checks ends in `, not found healthy yet`. More lines follow after an upgra
 `image ...; its boot is unknown: ...` means chalkd could not read the boot entries on the ESP or
 the running store, for the reason named.
 
-## The volume table lists the node's storage
+## Read the volume table
 
 Each row names a volume, the disk it lives on, its mount point and its state:
 
@@ -176,7 +176,7 @@ A line `disk <name>: <problem>` after the table names a disk chalkd could not us
 `disk longhorn: pinned disk ... is missing`.
 [Add storage volumes](storage-volumes.md#if-something-goes-wrong) covers those problems.
 
-## The output table shows each rendered output
+## Read the output table
 
 An output is a set of files that the image renders from the config, such as chrony's sources.
 Each row names an output, the hash of the files the node serves, and its state:
@@ -188,7 +188,7 @@ Each row names an output, the hash of the files the node serves, and its state:
 The image author declares the outputs, as
 [Render config into files](../build/render-config.md) describes.
 
-## The Kubernetes line shows the node's part in the cluster
+## Read the Kubernetes line
 
 With the Kubernetes layer, `kubernetes worker: joined, node ready: True` names the node's kind, its
 state and whether its Node is Ready. A control plane adds its VIP role, `vip holder` or
@@ -220,7 +220,7 @@ the Job's record of a run. Pending pods come first, then running ones, then fail
 holds at most 20 pods and counts the rest in `and <n> more`. `pods unknown: <error>` means the node
 could not list its pods.
 
-## The certificates section warns before an expiry
+## Read the certificates section
 
 Each line names a certificate the node holds or issues and its expiry. A third column names what
 needs doing:
@@ -249,15 +249,15 @@ certificates and the kubelet's. `Kubernetes CA expires <date>` warns a year ahea
 did not renew its certificate. [Troubleshoot Kubernetes](../kubernetes/troubleshooting.md) and
 [Rotate the Kubernetes CAs](../kubernetes/rotate-kubernetes-cas.md) cover these lines.
 
-## The trust section lists the CAs by fingerprint
+## Read the trust section
 
 Each line names a CA or key set the node trusts, by the first 16 hex characters of each
 fingerprint. `(issues)` marks the one that signs new certificates. Two fingerprints on one line
 are normal during a rotation and wrong outside one.
-[Manage access and certificates](access.md#a-rotation-runs-in-four-phases-with-pauses) explains the
+[Manage access and certificates](access.md#act-at-the-pauses-of-a-rotation) explains the
 phases.
 
-## The time line shows the clock
+## Read the time line
 
 `time: synchronised to <server>, offset <offset> s` means chrony synchronised the clock. A node
 whose clock is not synchronised shows
@@ -267,14 +267,14 @@ servers. `time: unknown: ...` means chalkd could not ask chrony.
 Certificates start an hour before they are issued, so a small offset does no harm. A clock that is
 days off rejects valid certificates. With the default servers, NTS needs the node to reach them on
 TCP port 4460 and UDP port 123. A network that blocks both needs its own servers, as
-[TimeSync names the time servers](node-config.md#timesync-names-the-time-servers) shows.
+[Name the time servers](node-config.md#name-the-time-servers) shows.
 
-## A failed unit line names a unit to read
+## Read a failed unit line
 
 `failed unit <unit>` names each systemd unit that failed in this boot. A healthy node has none.
 Read the unit's journal next.
 
-## chalkctl logs prints a unit's journal
+## Follow a unit's journal with chalkctl logs
 
 `chalkctl logs` prints the node's journal of the current boot, of every unit or of `--unit`
 alone. `-f` follows it:
@@ -306,7 +306,7 @@ A node in maintenance mode answers `chalkctl logs` too, with `--fingerprint` or 
 chalkctl logs node1 --insecure --unit=chalkd.service
 ```
 
-## chalkctl node diag runs the image's diagnostics
+## Run the image's diagnostics with chalkctl node diag
 
 A diagnostic is a read-only command that the node's image declares, such as `ip route get`.
 chalkd runs it on the node and sends back what it prints, so a node without a login still shows
@@ -385,7 +385,7 @@ A caller without a certificate may then run every diagnostic, `nft-ruleset` and 
 operator diagnostics included. It may call Install and Reboot as well. An image with the OS CA
 takes only the client files of its cluster in maintenance mode, each with its own role.
 
-## The serial console shows the boot and chalkd's lines
+## Watch the serial console
 
 The machine's screen and its serial console show the boot: the boot loader, the kernel's
 messages and a passphrase prompt for an encrypted disk. systemd's boot status and the emergency
@@ -415,7 +415,7 @@ chalklab console w1
 
 The lab's console is read-only, so a lab node cannot answer a passphrase prompt.
 
-## Debug tools reach the node through kubectl debug
+## Reach the node's tools through kubectl debug
 
 Nodes have no logins and no SSH. systemd, bash, less, nftables and kmod are on every image. An
 image built with `chalkos.debug.tools` adds coreutils, grep, sed, findutils, procps, iproute2 and

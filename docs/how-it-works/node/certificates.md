@@ -99,7 +99,7 @@ certificate it authenticates with. To reach it, chalkctl verifies the expired ce
 its start date, so it trusts the node's old key. Someone who holds a leaked, expired key of that
 node and sits in its network path could receive the new certificate instead. A node that renews
 before expiry never needs this.
-[Node certificates renew through a control plane](../../operate/access.md#node-certificates-renew-through-a-control-plane)
+[Renew node certificates](../../operate/access.md#renew-node-certificates)
 gives the steps.
 
 ## The clock decides whether a certificate is valid

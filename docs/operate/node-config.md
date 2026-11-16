@@ -21,7 +21,7 @@ You need to know each machine's disks and network interfaces. On a machine that 
 installer, `chalkctl disks` lists the disks, as
 [Choose the system disk](install.md#choose-the-system-disk) shows.
 
-## The inventory gives each node its files
+## Give each node its files in the inventory
 
 A node's config is the set of YAML documents that makes it this node. The inventory names the
 files each node's documents come from. The homelab's gives the router the files of `router/`, each
@@ -64,14 +64,9 @@ Each document has an `apiVersion` with its group and version, a `kind`, a `metad
 `spec`. A kind of which a node holds one takes any `metadata.name`; the examples use
 `default` or a short name such as `system`.
 
-## Documents never merge
+## Keep each document in one file
 
-A node's set is the documents of the files of `spec.all`, then those of its groups in the order
-the node names them, then those of its own files. A glob such as `cluster/*.yaml` takes its files
-in name order. Every path or glob must name at least one file, so a typo fails instead of leaving
-documents out. A file named twice counts once.
-
-The order decides nothing about values, because documents never merge. Two documents of the same
+Documents never merge, so a node's set must hold each document once. Two documents of the same
 kind and name in one node's set are an error that names both files:
 
 ```text
@@ -83,9 +78,10 @@ node node3: cluster/net.yaml and bgp/fabric.yaml both hold Network "20-enp1s0"
 
 Put a value that every node shares into a shared file once. When one node needs a different value,
 that node's own file holds its own document of that kind, and the shared file leaves the kind
-out.
+out. [The inventory gives each node a set of files](../how-it-works/node/config.md#the-inventory-gives-each-node-a-set-of-files)
+explains the order in which a node's set takes its files.
 
-## Groups share files and an image among some nodes
+## Share files and an image through a group
 
 A group holds what some of the nodes share. The homelab's group `router` gives its one node the
 image `router-metal` and the files of `router/`. The group `nodes` gives the three Kubernetes nodes
@@ -129,7 +125,7 @@ chalkctl: chalkos.yaml: node node1 names the image node-kvm, which the inventory
 The image stays out of the node's config. A new build of an image, or a node's move to another
 image, changes no node's config.
 
-## Every node holds one SystemDisk
+## Choose the system disk and the size of VAR
 
 A `SystemDisk` names the disk that holds the system region and VAR, the partition for the node's
 data. Every node holds exactly one. The homelab's take the whole disk for VAR. This one gives VAR
@@ -150,7 +146,7 @@ disk. By default STATE, VAR and every volume are encrypted with a key sealed to 
 node's recovery key as the second keyslot. [Add storage volumes](storage-volumes.md) covers the
 disk selectors, the encryption and the sizes.
 
-## Network documents configure the interfaces
+## Configure the interfaces
 
 A node's network is a set of `Network`, `NetDev` and `Link` documents. Each is one
 systemd-networkd unit file: a `.network`, a `.netdev` or a `.link` file. The document's
@@ -265,7 +261,7 @@ A VLAN takes the MAC address of its port, and the ports of a bond take the bond'
 document that matches by `macAddress` can match the wrong device. Match a port by
 `permanentMACAddress`, which only the physical device has.
 
-## Host sets the hostname
+## Set the hostname
 
 The hostname is the node's name unless a `Host` document gives another:
 
@@ -279,7 +275,7 @@ spec: {hostname: node1-shelf-a}
 The `Host` document changes the hostname alone. The node's name, its certificate and, with the
 Kubernetes layer, its Kubernetes node name stay as the inventory gives them.
 
-## TimeSync names the time servers
+## Name the time servers
 
 Nodes check certificates against their clocks. Without a `TimeSync` document, a node synchronises
 its clock with three servers of the German national metrology institute, PTB, authenticated with
@@ -300,7 +296,7 @@ spec:
 A server authenticates with NTS unless `nts: false`. `dhcp: true` also takes the servers that
 DHCP announces, which nothing authenticates.
 
-## Volume adds storage beside VAR
+## Add storage beside VAR
 
 A `Volume` is a further partition, on the system disk or on a disk of its own. This one takes a
 SATA SSD, which a selector finds by its model and type, for a storage system's replicas:
@@ -319,7 +315,7 @@ A node may hold several volumes, each with a name of its own. Some later changes
 reset or a reinstall. [Add storage volumes](storage-volumes.md) covers the formats, the
 encryption and which changes a node accepts.
 
-## Secret holds values that other documents reference
+## Keep secret values in Secret documents
 
 A `Secret` document holds secret values by key in `spec.data`. A field of an extension's kind
 references one of its keys instead of holding the value. The homelab's `Peer` for `router` in
@@ -328,7 +324,7 @@ references one of its keys instead of holding the value. The homelab's `Peer` fo
 the set lacks.
 
 `Secret` documents are config, separate from the cluster's secrets file.
-[Secret documents hold the services' secrets](workstation.md#secret-documents-hold-the-services-secrets)
+[Keep the services' secrets in Secret documents](workstation.md#keep-the-services-secrets-in-secret-documents)
 says where to keep the files that hold them.
 
 !!! note "With the Kubernetes layer, every node also holds a Cluster and a Node document"
@@ -372,7 +368,7 @@ whose `SystemDisk` leaves STATE unencrypted.
 `validate` checks no signature, so CI needs no db key. When the inventory names a signed copy, a CI
 job puts the unsigned build of the same image in that directory instead.
 
-## When validate refuses the config
+## If validate refuses the config
 
 `validate` names each node whose config is invalid and exits with status 1. A misspelled field
 names the document and the field:

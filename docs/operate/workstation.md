@@ -24,7 +24,7 @@ The images come from an image author, who builds them with Nix as
 builds write, and no Nix. chalkos publishes no prebuilt images yet, so without an image author you
 build them yourself from a template or an example with `nix build`.
 
-## chalkctl comes from the chalkos flake
+## Get chalkctl from the chalkos flake
 
 chalkctl is the package `chalkctl` of the chalkos flake, built for `x86_64-linux`. Take it from the
 chalkos revision your images are built from, because chalkos is unreleased and its commands and
@@ -42,7 +42,7 @@ template does, so that `nix develop` gives the chalkctl of the pinned revision.
 To run chalkctl on a machine without Nix, copy its program and install mtools, as
 [Requirements](../get-started/requirements.md#workstation) describes.
 
-## The repository holds the inventory, the config files and the images
+## Lay out the repository
 
 A cluster lives in one repository. The homelab's looks like this once its images are built and its
 secrets are generated:
@@ -165,7 +165,7 @@ operators such as `nft-ruleset` included. The homelab's flake leaves `osCA` out,
 before any cluster has secrets, and
 [Build a home lab](../guides/home-lab.md#generate-the-clusters-secrets) adds it.
 
-## Secret documents hold the services' secrets
+## Keep the services' secrets in Secret documents
 
 A `Secret` document is a config document, unrelated to the secrets file. It holds values that
 the node's services read, such as a password for a BGP peer, and it reaches the node with the
@@ -182,7 +182,7 @@ repository, or decrypt it into place with a tool such as sops before the command
 after. On the node, chalkd keeps the `Secret` documents readable by root alone, and hands each
 value only to the units that are granted the kind that names it.
 
-## A client file grants one role
+## Choose a role for each client file
 
 A client file holds a certificate of one client role, its key and the OS CA. It lets one person
 run the everyday commands without the secrets file. `chalkctl client new` issues one from the
@@ -203,10 +203,10 @@ file of their own, with the least role their work needs:
   certificates with.
 
 Nothing revokes a single client file.
-[Access ends when a certificate expires or its CA goes](access.md#access-ends-when-a-certificate-expires-or-its-ca-goes)
+[Take access away](access.md#take-access-away)
 describes how to take access away.
 
-## Each command needs the secrets file or a client file
+## Pass the secrets file or a client file
 
 Pass the secrets file with `--secrets` to the commands that issue certificates or deliver keys and
 config: `install`, `config apply`, `client new`, `recovery-key`, `node renew` and `rotate`. Run the
@@ -228,7 +228,7 @@ with a message that names the role it needs, such as
 `/chalkos.node.v1.NodeService/Reboot needs the operator role`.
 [Roles and credentials](../reference/access.md#methods) lists the role each method needs.
 
-## chalkctl looks for credentials in a fixed order
+## Choose which client file chalkctl uses
 
 The commands that need the secrets file read it only from `--secrets`. chalkctl never looks for a
 secrets file on its own. The commands that accept a client file take the first credential they

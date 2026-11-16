@@ -25,7 +25,7 @@ the decisions of [Plan a cluster](plan.md). Changes reach a running node with
 `chalkctl config apply`, as [Change a node's config](../operate/change-config.md) describes, which
 needs the secrets file.
 
-## The Cluster document holds what every node shares
+## Write the Cluster document
 
 Put the `Cluster` document into the files every node gets. chalkctl refuses an inventory whose
 nodes hold different `Cluster` or `Flannel` specs, and a node whose config holds no `Cluster`
@@ -46,7 +46,7 @@ document. Its fields fall into groups:
 [Plan a cluster](plan.md) covers the endpoint, the VIP and the address families. The sections
 below cover the images, scheduling and the extra flags.
 
-## Images name every component but the kubelet
+## Name the images of the components
 
 The node's image fixes the kubelet, containerd and the CNI plugins. The `images` block of the
 `Cluster` document names every other image the cluster runs, so a control-plane release changes
@@ -92,10 +92,10 @@ chalkctl: warning: node1: Cluster "default": images.proxy: registry.k8s.io/kube-
 
 containerd pulls the images when the static pods, the add-ons and the pods need them, through the
 `Registry` and `Mirror` documents. A cluster without internet access serves them from a mirror, as
-[Registries and mirrors](../operate/registries.md#container-images-use-the-same-documents)
+[Registries and mirrors](../operate/registries.md#pull-container-images-with-the-same-documents)
 describes.
 
-### The image's checker holds the versions to the skew policy
+### Keep the versions within the skew policy
 
 The tags of `apiServer`, `controllerManager`, `scheduler` and `proxy` name their Kubernetes
 version, `v<major>.<minor>.<patch>` with an optional suffix such as `-rc.1`. The image's checker
@@ -122,7 +122,7 @@ Cluster "default": images.proxy: v1.36.0 is 4 minors older than images.apiServer
 The checker sees the config and its own image alone. `chalkctl config apply` also checks the API
 server against the versions every node of the cluster runs, and `chalkctl upgrade` checks a new
 image's kubelet against the oldest API server, as
-[Upgrade Kubernetes](upgrade-kubernetes.md#chalkctl-checks-the-versions-every-node-runs) describes.
+[Upgrade Kubernetes](upgrade-kubernetes.md#check-the-versions-every-node-runs) describes.
 
 A reference of these four fields without a version tag, such as one by digest alone, fails the
 schema:
@@ -135,7 +135,7 @@ A change of any image restarts the kubelet and the preparation, which writes the
 chalkd applies the add-ons again. A change of `pause` also restarts containerd, whose running
 containers keep running; pods started after it get the new sandbox.
 
-## The Node document gives a node its type, labels and taints
+## Give a node its type, labels and taints
 
 Each node's config holds one `Node` document, usually in the node's own file. A worker `node4`,
 which the homelab could add as [Add and remove nodes](../operate/add-remove-nodes.md) does, here
@@ -302,7 +302,7 @@ separated by spaces is refused:
 node node4: the Kubernetes cluster the documents give: Node "default": kubeletExtraArgs: --eviction-hard="memory.available<500Mi nodefs.available<10%": the kubelet's flags cannot hold whitespace or backslashes
 ```
 
-## The API server authenticates with certificates and tokens
+## Choose how clients authenticate to the API server
 
 The API server accepts client certificates of the cluster's Kubernetes CA and service-account
 tokens. Anonymous requests reach only `/livez`, `/readyz` and `/healthz`. chalkos writes the API
@@ -320,7 +320,7 @@ For access narrower than `cluster-admin`, bind users and groups to roles with RB
 [Bootstrap and get a kubeconfig](bootstrap.md#give-someone-access-to-the-kubernetes-api) describes
 the kubeconfigs chalkctl issues.
 
-## Flannel sets the pod network's MTU and VXLAN sources
+## Set the pod network's MTU and VXLAN sources
 
 On images that run flannel, a `Flannel` document in the files every node gets sets two things:
 
@@ -354,7 +354,7 @@ node node4: invalid Kubernetes settings:
 It also refuses a source range that overlaps the pod or service ranges, and an MTU that leaves pods
 less than IPv4's minimum of 576, or IPv6's 1280 when the cluster uses IPv6.
 
-## Addon documents apply your own objects
+## Apply your own objects with Addon documents
 
 An `Addon` document holds Kubernetes objects that the control planes apply after chalkos's own
 add-ons. This one creates a namespace and lets the group `team-a` read what runs in it:
@@ -387,7 +387,7 @@ that changes them.
 - chalkd applies the objects as field manager `chalkd` and takes over fields that others changed,
   so a change made with kubectl to such an object is undone at the next apply.
 
-## Pods pull private images with the nodes' credentials
+## Pull private images with the nodes' credentials
 
 A `Registry` document gives every node the credentials of a private registry. The kubelet then
 pulls that registry's images for every pod on the node without `imagePullSecrets`.

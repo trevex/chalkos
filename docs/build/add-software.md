@@ -259,7 +259,7 @@ The option changes the image, so it reaches running nodes with an upgrade.
 
     Nodes have no logins and no SSH. On a node with Kubernetes, a privileged pod reaches the
     tools through the host's root, as
-    [Status, logs and the console](../operate/status-and-logs.md#debug-tools-reach-the-node-through-kubectl-debug)
+    [Status, logs and the console](../operate/status-and-logs.md#reach-the-nodes-tools-through-kubectl-debug)
     shows. A node without Kubernetes has `chalkctl logs` and its console.
 
 ## The image is an appliance

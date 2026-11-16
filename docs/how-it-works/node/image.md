@@ -220,7 +220,7 @@ what the image's own modules put there, such as systemd, bash, less, nftables, k
 helpers, and what the image's modules add. Each service names the tools it runs in its own path.
 [`chalkos.debug.tools`](../../reference/image-options.md#chalkosdebugtools) adds coreutils, grep, sed,
 findutils, procps, iproute2 and util-linux, and crictl on images with Kubernetes.
-[Status, logs and the console](../../operate/status-and-logs.md#debug-tools-reach-the-node-through-kubectl-debug)
+[Status, logs and the console](../../operate/status-and-logs.md#reach-the-nodes-tools-through-kubectl-debug)
 shows how they are reached.
 
 A platform's modules come before the image's own in each of its images. chalkos's `metal` platform

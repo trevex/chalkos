@@ -188,7 +188,7 @@ cp1 is bootstrapped; applied 19 objects
 bootstrap, the kubeconfig and why a second bootstrap is refused. Once cp1's API server is ready,
 cp1 holds the VIP.
 
-## The other control planes join etcd one at a time
+## Watch the other control planes join etcd
 
 cp2 and cp3 find the cluster at the endpoint and join on their own. etcd accepts one learner at a
 time, so they join one after the other. A joining node adds itself as a learner, a member that
@@ -215,7 +215,7 @@ standby node takes part in the VIP's election only while its API server answers 
 holds, and its API server answers ready. Right after the join, the line can read
 `control plane the API server is not ready` for a few seconds while the API server starts.
 
-## The VIP moves to another control plane within seconds
+## Check that the VIP moves
 
 When the holder's API server stops answering, or the holder fails, another healthy control plane
 takes the VIP through an election in etcd. The holder's lease lasts 10 seconds. The HA end-to-end
@@ -226,7 +226,7 @@ explains the election. Clients with an open connection to the old holder notice 
 connection times out. A cluster without etcd quorum has no holder, because no node can win the
 election.
 
-## Every change to the control planes goes through etcd
+## Change the control planes through etcd
 
 etcd's membership decides which control planes count towards the quorum. Every change therefore
 updates etcd before or after the machine changes:
@@ -338,7 +338,7 @@ chalkctl install cp3 --secrets=secrets.age --address=<address> --fingerprint=<fi
 Between the two commands, boot the machine into the installer through its BMC or boot menu. An
 installed node runs no maintenance mode, so `chalkctl install` cannot reach it before.
 
-## etcd has no backup and restore yet
+## Plan for an etcd without backups
 
 chalkos has no command that snapshots etcd or restores it. Three control planes survive the loss of
 one machine, but they do not bring back an object someone deleted. A cluster that loses two of its

@@ -30,14 +30,14 @@ worker, `w1`. The lab's secrets file and kubeconfig had other names; the output 
 ## Before you begin
 
 - You hold the secrets file and know how a rotation runs, as
-  [A rotation runs in four phases with pauses](../operate/access.md#a-rotation-runs-in-four-phases-with-pauses)
+  [Act at the pauses of a rotation](../operate/access.md#act-at-the-pauses-of-a-rotation)
   describes.
 - Every node of the inventory runs and is reachable. Each phase waits until every node confirms
   it.
 - No other rotation runs. One rotation runs at a time.
 - kubectl and a kubeconfig, for the steps between the phases.
 
-## Each kind replaces something else
+## Choose what to rotate
 
 | Kind | What it replaces | What stops working after the finish |
 | --- | --- | --- |
@@ -50,7 +50,7 @@ before the next one starts. Control planes take each phase one at a time, so etc
 quorum: each restarts its static pods on the new files, and the next starts only once etcd has
 every member healthy again.
 
-## The Kubernetes CAs pause twice for new kubeconfigs
+## Issue new kubeconfigs at the two pauses
 
 The rotation of the Kubernetes CAs stops after accept and after refresh, because kubeconfigs and
 workloads that talk to the API server need the new CA before the old one goes:
@@ -207,7 +207,7 @@ chains to is no longer trusted:
 - To revoke a service-account token, delete its ServiceAccount or Secret in Kubernetes. To
   invalidate every token at once, rotate the service-account key.
 
-## Certificates expire on a fixed schedule
+## Plan for certificate expiry
 
 chalkos renews what it can by itself, and `chalkctl status` warns before anything else expires.
 [Certificates](../reference/certificates.md) in the reference lists each CA and certificate with

@@ -217,7 +217,7 @@ sed -i "s/example-password/$(openssl rand -hex 16)/" router/secrets.yaml bgp/sec
 
 The two files now hold real secrets in plain text. Keep the repository private, or keep the two
 files out of it, as
-[Secret documents hold the services' secrets](../operate/workstation.md#secret-documents-hold-the-services-secrets)
+[Keep the services' secrets in Secret documents](../operate/workstation.md#keep-the-services-secrets-in-secret-documents)
 describes.
 
 ## Build the images and the installer

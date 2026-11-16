@@ -145,5 +145,5 @@ means the node still runs an image without it.
 - [Built-ins](../reference/builtins.md#diagnostics) lists the diagnostics every image declares.
 - [Extension API](../reference/extension-api.md#diagnostics) lists the options of
   `chalkos.diagnostics`.
-- [Status, logs and the console](../operate/status-and-logs.md#chalkctl-node-diag-runs-the-images-diagnostics)
+- [Status, logs and the console](../operate/status-and-logs.md#run-the-images-diagnostics-with-chalkctl-node-diag)
   shows how an operator runs diagnostics.

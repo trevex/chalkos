@@ -55,13 +55,13 @@ The output comes from a lab cluster. `...` stands for cp2's and cp3's lines, whi
   two needs `--allow-downtime`, described below.
 - kubectl is on your workstation, for the checks.
 
-## A new Kubernetes release takes two steps
+## Plan the two steps of a release
 
 The image fixes the kubelet's release. The image author sets it in the image's modules, as [Choose
 the kubelet's release](../build/images-and-platforms.md#choose-the-kubelets-release) describes, and
 every image with the Kubernetes layer is built again. The control plane, kube-proxy, CoreDNS and the
-pod sandbox run the images the `Cluster` document names, as [Images name every component but the
-kubelet](configure.md#images-name-every-component-but-the-kubelet) describes.
+pod sandbox run the images the `Cluster` document names, as [Name the images of the
+components](configure.md#name-the-images-of-the-components) describes.
 
 A kubelet must not be newer than the API server it talks to, so the control plane moves first:
 
@@ -70,7 +70,7 @@ A kubelet must not be newer than the API server it talks to, so the control plan
    [Roll the control plane out through config](#roll-the-control-plane-out-through-config)
    describes.
 2. Upgrade the nodes to the new image with `chalkctl upgrade`, as the sections from
-   [Control planes go one at a time, then workers in batches](#control-planes-go-one-at-a-time-then-workers-in-batches)
+   [Choose the order and the batch size](#choose-the-order-and-the-batch-size)
    on describe.
 
 A patch release of the control plane is the first step alone, and a patch release of the kubelet is
@@ -91,7 +91,7 @@ that follows delivers the same config, which changes no API server.
 
 Change the four versioned references of the `Cluster` document to the new release, and the other
 references when the release names new ones. Pin each by its digest, as
-[Images name every component but the kubelet](configure.md#images-name-every-component-but-the-kubelet)
+[Name the images of the components](configure.md#name-the-images-of-the-components)
 describes:
 
 ```yaml title="cluster/cluster.yaml"
@@ -111,7 +111,7 @@ chalkctl config apply cp1 cp2 cp3 w1 --secrets secrets.age
 
 The config changes the API server's version, so chalkctl orders the run. It checks the versions
 every node runs first, as
-[chalkctl checks the versions every node runs](#chalkctl-checks-the-versions-every-node-runs)
+[Check the versions every node runs](#check-the-versions-every-node-runs)
 describes. Then the control planes get the config one at a time, in the order of their names,
 whatever order the command names them in:
 
@@ -156,7 +156,7 @@ A command that names one node takes the same path when the config changes its AP
 version check over every node, etcd's quorum check, the trial and the wait. Without such a change,
 `chalkctl config apply` delivers node by node, as for any other config.
 
-### A failure stops the run and rolls that node back
+### Act on a node that fails its trial
 
 The first node that fails stops the run. A control plane whose static pods do not run the new
 images by the trial's deadline is rolled back at once, and the nodes after it get nothing. chalkctl
@@ -203,7 +203,7 @@ While a trial is open, the run refuses to go on, and `chalkctl config rollback c
 the open trial back. Once every control plane runs the config, the last command delivers it to the
 other nodes and finishes.
 
-## chalkctl checks the versions every node runs
+## Check the versions every node runs
 
 Each node reports, in its status, the Kubernetes version of the API server its config names and the
 release of its image's kubelet. chalkctl reads them from the inventory's nodes with a `Node`
@@ -219,7 +219,7 @@ versions compared:
 | kube-proxy is no newer than the API server and at most three minors older. | the image's checker |
 
 The image's checker compares the config with the image's own kubelet, as
-[The image's checker holds the versions to the skew policy](configure.md#the-images-checker-holds-the-versions-to-the-skew-policy)
+[Keep the versions within the skew policy](configure.md#keep-the-versions-within-the-skew-policy)
 describes. `chalkctl config apply` compares the config's API server with every node's API server
 and kubelet before it delivers anything to a node, and `chalkctl upgrade` compares each new image's
 kubelet with the oldest API server the control planes run before it sends any image. The upgrade
@@ -241,7 +241,7 @@ that changes the API server, and a control plane that does not answer stops an `
 `the versions <node> runs are unknown: <error>`. A node whose inventory entry holds no Kubernetes
 `Node` document does not count.
 
-## Control planes go one at a time, then workers in batches
+## Choose the order and the batch size
 
 chalkctl upgrades the control planes first, one at a time, each only while etcd keeps its quorum
 without it. The workers follow in batches of `--max-unavailable`, one node by default:
@@ -272,7 +272,7 @@ node runs the new image, its boot was found healthy and its Node is `Ready`. The
 node. `chalkctl node reboot` runs the same quorum check, drain, reboot, wait and uncordon for one
 node.
 
-## etcd keeps its quorum while a control plane reboots
+## Keep etcd's quorum while a control plane reboots
 
 Before chalkctl touches a control plane, it checks that etcd keeps its quorum without it. The other
 voters must be healthy and enough for a quorum, the majority of voters etcd needs to accept a
@@ -309,7 +309,7 @@ A control plane that is joining blocks the run too, because its etcd member is a
 message reads `etcd member cp3 is a learner yet; upgrade once it joined`. Run the command again
 once the node has joined.
 
-## The drain respects PodDisruptionBudgets
+## Drain within the PodDisruptionBudgets
 
 The drain cordons the node and evicts its pods through the eviction API, so each pod's
 PodDisruptionBudget applies. An eviction that the budget does not allow yet is tried again until

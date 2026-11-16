@@ -191,7 +191,7 @@ chalkctl logs r1 --secrets secrets.age --unit=chalkos-firewall.service
 
 The next delivery that changes the firewall documents loads the rendered ruleset again.
 
-## A refusal names the document
+## Fix a refused delivery
 
 chalkctl refuses documents before it sends anything: a value the kind's schema does not take,
 such as a range of ports that runs backwards, a field that names a document the config lacks, a

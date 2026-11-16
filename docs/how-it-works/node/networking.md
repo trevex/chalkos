@@ -145,7 +145,7 @@ explains.
 - [Kubernetes networking](../kubernetes/networking.md): node addresses, dual stack, the VIP and
   flannel.
 - [Config and the inventory](config.md): how the network documents reach a node.
-- [Write a node's config](../../operate/node-config.md#network-documents-configure-the-interfaces)
+- [Write a node's config](../../operate/node-config.md#configure-the-interfaces)
   for bonds, VLANs and static addresses.
 - [Ports and firewall](../../reference/ports-and-firewall.md).
 - [Config kinds](../../reference/kinds.md) for every field of `Network`, `NetDev`, `Link` and

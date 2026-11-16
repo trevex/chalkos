@@ -19,7 +19,7 @@ the node through chalkd on a local socket, so it needs no network and no client 
 You need the machine's screen and keyboard, or a BMC or hypervisor that shows them. The serial
 console is a separate console. It shows the boot loader, the kernel's messages, the passphrase
 prompts of encrypted volumes and chalkd's lines, as
-[Status, logs and the console](status-and-logs.md#the-serial-console-shows-the-boot-and-chalkds-lines)
+[Status, logs and the console](status-and-logs.md#watch-the-serial-console)
 describes. The `kvm` platform writes the boot to the serial console alone. The VMs of a lab have
 no screen, so `chalklab console` shows their serial console.
 
@@ -197,7 +197,7 @@ pods not running:
   and 21 more
 ```
 
-[The Kubernetes line shows the node's part in the cluster](status-and-logs.md#the-kubernetes-line-shows-the-nodes-part-in-the-cluster)
+[Read the Kubernetes line](status-and-logs.md#read-the-kubernetes-line)
 explains the lines. The tab reads the status every 5 seconds while it is on screen and every 30
 seconds while it is not, because the warning before a reboot needs the node's kind.
 

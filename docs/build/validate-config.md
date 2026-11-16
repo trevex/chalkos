@@ -231,7 +231,7 @@ the node alone:
 - [Route traffic by policy](../router/policy-routing.md#fix-a-refused-delivery)
 - [Translate to IPv4 and resolve names](../router/nat64-and-dns.md#fix-a-refused-delivery)
 - [Lease addresses with DHCP](../router/dhcp.md#fix-a-refused-delivery)
-- [Filter and translate traffic](../router/firewall-and-nat.md#a-refusal-names-the-document)
+- [Filter and translate traffic](../router/firewall-and-nat.md#fix-a-refused-delivery)
 
 ## What next
 

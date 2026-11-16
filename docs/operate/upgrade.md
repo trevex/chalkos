@@ -23,7 +23,7 @@ chalkctl status node3 --secrets secrets.age
 
 A new chalkos release arrives through the image author, who updates the `chalkos` input in the
 flake's `flake.lock` and builds the images again. Take chalkctl from the same revision, as
-[Set up your workstation](workstation.md#chalkctl-comes-from-the-chalkos-flake) describes.
+[Set up your workstation](workstation.md#get-chalkctl-from-the-chalkos-flake) describes.
 
 ## Before you begin
 

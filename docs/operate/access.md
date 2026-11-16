@@ -21,7 +21,7 @@ reachable, because each phase waits until every node confirms it.
 one issues, and [Certificates](../reference/certificates.md) in the reference lists their lifetimes
 and when status warns about them.
 
-## A client file gives one person one role
+## Issue a client file per person
 
 A client file holds a certificate of one role, its key and the OS CA. It lets a person run chalkctl
 without the secrets file. Issue one per person with `chalkctl client new`:
@@ -31,15 +31,15 @@ chalkctl client new --name alice --role operator --ttl 2160h --out alice.json --
 ```
 
 `--role` is reader, operator or admin. Give each person the least role their work needs.
-[A client file grants one role](workstation.md#a-client-file-grants-one-role) says what each role
+[Choose a role for each client file](workstation.md#choose-a-role-for-each-client-file) says what each role
 may do and where the file goes, and
-[Each command needs the secrets file or a client file](workstation.md#each-command-needs-the-secrets-file-or-a-client-file)
+[Pass the secrets file or a client file](workstation.md#pass-the-secrets-file-or-a-client-file)
 lists the role each command needs.
 
 The certificate is valid for a year unless `--ttl` gives another validity. chalkctl warns during a
 client file's last 30 days. Hand the file over as you would a private key, because it holds one.
 
-## Access ends when a certificate expires or its CA goes
+## Take access away
 
 chalkd checks no revocation list of client files. A client file keeps working until its certificate
 expires, or until the nodes no longer trust the OS CA it chains to. To take access away:
@@ -55,7 +55,7 @@ expires, or until the nodes no longer trust the OS CA it chains to. To take acce
     [Revoke Kubernetes access](../kubernetes/rotate-kubernetes-cas.md#revoke-kubernetes-access)
     covers kubeconfigs and service-account tokens.
 
-## Node certificates renew through a control plane
+## Renew node certificates
 
 Each node serves a node certificate, which chalkctl verifies. It is valid for a year, and never
 beyond the node CA that issued it.
@@ -148,7 +148,7 @@ before a CA expires. The OS CA is valid for ten years, and status warns a year a
 [Rotate the Kubernetes CAs and keys](../kubernetes/rotate-kubernetes-cas.md) covers the three
 Kubernetes kinds.
 
-## Revocation cuts off one node without a rotation
+## Choose between revocation and a rotation
 
 With the Kubernetes layer, `chalkctl node revoke` cuts off one node by name, at once. The cluster
 keeps running as it is, and no CA changes. A rotation replaces a CA and with it every certificate
@@ -173,7 +173,7 @@ takes both rotations first.
 [Kubernetes certificates](../how-it-works/kubernetes/certificates.md#revoking-a-node-cuts-off-its-writes-and-renewals)
 lists what a revoked node can still do.
 
-## A rotation runs in four phases with pauses
+## Act at the pauses of a rotation
 
 A rotation moves through four phases: accept, switch, refresh and finish. Every node confirms a
 phase before the next one starts, so no node presents a certificate that another node does not

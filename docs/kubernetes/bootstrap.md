@@ -29,32 +29,12 @@ kubectl --kubeconfig kubeconfig get nodes
   file; `chalkctl kubeconfig` needs the secrets file.
 - kubectl is on your workstation, for the check at the end.
 
-## One bootstrap starts the cluster, and the other nodes join
-
 A cluster starts once, on one control plane. After that, nothing runs a join command: each node
-finds the cluster at the endpoint by itself.
+finds the cluster at the endpoint by itself, as
+[chalkctl bootstrap starts the cluster once](../how-it-works/kubernetes/control-plane.md#chalkctl-bootstrap-starts-the-cluster-once)
+explains.
 
-```mermaid
-sequenceDiagram
-    participant you as chalkctl
-    participant node1 as chalkd on node1
-    participant node2 as chalkd on node2
-    participant node3 as chalkd on node3
-    you->>node1: bootstrap
-    Note over node1: starts etcd as its first member, then the control plane
-    Note over node1: applies chalkos's add-ons and the Addon objects
-    node1-->>you: bootstrapped, applied objects
-    node2->>node1: finds the cluster at the endpoint
-    Note over node2: joins etcd as a learner, then as a voter
-    node3->>node1: finds the cluster at the endpoint
-    Note over node3: joins etcd once node2 is a voter
-```
-
-The diagram shows the homelab's three control planes. A worker joins without etcd: its kubelet
-registers its node at the endpoint. [The control plane](../how-it-works/kubernetes/control-plane.md#chalkctl-bootstrap-starts-the-cluster-once)
-explains each step.
-
-## Every control plane waits for the bootstrap
+## Check that the control planes wait
 
 An installed control plane cannot tell whether it should start the cluster or join one, so it waits.
 [`chalkctl status`](../reference/cli/chalkctl_status.md) shows it in the Kubernetes line:
@@ -96,7 +76,7 @@ refuses it in these cases:
 - On a worker, chalkctl refuses before it sends anything: `node4 is not a control-plane node;
   bootstrap one of the cluster's control-plane nodes`.
 
-## The other nodes join on their own
+## Watch the other nodes join
 
 Each other control plane finds the cluster at the endpoint, joins etcd and starts its control
 plane. etcd accepts one learner at a time, so control planes join one after another. While a node
@@ -172,7 +152,7 @@ takes access away from everyone at once, so a short `--ttl` lets a kubeconfig la
 rotation.
 
 Narrower access uses Kubernetes RBAC. The API server accepts only client certificates and
-service-account tokens, as [Configure Kubernetes](configure.md#the-api-server-authenticates-with-certificates-and-tokens)
+service-account tokens, as [Configure Kubernetes](configure.md#choose-how-clients-authenticate-to-the-api-server)
 explains. A cluster admin can issue a client certificate for a user and group of their choice
 through the Kubernetes
 [certificate signing request API](https://kubernetes.io/docs/reference/access-authn-authz/certificate-signing-requests/#normal-user),

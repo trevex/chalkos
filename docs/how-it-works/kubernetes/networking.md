@@ -340,7 +340,7 @@ It does this at boot and whenever the `Node` document changes, through a table o
 - [How Kubernetes runs on a node](overview.md) and [The control plane](control-plane.md).
 - [Run a highly available control plane](../../kubernetes/ha-control-plane.md) and
   [Plan a cluster](../../kubernetes/plan.md).
-- [Configure Kubernetes](../../kubernetes/configure.md#flannel-sets-the-pod-networks-mtu-and-vxlan-sources)
+- [Configure Kubernetes](../../kubernetes/configure.md#set-the-pod-networks-mtu-and-vxlan-sources)
   for the `Flannel` document.
 - [Troubleshoot Kubernetes](../../kubernetes/troubleshooting.md#pods-on-different-nodes-cannot-reach-each-other)
   for VXLAN and MTU problems.

@@ -103,7 +103,7 @@ The flake's `bin/chalkctl` is a wrapper script that puts mtools on the `PATH` an
 `bin/.chalkctl-wrapped`. That program is built without cgo, so it is a static binary. To run
 chalkctl on a machine without Nix, an airgapped one included, copy `bin/.chalkctl-wrapped` there
 as `chalkctl` and install the distribution's mtools package.
-[Set up your workstation](../operate/workstation.md#chalkctl-comes-from-the-chalkos-flake) shows how
+[Set up your workstation](../operate/workstation.md#get-chalkctl-from-the-chalkos-flake) shows how
 to take chalkctl from the flake.
 
 ## Lab host

@@ -242,7 +242,7 @@ node-metal: {source: {oci: ghcr.io/example/node-metal@sha256:<digest>}}
 A node runs the image of its own `imageName`, else that of its groups, else `spec.all.imageName`.
 chalkctl refuses an inventory that leaves a node without an image, or whose groups give a node two
 different images.
-[Groups share files and an image among some nodes](../../operate/node-config.md#groups-share-files-and-an-image-among-some-nodes)
+[Share files and an image through a group](../../operate/node-config.md#share-files-and-an-image-through-a-group)
 shows an inventory whose GPU workers run an image of their own.
 
 The image stays out of the node's config. chalkctl reads the root hash from `metadata.json` when it
@@ -513,7 +513,7 @@ attempt changed the node. chalkd tries the rollback again each minute. ConfirmCo
 the trial, unless the failed attempt changed the node, and `chalkctl config confirm` tries for two
 minutes past the deadline. After an attempt that changed the node, `config rollback` finishes the
 rollback at once. Status reports the trial with the reason of the last failure, in the lines that
-[The config line compares the node with the inventory](../../operate/status-and-logs.md#the-config-line-compares-the-node-with-the-inventory)
+[Read the config line](../../operate/status-and-logs.md#read-the-config-line)
 lists.
 
 While the record exists, chalkd refuses every delivery, upgrade and image rollback with

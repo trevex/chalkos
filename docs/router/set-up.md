@@ -27,7 +27,7 @@ node installed as [Install a node](../operate/install.md) describes. The example
 ## Configure the interfaces
 
 A router's interfaces, addresses and static routes are networkd documents, as on any node.
-[Write a node's config](../operate/node-config.md#network-documents-configure-the-interfaces)
+[Write a node's config](../operate/node-config.md#configure-the-interfaces)
 describes them. A router `r1` with its uplink on `eth0` and a LAN on `eth1`:
 
 ```yaml

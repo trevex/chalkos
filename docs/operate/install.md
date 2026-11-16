@@ -258,7 +258,7 @@ chalkctl recovery-key node1 prints the key that unlocks it when its TPM fails
 ```
 
 The first line names the disk, the image directory, the image's ID `chalkos` and the image's name,
-whose form [Status, logs and the console](status-and-logs.md#chalkctl-status-reads-the-node-from-the-top)
+whose form [Status, logs and the console](status-and-logs.md#read-chalkctl-status-from-the-top)
 explains.
 
 When Secure Boot is enforced, the installer checks the UKI and the boot loader against the

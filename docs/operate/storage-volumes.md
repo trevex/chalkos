@@ -67,7 +67,7 @@ spec:
 
 Storage documents go in the node's own file, because they name that machine's disks. Nodes with
 the same disks can share a `Volume` through an inventory group, as
-[Write a node's config](node-config.md#groups-share-files-and-an-image-among-some-nodes) shows.
+[Write a node's config](node-config.md#share-files-and-an-image-through-a-group) shows.
 
 `disk` names the disk by `path` or by selector keys: `model`, `serial`, `wwn`, `size` and `type`.
 The two forms exclude each other. `path` may be any path below `/dev` that leads to a whole disk.
@@ -103,7 +103,7 @@ spec:
 ```
 
 At most one partition per disk may fill its disk, and VAR counts. A node whose `SystemDisk` sizes
-VAR at `200G`, as [Write a node's config](node-config.md#every-node-holds-one-systemdisk) shows,
+VAR at `200G`, as [Write a node's config](node-config.md#choose-the-system-disk-and-the-size-of-var) shows,
 lets the scratch volume fill the rest, or take a size as here. Sizes are a number with an optional
 `K`, `M`, `G`, `T` or `P`, in units of 1024.
 

@@ -38,7 +38,7 @@ the Kubernetes API is on [Manage access and certificates](../operate/access.md).
 Know the machines: how many there are, which network segments they sit on and which addresses
 they can keep.
 
-## Three control planes survive the loss of one
+## Choose one or three control planes
 
 A control plane runs etcd, the API server, the controller-manager and the scheduler. Every
 control plane is an etcd member, and etcd needs a majority of its voters to accept a write. The
@@ -59,7 +59,7 @@ A node is a control plane when its `Node` document has `type: controlplane`, and
 `type: worker`. The type is fixed once the node holds a Kubernetes share; a node of the other type
 is a reinstall. [Run a highly available control plane](ha-control-plane.md) installs three.
 
-## The cluster endpoint reaches the API server and chalkd
+## Choose the cluster endpoint
 
 The cluster endpoint, `spec.endpoint` of the `Cluster` document, is the URL that kubelets,
 kubeconfigs and joining control planes use to reach the API server on port 6443. Workers also
@@ -105,7 +105,7 @@ A single control plane can take the endpoint of its own address. Every kubeconfi
 endpoint, so moving to a VIP later means issuing every kubeconfig again. A VIP from the start, even
 on one control plane, keeps the endpoint when control planes join.
 
-## Control planes keep their addresses
+## Keep the control planes' addresses
 
 Give every control plane a static address in a `Network` document of its own file, and the same
 address as its `address` in the inventory. A control plane's addresses are pinned on STATE when it
@@ -118,7 +118,7 @@ Workers may take their address from DHCP. `spec.nodeIP.validSubnets` of the `Clu
 then picks it from the subnets you list. The inventory names such a worker by an address or name
 that stays.
 
-## IP families and ranges are fixed at creation
+## Choose the IP families and ranges
 
 `spec.ipFamilies` lists the cluster's address families, the primary one first: `[ipv4]` by
 default, `[ipv6]` for IPv6 alone, as in the homelab, or `[ipv4, ipv6]` for dual stack. Each family
@@ -155,7 +155,7 @@ spec:
 [Kubernetes networking](../how-it-works/kubernetes/networking.md#each-node-picks-one-address-per-family-before-the-kubelet-starts)
 explains how nodes pick an address of each family.
 
-## Workloads stay off control planes by default
+## Decide where workloads run
 
 Each control plane registers with a `NoSchedule` taint, so only pods that tolerate it run there. A
 cluster of one to three machines without workers leaves the taint off. Decide before the control
