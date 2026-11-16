@@ -60,8 +60,8 @@ draws the line in detail. [Config and the inventory](config.md) explains the con
 
 ## chalkctl and chalklab run on the operator's machine
 
-chalkctl reads the cluster from an inventory, `chalkos.yaml` in the current directory or the file
-`--inventory` names. The inventory names each node, the address chalkctl reaches it at, the YAML
+chalkctl reads the cluster from an inventory: the file `--inventory` names, else the file
+`$CHALKOSINVENTORY` names, else `chalkos.yaml` in the current directory. The inventory names each node, the address chalkctl reaches it at, the YAML
 files of its config and the image it runs, by the image directory of its build. chalkctl reads
 the image directory when a command needs the image. Without an inventory, a command that only
 reaches a node works with a client file and `--address`. [Config and the inventory](config.md)

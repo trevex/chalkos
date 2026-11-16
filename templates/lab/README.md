@@ -33,32 +33,32 @@ chalklab create --secrets secrets.json
 ```
 
 `chalklab create` prints the next commands: the kubeconfig to export, the client file to export
-as `CHALKOSCONFIG`, `chalkctl status` with the lab's inventory, `chalklab status` and
-`chalklab destroy`. `chalklab status` names the lab's files: the kubeconfig, the inventory, the
-client file and the Secure Boot db key and certificate the lab's firmware trusts. After a reboot
-of this machine, `chalklab start` starts the lab again; a node that powered off stops alone, and
-`chalklab start` starts it again.
+as `CHALKOSCONFIG`, the lab's inventory to export as `CHALKOSINVENTORY`, `chalkctl status`,
+`chalklab status` and `chalklab destroy`. `chalklab status` names the lab's files: the
+kubeconfig, the inventory, the client file and the Secure Boot db key and certificate the lab's
+firmware trusts. After a reboot of this machine, `chalklab start` starts the lab again; a node
+that powered off stops alone, and `chalklab start` starts it again.
 
 To change a node's config, edit the YAML of `cluster/` or `nodes/`, check it, and deliver it to
-the node. The lab's inventory reads the files of this directory; delivering config needs the
-secrets file:
+the node. The lab's inventory, which `CHALKOSINVENTORY` names, reads the files of this directory;
+delivering config needs the secrets file:
 
 ```sh
 chalkctl validate
-chalkctl config apply w1 --inventory <lab inventory> --secrets secrets.json
+chalkctl config apply w1 --secrets secrets.json
 ```
 
 To upgrade, change the `node-kvm` image's `modules` in `flake.nix` and commit, build the image
 again with `nix build .#node-kvm -o images/node-kvm`, sign a copy of it with the lab's db key,
-and upgrade the nodes with the copy, with the inventory `chalklab status` names and the client file
-`CHALKOSCONFIG` names. The copy's directory must not exist yet, so remove the copy of an earlier
-upgrade first. A changed image has a new root hash, so there is no version to raise; chalkctl
-shows the commit the flake passes to `mkImages` as `revision` beside it:
+and upgrade the nodes with the copy, with the inventory `CHALKOSINVENTORY` names and the client
+file `CHALKOSCONFIG` names. The copy's directory must not exist yet, so remove the copy of an
+earlier upgrade first. A changed image has a new root hash, so there is no version to raise;
+chalkctl shows the commit the flake passes to `mkImages` as `revision` beside it:
 
 ```sh
 rm -rf images/node-kvm-signed
 chalklab sign images/node-kvm --out images/node-kvm-signed
-chalkctl upgrade --image images/node-kvm-signed --inventory <lab inventory> --allow-downtime
+chalkctl upgrade --image images/node-kvm-signed --allow-downtime
 ```
 
 The lab has a single control plane: while it reboots, etcd and the API server are down, which

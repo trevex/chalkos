@@ -211,14 +211,15 @@ wrote /home/alice/.local/state/chalklab/lab/kubeconfig; its certificate is valid
 the lab lab runs cp1, w1; next:
   export KUBECONFIG=/home/alice/.local/state/chalklab/lab/kubeconfig
   export CHALKOSCONFIG=/home/alice/.local/state/chalklab/lab/chalkctl.json
+  export CHALKOSINVENTORY=/home/alice/.local/state/chalklab/lab/chalkos.yaml
   kubectl get nodes
-  chalkctl status cp1 --inventory /home/alice/.local/state/chalklab/lab/chalkos.yaml
+  chalkctl status cp1
   chalklab status
   chalklab destroy
 The lab's inventory names unsigned images, which its firmware refuses; upgrade with a copy
 signed by the lab's db key:
   chalklab sign <image dir> --out <signed dir>
-  chalkctl upgrade --image <signed dir> --inventory /home/alice/.local/state/chalklab/lab/chalkos.yaml --allow-downtime
+  chalkctl upgrade --image <signed dir> --allow-downtime
 ```
 
 The output follows the life of a node:
@@ -242,14 +243,15 @@ The output follows the life of a node:
    control plane; the worker joins on its own.
 5. Last, chalklab writes a kubeconfig that reaches the API server through its forwarded port.
 
-The commands chalklab prints last export the kubeconfig for kubectl and the client file for
-chalkctl: chalkctl reads the client file `$CHALKOSCONFIG` names when a command passes neither
-`--config` nor `--secrets`.
+The commands chalklab prints last export the kubeconfig for kubectl, and the client file and the
+lab's inventory for chalkctl. chalkctl reads the client file `$CHALKOSCONFIG` names when a command
+passes neither `--config` nor `--secrets`. It reads the inventory `$CHALKOSINVENTORY` names when a
+command passes no `--inventory`.
 
 The last lines are about upgrades. The nodes boot copies of the image that chalklab signed with
 the lab's key, but the inventory still names the unsigned build in `images/node-kvm`. The lab's
 firmware refuses to boot an unsigned image, so an upgrade must use a copy that `chalklab sign`
-signed. [Upgrade the cluster](#upgrade-the-cluster) does that.
+signed. The section "Upgrade the cluster" does that.
 
 The lab keeps its state, disks, keys and logs in `~/.local/state/chalklab/lab`, after the lab
 file's `metadata.name`, or under `$XDG_STATE_HOME/chalklab` when that variable is set; the
@@ -288,19 +290,21 @@ that address. The lab's inventory, `~/.local/state/chalklab/lab/chalkos.yaml`, i
 names each node at its forwarded port on `127.0.0.1` instead. Its paths are absolute, so it reads
 the image and the YAML files of the lab directory: an edit there reaches both inventories.
 
-Commands that reach a node, such as `chalkctl status`, `config apply` and `upgrade`, take the lab's
-inventory with `--inventory`. `chalkctl validate` reaches no node, so it reads `chalkos.yaml` in
-the current directory. On real machines, which chalkctl reaches at their own addresses, one
-inventory serves both.
+Once you export `$CHALKOSINVENTORY`, every chalkctl command reads the lab's inventory. That
+includes `chalkctl validate`, which reaches no node: both inventories name the same image and
+files, so it gives the same answer with either. On real machines, which chalkctl reaches at their
+own addresses, one inventory serves both.
 
 ## Use the cluster with kubectl
 
-The kubeconfig reaches the API server through its forwarded port. Export it and the client file,
-as `chalklab create` printed; the commands of this page rely on both. Then list the nodes:
+The kubeconfig reaches the API server through its forwarded port. Export it, the client file and
+the lab's inventory, as `chalklab create` printed; the commands of this page rely on all three.
+Then list the nodes:
 
 ```console
 $ export KUBECONFIG=~/.local/state/chalklab/lab/kubeconfig
 $ export CHALKOSCONFIG=~/.local/state/chalklab/lab/chalkctl.json
+$ export CHALKOSINVENTORY=~/.local/state/chalklab/lab/chalkos.yaml
 $ kubectl get nodes
 NAME   STATUS   ROLES    AGE   VERSION
 cp1    Ready    <none>   21s   v1.37.2
@@ -332,11 +336,12 @@ or two of the bootstrap.
 ## Look at a node with chalkctl
 
 The nodes have no SSH and no login. chalkctl talks to chalkd on each node over mutual TLS instead,
-with the client file `$CHALKOSCONFIG` names, and reaches them at the forwarded ports the lab's
-inventory names. [`chalkctl status`](../reference/cli/chalkctl_status.md) shows what a node runs:
+with the client file `$CHALKOSCONFIG` names, and reaches them at the forwarded ports of the
+inventory `$CHALKOSINVENTORY` names. [`chalkctl status`](../reference/cli/chalkctl_status.md)
+shows what a node runs:
 
 ```console
-$ chalkctl status cp1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml
+$ chalkctl status cp1
 config eca90aeb75db9d1ee363991f8e01e59fd04ffbb36823f8947a5ac8d938c12867 (the inventory's)
 platform kvm (the inventory's)
 image c118f05709bc, booted from chalkos_1.efi
@@ -438,21 +443,21 @@ the secrets file, which `--secrets` names; a client file does not suffice:
 $ chalkctl validate
 cp1: valid for the image node-kvm (node-kvm on kvm, root hash c118f05709bc), config 536473926d2f73ff319ee4039268c45cc4a560fbed6c66ddea6fb302274bae8d
 w1: valid for the image node-kvm (node-kvm on kvm, root hash c118f05709bc), config b487fd854345430128ae7c6638e9397596502d2d2f430996daa528c1803a9615
-$ chalkctl config apply cp1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml --secrets secrets.json
+$ chalkctl config apply cp1 --secrets secrets.json
 cp1: config 1 added, 0 removed, 0 changed
 restarted chalkos-chrony-dhcp.service
 cp1 runs config 536473926d2f73ff319ee4039268c45cc4a560fbed6c66ddea6fb302274bae8d
-$ chalkctl config apply w1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml --secrets secrets.json
+$ chalkctl config apply w1 --secrets secrets.json
 w1: config 1 added, 0 removed, 0 changed
 restarted chalkos-chrony-dhcp.service
 w1 runs config b487fd854345430128ae7c6638e9397596502d2d2f430996daa528c1803a9615
 ```
 
-`chalkctl validate` read the local `chalkos.yaml`, and `config apply` the lab's inventory; both
-take `cluster/time.yaml` from this directory. Each `config apply` first counts the documents the
-delivery adds, removes and changes against the node's config: here the one `TimeSync`. The node
-then restarts the units the change affects, and the last line names the config version it runs.
-`chalkctl status` now shows that version as the inventory's.
+Both commands read the lab's inventory, which takes `cluster/time.yaml` from this directory. Each
+`config apply` first counts the documents the delivery adds, removes and changes against the
+node's config: here the one `TimeSync`. The node then restarts the units the change affects, and
+the last line names the config version it runs. `chalkctl status` now shows that version as the
+inventory's.
 
 ## Upgrade the cluster
 
@@ -500,8 +505,7 @@ the nodes that run an image of its name, `node-kvm`, and rolls it through the cl
 a time:
 
 ```console
-$ chalkctl upgrade --image images/node-kvm-signed \
-  --inventory ~/.local/state/chalklab/lab/chalkos.yaml --allow-downtime
+$ chalkctl upgrade --image images/node-kvm-signed --allow-downtime
 upgrading node-kvm on kvm to 7c25ff03dff7 (7fbd2b83f4b9): cp1, w1
 cp1: installing 7c25ff03dff7 (7fbd2b83f4b9)
 cp1: config unchanged
@@ -548,7 +552,7 @@ image before again, and chalkctl stops there and shows what the failed boot logg
 `+3`:
 
 ```console
-$ chalkctl status w1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml
+$ chalkctl status w1
 config b487fd854345430128ae7c6638e9397596502d2d2f430996daa528c1803a9615 (the inventory's)
 platform kvm (the inventory's)
 image 7c25ff03dff7 (7fbd2b83f4b9), booted from chalkos_2.efi

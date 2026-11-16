@@ -79,8 +79,8 @@ the image each runs and the config files each gets:
 --8<-- "examples/homelab/chalkos.yaml"
 ```
 
-chalkctl reads `chalkos.yaml` in the current directory, or the file `--inventory` names, so you
-run chalkctl from the repository's root. Paths in the inventory are relative to its directory.
+chalkctl reads `chalkos.yaml` in the current directory, so you run chalkctl from the repository's
+root. `--inventory` or `$CHALKOSINVENTORY` names an inventory elsewhere. Paths in the inventory are relative to its directory.
 [Write a node's config](node-config.md) covers the inventory and the files it names.
 
 `images/` holds the image directories. `nix build` links a build there, and
@@ -236,10 +236,11 @@ find, in the order
 [Where chalkctl finds its credentials](../reference/access.md#where-chalkctl-finds-its-credentials)
 lists. With none of them, the command stops and says so.
 
-`$CHALKOSCONFIG` lets you keep the files of several clusters apart:
+`$CHALKOSCONFIG` and `$CHALKOSINVENTORY` let you keep the files of several clusters apart:
 
 ```sh
 export CHALKOSCONFIG=~/clusters/homelab/alice.json
+export CHALKOSINVENTORY=~/clusters/homelab/chalkos.yaml
 ```
 
 A client file names no cluster. Its OS CA ties it to one: a node of another cluster fails the TLS
@@ -302,7 +303,8 @@ It prints a line per node, as
 runs, finds the inventory and reads the image directory. The repository then holds `secrets.age`
 and `secrets.pub.json`, and `~/.config/chalkos/config` holds your client file.
 
-If `validate` cannot open `chalkos.yaml`, run it in the repository's root or pass `--inventory`.
+If `validate` cannot open `chalkos.yaml`, run it in the repository's root, or name the inventory
+with `--inventory` or `$CHALKOSINVENTORY`.
 If a command says that `the secrets file is encrypted and no usable age identity was found`, pass
 the key the file was encrypted to with `--identity`.
 

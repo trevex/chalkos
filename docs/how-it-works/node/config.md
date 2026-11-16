@@ -112,8 +112,8 @@ spec:
 ## The inventory gives each node a set of files
 
 The inventory is a YAML document of its own kind, [`Inventory`](../../reference/kinds.md#inventory),
-that chalkctl reads from `chalkos.yaml` in the current directory or from the file `--inventory`
-names. It stays on the operator's machine and never reaches a node. The lab template's inventory
+that chalkctl reads from the file `--inventory` names, else the file `$CHALKOSINVENTORY` names,
+else `chalkos.yaml` in the current directory. It stays on the operator's machine and never reaches a node. The lab template's inventory
 reads:
 
 ```yaml title="chalkos.yaml"

@@ -17,6 +17,8 @@ The Needs column names one of these:
 | reader, operator, admin | A client file of that role or a higher one, or the secrets file. |
 
 chalkctl finds a client file in `--config`, then `$CHALKOSCONFIG`, then `~/.config/chalkos/config`.
+It finds the inventory in `--inventory`, then `$CHALKOSINVENTORY`, then `chalkos.yaml` in the
+current directory.
 [Roles and credentials](access.md) lists the role of each API method. The commands below leave out
 `--inventory` and `--secrets`; add them where your setup needs them. `<node>` is a node's name in
 the inventory.

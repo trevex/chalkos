@@ -82,8 +82,8 @@ parentheses say otherwise when they differ:
   last delivery.
 - `cannot read the config the inventory gives it: ...`: chalkctl could not build the node's
   documents from the inventory, for the reason it names.
-- `no inventory to compare it with`: chalkctl found no inventory, neither by `--inventory` nor as
-  `chalkos.yaml` in the current directory.
+- `no inventory to compare it with`: chalkctl found no inventory: neither `--inventory` nor
+  `$CHALKOSINVENTORY` names one, and there is no `chalkos.yaml` in the current directory.
 
 `config none` is a node installed before config documents existed. A node with an image staged or
 active in its inactive slot adds `staged config <version> (...)`, the config that image boots

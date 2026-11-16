@@ -94,7 +94,8 @@ that `chalklab sign` signed, as
 
 ## Upgrade one node, then all
 
-Run the command in the inventory's directory, or name the inventory with `--inventory`. Start with
+Run the command in the inventory's directory, or name the inventory with `--inventory` or
+`$CHALKOSINVENTORY`. Start with
 one node, `--nodes node3`, and check it. Then run the command without `--nodes` for the rest:
 
 ```console
