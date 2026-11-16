@@ -71,6 +71,15 @@ from it, and reload or restart the service when those files change.
 
     [:octicons-arrow-right-24: Start](get-started/index.md)
 
+-   :material-map-marker-path: __Guides__
+
+    ---
+
+    Whole projects from start to end: a home lab on four real machines, and the BGP extension
+    its nodes carry, written from scratch.
+
+    [:octicons-arrow-right-24: Follow](guides/index.md)
+
 -   :material-server: __Operate nodes__
 
     ---

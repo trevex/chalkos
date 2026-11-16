@@ -628,5 +628,5 @@ follow the operator guides in order:
 3. [Install a node](../operate/install.md): boot a physical machine or a VM into maintenance mode
    and install it.
 
-To follow one fixed path on real machines instead, [Build a home lab](home-lab.md) turns four
+To follow one fixed path on real machines instead, [Build a home lab](../guides/home-lab.md) turns four
 machines and a switch into a router and three control planes.

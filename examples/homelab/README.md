@@ -6,10 +6,10 @@ an IPv6 fabric. The router gives the fabric its addresses, a resolver with DNS64
 IPv4 internet, and a WireGuard tunnel for the workstation. Each node announces its address over BGP
 on both of its ports, so it stays reachable when one cable fails.
 
-The guide [Build a home lab](https://trevex.github.io/chalkos/get-started/home-lab/) takes you from
+The guide [Build a home lab](https://trevex.github.io/chalkos/guides/home-lab/) takes you from
 the bare machines to the running cluster: it shows how to find each machine's ports and disks,
 adapt these files, install the machines and test a failover. Its source is
-[`docs/get-started/home-lab.md`](../../docs/get-started/home-lab.md).
+[`docs/guides/home-lab.md`](../../docs/guides/home-lab.md).
 
 | File | Holds |
 | --- | --- |

@@ -75,7 +75,7 @@ You need:
 
 - four amd64 machines with UEFI firmware, a TPM 2.0 and two Ethernet ports each, and a disk of
   at least 16 GiB for the router and a larger one for each node, which holds the containers'
-  images and etcd; the [requirements](requirements.md) list the rest;
+  images and etcd; the [requirements](../get-started/requirements.md) list the rest;
 - an unmanaged switch with at least seven ports, and Ethernet cables;
 - a USB stick of at least 1 GiB;
 - your home network, whose router hands out IPv4 addresses by DHCP and lets you reserve an address

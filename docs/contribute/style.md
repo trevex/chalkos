@@ -16,8 +16,8 @@ Each page is written for one of three readers. Write for that reader's task.
 
 | Reader | Works with | Reads |
 | --- | --- | --- |
-| Operator | chalkctl, YAML files and signed images | Get started, Operate nodes, Run Kubernetes, Run a router |
-| Image author | Nix, NixOS modules and `chalkos.lib.mkImages` | Build images |
+| Operator | chalkctl, YAML files and signed images | Get started, Guides, Operate nodes, Run Kubernetes, Run a router |
+| Image author | Nix, NixOS modules and `chalkos.lib.mkImages` | Guides, Build images |
 | Contributor | the chalkos repository | Contribute |
 
 All three read How chalkos works and Reference. Assume a working engineer who knows Linux and

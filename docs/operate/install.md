@@ -9,7 +9,7 @@ This page is for an operator who turns a machine into a node of the inventory. T
 a physical server or a VM under QEMU, libvirt or Proxmox. At the end the node runs its image from
 its system disk with its config, and chalkctl reaches it at the address the inventory names. The
 page installs the homelab's `node1`, as [Write a node's config](node-config.md) describes it.
-[Build a home lab](../get-started/home-lab.md) installs all four of the homelab's machines.
+[Build a home lab](../guides/home-lab.md) installs all four of the homelab's machines.
 
 ## Before you begin
 

@@ -21,6 +21,7 @@ let
   interfaceName = lib.types.strMatching "[A-Za-z0-9_.-]{1,15}";
   # An octet of an IPv4 address in decimal, without leading zeros.
   octet = "25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9]";
+  # --8<-- [start:credentials]
   # bird reads no password from a file, and its strings take no escapes: this writes each of the
   # unit's credentials as a constant of bird's config, named as the credential, which bird.conf's
   # password lines name. A name outside letters, digits, '.', '_' and '-', or a value with a quote
@@ -49,6 +50,7 @@ let
       mv "$tmp" /run/bird/credentials.conf
     '';
   };
+  # --8<-- [end:credentials]
 in
 {
   # --8<-- [start:kind]
@@ -305,6 +307,7 @@ in
   };
   # --8<-- [end:service]
 
+  # --8<-- [start:network]
   # bird installs the default route its peers send. networkd removes the routes it did not
   # configure itself each time it configures a link, so it leaves them alone here, as on router
   # images. BFD's control packets arrive on UDP port 3784, from a source port of the neighbour's
@@ -314,6 +317,7 @@ in
     ManageForeignNextHops = false;
   };
   networking.firewall.allowedUDPPorts = [ 3784 ];
+  # --8<-- [end:network]
 
   # --8<-- [start:effect]
   # bird reads its config again on birdc configure, which keeps the sessions a restart would drop.

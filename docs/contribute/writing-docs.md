@@ -19,6 +19,7 @@ The navigation has one section per reader and two that every reader shares:
 | Section | Directory | Reader | Kinds of page |
 | --- | --- | --- | --- |
 | Get started | `get-started/` | a reader new to chalkos | explanation, tutorial |
+| Guides | `guides/` | an operator or image author who follows one project through | tutorial |
 | Operate nodes | `operate/` | operator | how-to |
 | Run Kubernetes | `kubernetes/` | operator running Kubernetes | how-to |
 | Build images | `build/` | image author | how-to |

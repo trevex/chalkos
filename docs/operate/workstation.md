@@ -165,7 +165,7 @@ Images built without `osCA` accept any client until they are installed, as an ad
 the machine's network may then install it, reboot it and run every diagnostic on it, those for
 operators such as `nft-ruleset` included. The homelab's flake leaves `osCA` out, so that it builds
 before any cluster has secrets, and
-[Build a home lab](../get-started/home-lab.md#generate-the-clusters-secrets) adds it.
+[Build a home lab](../guides/home-lab.md#generate-the-clusters-secrets) adds it.
 
 ## Secret documents hold the services' secrets
 
