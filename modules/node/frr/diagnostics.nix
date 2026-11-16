@@ -1,5 +1,5 @@
-# BGP's diagnostics: FRR's BGP sessions, neighbours and paths and its BFD peers of a VRF, which
-# vtysh asks FRR for as a member of frrvty, the group of FRR's sockets.
+# FRR's diagnostics on images that run it: its BGP sessions, neighbours and paths and its BFD
+# peers of a VRF, which vtysh asks FRR for as a member of frrvty, the group of FRR's sockets.
 {
   config,
   lib,
@@ -20,7 +20,8 @@ let
     groups = [ "frrvty" ];
   };
   # The VRF a vtysh diagnostic asks about; FRR names the default VRF default. The regex is that of
-  # ShortName in pkg/router, which chalkd checks a VRF's name against; change both together.
+  # a VRF's name, ShortName in pkg/router, which chalkd checks a VRF document's name against;
+  # change both together.
   vrf = {
     type = "pattern";
     regex = "^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$";
@@ -29,7 +30,7 @@ let
   };
 in
 {
-  config = lib.mkIf (config.chalkos.router.enable && config.chalkos.router.bgp.enable) {
+  config = lib.mkIf config.chalkos.frr.enable {
     chalkos.diagnostics = {
       bgp-summary =
         vtysh "One VRF's BGP sessions of each address family, as show bgp summary prints them."

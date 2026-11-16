@@ -12,6 +12,7 @@
     ./console.nix
     ./time.nix
     ./network.nix
+    ./frr
     ./layers.nix
     ./kubernetes
     ./router

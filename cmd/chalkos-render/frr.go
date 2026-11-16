@@ -66,15 +66,21 @@ func renderFRR(in map[string]any, out string) error {
 // hostName is a node name FRR's hostname takes.
 var hostName = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9.-]{0,62})$`)
 
-func frrConfig(d derive.Model, node string) (string, error) {
-	var b strings.Builder
-	b.WriteString("! FRR's config, rendered by chalkos-render frr. frr.service fills in the passwords, and\n" +
-		"! frr-reload.py applies the changes.\n" +
-		"frr defaults traditional\n")
+// writeFRRHeader writes what opens every frr.conf: the renderer's subcommand that wrote it, FRR's
+// defaults, the node's name as FRR's hostname when FRR takes it, and the log.
+func writeFRRHeader(b *strings.Builder, renderer, node string) {
+	fmt.Fprintf(b, "! FRR's config, rendered by chalkos-render %s. frr.service fills in the passwords, and\n"+
+		"! frr-reload.py applies the changes.\n"+
+		"frr defaults traditional\n", renderer)
 	if hostName.MatchString(node) {
 		b.WriteString("hostname " + node + "\n")
 	}
 	b.WriteString("log syslog informational\nservice integrated-vtysh-config\n!\n")
+}
+
+func frrConfig(d derive.Model, node string) (string, error) {
+	var b strings.Builder
+	writeFRRHeader(&b, "frr", node)
 	switch {
 	case len(d.BGP) == 0 && len(d.Peers) > 0:
 		return "", derive.InternalErrorf("the config holds BGPPeer documents but no BGP document")
