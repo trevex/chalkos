@@ -86,9 +86,8 @@ every module's entries, the image's own before those of `modules`. `lib.mkBefore
 first and `lib.mkAfter` puts one last.
 
 The installer is a system of its own, built from chalkos's node modules, its installer modules and
-`installer.modules`. It carries no image's modules and no `modules`, because it holds no config
-for an extension to read. It belongs to no platform: one installer writes images of every
-platform.
+`installer.modules`, without [`modules`](#modules). It belongs to no platform: one installer
+writes images of every platform.
 
 ## mkImage and mkInstaller { #mkimage }
 

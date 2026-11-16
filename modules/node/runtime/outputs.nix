@@ -58,23 +58,11 @@ let
           type = chalkosLib.internal.programType "chalkosLib.render";
           example = lib.literalExpression "chalkosLib.render.template ./bird.conf.tmpl";
           description = ''
-            Program of the image's store, with its arguments, that renders the output. It reads
-            `{"node": {"name": …}, "documents": {"<Kind>": [<document>, …]}}` on standard input,
-            the documents of each kind of `inputs` sorted by name, with their schema defaults and
-            without any Secret's values, and writes the output's files into `$OUT`.
-
-            It runs as the unprivileged user `chalkos-render` without capabilities, devices or
-            network, may write `$OUT` alone, and cannot read STATE, `/var`, or the config,
-            credentials and Kubernetes keys chalkd writes below `/run/chalkos`. It must finish
-            within 30 seconds; the files may take 16 MiB and hold no links. The same documents
-            must give the same files, as chalkd renders every output again at boot.
-
-            It refuses a config by printing
-            `{"refusals": [{"kind": …, "name": …, "path": …, "message": …}]}` on standard output,
-            reported as a rule's refusal; anything else printed there fails it.
-            `chalkosLib.render.template`, `.jq` and `.documents` build the common renderers. In a
-            template, a key a document lacks or that holds null prints as nothing, and the
-            function `refuse` refuses.
+            Program of the image's store, with its arguments, that renders the output from the
+            documents of `inputs` into `$OUT`. `chalkosLib.render.template`, `.jq` and
+            `.documents` build the common renderers.
+            [Program contract](extension-runtime.md#program-contract) gives its input, its
+            report of refusals and its sandbox.
           '';
         };
         check = lib.mkOption {
@@ -82,13 +70,11 @@ let
           default = null;
           example = lib.literalExpression ''"''${pkgs.bird}/bin/bird -p -c $OUT/bird.conf"'';
           description = ''
-            Shell commands, run by bash with `set -e` in the renderer's sandbox, with coreutils, grep
-            and sed on the `PATH`, that check the rendered files in `$OUT`; they read the renderer's
-            input on standard input and may not write `$OUT`. Unlike the renderer they may open
-            netlink sockets, so `unshare --map-root-user --net nft --check --file "$OUT/…"` checks
-            an nftables ruleset in a user and network namespace of its own. The files are as the
-            renderer wrote them, before they get the output's owner and mode. A failure refuses
-            the delivery before it changes anything, and at boot fails `chalkos-config.service`.
+            Shell commands, run by bash with `set -e` after the renderer, that check the rendered
+            files in `$OUT`; null serves the files as the renderer wrote them. A failure refuses the
+            delivery before it changes anything, and at boot fails `chalkos-config.service`.
+            [Check environment](extension-runtime.md#check-environment) gives what the commands
+            read and may run.
           '';
         };
         dir = lib.mkOption {
@@ -96,12 +82,10 @@ let
           default = "/run/chalkos/outputs/${name}";
           defaultText = lib.literalExpression ''"/run/chalkos/outputs/<name>"'';
           description = ''
-            Where services read the output's files: a link that chalkd replaces in one rename, so
-            a service reads the files of one render, never a mix of two. Refer to it as
-            `config.chalkos.outputs.<name>.dir`, so a misspelled name fails the evaluation. It is
-            a clean path below `/run` whose components start with no dot, outside `/run/chalkos`
-            but for `/run/chalkos/outputs/<name>` and below, and neither another output's dir nor
-            inside one. A directory there is removed when the link first replaces it.
+            Where services read the output's files, a link to the last render. Refer to it as
+            `config.chalkos.outputs.<name>.dir`, so a misspelled name fails the evaluation.
+            [Output directories](extension-runtime.md#output-directories) gives the rules a dir
+            follows.
           '';
         };
         user = lib.mkOption {

@@ -61,10 +61,9 @@ let
         description = ''
           CEL expression that is true when a delivery takes the effect, for a trigger that no
           output renders; the effect fires when `when` holds, one of `outputs` changed or the
-          documents of one of `kinds` did. It reads `config` and
-          `oldConfig`, the node's config after and before the delivery, each by apiVersion, kind
-          and name with every Secret value replaced by its SHA-256, the node's name as
-          `node.name`, and `facts.<name>` after the delivery and `oldFacts.<name>` before it.
+          documents of one of `kinds` did.
+          [Effect conditions](extension-runtime.md#effect-condition-variables) gives the
+          variables it reads.
         '';
       };
       restart = lib.mkOption {
@@ -72,9 +71,10 @@ let
         default = [ ];
         example = [ "bird.service" ];
         description = ''
-          Units the effect restarts, by their full names. chalkd restarts the units of every due
-          effect in one `systemctl try-restart`, those of an effect with `start` in one
-          `systemctl restart`, and a unit that failed with `reset-failed` and `restart`.
+          Units the effect restarts, by their full names; a unit that does not run stays stopped
+          unless the effect sets `start`.
+          [The config pipeline](../how-it-works/node/config-pipeline.md#chalkd-takes-the-due-effects-in-one-order)
+          gives the order of the actions of every due effect.
         '';
       };
       reload = lib.mkOption {
@@ -82,10 +82,8 @@ let
         default = [ ];
         example = [ "systemd-networkd.service" ];
         description = ''
-          Units to `systemctl reload`, before any restart. chalkd reloads the units of all due
-          effects in one call, honouring their ordering, and only units that are active and not
-          also restarted. A failed unit is restarted instead (`reset-failed` and `restart`), as
-          systemd reloads no failed unit.
+          Units to `systemctl reload`, by their full names, before any restart. A failed unit is
+          restarted instead, as systemd reloads no failed unit.
         '';
       };
       run = lib.mkOption {

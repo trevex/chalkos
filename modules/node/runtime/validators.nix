@@ -43,17 +43,11 @@ let
         type = chalkosLib.internal.programType "chalkosLib.validate";
         example = lib.literalExpression "chalkosLib.validate.jq ./peers.jq";
         description = ''
-          Program of the image's store, with its arguments, that checks the documents. chalkd
-          runs it as `<program> validate <name>`. It reads what a renderer reads on standard
-          input: `{"node": {"name": …}, "documents": {"<Kind>": [<document>, …]}}`, the documents
-          of each kind of `inputs`, sorted by name, with their schema defaults and without any
-          Secret's values. It refuses a config by printing
-          `{"refusals": [{"kind": …, "name": …, "path": …, "message": …}]}` on standard output,
-          whatever its exit status, which chalkd reports as it reports a rule's refusal; it prints
-          nothing, or no refusal, for a config it accepts. Otherwise exit status 0 means it ran;
-          any other status, or anything else printed on standard output, fails it, which refuses
-          the config too. It runs in the renderers' sandbox, may write no path but `/tmp`, and
-          must finish within 30 seconds.
+          Program of the image's store, with its arguments, that checks the documents of
+          `inputs`; chalkd runs it as `<program> validate <name>`. It refuses a config with a
+          report of refusals on standard output.
+          [Program contract](extension-runtime.md#program-contract) gives its input, the report
+          and its sandbox.
           `chalkosLib.validate.jq` builds a validator from a jq program, whose output is the
           report.
         '';
