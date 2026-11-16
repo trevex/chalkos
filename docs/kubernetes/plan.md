@@ -175,10 +175,10 @@ needs no secrets file:
 
 ```console
 $ chalkctl validate
-node1: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config 228343216657e1b2015b346b5a8e582a69c65cf0ef037786e443dcf2fd832f4b
-node2: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config c45d7f3395eb69e67f555de1dd915133f24dea76554d492266eea6d42f721f3d
-node3: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config 3473dd3e12e4ca9a93d4a1444678d97aa1b41ed77f8a71c2d979955b68e3c1b0
-router: valid for the image router-metal (router-metal on metal, root hash befe5273a465), config b77dea492acd11e559461e079cdbb9bc53de8c8e46400672645d6a262719faa9
+node1: valid for the image node-metal (node-metal on metal, root hash 3b80d0bf1243), config 451b547e8373fe70683c9dbf95f7cc08916ae0e920702da6c1a2c3e85c6f4080
+node2: valid for the image node-metal (node-metal on metal, root hash 3b80d0bf1243), config 10c35f7fe988679c3a54691ddf95e78267269d22297fb360ceae5527f5965d50
+node3: valid for the image node-metal (node-metal on metal, root hash 3b80d0bf1243), config 55ed0b193224383f68d0bb4014e45885697279cd67dfa6fc9232627757cfbd44
+router: valid for the image router-metal (router-metal on metal, root hash cd7ac91cb655), config dc6178bbae55b1fe0e6af7b10502a1099f708c995b7be242ee95bb92050f87e6
 ```
 
 The output is the homelab's, whose router runs no Kubernetes. Each node of your inventory gets a

@@ -120,7 +120,7 @@ To move to another Go release:
 | `templates/lab/` | The lab template the quick start uses. |
 | `templates/router-lab/` | The router lab template the router quick start uses. |
 | `templates/cluster-metal/` | The template of a cluster on real machines, which the guide Build a cluster on real machines uses. |
-| `examples/homelab/` | The home lab of the guide Build a home lab: a flake that builds a router image, a node image with the Kubernetes layer's BGP speaker, a node image with the bird extension in its place and the installer, an inventory and its YAML, which the `example-homelab` check builds and validates. |
+| `examples/homelab/` | The home lab of the guide Build a home lab: a flake that builds a router image, a node image with the Kubernetes layer's BGP speaker, a node image with the bird extension in its place and the installer, an inventory and its YAML, which the `example-homelab` check builds, evaluating the bird image alone, and validates. |
 | `examples/extensions/` | An example of extension kinds: a flake that builds an image with the `Rack` and `Hardware` extensions and Kubernetes off, an inventory and its node's YAML, which the `example-extensions` check builds and validates. |
 | `test/e2e/` | The end-to-end tests, which boot virtual machines. |
 | `test/nix/` | The Nix evaluation tests. |

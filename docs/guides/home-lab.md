@@ -53,7 +53,7 @@ with a random /48 of your own in [Prepare the files](#prepare-the-files).
 | Use | Prefix or address |
 | --- | --- |
 | The fabric, which the router advertises | `fdc8:a1b2:c3d4:1::/64` |
-| The router on the fabric: resolver, default router and the BGP neighbour of each node's `enp1s0` | `fdc8:a1b2:c3d4:1::1` |
+| The router on the fabric: resolver and the BGP neighbour of each node's `enp1s0` | `fdc8:a1b2:c3d4:1::1` |
 | The router's second address on the fabric: the BGP neighbour of each node's `enp2s0` | `fdc8:a1b2:c3d4:1::2` |
 | node1, node2 and node3, each on its dummy interface `node0` | `fdc8:a1b2:c3d4:ff::11`, `::12` and `::13` |
 | The Kubernetes API's VIP | `fdc8:a1b2:c3d4:ff::10` |
@@ -70,9 +70,12 @@ interface `node0`. FRR, the BGP speaker of the nodes' image, announces it to the
 session on each port, each to one of the router's two addresses on the fabric, and the control
 plane that holds the API's VIP announces the VIP the same way. The router then has two equal paths
 to each address. When a cable or port fails, BFD ends that port's session within about a second,
-and the traffic takes the other port. The nodes take only a default route from the router, over
-BGP and not from its advertisements, so traffic between two nodes passes through the router too:
-the router is the one machine of the design whose failure stops the cluster.
+and the traffic takes the other port. The nodes take only a default route from the router, which
+arrives over BGP; they ignore the one its advertisements carry. Traffic between two nodes therefore
+passes through the router too: the router is the one machine of the design whose failure stops
+the cluster. Each port also has a static route to the workstation's prefix,
+`fdc8:a1b2:c3d4:f0::/64`, through the router's address on its link, so a node without a BGP
+session still answers the workstation at its ports' addresses.
 
 ## Before you begin
 
@@ -489,13 +492,13 @@ resolver: running
 
 The router runs its config, its NAT64 and its resolver. It has no BGP session yet, because no
 node runs. The `addresses` diagnostic shows the renamed ports, `wan` with the reserved address and
-`fabric` with `fdc8:a1b2:c3d4:1::1` and `fdc8:a1b2:c3d4:1::2`:
+`fabric` with its two addresses, `fdc8:a1b2:c3d4:1::1` and `::2`:
 
 ```console
 $ chalkctl node diag router --secrets=secrets.age addresses | jq -r "$ports"
 lo	00:00:00:00:00:00	UNKNOWN
 wan	02:00:00:00:01:01	UP	192.168.1.2
-fabric	02:00:00:00:01:02	UP	fdc8:a1b2:c3d4:1::1 fdc8:a1b2:c3d4:1::2
+fabric	02:00:00:00:01:02	UP	fdc8:a1b2:c3d4:1::2 fdc8:a1b2:c3d4:1::1
 wg0		UNKNOWN	fdc8:a1b2:c3d4:f0::1
 ...
 ```
@@ -641,13 +644,14 @@ so every machine of the same model shows the same two.
 ### Adapt the node's file
 
 `bgp/fabric.yaml`, which every node gets, configures the ports: a `Network` document for each port,
-which takes the router's advertisements without their default route, and a `BGPPeer` for each
-port, which runs a BGP session over that port with one of the router's two addresses. It names the
-ports `enp1s0` and `enp2s0`. When the `addresses` diagnostic shows other names, replace `enp1s0`
-and `enp2s0` throughout `bgp/fabric.yaml` with them. You do this once, for node1: node2 and node3
-have the same names when they are the same model. A node whose ports have other names, such as a
-machine of another model, takes `Network` and `BGPPeer` documents of its own in place of
-`bgp/fabric.yaml`, as the file's comment describes.
+which takes the router's advertisements without their default route and holds the static route
+to the workstation's prefix, and a `BGPPeer` for each port, which runs a BGP session over that
+port with one of the router's two addresses. It names the ports `enp1s0` and `enp2s0`. When the
+`addresses` diagnostic shows other names, replace `enp1s0` and `enp2s0` throughout
+`bgp/fabric.yaml` with them. You do this once, for node1: node2 and node3 have the same names when
+they are the same model. A node whose ports have other names, such as a machine of another model,
+takes `Network` and `BGPPeer` documents of its own in place of `bgp/fabric.yaml`, as the file's
+comment describes.
 
 `nodes/node1.yaml` holds everything that differs between the nodes:
 
@@ -760,7 +764,8 @@ Each node runs a session on each port, to the router's address that the port's `
 The diagnostic `bgp-summary` of the nodes' image shows them as FRR's `show bgp summary` prints
 them, a line for each of the router's addresses, `fdc8:a1b2:c3d4:1::1` and `fdc8:a1b2:c3d4:1::2`.
 A session that is up shows the number of prefixes received where a session that is down shows its
-state. `bfd-peers` shows the BFD session that watches each:
+state. The IPv4 section shows both sessions as `NoNeg`, because the router's peer `nodes` carries
+IPv6 alone. `bfd-peers` shows the BFD session that watches each:
 
 ```sh
 chalkctl node diag node1 --secrets=secrets.age bgp-summary
@@ -805,9 +810,9 @@ ping fdc8:a1b2:c3d4:ff::11
 ```
 
 Within about a second, BFD ends the session on that port: `bgp-summary` on node1 shows a state in
-place of that session's count of received prefixes, the router's `bgp:` table loses the port's session, and the route to node1 keeps
-one next hop. The ping goes on, losing a packet or two at most. Plug the cable back in, and the
-session comes back within seconds.
+place of that session's count of received prefixes, the router's `bgp:` table loses the port's
+session, and the route to node1 keeps one next hop. The ping goes on, losing a packet or two at
+most. Plug the cable back in, and the session comes back within seconds.
 
 ### Take the VIP's holder down
 
@@ -849,7 +854,8 @@ router rolls it back when chalkctl loses it. A delivery renames a router port at
 delivery, its `Network`, firewall zone and management interfaces, and deliver it with
 `chalkctl config apply router --try`, so that the router rolls it back when chalkctl loses it.
 
-A new chalkos revision or a change to the images' modules in `flake.nix` takes new images. Update the flake's lock with
+A new chalkos revision or a change to the images' modules in `flake.nix` takes new images, and a
+change to `extensions/` a new `node-bird-metal`. Update the flake's lock with
 `nix flake update chalkos`, and enter the shell of [Get the tools](#get-the-tools) again, so that
 chalkctl matches the images. Build the images again, as in
 [Build the images and the installer](#build-the-images-and-the-installer). With Secure Boot, remove
@@ -889,7 +895,18 @@ diagnostic shows into `bgp/fabric.yaml`, as in [Adapt the node's file](#adapt-th
 
 ### A BGP session does not come up
 
-The router's `bgp:` table shows no line for a port that never connected. Check, on the node:
+The router's `bgp:` table shows no line for a port that never connected. Without a session the
+router has no route to the node's address, so chalkctl does not reach the node there. The node
+still answers at its ports' addresses of the fabric, through its static route to the workstation's
+prefix. The router's `neighbours` diagnostic lists them, as the tip "Find the installer through
+the router" in [Install the nodes](#install-the-nodes) shows; pass one with `--address`:
+
+```sh
+chalkctl node diag node1 --secrets=secrets.age \
+  --address=fdc8:a1b2:c3d4:1:0:ff:fe00:1101 bgp-summary
+```
+
+Check, on the node:
 
 - the ports' names: the `addresses` diagnostic shows the names that the `BGPPeer` documents of
   `bgp/fabric.yaml` list, `enp1s0` and `enp2s0` in the example. FRR runs no session on a port of

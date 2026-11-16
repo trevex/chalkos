@@ -33,10 +33,10 @@ platform metal (the inventory's)
 image <image>, booted from chalkos_1.efi
 VOLUME  DISK    MOUNT POINT  STATE
 var     system  /var         mounted
-OUTPUT     HASH    STATE
-bird-conf  <hash>  rendered
-chrony     <hash>  rendered
-networkd   <hash>  rendered
+OUTPUT    HASH    STATE
+bgp       <hash>  rendered
+chrony    <hash>  rendered
+networkd  <hash>  rendered
 kubernetes controlplane: bootstrapped, node ready: True, vip holder, control plane current
 kubernetes versions: API server 1.37.2, kubelet 1.37.2, control-plane pods current
 certificates:
@@ -342,8 +342,17 @@ its addresses, routes and firewall. Without a diagnostic, `chalkctl node diag` l
 $ chalkctl node diag node1 --secrets secrets.age
 DIAGNOSTIC            ROLE      DESCRIPTION
 addresses             reader    The addresses of the node's interfaces, as ip -json address show prints them.
-bird-protocols        reader    The protocols bird runs and the state of their BGP sessions.
-  [protocol=<pattern>]          Name of a protocol, such as router_enp1s0 for the session of the Peer router on enp1s0, which alone is shown; every protocol when left out. Matches ^[A-Za-z0-9][A-Za-z0-9._-]*$.
+bfd-peers             reader    One VRF's BFD sessions and their state, as show bfd peers prints them.
+  [vrf=<pattern>]               VRF to ask about, by the name of its VRF document, or default for the default VRF. Matches ^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$. Default: default.
+bgp-neighbor          reader    One BGP session in detail, as show bgp neighbors prints it: its state, timers, capabilities and routes.
+  peer=<pattern>                The session's interface or the neighbour's address, as the node's status lists it. Matches ^([0-9A-Fa-f:.]+|[A-Za-z0-9_.:@-]{1,15})$.
+  [vrf=<pattern>]               VRF to ask about, by the name of its VRF document, or default for the default VRF. Matches ^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$. Default: default.
+bgp-route             reader    One VRF's BGP paths to a prefix, as show bgp prints them: each path's AS path, next hop and attributes, and the best.
+  prefix=<prefix>               Address range of the family, such as ::/0.
+  [vrf=<pattern>]               VRF to ask about, by the name of its VRF document, or default for the default VRF. Matches ^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$. Default: default.
+  [family=<enum>]               Address family of the prefix. One of ipv4, ipv6. Default: ipv6.
+bgp-summary           reader    One VRF's BGP sessions of each address family, as show bgp summary prints them.
+  [vrf=<pattern>]               VRF to ask about, by the name of its VRF document, or default for the default VRF. Matches ^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$. Default: default.
 dns-query             operator  Looks up a name in DNS, through the node's resolver or the server given.
   name=<hostname>               Name to look up.
   [type=<enum>]                 Record type; A when left out. One of A, AAAA, CAA, CNAME, DS, DNSKEY, MX, NS, PTR, SOA, SRV, TXT.
@@ -368,9 +377,9 @@ tcp-connect           operator  Opens a TCP connection to an address and port, c
 
 Each diagnostic names the least role that runs it. Readers run those that read the node's state.
 `ping`, `dns-query` and `tcp-connect` send traffic from the node, and `nft-ruleset` shows its
-firewall, so they need an operator. A parameter in brackets may be left out. `bird-protocols`
-comes from the homelab's BGP extension, which the image `node-bird-metal` carries. Every image has
-the others.
+firewall, so they need an operator. A parameter in brackets may be left out. `bfd-peers`,
+`bgp-neighbor`, `bgp-route` and `bgp-summary` come with FRR, which the Kubernetes layer's BGP
+speaker runs. Every image has the others.
 
 Name the diagnostic and give each parameter as `<parameter>=<value>`:
 

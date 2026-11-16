@@ -187,7 +187,8 @@ leaves it out, so that it builds before any cluster has secrets, and
 A `Secret` document is a config document, unrelated to the secrets file. It holds values that
 the node's services read, such as a password for a BGP peer, and it reaches the node with the
 rest of the node's config. The homelab's `bgp/secrets.yaml` gives the three nodes one, which the
-`Peer` document for `router` in `bgp/fabric.yaml` names in a `secretRef`:
+`BGPPeer` documents `router-enp1s0` and `router-enp2s0` in `bgp/fabric.yaml` name in a
+`secretRef`:
 
 ```yaml title="bgp/secrets.yaml"
 --8<-- "examples/homelab/bgp/secrets.yaml"

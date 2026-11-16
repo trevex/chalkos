@@ -186,7 +186,9 @@ cp nodes/node1.yaml nodes/node1-bird.yaml
 
 In `nodes/node1-bird.yaml`, replace the `BGPSpeaker` document with the `Speaker` above, and add
 the ports' `Network` documents of `bgp/fabric.yaml` and a `Peer` for the router. bird runs a
-session on each interface of the `Peer`, both to the router's first address:
+session on each interface of the `Peer`, both to the router's first address. The file's header
+comment and the comment above the `Speaker` speak of FRR, `BGPPeer` documents and
+`bgp/fabric.yaml`: adapt them to bird and to the documents the file now holds.
 
 ```yaml
 apiVersion: networkd.chalkos.dev/v1alpha1
@@ -196,6 +198,8 @@ spec:
   match: {name: enp1s0}
   network: {ipv6AcceptRA: true}
   ipv6AcceptRA: {useGateway: false}
+  route:
+    - {destination: "fdc8:a1b2:c3d4:f0::/64", gateway: "fdc8:a1b2:c3d4:1::1", metric: 1024}
 ---
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network
@@ -204,6 +208,8 @@ spec:
   match: {name: enp2s0}
   network: {ipv6AcceptRA: true}
   ipv6AcceptRA: {useGateway: false}
+  route:
+    - {destination: "fdc8:a1b2:c3d4:f0::/64", gateway: "fdc8:a1b2:c3d4:1::2", metric: 1025}
 ---
 apiVersion: bgp.example.org/v1alpha1
 kind: Peer
@@ -621,8 +627,8 @@ chalkctl upgrade --nodes node1 --secrets=secrets.age
 ```
 
 The node checks its config with the new image's validators, renderers and checks before it
-installs anything, and boots the image with bird in place of the built-in speaker. Change the documents alone, such as a new `Peer`, with
-`chalkctl config apply`, which needs no new image.
+installs anything, and boots the image with bird in place of the built-in speaker. Change the
+documents alone, such as a new `Peer`, with `chalkctl config apply`, which needs no new image.
 
 ## Debug on the node
 
