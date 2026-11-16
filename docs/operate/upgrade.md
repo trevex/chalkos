@@ -8,8 +8,8 @@ description: "Roll a new image through the nodes with chalkctl upgrade, and act 
 This page is for an operator who installs a new image on running nodes. At the end every node runs
 the new image, and its boot was found healthy. A node whose new image never becomes healthy boots
 its previous image again. Any change to what the image holds goes this way: a new chalkos release,
-a new Kubernetes release or a change to the image's modules. The page upgrades the homelab's
-router and its three Kubernetes nodes.
+a new Kubernetes release or a change to the image's modules. The page upgrades the three
+control planes of the `cluster-metal` template.
 
 In short:
 
@@ -17,9 +17,9 @@ In short:
 rm -rf images/node-metal-signed
 chalkbuild sign --key keys/db.key --cert keys/db.crt images/node-metal images/node-metal-signed
 chalkctl validate
-chalkctl upgrade --nodes node3 --secrets secrets.age
+chalkctl upgrade --nodes cp3 --secrets secrets.age
 chalkctl upgrade --secrets secrets.age
-chalkctl status node3 --secrets secrets.age
+chalkctl status cp3 --secrets secrets.age
 ```
 
 A new chalkos release arrives through the image author, who updates the `chalkos` input in the
@@ -53,9 +53,9 @@ out boots its previous image again. [Upgrades](../how-it-works/node/upgrades.md)
 
 ## Sign the new image and validate it
 
-Without `--image`, `chalkctl upgrade` gives each node its image in the inventory. The homelab's
-inventory names the image directory `images/router-metal` for the router and `images/node-metal`
-for the other nodes. For machines that enforce Secure Boot it names the signed copies, such as
+Without `--image`, `chalkctl upgrade` gives each node its image in the inventory. The template's
+inventory names the image directory `images/node-metal` for every node. For machines that enforce
+Secure Boot it names the signed copies, such as
 `images/node-metal-signed`. Sign each new build again into its copy. The output directory must not
 exist, so remove the copy of the previous build first:
 
@@ -78,8 +78,8 @@ it changes with `--diff`, which prints each node's changes as
 [`config apply --diff`](change-config.md#preview-the-change) does and changes nothing:
 
 ```sh
-chalkctl validate node3
-chalkctl upgrade --nodes=node3 --diff --secrets secrets.age
+chalkctl validate cp3
+chalkctl upgrade --nodes=cp3 --diff --secrets secrets.age
 ```
 
 The run also stops before it sends anything when a node runs another platform than its image in the
@@ -96,7 +96,9 @@ that `chalklab sign` signed, as
 
 Run the command in the inventory's directory, or name the inventory with `--inventory` or
 `$CHALKOSINVENTORY`. Start with
-one node, `--nodes node3`, and check it. Then run the command without `--nodes` for the rest:
+one node, `--nodes cp3`, and check it. Then run the command without `--nodes` for the rest. This
+run of the homelab example upgrades its three Kubernetes nodes, `node1` to `node3`, and its router,
+which run two images:
 
 ```console
 $ chalkctl upgrade --secrets secrets.age
@@ -145,9 +147,9 @@ The last line counts the nodes upgraded.
 
 The control planes go first, one at a time, and the other nodes after them in batches of
 `--max-unavailable`, 1 by default. Raise it when the workloads have spare capacity, because each
-batch takes its nodes away for one reboot. The homelab's nodes reach each other and the Kubernetes
-API through the router alone, so its reboot pauses that traffic. `--nodes router` upgrades the
-router in a run of its own, at a time that suits.
+batch takes its nodes away for one reboot. The homelab's nodes reach each other and the
+Kubernetes API through its router alone, so its reboot pauses that traffic. `--nodes router`
+upgrades the router in a run of its own, at a time that suits.
 [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) lists every flag.
 
 `--image` installs an image directory, or a raw image with `repart-output.json` next to it, in
@@ -170,7 +172,7 @@ registry, and [Registries and mirrors](registries.md) the credentials and mirror
     image is staged, and activates the image only after the drain, so a refused drain leaves the
     image staged and the node boots its current image. chalkctl also waits until the node's Node
     is Ready. Before a control plane is drained, chalkctl checks that etcd keeps its quorum without
-    it. The homelab has three control planes, so etcd keeps its quorum while each reboots. A
+    it. The template has three control planes, so etcd keeps its quorum while each reboots. A
     cluster of one or two control planes loses its quorum while one reboots, and its run needs
     `--allow-downtime`. The Kubernetes layer also adds `--delete-emptydir-data`.
     [Upgrade Kubernetes](../kubernetes/upgrade-kubernetes.md) covers the drain, the quorum, the
@@ -187,20 +189,20 @@ lists what it does with each node.
 `--until` stops each node after a step. A later command runs the next step, for one node at a time:
 
 ```console
-$ chalkctl upgrade --nodes node3 --until stage --secrets secrets.age
-upgrading node-metal on metal to <new>: node3
-node3: installing <new>
-node3: config unchanged
-node3: installed <new>, staged as .staged-chalkos_2.efi
+$ chalkctl upgrade --nodes cp3 --until stage --secrets secrets.age
+upgrading node-metal on metal to <new>: cp3
+cp3: installing <new>
+cp3: config unchanged
+cp3: installed <new>, staged as .staged-chalkos_2.efi
 staged <new> on 1 node; chalkctl node activate makes it boot next
-$ chalkctl node activate node3 --secrets secrets.age
-node3: activated <new>, which boots next as chalkos_2+3.efi
-node3: chalkctl node reboot node3 boots it
-$ chalkctl node reboot node3 --secrets secrets.age
-node3: cordoned, evicted <n> pods, kept <n>
-node3: rebooting into <new>
-node3: runs <new>, found healthy
-node3: uncordoned
+$ chalkctl node activate cp3 --secrets secrets.age
+cp3: activated <new>, which boots next as chalkos_2+3.efi
+cp3: chalkctl node reboot cp3 boots it
+$ chalkctl node reboot cp3 --secrets secrets.age
+cp3: cordoned, evicted <n> pods, kept <n>
+cp3: rebooting into <new>
+cp3: runs <new>, found healthy
+cp3: uncordoned
 ```
 
 - `--until stage` stages the image on each node and stops. The node keeps booting its current
@@ -223,7 +225,7 @@ describes.
 was found healthy:
 
 ```console
-$ chalkctl status node3 --secrets secrets.age
+$ chalkctl status cp3 --secrets secrets.age
 ...
 image <new>, booted from chalkos_2.efi
 ...
@@ -246,21 +248,21 @@ previous image <old> (upgrade --rollback boots it)
 `chalkctl upgrade --rollback` boots that image again in place of installing one:
 
 ```console
-$ chalkctl upgrade --rollback --nodes node1,node2,node3
-rolling back 3 nodes to <old>: node1, node2, node3
-node1: cordoned, evicted <n> pods, kept <n>
-node1: rolling back to <old>
-node1: <old> boots next as chalkos_3+3.efi
-node1: rebooting into <old>
-node1: runs <old>, found healthy
-node1: uncordoned
+$ chalkctl upgrade --rollback --nodes cp1,cp2,cp3
+rolling back 3 nodes to <old>: cp1, cp2, cp3
+cp1: cordoned, evicted <n> pods, kept <n>
+cp1: rolling back to <old>
+cp1: <old> boots next as chalkos_3+3.efi
+cp1: rebooting into <old>
+cp1: runs <old>, found healthy
+cp1: uncordoned
 ...
-node3: cordoned, evicted <n> pods, kept <n>
-node3: rolling back to <old>
-node3: <old> boots next as chalkos_3+3.efi
-node3: rebooting into <old>
-node3: runs <old>, found healthy
-node3: uncordoned
+cp3: cordoned, evicted <n> pods, kept <n>
+cp3: rolling back to <old>
+cp3: <old> boots next as chalkos_3+3.efi
+cp3: rebooting into <old>
+cp3: runs <old>, found healthy
+cp3: uncordoned
 rolled back 3 nodes to <old>
 ```
 
@@ -287,14 +289,14 @@ A node whose new image is not found healthy within its tries boots its previous 
 at that node:
 
 ```text
-chalkctl: node3: upgrade to <new> failed: rolled back to <old>; it stays cordoned; its boots logged:
+chalkctl: cp3: upgrade to <new> failed: rolled back to <old>; it stays cordoned; its boots logged:
   <journal lines>
 ```
 
 `<old>` is the image the node runs again. `<journal lines>` are the last 30 lines that chalkd and the
 health check logged during the failed boot, such as
 `the node did not become healthy within 5m0s: ...`. `; it stays cordoned` appears on a node of a
-Kubernetes cluster alone. `chalkctl status node3` shows the same lines for as long as the failed image
+Kubernetes cluster alone. `chalkctl status cp3` shows the same lines for as long as the failed image
 stays on the disk.
 
 The node runs its previous image, and that boot is healthy. To go on:

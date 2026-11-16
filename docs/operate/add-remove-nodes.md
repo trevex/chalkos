@@ -6,9 +6,9 @@ description: "Add a node to the inventory and install it, reinstall a node, take
 # Add and remove nodes
 
 This page is for an operator who changes which machines belong to a running cluster. It adds a
-worker `node4` to the homelab, reinstalls a node on its machine, removes and revokes `node4` again,
-and gives a revoked name to a new node. At the end the inventory names exactly the nodes that run, and
-`chalkctl validate` accepts it.
+worker `w1` to the cluster of the `cluster-metal` template, reinstalls a node on its machine,
+removes and revokes `w1` again, and gives a revoked name to a new node. At the end the inventory
+names exactly the nodes that run, and `chalkctl validate` accepts it.
 
 ## Before you begin
 
@@ -22,13 +22,17 @@ You need to know the new machine's disks and network interfaces, as for any node
 
 A new node needs an entry in `spec.nodes` and a file of its own. Its name, the key in
 `spec.nodes`, stays the node's name until it is reinstalled. Its recovery key derives from that
-name. The homelab gains a worker `node4`, a machine of the control planes' model whose two ports
-are on the fabric's switch like theirs. Its ports have the same names, so `bgp/fabric.yaml`
-configures them. Its file `nodes/node4.yaml` is a copy of `node1`'s with the new machine's disk,
-the address `fdc8:a1b2:c3d4:ff::14`, the router ID `0.0.0.14` and `type: worker`. A worker
-holds no VIP, so its `Node` names no `vip.interface`:
+name. The cluster gains a worker `w1` on the network of the control planes. Its file
+`nodes/w1.yaml` is a copy of `cp1`'s with the new machine's disk, the MAC address of its port,
+the address `192.168.1.14` and `type: worker`:
 
-```yaml title="nodes/node4.yaml"
+```yaml title="nodes/w1.yaml"
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: default}
+spec:
+  type: worker
+---
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: SystemDisk
 metadata: {name: system}
@@ -36,77 +40,52 @@ spec:
   disk: {path: /dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100003}
 ---
 apiVersion: networkd.chalkos.dev/v1alpha1
-kind: NetDev
-metadata: {name: 30-node0}
-spec:
-  netDev: {name: node0, kind: dummy}
----
-apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network
-metadata: {name: 30-node0}
+metadata: {name: 10-lan}
 spec:
-  match: {name: node0}
-  network: {address: ["fdc8:a1b2:c3d4:ff::14/128"]}
----
-apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Node
-metadata: {name: default}
-spec:
-  type: worker
-  nodeIP: {addresses: ["fdc8:a1b2:c3d4:ff::14"]}
----
-apiVersion: bgp.example.org/v1alpha1
-kind: Speaker
-metadata: {name: bgp}
-spec:
-  asn: 65001
-  routerID: 0.0.0.14
-  export: {interfaces: [node0]}
+  match: {macAddress: "02:00:00:00:00:14"}
+  network: {address: [192.168.1.14/24], gateway: 192.168.1.1, dns: [192.168.1.1]}
 ```
 
-The inventory names `node4` with its address and file. The group `nodes` gives it the image and
-the files of `cluster/` and `bgp/`, as it does the control planes:
+The inventory names `w1` with its address and file. `spec.all` gives it the image and the files
+of `cluster/`, as it does the control planes:
 
 ```yaml title="chalkos.yaml"
 apiVersion: chalkctl.chalkos.dev/v1alpha1
 kind: Inventory
-metadata: {name: homelab}
+metadata: {name: cluster}
 spec:
   images:
-    router-metal: {source: {directory: images/router-metal}}
     node-metal: {source: {directory: images/node-metal}}
-  groups:
-    router: {imageName: router-metal, files: [router/*.yaml]}
-    nodes: {imageName: node-metal, files: [cluster/*.yaml, bgp/fabric.yaml, bgp/secrets.yaml]}
+  all: {imageName: node-metal, files: [cluster/*.yaml]}
   nodes:
-    router: {address: 192.168.1.2, groups: [router]}
-    node1: {address: "fdc8:a1b2:c3d4:ff::11", groups: [nodes], files: [nodes/node1.yaml]}
-    node2: {address: "fdc8:a1b2:c3d4:ff::12", groups: [nodes], files: [nodes/node2.yaml]}
-    node3: {address: "fdc8:a1b2:c3d4:ff::13", groups: [nodes], files: [nodes/node3.yaml]}
-    node4: {address: "fdc8:a1b2:c3d4:ff::14", groups: [nodes], files: [nodes/node4.yaml]}
+    cp1: {address: 192.168.1.11, files: [nodes/cp1.yaml]}
+    cp2: {address: 192.168.1.12, files: [nodes/cp2.yaml]}
+    cp3: {address: 192.168.1.13, files: [nodes/cp3.yaml]}
+    w1: {address: 192.168.1.14, files: [nodes/w1.yaml]}
 ```
 
 Check the new node's config against its image:
 
 ```console
-$ chalkctl validate node4
-node4: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config 538df9b7dbb63277743c9cba429aa98fb6994f92dc4c20f7f0d632a880804b7c
+$ chalkctl validate w1
+w1: valid for the image node-metal (node-metal on metal, root hash 98bb85096ed9), config d293e0172dbc6c5bef6eba9da6cd05d1ec9ae19c1a93f604662d1dc5adc2dd41
 ```
 
 Adding a node changes no other node's config, so the other nodes need no `config apply`.
 
-With the Kubernetes layer, the `Node` document sets the node's type. `type: worker` makes `node4` a
+With the Kubernetes layer, the `Node` document sets the node's type. `type: worker` makes `w1` a
 worker. A node with `type: controlplane` joins etcd and the control plane. Grow the control planes
 to an odd number, as [Add a control plane](../kubernetes/ha-control-plane.md#add-a-control-plane)
 explains.
 
 ## Install the new node
 
-Install `node4` as [Install a node](install.md) describes: boot it into maintenance mode, note the
+Install `w1` as [Install a node](install.md) describes: boot it into maintenance mode, note the
 address and the fingerprint, and run `chalkctl install`:
 
 ```sh
-chalkctl install node4 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint>
+chalkctl install w1 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint>
 ```
 
 `<address>` and `<fingerprint>` are the ones the console shows.
@@ -126,20 +105,20 @@ cannot reach it for an install until it boots the installer again.
 
 !!! note "With the Kubernetes layer, take the node out of Kubernetes before step 1"
 
-    Drain a worker with `kubectl drain node4`, and uncordon it with `kubectl uncordon node4` once it is
+    Drain a worker with `kubectl drain w1`, and uncordon it with `kubectl uncordon w1` once it is
     `Ready` again. Its kubelet registers its Node again. Take a control plane out of etcd with
     `chalkctl etcd leave` before the reinstall, so that the others keep a correct membership. It
     joins etcd as a new member.
     [Reinstall a control plane](../kubernetes/ha-control-plane.md#reinstall-a-control-plane)
     shows the commands.
 
-To reinstall `node4`:
+To reinstall `w1`:
 
 1. Boot the machine into the installer, through its BMC or its boot menu.
 2. Install the node, and let the installer replace what the disk holds:
 
     ```sh
-    chalkctl install node4 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint> \
+    chalkctl install w1 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint> \
       --wipe-disk
     ```
 
@@ -158,26 +137,26 @@ revokes the node, so the machine cannot come back with the certificates it still
 
 !!! note "With the Kubernetes layer, take the node out of Kubernetes before step 1"
 
-    Drain a worker with `kubectl drain node4`. Take a control plane out of etcd with
+    Drain a worker with `kubectl drain w1`. Take a control plane out of etcd with
     `chalkctl etcd leave`, which refuses when the remaining voters would lose their quorum.
     [Remove a control plane](../kubernetes/ha-control-plane.md#remove-a-control-plane) covers the
     control plane. A control plane whose machine is gone leaves through the others, as
     [Replace a failed machine](../kubernetes/ha-control-plane.md#replace-a-failed-machine)
     describes.
 
-To remove `node4`:
+To remove `w1`:
 
-1. With the Kubernetes layer, revoke the node with `chalkctl node revoke node4`, as
+1. With the Kubernetes layer, revoke the node with `chalkctl node revoke w1`, as
    [Revoke a removed node](#revoke-a-removed-node) describes.
 2. Power the machine off.
 3. Delete its entry from `spec.nodes` in `chalkos.yaml`.
-4. Delete its file, `nodes/node4.yaml`, unless another node still names it.
+4. Delete its file, `nodes/w1.yaml`, unless another node still names it.
 
 chalkctl then no longer knows the node:
 
 ```console
-$ chalkctl validate node4
-chalkctl: usage: the inventory chalkos.yaml has no node node4; its nodes are node1, node2, node3, router
+$ chalkctl validate w1
+chalkctl: usage: the inventory chalkos.yaml has no node w1; its nodes are cp1, cp2, cp3
 ```
 
 Removing a node from the inventory changes nothing on the machine. Its disk still holds the
@@ -200,8 +179,8 @@ could register its Node again. `chalkctl node revoke` cuts the node off by name,
 without a rotation:
 
 ```console
-$ chalkctl node revoke node4 --secrets secrets.age
-revoked node node4 (since 2026-10-23T22:42:25Z); deleted its Node object
+$ chalkctl node revoke w1 --secrets secrets.age
+revoked node w1 (since 2026-10-23T22:42:25Z); deleted its Node object
 ```
 
 A control plane records the name and the time in the ConfigMap `kube-system/chalkos-revoked-nodes`
@@ -228,7 +207,7 @@ Before it revokes the node, `chalkctl node revoke` asks every other control plan
 the revoked nodes, and refuses while one does not answer or cannot read the list:
 
 ```text
-chalkctl: not every control-plane node reads the revoked nodes (node2: cannot read the revoked nodes: read the revoked nodes: connection refused); repair those, or pass --force to revoke node4 anyway
+chalkctl: not every control-plane node reads the revoked nodes (cp2: cannot read the revoked nodes: read the revoked nodes: connection refused); repair those, or pass --force to revoke w1 anyway
 ```
 
 Repair that control plane, then revoke again. `--force` revokes the node at once; the API server
@@ -242,7 +221,7 @@ since, as [Reuse a removed node's name](#reuse-a-removed-nodes-name) describes, 
 
 ```text
 revoked nodes:
-  node4  since 2026-10-23T22:42:25Z
+  w1  since 2026-10-23T22:42:25Z
 ```
 
 The revoked node keeps its certificates until they expire, and the API server still answers its
@@ -267,7 +246,7 @@ renews its node certificate, within a year, or at once with `chalkctl rotate os-
 
 ## Reuse a removed node's name
 
-A revoked name stays blocked for every machine, so a node installed afresh as `node4` is shut out as
+A revoked name stays blocked for every machine, so a node installed afresh as `w1` is shut out as
 well. To give the name to a new node, first rotate the two CAs the old node's certificates chain
 to. Then remove the name from the revoked nodes:
 
@@ -278,8 +257,8 @@ to. Then remove the name from the revoked nodes:
 3. Unrevoke the name:
 
     ```console
-    $ chalkctl node unrevoke node4 --secrets secrets.age
-    unrevoked node node4; the certificates it held before <time> are no longer trusted
+    $ chalkctl node unrevoke w1 --secrets secrets.age
+    unrevoked node w1; the certificates it held before <time> are no longer trusted
     ```
 
     `<time>` is when the node was revoked.
@@ -298,39 +277,38 @@ revocation. While one of them predates it, the old node's certificates would wor
 `chalkctl node unrevoke` refuses and names the rotations missing:
 
 ```text
-chalkctl: node1: failed_precondition: node4 was revoked at 2026-10-23T22:42:25Z, but the OS CA (chalkctl rotate os-ca) and the Kubernetes CA (chalkctl rotate kubernetes-ca) may predate the revocation: the old node's certificates would work again until they expire; rotate them first, or pass --force to unrevoke node4 anyway
+chalkctl: cp1: failed_precondition: w1 was revoked at 2026-10-23T22:42:25Z, but the OS CA (chalkctl rotate os-ca) and the Kubernetes CA (chalkctl rotate kubernetes-ca) may predate the revocation: the old node's certificates would work again until they expire; rotate them first, or pass --force to unrevoke w1 anyway
 ```
 
 `--force` unrevokes the node without the rotations. Use it to let the old machine back in, for
 example after revoking the wrong node. Its old certificates then work again until they expire:
 
 ```console
-$ chalkctl node unrevoke node4 --force --secrets secrets.age
-unrevoked node node4; its certificates from before 2026-10-23T22:42:25Z work again until they expire: the os-ca and kubernetes-ca were not rotated since
-the old node4's kubelet does not register its Node again by itself: reboot it with chalkctl node reboot node4 --no-drain, or restart its kubelet; a node installed afresh as node4 registers as usual
+$ chalkctl node unrevoke w1 --force --secrets secrets.age
+unrevoked node w1; its certificates from before 2026-10-23T22:42:25Z work again until they expire: the os-ca and kubernetes-ca were not rotated since
+the old w1's kubelet does not register its Node again by itself: reboot it with chalkctl node reboot w1 --no-drain, or restart its kubelet; a node installed afresh as w1 registers as usual
 ```
 
 The old machine's kubelet registers its Node once as it starts, and the revocation deleted that
-Node. Reboot the machine with `chalkctl node reboot node4 --no-drain`, and its Node comes back. The
+Node. Reboot the machine with `chalkctl node reboot w1 --no-drain`, and its Node comes back. The
 deleted Node holds no pods to drain.
 
 ## Check that it worked
 
-`chalkctl validate` lists exactly the nodes of the inventory. After `node4` is added, it lists the
-four nodes before it and `node4`:
+`chalkctl validate` lists exactly the nodes of the inventory. After `w1` is added, it lists the
+three nodes before it and `w1`:
 
 ```console
 $ chalkctl validate
-node1: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config 228343216657e1b2015b346b5a8e582a69c65cf0ef037786e443dcf2fd832f4b
-node2: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config c45d7f3395eb69e67f555de1dd915133f24dea76554d492266eea6d42f721f3d
-node3: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config 3473dd3e12e4ca9a93d4a1444678d97aa1b41ed77f8a71c2d979955b68e3c1b0
-node4: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config 538df9b7dbb63277743c9cba429aa98fb6994f92dc4c20f7f0d632a880804b7c
-router: valid for the image router-metal (router-metal on metal, root hash befe5273a465), config b77dea492acd11e559461e079cdbb9bc53de8c8e46400672645d6a262719faa9
+cp1: valid for the image node-metal (node-metal on metal, root hash 98bb85096ed9), config 91a07f018b112dd92925b568babd16a428cee713fbb9e9c393ac11a2f4f5976e
+cp2: valid for the image node-metal (node-metal on metal, root hash 98bb85096ed9), config 138189d54c5a0f2d15e197b349f23afbe71ded1b6179bde77bfdaf63a7ed93d7
+cp3: valid for the image node-metal (node-metal on metal, root hash 98bb85096ed9), config 52a62aa28b05f78a15e09f984db2709f79a89fe79a87a87c3d8a9066f0d8e7d5
+w1: valid for the image node-metal (node-metal on metal, root hash 98bb85096ed9), config d293e0172dbc6c5bef6eba9da6cd05d1ec9ae19c1a93f604662d1dc5adc2dd41
 ```
 
-`chalkctl status node4` shows the new node's config, image and volumes, as
-[Install a node](install.md#check-that-it-worked) describes. After `node4` is
-removed again, `validate` lists the other four alone.
+`chalkctl status w1` shows the new node's config, image and volumes, as
+[Install a node](install.md#check-that-it-worked) describes. After `w1` is
+removed again, `validate` lists the other three alone.
 
 ## What next
 

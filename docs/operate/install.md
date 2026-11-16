@@ -7,8 +7,9 @@ description: "Boot a physical machine from the installer and install a node of t
 
 This page is for an operator who turns a physical machine into a node of the inventory. At the end the node runs its image from
 its system disk with its config, and chalkctl reaches it at the address the inventory names. The
-page installs the homelab's `node1`, as [Write a node's config](node-config.md) describes it.
-[Build a home lab](../guides/home-lab.md) installs all four of the homelab's machines.
+page installs `cp1` of the `cluster-metal` template, as [Write a node's config](node-config.md)
+describes it. [Build a cluster on real machines](../guides/cluster-on-machines.md) installs all
+three of the template's machines.
 [Install a node in a VM](install-vm.md) runs a node under QEMU, libvirt or Proxmox instead.
 
 In short:
@@ -17,8 +18,8 @@ In short:
 nix build .#installer -o installer
 chalkbuild sign --key keys/db.key --cert keys/db.crt installer installer-signed
 chalkctl disks --address=<address> --fingerprint=<fingerprint> --secrets=secrets.age
-chalkctl install node1 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint>
-chalkctl status node1 --secrets=secrets.age
+chalkctl install cp1 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint>
+chalkctl status cp1 --secrets=secrets.age
 ```
 
 ## Before you begin
@@ -182,9 +183,9 @@ output lists each disk with the properties a selector matches, as
 `boot`.
 
 Name the disk by a `/dev/disk/by-id/` path or a selector, because device names such as
-`/dev/sda` can change between boots. The homelab's `node1` names its NVMe disk by its `by-id` path:
+`/dev/sda` can change between boots. Here `cp1` names its NVMe disk by its `by-id` path:
 
-```yaml title="nodes/node1.yaml"
+```yaml title="nodes/cp1.yaml"
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: SystemDisk
 metadata: {name: system}
@@ -193,7 +194,7 @@ spec:
 ```
 
 chalkctl reads the file as it is when a command runs. After a change, check it again with
-`chalkctl validate node1`.
+`chalkctl validate cp1`.
 
 ## Install the node
 
@@ -201,7 +202,7 @@ Run [`chalkctl install`](../reference/cli/chalkctl_install.md) with the node's n
 and the fingerprint:
 
 ```sh
-chalkctl install node1 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint>
+chalkctl install cp1 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint>
 ```
 
 When reading the console is impractical, `--insecure` accepts any certificate and prints
@@ -209,13 +210,13 @@ When reading the console is impractical, `--insecure` accepts any certificate an
 afterwards. chalkctl sends the node its config, certificates and secrets, with the Kubernetes layer
 its [Kubernetes share](../how-it-works/kubernetes/overview.md#the-kubernetes-share-holds-the-secrets-of-a-node)
 too. It refuses a node that is installed already, with
-`node1 at <address> is installed already`.
+`cp1 at <address> is installed already`.
 
 !!! note "With the Kubernetes layer, a revoked name is refused"
 
     chalkctl asks the other control planes of the inventory for the revoked nodes, and refuses a
     name that `chalkctl node revoke` revoked, with
-    `node3 is revoked since <time>, and install installs node3 only once chalkctl node unrevoke node3
+    `cp3 is revoked since <time>, and install installs cp3 only once chalkctl node unrevoke cp3
     lets it back in, or with --force`.
     It also refuses while control planes were bootstrapped and none says which nodes are revoked.
     A control plane that does not answer as an installed node, such as one in maintenance mode or
@@ -229,9 +230,9 @@ the one `--image` names. chalkctl refuses a directory whose raw image is not the
 illustrative: its lines are chalkctl's, and the disk is an example machine's.
 
 ```text
-installing node1 onto /dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100001 from /home/alice/homelab/images/node-metal-signed: chalkos 5f1e60980b55, sending 311717904 bytes of store, hash tree, UKI and boot loader
-node1 is installed and reboots
-chalkctl recovery-key node1 prints the key that unlocks it when its TPM fails
+installing cp1 onto /dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100001 from /home/alice/cluster/images/node-metal-signed: chalkos 5f1e60980b55, sending 311717904 bytes of store, hash tree, UKI and boot loader
+cp1 is installed and reboots
+chalkctl recovery-key cp1 prints the key that unlocks it when its TPM fails
 ```
 
 The first line names the disk, the image directory, the image's ID `chalkos` and the image's name,
@@ -303,7 +304,7 @@ them when the TPM does not. [`chalkctl recovery-key`](../reference/cli/chalkctl_
 derives the key from the secrets file:
 
 ```sh
-chalkctl recovery-key node1 --secrets=secrets.age
+chalkctl recovery-key cp1 --secrets=secrets.age
 ```
 
 No file stores the keys, and installing never changes the secrets file, so a backup of the
@@ -318,7 +319,7 @@ the fingerprint, choose the disk and run `chalkctl install`.
 
 !!! note "With the Kubernetes layer, only the first control plane needs a bootstrap"
 
-    Once `node1` is back up in normal mode, [Bootstrap and get a kubeconfig](../kubernetes/bootstrap.md)
+    Once `cp1` is back up in normal mode, [Bootstrap and get a kubeconfig](../kubernetes/bootstrap.md)
     starts the cluster on it. The other nodes need no bootstrap. Workers join at the cluster
     endpoint with the kubelet certificate chalkctl gave them. Further control planes join etcd
     and the control plane on their own, as
@@ -331,7 +332,7 @@ volumes, certificates and failed units, as
 [Status, logs and the console](status-and-logs.md) explains:
 
 ```sh
-chalkctl status node1 --secrets=secrets.age
+chalkctl status cp1 --secrets=secrets.age
 ```
 
 The node shows its volumes as mounted and no failed units.
@@ -339,14 +340,14 @@ The node shows its volumes as mounted and no failed units.
 ## If it fails
 
 A config that the image's checker refuses ends `chalkctl install` with the image's message, such as
-that of the homelab's validator `bgp-peers` from
-[Validate config with a program](../build/validate-config.md):
+that of the homelab example's validator `bgp-peers` from
+[Validate config with a program](../build/validate-config.md), on its node `node1`:
 
 ```text
 chalkctl: install node1: failed_precondition: install: the config is refused: Peer/router: spec.interfaces[2]: enp3s0 has no Network document; bird binds the session to an interface the node configures; the target disk boots nothing, and an install of the image continues on it
 ```
 
-The machine stays in maintenance mode. Fix the config and run `chalkctl install node1` again: the
+The machine stays in maintenance mode. Fix the config and run the same `chalkctl install` again: the
 install continues on the disk without `--wipe-disk`, also with an image rebuilt with a fixed
 validator. Build the installer from the same chalkos release as the image, so that both lay out
 the storage the same way. Otherwise the installer refuses the config once the image's store is on
@@ -362,7 +363,7 @@ chalkctl reports the installer's other refusals as its error. The common errors 
 | `Secure Boot would refuse the UKI: ...` or `Secure Boot would refuse the boot loader: ...` | The image is unsigned, or signed with a key whose certificate is not in this machine's db. Sign the build again with `chalkbuild sign` and the enrolled key, or enrol the key's certificate. |
 | `under the new db, Secure Boot would refuse the drivers the firmware loaded ...` from `chalkctl secureboot enroll` | The machine's cards carry option ROMs that db would not allow under the new keys. Enrol their digests with `--option-roms` or Microsoft's CAs with `--microsoft`, as [Allow the cards' option ROMs](secure-boot.md#allow-the-cards-option-roms) explains. |
 | `STATE on the target disk ... does not open on this machine, so it belongs to another node` | The disk was installed in another machine. Use `--wipe-disk` if its data may go. |
-| The first boot asks for a recovery key | The installer and the image were signed with different keys, or Secure Boot changed between install and boot. Type the key that `chalkctl recovery-key node1` prints. |
+| The first boot asks for a recovery key | The installer and the image were signed with different keys, or Secure Boot changed between install and boot. Type the key that `chalkctl recovery-key cp1` prints. |
 
 [The console asks for a passphrase at boot](recover-node.md#the-console-asks-for-a-passphrase-at-boot)
 explains the recovery-key prompt and how to make it go away. [Troubleshooting](troubleshooting.md)

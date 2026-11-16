@@ -8,8 +8,11 @@ description: "Give nodes their config files and images in the inventory, write t
 This page is for an operator who describes the cluster's nodes before installing them. At the
 end each node of the inventory has its config files, with its system disk, network, time servers
 and volumes, and `chalkctl validate` accepts them. The page follows the
-[homelab example](https://github.com/trevex/chalkos/tree/main/examples/homelab): a router and the
-three Kubernetes nodes `node1`, `node2` and `node3`, on two images.
+[`cluster-metal` template](https://github.com/trevex/chalkos/tree/main/templates/cluster-metal):
+the three Kubernetes control planes `cp1`, `cp2` and `cp3`, on one image. Where it needs groups
+or a second image, it shows the
+[homelab example](https://github.com/trevex/chalkos/tree/main/examples/homelab), a router beside
+three Kubernetes nodes.
 
 ## Before you begin
 
@@ -24,14 +27,14 @@ installer, `chalkctl disks` lists the disks, as
 ## Give each node its files in the inventory
 
 A node's config is the set of YAML documents that makes it this node. The inventory names the
-files each node's documents come from. The homelab's gives the router the files of `router/`, each
-Kubernetes node the files of `cluster/` and `bgp/`, and each of those its own file in `nodes/`:
+files each node's documents come from. The template's gives every node the files of `cluster/`, and
+each node its own file in `nodes/`:
 
 ```yaml title="chalkos.yaml"
---8<-- "examples/homelab/chalkos.yaml"
+--8<-- "templates/cluster-metal/chalkos.yaml"
 ```
 
-The inventory's `metadata.name`, `homelab` here, is a label for the cluster. It reaches no node:
+The inventory's `metadata.name`, `cluster` here, is a label for the cluster. It reaches no node:
 chalkctl uses it in its messages and as the default name of a kubeconfig's context.
 
 The inventory's `spec` has four parts:
@@ -39,25 +42,25 @@ The inventory's `spec` has four parts:
 - `spec.images` names each image and the directory of its build, relative to the inventory's
   directory.
 - `spec.all` is what every node gets: the image `imageName` names, and the config files `files`
-  names. The homelab has none, because its router and its Kubernetes nodes share no file.
-- `spec.groups` holds named groups of nodes, each with its files and its image. The homelab has
-  two, `router` and `nodes`.
+  names. The template gives every node the image `node-metal` and the files of `cluster/`.
+- `spec.groups` holds named groups of nodes, each with its files and its image. The template has
+  none, and the homelab example two, `router` and `nodes`.
 - `spec.nodes` holds each node by its name, with the `address` chalkctl reaches its chalkd at, as
   a host or `host:port`, and its own files.
 
-The key of `spec.nodes`, such as `node1`, is the node's name. Install writes it into the node's
+The key of `spec.nodes`, such as `cp1`, is the node's name. Install writes it into the node's
 certificate. The hostname defaults to it, and the recovery key and the seeds of the partition
 UUIDs derive from it. Renaming a node therefore takes a reinstall.
 
 `address` is where chalkctl reaches the node, also in maintenance mode before the node has any
 config. chalkctl never reads it from the node's `Network` documents. A node that installs with a
-DHCP address and then gets a static one names the static one here, as the homelab's nodes name
-the addresses of their `node0`. `--address` overrides it for one command.
+DHCP address and then gets a static one names the static one here, as the template's nodes do.
+`--address` overrides it for one command.
 
-Here is `node1`'s own file, `nodes/node1.yaml`:
+Here is `cp1`'s own file, `nodes/cp1.yaml`:
 
-```yaml title="nodes/node1.yaml"
---8<-- "examples/homelab/nodes/node1.yaml"
+```yaml title="nodes/cp1.yaml"
+--8<-- "templates/cluster-metal/nodes/cp1.yaml"
 ```
 
 Each document has an `apiVersion` with its group and version, a `kind`, a `metadata.name` and a
@@ -71,9 +74,9 @@ kind and name in one node's set are an error that names both files:
 
 ```text
 chalkctl: the config of 3 nodes is invalid:
-node node1: cluster/net.yaml and bgp/fabric.yaml both hold Network "20-enp1s0"
-node node2: cluster/net.yaml and bgp/fabric.yaml both hold Network "20-enp1s0"
-node node3: cluster/net.yaml and bgp/fabric.yaml both hold Network "20-enp1s0"
+node cp1: cluster/net.yaml and nodes/cp1.yaml both hold Network "10-lan"
+node cp2: cluster/net.yaml and nodes/cp2.yaml both hold Network "10-lan"
+node cp3: cluster/net.yaml and nodes/cp3.yaml both hold Network "10-lan"
 ```
 
 Put a value that every node shares into a shared file once. When one node needs a different value,
@@ -83,10 +86,11 @@ explains the order in which a node's set takes its files.
 
 ## Share files and an image through a group
 
-A group holds what some of the nodes share. The homelab's group `router` gives its one node the
-image `router-metal` and the files of `router/`. The group `nodes` gives the three Kubernetes nodes
-the image `node-metal` and the files of `cluster/` and `bgp/`, and each of them names its own
-file beside the group.
+A group holds what some of the nodes share. The template needs none, because its nodes share one
+image and one set of files. The homelab example has two. Its group `router` gives its one node
+the image `router-metal` and the files of `router/`. The group `nodes` gives the three Kubernetes
+nodes the image `node-metal` and the files of `cluster/` and `bgp/`, and each of them names its
+own file beside the group.
 
 A node runs the image named in the first of three places:
 
@@ -119,7 +123,7 @@ the node names its own. It also refuses a node that gets no image, and an `image
 no image of `spec.images`:
 
 ```text
-chalkctl: chalkos.yaml: node node1 names the image node-kvm, which the inventory does not define
+chalkctl: chalkos.yaml: node cp1 names the image node-kvm, which the inventory does not define
 ```
 
 The image stays out of the node's config. A new build of an image, or a node's move to another
@@ -128,7 +132,7 @@ image, changes no node's config.
 ## Choose the system disk and the size of VAR
 
 A `SystemDisk` names the disk that holds the system region and VAR, the partition for the node's
-data. Every node holds exactly one. The homelab's take the whole disk for VAR. This one gives VAR
+data. Every node holds exactly one. The template's take the whole disk for VAR. This one gives VAR
 200 GiB and leaves the rest of the disk to volumes:
 
 ```yaml
@@ -136,7 +140,7 @@ apiVersion: storage.chalkos.dev/v1alpha1
 kind: SystemDisk
 metadata: {name: system}
 spec:
-  disk: {path: /dev/disk/by-id/nvme-EXAMPLE_SSD_node1}
+  disk: {path: /dev/disk/by-id/nvme-EXAMPLE_SSD_cp1}
   var: {size: 200G}
 ```
 
@@ -154,30 +158,24 @@ systemd-networkd unit file: a `.network`, a `.netdev` or a `.link` file. The doc
 `spec` holds networkd's sections and keys in camelCase: `[Match]` with `MACAddress=` is
 `match: {macAddress: …}`.
 
-The homelab's router has a static address on its port `fabric`, and sends router advertisements
-there:
+The template's nodes give their port a static address, a gateway and a DNS server, and match the
+port by its MAC address:
 
 ```yaml
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network
-metadata: {name: 20-fabric}
+metadata: {name: 10-lan}
 spec:
-  match: {name: fabric}
-  network: {address: ["fdc8:a1b2:c3d4:1::1/64"], ipv6AcceptRA: false, ipv6SendRA: true}
-  ipv6Prefix: {prefix: "fdc8:a1b2:c3d4:1::/64"}
-  ipv6SendRA: {dns: ["fdc8:a1b2:c3d4:1::1"]}
-  ipv6PREF64Prefix: {prefix: "64:ff9b::/96"}
+  match: {macAddress: "02:00:00:00:00:11"}
+  network: {address: [192.168.1.11/24], gateway: 192.168.1.1, dns: [192.168.1.1]}
 ```
-
-Each node's ports take their addresses from those advertisements, with `ipv6AcceptRA: true` in
-their `Network` documents, as `bgp/fabric.yaml` shows.
 
 The image brings one unit of its own, `99-ethernet-default-dhcp`, which runs DHCP on every
 physical Ethernet interface that no `Network` document matches. A node whose config holds no
 `Network` document therefore runs DHCP on all of them. The documents' units take precedence over
 the image's units.
 
-A bond, a VLAN and a dummy interface such as the homelab's `node0` are `NetDev` documents, each
+A bond, a VLAN and a dummy interface are `NetDev` documents, each
 with the `Network` documents that attach it or configure it. On this machine, two ports form an
 LACP bond, and the machine's address is on VLAN 20 of the bond:
 
@@ -238,8 +236,8 @@ spec:
 ```
 
 The installer holds no config, so a machine's ports keep the kernel's names until the installed
-node's first boot, which renames them. The homelab's Kubernetes nodes keep the kernel's names,
-which identical machines share, and `bgp/fabric.yaml` names their ports by those names.
+node's first boot, which renames them. The template's nodes keep the kernel's names and match their
+port by its MAC address instead.
 
 The schemas of the three kinds come from the networkd of the image's own systemd,
 so they accept exactly the sections and keys that networkd accepts.
@@ -269,7 +267,7 @@ The hostname is the node's name unless a `Host` document gives another:
 apiVersion: chalkos.dev/v1alpha1
 kind: Host
 metadata: {name: default}
-spec: {hostname: node1-shelf-a}
+spec: {hostname: cp1-shelf-a}
 ```
 
 The `Host` document changes the hostname alone. The node's name, its certificate and, with the
@@ -331,7 +329,7 @@ says where to keep the files that hold them.
 
     An image with the Kubernetes layer runs Kubernetes. Each node's set then holds exactly one
     `Cluster` document, the same on every node, and one `Node` document with the node's type,
-    `controlplane` or `worker`. The homelab puts the `Cluster` in `cluster/cluster.yaml` and each
+    `controlplane` or `worker`. The template puts the `Cluster` in `cluster/cluster.yaml` and each
     `Node` in the node's own file.
     [Configure Kubernetes](../kubernetes/configure.md) covers both.
 
@@ -342,15 +340,14 @@ as chalkd will. It reaches no node and needs no credentials, so it also runs in 
 
 ```console
 $ chalkctl validate
-node1: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config 228343216657e1b2015b346b5a8e582a69c65cf0ef037786e443dcf2fd832f4b
-node2: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config c45d7f3395eb69e67f555de1dd915133f24dea76554d492266eea6d42f721f3d
-node3: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config 3473dd3e12e4ca9a93d4a1444678d97aa1b41ed77f8a71c2d979955b68e3c1b0
-router: valid for the image router-metal (router-metal on metal, root hash befe5273a465), config b77dea492acd11e559461e079cdbb9bc53de8c8e46400672645d6a262719faa9
+cp1: valid for the image node-metal (node-metal on metal, root hash 98bb85096ed9), config 91a07f018b112dd92925b568babd16a428cee713fbb9e9c393ac11a2f4f5976e
+cp2: valid for the image node-metal (node-metal on metal, root hash 98bb85096ed9), config 138189d54c5a0f2d15e197b349f23afbe71ded1b6179bde77bfdaf63a7ed93d7
+cp3: valid for the image node-metal (node-metal on metal, root hash 98bb85096ed9), config 52a62aa28b05f78a15e09f984db2709f79a89fe79a87a87c3d8a9066f0d8e7d5
 ```
 
 Each line names the node's image, its own name and platform, the first 12 hex characters of its
 root hash, and the hash of the node's config. `chalkctl status` later compares that hash with the
-config the node runs. `chalkctl validate node1` checks `node1` alone.
+config the node runs. `chalkctl validate cp1` checks `cp1` alone.
 
 `validate` checks that each set:
 
@@ -374,9 +371,10 @@ job puts the unsigned build of the same image in that directory instead.
 names the document and the field:
 
 ```text
-node1: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b06), config 228343216657e1b2015b346b5a8e582a69c65cf0ef037786e443dcf2fd832f4b
+cp1: valid for the image node-metal (node-metal on metal, root hash 98bb85096ed9), config 91a07f018b112dd92925b568babd16a428cee713fbb9e9c393ac11a2f4f5976e
+cp3: valid for the image node-metal (node-metal on metal, root hash 98bb85096ed9), config 52a62aa28b05f78a15e09f984db2709f79a89fe79a87a87c3d8a9066f0d8e7d5
 chalkctl: the config of 1 node is invalid:
-node node2: Network "30-node0": - at '/spec/network': additional properties 'keepconfiguration' not allowed
+node cp2: Network "10-lan": - at '/spec/network': additional properties 'keepconfiguration' not allowed
 ```
 
 Here `keepconfiguration` should be `keepConfiguration`. The common refusals and their fixes:
