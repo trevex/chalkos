@@ -75,6 +75,7 @@ nav = [
     "build/images-and-platforms.md",
     "build/add-software.md",
     "build/first-extension.md",
+    "build/develop-an-extension.md",
     "build/declare-a-kind.md",
     "build/read-config.md",
     "build/render-config.md",
@@ -88,6 +89,7 @@ nav = [
     "build/sign-images.md",
     "build/publish-images.md",
     "build/test-and-roll-out.md",
+    "build/change-a-kind.md",
   ] },
   { "How chalkos works" = [
     "how-it-works/index.md",

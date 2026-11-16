@@ -69,6 +69,9 @@ anything reaches the node.
     nix flake check
     ```
 
+    [Develop and debug an extension](develop-an-extension.md) runs the whole loop, from these
+    builds to a node, and lists the common errors.
+
 ## Build
 
 These pages build an image a node can install: the flake, its images and platforms, and the
@@ -120,6 +123,15 @@ of a change, its secrets and the checks that refuse a config a node cannot run.
     quick start's lab, then change the config on a node.
 
     [:octicons-arrow-right-24: Follow](first-extension.md)
+
+-   :material-bug: __Develop and debug an extension__
+
+    ---
+
+    Check an extension from the fastest build to a node, find the cause of an evaluation error
+    and fix common errors.
+
+    [:octicons-arrow-right-24: Read](develop-an-extension.md)
 
 -   :material-shape-plus: __Declare a config kind__
 
@@ -212,7 +224,7 @@ This page gives operators a way to look into a service on a node.
 ## Ship
 
 These pages take an image to the nodes: the installer, signing for Secure Boot, publishing to a
-registry, and testing and rolling out an upgrade.
+registry, testing and rolling out an upgrade, and changing a kind between images.
 
 <div class="grid cards" markdown>
 
@@ -250,5 +262,14 @@ registry, and testing and rolling out an upgrade.
     services.
 
     [:octicons-arrow-right-24: Read](test-and-roll-out.md)
+
+-   :material-swap-horizontal: __Change a kind incompatibly__
+
+    ---
+
+    Give a kind a new version, move the nodes' documents to it with an upgrade, and rename or
+    remove a kind.
+
+    [:octicons-arrow-right-24: Read](change-a-kind.md)
 
 </div>
