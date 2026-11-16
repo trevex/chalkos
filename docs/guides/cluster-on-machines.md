@@ -384,8 +384,13 @@ Once the three nodes wait, bootstrap one of them with
 [`chalkctl bootstrap`](../reference/cli/chalkctl_bootstrap.md), and write a kubeconfig with
 [`chalkctl kubeconfig`](../reference/cli/chalkctl_kubeconfig.md):
 
+```sh
+chalkctl bootstrap cp1 --secrets=secrets.age
+```
+
+Then write a kubeconfig:
+
 ```console
-$ chalkctl bootstrap cp1 --secrets=secrets.age
 $ chalkctl kubeconfig --secrets=secrets.age
 wrote kubeconfig; its certificate is valid for 8760h0m0s
 ```
@@ -406,8 +411,8 @@ kubectl get nodes
 The three nodes show `Ready`. A node may show `NotReady` for the first minute, until flannel runs
 on it. `kubectl get nodes -o wide` shows each node's static address as `INTERNAL-IP`.
 
-`chalkctl status` shows which control plane holds the VIP. Its `kubernetes controlplane` line ends
-in `vip holder`, and that of the other two in `vip standby`:
+`chalkctl status` shows which control plane holds the VIP. Its `kubernetes controlplane` line shows
+`vip holder`, and that of the other two `vip standby`:
 
 ```sh
 chalkctl status cp1 --secrets=secrets.age

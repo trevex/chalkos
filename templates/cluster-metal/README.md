@@ -33,6 +33,7 @@ nix build .#installer -o installer
 
 Replace the addresses of `chalkos.yaml`, `cluster/cluster.yaml` and `nodes/` with free ones of
 your network. Boot each machine from the installer, put each node's disk and MAC address into its
-file, check the files with `chalkctl validate` and install the node with `chalkctl install`. Then
+file, and check the files with `chalkctl validate`. Install each node with `chalkctl install`, with
+`--address` set to the installer's address and the `--fingerprint` its console shows. Then
 bootstrap one control plane with `chalkctl bootstrap cp1` and write a kubeconfig with
 `chalkctl kubeconfig`.

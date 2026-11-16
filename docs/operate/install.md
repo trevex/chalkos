@@ -227,7 +227,8 @@ too. It refuses a node that is installed already, with
 The installer gets the image as well, from the directory of the node's image in the inventory or
 the one `--image` names. chalkctl refuses a directory whose raw image is not the build its
 `metadata.json` names, and sends the store, hash tree, UKI and boot loader. The output below is
-illustrative: its lines are chalkctl's, and the disk is an example machine's.
+illustrative: its lines are chalkctl's, and the disk, the image hash and the size are an
+example's.
 
 ```text
 installing cp1 onto /dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100001 from /home/alice/cluster/images/node-metal-signed: chalkos 5f1e60980b55, sending 311717904 bytes of store, hash tree, UKI and boot loader
