@@ -25,8 +25,8 @@ You need:
   of the home lab set it up. Run every command of this page in that shell, in the repository;
 - some Nix: NixOS modules, options and `let` bindings;
 - for the last part, a node that runs the image `node-metal`. [Build a home lab](home-lab.md)
-  installs three. Without the machines, the [quick start](../get-started/quick-start.md) runs a
-  lab of virtual machines, whose image takes the extension the same way.
+  installs three. The extension needs a BGP neighbour on an IPv6 network, which the quick start's
+  lab of virtual machines lacks, so that lab can run the steps up to the node but not the sessions.
 
 The steps up to [Try it on a node](#try-it-on-a-node) need no node: they run in the Nix sandbox.
 
