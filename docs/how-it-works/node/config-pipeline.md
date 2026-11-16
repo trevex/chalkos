@@ -92,9 +92,6 @@ image. An image that does not run compares with the running config as
 [An image that does not run checks its own config](#an-image-that-does-not-run-checks-its-own-config)
 describes.
 
-A command fact runs the program of the image that checks the config, from that image's store. A
-newer image's rules therefore get the facts it adds during the upgrade to it.
-
 ## Null means the node does not know
 
 Facts describe the node, and a rule reads the facts that its own image declares. chalkd loads the
@@ -105,7 +102,7 @@ facts on the machine the node runs on:
 - When an image that does not run checks the config, as for an upgrade, a delivery to a staged
   image or an install from the installer, the facts are those that image's `facts.json` declares.
   A file fact reads the file on this machine, and a command fact runs that image's program from
-  its store.
+  its store. A newer image's rules therefore get the facts it adds during the upgrade to it.
 
 Several cases give null, so a rule treats null as unknown:
 
@@ -258,7 +255,7 @@ output that passes. The outputs render for the node's name, the subject of its n
 STATE. A node certificate that cannot be read fails `chalkos-config.service` before any output
 renders.
 
-A renderer must therefore be pure: the same documents must always give the same files. A renderer
+Because every boot renders again, a renderer must be pure: the same documents must always give the same files. A renderer
 that reads nothing but its input renders at boot the files that the delivery checked. A renderer
 that read node state, such as an interface's address, could render a file at boot that no
 delivery checked. So a service that needs node state reads that part itself.

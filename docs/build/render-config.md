@@ -205,9 +205,9 @@ the same documents below `/run/chalkos/config` without an output.
 ## Render with any program of the store
 
 `render` also takes a command: a program of the image's store, with its arguments, or a package
-that is such a program. chalkd runs the command without a shell, so a script from
-`pkgs.writeShellScript` redirects the output and expands `$OUT`. This one writes the peers as YAML
-with yq:
+that is such a program. chalkd splits the command on spaces and runs it without a shell, so the
+command cannot redirect output or expand `$OUT`. A script from `pkgs.writeShellScript` does both.
+This one writes the peers as YAML with yq:
 
 ```nix
 chalkos.outputs.peers-yaml = {

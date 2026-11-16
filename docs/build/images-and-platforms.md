@@ -1,6 +1,6 @@
 ---
 title: "Images and platforms"
-description: "Build images for nodes that run other software or other machines, and set the order of their modules"
+description: "Build images for nodes that run other software or other machines"
 ---
 
 # Images and platforms
@@ -351,6 +351,19 @@ which copies a flake's tracked files.
 - A flake rebuilds an image whenever its modules or `flake.lock` change. A build whose store
   changed has a new root hash and is a new image to `chalkctl upgrade`. A build whose store did not
   change is the image the nodes run already.
+
+## If it fails
+
+| Failure | Cause and fix |
+| --- | --- |
+| `mkImages` refuses an entry | Two entries share a name, or one is named `installer`. Rename it, as [List the images](#list-the-images) describes. |
+| The build refuses an image with both layers | An image lists one layer at most. Put each layer in an image of its own. |
+| `does not accept kind "BGP"` | The image leaves the feature out. Remove its documents first, as [Leave router features out](#leave-router-features-out) describes. |
+| chalkctl refuses the inventory | A node is in two groups that name different images, or has no image. See [Give each node its image](#give-each-node-its-image). |
+| The build names `chalkos.kubernetes.version` and `chalkos.kubernetes.package` | Both are set, to different minors. Set one of them. |
+| The build names `chalkos.consoles` | `boot.kernelParams` holds a `console=` entry. Set the consoles in `chalkos.consoles`. |
+| The evaluation says to generate new secrets | `osCA` names a secrets file of another version than 3. Generate new secrets. |
+| `chalkctl upgrade --image` of a renamed image | A renamed image matches no running node. Name the nodes of its first upgrade with `--nodes`. |
 
 ## What next
 

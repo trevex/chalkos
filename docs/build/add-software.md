@@ -330,6 +330,13 @@ chalkctl status w1
 chalkctl logs w1 --unit=disk-report.service
 ```
 
+## If it fails
+
+A build that fails names its cause: an unknown kernel module or one the image's tree lacks, as
+[Add a module group or single modules](#add-a-module-group-or-single-modules) shows, or a store
+too large for its slot, as [Keep the image within its slot](#keep-the-image-within-its-slot)
+shows.
+
 A device works when its driver bound to it. With the debug tools, `ip link` lists a new network
 card, `lsblk` a new disk, and `dmesg` names a firmware file a driver failed to load. A storage
 controller missing from the initrd shows earlier: the node does not find its disk and stops in the

@@ -429,9 +429,17 @@ node3: valid for the image node-metal (node-metal on metal, root hash ed7cc1ae4b
 router: valid for the image router-metal (router-metal on metal, root hash befe5273a465), config b77dea492acd11e559461e079cdbb9bc53de8c8e46400672645d6a262719faa9
 ```
 
-`chalkctl validate` refuses a document of a kind the image does not declare. If it names `Peer`
-as unknown, the node's image lacks the module: check the image's `modules`, and that git
-tracks the new file.
+## If it fails
+
+- `chalkctl validate` refuses a document of a kind the image does not declare. If it names `Peer`
+  as unknown, the node's image lacks the module: check the image's `modules`, and that git
+  tracks the new file.
+- A misspelled or missing field gives one error per path, as
+  [Validate the documents](#validate-the-documents) shows.
+- An option type the converter does not know fails the image's evaluation and names the field.
+  [Field types](../reference/extension-runtime.md#field-types) shows the error.
+- A `unique` declaration that does not fit its field fails the image build, as
+  [Unique declarations](../reference/extension-runtime.md#unique) lists.
 
 ## What next
 

@@ -42,7 +42,7 @@ The name is lower-case letters, digits and dashes, as an output's.
 
 ## Read the validator's input
 
-chalkd runs the program with the arguments `validate bgp-peers`, and writes one JSON object to its
+chalkd appends `validate bgp-peers` to the command, and writes one JSON object to the program's
 standard input: the input a renderer reads, as
 [Program input](../reference/extension-runtime.md#program-input) describes. For node1 of the
 homelab the object reads, trimmed to one `Network` and indented here:

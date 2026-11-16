@@ -55,7 +55,7 @@ embeds, an object of `apiVersion: v1` and `kind: Secret` such as a Kubernetes Se
 names of `documents` is sorted.
 
 A rule binds `self` to a path through the properties of objects. It cannot sit on the items of a
-list or the values of a map. Declare it on the list or the map, which the rule then compares
+list or the values of a map. A rule on a list or a map compares it
 whole. Lists are not matched item by item by a key.
 
 ### Effect conditions { #effect-condition-variables }
@@ -205,8 +205,9 @@ prints nothing for a `Peer` without a password. A key below a missing one, such 
 
 ## Program contract { #program-contract }
 
-Renderers, validators and checks are programs of the image's store. chalkd runs each with the
-same input and in the same sandbox, with the differences below.
+Renderers and validators are programs of the image's store, and a check holds shell commands that
+bash runs. chalkd runs each with the same input and in the same sandbox, with the differences
+below.
 
 ### Input { #program-input }
 
@@ -280,8 +281,8 @@ fails refuses the files. The check runs after the renderer, in the same sandbox:
 - `$OUT` holds the files as the renderer wrote them, before they get the output's owner and mode.
   The check may not change them.
 - Standard input holds the renderer's input, so a check can compare the files with the documents.
-- `PATH` holds coreutils, grep and sed alone. Name any other program by its store path, as
-  `${bird}/bin/bird` does.
+- `PATH` holds coreutils, grep and sed alone. Any other program is named by its store path,
+  as `${bird}/bin/bird` is.
 - Unlike the renderer, the check may open netlink sockets. They reach the sandbox's own network
   namespace, or one the check creates: the router's check runs
   `unshare --map-root-user --net nft --check --file "$OUT/ruleset.nft"`, so the kernel checks the
@@ -299,7 +300,7 @@ chalkd runs every renderer, check and validator as a transient unit with these l
 - The system is read-only. STATE, `/var`, and the config, credentials and Kubernetes keys chalkd
   writes below `/run/chalkos` are hidden, so a program cannot read a secret even by its path.
 - A renderer may write `$OUT` and a private `/tmp` of 16 MiB alone. A validator writes no
-  output's files, so it may write no path but its private `/tmp`.
+  output's files, so it may write no path but its private `/tmp` of 16 MiB.
 - It must finish within 30 seconds. The validators of a delivery run one after another.
 - No file it writes, standard output among them, may grow past 16 MiB, and a renderer's files
   together may take 16 MiB and hold no links, because chalkd sets their owner afterwards and must
