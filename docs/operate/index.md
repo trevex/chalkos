@@ -10,6 +10,8 @@ signed images. They apply to every node, apart from the sections on etcd, the AP
 kubeconfigs, which need the Kubernetes layer. Their examples come from a Kubernetes cluster.
 [Run Kubernetes](../kubernetes/index.md) sets up and runs the cluster itself, and
 [Run a router](../router/index.md) covers what router nodes add.
+The [command cheat sheet](../reference/cheat-sheet.md) lists the command and the credential for
+each common task.
 
 ## Set up
 

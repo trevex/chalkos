@@ -116,6 +116,7 @@ nav = [
   ] },
   { "Reference" = [
     "reference/index.md",
+    "reference/cheat-sheet.md",
     # The commands' pages, which nix run .#docgen writes from their help.
     # BEGIN docgen cli
     { "Command line" = [

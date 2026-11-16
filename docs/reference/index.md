@@ -16,6 +16,14 @@ prepares its images and chalkcfg prints a node's config documents on the node.
 
 <div class="grid cards" markdown>
 
+-   :material-table-search: __Command cheat sheet__
+
+    ---
+
+    The command for each common task, grouped by area, with the credential each one needs.
+
+    [:octicons-arrow-right-24: Read](cheat-sheet.md)
+
 -   :material-console: __Command line__
 
     ---
