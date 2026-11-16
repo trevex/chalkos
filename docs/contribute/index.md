@@ -73,10 +73,11 @@ touches.
 
 ## Where to start
 
-The [roadmap](roadmap.md) lists what chalkos does not do yet and the known limits of what it
-does; either is a place to find work. Before changing code, read
-[Architecture for developers](architecture.md) for where things live and
-[Development setup](development.md) for the commands of a development loop.
+Start with [First change in 10 minutes](development.md#first-change-in-10-minutes): it takes a
+small change from a fresh clone to a commit. Then read
+[Architecture for developers](architecture.md) for where things live. The
+[roadmap](roadmap.md) lists what chalkos does not do yet and the known limits of what it does;
+either is a place to find work.
 
 ## What a change needs
 

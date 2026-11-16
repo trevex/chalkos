@@ -11,6 +11,52 @@ formatting and linting, and running a lab from the checkout. Everything
 runs through Nix, so the only requirements are an x86-64 Linux machine with Nix and flakes
 enabled, and `/dev/kvm` for anything that boots a virtual machine.
 
+## First change in 10 minutes
+
+These steps take a small Go change from a fresh clone to a commit. The rest of this page explains
+each command.
+
+1. Clone the repository and enter its development shell. The first run downloads the toolchain:
+
+    ```sh
+    git clone https://github.com/trevex/chalkos
+    cd chalkos
+    nix develop
+    ```
+
+2. Run the tests of the package you change, here `pkg/inventory`:
+
+    ```sh
+    go test ./pkg/inventory/...
+    ```
+
+3. Edit the code and its test, then run the same tests again.
+
+4. Format the Go code and the Nix files:
+
+    ```sh
+    gofmt -l -w cmd pkg test
+    nix fmt
+    ```
+
+5. Build the flake check of what you touched, with its log. For Go code, that is the linter:
+
+    ```sh
+    nix build -L .#checks.x86_64-linux.go-lint
+    ```
+
+    [Testing](testing.md#flake-checks) maps each part of the repository to its checks. Leave
+    `nix flake check` for later: it runs every check, the end-to-end tests that boot VMs included.
+
+6. Commit in the form of [Conventional Commits](https://www.conventionalcommits.org/), with a type,
+   a scope and a summary in the imperative:
+
+    ```sh
+    git commit -am "fix(inventory): <summary>"
+    ```
+
+[What a change needs](index.md#what-a-change-needs) lists what a pull request must carry.
+
 ## Enter the development shell
 
 Clone the repository and enter its development shell:
