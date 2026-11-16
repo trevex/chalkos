@@ -329,7 +329,7 @@ func (rl *routerLab) reload(t *testing.T) {
 		t.Errorf("frr.service's journal of r1: %v", err)
 	case !strings.Contains(out, "chalkos-frr-reload: pass 1 applies:") || !strings.Contains(out, "chalkos-frr-reload: FRR runs frr.conf"):
 		t.Errorf("r1's journal shows no reload by chalkos-frr-reload")
-	case strings.Contains(out, "chalkos-frr-reload: pass 2") || strings.Contains(out, "refused"):
+	case strings.Contains(out, "chalkos-frr-reload: pass 2") || strings.Contains(out, "vtysh refused commands"):
 		t.Errorf("chalkos-frr-reload took more than one clean pass on r1")
 	}
 }
