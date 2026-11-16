@@ -8,7 +8,7 @@
 }:
 let
   inherit (pkgs) lib;
-  # The files of the examples and the lab template that the pages include as snippets, by their
+  # The files of the examples and the templates that the pages include as snippets, by their
   # directories.
   snippets = {
     "examples/homelab" = [
@@ -28,6 +28,11 @@ let
       "tests"
     ];
     "templates/lab" = [ "cluster" ];
+    "templates/router-lab" = [ "nodes" ];
+    "templates/cluster-metal" = [
+      "chalkos.yaml"
+      "nodes"
+    ];
   };
   src = lib.fileset.toSource {
     root = ../../.;

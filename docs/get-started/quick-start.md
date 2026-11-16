@@ -653,8 +653,9 @@ follow the operator guides in order:
 3. [Install a node](../operate/install.md): boot a physical machine into maintenance mode and
    install it, or [install it in a VM](../operate/install-vm.md).
 
-To follow one fixed path on real machines instead, [Build a home lab](../guides/home-lab.md)
-turns four machines and a switch into a router and three control planes.
+To follow one fixed path on real machines instead,
+[Build a cluster on real machines](../guides/cluster-on-machines.md) installs three machines from
+the `cluster-metal` template. [Quick start: a router](router-quick-start.md) runs a router lab.
 
 [Status, logs and the console](../operate/status-and-logs.md) explains every line of
 `chalkctl status`. Keep the [command cheat sheet](../reference/cheat-sheet.md) at hand: it lists

@@ -1,26 +1,27 @@
 ---
 title: "Guides"
-description: "Longer walks through a whole setup: a home lab on real machines and an extension built from scratch"
+description: "Longer walks through a whole setup: a cluster on real machines, an extension built from scratch and an IPv6 home lab"
 ---
 
 # Guides
 
-These pages follow one project from start to end, across the roles of the other sections. Each
-builds on the homelab example, a router and three Kubernetes nodes on real machines, and links to
-the how-to pages for the details of each step.
+These pages follow one project from start to end, across the roles of the other sections, and
+link to the how-to pages for the details of each step. Start with the cluster on real machines.
+The other two build on the homelab example, an advanced setup of a router and three Kubernetes
+nodes on an IPv6 fabric with BGP.
 [Decisions before you install](../get-started/decisions.md) lists the choices that each guide makes
 for you, with what each one costs.
 
 <div class="grid cards" markdown>
 
--   :material-home-variant-outline: __Build a home lab__
+-   :material-server-network: __Build a cluster on real machines__
 
     ---
 
-    Turn four machines and a switch into a router and three Kubernetes control planes on an IPv6
-    fabric, and test what happens when a cable or a node fails.
+    Install three machines from the `cluster-metal` template as a Kubernetes cluster of three
+    control planes, with static IPv4 addresses and a VIP for the Kubernetes API.
 
-    [:octicons-arrow-right-24: Build](home-lab.md)
+    [:octicons-arrow-right-24: Build](cluster-on-machines.md)
 
 -   :material-puzzle-outline: __Write a BGP extension__
 
@@ -30,5 +31,14 @@ for you, with what each one costs.
     service, effects, rules, a validator, a diagnostic and their tests, and debug it on a node.
 
     [:octicons-arrow-right-24: Write](bgp-extension.md)
+
+-   :material-home-variant-outline: __Build a home lab__
+
+    ---
+
+    An advanced setup: turn four machines and a switch into a router and three Kubernetes
+    control planes on an IPv6 fabric with BGP, and test what happens when a cable or a node fails.
+
+    [:octicons-arrow-right-24: Build](home-lab.md)
 
 </div>

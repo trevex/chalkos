@@ -19,13 +19,15 @@ nav = [
     "get-started/index.md",
     "get-started/what-is-chalkos.md",
     "get-started/quick-start.md",
+    "get-started/router-quick-start.md",
     "get-started/requirements.md",
     "get-started/decisions.md",
   ] },
   { "Guides" = [
     "guides/index.md",
-    "guides/home-lab.md",
+    "guides/cluster-on-machines.md",
     "guides/bgp-extension.md",
+    "guides/home-lab.md",
   ] },
   { "Operate nodes" = [
     "operate/index.md",

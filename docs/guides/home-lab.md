@@ -14,11 +14,14 @@ keeps its address when one of its cables is pulled, and the Kubernetes API stays
 control plane goes down. Plan an afternoon; most of it goes into the first image builds and the
 installs.
 
-!!! info "A personal home lab"
+!!! info "An advanced IPv6 and BGP setup"
 
     This lab is a maintainer's own home lab. Its BGP fabric, IPv6-only nodes, NAT64 and WireGuard
     tunnel are there for fun and to try those features out, not because a home network needs them.
-    The guide shares the setup in case it helps you test chalkos on a similar network.
+    The guide shares the setup in case it helps you test chalkos on a similar network. For a first
+    cluster on real machines, follow
+    [Build a cluster on real machines](cluster-on-machines.md) instead: one network, IPv4 and no
+    router of chalkos.
 
 ## What you build
 

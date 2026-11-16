@@ -38,8 +38,9 @@ yet, so every path needs Nix to build an image.
 
     ---
 
-    For operators. Run a lab cluster of two virtual machines on one machine in about 15 minutes.
-    Then take it to real machines with [Build a home lab](guides/home-lab.md), or do one task at a
+    For operators. Run a lab cluster of two virtual machines on one machine in about 15 minutes,
+    or [a lab router](get-started/router-quick-start.md). Then take the cluster to real machines
+    with [Build a cluster on real machines](guides/cluster-on-machines.md), or do one task at a
     time from [Operate nodes](operate/index.md).
 
     [:octicons-arrow-right-24: Quick start](get-started/quick-start.md)
@@ -138,8 +139,8 @@ machines on one host.
 
     ---
 
-    Whole projects from start to end: a home lab on four real machines, and the BGP extension
-    its nodes carry, written from scratch.
+    Whole projects from start to end: a cluster on three real machines, a BGP extension written
+    from scratch, and an IPv6 home lab with a router.
 
     [:octicons-arrow-right-24: Follow](guides/index.md)
 
