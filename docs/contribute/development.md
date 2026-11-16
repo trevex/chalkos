@@ -126,7 +126,8 @@ To move to another Go release:
 | `test/fixtures/` | Static test data: the e2e clusters' YAML, kind schemas and config documents. |
 | `docs/` | The documentation site's pages. |
 
-[Architecture for developers](architecture.md) describes the packages and modules one by one.
+[Packages and programs](packages.md) describes the Go packages and programs one by one, and
+[Nix code](nix.md#what-the-modules-and-lib-hold) the modules.
 
 ## Build the tools
 
