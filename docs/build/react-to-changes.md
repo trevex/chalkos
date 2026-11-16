@@ -203,7 +203,7 @@ config the node runs. Reloaded units are not listed. In the lab of
 restarts the unit:
 
 ```console
-$ chalkctl config apply w1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml --secrets secrets.json
+$ chalkctl config apply w1 --secrets secrets.json
 w1: config 0 added, 0 removed, 1 changed
 restarted hardware-info.service
 w1 runs config 9307d1da8a3a17a8e611ded2cdbdd577692950cc6eb963ce1712ecf656a25416

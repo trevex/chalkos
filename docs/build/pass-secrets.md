@@ -129,7 +129,7 @@ A service that reads a secret from a file needs nothing more. The template of `m
 the credential's path into the config:
 
 ```text title="myapp.conf.tmpl"
-{{- range .documents.Backend }}
+{{- range .documents.Backend -}}
 [backend.{{ .metadata.name }}]
 address = {{ .spec.address }}
 {{- with .spec.token }}

@@ -202,9 +202,9 @@ out. Documents never merge.
 ## Validate the documents
 
 `chalkctl validate` checks each node's set against the schemas of the image the inventory gives
-it. It reaches no node and needs no secrets file. In the lab of
-[Write your first extension](first-extension.md), with `model` misspelled as `modle` in
-`nodes/w1.yaml`, it refuses w1:
+it. It reaches no node and needs no secrets file. This output comes from the lab of
+[Write your first extension](first-extension.md), with its nodes cp1 and w1 on the image
+`node-kvm`. With `model` misspelled as `modle` in `nodes/w1.yaml`, it refuses w1:
 
 ```console
 $ chalkctl validate
@@ -331,6 +331,7 @@ once, and serves a hostname and path that no other `Site` serves:
         type = lib.types.str;
         default = "/";
       };
+      backend = lib.mkOption { type = chalkosLib.types.ref "Backend"; };
       port = chalkosLib.mkOption {
         type = lib.types.port;
         unique = true;

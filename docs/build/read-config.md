@@ -49,8 +49,8 @@ file and receives a password beside it.
 chalkd writes each of the node's documents to `/run/chalkos/config/<group>/<Kind>/<name>.json`,
 after the schemas' defaults are filled in. `config.chalkos.kinds.Rack.dir` names the kind's
 directory, `/run/chalkos/config/rack.example.org/Rack`, so a module never spells the path. Each
-file holds one line of JSON with sorted keys. For a `Hardware` document that leaves out its
-asset tag, the file reads:
+file holds one line of JSON with sorted keys. A `Hardware` document shows a default filled in:
+for one that leaves out its asset tag, the file reads:
 
 ```json title="/run/chalkos/config/hardware.example.org/Hardware/hardware.json"
 {"apiVersion":"hardware.example.org/v1alpha1","kind":"Hardware","metadata":{"name":"hardware"},"spec":{"assetTag":null,"model":"SYS-E300-9D","vendor":"Supermicro"}}

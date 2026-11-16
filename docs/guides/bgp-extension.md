@@ -213,7 +213,10 @@ git add extensions
 
 The template is Go's `text/template`. It reads the node's name as `.node.name` and each input
 kind's documents as a list, `.documents.Speaker` and `.documents.Peer`, sorted by name and with
-the schemas' defaults filled in. `quote` and `refuse` are chalkos's own functions.
+the schemas' defaults filled in. `quote` and `refuse` are chalkos's own functions. The
+template's first lines refuse `Peer` documents on a node without a `Speaker`, whose AS number
+every session needs: `refuse` prints a refusal that names the first `Peer`, and the delivery is
+refused.
 
 The output's check runs bird's parser on the rendered file, so the module needs bird's package.
 Add it to the `let` bindings:
@@ -275,10 +278,6 @@ and the interfaces of `node_addresses`, whose addresses each session announces. 
 the default route alone from the neighbour, and `merge paths` installs it with a next hop per
 session, so the node keeps it while one port works. The test's node is named `example`. After
 each change to the template, build the results again and read the new file.
-
-The template's first lines refuse `Peer` documents on a node without a `Speaker`, whose AS
-number every session needs. `refuse` prints a refusal that names the first `Peer`, and the
-delivery is refused.
 
 ### Find out why a render fails
 
@@ -360,6 +359,7 @@ bird the values that the `Peer` documents' `password` fields name, as systemd cr
 The homelab keeps the password in `bgp/secrets.yaml`, a file of its own, so that the file with
 the `Peer` can go into a public repository. The router's side of the sessions needs the same
 password, which `router/secrets.yaml` holds in a `Secret` of the router's own.
+
 Last, two settings outside bird: networkd leaves the routes bird installs alone, and the
 firewall lets BFD's packets in:
 
@@ -509,10 +509,11 @@ $ cat result/bgp-unconfigured-peer-interface/refusals.json
 refuses it on delivery.
 
 The finished extension tests the validator on more configs: interfaces matched by lists, globs and
-names separated by spaces, a `Peer` without a `Speaker`, and a node without any `Peer`. It declares
-them through a function of its own, `validatorTest`, that takes the name of the file below `tests/`
-and the refusals. Cover each branch of a program this way: a config it accepts, and one per
-refusal.
+names separated by spaces, a `Peer` without a `Speaker`, a `Speaker` that exports an interface
+without a `Network` document and a node without any `Peer`. It also tests the example config,
+`bgp-examples/fabric.yaml`, which the validator accepts. It declares the tests of `tests/`
+through a function of its own, `validatorTest`, that takes a file's name and the refusals. Cover each branch of a program
+this way: a config it accepts, and one per refusal.
 
 ## Add a diagnostic
 
@@ -670,14 +671,14 @@ still runs an image without it.
 
 These pages explain the steps of this tutorial in more depth:
 
-- [Declare a config kind](../build/declare-a-kind.md) lists the option types and what each
-  becomes in the schema.
+- [Field types](../reference/extension-runtime.md#field-types) lists the option types and what
+  each becomes in the schema.
 - [Template functions](../reference/extension-runtime.md#template-functions) lists `quote`,
   `refuse` and the other functions of a template.
 - [A failing test shows what it got](../build/test-an-extension.md#a-failing-test-shows-what-it-got)
   shows how a test prints the command that takes new golden files.
-- [Pass secrets to a service](../build/pass-secrets.md) follows the password from the `Secret`
-  document to bird.
+- [Pass secrets to a service](../build/pass-secrets.md) covers `secretRef` fields, credentials and
+  rotation.
 - [React to changes](../build/react-to-changes.md) covers restarts, commands and conditions.
 - [Guard changes with rules and facts](../build/guard-changes.md) covers rules over several
   fields, over all of a kind's documents, and rules that read the node's state.

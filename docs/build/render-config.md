@@ -239,9 +239,9 @@ and may run.
 
 The best check is the service's own validator, such as `bird -p`, `nginx -t` or `chronyd -p`. A
 program that is not on the check's `PATH` is named by its store path, as `${bird}/bin/bird` is in
-the check of the guide's `bird-conf`. A config that names files the node alone holds, such as
-credentials, needs the check to stand in for them first: that check defines each password
-constant before it runs `bird -p`.
+the check of `bird-conf` in [Render bird.conf](../guides/bgp-extension.md#render-birdconf). A config
+that names files the node alone holds, such as credentials, needs the check to stand in for them
+first: that check defines each password constant before it runs `bird -p`.
 
 ## Test the output
 
