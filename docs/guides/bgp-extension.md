@@ -111,7 +111,6 @@ Each field is a NixOS option. The type decides what the schema accepts, so pick 
 every value here lands in `bird.conf`, and `chalkosLib.types.address` and `interfaceName` keep a
 value from adding a statement of its own. A field without a default is required. `rules` and
 `unique` need `chalkosLib.mkOption` in place of `lib.mkOption`.
-[Declare a config kind](../build/declare-a-kind.md) lists the types and what each becomes.
 
 Add `Speaker`, of which a node holds one, since it has no `multiple`:
 
@@ -192,8 +191,7 @@ git add extensions
 
 The template is Go's `text/template`. It reads the node's name as `.node.name` and each input
 kind's documents as a list, `.documents.Speaker` and `.documents.Peer`, sorted by name and with
-the schemas' defaults filled in. `quote` and `refuse` are chalkos's own functions:
-[Template functions](../reference/extension-runtime.md#template-functions) lists them.
+the schemas' defaults filled in. `quote` and `refuse` are chalkos's own functions.
 
 The output's check runs bird's parser on the rendered file, so the module needs bird's package.
 Add it to the `let` bindings:
@@ -296,9 +294,7 @@ chalkos.tests.bgp-fabric = {
 ```
 
 From now on a template change that alters the file fails `bgp-fabric` with a diff, and prints the
-command that takes the new file, as
-[A failing test shows what it got](../build/test-an-extension.md#a-failing-test-shows-what-it-got)
-shows.
+command that takes the new file.
 
 ## Run bird
 
@@ -325,8 +321,7 @@ A renderer never sees a secret's value, so `bird.conf` names the password by its
 --8<-- "examples/homelab/extensions/bgp.nix:grant"
 ```
 
-[Pass secrets to a service](../build/pass-secrets.md) follows the value from the `Secret` document
-to bird. Last, two settings outside bird: networkd leaves the routes bird installs alone, and the
+Last, two settings outside bird: networkd leaves the routes bird installs alone, and the
 firewall lets BFD's packets in:
 
 ```nix
@@ -372,8 +367,6 @@ $ cat result/bgp-new-password/effects.json
 ["bird"]
 ```
 
-[React to changes](../build/react-to-changes.md) covers restarts, commands and conditions.
-
 ## Refuse what bird cannot run
 
 A schema checks each document on its own. Two more checks refuse a config before it reaches bird:
@@ -414,9 +407,6 @@ $ cat result/bgp-new-asn/refusals.json
 [{"kind":"Peer","name":"router","path":"spec.asn","message":"the AS number stays 65000; add a Peer of another name for 65002"}]
 ```
 
-[Guard changes with rules and facts](../build/guard-changes.md) covers rules over several fields,
-over all of a kind's documents, and rules that read the node's state.
-
 ### Refuse an interface the node does not configure
 
 bird binds each session to an interface. A `Peer` on an interface that no `Network` document
@@ -434,8 +424,7 @@ git add extensions
 ```
 
 The program reads the same input as a renderer, and prints a report of refusals, one per
-interface that no `Network` names. [Validate config with a program](../build/validate-config.md)
-walks through it. Test it with a config whose `Peer` names a third interface, `enp3s0`, without a
+interface that no `Network` names. Test it with a config whose `Peer` names a third interface, `enp3s0`, without a
 `Network` document:
 
 ```sh
@@ -475,8 +464,7 @@ of the image that chalkd runs on request. Add it to the body:
 `birdc -r` asks bird in its read-only mode, through bird's socket, which `groups` makes reachable.
 `protocol` takes only names of the form `bird.conf` gives the sessions, so no value closes bird's
 quotes. The image's build checks the declaration: a placeholder without a parameter, or a group the
-image lacks, fails it. [Add a diagnostic](../build/add-a-diagnostic.md) lists the parameter types
-and the sandbox the command runs in.
+image lacks, fails it.
 
 ## Run every test
 
@@ -506,8 +494,7 @@ chalkctl upgrade --nodes node1 --secrets=secrets.age
 ```
 
 The node checks its config with the new image's validators, renderers and checks before it
-installs anything, and boots the image with bird. [Test and roll out an image](../build/test-and-roll-out.md)
-covers the rollout to the other nodes. Change the documents alone, such as a new `Peer`, with
+installs anything, and boots the image with bird. Change the documents alone, such as a new `Peer`, with
 `chalkctl config apply`, which needs no new image.
 
 ## Debug on the node
@@ -617,3 +604,22 @@ still runs an image without it.
 - [The config pipeline](../how-it-works/node/config-pipeline.md) shows where the schemas, rules,
   validators, outputs and effects run in a delivery.
 - The [extension API](../reference/extension-api.md) lists every option this page used.
+
+These pages explain the steps of this tutorial in more depth:
+
+- [Declare a config kind](../build/declare-a-kind.md) lists the option types and what each
+  becomes in the schema.
+- [Template functions](../reference/extension-runtime.md#template-functions) lists `quote`,
+  `refuse` and the other functions of a template.
+- [A failing test shows what it got](../build/test-an-extension.md#a-failing-test-shows-what-it-got)
+  shows how a test prints the command that takes new golden files.
+- [Pass secrets to a service](../build/pass-secrets.md) follows the password from the `Secret`
+  document to bird.
+- [React to changes](../build/react-to-changes.md) covers restarts, commands and conditions.
+- [Guard changes with rules and facts](../build/guard-changes.md) covers rules over several
+  fields, over all of a kind's documents, and rules that read the node's state.
+- [Validate config with a program](../build/validate-config.md) walks through the validator.
+- [Add a diagnostic](../build/add-a-diagnostic.md) lists the parameter types and the sandbox the
+  command runs in.
+- [Test and roll out an image](../build/test-and-roll-out.md) covers the rollout to the other
+  nodes.

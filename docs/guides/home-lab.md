@@ -163,8 +163,7 @@ encrypted secrets.age to ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKMcR1DCFPGSdWXphQ3
 wrote secrets.age and secrets.pub.json
 ```
 
-[Generate the cluster's secrets with age](../operate/workstation.md#generate-the-clusters-secrets-with-age)
-explains the file and its backup. The `age1` recipient here stands for your offline backup
+The `age1` recipient here stands for your offline backup
 key's public key. Then give the images and the installer the cluster's OS CA, so
 that a machine waiting for its install accepts only a chalkctl that holds this cluster's secrets.
 Add the line to the arguments of `chalkos.lib.mkImages` in `flake.nix`:
@@ -216,9 +215,7 @@ sed -i "s/example-password/$(openssl rand -hex 16)/" router/secrets.yaml bgp/sec
 ```
 
 The two files now hold real secrets in plain text. Keep the repository private, or keep the two
-files out of it, as
-[Keep the services' secrets in Secret documents](../operate/workstation.md#keep-the-services-secrets-in-secret-documents)
-describes.
+files out of it.
 
 ## Build the images and the installer
 
@@ -237,8 +234,7 @@ nodes' image carries Kubernetes and bird.
 ### Sign the images (optional)
 
 Skip this step without Secure Boot. With it, create your Secure Boot keys in `keys/`, and sign
-copies of the three builds with the db key, as
-[Sign images for Secure Boot](../build/sign-images.md#create-the-keys) describes:
+copies of the three builds with the db key:
 
 ```sh
 chalkctl secureboot new keys --name homelab
@@ -295,8 +291,7 @@ on the fabric.
 
 Cable one of the router's ports to the home network and the other to the switch. Which port is
 which does not matter yet: the next step finds out. Boot the router from the USB stick through
-the firmware's boot menu. Once chalkd runs, the screen shows
-[the console](../operate/console.md). Its header keeps chalkd's fingerprint on screen, and the
+the firmware's boot menu. Once chalkd runs, the screen shows the console. Its header keeps chalkd's fingerprint on screen, and the
 address that the home network's DHCP server gave the port it reaches:
 
 ```text
@@ -355,12 +350,10 @@ Secure Boot is on; install the node with chalkctl install
 
 The router reboots into the installer, now with Secure Boot on; pick the USB stick in the boot menu
 if it boots something else. chalkd makes a new certificate at that boot: use the new fingerprint
-from here on. [Enrol Secure Boot keys](../operate/secure-boot.md#if-it-fails)
-explains what to do when the enrolment fails.
+from here on.
 
 When the router's network cards carry option ROMs, the node refuses the keys and names them: add
-`--option-roms` to enrol their digests, as [Allow the cards' option ROMs](../operate/secure-boot.md#allow-the-cards-option-roms)
-explains.
+`--option-roms` to enrol their digests.
 
 ### Find the disk and the ports
 
@@ -379,11 +372,10 @@ disk it is `nvme-<model>_<serial>`, and for a SATA disk `ata-<model>_<serial>`, 
 the model as an underscore: `/dev/disk/by-id/nvme-Samsung_SSD_980_512GB_S64DNF0R812345` here. When
 the path is in doubt, select the disk by its serial number instead, with
 `disk: {serial: S64DNF0R812345}` in place of `path`. The installer refuses a disk
-that holds data; [Replace what a disk holds](../operate/install.md#replace-what-a-disk-holds)
-covers that case.
+that holds data.
 
 The diagnostic `addresses` lists the ports, and the jq filter of
-[Get the tools](#get-the-tools) puts each on a line:
+"Get the tools" puts each on a line:
 
 ```console
 $ chalkctl node diag router --fingerprint=<fingerprint> --secrets=secrets.age addresses \
@@ -436,9 +428,7 @@ Check the files against the images:
 chalkctl validate
 ```
 
-It prints a line per node, as
-[Write a node's config](../operate/node-config.md#check-that-it-worked) shows, and names the
-document and field of each mistake.
+It prints a line per node, and names the document and field of each mistake.
 
 ### Install
 
@@ -559,8 +549,6 @@ peer: cK0R7bvqvEfk07xvf9i71Jj0ATJEGaKZ3gs1zBXr1m0=
   transfer: 1.02 KiB received, 892 B sent
 ```
 
-[Run WireGuard](../router/wireguard.md) covers more peers, preshared keys and key rotation.
-
 ## Install the nodes
 
 Install node1, node2 and node3 one after another, with the same steps.
@@ -580,7 +568,7 @@ addresses fdc8:a1b2:c3d4:1:0:ff:fe00:1101 fdc8:a1b2:c3d4:1:0:ff:fe00:1102
 ```
 
 The header shows no link-local address. A port without an address of the fabric has no cable, or
-the router sends no advertisements: [Troubleshooting](#troubleshooting) covers both. Note one of the
+the router sends no advertisements: the section "Troubleshooting" covers both. Note one of the
 addresses and the fingerprint. Put the address into `chalkos.yaml` as node1's for now, quoted, as
 YAML needs for an IPv6 address; the workstation reaches it over the tunnel:
 
@@ -619,10 +607,10 @@ YAML needs for an IPv6 address; the workstation reaches it over the tunnel:
     ```
 
     Without the console you have no fingerprint to compare: reach the installer with `--insecure`
-    in place of `--fingerprint`, as the note in [Boot the installer](#boot-the-installer) describes.
+    in place of `--fingerprint`, as the note under the router's "Boot the installer" describes.
 
 With Secure Boot, and when the node's firmware is in Setup Mode, enrol your keys at that address as
-for the router, in [Enrol the Secure Boot keys](#enrol-the-secure-boot-keys-optional), and note
+for the router, in "Enrol the Secure Boot keys", and note
 the new fingerprint.
 
 ### Find the disk and the ports
@@ -717,7 +705,7 @@ wrote kubeconfig; its certificate is valid for 8760h0m0s
 The bootstrap starts etcd and the control plane on node1. node1 then wins the election for the VIP,
 adds `fdc8:a1b2:c3d4:ff::10` to `node0`, and bird announces it. node2 and node3 find the cluster at
 the endpoint and join etcd one after the other. Pulling the images through the NAT64 takes most of
-the bootstrap's time. [Bootstrap and get a kubeconfig](../kubernetes/bootstrap.md) explains each step.
+the bootstrap's time.
 
 List the nodes through the VIP:
 
@@ -802,9 +790,6 @@ fdc8:a1b2:c3d4:ff::10/128  unicast  bgp       254    20      fe80::ff:fe00:1101 
 fdc8:a1b2:c3d4:ff::11/128  unicast  bgp       254    20      fe80::ff:fe00:1101 on fabric (weight 1), fe80::ff:fe00:1102 on fabric (weight 1)
 ...
 ```
-
-[Route with BGP](../router/bgp.md#deliver-and-check-the-sessions) explains the columns and the
-BGP paths that follow the kernel's routes.
 
 ### Pull a cable
 
@@ -960,3 +945,20 @@ network. After a delivery to the router, the tunnel works again once the worksta
   election, and how to replace a control plane.
 - [Declare a config kind](../build/declare-a-kind.md) follows the homelab's bird extension, which
   declares the `Speaker` and `Peer` kinds.
+
+These pages explain the steps of this tutorial in more depth:
+
+- [Generate the cluster's secrets with age](../operate/workstation.md#generate-the-clusters-secrets-with-age)
+  and [Keep the services' secrets in Secret documents](../operate/workstation.md#keep-the-services-secrets-in-secret-documents)
+  explain the secrets file, its backup and the Secret documents.
+- [Sign images for Secure Boot](../build/sign-images.md#create-the-keys) and
+  [Enrol Secure Boot keys](../operate/secure-boot.md) cover the keys, a failed enrolment and the
+  cards' option ROMs.
+- [The console on the machine's screen](../operate/console.md) describes what the installer shows.
+- [Install a node](../operate/install.md#replace-what-a-disk-holds) covers a disk that holds data,
+  and [Write a node's config](../operate/node-config.md#check-that-it-worked) the output of
+  `chalkctl validate`.
+- [Run WireGuard](../router/wireguard.md) covers more peers, preshared keys and key rotation.
+- [Bootstrap and get a kubeconfig](../kubernetes/bootstrap.md) explains each step of the bootstrap.
+- [Route with BGP](../router/bgp.md#deliver-and-check-the-sessions) explains the columns of the
+  router's `bgp:` table and the BGP paths that follow the kernel's routes.
