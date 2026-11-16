@@ -98,6 +98,32 @@ in
         inherit (api) version;
         builtin = true;
       };
+      # The option <name>.enable of a feature that images of a layer may leave out, true unless an
+      # image sets it false. Its description says that the layer's images carry `carries` and
+      # accept the kinds named; layer is the layer as the description names it, such as router.
+      feature =
+        layer: name:
+        {
+          carries,
+          kinds,
+        }:
+        let
+          names = map (k: "`${k}`") kinds;
+          kindsText =
+            if lib.length names == 1 then
+              "the kind ${lib.head names}"
+            else
+              "the kinds ${lib.concatStringsSep ", " (lib.init names)} and ${lib.last names}";
+        in
+        {
+          ${name}.enable = lib.mkOption {
+            type = lib.types.bool;
+            default = true;
+            description =
+              "Whether ${layer} images carry ${carries} and accept ${kindsText}. Only with the ${layer} "
+              + "layer; set it false in an image's modules to leave the feature out of it.";
+          };
+        };
       # The sandbox of a root unit that needs no capability and no network: Unix sockets alone,
       # which stay reachable on a read-only system and from the private network namespace, as it
       # hides abstract sockets alone; no home; kernel tunables, modules and cgroups out of reach;

@@ -47,32 +47,12 @@ let
     # feature out; name must be one of features. Its description says that the images carry
     # `carries` and accept the kinds named.
     feature =
-      name:
-      {
-        carries,
-        kinds,
-      }:
-      let
-        names = map (k: "`${k}`") kinds;
-        kindsText =
-          if lib.length names == 1 then
-            "the kind ${lib.head names}"
-          else
-            "the kinds ${lib.concatStringsSep ", " (lib.init names)} and ${lib.last names}";
-      in
+      name: args:
       chalkosLib.internal.refuse
         (lib.optional (
           !lib.elem name routerLib.features
         ) "the router feature ${name} is missing from routerLib.features")
-        {
-          ${name}.enable = lib.mkOption {
-            type = lib.types.bool;
-            default = true;
-            description =
-              "Whether router images carry ${carries} and accept ${kindsText}. Only with the router "
-              + "layer; set it false in an image's modules to leave the feature out of it.";
-          };
-        };
+        (chalkosLib.internal.feature "router" name args);
 
     # Keeps the kinds of a list that the image accepts, in order, so an output reads the kinds of
     # another feature only on images that carry it.
