@@ -123,10 +123,10 @@ in
       '';
 
   # The test images on each platform and the installer within their ceilings
-  # (testing/image-sizes.nix). An image over one fails the check with the largest paths of its
-  # system's closure, read from closureInfo, as the build has no Nix daemon to ask. The images' own
-  # fit check is tried on the test image too, and its measure of each image agrees with package
-  # verity, which an upgrade reads the sizes with.
+  # (testing/image-sizes.nix), and without Python in their closures. An image over one fails the
+  # check with the largest paths of its system's closure, read from closureInfo, as the build has
+  # no Nix daemon to ask. The images' own fit check is tried on the test image too, and its measure
+  # of each image agrees with package verity, which an upgrade reads the sizes with.
   image-size =
     let
       inherit (pkgs.chalkos) veritysize;
@@ -165,6 +165,11 @@ in
         check() {
           local name=$1 raw=$2 partitions=$3 uki=$4 closure=$5 sizes verity data hash over=()
           local -A ceiling=([storeData]=$6 [hashTree]=$7 [uki]=$8)
+          # Python takes over 100 MiB; a package that names it, as FRR's build did, brings it in.
+          if grep -- '-python3-[0-9]' "$closure/store-paths" >python; then
+            echo "error: $name's closure holds Python: $(cat python)" >&2
+            failed=1
+          fi
           sizes=$(chalkos-image-size measure "$raw" "$partitions")
           verity=$(veritysize "$raw" "$partitions")
           if [[ $verity != "$sizes" ]]; then

@@ -103,7 +103,8 @@ packages with `pkgs.chalkos.overrideScope`.
    named as the package. The overlay adds every file there to the scope, so a new package needs
    no other change. A package file takes its dependencies by name, as `callPackage` passes them.
    A file that takes an argument with the same name as a member of the scope gets that argument
-   passed explicitly in `nix/overlay/default.nix`, as `kea.nix` gets nixpkgs's `kea`.
+   passed explicitly in `nix/overlay/default.nix`, as `kea.nix` gets nixpkgs's `kea`. `frr.nix`
+   gets the `frr` from before the overlay, because images with FRR replace `pkgs.frr` with it.
 3. If it needs a module's `config` or belongs to one layer, add it to that layer's module
    argument, as `routerLib` is for the router layer.
 4. If one module uses it, put it in a file next to that module. A script that a module builds

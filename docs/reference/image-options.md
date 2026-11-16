@@ -98,7 +98,7 @@ Whether an image runs Kubernetes, the packages and images it runs it with, and i
 
 Type: boolean · Default: `true` · Declared in: [modules/node/kubernetes/bgp/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/bgp/default.nix)
 
-Whether Kubernetes images carry FRR, which runs BGP and BFD, with the Python its closure holds, and accept the kinds `BGPPeer` and `BGPSpeaker`. Only with the Kubernetes layer; set it false in an image's modules to leave the feature out of it.
+Whether Kubernetes images carry FRR, which runs BGP and BFD, and accept the kinds `BGPPeer` and `BGPSpeaker`. Only with the Kubernetes layer; set it false in an image's modules to leave the feature out of it.
 
 ### `chalkos.kubernetes.enable` { #chalkoskubernetesenable }
 
@@ -159,7 +159,7 @@ Whether an image carries the router layer, and whether its node forwards packets
 
 Type: boolean · Default: `true` · Declared in: [modules/node/router/bgp/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/bgp/default.nix)
 
-Whether router images carry FRR, which runs BGP and BFD, with the Python its closure holds, and accept the kinds `BGP`, `BGPPeer`, `CommunityList`, `PrefixList` and `RoutingPolicy`. Only with the router layer; set it false in an image's modules to leave the feature out of it.
+Whether router images carry FRR, which runs BGP and BFD, and accept the kinds `BGP`, `BGPPeer`, `CommunityList`, `PrefixList` and `RoutingPolicy`. Only with the router layer; set it false in an image's modules to leave the feature out of it.
 
 ### `chalkos.router.dhcp.enable` { #chalkosrouterdhcpenable }
 

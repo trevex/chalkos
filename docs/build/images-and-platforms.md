@@ -111,7 +111,7 @@ feature's software, kinds, outputs, units and diagnostics out of the image:
 
 | Option | Leaves out | Kinds the nodes refuse |
 | --- | --- | --- |
-| [`chalkos.router.bgp.enable`](../reference/image-options.md#chalkosrouterbgpenable) | FRR: zebra, bgpd, bfdd, staticd, vtysh and the Python of `frr-reload.py` | `BGP`, `BGPPeer`, `PrefixList`, `CommunityList`, `RoutingPolicy` |
+| [`chalkos.router.bgp.enable`](../reference/image-options.md#chalkosrouterbgpenable) | FRR: zebra, bgpd, bfdd, staticd, vtysh and `chalkos-frr-reload` | `BGP`, `BGPPeer`, `PrefixList`, `CommunityList`, `RoutingPolicy` |
 | [`chalkos.router.nat64.enable`](../reference/image-options.md#chalkosrouternat64enable) | Jool's kernel module and `jool` | `NAT64` |
 | [`chalkos.router.resolver.enable`](../reference/image-options.md#chalkosrouterresolverenable) | Unbound | `Resolver` |
 | [`chalkos.router.dhcp.enable`](../reference/image-options.md#chalkosrouterdhcpenable) | Kea | `DHCPSubnet` |

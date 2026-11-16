@@ -1,8 +1,9 @@
 # FRR on images whose layer runs BGP: zebra, bgpd, bfdd and staticd, whose whole config a layer's
 # output renders as frr.conf. frr.service fills the peers' passwords in from its credentials into
 # /run/frr/frr.conf before it starts and on each reload, which applies the changes with
-# chalkos-frr-reload and keeps the sessions they leave alone. A layer's BGP feature turns it on and
-# names the rendered config and the config of a node without one.
+# chalkos-frr-reload and keeps the sessions they leave alone. FRR is chalkos's build, without Python
+# in its closure. A layer's BGP feature turns it on and names the rendered config and the config of
+# a node without one.
 {
   config,
   lib,
@@ -85,6 +86,9 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    # NixOS's FRR module and chalkd run pkgs.frr.
+    nixpkgs.overlays = [ (final: _: { inherit (final.chalkos) frr; }) ];
+
     # The images allocate unpinned IDs from 999 down, so a feature that adds or drops a user would
     # move the IDs after it; 329 and 330 are free in NixOS's ids.nix.
     users.users.frr.uid = 329;

@@ -339,7 +339,7 @@ Every check builds with `nix build`, and a change runs the checks of the parts i
 | The firewall or VXLAN rule | `vxlan-rule`, `go-unit`, `e2e-kubernetes` |
 | The router's kinds, outputs or firewall | `router-firewall`, `rules`, `image-tests`, `eval`, `eval-kinds`, `go-unit` |
 | The router's BGP: its kinds, `frr` output, FRR's unit, `pkg/router` | `rules`, `image-tests`, `frr-credentials`, `frr-reload`, `eval`, `eval-kinds`, `go-unit`, `e2e-router` |
-| The FRR reload: `pkg/frr`, `cmd/chalkos-frr-reload` | `frr-reload`, `go-unit`, `e2e-router` |
+| FRR's package or reload: `nix/packages/frr.nix`, `pkg/frr`, `cmd/chalkos-frr-reload` | `frr-reload`, `go-unit`, `image-size`, `e2e-router` |
 | The router's NAT64 and resolvers: their kinds, the `jool` and `unbound` outputs, their units, `pkg/router` | `router-nat64`, `router-firewall`, `rules`, `image-tests`, `eval`, `eval-kinds`, `go-unit`, `image-size`, `e2e-router` |
 | The router's VRFs: the `VRF` kind, `router-networkd`, `chalkos-vrf` | `rules`, `image-tests`, `eval`, `eval-kinds`, `go-unit`, `router-vrf`, `router-firewall`, `e2e-router` |
 | The router's policy routing: the `PolicyRoute` and `NextHop` kinds, their chain and units | `router-policy-routing`, `router-firewall`, `rules`, `image-tests`, `eval`, `eval-kinds`, `go-unit`, `e2e-router` |

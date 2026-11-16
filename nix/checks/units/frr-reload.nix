@@ -108,7 +108,7 @@ let
       }' | sort
   '';
 in
-pkgs.testers.runNixOSTest {
+(pkgs.extend (final: _: { inherit (final.chalkos) frr; })).testers.runNixOSTest {
   name = "chalkos-frr-reload";
   nodes.machine = {
     services.frr = {

@@ -14,7 +14,7 @@ let
 in
 {
   options.chalkos.router = routerLib.feature "bgp" {
-    carries = "FRR, which runs BGP and BFD, with the Python its closure holds,";
+    carries = "FRR, which runs BGP and BFD,";
     kinds = lib.attrNames kinds;
   };
 

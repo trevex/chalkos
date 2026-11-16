@@ -981,8 +981,8 @@ lib.runTests {
   };
   # Router images run FRR with bgpd and bfdd. frr.service starts after the firewall and before the
   # node's addresses settle, fills the BGPPeers' passwords in from its credentials before it starts
-  # and on reload, which chalkos-frr-reload applies, and networkd keeps zebra's routes. Other
-  # images run no FRR.
+  # and on reload, which chalkos-frr-reload applies, and networkd keeps zebra's routes. They run
+  # chalkos's FRR. Other images run no FRR.
   testRouterBGP = {
     expr =
       let
@@ -1011,6 +1011,10 @@ lib.runTests {
             reload = lib.last frr.serviceConfig.ExecReload;
           in
           lib.hasInfix "/bin/chalkos-frr-reload " reload && lib.hasSuffix " /run/frr/frr.conf" reload;
+        # The images run chalkos's FRR, which has no Python in its closure.
+        package =
+          frr.serviceConfig.ExecStart
+          == "${layered.edge-metal.pkgs.chalkos.frr}/libexec/frr/frrinit.sh start";
         refresh = frr.serviceConfig.RefreshOnReload;
         networkd = edge.systemd.network.config.networkConfig;
         groups = edge.chalkos.diagnostics.bgp-summary.groups;
@@ -1032,6 +1036,7 @@ lib.runTests {
       reload = 2;
       fillsAlike = true;
       reloadsFilled = true;
+      package = true;
       refresh = "credentials";
       networkd = {
         ManageForeignNextHops = false;
