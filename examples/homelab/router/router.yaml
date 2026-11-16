@@ -1,8 +1,9 @@
 # The router: its port wan on the home network, which gives it an IPv4 address by DHCP, and its
 # port fabric on the switch of the three nodes. The fabric is IPv6 alone. Router advertisements
-# give each node an address, a default route, the resolver and the NAT64 prefix, and the NAT64
-# carries the nodes' connections to the IPv4 internet out of wan. Each node announces its address
-# over BGP, and the workstation reaches the fabric through WireGuard.
+# give each node an address, the resolver and the NAT64 prefix, and the NAT64 carries the nodes'
+# connections to the IPv4 internet out of wan. Each node announces its address over BGP and takes
+# its default route from the router there, and the workstation reaches the fabric through
+# WireGuard.
 #
 # The two Link documents name the ports by their permanent MAC addresses, which a VLAN or a bond
 # on a port does not take, so the other documents name wan and fabric whatever the kernel calls
@@ -39,15 +40,16 @@ spec:
   match: {name: wan}
   network: {dhcp: ipv4, ipv6AcceptRA: false}
 ---
-# The fabric's address and its router advertisements: the prefix, from which each node's ports
-# take their addresses, the resolver and the NAT64 prefix. The advertisements also make the router
-# each node's default router.
+# The fabric's two addresses, ::1 and ::2, to which each node's two ports run a BGP session each,
+# and its router advertisements: the prefix, from which each node's ports take their addresses,
+# the resolver and the NAT64 prefix. The nodes take their default route over BGP, not from the
+# advertisements.
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network
 metadata: {name: 20-fabric}
 spec:
   match: {name: fabric}
-  network: {address: ["fdc8:a1b2:c3d4:1::1/64"], ipv6AcceptRA: false, ipv6SendRA: true}
+  network: {address: ["fdc8:a1b2:c3d4:1::1/64", "fdc8:a1b2:c3d4:1::2/64"], ipv6AcceptRA: false, ipv6SendRA: true}
   ipv6Prefix: {prefix: "fdc8:a1b2:c3d4:1::/64"}
   ipv6SendRA: {dns: ["fdc8:a1b2:c3d4:1::1"]}
   ipv6PREF64Prefix: {prefix: "64:ff9b::/96"}

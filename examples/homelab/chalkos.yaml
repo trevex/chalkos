@@ -2,8 +2,8 @@
 # reaches the router at its address on the home network, and the nodes at their node addresses
 # through the router's WireGuard tunnel. The router's port wan takes its address from the home
 # router by DHCP: reserve the address for wan's MAC address there, so that it stays the one below.
-# The router image accepts neither the Kubernetes kinds nor bird's, so each group names its own
-# files and nothing goes to every node.
+# The router image accepts no Kubernetes kinds, so each group names its own files and nothing goes
+# to every node.
 apiVersion: chalkctl.chalkos.dev/v1alpha1
 kind: Inventory
 metadata: {name: homelab}

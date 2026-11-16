@@ -259,16 +259,17 @@ in
     command = validatePinned;
   };
 
-  # The homelab example: its flake builds the router's metal image and the nodes' with the BGP
-  # extension, and chalkctl validate accepts the router's and the nodes' YAML, Speaker and Peer
-  # documents included, with those images where their groups point, and validatePinned checks
-  # its Cluster document's images.
+  # The homelab example: its flake builds the router's metal image and the nodes', and chalkctl
+  # validate accepts the router's and the nodes' YAML, BGPSpeaker and BGPPeer documents included,
+  # with those images where their groups point, and validatePinned checks its Cluster document's
+  # images. The image node-bird-metal, of the BGP extension, evaluates.
   example-homelab =
     let
       packages = homelab.packages.${pkgs.stdenv.hostPlatform.system};
     in
     # The installer, which the guide writes to a USB stick, evaluates.
     assert lib.isString packages.installer.drvPath;
+    assert lib.isString packages.node-bird-metal.drvPath;
     checkLib.validateDirectory {
       name = "example-homelab";
       src = ../../examples/homelab;
@@ -301,7 +302,7 @@ in
   # and the test's field, spec.interfaces[2] or spec.asn, which is how the check finds it.
   example-homelab-validator-docs =
     let
-      inherit (homelab.nixosConfigurations.node-metal.config.chalkos) tests;
+      inherit (homelab.nixosConfigurations.node-bird-metal.config.chalkos) tests;
     in
     pkgs.runCommand "chalkos-example-homelab-validator-docs"
       {

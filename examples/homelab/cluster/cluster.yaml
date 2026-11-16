@@ -6,7 +6,7 @@ metadata: {name: default}
 spec:
   ipFamilies: [ipv6]
   allowSchedulingOnControlPlanes: true
-  # The API server's VIP, which one control plane holds at a time on its interface node0. bird on
+  # The API server's VIP, which one control plane holds at a time on its interface node0. FRR on
   # that node announces it with the node's address, so the VIP's route follows its holder.
   endpoint: "https://[fdc8:a1b2:c3d4:ff::10]:6443"
   vip: {addresses: ["fdc8:a1b2:c3d4:ff::10"], mode: routed}
