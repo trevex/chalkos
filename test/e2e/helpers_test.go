@@ -124,6 +124,7 @@ var inventories = map[string]string{
 	"default-gone":   "chalklab/router-default-gone.yaml",
 	"wireguard":      "chalklab/router-wireguard.yaml",
 	"wireguard-wide": "chalklab/router-wireguard-wide.yaml",
+	"kubernetes":     "chalklab/router-kubernetes.yaml",
 	"ha":             "chalklab-ha/chalkos.yaml",
 }
 

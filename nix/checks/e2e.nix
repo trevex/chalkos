@@ -66,9 +66,16 @@ in
     CHALKLAB_CHALKLAB = lib.getExe pkgs.chalkos.chalklab;
     CHALKLAB_K8S_IMAGES = kubernetesImages;
   };
-  e2e-router = e2e "router" "^TestRouterLab$" [ "CHALKLAB_ROUTER_IMAGE_DIR" ] {
-    CHALKLAB_CHALKLAB = lib.getExe pkgs.chalkos.chalklab;
-  };
+  e2e-router =
+    e2e "router" "^TestRouterLab$"
+      [
+        "CHALKLAB_ROUTER_IMAGE_DIR"
+        "CHALKLAB_K8S_IMAGE_DIR"
+      ]
+      {
+        CHALKLAB_CHALKLAB = lib.getExe pkgs.chalkos.chalklab;
+        CHALKLAB_K8S_IMAGES = kubernetesImages;
+      };
   e2e-kubernetes-ha =
     e2e "kubernetes-ha" "^TestKubernetesHA$"
       [

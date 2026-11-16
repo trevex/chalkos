@@ -1,0 +1,61 @@
+# k1, the router lab's control plane. Its node address and the VIP sit on the dummy interface kube0,
+# which its BGP speaker of k1-speaker.yaml announces to r1 over a session on the switch, enp0s3,
+# with BFD and the routers' password. The session goes to r1's address and is bound to no
+# interface, so k1's FRR sends no router advertisements on the switch, where r1's and r2's zebra
+# would take k1 for the neighbour of their unnumbered session. enp0s2, the user-mode NIC, reaches
+# the test's registry and takes the default route of QEMU's router advertisements, which zebra
+# prefers over the one r1 sends.
+apiVersion: storage.chalkos.dev/v1alpha1
+kind: SystemDisk
+metadata: {name: system}
+spec:
+  disk:
+    path: /dev/vda
+  encryption:
+    fallback: recovery-key
+    mode: tpm2
+  var:
+    encryption:
+      mode: tpm2
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-fabric}
+spec:
+  match: {name: enp0s3}
+  network: {address: ["fd00:300::31/64"], ipv6AcceptRA: false}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: NetDev
+metadata: {name: 20-kube0}
+spec:
+  netDev: {name: kube0, kind: dummy}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-kube0}
+spec:
+  match: {name: kube0}
+  network: {address: ["fd00:301::31/128"], keepConfiguration: "yes"}
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: default}
+spec:
+  type: controlplane
+  nodeIP: {addresses: ["fd00:301::31"]}
+  vip: {interface: kube0}
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: BGPPeer
+metadata: {name: r1}
+spec:
+  asn: 64512
+  address: "fd00:300::1"
+  password: {secretRef: {name: bgp, key: fabric}}
+---
+apiVersion: chalkos.dev/v1alpha1
+kind: Secret
+metadata: {name: bgp}
+spec:
+  data: {fabric: lab-s3cret}

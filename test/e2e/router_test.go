@@ -41,6 +41,12 @@ func routerOf(c *client.Conn) routerv1connect.RouterServiceClient {
 
 // session is the router's session of the BGPPeer on enp0s3, as its status reports it.
 func (rl *routerLab) session(name, peer string) (*routerv1.BGPPeerStatus, error) {
+	return rl.sessionWith(name, peer, "enp0s3")
+}
+
+// sessionWith is the router's session of the BGPPeer with the neighbour, an interface or an
+// address, as its status reports it.
+func (rl *routerLab) sessionWith(name, peer, neighbor string) (*routerv1.BGPPeerStatus, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	resp, err := routerOf(rl.conns[name]).Status(ctx, connect.NewRequest(&routerv1.StatusRequest{}))
@@ -52,11 +58,11 @@ func (rl *routerLab) session(name, peer string) (*routerv1.BGPPeerStatus, error)
 		return nil, fmt.Errorf("its BGP state is unknown: %s", r.BgpError)
 	}
 	for _, p := range r.Peers {
-		if p.Name == peer && p.Neighbor == "enp0s3" {
+		if p.Name == peer && p.Neighbor == neighbor {
 			return p, nil
 		}
 	}
-	return nil, fmt.Errorf("%s has no session of %s on enp0s3: %v", name, peer, r.Peers)
+	return nil, fmt.Errorf("%s has no session of %s with %s: %v", name, peer, neighbor, r.Peers)
 }
 
 // establishedIn is the router's session of the peer once it is up in the VRF, with BFD up.
@@ -213,15 +219,27 @@ const routerLabName = "chalklab-router"
 // chalklab/groups/router.yaml.
 const bgpPassword = "lab-s3cret"
 
+// k1 of chalklab/nodes/k1.yaml: its address on the switch, its node address and the VIP on kube0,
+// lb0's address of k1-lb.yaml, and its AS.
+const (
+	k1Switch  = "fd00:300::31"
+	k1Address = "fd00:301::31"
+	k1VIP     = "fd00:301::10"
+	k1LB      = "fd00:302::31"
+	k1AS      = "65031"
+)
+
 // TestRouterLab boots r1 and r2 through chalklab, with IPv6 link-local addresses alone between
-// them, peering unnumbered over BGP on enp0s3 with BFD and a password, and runs the phases below
-// in order; a failed phase stops the rest. Two VMs of 768 MiB and 2 CPUs each, about 8 minutes
-// with the copies of the images; chalklab destroy removes the lab when the test ends.
+// them, peering unnumbered over BGP on enp0s3 with BFD and a password, and k1, a Kubernetes
+// control plane on the same switch that chalklab bootstraps, whose images come from the test's
+// registry. It runs the phases below in order; a failed phase stops the rest. Two VMs of 768 MiB
+// and one of 1536 MiB, 2 CPUs each, about 15 minutes with the copies of the images and k1's
+// bootstrap; chalklab destroy removes the lab when the test ends.
 func TestRouterLab(t *testing.T) {
-	requireEnv(t, append([]string{"CHALKLAB_CHALKLAB", "CHALKLAB_ROUTER_IMAGE_DIR"}, chalkdEnv...)...)
+	requireEnv(t, append([]string{"CHALKLAB_CHALKLAB", "CHALKLAB_ROUTER_IMAGE_DIR", "CHALKLAB_K8S_IMAGE_DIR", "CHALKLAB_K8S_IMAGES"}, chalkdEnv...)...)
 	dir := vmDir(t)
 	startNTP(t)
-	nodes, _, _, _ := startLab(t, dir, routerLabName, "lab-router.yaml")
+	nodes, _, _, _ := startLab(t, dir, routerLabName, "lab-router.yaml", "--guest-forward", registryGuest+"="+startRegistry(t))
 	rl := &routerLab{
 		phased:  phased{t},
 		nodes:   nodes,
@@ -243,6 +261,7 @@ func TestRouterLab(t *testing.T) {
 	}{
 		{"bgp", rl.bgp}, {"reload", rl.reload}, {"nat64", rl.nat64}, {"trial", rl.trial},
 		{"vrf", rl.vrf}, {"default", rl.defaultRoute}, {"wireguard", rl.wireguard}, {"dhcp", rl.dhcp},
+		{"kubernetes", rl.kubernetes},
 	} {
 		if !rl.phase(p.name, p.run) {
 			return
@@ -766,7 +785,7 @@ func (rl *routerLab) wireguard(t *testing.T) {
 // frames, and r1 DHCPv4 and DHCPv6 servers in the VRF lan. r2 gets its reserved address and a
 // delegated prefix, which r1 routes in lan's table, and r1's Link names enp0s3 lab0. After a boot
 // of r1 the servers run with the leases, r1 routes the prefix again and r2 renews there. The
-// phase runs last: networkd keeps both dhcp0 devices and enp0s3 keeps lab0.
+// phase runs after the routers' others: networkd keeps both dhcp0 devices and enp0s3 keeps lab0.
 func (rl *routerLab) dhcp(t *testing.T) {
 	// A failed phase logs the journals of r1's server and r2's client.
 	defer func() {
@@ -897,4 +916,130 @@ func (rl *routerLab) dhcp(t *testing.T) {
 		return nil
 	})
 	rl.noFailedUnits("base", "r1", "r2")
+}
+
+// learnedFromK1 is nil once r1 routes the prefix over enp0s3 and BGP's best path to it came from
+// k1's AS.
+func (rl *routerLab) learnedFromK1(prefix string) error {
+	resp, err := rl.routes("r1", &routerv1.RoutesRequest{Prefix: prefix, Protocol: "bgp"})
+	if err != nil {
+		return err
+	}
+	kernel := slices.ContainsFunc(resp.Kernel, func(k *routerv1.KernelRoute) bool {
+		return k.Destination == prefix && slices.ContainsFunc(k.NextHops, func(h *routerv1.NextHop) bool { return h.Interface == "enp0s3" })
+	})
+	bgp := slices.ContainsFunc(resp.Bgp, func(b *routerv1.BGPRoute) bool {
+		return b.Prefix == prefix && b.Best && b.AsPath == k1AS
+	})
+	if !kernel || !bgp {
+		return fmt.Errorf("r1's routes to %s: kernel %v, BGP %v, BGP's error %q", prefix, resp.Kernel, resp.Bgp, resp.BgpError)
+	}
+	return nil
+}
+
+// k1Session is nil once r1's session with k1 is up with BFD up.
+func (rl *routerLab) k1Session() error {
+	p, err := rl.sessionWith("r1", "kubernetes", k1Switch)
+	if err != nil {
+		return err
+	}
+	if p.State != "Established" || p.Bfd != "up" {
+		return fmt.Errorf("r1's session with k1 is %s, its BFD %q", p.State, p.Bfd)
+	}
+	return nil
+}
+
+// kubernetes gives r1 an address on the switch and a peer of k1's AS, towards which k1's FRR has
+// tried to connect since its first boot. The session comes up with BFD and the password on both
+// sides; r1 learns k1's node address and the VIP, which k1 holds since chalklab bootstrapped it,
+// and reaches the API server at the VIP over that route. k1's BGP takes r1's default route, which
+// zebra leaves out of the kernel beside the default route of enp0s2. A delivery that announces
+// lb0's address as well reaches r1 while the session stays up, applied by chalkos-frr-reload in
+// one clean pass.
+func (rl *routerLab) kubernetes(t *testing.T) {
+	k1 := rl.nodes["k1"]
+	// A failed phase logs k1's FRR.
+	defer func() {
+		if t.Failed() {
+			_, _ = chalkctl(t, k1, "kubernetes", "logs", "k1", "--unit", "frr.service")
+		}
+	}()
+	rl.apply("kubernetes", "r1")
+	waitFor(t, 5*time.Minute, "r1's session with k1", rl.k1Session)
+	for _, prefix := range []string{k1Address + "/128", k1VIP + "/128"} {
+		waitFor(t, 2*time.Minute, "r1's route to "+prefix, func() error { return rl.learnedFromK1(prefix) })
+	}
+	if out, err := chalkctl(t, rl.nodes["r1"], "kubernetes", "node", "diag", "r1", "tcp-connect", "address="+k1VIP, "port=6443"); err != nil || !strings.Contains(out, "connected to "+k1VIP+" port 6443") {
+		t.Errorf("r1 did not reach k1's API server at the VIP: %v\n%s", err, out)
+	}
+
+	// Both sides show the session and its BFD peer up, and k1 the session's password.
+	diag := func(name string, args ...string) (string, error) {
+		return chalkctl(t, rl.nodes[name], "kubernetes", append([]string{"node", "diag", name}, args...)...)
+	}
+	for name, peer := range map[string]string{"k1": "fd00:300::1", "r1": k1Switch} {
+		if out, err := diag(name, "bgp-summary"); err != nil || !regexp.MustCompile(`(?m)^\*?`+regexp.QuoteMeta(peer)+`\s`).MatchString(out) {
+			t.Errorf("bgp-summary of %s lists no session with %s: %v\n%s", name, peer, err, out)
+		}
+		if out, err := diag(name, "bfd-peers"); err != nil || !regexp.MustCompile(`peer `+regexp.QuoteMeta(peer)+` [^\n]*\n(?:[ \t]+[^\n]*\n)*?[ \t]+Status: up\n`).MatchString(out) {
+			t.Errorf("bfd-peers of %s shows no BFD peer %s up: %v\n%s", name, peer, err, out)
+		}
+	}
+	if out, err := diag("k1", "bgp-neighbor", "peer=fd00:300::1"); err != nil || !strings.Contains(out, "BGP state = Established") || !strings.Contains(out, "Peer Authentication Enabled") {
+		t.Errorf("bgp-neighbor of k1 shows no established session with r1 with a password: %v\n%s", err, out)
+	}
+	defaultPath := regexp.MustCompile(`(?m)^  64512\n[\s\S]*\bvalid, external, (?:multipath, )?best\b`)
+	waitFor(t, 2*time.Minute, "k1's BGP path to r1's default route", func() error {
+		out, err := diag("k1", "bgp-route", "prefix=::/0")
+		if err != nil || !defaultPath.MatchString(out) {
+			return fmt.Errorf("k1 holds no best path to ::/0 from r1: %v\n%s", err, out)
+		}
+		return nil
+	})
+	// zebra installs no default route from BGP while the kernel holds another: k1's comes from
+	// the router advertisements of QEMU's user-mode network on enp0s2.
+	raDefault := regexp.MustCompile(`"dst":"default","gateway":"fe80::2","dev":"enp0s2","protocol":"ra"`)
+	if out, err := diag("k1", "routes", "family=inet6"); err != nil || !raDefault.MatchString(out) || strings.Contains(out, `"protocol":"bgp"`) {
+		t.Errorf("routes of k1 hold no default route from enp0s2's router advertisements, or one from BGP: %v\n%s", err, out)
+	}
+	vipLine := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(k1VIP) + `/128\s+\*\s+` + k1AS + `\s+` + regexp.QuoteMeta(k1Switch) + `\s`)
+	if out, err := chalkctl(t, rl.nodes["r1"], "kubernetes", "node", "routes", "r1", k1VIP+"/128"); err != nil || !vipLine.MatchString(out) {
+		t.Errorf("node routes of r1 shows no path to the VIP from k1: %v\n%s", err, out)
+	}
+	if out, err := chalkctl(t, k1, "kubernetes", "status", "k1"); err != nil || rl.failedUnit("k1", "kubernetes", out) || !strings.Contains(out, "vip holder") {
+		t.Errorf("status of k1 shows a failed unit or no VIP held: %v\n%s", err, out)
+	}
+
+	// A dry run of k1's delivery plans FRR's reload on its output.
+	plan := regexp.MustCompile(`(?m)^  (?:effects:  | {10})bgp: reload frr\.service \(output bgp\)$`)
+	if out, err := chalkctl(t, k1, "kubernetes", "config", "apply", "--dry-run", "k1"); err != nil || !plan.MatchString(out) {
+		t.Fatalf("config apply --dry-run of k1 plans no reload of FRR: %v\n%s", err, out)
+	}
+	before, err := rl.sessionWith("r1", "kubernetes", k1Switch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	rl.apply("kubernetes", "k1")
+	waitFor(t, 2*time.Minute, "r1's route to k1's lb0", func() error { return rl.learnedFromK1(k1LB + "/128") })
+	after, err := rl.sessionWith("r1", "kubernetes", k1Switch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A session that stayed up aged by the time the delivery took, give or take the whole
+	// seconds FRR rounds its uptime to.
+	if elapsed := time.Since(start); after.State != "Established" || after.UptimeSeconds+2 < before.UptimeSeconds+uint64(elapsed.Seconds()) {
+		t.Errorf("k1's session restarted: up %ds before the delivery, %s and up %ds %v later", before.UptimeSeconds, after.State, after.UptimeSeconds, elapsed.Round(time.Second))
+	}
+	// chalkos-frr-reload applied the delivery in one pass that vtysh took whole.
+	out, err := chalkctl(t, k1, "kubernetes", "logs", "k1", "--unit", "frr.service")
+	switch {
+	case err != nil:
+		t.Errorf("frr.service's journal of k1: %v", err)
+	case !strings.Contains(out, "chalkos-frr-reload: pass 1 applies:") || !strings.Contains(out, "chalkos-frr-reload: FRR runs frr.conf"):
+		t.Errorf("k1's journal shows no reload by chalkos-frr-reload")
+	case strings.Contains(out, "chalkos-frr-reload: pass 2") || strings.Contains(out, "vtysh refused commands"):
+		t.Errorf("chalkos-frr-reload took more than one clean pass on k1")
+	}
+	rl.noFailedUnits("kubernetes", "r1", "k1")
 }

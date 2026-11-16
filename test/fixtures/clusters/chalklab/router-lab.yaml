@@ -1,0 +1,18 @@
+# The router e2e test's lab: the main cluster's routers r1 and r2, as chalkos.yaml gives them, and
+# k1, the control plane of a cluster of its own, which peers with r1 once router-kubernetes.yaml
+# gives r1 its peer.
+apiVersion: chalkctl.chalkos.dev/v1alpha1
+kind: Inventory
+metadata: {name: chalklab}
+spec:
+  images:
+    k8s-kvm: {source: {directory: images/k8s-kvm}}
+    router-kvm: {source: {directory: images/router-kvm}}
+  all: {files: [cluster/*.yaml]}
+  groups:
+    k8s-bgp: {imageName: k8s-kvm, files: [groups/k8s-bgp.yaml, groups/registries.yaml]}
+    router: {imageName: router-kvm, files: [groups/router.yaml]}
+  nodes:
+    r1: {groups: [router], files: [nodes/r1.yaml, nodes/r1-bgp.yaml, nodes/r1-peer.yaml]}
+    r2: {groups: [router], files: [nodes/r2.yaml, nodes/r2-bgp.yaml]}
+    k1: {groups: [k8s-bgp], files: [nodes/k1.yaml, nodes/k1-speaker.yaml]}

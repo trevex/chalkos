@@ -1,0 +1,22 @@
+# k1-speaker.yaml with a second interface to announce: the dummy lb0, whose address stands for one
+# a load balancer would hold.
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: NetDev
+metadata: {name: 20-lb0}
+spec:
+  netDev: {name: lb0, kind: dummy}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-lb0}
+spec:
+  match: {name: lb0}
+  network: {address: ["fd00:302::31/128"]}
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: BGPSpeaker
+metadata: {name: bgp}
+spec:
+  asn: 65031
+  routerID: 0.0.0.31
+  export: {interfaces: [kube0, lb0]}

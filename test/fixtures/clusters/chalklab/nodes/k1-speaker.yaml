@@ -1,0 +1,9 @@
+# k1's side of its BGP session: FRR announces the addresses of kube0, the node's own and the VIP
+# while k1 holds it.
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: BGPSpeaker
+metadata: {name: bgp}
+spec:
+  asn: 65031
+  routerID: 0.0.0.31
+  export: {interfaces: [kube0]}
