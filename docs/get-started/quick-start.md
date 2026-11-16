@@ -27,6 +27,18 @@ You do not need root. [Requirements](requirements.md#lab-host) lists the details
 chalkos publishes no prebuilt images yet. This tutorial builds its image from the `lab` template
 with `nix build`, which is why it needs Nix.
 
+## Terms you meet on this page
+
+| Term | Meaning |
+| --- | --- |
+| secrets file | The one file that holds every CA and key of a cluster, written once by `chalkctl gen secrets`. |
+| OS CA | The CA of the node API. chalkd and chalkctl trust only certificates that chain to it. |
+| client file | A certificate of one role and its key, which lets chalkctl reach nodes without the secrets file. |
+| maintenance mode | The mode chalkd runs in before a node is installed. It prints its certificate's fingerprint on the console. |
+| slot | One of a node's two partition pairs, A and B, each holding one image. An upgrade writes the one not booted. |
+
+The [glossary](../reference/glossary.md) defines every other term.
+
 ## Create the lab's files
 
 The `lab` template holds a cluster that chalklab can run. Create a directory for it and
@@ -355,14 +367,17 @@ trust:
 time: synchronised to 192.53.103.108, offset -0.000000 s
 ```
 
-The first lines say that the node runs the config the inventory gives it and the image whose
-store's root hash begins with `c118f05709bc`, from its first boot entry, `chalkos_1.efi`. The
-output table lists the files the image renders from the config, chrony's time sources and
-systemd-networkd's network files, with the hash of each. The certificates section lists the
-node's certificates and CAs with their expiry dates; the control plane renews the node's
-certificates before they expire. The trust section lists the CAs and keys the node trusts by the
-start of their fingerprints; `(issues)` marks the one the control plane signs with, which matters
-during a rotation, when two are trusted.
+Three lines matter at first:
+
+- `config ... (the inventory's)`: the node runs the config the inventory gives it.
+- `image c118f05709bc, booted from chalkos_1.efi`: the node runs the image whose root hash begins
+  with `c118f05709bc`, from its first boot entry.
+- `kubernetes controlplane: bootstrapped, node ready: True`: cp1 is bootstrapped, and its Node is
+  Ready in Kubernetes.
+
+The other lines list the node's volumes, the files it renders from its config, its certificates,
+the CAs it trusts and its clock. [Status, logs and the console](../operate/status-and-logs.md)
+explains each of them.
 
 [`chalklab status`](../reference/cli/chalklab_status.md) shows the lab itself: the virtual
 machines, their forwarded ports and the lab's files.
@@ -633,3 +648,6 @@ follow the operator guides in order:
 
 To follow one fixed path on real machines instead, [Build a home lab](../guides/home-lab.md) turns four
 machines and a switch into a router and three control planes.
+
+Keep the [command cheat sheet](../reference/cheat-sheet.md) at hand: it lists the command and the
+credential for each common task.
