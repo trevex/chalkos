@@ -13,8 +13,12 @@ what its firewall lets through, whom it exchanges routes with over BGP, which li
 table, how it translates IPv6 to IPv4 and resolves names, which addresses it leases, and which peers
 reach it through WireGuard.
 
-To see a router run first, [Quick start: a router](../get-started/router-quick-start.md) runs one
+To see a router run first, [Quick start: router](../get-started/quick-start-router.md) runs one
 with a client on its LAN as virtual machines, in about 15 minutes.
+
+## Set up
+
+These pages give a node its router config and its firewall.
 
 <div class="grid cards" markdown>
 
@@ -35,6 +39,14 @@ with a client on its LAN as virtual machines, in about 15 minutes.
     forward ports.
 
     [:octicons-arrow-right-24: Read](firewall-and-nat.md)
+
+</div>
+
+## Route
+
+These pages decide where the router sends traffic.
+
+<div class="grid cards" markdown>
 
 -   :material-transit-connection-variant: __Route with BGP__
 
@@ -62,6 +74,14 @@ with a client on its LAN as virtual machines, in about 15 minutes.
     whatever its destination's route.
 
     [:octicons-arrow-right-24: Read](policy-routing.md)
+
+</div>
+
+## Serve the networks
+
+These pages give the router's networks their services.
+
+<div class="grid cards" markdown>
 
 -   :material-swap-horizontal: __Translate to IPv4 and resolve names__
 

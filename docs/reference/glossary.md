@@ -80,7 +80,7 @@ plane and decides whether a boot is healthy. See [Architecture](../how-it-works/
 
 The command that runs a cluster's `kvm` nodes as QEMU virtual machines on one machine. Each
 virtual machine has Secure Boot and a TPM, and chalklab installs and bootstraps them. See
-[its commands](cli/chalklab.md) and the [quick start](../get-started/quick-start.md).
+[its commands](cli/chalklab.md) and the [quick start](../get-started/quick-start-kubernetes.md).
 
 ## Change rule { #change-rule }
 <!-- abbr: change rules, Change rules -->
@@ -362,7 +362,7 @@ file, `chalklab.yaml`, names the cluster's [inventory](#inventory) and each
 VM's MAC address, memory, CPUs and disks. The lab's state (disks, firmware variables, TPM state,
 keys, logs, kubeconfig, client file and an inventory that reaches the nodes at forwarded ports)
 lives in `$XDG_STATE_HOME/chalklab/<name>`, after the lab file's `metadata.name`. See the
-[quick start](../get-started/quick-start.md) and [Config kinds](kinds.md#lab).
+[quick start](../get-started/quick-start-kubernetes.md) and [Config kinds](kinds.md#lab).
 
 ## Layer { #layer }
 <!-- abbr: nolower, Layers, Kubernetes layer, router layer -->

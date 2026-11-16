@@ -78,7 +78,7 @@ explains both.
 chalklab runs the nodes a lab file names as QEMU virtual machines on one machine, each with
 Secure Boot and a TPM. It never builds images. It copies the `kvm` image the inventory names for
 each node, signs the copy with lab keys it enrols in the VMs' firmware, boots each node and
-installs it with chalkctl. A lab is how the [quick start](../../get-started/quick-start.md) runs.
+installs it with chalkctl. A lab is how the [quick start](../../get-started/quick-start-kubernetes.md) runs.
 
 ## A node runs its image from a read-only store
 

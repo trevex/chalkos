@@ -52,7 +52,7 @@ chalklab create --secrets secrets.json
 
 `nix build` builds the nodes' image. `chalklab create` starts the virtual machines, installs
 the nodes, bootstraps the cluster and prints how to reach it with kubectl and chalkctl.
-`chalklab destroy` removes the lab. The [quick start](https://trevex.github.io/chalkos/get-started/quick-start/) walks
+`chalklab destroy` removes the lab. The [quick start](https://trevex.github.io/chalkos/get-started/quick-start-kubernetes/) walks
 through it, including an upgrade.
 
 ## Development

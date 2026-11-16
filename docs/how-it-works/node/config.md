@@ -760,5 +760,5 @@ image with other defaults does not change it.
 - [Write a node's config](../../operate/node-config.md) for writing the inventory and the
   documents, and [Set up your workstation](../../operate/workstation.md) for the secrets file and
   the client files.
-- The [quick start](../../get-started/quick-start.md) and
+- The [quick start](../../get-started/quick-start-kubernetes.md) and
   [Install a node](../../operate/install.md) for config files in use.

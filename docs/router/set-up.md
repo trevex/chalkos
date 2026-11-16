@@ -7,7 +7,7 @@ description: "Configure a router node's interfaces, its Router document and the 
 
 This page shows how to configure a node of a router image: its interfaces, its `Router` document
 and the interfaces on which it answers the node API.
-[Quick start: a router](../get-started/router-quick-start.md) runs a configured router as a
+[Quick start: router](../get-started/quick-start-router.md) runs a configured router as a
 virtual machine first, from a template whose flake builds the router image.
 
 In short:

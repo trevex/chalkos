@@ -6,7 +6,7 @@ description: "The choices that shape a chalkos cluster before its first install,
 # Decisions before you install
 
 A few choices are hard to change once nodes run. Make them before the first install of a cluster
-on your own machines. The [quick start](quick-start.md) makes all of them for you, so you can
+on your own machines. The [quick start](quick-start-kubernetes.md) makes all of them for you, so you can
 skip this page for a lab.
 
 | Decision | Default choice | Changing it later |

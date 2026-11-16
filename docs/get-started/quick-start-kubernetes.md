@@ -1,9 +1,9 @@
 ---
-title: "Quick start"
+title: "Quick start: Kubernetes"
 description: "Run a chalkos cluster of two QEMU virtual machines on this machine with chalklab"
 ---
 
-# Quick start
+# Quick start: Kubernetes
 
 This tutorial builds a chalkos cluster of one control plane and one worker on your machine, runs
 kubectl against it, upgrades both nodes to a new image and removes the cluster again. chalklab runs
@@ -655,7 +655,7 @@ follow the operator guides in order:
 
 To follow one fixed path on real machines instead,
 [Build a cluster on real machines](../guides/cluster-on-machines.md) installs three machines from
-the `cluster-metal` template. [Quick start: a router](router-quick-start.md) runs a router lab.
+the `cluster-metal` template. [Quick start: router](quick-start-router.md) runs a router lab.
 
 [Status, logs and the console](../operate/status-and-logs.md) explains every line of
 `chalkctl status`. Keep the [command cheat sheet](../reference/cheat-sheet.md) at hand: it lists

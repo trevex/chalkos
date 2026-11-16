@@ -1,9 +1,9 @@
 ---
-title: "Quick start: a router"
+title: "Quick start: router"
 description: "Run a chalkos router and a client on its LAN as QEMU virtual machines with chalklab, and change its firewall on trial"
 ---
 
-# Quick start: a router
+# Quick start: router
 
 This tutorial runs a chalkos router and a client machine behind it on your machine. The router
 takes its WAN address by DHCP, leases an address to the client, answers its DNS queries and
@@ -332,4 +332,4 @@ again.
 - [Try a config change](../operate/change-config.md#try-a-config-change) explains trials and
   how to confirm one later.
 - [The router's firewall](../how-it-works/router/firewall.md) shows the chains the router loads.
-- [Quick start](quick-start.md) runs a Kubernetes cluster in the same way.
+- [Quick start](quick-start-kubernetes.md) runs a Kubernetes cluster in the same way.

@@ -13,7 +13,7 @@ chalkos builds API-driven, immutable Linux distributions from NixOS modules. It 
 Kubernetes nodes and routers, and its images carry the schemas of the config they accept.
 </p>
 
-[Get started :material-arrow-right:](get-started/quick-start.md){ .md-button .md-button--primary }
+[Get started :material-arrow-right:](get-started/quick-start-kubernetes.md){ .md-button .md-button--primary }
 [What is chalkos](get-started/what-is-chalkos.md){ .md-button }
 
 </div>
@@ -39,11 +39,11 @@ yet, so every path needs Nix to build an image.
     ---
 
     For operators. Run a lab cluster of two virtual machines on one machine in about 15 minutes,
-    or [a lab router](get-started/router-quick-start.md). Then take the cluster to real machines
+    or [a lab router](get-started/quick-start-router.md). Then take the cluster to real machines
     with [Build a cluster on real machines](guides/cluster-on-machines.md), or do one task at a
     time from [Operate nodes](operate/index.md).
 
-    [:octicons-arrow-right-24: Quick start](get-started/quick-start.md)
+    [:octicons-arrow-right-24: Quick start](get-started/quick-start-kubernetes.md)
 
 -   :material-puzzle-outline: __Customise images__
 

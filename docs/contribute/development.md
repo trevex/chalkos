@@ -281,7 +281,7 @@ chalklab create
 A `git+file` input reads the files git tracks, so add new files in the checkout before the lab
 sees them. After changing the checkout, run `nix flake update chalkos` in the lab to lock the new
 state, then upgrade the lab's nodes as the template's README shows, or recreate the lab with
-`chalklab destroy` and `chalklab create`. The [quick start](../get-started/quick-start.md) walks
+`chalklab destroy` and `chalklab create`. The [quick start](../get-started/quick-start-kubernetes.md) walks
 through a lab step by step.
 
 ## Serve the documentation

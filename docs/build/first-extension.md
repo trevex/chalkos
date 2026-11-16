@@ -18,9 +18,9 @@ The extension is `examples/extensions/hardware.nix` of the chalkos repository.
 
 You need:
 
-- the machine the [quick start](../get-started/quick-start.md#before-you-begin) needs;
+- the machine the [quick start](../get-started/quick-start-kubernetes.md#before-you-begin) needs;
 - a lab directory made from the `lab` template, as the quick start makes it up to
-  [Generate the cluster's secrets](../get-started/quick-start.md#generate-the-clusters-secrets):
+  [Generate the cluster's secrets](../get-started/quick-start-kubernetes.md#generate-the-clusters-secrets):
   under git, with `flake.lock` and `secrets.json`;
 - no lab named `lab` that still runs. If the quick start's lab runs, `chalklab destroy` removes it;
 - some Nix: NixOS modules and their options.
