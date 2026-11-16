@@ -41,7 +41,7 @@ func CompileEffect(name, when string) (*EffectRule, error) {
 		return nil, fail("%v", err)
 	}
 	e.Facts = facts
-	if e.program, err = program(env, parsed[0], cel.BoolType); err != nil {
+	if e.program, _, err = program(env, parsed[0], cel.BoolType); err != nil {
 		return nil, fail("%v", err)
 	}
 	return e, nil
@@ -81,5 +81,5 @@ func (e *EffectRule) evaluate(cfg, oldCfg, node map[string]any, facts, oldFacts 
 	var factErr error
 	bindFacts(vars, "facts", e.Facts, facts, &factErr)
 	bindFacts(vars, "oldFacts", e.Facts, oldFacts, &factErr)
-	return evalBool(e.program, vars, &factErr)
+	return evalBool(e.program, vars, nil, &factErr)
 }

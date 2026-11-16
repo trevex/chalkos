@@ -12,7 +12,7 @@ import (
 
 // newEnv is the environment rules compile in: CEL's standard library without bytes(string), the
 // lists, sets, strings and bindings extensions, chalkos's library, and the variables given, all
-// of type dyn, since documents are JSON whose shape the schemas, not CEL, check.
+// of type dyn. A rule's environment adds self, oldSelf or documents with kindTypes.
 func newEnv(variables ...string) (*cel.Env, error) {
 	std := env.NewLibrarySubset().AddExcludedFunctions(
 		env.NewFunction("bytes", &env.Overload{ID: overloads.StringToBytes}))

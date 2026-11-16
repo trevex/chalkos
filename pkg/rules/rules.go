@@ -9,6 +9,7 @@ import (
 	"cel.dev/cel-go/cel"
 	"cel.dev/cel-go/checker"
 	celast "cel.dev/cel-go/common/ast"
+	"cel.dev/cel-go/common/types"
 
 	"github.com/trevex/chalkos/pkg/schema"
 )
@@ -37,6 +38,9 @@ type Program struct {
 	Transition bool
 
 	check, message cel.Program
+	// fields are the fields of the kind's schema the rule and its message read, sorted, which
+	// an error of their evaluation may name.
+	fields []string
 }
 
 // Where names the kind or field that declares the rule.
@@ -69,20 +73,26 @@ func Compile(s *schema.Schemas) (*Set, error) {
 	for _, k := range s.Kinds() {
 		apiVersions[k.Kind] = k.APIVersion
 	}
-	add := func(k schema.Kind, path []string, rules []schema.Rule) {
-		for _, r := range rules {
-			p, err := compile(apiVersions, k, path, r)
-			if err != nil {
-				errs = append(errs, err)
-				continue
-			}
-			set.Programs = append(set.Programs, p)
-		}
-	}
 	for _, k := range s.Kinds() {
+		kt, err := newKindTypes(k.Kind)
+		if err != nil {
+			return nil, err
+		}
+		add := func(path []string, self *types.Type, rules []schema.Rule) {
+			for _, r := range rules {
+				p, err := compile(apiVersions, kt, k, path, self, r)
+				if err != nil {
+					errs = append(errs, err)
+					continue
+				}
+				set.Programs = append(set.Programs, p)
+			}
+		}
 		s.WalkSchema(k.APIVersion, k.Kind, func(n schema.Node) bool {
 			a := n.Annotations()
-			add(k, nil, a.KindRules)
+			if len(n.Field) == 0 && len(a.KindRules) > 0 {
+				add(nil, kt.of(n.Schema, nil), a.KindRules)
+			}
 			switch {
 			case len(a.Rules) == 0:
 			case len(n.Field) == 0:
@@ -90,7 +100,7 @@ func Compile(s *schema.Schemas) (*Set, error) {
 			case slices.Contains(n.Field, schema.ItemStep) || slices.Contains(n.Field, schema.ValueStep):
 				errs = append(errs, fmt.Errorf("%s %s: a rule below a list item or a map value has no path to bind self to; declare it on the list or the map", k.Kind, n.Path))
 			default:
-				add(k, slices.Clone(n.Field), a.Rules)
+				add(slices.Clone(n.Field), kt.of(n.Schema, n.Field), a.Rules)
 			}
 			return true
 		})
@@ -103,21 +113,23 @@ func Compile(s *schema.Schemas) (*Set, error) {
 
 // compile compiles a rule of the kind k, of its field at path or, with a nil path, of the kind.
 // Every rule sees config, oldConfig and node, and document(kind, name) over config; a kind's rules
-// documents and oldDocuments, a field's self and oldSelf; and each fact it names as facts.<name>.
-func compile(apiVersions map[string]string, k schema.Kind, path []string, r schema.Rule) (*Program, error) {
+// documents and oldDocuments, maps of names to documents of type self; a field's self and oldSelf,
+// of type self; and each fact it names as facts.<name>. kt holds the types of k's schema.
+func compile(apiVersions map[string]string, kt *kindTypes, k schema.Kind, path []string, self *types.Type, r schema.Rule) (*Program, error) {
 	p := &Program{Rule: r, Kind: k, Path: path}
 	fail := func(format string, args ...any) error {
 		return fmt.Errorf("%s: rule %q: %s", p.Where(), r.Rule, fmt.Sprintf(format, args...))
 	}
-	vars := []string{"config", "oldConfig", "node"}
+	opts := []cel.EnvOption{documents(apiVersions), cel.CustomTypeProvider(kt), kt.indexes()}
 	if path == nil {
-		vars = append(vars, "documents", "oldDocuments")
+		docs := cel.MapType(cel.StringType, self)
+		opts = append(opts, cel.Variable("documents", docs), cel.Variable("oldDocuments", docs))
 	} else {
-		vars = append(vars, "self", "oldSelf")
+		opts = append(opts, cel.Variable("self", self), cel.Variable("oldSelf", self))
 	}
-	base, err := newEnv(vars...)
+	base, err := newEnv("config", "oldConfig", "node")
 	if err == nil {
-		base, err = base.Extend(documents(apiVersions))
+		base, err = base.Extend(opts...)
 	}
 	if err != nil {
 		return nil, err
@@ -128,13 +140,15 @@ func compile(apiVersions map[string]string, k schema.Kind, path []string, r sche
 	}
 	check, message := parsed[0], parsed[1]
 	p.Facts = facts
-	if p.check, err = program(e, check, cel.BoolType); err != nil {
+	if p.check, p.fields, err = program(e, check, cel.BoolType); err != nil {
 		return nil, fail("%v", err)
 	}
 	if message != nil {
-		if p.message, err = program(e, message, cel.StringType); err != nil {
+		var fields []string
+		if p.message, fields, err = program(e, message, cel.StringType); err != nil {
 			return nil, fail("messageExpression: %v", err)
 		}
+		p.fields = slices.Compact(slices.Sorted(slices.Values(append(p.fields, fields...))))
 	}
 	p.Transition = path != nil && reads(check, "oldSelf")
 	return p, nil
@@ -182,23 +196,33 @@ func parseRule(base *cel.Env, idents []string, rule string, srcs ...string) (*ce
 	return e, parsed, facts, nil
 }
 
-// program checks a parsed expression, which must yield want or dyn, and limits its cost.
-func program(e *cel.Env, parsed *cel.Ast, want *cel.Type) (cel.Program, error) {
+// program checks a parsed expression, which must yield want or dyn, and limits its cost. In the
+// environment of a kind's rule it returns the fields of the kind's schema the expression reads,
+// as kindTypes.fieldsRead does.
+func program(e *cel.Env, parsed *cel.Ast, want *cel.Type) (cel.Program, []string, error) {
 	checked, iss := e.Check(parsed)
 	if iss.Err() != nil {
-		return nil, iss.Err()
+		return nil, nil, iss.Err()
+	}
+	var fields []string
+	if kt, ok := e.CELTypeProvider().(*kindTypes); ok {
+		var err error
+		if fields, err = kt.fieldsRead(checked); err != nil {
+			return nil, nil, err
+		}
 	}
 	if out := checked.OutputType(); !out.IsExactType(want) && !out.IsExactType(cel.DynType) {
-		return nil, fmt.Errorf("yields %s, not %s", out, want)
+		return nil, nil, fmt.Errorf("yields %s, not %s", out, want)
 	}
 	est, err := e.EstimateCost(checked, estimator{})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if est.Max > maxEstimatedCost {
-		return nil, fmt.Errorf("costs up to %d, more than the limit of %d, with %d elements in each list, map and string", est.Max, maxEstimatedCost, sizeHint)
+		return nil, nil, fmt.Errorf("costs up to %d, more than the limit of %d, with %d elements in each list, map and string", est.Max, maxEstimatedCost, sizeHint)
 	}
-	return e.Program(checked, cel.CostLimit(runtimeCostLimit))
+	prg, err := e.Program(checked, cel.CostLimit(runtimeCostLimit))
+	return prg, fields, err
 }
 
 // estimator assumes sizeHint elements wherever CEL cannot tell a size.

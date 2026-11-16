@@ -128,14 +128,14 @@ func bindFacts(vars map[string]any, ident string, names []string, facts Facts, f
 
 // evalBool evaluates prg, the check of a rule, with vars. A fact the rule reads that could not be
 // loaded, which bindFacts keeps in factErr, is the error then, whatever the rule yields without
-// it; else the error says why the rule yields no bool.
-func evalBool(prg cel.Program, vars map[string]any, factErr *error) (bool, error) {
+// it; else the error says why the rule yields no bool, naming the one of fields it lacks.
+func evalBool(prg cel.Program, vars map[string]any, fields []string, factErr *error) (bool, error) {
 	out, _, err := prg.Eval(vars)
 	if *factErr != nil {
 		return false, *factErr
 	}
 	if err != nil {
-		return false, errors.New(cannotEvaluate(err))
+		return false, errors.New(cannotEvaluate(err, fields))
 	}
 	ok, isBool := out.(types.Bool)
 	if !isBool {
@@ -154,7 +154,7 @@ func (p *Program) evaluate(vars map[string]any, cfg, oldCfg, node map[string]any
 	if doc != "" {
 		where = refusals.Refusal{Kind: p.Kind.Kind, Name: doc, Path: strings.Join(p.Path, ".")}.Where()
 	}
-	ok, err := evalBool(p.check, vars, &factErr)
+	ok, err := evalBool(p.check, vars, p.fields, &factErr)
 	// A fact that could not be loaded is returned as it is, outside the cannot-check wrap.
 	if factErr != nil {
 		return nil, factErr
@@ -178,7 +178,7 @@ func (p *Program) evaluate(vars map[string]any, cfg, oldCfg, node map[string]any
 			f.Message = refusals.Printable(string(s))
 		} else if f.Message == "" {
 			f.Message = "the config does not meet a rule of " + p.Where() + ", whose messageExpression fails"
-			if why := messageError(msg, err); why != "" {
+			if why := messageError(msg, err, p.fields); why != "" {
 				f.Message += ": " + why
 			}
 		}
@@ -191,9 +191,9 @@ func (p *Program) evaluate(vars map[string]any, cfg, oldCfg, node map[string]any
 
 // messageError is what a failure says of a messageExpression that yields msg and err: the kind
 // of error, or the type it yields instead of a string.
-func messageError(msg ref.Val, err error) string {
+func messageError(msg ref.Val, err error, fields []string) string {
 	if err != nil {
-		return evalError(err)
+		return evalError(err, fields)
 	}
 	if msg == nil {
 		return ""
@@ -353,11 +353,16 @@ var invalidInput = regexp.MustCompile(`^[A-Za-z.]+: invalid input: `)
 var libraryErrors = []string{errNotCIDR, errNotIP, errNotSize, errNegativeIndex, errPastRange, errNotPortRange}
 
 // evalError is what a refusal says of err, the error of a rule or a messageExpression that cannot
-// be evaluated: the kind of error, or nothing for one evalErrors does not know.
-func evalError(err error) string {
+// be evaluated: the kind of error, or nothing for one evalErrors does not know. A missing key that
+// is one of fields, the schema's fields the expression reads, is named: a field's name comes from
+// the schema, not from a value.
+func evalError(err error, fields []string) string {
 	text := err.Error()
 	if slices.Contains(libraryErrors, text) {
 		return text
+	}
+	if key, ok := strings.CutPrefix(text, "no such key: "); ok && slices.Contains(fields, key) {
+		return "no such key: " + key + ", a field the config leaves out; test it with has() first"
 	}
 	for _, e := range evalErrors {
 		if strings.HasPrefix(text, e.prefix) {
@@ -372,8 +377,8 @@ func evalError(err error) string {
 
 // cannotEvaluate is the error of a rule that cannot be evaluated, with what evalError says of
 // err.
-func cannotEvaluate(err error) string {
-	if says := evalError(err); says != "" {
+func cannotEvaluate(err error, fields []string) string {
+	if says := evalError(err, fields); says != "" {
 		return "a rule cannot be evaluated: " + says
 	}
 	return "a rule cannot be evaluated"

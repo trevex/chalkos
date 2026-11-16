@@ -439,6 +439,30 @@ func TestEvaluateKindRuleError(t *testing.T) {
 	}
 }
 
+// A rule that reads a declared field the config leaves out names the field, which comes from the
+// schema; a map's missing key, which comes from a value, stays unnamed.
+func TestEvaluateNamesMissingField(t *testing.T) {
+	spec := closed(map[string]any{
+		"name":   map[string]any{"type": "string"},
+		"labels": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}},
+		"peer":   closed(map[string]any{"address": map[string]any{"type": "string"}}),
+	})
+	for name, tc := range map[string]struct{ rule, want string }{
+		"field":    {`self.peer.address != ""`, "no such key: address, a field the config leaves out; test it with has() first"},
+		"index":    {`self.peer["address"] != ""`, "no such key: address, a field the config leaves out; test it with has() first"},
+		"map key":  {`self.labels[self.name] != ""`, "no such key"},
+		"declared": {`self.labels.s3cret != "" || self.peer.address != ""`, "no such key"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			set := compiled(t, closedKind(withRules(spec, rule(tc.rule, "")), nil))
+			_, err := set.Evaluate(Input{Documents: config.Redact([]config.Document{doc(t, "Demo", "a", `{"name": "s3cret", "labels": {}, "peer": {}}`)})})
+			if want := "cannot check: Demo/a: spec: a rule cannot be evaluated: " + tc.want; err == nil || err.Error() != want {
+				t.Errorf("err = %v, want %q", err, want)
+			}
+		})
+	}
+}
+
 // A rule's description annotates it for the reference: the rule neither reads it nor says it.
 func TestDescriptionIgnored(t *testing.T) {
 	set := compiled(t, kindSchema("Demo", true, object(nil), []any{
@@ -633,5 +657,77 @@ func TestFactErrorBounded(t *testing.T) {
 	got := strings.TrimPrefix(err.Error(), "cannot check: fact disks: ")
 	if len(got) > maxErrorText+len("…") || !strings.HasSuffix(got, "…") || !utf8.ValidString(got) {
 		t.Errorf("FactError = %d bytes, valid %v", len(got), utf8.ValidString(got))
+	}
+}
+
+// closed is an object of the properties given that allows no others, as lib/kinds/schema.nix
+// writes a submodule.
+func closed(props map[string]any) map[string]any {
+	o := object(props)
+	o["additionalProperties"] = false
+	return o
+}
+
+// closedKind is kindSchema with its root and metadata closed, as lib/kinds/schema.nix writes them.
+func closedKind(spec map[string]any, rules []any) map[string]any {
+	sch := kindSchema("Demo", true, spec, rules)
+	sch["additionalProperties"] = false
+	sch["properties"].(map[string]any)["metadata"] = closed(map[string]any{"name": map[string]any{"type": "string"}})
+	return sch
+}
+
+// A rule that reads a field the schema does not declare on an object that allows no other fields
+// fails its compilation, naming the kind, the rule's path and the field. A map's keys and the
+// fields of an object that allows others are read as they come.
+func TestCompileRefusesUnknownField(t *testing.T) {
+	spec := func(rules ...any) map[string]any {
+		s := closed(map[string]any{
+			"model":  map[string]any{"type": "string"},
+			"labels": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}},
+			"extra":  object(map[string]any{"a": map[string]any{"type": "string"}}),
+			"ports":  map[string]any{"type": "array", "items": closed(map[string]any{"port": map[string]any{"type": "integer"}})},
+			"peer": map[string]any{"anyOf": []any{
+				closed(map[string]any{"address": map[string]any{"type": "string"}}),
+				map[string]any{"type": "null"},
+			}},
+		})
+		if len(rules) > 0 {
+			withRules(s, rules...)
+		}
+		return s
+	}
+	for name, tc := range map[string]struct {
+		spec  map[string]any
+		rules []any
+		want  string
+	}{
+		"field rule":     {spec(rule("self.modle == oldSelf.modle", "")), nil, `Demo spec: rule "self.modle == oldSelf.modle": ERROR: <input>:1:5: undefined field 'modle'`},
+		"list item":      {spec(rule("self.ports.all(p, p.prot > 0)", "")), nil, "undefined field 'prot'"},
+		"nullable":       {spec(rule("self.peer == null || self.peer.adress != ''", "")), nil, "undefined field 'adress'"},
+		"kind rule":      {spec(), []any{rule("documents.all(n, documents[n].spec.modle != '')", "")}, `Demo: rule "documents.all(n, documents[n].spec.modle != '')": ERROR: <input>:1:35: undefined field 'modle'`},
+		"field type":     {spec(rule("self.model == 1", "")), nil, "found no matching overload for '_==_' applied to '(string, int)'"},
+		"metadata field": {spec(), []any{rule("documents.all(n, documents[n].metadata.nmae != '')", "")}, "undefined field 'nmae'"},
+		"literal index":  {spec(rule("self['modle'] == ''", "")), nil, "ERROR: <input>:1:5: undefined field 'modle'"},
+		"message":        {spec(rule("true", "", "messageExpression", "self.modle")), nil, "messageExpression: ERROR: <input>:1:5: undefined field 'modle'"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := Compile(schemasOf(t, closedKind(tc.spec, tc.rules)))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("err = %v, want %q", err, tc.want)
+			}
+		})
+	}
+	sch := closedKind(spec(
+		rule("self.labels.anything == 'x' && self.extra.b == 'y' && self.model == oldSelf.model", ""),
+		rule("has(self.peer) && self.peer != null && self.peer.address != '' && self.ports.all(p, p.port > 0)", ""),
+	), []any{rule("documents.all(n, documents[n].spec.model != '' && documents[n].metadata.name != '')", "")})
+	if _, err := Compile(schemasOf(t, sch)); err != nil {
+		t.Error(err)
+	}
+	// A value indexed by a string reads as dyn, also beside null in a kind whose schema declares
+	// no object type.
+	byName := rule(`documents.all(n, cel.bind(r, n in facts.recorded ? facts.recorded[n] : null, r == null || r.format == ""))`, "")
+	if _, err := Compile(schemasOf(t, kindSchema("Open", true, object(nil), []any{byName}))); err != nil {
+		t.Error(err)
 	}
 }
