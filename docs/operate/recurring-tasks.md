@@ -103,11 +103,15 @@ The image flake pins chalkos in `flake.lock`. A newer chalkos reaches the nodes 
     nix develop
     ```
 
-4. Build the images again, and check every node's config against them:
+4. Build each image again into the directory the inventory names, and check every node's
+   config against them:
 
     ```sh
+    nix build .#<image> -o images/<image>
     chalkctl validate
     ```
+
+    `<image>` is an image's name, such as `node-metal`.
 
     Fix each document `validate` refuses before you go on.
 

@@ -80,7 +80,8 @@ the image each runs and the config files each gets:
 ```
 
 chalkctl reads `chalkos.yaml` in the current directory, so you run chalkctl from the repository's
-root. `--inventory` or `$CHALKOSINVENTORY` names an inventory elsewhere. Paths in the inventory are relative to its directory.
+root. `--inventory` or `$CHALKOSINVENTORY` names an inventory elsewhere, and either takes
+precedence over `./chalkos.yaml`. Paths in the inventory are relative to its directory.
 [Write a node's config](node-config.md) covers the inventory and the files it names.
 
 `images/` holds the image directories. `nix build` links a build there, and
@@ -146,7 +147,8 @@ from before the last change, or after a rotation the version from before the rot
 
     New secrets do not match the installed nodes. Without the file you cannot install or
     reinstall a node, deliver config, issue client files or derive a recovery key. Back it up to
-    a second place, as [Back up what you cannot rebuild](recurring-tasks.md#back-up-what-you-cannot-rebuild) lists.
+    a second place, as
+    [Back up what you cannot rebuild](recurring-tasks.md#back-up-what-you-cannot-rebuild) lists.
     [Recover a node](recover-node.md#the-secrets-file-is-lost) lists what still works without it.
 
 ## Build the images with the cluster's OS CA

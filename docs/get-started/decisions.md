@@ -13,7 +13,7 @@ skip this page for a lab.
 | --- | --- | --- |
 | Secure Boot or not | Secure Boot | Turning it on for an installed node changes PCR 7, so the node's next boot asks for its recovery key. |
 | One or three control planes | Three | A cluster can grow from one to three; the endpoint should allow for it. |
-| VIP announced on layer 2 or routed | Layer 2 | The mode is a field of the `Cluster` document. |
+| VIP announced on layer 2 or routed | Layer 2 | The mode changes with a config delivery; moving the endpoint means reissuing every kubeconfig. |
 | Secrets file encrypted with age or plaintext | age | A rotation can write a plaintext file encrypted to a new `.age` file. |
 | Metal or VM | The machines you have | A node's platform changes only with a reinstall. |
 

@@ -612,6 +612,13 @@ $ chalklab destroy
 removed the lab in /home/alice/.local/state/chalklab/lab
 ```
 
+The exported variables still name the removed lab's files, so clear them before chalkctl or kubectl
+reads another cluster:
+
+```sh
+unset KUBECONFIG CHALKOSCONFIG CHALKOSINVENTORY
+```
+
 The files and the image stay, so `chalklab create --secrets secrets.json` makes the same cluster
 again. A lab you keep stays on disk across a reboot of your machine, but its virtual machines do
 not start by themselves; `chalklab start` starts them again with their disks, TPM state and
@@ -646,8 +653,8 @@ follow the operator guides in order:
 3. [Install a node](../operate/install.md): boot a physical machine into maintenance mode and
    install it, or [install it in a VM](../operate/install-vm.md).
 
-To follow one fixed path on real machines instead, [Build a home lab](../guides/home-lab.md) turns four
-machines and a switch into a router and three control planes.
+To follow one fixed path on real machines instead, [Build a home lab](../guides/home-lab.md)
+turns four machines and a switch into a router and three control planes.
 
 [Status, logs and the console](../operate/status-and-logs.md) explains every line of
 `chalkctl status`. Keep the [command cheat sheet](../reference/cheat-sheet.md) at hand: it lists

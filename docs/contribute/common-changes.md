@@ -47,8 +47,9 @@ service, such as `api/chalkos/router/v1/router.proto`; the steps differ where no
 ## Add a chalkctl command
 
 1. Write the command in `pkg/chalkctl`, built with `a.command`, or for a layer's command in
-   `pkg/chalkctl/layers/<layer>`. Give it `Use`, `Short`, `Long` and `Example`. A command that reaches nodes registers its flags through `layer.NodeFlags`:
-   `Register` for the secrets file alone, `RegisterClient` when a client file may run it.
+   `pkg/chalkctl/layers/<layer>`. Give it `Use`, `Short`, `Long` and `Example`. A command that
+   reaches nodes registers its flags through `layer.NodeFlags`: `Register` for the secrets file
+   alone, `RegisterClient` when a client file may run it.
 2. Put its long description and examples in `help.go` of the same package, beside the other
    commands' help. `TestCommandsDescribed` fails for a visible command without a short or long
    description or an example.

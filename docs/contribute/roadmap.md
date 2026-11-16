@@ -24,13 +24,6 @@ today:
   32767 for TCP alone, as [Known limits](#networking) says. Add the same range to
   `allowedUDPPortRanges`, and update
   [Ports and firewall](../reference/ports-and-firewall.md) and this page.
-- Export the lab's inventory on the remaining build pages. `docs/build/first-extension.md` and
-  `docs/build/sign-images.md` pass `--inventory` to every chalkctl command of a lab. Export
-  `CHALKOSINVENTORY` once, as the [quick start](../get-started/quick-start.md) does.
-- Hold the guides to the link rule of tutorials. The
-  [docs style guide](style.md#terms-and-links) lets a tutorial step link only the reference of a
-  command it runs. `docs/guides/home-lab.md` and `docs/guides/bgp-extension.md` link other pages
-  inside their steps; move those links to their last sections.
 
 ## Planned work
 

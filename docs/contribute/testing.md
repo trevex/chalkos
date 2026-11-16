@@ -75,7 +75,8 @@ The router's renderers in `cmd/chalkos-render` keep their golden files in
 
 ## Wait in tests
 
-A test waits for an event: no test calls `time.Sleep` to let something happen. `pkg/internal/testwait` gives the two ways to wait:
+A test waits for an event: no test calls `time.Sleep` to let something happen.
+`pkg/internal/testwait` gives the two ways to wait:
 
 | Wait | Use it for | How it works |
 | --- | --- | --- |
@@ -289,7 +290,7 @@ Each test lives in a file of its own in `test/e2e`; the other files hold the ste
 | `lab_test.go` | labs that chalklab runs | `e2e-kubernetes`, `e2e-router` |
 | `registry_test.go` | registries the tests serve, of container images and of chalkos images | `e2e-installer`, `e2e-upgrade`, `e2e-kubernetes`, `e2e-kubernetes-ha` |
 | `ntp_test.go` | an NTP server for the nodes' clocks | `e2e-kubernetes`, `e2e-router` |
-| `certificates_test.go`, `rotation_test.go` | certificate renewals and CA rotations | `e2e-kubernetes` |
+| `certificates_test.go`, `rotation_test.go` | certificate renewals and CA rotations, and chalkctl run with a client file | `e2e-kubernetes`, `e2e-upgrade` |
 
 A VM gets 2 CPUs and 2 GiB of memory unless its test asks for less, on a 16 GiB sparse disk.
 The Kubernetes test gives its control plane 2048 MiB and its worker 1024 MiB; the HA test gives

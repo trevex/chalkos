@@ -71,8 +71,9 @@ reports it the same way:
 
 Long output is compared with golden files instead of with strings in the test:
 
-- Go tests use `pkg/internal/golden`. `go test -run <test> -update` in the package rewrites the
-  files in its `testdata/`.
+- New Go golden tests use `pkg/internal/golden`. `go test -run <test> -update` in the package
+  rewrites the files in its `testdata/`. The router's renderers in `cmd/chalkos-render` keep a
+  helper of their own with the same flag.
 - Image tests compare an output's rendered files with the directories that their `outputs` name,
   such as `modules/node/router/tests/<example>/<output>`. The `image-tests` check prints the
   command that takes a new set.
@@ -87,7 +88,7 @@ commits what they generate too. A check fails when they differ.
 | Source | Command | Generated | Check |
 | --- | --- | --- | --- |
 | `api/chalkos/*/v1/*.proto` | `buf generate` | `pkg/api/*/v1/`, `docs/reference/api.md` | `api-generated`, `docs-generated` |
-| Command help, option declarations, the kinds' JSON Schemas, the proto files | `nix run .#docgen` | `docs/reference/cli/`, `docs/reference/mkimages.md`, `docs/reference/image-options.md`, `docs/reference/extension-api.md`, `docs/reference/kinds.md`, `docs/reference/api.md`, the navigation in `zensical.toml` | `docs-generated` |
+| Command help, option declarations, the kinds' JSON Schemas, the built-in rules, facts, outputs and effects, the proto files | `nix run .#docgen` | `docs/reference/cli/`, `docs/reference/mkimages.md`, `docs/reference/image-options.md`, `docs/reference/extension-api.md`, `docs/reference/kinds.md`, `docs/reference/builtins.md`, `docs/reference/api.md`, the navigation in `zensical.toml` | `docs-generated` |
 | `docs/reference/glossary.md` | `nix run .#docgen` | `docs/includes/abbreviations.md` | `docs-generated` |
 | `go.mod`, `go.sum` | `nix build .#chalkctl`, with `vendorHash` set to `lib.fakeHash` first | `vendorHash` in `nix/overlay/build-go-program.nix` | every Go package's build |
 
