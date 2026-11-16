@@ -6,9 +6,9 @@ description: "How chalkos's Nix code is laid out, what a module gets, where a ne
 # Nix code
 
 chalkos's Nix code builds chalkos's programs and images and runs its checks. This page covers
-where each part lives, which arguments a chalkos NixOS module receives, where a new helper
-belongs and the practices new Nix code follows. [Architecture for developers](architecture.md)
-describes what the modules do.
+where each part lives, what the modules hold, which arguments a chalkos NixOS module receives,
+where a new helper belongs and the practices new Nix code follows.
+[Architecture for developers](architecture.md) shows where the Nix and Go halves meet.
 
 ## Where Nix code lives
 
@@ -34,6 +34,42 @@ and checks it.
 | `nix/docs/` | The docs output: `default.nix` builds the site and the generated reference pages, `nav.py` checks the site's navigation, and `templates/` holds the openings of the options pages and the end of the extension API's. |
 | `nix/checks/` | The flake's checks. |
 | `nix/testing/` | The test images, their fixtures and the test environment that the checks, the apps and the development shell share. |
+
+## What the modules and lib hold
+
+| Directory | What it holds |
+| --- | --- |
+| `modules/node/` | The NixOS modules of every image: `base/` (appliance, closure, diagnostics, disk, image directory, storage), `kinds/` (`chalkos.kinds`, `chalkos.facts`, networkd's kinds and the kinds every image accepts), `runtime/` (grants, `chalkos.outputs`, `chalkos.validators`, `chalkos.effects`, `chalkos.tests`, chalkcfg on the system path), `kubernetes/` (the kubelet, its kinds, effects, the CNI, containerd, registries, firewall), `router/` (the router layer), and a file each for the kernel, chalkd, the console, the kernel's consoles, diagnostics, the network, time, the layers' markers and upgrades. |
+| `modules/node/router/` | The router layer: `default.nix` (its option, marker and forwarding), the Router kind (`kinds.nix`) and its output `router-sysctl` (`sysctl.nix`), `lib.nix`, traceroute (`diagnostics.nix`) and the validator router (`validator.nix`). `lib.nix` holds what the router's parts share, which they get as the module argument `routerLib`: the enable option of a feature, the kinds the image declares, the sandbox of the units, the loader of a part's kinds file and, as `routerLib.types`, the types the router kinds share from `types.nix`. `routerLib` belongs to the router layer and is not part of the extension API, although every image's modules can read it. |
+| `modules/platforms/` | `metal` and `kvm`. |
+| `modules/installer/` | The installer image and its ISO. |
+| `modules/testing/` | The test probe, the test image's partition sizes and the test-only config kind `Greeting` with its output and effect. |
+| `lib/` | `mkImage`, `mkInstaller`, `mkImages` and the helpers over their result (`images.nix`); their arguments as module options (`images-arguments.nix`); the layers, which the flake exports as `nixosModules` (`layers.nix`); and `chalkos.nix`, which builds `chalkosLib`. `chalkosLib` is the module argument of every image's modules and, beside `mkImages`, the flake's `lib`. The functions the modules share are reached through `chalkosLib.internal` alone: `kinds/`, `cel.nix` and `refuse.nix`. |
+
+The shared functions in `lib/` are these:
+
+- `kinds/`: the JSON Schema converter, the chalkcfg commands of `get`, the option types both
+  recognise, and the API groups of chalkos's own kinds. It also holds the check of the kinds a
+  grant, an output, a validator or an effect names, which lists every kind the image does not
+  declare, Secret and withheld kinds.
+- `cel.nix`: CEL that effect rules share.
+- `refuse.nix`: `refuse`, which throws every problem a module finds in one message, and the
+  phrases the messages share.
+
+Each part of the router has a directory of `modules/node/router`:
+
+- `kinds.nix` is a function of `{ chalkosLib, lib, routerLib }` that returns the part's kinds.
+  `default.nix` loads it with `routerLib.kinds ./kinds.nix`.
+- `default.nix` sets the kinds under one condition with the part's outputs, effects and units.
+- A part whose diagnostics have a file of their own keeps them in `diagnostics.nix`, a module that
+  `default.nix` imports, under the same condition.
+- A feature that an image can leave out declares its option `chalkos.router.<feature>.enable` in
+  `default.nix`.
+- An output that reads another feature's kinds filters them by the kinds the image declares.
+
+Every router image carries `firewall/`, `vrf/` and `policy-routing/`. An image can leave out
+`bgp/`, `nat64/`, `resolver/`, `dhcp/`, `dhcp-relay/` and `wireguard/` with
+`chalkos.router.<feature>.enable`.
 
 ## What a module gets
 
