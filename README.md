@@ -56,8 +56,9 @@ through it, including an upgrade.
 
 ## Development
 
-`nix develop` gives the tools; `nix flake check` runs the tests, including the end-to-end tests
-in QEMU, which need `/dev/kvm`. The documentation is built with `nix build .#docs`, served while
-it is edited with `nix run .#docs-serve`, and its generated reference pages are written with
-`nix run .#docgen`. The [contributing guide](https://trevex.github.io/chalkos/contribute/)
-has the details.
+`nix develop` gives the tools. `nix flake check` runs every check, including the end-to-end tests
+in QEMU, which boot VMs and need `/dev/kvm`. Contributors usually build single checks instead, as
+[Testing](https://trevex.github.io/chalkos/contribute/testing/) describes. The documentation is
+built with `nix build .#docs`, served while it is edited with `nix run .#docs-serve`, and its
+generated reference pages are written with `nix run .#docgen`. The
+[contributing guide](https://trevex.github.io/chalkos/contribute/) has the details.

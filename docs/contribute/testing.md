@@ -24,6 +24,21 @@ Start at the top of the table and go down only when the level above cannot show 
 | Build check | `nix/checks/` | what an image build produces: kernel modules, sizes, the bootspec | one image build |
 | End-to-end test | `test/e2e/` | behaviour that needs a booted node: firmware, Secure Boot, the TPM, the initrd, a cluster | minutes and 2 GiB or more per VM |
 
+## Run a subset
+
+Run one package's Go tests, or one test of it, in the development shell. Build one flake check by
+its name, with its log:
+
+```sh
+go test ./pkg/<pkg>/ -run TestX
+nix build -L .#checks.x86_64-linux.<name>
+```
+
+`<pkg>` is a package below `pkg/`, `TestX` a test function's name and `<name>` a check of the
+tables below. `go test ./...` from the repository's root also runs the end-to-end tests in
+`test/e2e`, which boot VMs once the variables they need are set. The development shell sets those
+of the firmware test.
+
 ## Go unit tests
 
 Unit tests run with `go test` and take no privileges. Commands are tested in-process through
@@ -152,6 +167,14 @@ shell functions the check scripts call: `fail`, `retry` and `refuses`, and for t
 | `template-lab` | The lab template's image builds, and `chalkctl validate` accepts the template's YAML with it. |
 | `example-homelab` | The homelab example's image builds, and `chalkctl validate` accepts its YAML, `Peer` documents included, with it. |
 | `example-extensions` | The extensions example's image builds, and `chalkctl validate` accepts its YAML, `Rack` and `Hardware` documents included, with it. |
+| `image-contract` | An image directory describes itself and carries a schema for each kind it lists. |
+| `image-oci` | The test image's OCI layout: one manifest of the chalkos artifact type, whose header names the image directory's root hash and platform, whose layers are the image's parts and contract in order, and whose contract holds the directory's `metadata.json`. |
+| `chrony-dhcp` | The `chalkos-chrony-dhcp` unit's script: the time servers networkd learned are chrony's when the node's `TimeSync` takes them, and none are otherwise. chrony's effect reloads the sources of a chronyd that runs alone. |
+| `containerd-config` | containerd's merged config takes the sandbox image from the file `chalkos-containerd-config` writes from the `Cluster` document, and keeps its own without one. |
+| `controlplane-ports` | A peer reaches 6443, 2379 and 2380 over IPv4 and IPv6 through the firewall once the node's `Node` document makes it a control plane, and no longer once it makes it a worker, in a network namespace. |
+| `registry-mirrors` | The `chalkos-registry-mirrors` unit writes the registry hosts containerd reads from `Mirror` and `Registry` documents, keeps them when a document cannot be read, and writes none without documents. |
+| `fixtures` | Every node of the end-to-end fixtures has config its image accepts, as `chalkctl validate` checks it, and the inventories the tests want refused are refused with their message. |
+| `nix-lint` | The Nix files are formatted as `nix fmt` formats them, hold no unused binding or argument (deadnix) and pass statix, except for the lints `statix.toml` leaves out. |
 
 ## Image tests
 
