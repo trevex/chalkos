@@ -15,13 +15,17 @@ A change rule is a CEL expression that every config the node accepts makes true.
 part of the image's schemas, so what a node accepts changes with an upgrade. A rule that needs
 node state, such as what a survey found, reads it from a fact: the JSON of a file or of a program.
 
+[Extension runtime](../reference/extension-runtime.md) lists the variables and functions a rule
+reads, its cost limits and its errors. [The config pipeline](../how-it-works/node/config-pipeline.md#chalkctl-and-chalkd-both-run-the-rules)
+explains where the rules run.
+
 ## Before you begin
 
 You need a kind of your own, as [Declare a config kind](declare-a-kind.md) declares one. Rules
 on a field need `chalkosLib.mkOption`, which that page introduces. CEL is the
 [Common Expression Language](https://cel.dev/); its syntax resembles that of C and JavaScript.
 
-## A field rule keeps a Peer's AS number
+## Keep a field's value with a field rule
 
 A BGP neighbour's AS number is part of who it is: a new number is a new neighbour. The `asn`
 field of `Peer` declares a rule that keeps it:
@@ -50,20 +54,12 @@ document's name, then the field, as `Peer/router: spec.asn:`, the form a rendere
 too. The rest comes from `messageExpression`, which builds the message from the same variables as
 the rule.
 
-## A rule has five attributes
+## Say what the refused change takes
 
-| Attribute | Meaning |
-| --- | --- |
-| `rule` | CEL that is true for every config the node accepts. |
-| `message` | What the node says when the rule is false: why, and what to do instead. |
-| `messageExpression` | CEL that yields the message. When it fails, the node says `message`, or names the rule's kind or field without one. |
-| `takes` | What the refused change needs instead: `refuse`, the default, `reset` or `reinstall`. |
-| `description` | One sentence on what the rule guards, which the reference pages show. The node never reads it. |
-
-A rule without either message says `the config does not meet a rule of` and the kind or field
-that declares it, such as `the config does not meet a rule of Peer spec.asn`.
-
-## A refusal starts with what the change takes
+A rule's `message` or `messageExpression` says why the change is refused and what to do instead.
+Its `takes` says what the refused change needs instead: `refuse`, the default, `reset` or
+`reinstall`. [Rule attributes](../reference/extension-runtime.md#rule-attributes) lists every
+attribute of a rule.
 
 A config whose rules fail is refused as a whole. The refusal starts with the most that any failed
 rule takes, then lists every failed rule's message, separated by `;`:
@@ -78,7 +74,7 @@ Your own kinds mostly use `refuse`. The storage kinds use `reset` and `reinstall
 volume's new format is possible once the volume is recreated.
 [`chalkctl storage reset`](../reference/cli/chalkctl_storage_reset.md) recreates one volume.
 
-## A kind rule sees all of a kind's documents
+## Compare a kind's documents with a kind rule
 
 A rule over all documents of a kind goes into
 [`chalkos.kinds.<name>.rules`](../reference/extension-api.md#chalkoskindsrules). Here `documents` maps
@@ -108,19 +104,18 @@ A kind's message names nothing by itself, so it says which kind it is about.
 
 A value that must not repeat, among a kind's documents or within one list, needs no rule.
 Declare it with `unique` on the field or the kind, as
-[A field's values can be unique](declare-a-kind.md#a-fields-values-can-be-unique) shows.
-chalkctl and chalkd check such declarations before any rule runs, in a time that grows with the
-number of values, and name every value that repeats and where it does. A rule that compares each
-value with every other one costs two nested loops, which comes close to the limit
-[The build compiles every rule](#the-build-compiles-every-rule) describes.
+[Make a field's values unique](declare-a-kind.md#make-a-fields-values-unique) shows.
+chalkctl and chalkd check such declarations before any rule runs. A rule that compares each
+value with every other one costs two nested loops, which comes close to the
+[cost limit](../reference/extension-runtime.md#cost-limits).
 
-## A spec rule sees one document whole
+## Compare fields of one document with a spec rule
 
 A rule that compares fields of one document goes into
 [`chalkos.kinds.<name>.specRules`](../reference/extension-api.md#chalkoskindsspecrules). Its `self`
 is the spec of one delivered document and `oldSelf` the spec of the running config's document of
 the same name, so it runs as a field's rule does, once for each document. The `Session` of
-[A field's values can be unique](declare-a-kind.md#a-fields-values-can-be-unique) keeps its
+[Make a field's values unique](declare-a-kind.md#make-a-fields-values-unique) keeps its
 neighbours off its peer's address:
 
 ```nix
@@ -138,9 +133,8 @@ A spec rule's message starts like a field rule's, with the kind, the document's 
 
 The same check as a kind rule loops over `documents` around the loop over the neighbours. A kind
 rule that compares two lists of each document, such as each reservation of a subnet with each of
-its pools, therefore costs three nested loops, which exceeds the limit that
-[The build compiles every rule](#the-build-compiles-every-rule) describes. As a spec rule it costs
-two.
+its pools, therefore costs three nested loops, which exceeds the
+[cost limit](../reference/extension-runtime.md#cost-limits). As a spec rule it costs two.
 
 The build estimates that cost with 256 items in each list, but a node meets the lists of the
 config it gets. A spec rule over two long lists can pass the build and still exceed the node's
@@ -149,37 +143,7 @@ list longer than the rule can loop over, and test the rule at the bounds. A `DHC
 pools and 512 reservations at most: its rule that compares each reservation with each pool then
 costs about 330,000.
 
-## Rules read these variables
-
-Every rule compares the delivered config with the config of the slot the node boots now. That
-config is the baseline also when the delivered config is for another image, as in an upgrade.
-
-| Variable | Rules | Value |
-| --- | --- | --- |
-| `self` | a field's or a spec's | The field's value, or the spec, in the delivered document, with the schema's defaults filled in. |
-| `oldSelf` | a field's or a spec's | The field's value, or the spec, in the running config's document of the same kind and name; for a kind a node holds once, its document whatever its name. |
-| `documents` | a kind's | The delivered documents of the kind, by name. |
-| `oldDocuments` | a kind's | The running config's documents of the kind, by name. |
-| `config` | every | The whole delivered config by apiVersion, kind and name: `config["bgp.example.org/v1alpha1"].Peer["router"]`. |
-| `oldConfig` | every | The running config, in the same shape. |
-| `node.name` | every | The node's name in the inventory, which its node certificate carries. |
-| `facts.<name>` | every | The fact of that name. |
-
-Every value of a `Secret` is its SHA-256 in these variables, so a rule can tell that a secret
-changed without reading it. Maps iterate in the order of their keys, so a list built from the
-names of `documents` is sorted.
-
-A rule binds `self` to a path through the properties of objects. It cannot sit on the items of a
-list or the values of a map. Declare it on the list or the map, which the rule then compares
-whole. Lists are not matched item by item by a key.
-
-!!! note "Embedded Secret objects show as hashes too"
-
-    Each `data` and `stringData` value of a Secret object that a document embeds, an object of
-    `apiVersion: v1` and `kind: Secret` such as a Kubernetes Secret in an `Addon`, is its SHA-256
-    in these variables as well.
-
-## Facts give a rule node state
+## Read node state from a fact
 
 A fact is node state that a rule reads as `facts.<name>`. The extensions example's `Rack` kind
 refuses a location that differs from the one a rack survey wrote to the node:
@@ -213,199 +177,17 @@ A fact is a file or a command:
   changed but not what it holds. A file that cannot be read or holds no JSON, or no JSON object
   with `fields` or `hashOthers`, refuses the delivery.
 - A command fact, `{ command = "${pkg}/bin/tool facts"; }`, is a program of the image's store with
-  its arguments. It reads `{"config": ..., "oldConfig": ...}` on standard input, in the shape that
-  rules see, and prints the fact as JSON. A command with `inputs = [ "fallbackSecret" ];` also
-  reads the fallback secret delivered with the config. No other command reads it.
+  its arguments, which prints the fact as JSON. [Extension runtime](../reference/extension-runtime.md#facts)
+  lists what it reads, and the [sandbox](../reference/extension-runtime.md#command-fact-sandbox)
+  it runs in.
 
-chalkd loads a fact when a rule first reads it, and keeps it for the rest of the delivery. A file
-is read once. A command runs once for each config it reads: a delivery while an image is staged
-runs the command once for the running image's check and once for the staged image's. A rule that
-does not reach a fact, such as one whose first operand of `||` holds, loads
-none. A fact is read by its name alone: `facts["rackSurvey"]`, `has(facts.rackSurvey)` or `facts`
-by itself fails the build.
+A message can show what a fact holds, as the `Rack` message shows the survey's location. Keep
+what a rule does not need out of the fact with `fields`, or as hashes with `hashOthers`.
 
-## Null means the node does not know
-
-Facts describe the node, and a rule reads the facts that its own image declares: the build refuses
-a rule that reads a fact its image does not declare. chalkd loads the facts on the machine the
-node runs on:
-
-- When the running image checks the config, as for `chalkctl config apply` to its own slot, the
-  facts are the running image's. A command fact runs the running image's program.
-- When an image that does not run checks the config, as for an upgrade, a delivery to a staged
-  image or an install from the installer, the facts are those that image's `facts.json` declares.
-  A file fact reads the file on this machine, and a command fact runs that image's program from
-  its store.
-
-Several cases give null, so a rule treats null as unknown:
-
-- A file fact whose file is missing.
-- Every fact at an install in place, so a repeated install does not read what an earlier attempt
-  left on STATE.
-- A fact of what the node holds, such as a file on STATE, at an install from the installer. The
-  installer's machine has no STATE, but its hardware is the node's, so a command fact that reads
-  the disks finds the node's disks.
-
-An install also has no running config: rules of fields that read `oldSelf` do not run, and the
-rules of kinds see no `oldDocuments`. The `Rack` rule therefore accepts any location at install.
-
-## chalkctl and chalkd both run the rules
-
-chalkd evaluates every rule, with its facts, each time it writes a config slot and before it
-changes anything:
-
-- `chalkctl config apply` for the running image, with the running image's rules;
-- `chalkctl config apply` while an image is staged, `chalkctl config apply --staged` and upgrades,
-  with the rules of the image the slot is for, which that image's own chalkd evaluates;
-- `chalkctl install`, with the rules of the image it installs: in place the running image's, from
-  the installer those that the image's own chalkd evaluates once its store is on the target disk.
-
-An image checks config for itself before it boots: the node or the installer runs the image's
-`chalkd check` with the image's store in place of its own. The image's rules therefore compile
-with the CEL library of the image's chalkd, and may call any function that chalkd has, whatever
-the running image's or the installer's chalkd has.
-
-chalkctl evaluates the rules that read no facts, because the facts are the node's. `chalkctl
-validate` has no running config, so it runs the rules of kinds and the rules of fields that do not
-read `oldSelf`. `chalkctl config apply` fetches the node's config first and runs those rules
-against it too, so a change that the `asn` rule refuses fails without reaching the node. The
-`Rack` rule reads a fact, so it runs on the node alone.
-
-`chalkctl storage reset` evaluates the storage kinds' rules against STATE's storage records
-without the volume it resets, which it recreates like a new one.
-
-## Rules call CEL's functions and chalkos's
-
-Rules have CEL's standard functions, the lists, sets, strings and bindings (`cel.bind`)
-extensions of cel-go, and chalkos's document lookup and its address, size, port and DNS
-functions:
-
-| Function | Result |
-| --- | --- |
-| `document(kind, name)` | The document of the kind by that name, as `config` holds it, or `null` when the config holds none or `name` is `null`. `kind` is a string literal naming a kind the image declares, without its group, as in `document("Peer", self)`; another kind fails the build. |
-| `cidr(s)` | The address range `s`, with its address masked, so `cidr("10.244.1.0/16") == cidr("10.244.0.0/16")`. |
-| `<cidr>.ip(n)` | The address `n` places after the range's first, which must lie in the range: `cidr("10.96.0.0/12").ip(10)` is `10.96.0.10`. |
-| `<cidr>.last()` | The range's last address, its IPv4 broadcast address: `cidr("192.0.2.0/24").last()` is `192.0.2.255`. `<cidr>.ip(0)` is its first. |
-| `<cidr>.prefix()` | The prefix length, an int. |
-| `<cidr>.contains(<ip>)` | Whether the range holds the address. |
-| `ip(s)` | The address `s`, equal to every spelling of it. |
-| `<ip>.family()` | `ipv4` or `ipv6`. |
-| `<ip>.compare(<ip>)` | `-1`, `0` or `1` as the address comes before, equals or comes after the other, in numeric order: `ip("10.0.0.2").compare(ip("10.0.0.10"))` is `-1`. IPv4 addresses come before IPv6 ones. |
-| `string(<cidr>)`, `string(<ip>)` | The canonical spelling: `fd00::/108`, `fd00::a`. |
-| `bytes(s)` | A size such as `1G` or `512M` in bytes, an int, with suffixes in powers of 1024. It replaces CEL's conversion of a string to bytes. |
-| `isSize(s)` | Whether `bytes(s)` reads `s`: digits with an optional K, M, G, T or P suffix, below 8 EiB. |
-| `portRange(p)` | The ports of `p`, a port as an int or a range `"<first>-<last>"`, as a map of `first` and `last`: `portRange("8000-8100").last` is `8100`, `portRange(22).first` is `22`. A port as a string works too: `portRange("22")` is the range of port 22 alone. Both lie from 1 to 65535, and `first` is no higher than `last`. |
-| `isDNSName(s)` | Whether `s` is a DNS name in lower case without the root's dot, of 253 characters at most: labels of letters, digits, `-` and `_`, each of 63 characters at most, that start with a letter, a digit or `_` and end with a letter or a digit, or are `_` alone. |
-| `isRecordData(type, s)` | Whether `s` is data a DNS record of the type holds, as the router's resolver takes it: an IPv4 address for `A` and an IPv6 address for `AAAA`, both without a zone, and for `AAAA` not an IPv4-mapped address such as `::ffff:192.0.2.1`; a name `isDNSName` takes for `CNAME` and `PTR`; a preference and a name for `MX`, and a priority, a weight, a port and a name for `SRV`, a single space apart, each number from 0 to 65535 without leading zeros; and 1 to 255 printable characters without quotes or backslashes for `TXT`. |
-
-`document()` reads one document at the cost of one step, so a rule that loops over a list of
-names and reads each named document costs as one loop. `isDNSName` and `isRecordData` cost a step
-and a tenth of a step for each character of the string they check, as CEL's own string
-functions do. chalkos's other functions cost one step each.
-
-chalkctl and chalkd check every `chalkosLib.types.ref` field before any rule runs, so
-`document()` of such a field yields `null` only for a `null` field or a reserved name. Rules of
-effects have no `document()`.
-
-## The build compiles every rule
-
-The image build runs `chalkos-rules check` over the image's schemas, facts, effects and outputs.
-It fails on a rule that does not parse or type-check, on a rule that reads a fact no module
-declares, and on a command fact that is no program of the store. It also limits a rule's cost:
-
-- The build refuses a rule whose estimated cost exceeds 10,000,000, estimated with 256 elements
-  in every list, map and string. A loop over a kind's documents inside another loop over them
-  fits; a third nested loop does not.
-- A node stops a rule at a cost of 1,000,000 on the config it meets.
-
-A rule of the running image that does not compile on the node fails the delivery as an internal
-error.
-
-## Errors show no values
-
-A refusal must not leak a secret or a fact's content that the rule only compared:
-
-- A rule that cannot be evaluated refuses the delivery with the kind of error alone, such as
-  `cannot check: Peer/router: spec.asn: a rule cannot be evaluated: no such key`. The kind is
-  one of `no such key`, `index out of bounds`, `no such overload`, `unknown time zone`,
-  `invalid input to a function`, `cost limit exceeded`, `overflow`, `division by zero` and
-  `conversion error`. An error of chalkos's functions names the function, such as
-  `ip: the argument is not an address`. Of any other error the refusal says only
-  `a rule cannot be evaluated`.
-- A `messageExpression` that fails gives the same kind of error after the message.
-- A rule that yields no bool says which type it yields.
-- A command fact that fails shows its exit status alone: `cannot check: fact disks: the command
-  failed (exit 1); see the node's journal`. Its standard error goes to the node's journal, cut to
-  4 KiB. An output that is no JSON, and a file that is not JSON, show nothing of their content.
-
-A message itself can show what a fact holds, as the `Rack` message shows the survey's location.
-Keep what a rule does not need out of the fact with `fields`, or as hashes with `hashOthers`.
-
-## A command fact runs in a sandbox
-
-chalkd runs a command fact through `systemd-run --pipe --wait` as a transient unit, as root
-without `CAP_SYS_MODULE`:
-
-- The file system is read-only, STATE among it, apart from `/dev`, the unit's own empty `/tmp`
-  and `/var/tmp`, and `/run/cryptsetup`, cryptsetup's lock directory, which the passphrase test
-  writes.
-- Home directories are hidden, and kernel tunables and control groups are read-only.
-- The unit cannot load a kernel module itself. The kernel still loads one on request, as for a
-  socket family or a cipher the unit uses.
-- It has no network and no socket beyond Unix sockets and the kernel crypto API's.
-- Devices stay accessible, because the storage facts resolve disks and test passphrases on block
-  devices. cryptsetup may set up a temporary device-mapper mapping for a cipher the kernel crypto
-  API lacks.
-- It gains no privileges.
-
-A command that exits with an error, takes longer than 30 seconds, prints more than 1 MiB or prints
-no JSON refuses the delivery.
-
-A command fact names its program itself, or a script that calls it, never a link to a multi-call
-binary such as kmod's `lsmod`, lvm2's `lvs` or busybox. For an image that does not run, as when a
-staged image checks its config, chalkd follows a link within that image's store and runs what it
-leads to under that name, so `lsmod` would run as `kmod`.
-
-## Rules compare with the running config alone
-
-- Rules compare the config with the running image's config. An image that does not run compares
-  with that config as it was delivered, with its own defaults filled in. No rule reads the slot
-  of another image.
-- A command fact runs the program of the image that checks the config, from that image's store. A
-  newer image's rules therefore get the facts it adds during the upgrade to it.
-
-## Built into chalkos
-
-chalkos's own kinds guard changes the same way.
-[Built-ins](../reference/builtins.md#change-rules) lists their rules and the
-[facts](../reference/builtins.md#facts) that they and the built-in effects read: those of every
-image and those that images with Kubernetes add. The router's `DHCPSubnet` checks its pools and
-reservations against each other with spec rules.
-
-The storage kinds read three facts. `recorded` is the storage section STATE records. `disks`
-says, for each volume with a disk of its own, whether its disk is pinned and plugged in, and what
-a changed reference finds. `fallback` says whether a fallback secret was sent, and whether it
-opens the node's fallback keyslot.
-
-The storage kinds' messages show what the `disks` fact found: a volume's disk reference, the
-identity of its pinned disk and of the disk a changed reference finds, and why a disk cannot be
-found.
-
-A reset recreates its volume like a new one, so a node with a fallback needs the fallback secret.
-`chalkos-storage facts fallback` checks it against the password keyslots of STATE and the volumes
-before the reset. The volume being reset may hold the node's only password keyslot. A secret that
-does not open that keyslot then refuses the reset, and so does a keyslot cryptsetup cannot read,
-as when its header is damaged, although the reset would wipe it.
-
-!!! note "Kubernetes: the Node and Cluster kinds keep the node's share"
-
-    Images with Kubernetes add rules that keep, once the node holds a Kubernetes share, the
-    `Node`'s type, labels and taints, and the `Cluster`'s `allowSchedulingOnControlPlanes`,
-    `ipFamilies`, and the ranges and DNS addresses of the families both configs have. Ranges and
-    addresses compare as what they denote; an unset DNS address is the 10th of its service range.
-    The fact `share` holds the kind of the node's share and the SHA-256 of each of its other keys,
-    so its certificates and private keys stay out. The fact `cluster` is the node's cluster as
-    chalkd last wrote it.
+Treat a null fact as unknown, as the `Rack` rule does with `facts.rackSurvey == null`. A file
+fact is null while its file is missing, and facts can be null at an install too:
+[Null means the node does not know](../how-it-works/node/config-pipeline.md#null-means-the-node-does-not-know)
+lists every case.
 
 ## Check that it worked
 
@@ -418,9 +200,24 @@ chalkctl validate
 
 The rules that read `oldSelf` run on `chalkctl config apply`, against the node's config. Rules
 that read facts run on the node alone; `chalkctl config apply --dry-run` has the node run them
-without delivering the config. A refusal that starts with `cannot check:` comes from a rule that
-cannot be evaluated or a fact that cannot be loaded. The journal of `chalkd.service` holds what a
-failed command fact wrote.
+without delivering the config.
+
+## If it fails
+
+A refusal that starts with `cannot check:` comes from a rule that cannot be evaluated or a fact
+that cannot be loaded. It names the kind of error and no value, as
+[Rule errors](../reference/extension-runtime.md#rule-errors) lists. The journal of
+`chalkd.service` holds what a failed command fact wrote.
+
+## Built into chalkos
+
+chalkos's own kinds guard changes the same way.
+[Built-ins](../reference/builtins.md#change-rules) lists their rules and the
+[facts](../reference/builtins.md#facts) that they and the built-in effects read: those of every
+image and those that images with Kubernetes add. The router's `DHCPSubnet` checks its pools and
+reservations against each other with spec rules.
+[Built-in rules and facts](../how-it-works/node/config-pipeline.md#built-in-rules-and-facts)
+explains the storage facts and the rules images with Kubernetes add.
 
 ## What next
 

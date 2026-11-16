@@ -200,7 +200,7 @@ A node's set is valid when:
   key together take at most 247 bytes, and no two references share the credential
   file `<secret>.<key>`, as `Secret` `a.b` with key `c` and `Secret` `a` with key `b.c` would;
 - no value repeats that a kind declares unique, among the kind's documents or within one list,
-  as [Declare a config kind](../../build/declare-a-kind.md#a-fields-values-can-be-unique)
+  as [Declare a config kind](../../build/declare-a-kind.md#make-a-fields-values-unique)
   describes; chalkctl and chalkd report each repeated value, one line each;
 - every document is valid against its kind's schema.
 
@@ -741,7 +741,7 @@ image with other defaults does not change it.
   a kind is a new set of documents.
 - A rule compares a config with the running image's config alone, and chalkctl runs only the rules
   that read no facts; see
-  [Guard changes with rules and facts](../../build/guard-changes.md#rules-compare-with-the-running-config-alone).
+  [Rules compare with the running config alone](config-pipeline.md#rules-compare-with-the-running-config-alone).
 
 ## Related pages
 

@@ -133,7 +133,7 @@ chalkd checks the mode or the role. In chalkctl, the plugin adds the layer's com
 A layer's units run its chalkd subcommands as `chalkd <layer> <command>`, such as
 `chalkd kubernetes prepare`. An effect may name an action of a layer as `<layer>:<action>`, such
 as `kubernetes:restart`, which acts on what only the running chalkd holds;
-[React to changes](../../build/react-to-changes.md#an-effect-reloads-restarts-or-runs-a-command)
+[React to changes](../../build/react-to-changes.md#choose-what-the-effect-does)
 covers both. An image whose effects name a layer it does not carry fails to evaluate.
 
 ## The installed marker decides chalkd's mode

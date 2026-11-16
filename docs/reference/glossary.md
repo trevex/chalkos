@@ -237,7 +237,7 @@ Node state that a [change rule](#change-rule) reads. Facts are declared in
 [`chalkos.facts`](extension-api.md#chalkosfacts): the JSON of a file, such as the
 [Kubernetes share](#kubernetes-share), or of a program of the image's store, which chalkd runs in
 a sandbox. See
-[Guard changes with rules and facts](../build/guard-changes.md#facts-give-a-rule-node-state).
+[Guard changes with rules and facts](../build/guard-changes.md#read-node-state-from-a-fact).
 
 ## Fallback keyslot { #fallback-keyslot }
 

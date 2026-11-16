@@ -60,7 +60,7 @@ The diagram shows the documents becoming staged files, which the check either pa
 Files that pass replace the old ones in one link swap, and the effects that name the output fire
 after it. A refused render changes nothing the service reads.
 
-## The renderer reads one JSON object
+## Read the renderer's input
 
 Every renderer reads the same input on standard input: the node's name and the documents of each
 input kind. For the homelab's `Speaker` and `Peer` on `node1`, `bird-conf`'s renderer reads
@@ -96,17 +96,17 @@ this object, indented here:
 }
 ```
 
-- `documents` holds one list per kind of `inputs`, empty when the node holds no document of the
-  kind. Each list is sorted by the documents' names.
-- The documents carry their schema defaults, so `router` has `bfd: true` although its YAML
-  leaves the field out.
-- A `secretRef` field holds the reference alone. A renderer never sees a `Secret`'s value, as
-  [Pass secrets to a service](pass-secrets.md) explains.
-- `node.name` is the node's name in the inventory, which its node certificate carries.
+The documents carry their schema defaults, so `router` has `bfd: true` although its YAML leaves
+the field out. A renderer never sees a `Secret`'s value, as
+[Pass secrets to a service](pass-secrets.md) explains. It writes its files into the directory
+that the environment variable `OUT` names.
+[Program input](../reference/extension-runtime.md#program-input) lists the rules of the input.
 
-The renderer writes its files into the directory that the environment variable `OUT` names.
+A renderer reads nothing but this input, because every boot renders the outputs again.
+[Every boot renders the outputs again](../how-it-works/node/config-pipeline.md#every-boot-renders-the-outputs-again)
+explains why.
 
-## A template renders one file
+## Render one file from a template
 
 `chalkosLib.render.template` renders a Go `text/template` into one file, named as the template
 less `.tmpl`. `bird.conf.tmpl` becomes `bird.conf`:
@@ -153,22 +153,11 @@ interface, named after the `Peer` and the interface and bound to that interface.
 the default route alone from the neighbour, and `merge paths` installs it with a next hop per
 session, so the node keeps it while one port works.
 
-The template reads the input as `.node.name` and `.documents.<Kind>`. Besides Go's own functions
-it has five more:
+The template reads the input as `.node.name` and `.documents.<Kind>`.
+[Template functions](../reference/extension-runtime.md#template-functions) lists the functions it
+has besides Go's own, such as `quote` and `refuse`, and how it prints a missing key.
 
-| Function | Result |
-| --- | --- |
-| `join <sep> <list>` | The list's values, each as it prints, joined with `<sep>`. |
-| `quote <value>` | The value as a double-quoted string with Go's escapes. |
-| `json <value>` | The value as JSON. |
-| `default <fallback> <value>` | `<fallback>` when the value is missing, null, empty or false; the value otherwise. |
-| `refuse <kind> <name> <path> <message>` | Stops the render and refuses the config, as [A renderer refuses a config](#a-renderer-refuses-a-config) shows. |
-
-A key that a document lacks, or that holds null, prints as nothing, so `{{ .spec.password }}`
-prints nothing for a `Peer` without a password. A key below a missing one, such as
-`.spec.missing.name`, fails the render.
-
-## A jq program renders one file
+## Render one file with jq
 
 `chalkosLib.render.jq` runs a jq program on the input and writes its result into one file, named
 as the program less `.jq`, so `peers.json.jq` writes `peers.json`. Here is that program, which
@@ -198,9 +187,7 @@ For the homelab's `Peer`, the output's `dir` then holds `peers.json`:
 ]
 ```
 
-jq runs with `-r`, so a program whose result is a string writes the string raw, without quotes.
-
-## The documents renderer copies documents
+## Copy documents as they are
 
 `chalkosLib.render.documents` writes each document of the kinds it names as
 `<Kind>/<name>.json`, for a service that reads documents from a directory of its own choosing:
@@ -215,12 +202,12 @@ chalkos.outputs.racks = {
 Each kind it names must be one of `inputs`, or the render fails. A unit granted the kind reads
 the same documents below `/run/chalkos/config` without an output.
 
-## Any program of the store renders too
+## Render with any program of the store
 
 `render` also takes a command: a program of the image's store, with its arguments, or a package
-that is such a program. chalkd splits the command on spaces and runs it without a shell, so the
-command cannot redirect output or expand `$OUT`. A script from `pkgs.writeShellScript` does both.
-This one writes the peers as YAML with yq:
+that is such a program. chalkd runs the command without a shell, so a script from
+`pkgs.writeShellScript` redirects the output and expands `$OUT`. This one writes the peers as YAML
+with yq:
 
 ```nix
 chalkos.outputs.peers-yaml = {
@@ -236,11 +223,10 @@ chalkos.outputs.peers-yaml = {
   address: fdc8:a1b2:c3d4:1::1
 ```
 
-The program may write any number of files and directories into `$OUT`, but no links. Its
-standard output is reserved for refusals: anything it prints there that is not a report of
-refusals fails the render.
+[Program output](../reference/extension-runtime.md#program-output) lists what the program may
+write, and where.
 
-## A renderer refuses a config
+## Refuse a config from the renderer
 
 A schema and the change rules check what a document's fields hold. A renderer can check more,
 such as what several documents mean together. It refuses a config by printing a report of
@@ -250,24 +236,14 @@ refusals on standard output, one JSON object:
 {"refusals": [{"kind": "Peer", "name": "router", "path": "metadata.name", "message": "a node with Peer documents needs a Speaker document, which gives bird its AS number and router ID"}]}
 ```
 
-- `kind` and `name` name the document. `name` takes the form of a document name.
-- `path` names the field, as written in the document, such as `spec.asn` or
-  `spec.neighbors[0].address`, without spaces or colons.
-- `message` says what is wrong and how to fix it, on one line of at most 1 KiB.
-
-Any refusal refuses the delivery, whether the renderer then exits with 0 or not. An empty
-report, `{"refusals": []}`, or no output refuses nothing. chalkd reports each refusal after
-`the config is refused:`, as it reports a rule's refusal, and reports a refusal that several
-outputs print once:
+Any refusal refuses the delivery, and chalkd reports it after `the config is refused:`:
 
 ```text
 the config is refused: Peer/router: metadata.name: a node with Peer documents needs a Speaker document, which gives bird its AS number and router ID
 ```
 
-A report that does not take this form fails the render as the renderer's own error, as does more
-than 64 KiB of output. When the renderer also exits with a status other than 0, chalkd reports
-that status, as it does for any renderer that fails. A refusal can quote any value of the
-documents. It cannot carry a secret's value, because the renderer never reads one.
+[Refusal report](../reference/extension-runtime.md#refusal-report) gives the rules of each field
+and of the report.
 
 A template refuses with `refuse`. These lines of `bird.conf.tmpl` refuse `Peer` documents on a
 node without a `Speaker`, whose AS number every session needs:
@@ -282,48 +258,25 @@ The validator `bgp-peers` of [Validate config with a program](validate-config.md
 same config, before any renderer runs.
 
 A program that `render` names prints the report itself, and a script made by
-`pkgs.writeShellScript` can print it with `echo` or `jq`. A jq renderer cannot refuse: what the
-program prints is the output's file. Its `error` fails the render, with the message in the
-node's journal alone.
-
-A check refuses the rendered files by failing, as [The check refuses a bad
-file](#the-check-refuses-a-bad-file) shows. Its standard output goes nowhere.
+`pkgs.writeShellScript` can print it with `echo` or `jq`. A jq renderer cannot refuse, and a check
+refuses by failing, as [Check the rendered files](#check-the-rendered-files) shows.
 
 A check of the documents that needs no rendered file fits a validator better, which
 [Validate config with a program](validate-config.md) declares: it runs before every renderer,
 reads the same input and reports its refusals in the same form.
 
-## The renderer must be pure
+## Check the rendered files
 
-The same documents must always give the same files. `/run` is a tmpfs, so a node keeps no
-rendered file across a reboot: it renders every output again at boot, from the config slot it
-boots with. A renderer that reads nothing but its input renders at boot the files that the
-delivery checked. A renderer that read node state, such as an interface's address, could render a
-file at boot that no delivery checked. A service that needs node state therefore reads that part
-itself.
-
-## The check refuses a bad file
-
-`check` holds shell commands. chalkd runs them with bash and `set -e`, so the first command that
-fails refuses the files. The check runs after the renderer, in the same sandbox:
-
-- `$OUT` holds the files as the renderer wrote them, before they get the output's owner and mode.
-  The check may not change them.
-- Standard input holds the renderer's input, so a check can compare the files with the documents.
-- `PATH` holds coreutils, grep and sed alone. Name any other program by its store path, as
-  `${bird}/bin/bird` does.
-- Unlike the renderer, the check may open netlink sockets. They reach the sandbox's own network
-  namespace, or one the check creates: the router's check runs
-  `unshare --map-root-user --net nft --check --file "$OUT/ruleset.nft"`, so the kernel checks the
-  ruleset.
+`check` holds shell commands, which chalkd runs with bash and `set -e` after the renderer. The
+first command that fails refuses the files.
+[Check environment](../reference/extension-runtime.md#check-environment) lists what a check reads
+and may run.
 
 The best check is the service's own validator, such as `bird -p`, `nginx -t` or `chronyd -p`.
 `bird-conf`'s check defines each password constant before it runs `bird -p`, because the
 constants exist on the node alone.
 
-An output without `check` has its files served as the renderer wrote them.
-
-## Tests render the output before any node does
+## Test the output
 
 A test of `chalkos.tests` renders and checks every output from a config file, as chalkd does for
 a delivery, and compares an output's files with golden files that hold what it should render.
@@ -336,33 +289,16 @@ result with `tests/fabric/bird-conf/bird.conf`.
 
 Cover the documents that change what the renderer writes: no documents, one, several, and each
 optional field set and unset. In a test the renderer and the check run in the Nix build sandbox, not
-in the output's sandbox of [The renderer runs in a sandbox](#the-renderer-runs-in-a-sandbox), and
+in the output's [sandbox](../reference/extension-runtime.md#sandbox), and
 the files keep the owner the build gives them. [Test an extension](test-an-extension.md) declares
 the tests and takes the golden files.
 
-## The output's dir is a link
+## Choose the files' directory and owner
 
-Services read the files at the output's `dir`, `/run/chalkos/outputs/<name>` by default. `dir` is
-a symbolic link to the directory of the last render. chalkd replaces the link in one rename, so a
-service reads the files of one render and never a mix of two.
-
-A `dir` of your own lets a service find its files where it expects them. The built-in output
-`networkd` uses `/run/systemd/network`. The first swap removes a directory it finds at `dir`, so
-the image's evaluation refuses a `dir` that breaks these rules:
-
-- It is a clean path below `/run`, and no component starts with a dot.
-- It stays out of `/run/chalkos`, except for `/run/chalkos/outputs/<name>` and the paths below it.
-- It is neither another output's `dir` nor inside one.
-
-chalkd checks the same rules again when it reads the image's `/etc/chalkos/outputs.json`, and
-refuses an `outputs.json` with a `dir` that breaks one.
-
-## Owner and mode default to root and 0644
-
-The files belong to the output's `user` and `group`, `root` and `root` by default, with its
-`mode`, `0644` by default. Directories get `0755`. A file that holds anything a local user must not
-read, such as a password, belongs in a credential instead. A file only the service may read gets
-the service's user and a narrower mode:
+Services read the files at the output's `dir`. A `dir` of your own lets a service find its files
+where it expects them. The files belong to `root` by default, and every local user may read them.
+A file that holds anything a local user must not read, such as a password, belongs in a
+credential instead. A file only the service may read gets the service's user and a narrower mode:
 
 ```nix
 chalkos.outputs.bird-conf = {
@@ -372,7 +308,8 @@ chalkos.outputs.bird-conf = {
 };
 ```
 
-`mode` is three octal digits with an optional leading `0`.
+[Output directories](../reference/extension-runtime.md#output-directories) gives the defaults of
+`dir`, `user`, `group` and `mode`, and the rules a `dir` of your own follows.
 
 ## Check that it worked
 
@@ -388,6 +325,17 @@ A test that fails names the output in a `FAIL` line, such as
 `FAIL bgp-fabric: output bird-conf differs from its golden files`.
 [A failing test shows what it got](test-an-extension.md#a-failing-test-shows-what-it-got) shows the
 diff and how to take the new file.
+
+`chalkctl status node1` lists each output with three columns. `OUTPUT` is its name. `HASH` is the
+start of the hash of the files the node serves, `none` while it serves none. `STATE` is
+`rendered`, `failed:` with the last failure, or `not rendered yet`. A refused delivery leaves the
+hash of the files the node still serves.
+
+`chalkctl config apply --dry-run` renders and checks every output on the node without a delivery.
+It prints the refusal a delivery would print, or the outputs whose files would change, and records
+nothing in the status.
+
+## If it fails
 
 After `chalkctl config apply`, a render or check that fails refuses the delivery, and nothing on
 the node changes. A renderer's refusal shows as `the config is refused:` and the refusals. Any
@@ -406,36 +354,12 @@ chalkctl logs node1 --unit=chalkd.service
 chalkctl logs node1 --unit=chalkos-render-<n>.service
 ```
 
-`chalkctl status node1` lists each output with three columns. `OUTPUT` is its name. `HASH` is the
-start of the hash of the files the node serves, `none` while it serves none. `STATE` is
-`rendered`, `failed:` with the last failure, or `not rendered yet`. A refused delivery leaves the
-hash of the files the node still serves.
-
-`chalkctl config apply --dry-run` renders and checks every output on the node without a delivery.
-It prints the refusal a delivery would print, or the outputs whose files would change, and records
-nothing in the status.
-
 `chalkctl config apply` while an image is staged, with or without `--staged` and `--dry-run`, and
 `chalkctl upgrade` run the renderers of the image the config is for, from that image's store, in
 `chalkos-check.service`; its journal holds what they write to standard error.
 
-## The renderer runs in a sandbox
-
-chalkd runs every renderer and check as a transient unit with these limits:
-
-- It runs as the unprivileged system user `chalkos-render`, without capabilities, devices or
-  network. A check may open netlink sockets, which reach no network but a namespace's own.
-- The system is read-only. STATE, `/var`, and the config, credentials and Kubernetes keys chalkd
-  writes below `/run/chalkos` are hidden, so a renderer cannot read a secret even by its path.
-- The renderer may write `$OUT` and a private `/tmp` of 16 MiB alone.
-- It must finish within 30 seconds.
-- No file it writes, standard output among them, may grow past 16 MiB, and its files together
-  may take 16 MiB and hold no links, because chalkd sets their owner afterwards and must
-  not follow a link to a file the output does not own.
-
-The outputs' files, those the node serves and those a render stages, sit on a tmpfs of their own
-at `/run/chalkos/outputs`. It has room for every output's files twice and 16 MiB more, so a
-renderer that writes without end fills that tmpfs and not `/run`.
+A renderer that times out, writes too much or reads a path it may not read hits a limit of its
+[sandbox](../reference/extension-runtime.md#sandbox).
 
 ## What next
 

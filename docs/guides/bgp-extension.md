@@ -193,7 +193,7 @@ git add extensions
 The template is Go's `text/template`. It reads the node's name as `.node.name` and each input
 kind's documents as a list, `.documents.Speaker` and `.documents.Peer`, sorted by name and with
 the schemas' defaults filled in. `quote` and `refuse` are chalkos's own functions:
-[Render config files](../build/render-config.md#a-template-renders-one-file) lists them.
+[Template functions](../reference/extension-runtime.md#template-functions) lists them.
 
 The output's check runs bird's parser on the rendered file, so the module needs bird's package.
 Add it to the `let` bindings:

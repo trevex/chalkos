@@ -206,6 +206,7 @@ nav = [
     { "mkImages" = "reference/mkimages.md" },
     { "Image options" = "reference/image-options.md" },
     { "Extension API" = "reference/extension-api.md" },
+    "reference/extension-runtime.md",
     "reference/image-layout.md",
     "reference/boot.md",
     "reference/os-release.md",

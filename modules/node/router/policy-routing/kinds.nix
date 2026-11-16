@@ -2,7 +2,7 @@
 # what they match to a VRF, a table or a next hop, and the NextHop documents, which the outputs
 # router-nftables and networkd render (default.nix).
 #
-# CEL's cost limit (docs/build/guard-changes.md) allows two nested loops over a config's lists. So a
+# CEL's cost limit (docs/reference/extension-runtime.md) allows two nested loops over a config's lists. So a
 # rule over a policy route's rules sits on spec.rules, where document() looks up a rule's AddressSet
 # or NextHop at a constant cost.
 {

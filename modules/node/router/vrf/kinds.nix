@@ -3,7 +3,7 @@
 # router kinds name a VRF by its document's name; the default VRF, of every link no VRF holds, has
 # no document.
 #
-# CEL's cost limit (docs/build/guard-changes.md) allows two nested loops over a config's lists. So
+# CEL's cost limit (docs/reference/extension-runtime.md) allows two nested loops over a config's lists. So
 # the rules bind the members of every VRF as a flat list before they loop over them, and match the
 # Network documents' names against one regular expression of the VRFs' members. Checks across
 # documents too costly for CEL live in the validator router (pkg/router/derive) and in the output

@@ -2,7 +2,7 @@
 # VRF, which the output unbound renders for Unbound (default.nix). A resolver's DNS64 prefix names
 # no NAT64 document: it may be that of a NAT64 another router runs.
 #
-# CEL's cost limit (docs/build/guard-changes.md) allows two nested loops over a config's lists. So
+# CEL's cost limit (docs/reference/extension-runtime.md) allows two nested loops over a config's lists. So
 # the rules over the local zones' records loop over the records flattened. Checks across documents
 # too costly for CEL live in the validator router (pkg/router/derive) and in the output unbound's
 # check.

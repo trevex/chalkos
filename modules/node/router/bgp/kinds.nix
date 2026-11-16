@@ -2,7 +2,7 @@
 # and the prefix lists, community lists and routing policies peers, networks and imports name,
 # which the output frr renders into FRR's config (default.nix).
 #
-# CEL's cost limit (docs/build/guard-changes.md) allows two nested loops over a config's lists. So
+# CEL's cost limit (docs/reference/extension-runtime.md) allows two nested loops over a config's lists. So
 # the rules over a peer's families sit on spec.families and those over an instance's networks and
 # imports on spec.networks and spec.import, where the one document is self, and loop over a policy's
 # terms alone. Checks across documents too costly for CEL live in the validator router

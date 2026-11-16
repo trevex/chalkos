@@ -2,7 +2,7 @@
 # instances, each in a network namespace of its own joined to its VRF, which the output jool
 # renders for Jool (default.nix).
 #
-# CEL's cost limit (docs/build/guard-changes.md) allows two nested loops over a config's lists. So
+# CEL's cost limit (docs/reference/extension-runtime.md) allows two nested loops over a config's lists. So
 # the rule over two entries of one pool loops over the pool's ranges flattened, and the rules over
 # the Network documents' static addresses bind their sections and their values as flat lists. Checks
 # across documents too costly for CEL live in the validator router (pkg/router/derive).

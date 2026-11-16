@@ -53,7 +53,7 @@ chalkos.effects.rack-location = chalkosLib.restartOn { kinds = [ "Rack" ]; } [
 ];
 ```
 
-## Three triggers fire an effect
+## Choose what fires the effect
 
 An effect fires when any of its triggers fires. It has at least one, or the image's evaluation
 fails:
@@ -73,7 +73,15 @@ service reads the value as a credential beside its files. bird's password reache
 `kinds` cannot name `Secret` or a withheld kind, such as `Addon`. A `Secret` counts through the
 kinds whose documents reference it, and chalkd reads a withheld kind's documents itself.
 
-## An effect reloads, restarts or runs a command
+Delivery is idempotent: a delivery that changes nothing an effect compares takes no effect. The
+same config delivered twice reloads bird once. A delivery that fails part way leaves a baseline,
+and the next delivery compares with it, so it takes every effect of the failed one again. The
+next delivery also compares with the config and facts of the failed delivery, so a delivery of
+the config from before it takes the effects that undo it.
+[The config pipeline](../how-it-works/node/config-pipeline.md#the-baseline-survives-a-failed-delivery)
+describes the baseline.
+
+## Choose what the effect does
 
 An effect takes at least one action of `reload`, `restart`, `run` and `chalkd`, or the image's
 evaluation fails. `start` changes what `restart` does, and `hint` what a failed restart reports:
@@ -111,16 +119,14 @@ whose preparation fails says why.
 The image build fails on an effect that restarts or reloads a unit the image does not define, and
 the evaluation on one whose `outputs` names no output.
 
-!!! note "Kubernetes: chalkd's own loops"
+chalkd takes the actions of every due effect together, every reload before any restart.
+[chalkd takes the due effects in one order](../how-it-works/node/config-pipeline.md#chalkd-takes-the-due-effects-in-one-order)
+gives the order, and what the Kubernetes layer's `chalkd` actions do.
 
-    The Kubernetes layer's loops run inside chalkd and have no unit, so an effect acts on them
-    through its `chalkd` option. `kubernetes:restart` starts every Kubernetes loop again, and
-    each reads the cluster when it starts. `kubernetes:reload` starts the control plane's loop
-    again, which reads the share and applies the control plane's objects. chalkd runs each due
-    action once, however many effects name it. chalkos's own Kubernetes effects use them; an
-    image without the Kubernetes layer has neither.
+A oneshot unit that should run again on a change sets `RemainAfterExit = true`, so it stays
+active and `try-restart` runs it again. The extensions example's rack unit does.
 
-## A when condition fires on what no output renders
+## Fire the effect on a condition
 
 `when` holds a CEL expression, the language of [change rules](guard-changes.md). It fires an
 effect on a condition that neither an output nor a whole kind expresses. Say a BGP exporter reads
@@ -144,115 +150,17 @@ chalkos.effects.bgp-exporter = {
 such key, so the expression checks with `in` before it reads one. A map iterates in the order of
 its keys, so both lists of addresses follow the peers' names.
 
-The expression reads these variables:
-
-| Variable | Value |
-| --- | --- |
-| `config` | The config the node runs once the delivery is applied, by apiVersion, kind and name: `config["bgp.example.org/v1alpha1"].Peer["router"]`. |
-| `oldConfig` | The config before the delivery, in the same shape. |
-| `node.name` | The node's name, which its node certificate carries. |
-| `facts.<name>` | A fact once the delivery is applied. |
-| `oldFacts.<name>` | The same fact before the delivery changed anything. |
-
-Every value of a `Secret` is its SHA-256 in `config` and `oldConfig`. An expression can tell that
-a secret changed, but not read it. `documents`, `self` and `oldSelf` exist in change rules alone.
-
-A fact is node state that a rule reads, such as the JSON of a file.
-[Guard changes with rules and facts](guard-changes.md#facts-give-a-rule-node-state) declares one.
-chalkd loads the facts an expression reads before a delivery changes anything, and again once it
-is applied, so `facts.<name> != oldFacts.<name>` fires on a file that the delivery writes. A fact
-is read by its name alone: `facts["share"]`, `has(facts.share)` or `facts` by itself fails the
-build. A fact the node cannot find reads as null.
-
-The image build compiles every `when`, and fails on one that does not compile or reads a fact no
-module declares. On the node, a `when` that cannot be evaluated counts as true. Its units then
-restart or reload once more than they needed to, so none runs on config it has not read.
-chalkctl prints the reason as a warning.
-
-## chalkd takes the due effects in one order
-
-Once a delivery is applied, chalkd collects every effect that fires and takes their actions
-together:
-
-```mermaid
-flowchart TD
-    applied["Delivery applied, outputs swapped in"] --> due{"For each effect: output changed, kind changed or when holds?"}
-    due -->|no| skip["Effect not taken"]
-    due -->|yes| reload["1. Reload the units of reload that are neither inactive nor failed"]
-    reload --> run["2. Run the commands of run"]
-    run --> failed["3. reset-failed the failed units of restart and reload"]
-    failed --> start["4. restart them and the units of an effect with start"]
-    start --> try["5. try-restart the other units of restart"]
-    try --> loops["6. Run the layers' actions"]
-```
-
-The diagram shows the decision for each effect and the order of the actions of all due effects:
-
-1. chalkd reloads, in one `systemctl reload`, the units of `reload` that are neither inactive nor
-   failed, such as an active unit or one that is starting. An inactive unit reads its config when
-   it starts, a failed one chalkd restarts in step 4, and a unit chalkd also restarts gets no
-   reload. systemctl queues the job of each unit it is given one at a time, and systemd holds a
-   job back only for jobs already queued. chalkd therefore names each unit after the units it is
-   ordered after, by its `After=` or their `Before=`, so the reloads keep the units' order. Each
-   restart in steps 4 and 5 is ordered the same way, but every restart comes after every reload.
-   A failed unit of `reload` therefore restarts after the units that are ordered after it have
-   reloaded. A unit whose work such a reload depends on asks for the reload again itself, as
-   `chalkos-vrf.service` does for `chalkos-resolvers.service`.
-2. It runs the `run` commands, each once, in the order of their effects' names.
-3. It runs `systemctl reset-failed` on the units of `restart` and `reload` that failed. The new
-   config may be what they lacked, systemd reloads no failed unit, and their earlier failures
-   would count against their start limit.
-4. It restarts, in one `systemctl restart`, those failed units and the units of an effect with
-   `start`. `systemctl restart` starts a unit that does not run.
-5. It restarts the other units in one `systemctl try-restart`. A unit that runs, or ran and stays
-   active, restarts. A unit that never started or was stopped stays so.
-6. It runs the layers' actions that the effects' `chalkd` options name, each once, on what
-   chalkd itself holds.
-
-A oneshot unit that should run again on a change sets `RemainAfterExit = true`, so it stays
-active and `try-restart` runs it again. The extensions example's rack unit does.
-
-A reload, command or restart that fails fails the delivery. The delivery is applied by then, so
-the error ends with what is still to do: for example `reload bird.service by hand once that is
-fixed, or deliver it again`.
-
-## A delivery that changes nothing takes no effect
-
-Delivery is idempotent: a delivery that changes nothing an effect compares takes no effect. The
-same config delivered twice reloads bird once. A delivery that fails part way leaves a baseline,
-and the next delivery compares with it, so it takes every effect of the failed one again. The
-next delivery also compares with the config and facts of the failed delivery, so a delivery of
-the config from before it takes the effects that undo it.
-[The config pipeline](../how-it-works/node/config-pipeline.md) describes the baseline.
+The expression reads the config and facts as they are once the delivery is applied, and as they
+were before it. [Effect conditions](../reference/extension-runtime.md#effect-condition-variables)
+lists the variables. A fact is node state that a rule reads, such as the JSON of a file.
+[Read node state from a fact](guard-changes.md#read-node-state-from-a-fact) declares one.
 
 ## Built into chalkos
 
-Every image renders the node's network and time servers as outputs of its own. A delivery checks
-them as it checks an extension's, and every boot renders them before networkd and chrony start.
-Their names are taken, so an extension's outputs and effects use others.
-[Built-ins](../reference/builtins.md#outputs) lists these outputs and the
-[effects](../reference/builtins.md#effects) of every image and of images with Kubernetes.
-
-The output `networkd` writes one unit per document to `/run/systemd/network`, named as the
-document with its kind's suffix, such as `20-enp1s0.network`. networkd has no offline validator,
-so the schemas guard it: they accept exactly the sections and keys of the image's networkd, and
-refuse a value that spans lines. Its units take precedence over the image's own in
-`/etc/systemd/network`. The output owns `/run/systemd/network`, so a unit written there by other
-means is gone once the link replaces the directory.
-
-The output `chrony` writes `servers.sources`, one `server` line per server of the `TimeSync`, or
-chalkos's own servers without one. Its check parses the file with `chronyd -p` and accepts only
-`server` lines of a host name or address. Its effect runs `chalkos-chrony-reload-sources`, which
-runs `chronyc reload sources` while `chronyd.service` is active. The time servers that DHCP
-announces are no output, because they come from the network at runtime.
-
-!!! note "Kubernetes: effects on the share and chalkd's loops"
-
-    Images with Kubernetes add effects that restart their services and act on chalkd's own
-    loops. Their `when` rules leave out a share that differs in its node CA alone, and
-    `chalkd-share` also fires on a control plane when the objects of the `Addon` documents
-    changed. chalkd acts on its loops also when a delivery fails part way, as when it cannot
-    write the cluster file, the node certificate, the share or the slot.
+Every image renders the node's network and time servers as outputs of its own, `networkd` and
+`chrony`. Their names are taken, so an extension's outputs and effects use others.
+[Built-in outputs and effects](../how-it-works/node/config-pipeline.md#built-in-outputs-and-effects)
+describes them and the effects images with Kubernetes add.
 
 ## Check that it worked
 
@@ -281,6 +189,12 @@ config the node runs. Reloaded units are not listed. Check bird's journal for th
 chalkctl config apply node1
 chalkctl logs node1 --unit=bird.service
 ```
+
+## If it fails
+
+A reload, command or restart that fails fails the delivery. The delivery is applied by then, so
+the error ends with what is still to do: for example `reload bird.service by hand once that is
+fixed, or deliver it again`.
 
 A warning that starts with `the rule of effect` names a `when` that could not be evaluated, whose
 effect chalkd took all the same. A unit that did not restart was not running: an effect without

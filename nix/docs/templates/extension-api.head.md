@@ -10,4 +10,5 @@ own, read a node's documents in a service, check them with programs, react when 
 give operators diagnostics. It lists the options the node modules give an extension and the
 helpers of `chalkosLib`. The Build pages show them at work, from
 [Declare a config kind](../build/declare-a-kind.md) to
-[Add a diagnostic](../build/add-a-diagnostic.md).
+[Add a diagnostic](../build/add-a-diagnostic.md). [Extension runtime](extension-runtime.md) lists
+what an extension's rules, templates and programs read, and the limits they run within.

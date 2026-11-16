@@ -89,6 +89,14 @@ These pages list how an image is built, what it holds and how a node boots it.
 
     [:octicons-arrow-right-24: Read](extension-api.md)
 
+-   :material-function-variant: __Extension runtime__
+
+    ---
+
+    What an extension's rules, templates and programs read and call, and the limits they run within.
+
+    [:octicons-arrow-right-24: Read](extension-runtime.md)
+
 -   :material-harddisk: __Image and partition layout__
 
     ---

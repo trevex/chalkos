@@ -40,15 +40,12 @@ The declaration sets two things:
 
 The name is lower-case letters, digits and dashes, as an output's.
 
-## The validator reads the documents by kind
+## Read the validator's input
 
-chalkd runs the program as `<program> validate <name>`, here `validate bgp-peers`, and writes
-one JSON object to its standard input: the input a renderer reads, as [The renderer reads one
-JSON object](render-config.md#the-renderer-reads-one-json-object) describes. `documents` holds one
-list per kind of `inputs`, each sorted by name, with the schema defaults filled in, and `node.name`
-is the node's name. The object holds no `Secret`, and a `secretRef` field holds the reference,
-never the value. For node1 of the homelab the object reads, trimmed to one `Network` and
-indented here:
+chalkd runs the program with the arguments `validate bgp-peers`, and writes one JSON object to its
+standard input: the input a renderer reads, as
+[Program input](../reference/extension-runtime.md#program-input) describes. For node1 of the
+homelab the object reads, trimmed to one `Network` and indented here:
 
 ```json
 {
@@ -71,7 +68,7 @@ indented here:
 }
 ```
 
-## The validator prints a report of refusals
+## Print a report of refusals
 
 A validator refuses a config by printing one JSON object on standard output, the report of
 refusals that a renderer prints too:
@@ -81,22 +78,11 @@ refusals that a renderer prints too:
 ```
 
 Each refusal names the document by `kind` and `name`, the field by its `path`, and says in
-`message` what is wrong and how to fix it, on one line. [A renderer refuses a
-config](render-config.md#a-renderer-refuses-a-config) lists the rules of each field.
+`message` what is wrong and how to fix it. Any refusal refuses the delivery.
+[Refusal report](../reference/extension-runtime.md#refusal-report) gives the rules of each field
+and of the report, which a validator and a renderer share.
 
-A validator reads its input and reports refusals as a renderer does, so the same rules decide:
-
-- Any refusal refuses the delivery, whether the validator then exits with 0 or not.
-- A report without refusals, `{"refusals": []}`, or no output at all, refuses nothing. The
-  validator then passes when it exits with 0.
-- Any other exit status fails the validator. The delivery is refused with
-  `validator <name>: its program failed (exit <n>); see the node's journal`.
-- Output that is not a report, or more than 64 KiB of it, fails the validator too.
-
-A validator never sees a secret's value, so its messages cannot carry one. What it writes to
-standard error goes to the node's journal alone, because it can echo the documents.
-
-## A jq program validates
+## Validate with a jq program
 
 `chalkosLib.validate.jq` turns a jq program into a validator: jq reads the input, and what the
 program outputs is the report. `bgp-peers.jq` collects the interface names of the node's `Network`
@@ -113,16 +99,15 @@ an interface, so the program takes it for no name, and a `Peer` on such an inter
 
 The program also refuses `Peer` documents without a `Speaker`, which gives bird its AS number and
 router ID. The template refuses the same config, as
-[A renderer refuses a config](render-config.md#a-renderer-refuses-a-config) shows, but the
+[Refuse a config from the renderer](render-config.md#refuse-a-config-from-the-renderer) shows, but the
 validators run before the renderers, so the operator sees this refusal. The homelab's tests run
 the program on these cases and on `enp3s0` below.
 
-## Any program of the store validates
+## Validate with any program of the store
 
-`program` also takes a package or a command line of the store. chalkd appends `validate` and the
-validator's name to it, which a program that serves several validators reads to tell them apart.
-A script made by `pkgs.writeShellScript` reads the input from standard input and prints the
-report with `echo` or `jq`:
+`program` also takes a package or a command line of the store, to which chalkd appends `validate`
+and the validator's name. A script made by `pkgs.writeShellScript` reads the input from standard
+input and prints the report with `echo` or `jq`:
 
 ```nix
 chalkos.validators.bgp-peers.program = pkgs.writeShellScript "bgp-peers" ''
@@ -133,7 +118,7 @@ chalkos.validators.bgp-peers.program = pkgs.writeShellScript "bgp-peers" ''
 A Go program, or one in any other language, works the same way: read the input, print the report,
 exit 0. A program that serves as a renderer too reads the same input in both roles.
 
-## Tests run the validator before any node does
+## Test the validator
 
 A test of `chalkos.tests` runs every validator on a config file, as chalkd does for a delivery,
 and compares the refusals with those the test expects. A test that expects none expects the config
@@ -189,6 +174,8 @@ a delivery. `chalkctl validate` accepts the config: chalkctl runs only the valid
 the router layer's `router` on router images, and an image's own validator runs on the node
 alone.
 
+## If it fails
+
 A validator that fails names itself and its exit status. Each run is a transient unit,
 `chalkos-render-<n>.service`, whose journal holds what the program wrote to standard error, and
 the journal of `chalkd.service` names the unit beside the failure:
@@ -201,18 +188,12 @@ chalkctl logs node1 --unit=chalkos-render-<n>.service
 `chalkctl config apply` while an image is staged, with or without `--staged`, and
 `chalkctl upgrade` run the validators of the image the config is for, from that image's store, in
 `chalkos-check.service`. So does `chalkctl install` on a machine that runs the installer, once the
-image's store is on the target disk. A boot runs no validator, since every config slot passed the
-validators of its image before it was written.
+image's store is on the target disk.
 
-## The validator runs in a sandbox
+A validator runs in the renderers' [sandbox](../reference/extension-runtime.md#sandbox), within
+its limits of time and space.
 
-chalkd runs every validator in the renderers' sandbox, as
-[The renderer runs in a sandbox](render-config.md#the-renderer-runs-in-a-sandbox) describes. A
-validator writes no output's files, so it may write no path but its private `/tmp` of 16 MiB. Like
-a renderer, it opens no netlink socket. It must finish within 30 seconds, and the validators of a
-delivery run one after another.
-
-## Router images run the validator router
+## Built into chalkos
 
 A router image declares the [validator `router`](../reference/builtins.md#validator-router). It
 checks what the router kinds' documents and the `Network` documents mean together: which links

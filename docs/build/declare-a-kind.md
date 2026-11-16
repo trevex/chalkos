@@ -37,7 +37,7 @@ The declaration sets five things:
   carries it as its own `description`. A kind may leave it out.
 - `multiple = true` lets a node hold several `Peer` documents, each with a name of its own.
   Without it, a node holds at most one document of the kind, as
-  [A kind can hold one document per node](#a-kind-can-hold-one-document-per-node) shows.
+  [Hold one document per node](#hold-one-document-per-node) shows.
 - `spec` declares the document's fields as NixOS options, under the names the YAML uses.
 
 A field without a default is required. `password` has the default `null` and `bfd` the default
@@ -57,7 +57,7 @@ image `node-metal`, so `extensions/default.nix`, which imports `bgp.nix`, sits i
 reaches every image. A node whose image lacks the kind refuses a config that holds a document of
 it.
 
-## A kind can hold one document per node
+## Hold one document per node
 
 bird needs the node's own AS number and router ID beside its neighbours. `extensions/bgp.nix`
 declares them in a second kind, `Speaker`, without `multiple`:
@@ -82,7 +82,7 @@ spec:
   export: {interfaces: [node0]}
 ```
 
-## The build writes the kind's JSON Schema
+## Look at the kind's JSON Schema
 
 The image build converts the options into a JSON Schema, draft 2020-12. It writes the schema
 into the image directory's `schemas/` and into the image itself, at `/etc/chalkos/schemas`. Here
@@ -198,7 +198,7 @@ chalkctl checks the YAML against the image directory's copy before it sends anyt
 checks the set again on arrival, against the schemas of the image the set is for, and fills in
 the defaults.
 
-## Each node's YAML holds documents of the kind
+## Write documents of the kind
 
 A `Peer` document has the fields of every config document: `apiVersion`, `kind`, `metadata.name`
 and `spec`. Every homelab node peers with the same router on the same two ports, so the `Peer`
@@ -213,7 +213,7 @@ A node that needs other neighbours or has other port names gets its `Peer` and `
 in its own file instead, and leaves the shared file out. Documents never merge. The `password`
 field and the `Secret` are the subject of [Pass secrets to a service](pass-secrets.md).
 
-## chalkctl validate refuses a misspelled field
+## Validate the documents
 
 `chalkctl validate` checks each node's set against the schemas of the image the inventory gives
 it. It reaches no node and needs no secrets file. With `asn` misspelled as `asm` in `router`,
@@ -234,50 +234,18 @@ Each error names the node, the document and the path in it. `asm` is a field the
 declare, and `asn` is required, so the one typo gives two errors. `chalkctl install`,
 `config apply` and `upgrade` run the same check before they deliver.
 
-## Field types map to JSON Schema
+## Choose each field's type
 
-A field's option type decides its schema. The converter knows these types:
+A field's option type decides its schema. [Field types](../reference/extension-runtime.md#field-types)
+lists the types the converter knows and their schemas. Any other type, such as `path`, fails the
+image's evaluation and names the field. Keep `strMatching` patterns to the subset that POSIX and
+ECMA-262 regular expressions share, because Nix reads a pattern as the first and JSON Schema as
+the second.
 
-| Option type | JSON Schema |
-| --- | --- |
-| `str` | `string` |
-| `nonEmptyStr` | `string` with `minLength: 1` |
-| `strMatching "<regex>"` | `string` with `pattern` anchored at both ends |
-| `bool` | `boolean` |
-| `int` | `integer` |
-| `ints.u8`, `ints.u16`, `ints.u32`, `ints.s8`, `ints.s16`, `ints.s32`, `port` | `integer` with the type's `minimum` and `maximum` |
-| `ints.unsigned`, `ints.positive` | `integer` with `minimum` 0 or 1 |
-| `ints.between <low> <high>` | `integer` with `minimum` and `maximum` |
-| `float` | `number` |
-| `enum [ ... ]` | `enum` with the values |
-| `nullOr <type>` | `anyOf` the type and `null` |
-| `listOf <type>`, `nonEmptyListOf <type>` | `array` of the type; the second with `minItems: 1` |
-| `attrsOf <type>`, `lazyAttrsOf <type>` | `object` whose values have the type |
-| `submodule { options = ...; }` | `object` with the submodule's options, refusing others |
-| `chalkosLib.types.ref "<Kind>"`, `chalkosLib.types.ref { kind = "<Kind>"; reserved = [ ... ]; }` | `string` with the pattern of a document name, and `x-chalkos-ref` with the kind's `apiVersion`, the `kind` and `reserved` |
-| `chalkosLib.types.secretRef` | `object` holding `secretRef` with `name` and `key` |
-| `chalkosLib.types.address` | `string` with `format: ip` |
-| `chalkosLib.types.prefix` | `string` with `format: cidr` |
-| `chalkosLib.types.portRange` | `anyOf` an `integer` from 1 to 65535 and a `string` with `format: port-range` |
-| `chalkosLib.types.imageReference` | `string` with `format: image-reference` |
-
-A pattern of `strMatching` is a POSIX regular expression to Nix and an ECMA-262 one to JSON
-Schema. Keep to their common subset: character classes such as `[[:alpha:]]` differ between the
-two.
-
-Any other type fails the image's evaluation and names the field. A field of type `path` fails
-like this:
-
-```text
-error: chalkos.kinds.Peer.spec.keyFile: the option type absolute path has no JSON Schema mapping. Kinds accept str,
-nonEmptyStr, strMatching, bool, int, ints.*, port, float, enum, nullOr, listOf, attrsOf,
-submodule and the types of chalkosLib.types.
-```
-
-## Field rules need chalkosLib.mkOption
+## Add rules with chalkosLib.mkOption
 
 `chalkosLib.mkOption` is `lib.mkOption` with three more arguments: `rules`, a list of change
-rules; `unique`, which [A field's values can be unique](#a-fields-values-can-be-unique)
+rules; `unique`, which [Make a field's values unique](#make-a-fields-values-unique)
 describes; and `maxItems`, the most items a list field holds, which the schema checks.
 `lib.mkOption` takes none of them. Use `lib.mkOption` for a field without them, as `password`
 and `bfd` do, and `chalkosLib.mkOption` for a field with them, as `address`, `asn` and
@@ -296,7 +264,7 @@ reads about the node.
 The `rules`, `unique` and `maxItems` arguments exist only on `chalkosLib`, which every image
 module gets as a module argument. The types of `chalkosLib.types` come from the same place.
 
-## A field can name a document of another kind
+## Name a document of another kind
 
 `chalkosLib.types.ref` declares a field that holds the name of a document of another kind, as
 `metadata.name` writes it. The field names the kind without its group: kind names are unique
@@ -344,10 +312,10 @@ The type works inside `nullOr`, `listOf`, `attrsOf` and submodules.
   `Table` named `main` is refused.
 
 A rule reads the document a reference names with `document(kind, name)`, which
-[Guard changes with rules and facts](guard-changes.md#rules-call-cels-functions-and-chalkoss)
+[CEL functions](../reference/extension-runtime.md#cel-functions)
 describes.
 
-## A field's values can be unique
+## Make a field's values unique
 
 `unique` on `chalkosLib.mkOption` declares values that must not repeat, and
 `chalkos.kinds.<Kind>.unique` declares tuples of spec fields that no two documents share.
@@ -402,33 +370,10 @@ once, and runs one session per peer and table:
 }
 ```
 
-`unique` takes `true`, one declaration, or a list of declarations, each checked on its own. A
-declaration has these attributes:
-
-| Attribute | Meaning |
-| --- | --- |
-| `across` | `"kind"` compares the values of all the node's documents of the kind, `"list"` the items of one list. The default is `"list"` for a list with `by` and `"kind"` otherwise. |
-| `by` | The fields of a list's items, or of an object, that make up the key, each a field name or `{ field; as; }`. Without `by`, the key is the value itself, or each item of a list of values. |
-| `as` | The normaliser of a key without `by`. |
-| `hint` | What to do instead, which ends the refusal. |
-
-`unique = true` on a single value compares it across the kind's documents. On a list of values,
-it compares each item across the kind, so a value listed twice in one document is refused too.
-`chalkos.kinds.<Kind>.unique` takes a list of `{ by; hint; }`, whose `by` names fields of the
-spec and compares across the kind.
-
-A normaliser changes how a value compares. The message still shows the value as written:
-
-| `as` | Compares |
-| --- | --- |
-| `ip` | as an address, as the rules' `ip()` reads it: `2001:db8::1` equals `2001:db8:0::1`. |
-| `cidr` | as an address range with its host bits cleared, as `cidr()` reads it: `10.1.0.0/8` equals `10.0.0.0/8`. |
-| `host` | as a registry host, in lower case and with `docker.io` as `index.docker.io`. A port stays, so `ghcr.io:443` and `ghcr.io` differ. |
-| `lower` | in lower case. |
-
-A null value or a field left out takes no part. A key of several fields takes part when one of
-them holds a value, and a null field then equals another null field. A value its normaliser
-cannot read takes no part either; give the field a type or a rule that refuses such values.
+`neighbours` compares its items by their `address`, read as an address, so two spellings of one
+address repeat. [Unique declarations](../reference/extension-runtime.md#unique) lists the
+attributes of a declaration, the normalisers of `as` and which values take part. Give a field
+with `as` a type or a rule that refuses the values its normaliser cannot read.
 
 chalkctl and chalkd report every repeated value at once, one line each, sorted:
 
@@ -438,12 +383,7 @@ Session/a, Session/b: spec.port 1179 is not unique
 Session/up: spec.neighbours[0].address, spec.neighbours[2].address: "2001:db8::1" is not unique; list each neighbour once
 ```
 
-The image build fails on a declaration that does not fit its field: an unknown normaliser, `by`
-on a list of values, `across = "list"` on a field that is no list, a `by` field the items lack or
-one that holds a list or an object, `as` on a field that may hold a value other than a string (an
-`enum` of strings holds strings only), and a declaration on a `secretRef`.
-
-## A new version of a kind is a new set of documents
+## Change a kind in a new version
 
 An image declares one version of each kind, and chalkos converts no document from one version to
 another. Changes that keep existing documents valid need no new version:
@@ -457,7 +397,7 @@ a narrower type are among them. Make such a change a new `version`, and change t
 the new image's schemas and delivers them with the image. The image before keeps its own config
 slot with the old documents, so a fallback boots with the config it ran.
 
-## The extensions example declares two more kinds
+## Compare with the extensions example's kinds
 
 The [extensions example](https://github.com/trevex/chalkos/tree/main/examples/extensions) declares
 two more kinds the same way:

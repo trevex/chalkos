@@ -4,7 +4,7 @@
 # that the firewall does not see, so a subnet names each of its links: no glob serves a link by
 # chance.
 #
-# CEL's cost limit (docs/build/guard-changes.md) allows two nested loops over a config's lists. It
+# CEL's cost limit (docs/reference/extension-runtime.md) allows two nested loops over a config's lists. It
 # costs every string as one of 256 characters and stops a rule at 1,000,000 on the config it meets.
 # A subnet's rules see one document at a time, so a rule may compare two of its lists, as its
 # reservations with its pools; a pool is two addresses rather than a string to split, and
