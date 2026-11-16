@@ -38,6 +38,16 @@ let
       ++ lib.concatLists (lib.mapAttrsToList (dir: map (path: ../../. + "/${dir}/${path}")) snippets)
     );
   };
+  # The Go files of cmd/ and pkg/, whose directories the page of packages and programs lists.
+  goSources = lib.fileset.toSource {
+    root = ../../.;
+    fileset = lib.fileset.unions (
+      map (lib.fileset.fileFilter (f: f.hasExt "go")) [
+        ../../cmd
+        ../../pkg
+      ]
+    );
+  };
   # The pages and files docgen writes, as they lie in the repository.
   generatedPaths = [
     "docs/reference/cli"
@@ -226,7 +236,8 @@ rec {
 
   # The site builds strictly; the chalkctl, chalklab, chalkbuild and chalkcfg commands its pages
   # show exist; the config documents they show are valid against an image's, the inventory's and
-  # the lab file's schemas; and the Nix files they show parse.
+  # the lab file's schemas; the Nix files they show parse; and the page of packages and programs
+  # has a row for each directory of Go code.
   check =
     pkgs.runCommand "chalkos-docs-check"
       {
@@ -240,6 +251,7 @@ rec {
         docgen check docs
         docgen yaml docs ${snippetSchemas}
         docgen nix docs $TMPDIR/nix
+        docgen packages docs/contribute/packages.md ${goSources}
         status=0
         # A fragment parses as an expression, or within braces as the attributes of a module.
         for f in $TMPDIR/nix/*.nix; do

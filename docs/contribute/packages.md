@@ -10,6 +10,10 @@ find where a piece of logic lives before you change it. Each directory of `cmd/`
 wires packages up; the logic lives in `pkg/`. Paths in the package tables are relative to `pkg/`.
 [Architecture for developers](architecture.md) shows how the areas fit together.
 
+Every directory of `cmd/` and `pkg/` that holds Go code other than tests, outside `testdata`, needs
+a row of its own. The `docs` check fails when one has none. A directory without Go code, such as
+`pkg/api` or `pkg/secureboot/microsoft`, needs no row.
+
 ## Command-line tools
 
 chalkctl, chalklab, chalkbuild and chalkcfg are cobra command trees in importable packages. Each of

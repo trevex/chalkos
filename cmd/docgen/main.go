@@ -44,6 +44,11 @@
 // writes the Nix blocks of those files that are whole files, titled with a .nix file name, to
 // OUT_DIR, for a Nix parser to check.
 //
+//	docgen packages PAGE ROOT
+//
+// fails when a directory of Go code below ROOT/cmd or ROOT/pkg has no row in the tables of the
+// page PAGE, the contributors' list of programs and packages.
+//
 //	docgen abbr GLOSSARY OUT
 //
 // writes the terms of the glossary page GLOSSARY to OUT as Markdown abbreviations, which the site
@@ -86,10 +91,12 @@ func run(args []string) error {
 		return checkYAML(args[1], args[2])
 	case len(args) == 3 && args[0] == "nix":
 		return writeNix(args[1], args[2])
+	case len(args) == 3 && args[0] == "packages":
+		return checkPackages(args[1], args[2])
 	case len(args) == 3 && args[0] == "abbr":
 		return writeAbbr(args[1], args[2])
 	}
-	return errors.New("usage: docgen cli DIR ZENSICAL_TOML DOCS_DIR | docgen kinds PAGE SCHEMAS_DIR [SCHEMA_FILE...] | docgen options DIR TEMPLATES_DIR ARGUMENTS_JSON OPTIONS_JSON | docgen builtins PAGE DEFAULT_IMAGE PLAIN_IMAGE ROUTER_IMAGE | docgen check DOCS_DIR | docgen yaml DOCS_DIR SCHEMAS_DIR | docgen nix DOCS_DIR OUT_DIR | docgen abbr GLOSSARY OUT")
+	return errors.New("usage: docgen cli DIR ZENSICAL_TOML DOCS_DIR | docgen kinds PAGE SCHEMAS_DIR [SCHEMA_FILE...] | docgen options DIR TEMPLATES_DIR ARGUMENTS_JSON OPTIONS_JSON | docgen builtins PAGE DEFAULT_IMAGE PLAIN_IMAGE ROUTER_IMAGE | docgen check DOCS_DIR | docgen yaml DOCS_DIR SCHEMAS_DIR | docgen nix DOCS_DIR OUT_DIR | docgen packages PAGE ROOT | docgen abbr GLOSSARY OUT")
 }
 
 // programs are the four command trees with cobra's help and completion commands. The completion
