@@ -27,6 +27,12 @@ let
       rule = ''${orNull}cel.bind(names, ${cel.matchNames "config"}, self.all(i, names.contains(" " + i + " ")))'';
       messageExpression = ''cel.bind(names, ${cel.matchNames "config"}, self.filter(i, !names.contains(" " + i + " "))[0] + " has no Network document whose [Match] Name= names it; ${what}")'';
     };
+  # The CEL expr with links bound to the interfaces of the delivered BGPPeers' unnumbered sessions,
+  # each as <name>, so that an interface two peers list occurs twice: one string costs no loop
+  # within the loop over a peer's interfaces.
+  sharedUnnumbered =
+    expr:
+    ''cel.bind(peers, ${delivered "BGPPeer"}, cel.bind(links, peers.map(n, peers[n].spec.address == null && peers[n].spec.interfaces != null ? peers[n].spec.interfaces.map(i, "<" + i + ">").join("") : "").join(""), ${expr}))'';
   # Whether a Node of the delivered config has an IPv4 address in nodeIP.addresses.
   nodeIPv4 = ''cel.bind(nodes, ${delivered "Node"}, nodes.exists(n, has(nodes[n].spec.nodeIP) && has(nodes[n].spec.nodeIP.addresses) && nodes[n].spec.nodeIP.addresses != null && nodes[n].spec.nodeIP.addresses.exists(a, ip(a).family() == "ipv4")))'';
 in
@@ -66,20 +72,25 @@ in
           }
         ];
       };
-      export.interfaces = chalkosLib.mkOption {
-        type = types.nonEmptyListOf interfaceName;
-        example = [ "node0" ];
-        unique = {
-          across = "list";
-          hint = "list each interface once";
+      export = mkOption {
+        description = "What FRR announces to every BGPPeer: the routes the node originates. FRR passes on no route it learns from a peer, so the node is no transit.";
+        type = types.submodule {
+          options.interfaces = chalkosLib.mkOption {
+            type = types.nonEmptyListOf interfaceName;
+            example = [ "node0" ];
+            unique = {
+              across = "list";
+              hint = "list each interface once";
+            };
+            description = "Interfaces whose addresses FRR announces, each named by a Network document's [Match] Name=: an address of /32 or /128 as itself, another as its subnet. The VIP is announced while the node holds it on one of them, its Node's vip.interface.";
+            rules = [
+              (configured {
+                what = "FRR announces the addresses of interfaces the node configures";
+                nullable = false;
+              })
+            ];
+          };
         };
-        description = "Interfaces whose addresses FRR announces to every BGPPeer, each named by a Network document's [Match] Name=: an address of /32 or /128 as itself, another as its subnet. The VIP is announced while the node holds it on one of them, its Node's vip.interface.";
-        rules = [
-          (configured {
-            what = "FRR announces the addresses of interfaces the node configures";
-            nullable = false;
-          })
-        ];
       };
     };
   };
@@ -96,7 +107,12 @@ in
       {
         description = "A BGPPeer with an address names one interface at most.";
         rule = "self.address == null || self.interfaces == null || size(self.interfaces) == 1";
-        message = "FRR runs one session per neighbour address, so a peer with an address names one interface at most, the one its session is bound to; give each interface a BGPPeer of its own with the neighbour's address on that link, or leave the address out for unnumbered sessions";
+        message = "FRR binds a session to an address to one interface, so a peer with an address names one interface at most; for a neighbour on several links, give each link a BGPPeer of its own with the neighbour's address on that link, a different address on each, or leave the address out for unnumbered sessions";
+      }
+      {
+        description = "No interface carries the unnumbered sessions of two BGPPeers.";
+        rule = "self.address != null || self.interfaces == null || ${sharedUnnumbered "self.interfaces.all(i, links.indexOf(\"<\" + i + \">\") == links.lastIndexOf(\"<\" + i + \">\"))"}";
+        messageExpression = ''${sharedUnnumbered ''self.interfaces.filter(i, links.indexOf("<" + i + ">") != links.lastIndexOf("<" + i + ">"))[0]''} + " carries the unnumbered sessions of another BGPPeer too; FRR runs one unnumbered session per interface, so give the neighbour on that link one BGPPeer"'';
       }
       {
         description = "A node with BGPPeer documents has a BGPSpeaker.";
@@ -121,7 +137,11 @@ in
         type = types.nullOr address;
         default = null;
         example = "fdc8:a1b2:c3d4:1::1";
-        description = "Unicast address of the neighbour, IPv4 or IPv6, neither loopback nor link-local: one session to it, over the route the kernel picks, or bound to the one interface of `interfaces`. Null for unnumbered sessions on `interfaces`. A session to an IPv4 address carries IPv4 routes alone, and one to an IPv6 address without an interface IPv6 routes alone; bound to an interface, a session to an IPv6 address carries both, IPv4 routes with IPv6 next hops.";
+        unique = {
+          as = "ip";
+          hint = "FRR runs one session per neighbour address; give the neighbour one BGPPeer per address, a different address on each link";
+        };
+        description = "Unicast address of the neighbour, IPv4 or IPv6, neither loopback nor link-local, on a subnet of an interface of the node: eBGP runs with a TTL of 1, so the neighbour is on a link the node is connected to. One session to it, or bound to the one interface of `interfaces`. Null for unnumbered sessions on `interfaces`. A session to an IPv4 address carries IPv4 routes alone, and one to an IPv6 address without an interface IPv6 routes alone; bound to an interface, a session to an IPv6 address carries both, IPv4 routes with IPv6 next hops.";
         rules = [
           {
             description = "A BGPPeer's address is a unicast address: not unspecified, loopback, link-local or multicast.";

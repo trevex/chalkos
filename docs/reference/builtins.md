@@ -176,51 +176,64 @@ The rules of the kinds that images with Kubernetes accept, and those they add to
 | Rule | Field | Guards | Takes | Expression | Message |
 | --- | --- | --- | --- | --- | --- |
 | 1 | `spec` | A BGPPeer names an address, interfaces or both. | `refuse` | `self.address != null || self.interfaces != null` | the peer names neither address nor interfaces; give its address, the interfaces of unnumbered sessions, or the address and the one interface its session runs on |
-| 2 | `spec` | A BGPPeer with an address names one interface at most. | `refuse` | `self.address == null || self.interfaces == null || size(self.interfaces) == 1` | FRR runs one session per neighbour address, so a peer with an address names one interface at most, the one its session is bound to; give each interface a BGPPeer of its own with the neighbour's address on that link, or leave the address out for unnumbered sessions |
-| 3 | `spec` | A node with BGPPeer documents has a BGPSpeaker. | `refuse` | after the table | a node with BGPPeer documents needs a BGPSpeaker document, which gives FRR its AS number and router ID |
-| 4 | `spec.address` | A BGPPeer's address is a unicast address: not unspecified, loopback, link-local or multicast. | `refuse` | after the table | after the table |
-| 5 | `spec.asn` | A BGPPeer keeps its AS number. | `refuse` | `self == oldSelf` | `"the AS number stays " + string(oldSelf) + "; add a BGPPeer of another name for " + string(self)` |
-| 6 | `spec.interfaces` | Each interface is named by a Network document's [Match] Name=. | `refuse` | after the table | after the table |
-| 7 | `spec.interfaces` | A BGPPeer's interfaces are not named like IPv4 addresses. | `refuse` | `self == null || self.all(i, !i.matches("^([0-9]{1,3}[.]){3}[0-9]{1,3}$"))` | after the table |
-| 8 | `spec.password` | A BGPPeer's password names its Secret and key as credentials' names. | `refuse` | after the table | the Secret's name and key hold letters, digits, '.', '_' and '-' alone, as the names of frr.service's credentials do |
+| 2 | `spec` | A BGPPeer with an address names one interface at most. | `refuse` | `self.address == null || self.interfaces == null || size(self.interfaces) == 1` | FRR binds a session to an address to one interface, so a peer with an address names one interface at most; for a neighbour on several links, give each link a BGPPeer of its own with the neighbour's address on that link, a different address on each, or leave the address out for unnumbered sessions |
+| 3 | `spec` | No interface carries the unnumbered sessions of two BGPPeers. | `refuse` | after the table | after the table |
+| 4 | `spec` | A node with BGPPeer documents has a BGPSpeaker. | `refuse` | after the table | a node with BGPPeer documents needs a BGPSpeaker document, which gives FRR its AS number and router ID |
+| 5 | `spec.address` | A BGPPeer's address is a unicast address: not unspecified, loopback, link-local or multicast. | `refuse` | after the table | after the table |
+| 6 | `spec.asn` | A BGPPeer keeps its AS number. | `refuse` | `self == oldSelf` | `"the AS number stays " + string(oldSelf) + "; add a BGPPeer of another name for " + string(self)` |
+| 7 | `spec.interfaces` | Each interface is named by a Network document's [Match] Name=. | `refuse` | after the table | after the table |
+| 8 | `spec.interfaces` | A BGPPeer's interfaces are not named like IPv4 addresses. | `refuse` | `self == null || self.all(i, !i.matches("^([0-9]{1,3}[.]){3}[0-9]{1,3}$"))` | after the table |
+| 9 | `spec.password` | A BGPPeer's password names its Secret and key as credentials' names. | `refuse` | after the table | the Secret's name and key hold letters, digits, '.', '_' and '-' alone, as the names of frr.service's credentials do |
 
 Expression of rule 3:
 
 ```text
-size((("kubernetes.chalkos.dev/v1alpha1" in config && "BGPSpeaker" in config["kubernetes.chalkos.dev/v1alpha1"]) ? config["kubernetes.chalkos.dev/v1alpha1"].BGPSpeaker : {})) > 0
+self.address != null || self.interfaces == null || cel.bind(peers, (("kubernetes.chalkos.dev/v1alpha1" in config && "BGPPeer" in config["kubernetes.chalkos.dev/v1alpha1"]) ? config["kubernetes.chalkos.dev/v1alpha1"].BGPPeer : {}), cel.bind(links, peers.map(n, peers[n].spec.address == null && peers[n].spec.interfaces != null ? peers[n].spec.interfaces.map(i, "<" + i + ">").join("") : "").join(""), self.interfaces.all(i, links.indexOf("<" + i + ">") == links.lastIndexOf("<" + i + ">"))))
+```
+
+Message of rule 3:
+
+```text
+cel.bind(peers, (("kubernetes.chalkos.dev/v1alpha1" in config && "BGPPeer" in config["kubernetes.chalkos.dev/v1alpha1"]) ? config["kubernetes.chalkos.dev/v1alpha1"].BGPPeer : {}), cel.bind(links, peers.map(n, peers[n].spec.address == null && peers[n].spec.interfaces != null ? peers[n].spec.interfaces.map(i, "<" + i + ">").join("") : "").join(""), self.interfaces.filter(i, links.indexOf("<" + i + ">") != links.lastIndexOf("<" + i + ">"))[0])) + " carries the unnumbered sessions of another BGPPeer too; FRR runs one unnumbered session per interface, so give the neighbour on that link one BGPPeer"
 ```
 
 Expression of rule 4:
 
 ```text
+size((("kubernetes.chalkos.dev/v1alpha1" in config && "BGPSpeaker" in config["kubernetes.chalkos.dev/v1alpha1"]) ? config["kubernetes.chalkos.dev/v1alpha1"].BGPSpeaker : {})) > 0
+```
+
+Expression of rule 5:
+
+```text
 self == null || cel.bind(x, ip(self), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("169.254.0.0/16").contains(x) && !cidr("fe80::/10").contains(x) && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x))
 ```
 
-Message of rule 4:
+Message of rule 5:
 
 ```text
 "the address " + self + " is no neighbour's: give a unicast address, neither loopback nor link-local; a neighbour on a link without one takes interfaces alone"
 ```
 
-Expression of rule 6:
+Expression of rule 7:
 
 ```text
 self == null || cel.bind(names, cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in config && "Network" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].Network : {}), cel.bind(matches, dyn(nets.map(n, "match" in nets[n].spec ? (type(nets[n].spec.match) == list ? nets[n].spec.match : [nets[n].spec.match]) : []).flatten()), " " + dyn(matches.map(m, "name" in m ? (type(m.name) == list ? m.name : [m.name]) : []).flatten()).join(" ").replace("\t", " ") + " ")), self.all(i, names.contains(" " + i + " ")))
 ```
 
-Message of rule 6:
+Message of rule 7:
 
 ```text
 cel.bind(names, cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in config && "Network" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].Network : {}), cel.bind(matches, dyn(nets.map(n, "match" in nets[n].spec ? (type(nets[n].spec.match) == list ? nets[n].spec.match : [nets[n].spec.match]) : []).flatten()), " " + dyn(matches.map(m, "name" in m ? (type(m.name) == list ? m.name : [m.name]) : []).flatten()).join(" ").replace("\t", " ") + " ")), self.filter(i, !names.contains(" " + i + " "))[0] + " has no Network document whose [Match] Name= names it; FRR runs sessions on interfaces the node configures")
 ```
 
-Message of rule 7:
+Message of rule 8:
 
 ```text
 "the interface " + self.filter(i, i.matches("^([0-9]{1,3}[.]){3}[0-9]{1,3}$"))[0] + " is named like an address, which FRR cannot tell from a neighbour's; rename the interface"
 ```
 
-Expression of rule 8:
+Expression of rule 9:
 
 ```text
 self == null || self.secretRef.name.matches("^[A-Za-z0-9._-]+$") && self.secretRef.key.matches("^[A-Za-z0-9._-]+$")

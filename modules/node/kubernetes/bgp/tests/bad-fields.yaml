@@ -1,0 +1,71 @@
+# A speaker and peers whose fields each break a rule: a router ID of 0.0.0.0, a peer with neither
+# address nor interfaces, one at a link-local address, one on an interface named like an IPv4
+# address, and one whose password's key is no credential's name.
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: BGPSpeaker
+metadata: {name: bgp}
+spec:
+  asn: 65001
+  routerID: 0.0.0.0
+  export: {interfaces: [node0]}
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: BGPPeer
+metadata: {name: empty}
+spec:
+  asn: 65000
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: BGPPeer
+metadata: {name: link-local}
+spec:
+  asn: 65000
+  address: "fe80::1"
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: BGPPeer
+metadata: {name: dotted}
+spec:
+  asn: 65000
+  interfaces: [10.0.0.1]
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: BGPPeer
+metadata: {name: password}
+spec:
+  asn: 65000
+  interfaces: [fabric0]
+  password: {secretRef: {name: bgp, key: "pass+word"}}
+---
+apiVersion: chalkos.dev/v1alpha1
+kind: Secret
+metadata: {name: bgp}
+spec:
+  data: {"pass+word": example-password}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-dotted}
+spec:
+  match: {name: 10.0.0.1}
+  network: {ipv6AcceptRA: false}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-fabric0}
+spec:
+  match: {name: fabric0}
+  network: {ipv6AcceptRA: false}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: NetDev
+metadata: {name: 30-node0}
+spec:
+  netDev: {name: node0, kind: dummy}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 30-node0}
+spec:
+  match: {name: node0}
+  network: {address: ["fdc8:a1b2:c3d4:ff::11/128"], keepConfiguration: "yes"}

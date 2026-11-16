@@ -3680,7 +3680,12 @@ lib.runTests {
     {
       expr = {
         # The worker adds FRR's diagnostics, which testKubernetesBGPOptional covers.
-        names = lib.intersectLists names (lib.attrNames node);
+        names = lib.subtractLists [
+          "bfd-peers"
+          "bgp-neighbor"
+          "bgp-route"
+          "bgp-summary"
+        ] (lib.attrNames node);
         installer = lib.attrNames inInstaller;
         inStore = lib.all (d: lib.hasPrefix "/nix/store/" (lib.head d.command)) (lib.attrValues node);
         ip = lib.hasSuffix "-iproute2-ip-${pkgs.iproute2.version}/bin/ip" (lib.head node.route-get.command);
@@ -3916,13 +3921,17 @@ lib.runTests {
             "kubernetes-bgp-address"
             "kubernetes-bgp-address-interface"
             "kubernetes-bgp-address-two-interfaces"
+            "kubernetes-bgp-bad-fields"
+            "kubernetes-bgp-duplicate-address"
             "kubernetes-bgp-match-glob"
             "kubernetes-bgp-mixed"
             "kubernetes-bgp-new-asn"
             "kubernetes-bgp-new-password"
+            "kubernetes-bgp-new-peer-asn"
             "kubernetes-bgp-no-router-id"
             "kubernetes-bgp-none"
             "kubernetes-bgp-peer-without-speaker"
+            "kubernetes-bgp-shared-unnumbered"
             "kubernetes-bgp-unconfigured-export"
             "kubernetes-bgp-unconfigured-peer-interface"
             "kubernetes-bgp-unnumbered"

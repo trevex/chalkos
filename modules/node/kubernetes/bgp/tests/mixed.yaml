@@ -1,5 +1,5 @@
 # A node with an unnumbered session on fabric0, a session bound to enp1s0 at a router's address,
-# and a session to a route reflector's address beyond the link, which carries IPv6 alone.
+# and a session to a switch on enp2s0's subnet, which carries IPv6 alone.
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: BGPSpeaker
 metadata: {name: bgp}
@@ -25,7 +25,7 @@ spec:
 ---
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: BGPPeer
-metadata: {name: reflector}
+metadata: {name: switch}
 spec:
   asn: 65002
   address: "fdc8:a1b2:c3d4:2::1"
@@ -45,6 +45,13 @@ metadata: {name: 20-enp1s0}
 spec:
   match: {name: enp1s0}
   network: {ipv6AcceptRA: true}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-enp2s0}
+spec:
+  match: {name: enp2s0}
+  network: {address: ["fdc8:a1b2:c3d4:2::11/64"], ipv6AcceptRA: false}
 ---
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: NetDev

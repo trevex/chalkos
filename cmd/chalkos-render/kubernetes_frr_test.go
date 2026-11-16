@@ -101,8 +101,9 @@ end
 
 // An IPv4 peer carries IPv4 alone; an IPv6 peer bound to an interface carries both with extended
 // next hops and keeps the interface's router advertisements from offering a default router; an
-// IPv6 peer without an interface carries IPv6 alone, without extended next hops; a password is a
-// placeholder; a speaker without a router ID takes the Node's first IPv4 address.
+// IPv6 peer without an interface, a second switch on eth0's subnet, carries IPv6 alone, without
+// extended next hops; a password is a placeholder; a speaker without a router ID takes the Node's
+// first IPv4 address.
 func TestKubernetesFRRAddresses(t *testing.T) {
 	got := renderedFile(t, []string{"kubernetes-frr"}, kubernetesInput(t, map[string]any{
 		"Node":       []any{doc("default", map[string]any{"nodeIP": map[string]any{"addresses": []string{"2001:db8::11", "192.0.2.11"}}})},
@@ -110,7 +111,7 @@ func TestKubernetesFRRAddresses(t *testing.T) {
 		"BGPPeer": []any{
 			doc("tor-v4", map[string]any{"asn": 65000, "address": "192.0.2.1", "interfaces": nil, "password": nil, "bfd": false, "import": "none"}),
 			doc("tor-v6", map[string]any{"asn": 65000, "address": "2001:db8::1", "interfaces": []string{"eth0"}, "password": map[string]any{"secretRef": map[string]any{"name": "bgp", "key": "password"}}, "bfd": true, "import": "default"}),
-			doc("upstream", map[string]any{"asn": 65002, "address": "2001:db8:1::1", "interfaces": nil, "password": nil, "bfd": true, "import": "default"}),
+			doc("tor-b", map[string]any{"asn": 65002, "address": "2001:db8::2", "interfaces": nil, "password": nil, "bfd": true, "import": "default"}),
 		},
 	}), frrFile)
 	for _, want := range []string{
@@ -118,11 +119,11 @@ func TestKubernetesFRRAddresses(t *testing.T) {
 		" bgp router-id 192.0.2.11\n",
 		" neighbor peer-tor-v4 remote-as 65000\n neighbor peer-tor-v4 timers connect 10\n neighbor 192.0.2.1 peer-group peer-tor-v4\n",
 		" neighbor peer-tor-v6 password @secret_bgp.password@\n neighbor peer-tor-v6 bfd\n neighbor peer-tor-v6 timers connect 10\n neighbor peer-tor-v6 capability extended-nexthop\n neighbor 2001:db8::1 peer-group peer-tor-v6\n neighbor 2001:db8::1 interface eth0\n",
-		" neighbor peer-upstream timers connect 10\n neighbor 2001:db8:1::1 peer-group peer-upstream\n !\n",
+		" neighbor peer-tor-b timers connect 10\n neighbor 2001:db8::2 peer-group peer-tor-b\n !\n",
 		"  neighbor peer-tor-v4 activate\n  neighbor peer-tor-v4 route-map import-none in\n",
 		"  neighbor peer-tor-v6 activate\n  neighbor peer-tor-v6 route-map import-ipv4 in\n",
 		" address-family ipv6 unicast\n  redistribute connected route-map export\n  maximum-paths 16\n  neighbor peer-tor-v6 activate\n",
-		"  neighbor peer-upstream activate\n  neighbor peer-upstream route-map import-ipv6 in\n",
+		"  neighbor peer-tor-b activate\n  neighbor peer-tor-b route-map import-ipv6 in\n",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("frr.conf lacks:\n%s\nin:\n%s", want, got)
@@ -132,7 +133,7 @@ func TestKubernetesFRRAddresses(t *testing.T) {
 	if strings.Contains(got, "peer-tor-v4 capability") || strings.Contains(ipv6, "peer-tor-v4") {
 		t.Errorf("the IPv4 peer has extended next hops or IPv6 routes:\n%s", got)
 	}
-	if strings.Contains(got, "peer-upstream capability") || strings.Contains(ipv4[strings.Index(ipv4, " address-family ipv4"):], "peer-upstream") {
+	if strings.Contains(got, "peer-tor-b capability") || strings.Contains(ipv4[strings.Index(ipv4, " address-family ipv4"):], "peer-tor-b") {
 		t.Errorf("the IPv6 peer without an interface has extended next hops or IPv4 routes:\n%s", got)
 	}
 }

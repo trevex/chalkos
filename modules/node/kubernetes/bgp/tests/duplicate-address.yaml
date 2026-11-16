@@ -1,0 +1,38 @@
+# Two peers at one neighbour address, written two ways, each bound to a port of its own.
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: BGPSpeaker
+metadata: {name: bgp}
+spec:
+  asn: 65001
+  routerID: 0.0.0.11
+  export: {interfaces: [enp1s0]}
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: BGPPeer
+metadata: {name: router-enp1s0}
+spec:
+  asn: 65000
+  address: "fdc8:a1b2:c3d4:1::1"
+  interfaces: [enp1s0]
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: BGPPeer
+metadata: {name: router-enp2s0}
+spec:
+  asn: 65000
+  address: "fdc8:a1b2:c3d4:1:0::1"
+  interfaces: [enp2s0]
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-enp1s0}
+spec:
+  match: {name: enp1s0}
+  network: {ipv6AcceptRA: true}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-enp2s0}
+spec:
+  match: {name: enp2s0}
+  network: {ipv6AcceptRA: true}
