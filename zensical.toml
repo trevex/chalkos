@@ -39,6 +39,7 @@ nav = [
     "operate/access.md",
     "operate/storage-volumes.md",
     "operate/registries.md",
+    "operate/recurring-tasks.md",
     "operate/status-and-logs.md",
     "operate/console.md",
     "operate/recover-node.md",

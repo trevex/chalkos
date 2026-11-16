@@ -64,7 +64,7 @@ These pages go from a new workstation to the first installed node.
 ## Day 2
 
 These pages cover nodes that run: config changes, new and removed nodes, upgrades, access,
-storage and registries.
+storage, registries and the tasks that recur.
 
 <div class="grid cards" markdown>
 
@@ -115,6 +115,14 @@ storage and registries.
     Give nodes the credentials of a private registry, and pull images through a mirror.
 
     [:octicons-arrow-right-24: Read](registries.md)
+
+-   :material-calendar-check: __Recurring tasks__
+
+    ---
+
+    What expires when, what to back up, and how to move the cluster to a newer chalkos.
+
+    [:octicons-arrow-right-24: Read](recurring-tasks.md)
 
 </div>
 

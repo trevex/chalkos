@@ -216,7 +216,7 @@ These are gone:
 The client files expire within their validity, a year by default, and nothing can issue new ones.
 Plan a move to a new cluster before then. Generate new secrets, build new images, install new
 nodes and move the workloads across.
-[Back up what you cannot rebuild](workstation.md#back-up-what-you-cannot-rebuild) lists the
+[Back up what you cannot rebuild](recurring-tasks.md#back-up-what-you-cannot-rebuild) lists the
 secrets file among the files to keep in a second place.
 
 !!! note "With the Kubernetes layer, Kubernetes access runs out too"

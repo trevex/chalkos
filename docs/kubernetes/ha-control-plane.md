@@ -345,7 +345,7 @@ one machine, but they do not bring back an object someone deleted. A cluster tha
 three control planes at once loses etcd's quorum, and chalkos has no command that rebuilds etcd
 from the one member left. Back up what the workloads keep with a tool that works at the Kubernetes
 level.
-[Back up what you cannot rebuild](../operate/workstation.md#back-up-what-you-cannot-rebuild) lists
+[Back up what you cannot rebuild](../operate/recurring-tasks.md#back-up-what-you-cannot-rebuild) lists
 the files to keep, and the [roadmap](../contribute/roadmap.md#smaller-items) lists etcd backup and
 restore.
 

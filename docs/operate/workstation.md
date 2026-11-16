@@ -146,7 +146,7 @@ from before the last change, or after a rotation the version from before the rot
 
     New secrets do not match the installed nodes. Without the file you cannot install or
     reinstall a node, deliver config, issue client files or derive a recovery key. Back it up to
-    a second place, as [Back up what you cannot rebuild](#back-up-what-you-cannot-rebuild) lists.
+    a second place, as [Back up what you cannot rebuild](recurring-tasks.md#back-up-what-you-cannot-rebuild) lists.
     [Recover a node](recover-node.md#the-secrets-file-is-lost) lists what still works without it.
 
 ## Build the images with the cluster's OS CA
@@ -267,26 +267,9 @@ command. Its public half reaches the images, whose chalkd accepts certificates o
 
 ## Back up what you cannot rebuild
 
-A node can be reinstalled and an image built again, but some files exist only where you keep them.
-Back up these files to a place apart from the workstation:
-
-- The secrets file and the age or SSH identities of its recipients, the offline backup key
-  included. Without an identity the file cannot be decrypted.
-- The directory of the Secure Boot keys, PK, KEK and db, which
-  [Sign images for Secure Boot](../build/sign-images.md) creates. Every machine's firmware trusts
-  their certificates, so new keys mean enrolling new certificates on each machine.
-- The repository: the inventory, the config files, `secrets.pub.json` and `flake.lock`, which pins
-  the chalkos revision every image is built from.
-- The image directory of the image the nodes ran before an upgrade, until the new image has
-  proven itself. `chalkctl upgrade --rollback` boots that image from the nodes' inactive slots
-  until the next upgrade writes over them; after that, an upgrade to the kept directory is the way
-  back, as [Go back to the previous image](upgrade.md#go-back-to-the-previous-image) describes.
-- The password of each node whose encryption fallback is a password. Nothing else holds it.
-
-With the Kubernetes layer, the cluster's state lives in etcd on the control planes. chalkos has no
-etcd backup or restore yet; the [roadmap](../contribute/roadmap.md#smaller-items) lists it. Three
-control planes survive the loss of a machine, but they do not bring back an object that someone
-deleted. Back up what the workloads keep with a tool that works at the Kubernetes level.
+Some files exist only where you keep them: the secrets file and its recipients' keys, the Secure
+Boot keys, the repository and the previous image.
+[Back up what you cannot rebuild](recurring-tasks.md#back-up-what-you-cannot-rebuild) lists them.
 
 ## Check that it worked
 
