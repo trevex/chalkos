@@ -46,12 +46,13 @@ git init && git add .
 nix develop
 chalkctl gen secrets --plaintext
 git add . && git commit -m "A chalkos lab"
-chalklab create
+nix build .#node-kvm -o images/node-kvm
+chalklab create --secrets secrets.json
 ```
 
-`chalklab create` builds the images, starts the virtual machines, installs the nodes,
-bootstraps the cluster and prints how to reach it with kubectl and chalkctl. `chalklab destroy`
-removes the lab. The [quick start](https://trevex.github.io/chalkos/get-started/quick-start/) walks
+`nix build` builds the nodes' image. `chalklab create` starts the virtual machines, installs
+the nodes, bootstraps the cluster and prints how to reach it with kubectl and chalkctl.
+`chalklab destroy` removes the lab. The [quick start](https://trevex.github.io/chalkos/get-started/quick-start/) walks
 through it, including an upgrade.
 
 ## Development
