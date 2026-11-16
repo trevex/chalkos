@@ -32,7 +32,7 @@ func TestKubernetesFRRUnnumbered(t *testing.T) {
 		"BGPPeer":    []any{doc("fabric", map[string]any{"asn": 65000, "address": nil, "interfaces": []string{"fabric1", "fabric0"}, "password": nil, "bfd": true, "import": "default"})},
 	}), frrFile)
 	want := `! FRR's config, rendered by chalkos-render kubernetes-frr. frr.service fills in the passwords, and
-! frr-reload.py applies the changes.
+! chalkos-frr-reload applies the changes.
 frr defaults traditional
 hostname k1
 log syslog informational

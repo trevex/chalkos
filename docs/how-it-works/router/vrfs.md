@@ -216,9 +216,9 @@ A route-map's `set as-path prepend` repeats an AS number, and one route-map serv
 that names its policy. The renderer prepends the AS number of the instances that use the policy,
 and refuses a policy with `prepend` that instances of two AS numbers use.
 
-FRR keeps its default instance while another VRF's runs, and `frr-reload.py` reports the failed
-removal without failing. A rule therefore refuses a delivery that drops the default VRF's `BGP`
-document and keeps another VRF's running instance.
+FRR keeps its default instance while another VRF's runs, so a reload cannot remove it. A rule
+therefore refuses a delivery that drops the default VRF's `BGP` document and keeps another VRF's
+running instance.
 
 ## Imported routes keep their next hop
 

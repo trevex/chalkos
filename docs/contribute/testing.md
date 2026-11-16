@@ -194,6 +194,7 @@ shell functions the check scripts call: `fail`, `retry` and `refuses`, and for t
 | `router-dhcp6` | A router's `kea-dhcp6` servers, the records and routes of delegated prefixes and the firewall's DHCPv6 opening, in network namespaces. |
 | `router-dhcp-relay` | A router's `dnsmasq-relay.service` and `dnsmasq-relay@<vrf>.service` and the firewall's openings of the relays, in network namespaces. |
 | `frr-credentials` | A router's `frr.service` fills its config's passwords in from its credentials, and refuses those FRR would not take. |
+| `frr-reload` | `chalkos-frr-reload` on a NixOS VM that runs FRR: it reloads FRR from one golden `frr.conf` of the renderers to another in one pass, after which FRR runs what it runs when it starts on the second, and plans nothing for a config FRR runs. |
 | `image-checker` | An image's `chalkd check` in its sandbox on a NixOS VM, with a second store: the image's renderer and command fact run from it, a renderer's refusal comes back, the sandbox hides `/run/chalkos`, and another user reaches neither the facts socket nor the result. |
 | `rules` | The images' rules compile, the outputs' checks pass the files they should and refuse broken ones, and a broken rule, effect, output or diagnostic fails its image. |
 | `image-tests` | The image tests of the test image, the router images and the examples' image pass: their outputs render the golden files, and their refusals and effects are those expected. |
@@ -337,7 +338,8 @@ Every check builds with `nix build`, and a change runs the checks of the parts i
 | Kernel modules, closure, image size | `kernel-modules`, `image-size`, `bootspec` |
 | The firewall or VXLAN rule | `vxlan-rule`, `go-unit`, `e2e-kubernetes` |
 | The router's kinds, outputs or firewall | `router-firewall`, `rules`, `image-tests`, `eval`, `eval-kinds`, `go-unit` |
-| The router's BGP: its kinds, `frr` output, FRR's unit, `pkg/router` | `rules`, `image-tests`, `frr-credentials`, `eval`, `eval-kinds`, `go-unit`, `e2e-router` |
+| The router's BGP: its kinds, `frr` output, FRR's unit, `pkg/router` | `rules`, `image-tests`, `frr-credentials`, `frr-reload`, `eval`, `eval-kinds`, `go-unit`, `e2e-router` |
+| The FRR reload: `pkg/frr`, `cmd/chalkos-frr-reload` | `frr-reload`, `go-unit`, `e2e-router` |
 | The router's NAT64 and resolvers: their kinds, the `jool` and `unbound` outputs, their units, `pkg/router` | `router-nat64`, `router-firewall`, `rules`, `image-tests`, `eval`, `eval-kinds`, `go-unit`, `image-size`, `e2e-router` |
 | The router's VRFs: the `VRF` kind, `router-networkd`, `chalkos-vrf` | `rules`, `image-tests`, `eval`, `eval-kinds`, `go-unit`, `router-vrf`, `router-firewall`, `e2e-router` |
 | The router's policy routing: the `PolicyRoute` and `NextHop` kinds, their chain and units | `router-policy-routing`, `router-firewall`, `rules`, `image-tests`, `eval`, `eval-kinds`, `go-unit`, `e2e-router` |

@@ -70,7 +70,7 @@ var hostName = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9.-]{0,62})$`)
 // defaults, the node's name as FRR's hostname when FRR takes it, and the log.
 func writeFRRHeader(b *strings.Builder, renderer, node string) {
 	fmt.Fprintf(b, "! FRR's config, rendered by chalkos-render %s. frr.service fills in the passwords, and\n"+
-		"! frr-reload.py applies the changes.\n"+
+		"! chalkos-frr-reload applies the changes.\n"+
 		"frr defaults traditional\n", renderer)
 	if hostName.MatchString(node) {
 		b.WriteString("hostname " + node + "\n")
@@ -587,7 +587,7 @@ func prefixEntries(l derive.PrefixListSpec) []string {
 
 // prefixLists renders each PrefixList as a prefix-list of its family, an entry a sequence number.
 // The numbers follow the entries' positions, so an entry put before others renumbers those after
-// it, which frr-reload.py then rewrites.
+// it, which chalkos-frr-reload then rewrites.
 func (c *frr) prefixLists(b *strings.Builder) {
 	for _, l := range c.prefixes {
 		for i, e := range c.entries[l.Name] {
@@ -645,7 +645,7 @@ func asPathList(policy string, i int) string { return fmt.Sprintf("asp-%s-%d", p
 
 // termSeq is the route-map sequence number of term i; the default is 65535. The numbers follow
 // the terms' positions, so a term put before others renumbers those after it, which
-// frr-reload.py then rewrites.
+// chalkos-frr-reload then rewrites.
 func termSeq(i int) int { return 10 * (i + 1) }
 
 // routeMaps renders each RoutingPolicy as a route-map: an entry per term, and its default last,

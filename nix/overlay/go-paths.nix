@@ -12,4 +12,7 @@
   (lib.fileset.fileFilter (f: f.hasExt "yaml") ../../templates/lab)
   # The router outputs' examples, which chalkos-render's golden test renders.
   ../../modules/node/examples/router
+  # The layers' rendered frr.conf files, which pkg/frr's tests reload from one to another.
+  (lib.fileset.fileFilter (f: f.name == "frr.conf") ../../modules/node/router/tests)
+  (lib.fileset.fileFilter (f: f.name == "frr.conf") ../../modules/node/kubernetes/bgp/tests)
 ]

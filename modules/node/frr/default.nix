@@ -1,7 +1,7 @@
 # FRR on images whose layer runs BGP: zebra, bgpd, bfdd and staticd, whose whole config a layer's
 # output renders as frr.conf. frr.service fills the peers' passwords in from its credentials into
 # /run/frr/frr.conf before it starts and on each reload, which applies the changes with
-# frr-reload.py and keeps the sessions they leave alone. A layer's BGP feature turns it on and
+# chalkos-frr-reload and keeps the sessions they leave alone. A layer's BGP feature turns it on and
 # names the rendered config and the config of a node without one.
 {
   config,
@@ -114,12 +114,12 @@ in
       serviceConfig = {
         ExecStartPre = lib.getExe credentials;
         # A reload loads the credentials again, so a rotated password reaches FRR without a
-        # restart. frr-reload.py logs to the journal, and reads the filled config through
-        # /etc/frr/frr.conf: given another file, it would write the running config over that one.
+        # restart. chalkos-frr-reload logs the commands it runs, without the passwords, to the
+        # journal; a config it cannot apply fails the reload, and a restart loads it whole.
         RefreshOnReload = "credentials";
         ExecReload = lib.mkForce [
           (lib.getExe credentials)
-          "${frr}/libexec/frr/frr-reload.py --reload --stdout --bindir ${frr}/bin --confdir /etc/frr --rundir /run/frr /etc/frr/frr.conf"
+          "${lib.getExe pkgs.chalkos.chalkos-frr-reload} -vtysh ${frr}/bin/vtysh /run/frr/frr.conf"
         ];
       };
     };
