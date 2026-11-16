@@ -20,7 +20,7 @@ You need the flake that builds the cluster's images with `chalkos.lib.mkImages`.
 driver you need a way to see the hardware: a Linux live system booted on the machine, or the
 vendor's specification of the card.
 
-## A module adds a service to every image
+## Add a service to every image
 
 A module of the images is an ordinary NixOS module. This one runs a service on every node, with
 the tool it calls in its own `path`:
@@ -105,7 +105,7 @@ No output means the image lacks the module. A module the image carries prints it
 `result/lib/modules/6.18.63/kernel/drivers/net/ethernet/mellanox/mlx5/core/mlx5_core.ko.xz`.
 Replace `node-metal` with the name of the node's image.
 
-## Kernel module groups select whole driver directories
+## Add a module group or single modules
 
 [`chalkos.kernel.moduleGroups`](../reference/image-options.md#chalkoskernelmodulegroups) selects whole
 directories of the kernel's tree, so a group follows a kernel update with its subsystem's new
@@ -160,7 +160,7 @@ error: unknown kernel module mlx5core, named by chalkos.kernel.extraModules or a
 So does a module the image loads, through `boot.kernelModules` or the initrd, that its tree does
 not hold, and a dependency of a module in the tree that the tree lacks.
 
-## The initrd needs the system disk's driver
+## Add the system disk's driver to the initrd
 
 The initrd finds the store, STATE and the node's other disks before the system starts. So the
 driver of every disk controller a node's storage uses must be in the initrd, not only in the
@@ -177,7 +177,7 @@ adapter, needs its driver added:
 The module must also be in the image's tree, which the build checks. `megaraid_sas` is in the
 `storage` group.
 
-## Firmware and microcode come from hardware.firmware
+## Add firmware and microcode
 
 Many network, storage and GPU drivers load firmware files at runtime, and the images carry none.
 NixOS's [`hardware.firmware`](https://nixos.org/manual/nixos/stable/options#opt-hardware.firmware)
@@ -224,7 +224,7 @@ modules = [
 microcode at the start of the initrd. The UKI carries the initrd, so the kernel loads the
 microcode at its earliest point on every boot.
 
-## Out-of-tree modules come whole
+## Add an out-of-tree module
 
 A module that is not part of the kernel, from a nixpkgs kernel package or one you build, goes into
 NixOS's `boot.extraModulePackages`. It is carried whole, with the kernel's modules it depends on,
@@ -241,7 +241,7 @@ whatever the groups say:
 The package must be built for the image's kernel, which `config.boot.kernelPackages` ensures. The
 build fails when such a module depends on one the kernel does not have.
 
-## Debug tools are an option of the image
+## Add the debug tools
 
 [`chalkos.debug.tools`](../reference/image-options.md#chalkosdebugtools) adds coreutils, grep, sed,
 findutils, procps, iproute2 and util-linux to the system path, and crictl on images with
@@ -262,18 +262,11 @@ The option changes the image, so it reaches running nodes with an upgrade.
     [Status, logs and the console](../operate/status-and-logs.md#reach-the-nodes-tools-through-kubectl-debug)
     shows. A node without Kubernetes has `chalkctl logs` and its console.
 
-## The image is an appliance
+## Leave chalkos's own parts alone
 
-An image is built once and never changed on the node:
-
-- There is no Nix daemon, no `nixos-rebuild` and no `switch-to-configuration` on the node.
-- The root file system is a tmpfs, so nothing written outside STATE and VAR survives a reboot.
-- `/etc` is assembled from the image at boot and stays read-only.
-- The store is read-only and checked by dm-verity.
-- Users and groups are fixed at build time. Nodes have no interactive logins, so no account needs
-  a password or an SSH key.
-
-A service keeps its data below `/var`, which is VAR, or on a volume. Within that, a module can set
+An image is built once and never changed on the node, as
+[A node cannot change its own system](../how-it-works/node/image.md#a-node-cannot-change-its-own-system)
+explains, so a service keeps its data below `/var` or on a volume. Within that, a module can set
 anything, and these settings break the node or are refused:
 
 - chalkd, `chalkos-config.service`, `chalkos-health.service` and systemd-networkd install,

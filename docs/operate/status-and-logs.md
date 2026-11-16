@@ -391,7 +391,7 @@ The machine's screen and its serial console show the boot: the boot loader, the 
 messages and a passphrase prompt for an encrypted disk. systemd's boot status and the emergency
 shell appear on the last of the image's kernel consoles alone: the screen on `metal` and the
 installer, the serial port on `kvm`, as
-[Images and platforms](../build/images-and-platforms.md#the-last-console-is-devconsole)
+[Images and platforms](../build/images-and-platforms.md#choose-the-console-people-watch)
 describes. Once chalkd serves, the screen shows [the console](console.md) in place of a login
 prompt. The serial console goes on to show chalkd's lines, which `chalkos-serial-log@` copies
 there from the journal while the screen is the last console. In maintenance mode, chalkd prints

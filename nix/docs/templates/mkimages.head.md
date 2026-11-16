@@ -64,6 +64,62 @@ lists one layer at most. An image without a layer runs chalkos's base alone.
 - `chalkos.nixosModules.router`: the router layer, which forwards packets between the node's
   interfaces and accepts the kinds of `router.chalkos.dev`.
 
+## Module order { #module-order }
+
+An image is one NixOS system, evaluated from four lists of modules:
+
+```mermaid
+flowchart LR
+    node["chalkos node modules"] --> system["NixOS system of the image"]
+    platform["Platform modules"] --> system
+    every["modules"] --> system
+    own["The image's modules"] --> system
+```
+
+1. chalkos's node modules.
+2. chalkos's modules of the platform, for `metal` and `kvm`.
+3. `modules`, which every image of the mkImages call carries.
+4. The image's own `modules`, with its layer.
+
+NixOS merges a value by priority, not by module order. A list such as `boot.kernelParams` holds
+every module's entries, the image's own before those of `modules`. `lib.mkBefore` puts an entry
+first and `lib.mkAfter` puts one last.
+
+The installer is a system of its own, built from chalkos's node modules, its installer modules and
+`installer.modules`. It carries no image's modules and no `modules`, because it holds no config
+for an extension to read. It belongs to no platform: one installer writes images of every
+platform.
+
+## mkImage and mkInstaller { #mkimage }
+
+mkImages builds each entry of `images` with `chalkos.lib.mkImage` and the installer with
+`chalkos.lib.mkInstaller`. A flake can call them itself, with the same shared arguments:
+
+```nix
+let
+  shared = {
+    osCA = ./secrets.pub.json;
+    revision = self.rev or self.dirtyRev or null;
+  };
+in
+{
+  packages.x86_64-linux = {
+    node-metal = chalkos.lib.mkImage (
+      shared
+      // {
+        name = "node-metal";
+        platform = "metal";
+        modules = [ chalkos.nixosModules.kubernetes ];
+      }
+    );
+    installer = chalkos.lib.mkInstaller (shared // { modules = [ ./installer-network.nix ]; });
+  };
+}
+```
+
+mkImage takes `modules` as the image's own, after its platform's. It returns the same image as
+mkImages would.
+
 ## Return values { #return-values }
 
 mkImage returns the image directory, built only when asked for, with these attributes:

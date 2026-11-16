@@ -203,7 +203,7 @@ second port lists that port:
 
 A serial port put last becomes `/dev/console` and shows the boot's status and the emergency
 shell too, as
-[Images and platforms](images-and-platforms.md#the-last-console-is-devconsole)
+[Images and platforms](images-and-platforms.md#choose-the-console-people-watch)
 describes.
 
 ## The installer keeps chalkd in installer mode

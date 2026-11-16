@@ -37,7 +37,7 @@ control plane 2 vCPUs and about 3 GiB of memory, each worker 2 GiB, and every no
 A VM runs the `kvm` platform's image, which writes its console to the first serial port alone and
 runs the QEMU guest agent. The image author adds `kvm` to the flake's platforms and exposes its
 image as a package, such as `node-kvm`, as
-[Images and platforms](../build/images-and-platforms.md#a-platform-builds-an-image-per-kind-of-machine)
+[Images and platforms](../build/images-and-platforms.md#build-an-image-per-kind-of-machine)
 describes.
 
 Name the signed copy of the `kvm` image in the inventory's `spec.images`. `spec.all.imageName`

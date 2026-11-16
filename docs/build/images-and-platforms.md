@@ -14,7 +14,7 @@ An image has a name, a platform and NixOS modules. The modules are the software 
 runs. A platform is the kind of machine an image runs on, such as `metal` or `kvm`. `mkImages`
 builds the images its `images` list names.
 
-## Each image is an entry of the list
+## List the images
 
 This call builds three images: Kubernetes nodes for `metal` and `kvm`, and storage nodes without
 Kubernetes for `metal`:
@@ -68,7 +68,7 @@ above end in their platform only by convention; `platform` alone sets the platfo
 the same name. A renamed image matches no running node, so its first upgrade names the nodes with
 `--nodes`.
 
-## Layers are NixOS modules
+## Add a layer
 
 A layer is a predefined set of NixOS modules that chalkos ships. An image lists it in its
 `modules` like any other module, and it enables chalkos's own modules for the layer:
@@ -201,7 +201,7 @@ A release the option does not offer, such as another patch release, needs
 Kubernetes package whose `bin/kubelet` the image runs. Set one of the two options. An image that
 sets both to different minors fails to build and names both.
 
-## The inventory gives each node its image
+## Give each node its image
 
 A node runs the image the [inventory](../reference/kinds.md#inventory) names for it. Add the new
 image to `spec.images`, beside `node-metal`, and name it on the node that runs it, here
@@ -231,7 +231,7 @@ No check compares the software of two images. A node may move to another image w
 The node checks the config the upgrade carries against the new image's schemas before the image
 becomes its next boot, so an image that does not accept the node's config never boots.
 
-## A platform builds an image per kind of machine
+## Build an image per kind of machine
 
 A platform's NixOS modules add what one kind of machine needs and other machines do not: drivers,
 firmware, agents and the console. chalkos has modules for two platforms, which an image of the
@@ -277,7 +277,7 @@ by being installed again. Its config files stay as they are on any platform. One
 platform keeps each image small, because a universal image would carry every platform's agents
 and drivers.
 
-### The last console is /dev/console
+### Choose the console people watch
 
 [`chalkos.consoles`](../reference/image-options.md#chalkosconsoles) lists the kernel's consoles in
 order, each as the kernel's `console=` parameter takes it, such as `ttyS0,115200` or `tty0` for
@@ -310,67 +310,20 @@ boot's status and the emergency shell appear there too. Set it in the image's mo
 
 The build refuses a `console=` entry in `boot.kernelParams` and names `chalkos.consoles`.
 
-## An image is one NixOS system of four lists of modules
+## Override a platform's value
 
-An image is one NixOS system, evaluated from four lists of modules:
-
-```mermaid
-flowchart LR
-    node["chalkos node modules"] --> system["NixOS system of the image"]
-    platform["Platform modules"] --> system
-    every["modules"] --> system
-    own["The image's modules"] --> system
-```
-
-1. chalkos's node modules.
-2. chalkos's modules of the platform, for `metal` and `kvm`.
-3. `modules`, which every image of the `mkImages` call carries.
-4. The image's own `modules`, with its layer.
-
+An image is one NixOS system of four lists of modules: chalkos's, its platform's, `modules` and
+its own. [Module order](../reference/mkimages.md#module-order) lists them, and the installer's.
 NixOS merges a value by priority, not by module order. So an image that sets a value its platform
 also sets plainly gets a conflict, and overrides that value with `lib.mkForce`. A value the
 platform forces itself, such as the `kvm` platform's `ExecStart` of the guest agent, needs
-`lib.mkOverride` with a priority below 50, for example `lib.mkOverride 40`. A list such as
-`boot.kernelParams` holds every module's entries, the image's own before those of `modules`.
-`lib.mkBefore` puts an entry first and `lib.mkAfter` puts one last.
+`lib.mkOverride` with a priority below 50, for example `lib.mkOverride 40`.
 
-The installer is a system of its own, built from chalkos's node modules, its installer modules and
-`installer.modules`. It carries no image's modules and no `modules`, because it holds no config
-for an extension to read. It belongs to no platform: one installer writes images of every
-platform. [Customise the installer](customise-installer.md) adds to it.
+A flake can also build each image with `chalkos.lib.mkImage` and the installer with
+`chalkos.lib.mkInstaller` itself, as [mkImage and mkInstaller](../reference/mkimages.md#mkimage)
+shows. [Customise the installer](customise-installer.md) adds modules to the installer.
 
-## mkImage builds one image
-
-`mkImages` builds each entry with `chalkos.lib.mkImage` and the installer with
-`chalkos.lib.mkInstaller`. A flake can call them itself, with the same shared arguments:
-
-```nix
-let
-  shared = {
-    osCA = ./secrets.pub.json;
-    revision = self.rev or self.dirtyRev or null;
-  };
-in
-{
-  packages.x86_64-linux = {
-    node-metal = chalkos.lib.mkImage (
-      shared
-      // {
-        name = "node-metal";
-        platform = "metal";
-        modules = [ chalkos.nixosModules.kubernetes ];
-      }
-    );
-    installer = chalkos.lib.mkInstaller (shared // { modules = [ ./installer-network.nix ]; });
-  };
-}
-```
-
-`mkImage` takes `modules` as the image's own, after its platform's. It returns the same image as
-`mkImages` would. The [mkImages reference](../reference/mkimages.md) lists the arguments of all
-three functions.
-
-## The OS CA ties images to one cluster
+## Tie the images to one cluster
 
 `osCA` names `secrets.pub.json`, the public part of the cluster's secrets that
 [`chalkctl gen secrets`](../reference/cli/chalkctl_gen_secrets.md) writes. It holds certificates

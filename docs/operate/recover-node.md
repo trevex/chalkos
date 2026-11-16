@@ -49,7 +49,7 @@ first answer counts. A machine without a serial port shows the prompt on its scr
 keyboard answers it. The boot's status around the prompt, such as the unit that waits, shows only
 on the last console of [`chalkos.consoles`](../reference/image-options.md#chalkosconsoles), which
 is the screen unless the image puts a serial port last;
-[Images and platforms](../build/images-and-platforms.md#the-last-console-is-devconsole)
+[Images and platforms](../build/images-and-platforms.md#choose-the-console-people-watch)
 describes the choice. A volume that asks after the boot shows its prompt in the console on the
 screen, as [The console answers password requests](console.md#the-console-answers-password-requests)
 describes.

@@ -63,8 +63,8 @@ type and label.
 A node built from an image cannot drift from it, because images use NixOS's image-based appliance
 profile:
 
-- There is no Nix daemon and no `switch-to-configuration`, so the system cannot be rebuilt on the
-  node.
+- There is no Nix daemon, no `nixos-rebuild` and no `switch-to-configuration`, so the system
+  cannot be rebuilt on the node.
 - The root file system is a tmpfs, so nothing written outside STATE and VAR survives a reboot.
 - `/etc` is assembled from the image at boot and stays read-only.
 - Users and groups are fixed at build time. Nodes have no interactive logins, so no account needs
@@ -72,7 +72,8 @@ profile:
 - The image avoids Perl and keeps interpreters out where it can.
 
 What a node must keep goes to two partitions. STATE holds its config, certificates and secrets.
-VAR, mounted at `/var`, holds what its services write and the logs.
+VAR, mounted at `/var`, holds what its services write and the logs. A service may also keep its
+data on a volume of its own.
 
 ## The store is a compressed erofs file system
 
@@ -229,7 +230,7 @@ is `/dev/console`. Its `kvm` platform sets the kernel's console to the first ser
 adds the QEMU guest agent, about 6 MiB of store, limited to reporting on the node and shutting it
 down.
 [Add software, drivers and kernel modules](../../build/add-software.md) and
-[Images and platforms](../../build/images-and-platforms.md#a-platform-builds-an-image-per-kind-of-machine)
+[Images and platforms](../../build/images-and-platforms.md#build-an-image-per-kind-of-machine)
 show how an image author changes each of these.
 
 ## Every build leaves room for the next image

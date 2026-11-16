@@ -476,7 +476,7 @@ same key and not after a change to Secure Boot. See
 The kind of machine an image is built for, such as `metal` or `kvm`, which each [image](#image)
 names in its [`platform`](mkimages.md#imagesplatform). chalkos has NixOS modules of its own for
 `metal` and `kvm`, which only that platform's images carry, with its drivers and agents. A node
-refuses an image of another platform than the one it runs. See [Images and platforms](../build/images-and-platforms.md#a-platform-builds-an-image-per-kind-of-machine).
+refuses an image of another platform than the one it runs. See [Images and platforms](../build/images-and-platforms.md#build-an-image-per-kind-of-machine).
 
 ## Previous config { #previous-config }
 

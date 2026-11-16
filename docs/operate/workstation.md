@@ -155,7 +155,7 @@ Give `secrets.pub.json` to the image author, who names it in the `osCA` argument
 `osCA = ./secrets.pub.json;`. The image author then builds the images and the installer again.
 Their chalkd in maintenance mode accepts only clients with a certificate from this cluster's OS
 CA, so nobody else can install an image on a machine that waits for its install.
-[The OS CA ties images to one cluster](../build/images-and-platforms.md#the-os-ca-ties-images-to-one-cluster)
+[Tie the images to one cluster](../build/images-and-platforms.md#tie-the-images-to-one-cluster)
 describes the argument, and [Your first image flake](../build/first-image.md) shows the flake that
 takes it.
 
