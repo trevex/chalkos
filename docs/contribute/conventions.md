@@ -24,8 +24,8 @@ chalkos has no release yet. A change does not keep the old behaviour beside the 
   its own, goes in `pkg/internal/`, as `pkg/internal/cli`, `pkg/internal/golden` and
   `pkg/internal/testwait` do.
 - `cmd/` holds the mains, which wire packages up. Logic worth a test lives in `pkg/`.
-- Every directory of Go code needs a row in [Packages and programs](packages.md). The `docs`
-  check fails without it.
+- Every directory of Go code needs a row in [Packages and programs](packages.md). A directory that
+  loses its Go code loses its row. The `docs` check fails otherwise.
 - A new Nix helper goes where [Nix code](nix.md#where-a-new-helper-goes) says.
 
 ## Layers own their names

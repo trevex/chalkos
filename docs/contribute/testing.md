@@ -345,7 +345,7 @@ Every check builds with `nix build`, and a change runs the checks of the parts i
 | OCI images: `pkg/ociimage`, `pkg/chalkbuild` | `go-unit`, `go-lint`, `image-oci`, `e2e-installer`, `e2e-upgrade` |
 | The console: `pkg/console`, `cmd/chalkos-console` | `go-unit`, `go-lint`, `e2e-image` |
 | Status: `pkg/statusview` and its `layers/<layer>` | `go-unit`, `go-lint`, and its golden files in `testdata/` |
-| A new or removed directory of Go code in `cmd/` or `pkg/` | `docs`, which wants a row for each directory in `docs/contribute/packages.md` |
+| A new or removed directory of Go code in `cmd/` or `pkg/` | `docs`, which wants a row in `docs/contribute/packages.md` for each directory of Go code and none for another |
 | `templates/lab` | `template-lab` |
 | `.github/workflows` | `workflows` |
 

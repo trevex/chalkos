@@ -11,8 +11,8 @@ wires packages up; the logic lives in `pkg/`. Paths in the package tables are re
 [Architecture for developers](architecture.md) shows how the areas fit together.
 
 Every directory of `cmd/` and `pkg/` that holds Go code other than tests, outside `testdata`, needs
-a row of its own. The `docs` check fails when one has none. A directory without Go code, such as
-`pkg/api` or `pkg/secureboot/microsoft`, needs no row.
+a row of its own. A directory without Go code, such as `pkg/api` or `pkg/secureboot/microsoft`,
+has none. The `docs` check fails on a directory without a row and on a row without Go code.
 
 ## Command-line tools
 

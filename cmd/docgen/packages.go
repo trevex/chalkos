@@ -11,11 +11,11 @@ import (
 )
 
 // checkPackages fails when a Go directory below root's cmd/ or pkg/ has no row in the tables of
-// the page at path. A Go directory holds a .go file other than a test, outside testdata; a
-// directory without one, such as pkg/api, or one of data alone, needs no row. A row names its
-// directories in code spans in its first cell: cmd/<program> for a program, and a path relative to
-// pkg/ for a package. Each directory needs a row of its own, as a parent package's row does not
-// describe its subpackages.
+// the page at path, or when a row names a directory that holds no Go code. A Go directory holds a
+// .go file other than a test, outside testdata; a directory without one, such as pkg/api, or one
+// of data alone, needs no row and has none. A row names its directories in code spans in its first
+// cell: cmd/<program> for a program, and a path relative to pkg/ for a package. Each directory
+// needs a row of its own, as a parent package's row does not describe its subpackages.
 func checkPackages(path, root string) error {
 	page, err := os.ReadFile(path)
 	if err != nil {
@@ -31,7 +31,8 @@ func checkPackages(path, root string) error {
 			named[strings.TrimSuffix(m[1], "/")] = true
 		}
 	}
-	var missing []string
+	exists := map[string]bool{}
+	var missing, stale []string
 	for _, top := range []string{"cmd", "pkg"} {
 		dirs, err := goDirs(filepath.Join(root, top))
 		if err != nil {
@@ -42,13 +43,30 @@ func checkPackages(path, root string) error {
 			if top == "cmd" {
 				name = "cmd/" + dir
 			}
+			exists[name] = true
 			if !named[name] {
 				missing = append(missing, top+"/"+dir)
 			}
 		}
 	}
+	for name := range named {
+		if !exists[name] {
+			if !strings.HasPrefix(name, "cmd/") {
+				name = "pkg/" + name
+			}
+			stale = append(stale, name)
+		}
+	}
+	slices.Sort(stale)
+	var problems []string
 	if len(missing) > 0 {
-		return errors.New(path + " has no row for these directories of Go code; add one to the table of their area:\n" + strings.Join(missing, "\n"))
+		problems = append(problems, path+" has no row for these directories of Go code; add one to the table of their area:\n"+strings.Join(missing, "\n"))
+	}
+	if len(stale) > 0 {
+		problems = append(problems, path+" has rows for these directories, which hold no Go code; remove them:\n"+strings.Join(stale, "\n"))
+	}
+	if len(problems) > 0 {
+		return errors.New(strings.Join(problems, "\n"))
 	}
 	return nil
 }

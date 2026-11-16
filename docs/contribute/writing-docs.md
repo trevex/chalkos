@@ -183,7 +183,7 @@ Two flake checks guard the documentation:
 
 | Check | Fails when |
 | --- | --- |
-| `docs` | The navigation names a page that does not exist; the strict build finds a broken link or anchor; `docgen check` finds a command that does not exist; `docgen yaml` finds a config document the schemas refuse; a Nix block a page shows does not parse; or `docgen packages` finds a directory of Go code in `cmd/` or `pkg/` that `contribute/packages.md` has no row for. |
+| `docs` | The navigation names a page that does not exist; the strict build finds a broken link or anchor; `docgen check` finds a command that does not exist; `docgen yaml` finds a config document the schemas refuse; a Nix block a page shows does not parse; or `docgen packages` finds a directory of Go code in `cmd/` or `pkg/` without a row in `contribute/packages.md`, or a row there for a directory without Go code. |
 | `docs-generated` | The generated pages in the repository differ from what the code generates. It names `nix run .#docgen` as the fix. |
 
 Run both before handing in a change:
