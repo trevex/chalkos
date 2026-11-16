@@ -1,0 +1,12 @@
+# The nodes chalklab runs as virtual machines, each with the MAC address of its card on the lab
+# network, the router's LAN. The nodes' files name the cards by the kernel's names instead: enp0s2
+# on QEMU's user-mode network, enp0s3 on the lab network. Neither node runs Kubernetes, so each
+# needs less memory than the default of 2048 MiB.
+apiVersion: chalklab.chalkos.dev/v1alpha1
+kind: Lab
+metadata: {name: router-lab}
+spec:
+  inventory: ./chalkos.yaml
+  nodes:
+    router: {mac: "52:54:00:7c:00:01", memory: 1024}
+    client: {mac: "52:54:00:7c:00:02", memory: 768}

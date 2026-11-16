@@ -118,6 +118,8 @@ To move to another Go release:
 | `lib/` | `mkImage`, `mkInstaller`, `mkImages` and the module of their arguments, and the layers, the flake's `nixosModules`. |
 | `nix/` | Tooling: packages, apps, checks, the development shell, the docs build, and the test images and their secrets in `nix/testing/`. |
 | `templates/lab/` | The lab template the quick start uses. |
+| `templates/router-lab/` | The router lab template the router quick start uses. |
+| `templates/cluster-metal/` | The template of a cluster on real machines, which the guide Build a cluster on real machines uses. |
 | `examples/homelab/` | The home lab of the guide Build a home lab: a flake that builds a router image and a node image with the bird extension, the installer, an inventory and its YAML, which the `example-homelab` check builds and validates. |
 | `examples/extensions/` | An example of extension kinds: a flake that builds an image with the `Rack` and `Hardware` extensions and Kubernetes off, an inventory and its node's YAML, which the `example-extensions` check builds and validates. |
 | `test/e2e/` | The end-to-end tests, which boot virtual machines. |

@@ -1,0 +1,23 @@
+# The client, a machine on the router's LAN. chalklab reaches its chalkd through the card on QEMU's
+# user-mode network, enp0s2, which takes QEMU's guest address without a gateway, so the client
+# reaches the internet only through the router.
+apiVersion: storage.chalkos.dev/v1alpha1
+kind: SystemDisk
+metadata: {name: system}
+spec:
+  disk: {path: /dev/vda}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-user}
+spec:
+  match: {name: enp0s2}
+  network: {address: [10.0.2.15/24], ipv6AcceptRA: false}
+---
+# The card on the lab network takes its address, gateway and DNS server from the router.
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-lan}
+spec:
+  match: {name: enp0s3}
+  network: {dhcp: ipv4}

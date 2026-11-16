@@ -1,0 +1,75 @@
+# The router: its WAN, enp0s2, is the VM's card on QEMU's user-mode network, which reaches the
+# internet through this machine and carries the port chalklab forwards to chalkd. Its LAN, enp0s3,
+# is the card on the lab network, where it leases addresses to the client, answers its DNS queries
+# and masquerades its IPv4 traffic out of the WAN.
+apiVersion: storage.chalkos.dev/v1alpha1
+kind: SystemDisk
+metadata: {name: system}
+spec:
+  disk: {path: /dev/vda}
+---
+# The WAN takes its address and default route from QEMU's DHCP server.
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-wan}
+spec:
+  match: {name: enp0s2}
+  network: {dhcp: ipv4, ipv6AcceptRA: false}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-lan}
+spec:
+  match: {name: enp0s3}
+  network: {address: [192.168.50.1/24]}
+---
+# The firewall accepts the node API on the WAN alone, where chalklab forwards its port.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: Router
+metadata: {name: router}
+spec:
+  management: {interfaces: [enp0s2]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallZone
+metadata: {name: wan}
+spec: {interfaces: [enp0s2]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallZone
+metadata: {name: lan}
+spec: {interfaces: [enp0s3]}
+---
+# The LAN reaches the WAN, and the replies come back; nothing from the WAN reaches the LAN.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallPolicy
+metadata: {name: lan-wan}
+spec: {from: lan, to: wan, default: accept}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: NATRule
+metadata: {name: masquerade}
+spec:
+  type: masquerade
+  out: {zone: wan}
+  match: {source: [192.168.50.0/24]}
+---
+# The LAN's clients get an address of the pool, the router as their gateway and DNS server.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: DHCPSubnet
+metadata: {name: lan}
+spec:
+  interfaces: [enp0s3]
+  subnet: 192.168.50.0/24
+  pools: [{first: 192.168.50.100, last: 192.168.50.199}]
+  gateway: 192.168.50.1
+  dns: [192.168.50.1]
+---
+# The resolver answers the LAN on the router's LAN address and resolves names from the root
+# servers.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: Resolver
+metadata: {name: lan}
+spec:
+  listen: [192.168.50.1]
+  allow: [192.168.50.0/24]

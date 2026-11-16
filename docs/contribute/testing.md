@@ -198,6 +198,8 @@ shell functions the check scripts call: `fail`, `retry` and `refuses`, and for t
 | `rules` | The images' rules compile, the outputs' checks pass the files they should and refuse broken ones, and a broken rule, effect, output or diagnostic fails its image. |
 | `image-tests` | The image tests of the test image, the router images and the examples' image pass: their outputs render the golden files, and their refusals and effects are those expected. |
 | `template-lab` | The lab template's image builds, and `chalkctl validate` accepts the template's YAML with it. |
+| `template-router-lab` | The router lab template's two images build, and `chalkctl validate` accepts the template's YAML with them. |
+| `template-cluster-metal` | The metal cluster template's image and installer build, and `chalkctl validate` accepts the template's YAML with the image. |
 | `example-homelab` | The homelab example's image builds, and `chalkctl validate` accepts its YAML, `Peer` documents included, with it. |
 | `example-extensions` | The extensions example's image builds, and `chalkctl validate` accepts its YAML, `Rack` and `Hardware` documents included, with it. |
 | `image-contract` | An image directory describes itself and carries a schema for each kind it lists. |
@@ -348,6 +350,8 @@ Every check builds with `nix build`, and a change runs the checks of the parts i
 | Status: `pkg/statusview` and its `layers/<layer>` | `go-unit`, `go-lint`, and its golden files in `testdata/` |
 | A new or removed directory of Go code in `cmd/` or `pkg/` | `docs`, which wants a row in `docs/contribute/packages.md` for each directory of Go code and none for another |
 | `templates/lab` | `template-lab` |
+| `templates/router-lab` | `template-router-lab` |
+| `templates/cluster-metal` | `template-cluster-metal` |
 | `.github/workflows` | `workflows` |
 
 Run one check, with its log:

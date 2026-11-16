@@ -1,4 +1,4 @@
-# Checks of the repository's code, documentation, workflows, template and examples.
+# Checks of the repository's code, documentation, workflows, templates and examples.
 {
   pkgs,
   self,
@@ -41,6 +41,48 @@ let
       exit 1
     }
   '';
+  # The check of a template: its flake's dev shell brings the tools it names, and chalkctl
+  # validate, or command, accepts the template's nodes with the images it builds where their
+  # inventory points, each image at images/<name>. The flake's mkImages gets the test secrets' OS
+  # CA in place of the secrets.pub.json chalkctl gen secrets writes, which the repository does not
+  # hold.
+  templateCheck =
+    {
+      name,
+      tools,
+      command ? "chalkctl validate",
+    }:
+    let
+      system = pkgs.stdenv.hostPlatform.system;
+      chalkos = self // {
+        lib = self.lib // {
+          # The template must name its secrets.pub.json, which the check replaces.
+          mkImages =
+            arguments:
+            assert lib.assertMsg (arguments ? osCA) "the ${name} template's flake passes mkImages no osCA";
+            self.lib.mkImages (arguments // { osCA = "${chalkPkgs.test-secrets}/secrets.pub.json"; });
+        };
+      };
+      # A flake of no git repository has no revision.
+      template = (import ../../templates/${name}/flake.nix).outputs {
+        inherit chalkos;
+        self = { };
+      };
+      shell = template.devShells.${system}.default;
+      packages = template.packages.${system};
+    in
+    assert lib.all (p: lib.elem p shell.nativeBuildInputs) tools;
+    assert lib.isString shell.drvPath;
+    # The installer, which a guide writes to a USB stick, evaluates.
+    assert packages ? installer -> lib.isString packages.installer.drvPath;
+    checkLib.validateDirectory {
+      name = "template-${name}";
+      src = ../../templates/${name};
+      images = lib.mapAttrs' (image: lib.nameValuePair "images/${image}") (
+        removeAttrs packages [ "installer" ]
+      );
+      inherit command;
+    };
   # A check that builds the Go code of the whole tree, its tests included, in its buildPhase.
   goCheck =
     args:
@@ -181,43 +223,41 @@ in
         touch $out
       '';
 
-  # The lab template: its flake builds the nodes' kvm image with mkImages, and its dev shell
-  # brings chalklab, chalkctl and kubectl. chalkctl validate accepts the template's nodes with that
-  # image where their Image points, and validatePinned checks its Cluster document's images;
-  # TestTheLabFiles of go-unit checks chalklab.yaml's MAC addresses. The flake's mkImages gets the
-  # test secrets' OS CA in place of the secrets.pub.json chalkctl gen secrets writes, which the
-  # repository does not hold.
-  template-lab =
-    let
-      system = pkgs.stdenv.hostPlatform.system;
-      chalkos = self // {
-        lib = self.lib // {
-          # The template must name its secrets.pub.json, which the check replaces.
-          mkImages =
-            arguments:
-            assert lib.assertMsg (arguments ? osCA) "the lab template's flake passes mkImages no osCA";
-            self.lib.mkImages (arguments // { osCA = "${chalkPkgs.test-secrets}/secrets.pub.json"; });
-        };
-      };
-      # A flake of no git repository has no revision.
-      template = (import ../../templates/lab/flake.nix).outputs {
-        inherit chalkos;
-        self = { };
-      };
-      shell = template.devShells.${system}.default;
-    in
-    assert lib.all (p: lib.elem p shell.nativeBuildInputs) [
+  # The lab template: its flake builds the nodes' kvm image, and its dev shell brings chalklab,
+  # chalkctl and kubectl; validatePinned checks its Cluster document's images. TestTheLabFiles of
+  # go-unit checks chalklab.yaml's MAC addresses.
+  template-lab = templateCheck {
+    name = "lab";
+    tools = [
       pkgs.chalkos.chalklab
       pkgs.chalkos.chalkctl
       pkgs.kubectl
     ];
-    assert lib.isString shell.drvPath;
-    checkLib.validateDirectory {
-      name = "template-lab";
-      src = ../../templates/lab;
-      images."images/node-kvm" = template.packages.${system}.node-kvm;
-      command = validatePinned;
-    };
+    command = validatePinned;
+  };
+
+  # The router lab template: its flake builds the router's and the client's kvm images, and its
+  # dev shell brings chalklab and chalkctl.
+  template-router-lab = templateCheck {
+    name = "router-lab";
+    tools = [
+      pkgs.chalkos.chalklab
+      pkgs.chalkos.chalkctl
+    ];
+  };
+
+  # The metal cluster template: its flake builds the nodes' metal image and the installer, and its
+  # dev shell brings chalkctl, chalkbuild and kubectl; validatePinned checks its Cluster
+  # document's images.
+  template-cluster-metal = templateCheck {
+    name = "cluster-metal";
+    tools = [
+      pkgs.chalkos.chalkctl
+      pkgs.chalkos.chalkbuild
+      pkgs.kubectl
+    ];
+    command = validatePinned;
+  };
 
   # The homelab example: its flake builds the router's metal image and the nodes' with the BGP
   # extension, and chalkctl validate accepts the router's and the nodes' YAML, Speaker and Peer

@@ -1,0 +1,15 @@
+# The lab's two nodes, the image each runs and its config file. chalklab reaches the nodes at ports
+# it forwards from 127.0.0.1, through the inventory it writes into the lab's state directory, so
+# the nodes need no address here.
+apiVersion: chalkctl.chalkos.dev/v1alpha1
+kind: Inventory
+metadata: {name: router-lab}
+spec:
+  images:
+    # nix build .#router-kvm -o images/router-kvm and nix build .#client-kvm -o images/client-kvm
+    # put the images here.
+    router-kvm: {source: {directory: images/router-kvm}}
+    client-kvm: {source: {directory: images/client-kvm}}
+  nodes:
+    router: {imageName: router-kvm, files: [nodes/router.yaml]}
+    client: {imageName: client-kvm, files: [nodes/client.yaml]}

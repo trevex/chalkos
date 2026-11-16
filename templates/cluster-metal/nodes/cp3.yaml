@@ -1,0 +1,23 @@
+# cp3: a control plane with one Ethernet port on the network. Replace the disk with the node's own,
+# by its path below /dev/disk/by-id, and the MAC address with its port's, which chalkctl disks and
+# the diagnostic addresses show while the machine waits in the installer.
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: default}
+spec:
+  type: controlplane
+---
+apiVersion: storage.chalkos.dev/v1alpha1
+kind: SystemDisk
+metadata: {name: system}
+spec:
+  disk: {path: /dev/disk/by-id/nvme-EXAMPLE_SSD_cp3}
+---
+# The port's static address, the one chalkos.yaml names for cp3, its gateway and its DNS server.
+# The node holds the VIP on this port while it is the VIP's holder.
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-lan}
+spec:
+  match: {macAddress: "02:00:00:00:00:13"}
+  network: {address: [192.168.1.13/24], gateway: 192.168.1.1, dns: [192.168.1.1]}

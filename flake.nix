@@ -43,6 +43,14 @@
         path = ./templates/lab;
         description = "A cluster of a control plane and a worker that chalklab runs as QEMU virtual machines";
       };
+      templates.router-lab = {
+        path = ./templates/router-lab;
+        description = "A router and a client on its LAN that chalklab runs as QEMU virtual machines";
+      };
+      templates.cluster-metal = {
+        path = ./templates/cluster-metal;
+        description = "A Kubernetes cluster of three control planes on real machines, with its installer";
+      };
       packages.${system} = import ./nix/outputs/packages.nix arguments;
       checks.${system} = import ./nix/checks arguments;
       apps.${system} = import ./nix/outputs/apps.nix arguments;

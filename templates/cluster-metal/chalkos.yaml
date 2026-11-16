@@ -1,0 +1,15 @@
+# The cluster's three nodes, the address chalkctl reaches each at, the image they run and their
+# config files: every node gets cluster/, each its own file in nodes/. Replace the addresses with
+# free ones of your network, here and in the nodes' files.
+apiVersion: chalkctl.chalkos.dev/v1alpha1
+kind: Inventory
+metadata: {name: cluster}
+spec:
+  images:
+    # nix build .#node-metal -o images/node-metal puts the image here.
+    node-metal: {source: {directory: images/node-metal}}
+  all: {imageName: node-metal, files: [cluster/*.yaml]}
+  nodes:
+    cp1: {address: 192.168.1.11, files: [nodes/cp1.yaml]}
+    cp2: {address: 192.168.1.12, files: [nodes/cp2.yaml]}
+    cp3: {address: 192.168.1.13, files: [nodes/cp3.yaml]}

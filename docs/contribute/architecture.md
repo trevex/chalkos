@@ -117,6 +117,7 @@ Each row names where a change goes and the checks that cover it. `nix build
 | The arguments of mkImage and mkImages | `lib/images.nix`, `lib/images-arguments.nix` | `eval`, `image-tests`, `docs-generated` |
 | Kernel modules or the closure | `modules/node/kernel.nix`, `modules/node/base/closure.nix` | `kernel-modules`, `image-size`, `bootspec` |
 | The lab template | `templates/lab` | `template-lab` |
+| The router lab and metal cluster templates | `templates/router-lab`, `templates/cluster-metal` | `template-router-lab`, `template-cluster-metal` |
 | A documentation page | `docs/` | `docs` |
 
 [Testing](testing.md#flake-checks) maps more parts to their checks.
