@@ -220,8 +220,8 @@ a run, and after a run that stopped or a node that rolled back. Such a node beha
   `the config of <node>: does not accept kind "Hardware" of apiVersion "hardware.example.org/v1alpha2"`.
 - `chalkctl status` shows its config and its image as not the inventory's. The image line names
   the command that brings the node to the inventory's image, such as
-  `chalkctl upgrade --nodes <node>`, which fixes both. The config line names
-  `chalkctl config apply`, which refuses until then.
+  `chalkctl upgrade --nodes <node>`, which fixes both. The config line names the same upgrade:
+  `not the inventory's; chalkctl upgrade --nodes <node> delivers it with the image <image>`.
 
 To see what such a node accepts, validate against the old image. Here `chalkos-old.yaml` is a copy
 of the inventory whose `spec.images` names a build of the commit before:

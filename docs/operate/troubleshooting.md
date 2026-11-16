@@ -218,6 +218,11 @@ quorum, and at a drain that does not finish.
 the last delivery. Preview and deliver the change, as
 [Change a node's config](change-config.md) describes.
 
+`not the inventory's; chalkctl upgrade --nodes w1 delivers it with the image <image>` means the
+node also runs another image than the inventory's. `config apply` would check the files against
+the image the node runs, which may refuse them. Upgrade the node, as
+[Upgrade nodes](upgrade.md) describes; the upgrade delivers the config with the image.
+
 ## Status warns about a certificate
 
 The certificates section has a third column, such as `less than a third of its lifetime remains`

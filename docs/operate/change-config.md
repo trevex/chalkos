@@ -212,7 +212,7 @@ config 415c8f6a2ad1aaf92090cbf7b9814c5384220d2ec63d276334234e2bfcef86ad (the inv
 ...
 ```
 
-A node whose files changed since the last delivery shows
+A node that runs the inventory's image and whose files changed since the last delivery shows
 `not the inventory's; chalkctl config apply cp1 delivers it` in the parentheses.
 
 ## Roll back a config change
