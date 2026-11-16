@@ -223,6 +223,11 @@ node also runs another image than the inventory's. `config apply` would check th
 the image the node runs, which may refuse them. Upgrade the node, as
 [Upgrade nodes](upgrade.md) describes; the upgrade delivers the config with the image.
 
+`... delivers it if the image <image> in the inactive slot, which is not the inventory's, accepts
+it too` means an image the inventory no longer names is staged or active on the node. A delivery
+writes that image's config slot too, and that image checks the config first. When it refuses,
+deliver the config once an upgrade to a new image replaced it.
+
 ## Status warns about a certificate
 
 The certificates section has a third column, such as `less than a third of its lifetime remains`

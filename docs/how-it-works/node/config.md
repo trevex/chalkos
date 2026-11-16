@@ -716,16 +716,21 @@ gives it, in two ways:
   config against the image the node runs, which need not accept the files of another image. A
   node that runs another image than the inventory's therefore shows
   `chalkctl upgrade --nodes <node> delivers it with the image <image>`, or
-  `it comes with the image <image> in the inactive slot` when that image is staged or active.
+  `it comes with the image <image> in the inactive slot` when that image is staged or active. A
+  known-good image keeps the config it last ran, so when it is the inventory's image, the advice
+  is `config apply` once the node runs it. A delivery writes the config slot of a staged image
+  too, which checks the config first. On a node that runs the inventory's image, a staged image
+  that is not the inventory's adds that condition to the advice, as no command removes it.
   With an image staged, status compares the staged slot's config the same way. When it differs,
   the advice names `chalkctl config apply <node>`, which writes the config slots of both images,
   or `chalkctl config apply --staged <node>` when the running slot holds the inventory's config
-  already or the running image is not the inventory's. When neither image is the inventory's,
-  the advice is the upgrade. A rollback image that keeps the config it last ran gets no advice. The node tells
-  that image in its boot status by the same test its deliveries take. During a trial, which holds
-  every delivery back, the advice is `chalkctl config confirm <node>` when the inventory's
-  config is on trial, as the confirmation writes the staged slot, and the end of the trial
-  otherwise.
+  already, or when the staged image is the inventory's and the running image is not. When
+  neither image is the inventory's, the advice is the upgrade. A rollback image that keeps the
+  config it last ran gets no advice. The node tells that image in its boot status by the same
+  test its deliveries take. A trial holds back every delivery, as chalkctl and the node test it:
+  the advice is `chalkctl config confirm <node>` for the staged slot when the inventory's config
+  is on trial, as the confirmation writes the staged slot, and the end of the trial otherwise. A
+  trial record the node cannot read holds back every change but `chalkctl config rollback`.
 - The image: chalkctl compares the root hash of the store the node booted with the root hash in
   the `metadata.json` of the directory of its image in the inventory. It names both when they
   differ, or says when the image is installed and waits for the node's next boot.

@@ -80,13 +80,25 @@ parentheses say otherwise when they differ:
 
 - `not the inventory's; chalkctl config apply node1 delivers it`: the node's files changed since the
   last delivery.
+- `not the inventory's; chalkctl config apply node1 delivers it if the image <image> in the
+  inactive slot, which is not the inventory's, accepts it too`: the node runs the inventory's
+  image, but another image is staged or active, as an upgrade with `--until stage` of an image the
+  inventory names no longer leaves it. A delivery writes that image's config slot too, so that
+  image checks the config, and no command removes it. An upgrade to a new image replaces it.
 - `not the inventory's; chalkctl upgrade --nodes node1 delivers it with the image <image>`: the
   node runs another image than the inventory's. `config apply` checks the config against the
   image the node runs, which may refuse it, so the config comes with the upgrade.
 - `not the inventory's; it comes with the image <image> in the inactive slot`: the node has the
   inventory's image staged or active, and boots it with the config the `staged config` line shows.
+- `not the inventory's; the node boots the image <image> next with the config it last ran; once it
+  runs it, chalkctl config apply node1 delivers it`: the inventory's image is the known-good image
+  of a rollback from a boot that was not found healthy. It keeps the config it last ran.
 - `not the inventory's; the node takes no delivery until the trial of config <version> ends`: a
-  config is on trial.
+  config is on trial. A trial whose rollback at the deadline failed holds nothing back, as the
+  node finishes that rollback before the next delivery.
+- `not the inventory's; the node takes no delivery until chalkctl config rollback node1 removes
+  the record of a config's trial that cannot be read`: the node cannot read its trial record and
+  refuses every change but a rollback.
 - `cannot read the config the inventory gives it: ...`: chalkctl could not build the node's
   documents from the inventory, for the reason it names.
 - `no inventory to compare it with`: chalkctl found no inventory: neither `--inventory` nor
@@ -96,12 +108,15 @@ parentheses say otherwise when they differ:
 active in its inactive slot adds `staged config <version> (...)`, the config that image boots
 with. When it differs, its parentheses name `chalkctl config apply node1`, which writes the config
 slots of both images, or `chalkctl config apply --staged node1` when the running image runs the
-inventory's config already or is not the inventory's image. When neither image is the
-inventory's, they name `chalkctl upgrade --nodes node1`, as the config line does. After a rollback from a boot that was not found healthy, the staged
-image is the rollback image, and the parentheses say that it keeps the config it last ran until
-the boot is found healthy. During a trial the node takes no delivery. When the inventory's config
-is on trial, the parentheses name `chalkctl config confirm node1`, because the confirmation
-writes the staged config. Otherwise they say that the trial must end first.
+inventory's config already, or when the staged image is the inventory's and the running image is
+not. When neither image is the inventory's, they name `chalkctl upgrade --nodes node1`, as the
+config line does. A staged image that is not the inventory's on a node that runs the inventory's
+image adds the same condition as the config line. After a rollback from a boot that was not found
+healthy, the staged image is the rollback image, and the parentheses say that it keeps the config
+it last ran until the boot is found healthy. During a trial the node takes no delivery. When the
+inventory's config is on trial, the parentheses name `chalkctl config confirm node1`, because the
+confirmation writes the staged config. Otherwise they say what must end the trial first, as the
+config line does.
 
 A node that holds config for its next upgrade adds
 `pending config <version> (unchecked, since <time>; the next upgrade checks it against its image)`.
@@ -166,7 +181,10 @@ still checks ends in `, not found healthy yet`. More lines follow after an upgra
   rebuilt since the node's upgrade. The line ends in `chalkctl upgrade --nodes node1 installs that
   image`, in `it has ... staged: chalkctl node activate node1 makes it boot next` when the image
   waits for its activation, or in `it has ... active, which it boots with its next reboot:
-  chalkctl node reboot node1` when it waits for a reboot.
+  chalkctl node reboot node1` when it waits for a reboot. After a rollback from a boot that was
+  not found healthy, the inventory's image can be the known-good image the node falls back to,
+  and the line says `it has ... active as its known-good image, which it boots with the config it
+  last ran at its next reboot: chalkctl node reboot node1`.
 
 `image ...; its boot is unknown: ...` means chalkd could not read the boot entries on the ESP or
 the running store, for the reason named.
