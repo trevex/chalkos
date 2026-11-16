@@ -5,14 +5,17 @@ description: "Declare a read-only command that operators run on a node with chal
 
 # Add a diagnostic
 
-This page is for an image author whose service has state an operator needs to see on a node,
-such as bird's BGP sessions. At the end, `chalkctl node diag node1 bird-protocols` prints them.
-The page continues the homelab's BGP extension.
+This page is for an image author whose service or hardware has state an operator needs to see on
+a node, such as the server's PCI devices. At the end, `chalkctl node diag server1 pci-devices`
+prints them.
 
 A diagnostic is a read-only command of the image that chalkd runs on a node for a client of the
 node API. Nodes have no logins. On a node without Kubernetes no pod can debug the host either,
 so a diagnostic is how an operator reads a service's state there. Every image declares the base
 diagnostics, which [Built-ins](../reference/builtins.md#diagnostics) lists.
+
+See it in a full extension: [Add a diagnostic](../guides/bgp-extension.md#add-a-diagnostic) of
+the BGP guide shows bird's sessions through bird's control socket.
 
 ## Before you begin
 
@@ -22,27 +25,38 @@ command prints.
 
 ## Declare the diagnostic
 
-`chalkos.diagnostics.<name>` declares a diagnostic. Here is bird's, as `extensions/bgp.nix`
-declares it:
+`chalkos.diagnostics.<name>` declares a diagnostic. This one runs `lspci` from pciutils:
 
 ```nix
---8<-- "examples/homelab/extensions/bgp.nix:diagnostic"
+chalkos.diagnostics.pci-devices = {
+  description = "The server's PCI devices, in detail.";
+  command = [
+    "${pkgs.pciutils}/bin/lspci"
+    "-vv"
+    "-s{slot}"
+  ];
+  parameters.slot = {
+    type = "pattern";
+    regex = "^[0-9a-f]{2}:[0-9a-f]{2}\\.[0-7]$";
+    optional = true;
+    description = "Bus, device and function of one device, such as 00:1f.2, which alone is shown; every device when left out.";
+  };
+  role = "reader";
+};
 ```
 
 The name is what `chalkctl node diag` takes: up to 64 lower-case letters, digits and hyphens,
 starting with a letter. `role` is the least client role that runs it. Readers may run this one,
-because it only reads bird's state. A diagnostic without a `role` needs an operator.
+because it only reads. A diagnostic without a `role` needs an operator.
 
 ## The command is a list of arguments
 
 `command` is the command line as a list, and no shell reads it. Its first argument is a program
-of the image's store: `"${bird}/bin/birdc"`, never `birdc`. A placeholder such as `{protocol}`
-is replaced by the parameter's value inside its own argument alone. `"'{protocol}'"` becomes
-`'router_enp1s0'`, one argument, whatever the value holds. The quotes are for bird, which needs
-them around a protocol name with a hyphen, such as that of a `Peer` named `spare-router`.
+of the image's store: `"${pkgs.pciutils}/bin/lspci"`, never `lspci`. A placeholder such as
+`{slot}` is replaced by the parameter's value inside its own argument alone. `"-s{slot}"` becomes
+`-s00:1f.2`, one argument, whatever the value holds.
 
-`birdc -r` asks bird in its restricted mode, which takes only commands that read. Run a program
-in such a mode when it has one.
+Run a program in a mode that only reads when it has one, such as bird's `birdc -r`.
 
 ## Parameters are typed
 
@@ -61,14 +75,12 @@ and passes the command the value's canonical form:
 
 `regex` is in Go's RE2 syntax and runs from `^` to `$`. Whatever the type, chalkd refuses a
 value that starts with `-`, which a program would read as an option, and a value that holds a
-control character. The regex of `protocol` takes the names `bird.conf` gives the sessions, a
-`Peer`'s name and an interface's joined by `_`, so no value closes bird's quotes.
+control character. The regex of `slot` takes a PCI address of bus, device and function alone.
 
 A call gives every parameter that has neither `optional` nor a `default`. When a call leaves out
-an optional parameter, chalkd drops every argument that names it. Without `protocol`, the command is
-`birdc -r show protocols`, and bird shows every protocol. A `default` fills the arguments
-instead, as `count`'s default of `4` does for the base diagnostic `ping`. A parameter has one or
-the other.
+an optional parameter, chalkd drops every argument that names it. Without `slot`, the command is
+`lspci -vv`, and lspci shows every device. A `default` fills the arguments instead, as `count`'s
+default of `4` does for the base diagnostic `ping`. A parameter has one or the other.
 
 ## The run gets a sandbox of its own
 
@@ -87,9 +99,10 @@ chalkd sends at most 1 MiB of what the command prints, then stops it. A node run
 diagnostics at a time. A fifth call fails with
 `resource_exhausted: 4 diagnostics run already; wait for one to end`.
 
-bird makes its control socket writable for its group, `bird`. `groups = [ "bird" ]` lets the run
-reach the socket. A daemon whose socket only root may use needs another way in. The base
-diagnostic `nft-ruleset` gets `CAP_NET_ADMIN` to read nftables, and `ping` gets `CAP_NET_RAW`.
+A daemon's control socket that its group may write is reachable through `groups`, which adds the
+run to that group of the image. A daemon whose socket only root may use needs another way in. The
+base diagnostic `nft-ruleset` gets `CAP_NET_ADMIN` to read nftables, and `ping` gets
+`CAP_NET_RAW`.
 
 ## Run in a network namespace
 
@@ -121,21 +134,27 @@ The image fails to build when chalkd could not run the declaration:
 - the timeout is not from `1s` to `10m`, a capability is none of Linux's, or a regex does not
   compile or does not run from `^` to `$`.
 
-The message names the diagnostic or its option, such as
-`chalkos.diagnostics.bird-protocols: the command or networkNamespace names {session}, which is no parameter`.
+The message names the diagnostic or its option. With `{device}` in place of `{slot}`, the build
+fails with two:
+
+```text
+Failed assertions:
+- chalkos.diagnostics.pci-devices: the command or networkNamespace names {device}, which is no parameter
+- chalkos.diagnostics.pci-devices.parameters.slot: the command names no {slot}
+```
 
 ## Check that it worked
 
 Build the image and upgrade a node to it, as
 [Test and roll out an image](test-and-roll-out.md) describes. `chalkctl node diag` lists the new
-diagnostic, and running it prints bird's protocols:
+diagnostic, and running it prints the device:
 
 ```sh
-chalkctl node diag node1
-chalkctl node diag node1 bird-protocols protocol=router_enp1s0
+chalkctl node diag server1
+chalkctl node diag server1 pci-devices slot=00:1f.2
 ```
 
-`not_found: the image declares no diagnostic "bird-protocols"; chalkctl node diag lists those it does`
+`not_found: the image declares no diagnostic "pci-devices"; chalkctl node diag lists those it does`
 means the node still runs an image without it.
 
 ## What next

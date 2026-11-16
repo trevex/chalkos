@@ -1,7 +1,8 @@
 # The Rack kind, which records a node's rack position, and a unit that reads it on the node. An
 # image that carries this module accepts Rack documents. A node that was surveyed, whose
 # rack-survey tool wrote where it found the node, takes no other location than that once it runs;
-# an install reads no facts and takes any.
+# an install reads no facts and takes any. The comments # --8<-- mark the sections the docs
+# include.
 {
   chalkosLib,
   config,
@@ -33,6 +34,7 @@
   chalkos.effects.rack-location = chalkosLib.restartOn { kinds = [ "Rack" ]; } [
     "rack-location.service"
   ];
+  # --8<-- [start:unit]
   systemd.services.rack-location = {
     # chalkd writes the node's Rack below /run/chalkos/config for it.
     chalkos.kinds = [ "Rack" ];
@@ -49,4 +51,5 @@
       );
     };
   };
+  # --8<-- [end:unit]
 }

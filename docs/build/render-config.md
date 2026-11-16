@@ -6,54 +6,57 @@ description: "Render a service's config file from the node's documents, checked 
 # Render config files
 
 This page is for an image author whose service reads a config file of its own format. At the end
-an output renders that file from the node's documents, the service's own validator checks it, and
-a document that would break the service is refused before it reaches the node. The page continues
-the homelab's BGP extension, `extensions/bgp.nix`: bird reads `bird.conf`, rendered from the
-`Speaker` and `Peer` documents.
+an output renders that file from the node's documents, a check refuses a file the service could
+not read, and a document that would break the service is refused before it reaches the node. The
+examples use the output `hardware` of the
+[extensions example](https://github.com/trevex/chalkos/tree/main/examples/extensions): it renders
+the node's `Hardware` document into an environment file that a unit reads.
 
 An output is a directory of files that a program of the image renders from documents. chalkd
 renders and checks every output before a delivery changes anything. When a render or a check
 fails, chalkd refuses the whole delivery, and the node keeps the config it runs.
 
+See it in a full extension: [Render bird.conf](../guides/bgp-extension.md#render-birdconf) of the
+BGP guide renders bird's config and checks it with bird's parser.
+
 ## Before you begin
 
 You need a kind whose documents the service needs, as [Declare a config kind](declare-a-kind.md)
-declares `Peer`. A service that reads JSON documents itself needs no output: a grant gives it the
-documents, as [Read config in a service](read-config.md) shows.
+declares `Hardware`. A service that reads JSON documents itself needs no output: a grant gives it
+the documents, as [Read config in a service](read-config.md) shows.
 
 ## Declare the output
 
-`chalkos.outputs.<name>` declares an output. Here is `bird-conf`, as `extensions/bgp.nix`
-declares it:
+`chalkos.outputs.<name>` declares an output. Here is `hardware`, as `hardware.nix` declares it:
 
-```nix
---8<-- "examples/homelab/extensions/bgp.nix:output"
+```nix title="hardware.nix"
+--8<-- "examples/extensions/hardware.nix:output"
 ```
 
-The declaration sets three things:
+The declaration sets two things, and may set a third:
 
 - `inputs` names the kinds whose documents the renderer reads.
-- `render` is the renderer: here a Go template, rendered into `bird.conf`.
-- `check` is a shell script that checks the rendered files. `bird -p` parses the config without
-  running it and exits with an error on a config bird rejects.
+- `render` is the renderer: here a Go template, rendered into `hardware.env`.
+- `check` is a shell script that checks the rendered files. `hardware` has none.
+  [Check the rendered files](#check-the-rendered-files) describes it.
 
-bird's config includes the rendered file from the output's `dir`. The module names the path as
-`config.chalkos.outputs.bird-conf.dir`, so a misspelled output name fails the image's evaluation:
+The unit reads the rendered file from the output's `dir`. The module names the path as
+`config.chalkos.outputs.hardware.dir`, so a misspelled output name fails the image's evaluation:
 
 ```nix
---8<-- "examples/homelab/extensions/bgp.nix:service"
+EnvironmentFile = "-${config.chalkos.outputs.hardware.dir}/hardware.env";
 ```
 
-On a delivery, the files pass through these steps before bird reads them:
+On a delivery, the files pass through these steps before the unit reads them:
 
 ```mermaid
 flowchart LR
-    docs["Speaker and Peer documents"] -->|input JSON| render["Renderer in the sandbox"]
+    docs["Hardware documents"] -->|input JSON| render["Renderer in the sandbox"]
     render -->|staged files| check["check"]
     check -->|passes| swap["dir link swapped"]
     check -->|fails| refuse["delivery refused"]
     swap --> effects["effects fire"]
-    effects -->|reload| bird["bird reads bird.conf"]
+    effects -->|restart| unit["hardware-info reads hardware.env"]
 ```
 
 The diagram shows the documents becoming staged files, which the check either passes or refuses.
@@ -63,41 +66,35 @@ after it. A refused render changes nothing the service reads.
 ## Read the renderer's input
 
 Every renderer reads the same input on standard input: the node's name and the documents of each
-input kind. For the homelab's `Speaker` and `Peer` on `node1`, `bird-conf`'s renderer reads
-this object, indented here:
+input kind. For a renderer with the inputs `Hardware` and `Rack`, on a node named `example`, the
+input reads, indented here:
 
 ```json
 {
   "documents": {
-    "Peer": [
+    "Hardware": [
       {
-        "apiVersion": "bgp.example.org/v1alpha1",
-        "kind": "Peer",
-        "metadata": {"name": "router"},
-        "spec": {
-          "address": "fdc8:a1b2:c3d4:1::1",
-          "asn": 65000,
-          "bfd": true,
-          "interfaces": ["enp1s0", "enp2s0"],
-          "password": {"secretRef": {"key": "password", "name": "bgp"}}
-        }
+        "apiVersion": "hardware.example.org/v1alpha1",
+        "kind": "Hardware",
+        "metadata": {"name": "hardware"},
+        "spec": {"assetTag": null, "model": "SYS-E300-9D", "vendor": "Supermicro"}
       }
     ],
-    "Speaker": [
+    "Rack": [
       {
-        "apiVersion": "bgp.example.org/v1alpha1",
-        "kind": "Speaker",
-        "metadata": {"name": "bgp"},
-        "spec": {"asn": 65001, "export": {"interfaces": ["node0"]}, "routerID": "0.0.0.11"}
+        "apiVersion": "rack.example.org/v1alpha1",
+        "kind": "Rack",
+        "metadata": {"name": "rack"},
+        "spec": {"location": "rack-a/u12"}
       }
     ]
   },
-  "node": {"name": "node1"}
+  "node": {"name": "example"}
 }
 ```
 
-The documents carry their schema defaults, so `router` has `bfd: true` although its YAML leaves
-the field out. A renderer never sees a `Secret`'s value, as
+The documents carry their schema defaults, so the `Hardware` has `assetTag: null` although its
+YAML leaves the field out. A renderer never sees a `Secret`'s value, as
 [Pass secrets to a service](pass-secrets.md) explains. It writes its files into the directory
 that the environment variable `OUT` names.
 [Program input](../reference/extension-runtime.md#program-input) lists the rules of the input.
@@ -109,49 +106,19 @@ explains why.
 ## Render one file from a template
 
 `chalkosLib.render.template` renders a Go `text/template` into one file, named as the template
-less `.tmpl`. `bird.conf.tmpl` becomes `bird.conf`:
+less `.tmpl`. `hardware.env.tmpl` becomes `hardware.env`:
 
-```text title="extensions/bird.conf.tmpl"
---8<-- "examples/homelab/extensions/bird.conf.tmpl"
+```text title="hardware.env.tmpl"
+--8<-- "examples/extensions/hardware.env.tmpl"
 ```
 
-From the input above, the template renders this file:
+From a `Hardware` with the asset tag `HL-0042`, the template renders this file:
 
-```text title="bird.conf"
-# bird's config for node1, rendered by chalkos from its Speaker and Peer documents.
-router id 0.0.0.11;
-...
-
-protocol bgp 'router_enp1s0' {
-  local as 65001;
-  neighbor fdc8:a1b2:c3d4:1::1 as 65000;
-  interface "enp1s0";
-  direct;
-  connect retry time 5;
-  bfd on;
-  authentication md5;
-  password 'secret_bgp.password';
-  ipv6 {
-    # The router sends a link-local next hop beside its global one. bird would resolve the global
-    # one through the first port on the fabric's prefix for every session; the link-local one
-    # keeps each session's routes on its own port.
-    next hop prefer local;
-    import where net = ::/0;
-    export where proto = "node_addresses";
-  };
-}
-...
+```text title="hardware.env"
+--8<-- "examples/extensions/tests/server/hardware/hardware.env"
 ```
 
-This excerpt shows the session of the `Peer` named `router` on `enp1s0`. The file has a second
-session on `enp2s0`, and the blocks for the node's addresses and the kernel. The
-[BGP extension guide](../guides/bgp-extension.md#see-what-the-output-renders) shows the whole file.
-
-The `Speaker` gives the router ID, the AS number of every session and the interfaces of
-`node_addresses`, whose addresses each session announces. Each `Peer` gets a session per
-interface, named after the `Peer` and the interface and bound to that interface. A session takes
-the default route alone from the neighbour, and `merge paths` installs it with a next hop per
-session, so the node keeps it while one port works.
+On a node without a `Hardware` document the range is empty, and so is the file.
 
 The template reads the input as `.node.name` and `.documents.<Kind>`.
 [Template functions](../reference/extension-runtime.md#template-functions) lists the functions it
@@ -160,29 +127,28 @@ has besides Go's own, such as `quote` and `refuse`, and how it prints a missing 
 ## Render one file with jq
 
 `chalkosLib.render.jq` runs a jq program on the input and writes its result into one file, named
-as the program less `.jq`, so `peers.json.jq` writes `peers.json`. Here is that program, which
-turns the peers into a JSON list for a tool that reads its neighbours from JSON:
+as the program less `.jq`, so `hardware.json.jq` writes `hardware.json`. Here is that program,
+for a tool that reads the server's details from JSON:
 
-```text title="peers.json.jq"
-# One entry per Peer, for a tool that reads its neighbours from JSON.
-.documents.Peer | map({name: .metadata.name, address: .spec.address, asn: .spec.asn})
+```text title="hardware.json.jq"
+# One object per Hardware document, for a tool that reads the server's details from JSON.
+.documents.Hardware | map({vendor: .spec.vendor, model: .spec.model})
 ```
 
 ```nix
-chalkos.outputs.peers-json = {
-  inputs = [ "Peer" ];
-  render = chalkosLib.render.jq ./peers.json.jq;
+chalkos.outputs.hardware-json = {
+  inputs = [ "Hardware" ];
+  render = chalkosLib.render.jq ./hardware.json.jq;
 };
 ```
 
-For the homelab's `Peer`, the output's `dir` then holds `peers.json`:
+For the `Hardware` above, the output's `dir` then holds `hardware.json`:
 
-```json title="peers.json"
+```json title="hardware.json"
 [
   {
-    "name": "router",
-    "address": "fdc8:a1b2:c3d4:1::1",
-    "asn": 65000
+    "vendor": "Supermicro",
+    "model": "SYS-E300-9D"
   }
 ]
 ```
@@ -207,20 +173,20 @@ the same documents below `/run/chalkos/config` without an output.
 `render` also takes a command: a program of the image's store, with its arguments, or a package
 that is such a program. chalkd splits the command on spaces and runs it without a shell, so the
 command cannot redirect output or expand `$OUT`. A script from `pkgs.writeShellScript` does both.
-This one writes the peers as YAML with yq:
+This one writes the servers as YAML with yq:
 
 ```nix
-chalkos.outputs.peers-yaml = {
-  inputs = [ "Peer" ];
-  render = pkgs.writeShellScript "render-peers-yaml" ''
-    ${lib.getExe pkgs.yq-go} -P -o yaml '.documents.Peer | map({"name": .metadata.name, "address": .spec.address})' >"$OUT/peers.yaml"
+chalkos.outputs.hardware-yaml = {
+  inputs = [ "Hardware" ];
+  render = pkgs.writeShellScript "render-hardware-yaml" ''
+    ${lib.getExe pkgs.yq-go} -P -o yaml '.documents.Hardware | map({"vendor": .spec.vendor, "model": .spec.model})' >"$OUT/hardware.yaml"
   '';
 };
 ```
 
-```yaml title="peers.yaml"
-- name: router
-  address: fdc8:a1b2:c3d4:1::1
+```yaml title="hardware.yaml"
+- vendor: Supermicro
+  model: SYS-E300-9D
 ```
 
 [Program output](../reference/extension-runtime.md#program-output) lists what the program may
@@ -233,29 +199,27 @@ such as what several documents mean together. It refuses a config by printing a 
 refusals on standard output, one JSON object:
 
 ```json
-{"refusals": [{"kind": "Peer", "name": "router", "path": "metadata.name", "message": "a node with Peer documents needs a Speaker document, which gives bird its AS number and router ID"}]}
+{"refusals": [{"kind": "Hardware", "name": "hardware", "path": "metadata.name", "message": "a node with a Hardware document needs a Rack document, which says where the server is mounted"}]}
 ```
 
-Any refusal refuses the delivery, and chalkd reports it after `the config is refused:`:
+Any refusal refuses the delivery, and chalkd reports it after `the config is refused:`, with the
+document and the field:
 
 ```text
-the config is refused: Peer/router: metadata.name: a node with Peer documents needs a Speaker document, which gives bird its AS number and router ID
+the config is refused: Hardware/hardware: metadata.name: a node with a Hardware document needs a Rack document, which says where the server is mounted
 ```
 
 [Refusal report](../reference/extension-runtime.md#refusal-report) gives the rules of each field
 and of the report.
 
-A template refuses with `refuse`. These lines of `bird.conf.tmpl` refuse `Peer` documents on a
-node without a `Speaker`, whose AS number every session needs:
+A template refuses with `refuse`. These lines refuse a `Hardware` document on a node without a
+`Rack`, in a template whose output has both kinds as `inputs`:
 
 ```text
-{{- if and .documents.Peer (not .documents.Speaker) }}
-{{- refuse "Peer" (index .documents.Peer 0).metadata.name "metadata.name" "a node with Peer documents needs a Speaker document, which gives bird its AS number and router ID" }}
+{{- if and .documents.Hardware (not .documents.Rack) }}
+{{- refuse "Hardware" (index .documents.Hardware 0).metadata.name "metadata.name" "a node with a Hardware document needs a Rack document, which says where the server is mounted" }}
 {{- end }}
 ```
-
-The validator `bgp-peers` of [Validate config with a program](validate-config.md) refuses the
-same config, before any renderer runs.
 
 A program that `render` names prints the report itself, and a script made by
 `pkgs.writeShellScript` can print it with `echo` or `jq`. A jq renderer cannot refuse, and a check
@@ -263,7 +227,8 @@ refuses by failing, as [Check the rendered files](#check-the-rendered-files) sho
 
 A check of the documents that needs no rendered file fits a validator better, which
 [Validate config with a program](validate-config.md) declares: it runs before every renderer,
-reads the same input and reports its refusals in the same form.
+reads the same input and reports its refusals in the same form. When a validator and a renderer
+refuse the same config, the operator sees the validator's refusal.
 
 ## Check the rendered files
 
@@ -272,20 +237,24 @@ first command that fails refuses the files.
 [Check environment](../reference/extension-runtime.md#check-environment) lists what a check reads
 and may run.
 
-The best check is the service's own validator, such as `bird -p`, `nginx -t` or `chronyd -p`.
-`bird-conf`'s check defines each password constant before it runs `bird -p`, because the
-constants exist on the node alone.
+The best check is the service's own validator, such as `bird -p`, `nginx -t` or `chronyd -p`. A
+program that is not on the check's `PATH` is named by its store path, as `${bird}/bin/bird` is in
+the check of the guide's `bird-conf`. A config that names files the node alone holds, such as
+credentials, needs the check to stand in for them first: that check defines each password
+constant before it runs `bird -p`.
 
 ## Test the output
 
 A test of `chalkos.tests` renders and checks every output from a config file, as chalkd does for
 a delivery, and compares an output's files with golden files that hold what it should render.
 `nix flake check` runs the tests, so a template that does not render, or renders a file the check
-refuses, fails there before any node gets the image. The homelab's test `bgp-fabric` renders
-`bird-conf` from `bgp-examples/fabric.yaml`, with a node's `Speaker`, the `Peer` of the router,
-the `Secret` that the `Peer` names and the `Network` documents of the node's ports and of `node0`,
-which the validator of [Validate config with a program](validate-config.md) reads. It compares the
-result with `tests/fabric/bird-conf/bird.conf`.
+refuses, fails there before any node gets the image. The example's test `hardware-server`
+renders `hardware` from `hardware-examples/server.yaml` and compares the result with
+`tests/server/hardware/hardware.env`:
+
+```nix
+--8<-- "examples/extensions/hardware.nix:test"
+```
 
 Cover the documents that change what the renderer writes: no documents, one, several, and each
 optional field set and unset. In a test the renderer and the check run in the Nix build sandbox, not
@@ -301,9 +270,9 @@ A file that holds anything a local user must not read, such as a password, belon
 credential instead. A file only the service may read gets the service's user and a narrower mode:
 
 ```nix
-chalkos.outputs.bird-conf = {
-  user = "bird";
-  group = "bird";
+chalkos.outputs.myapp-conf = {
+  user = "myapp";
+  group = "myapp";
   mode = "0640";
 };
 ```
@@ -313,21 +282,21 @@ chalkos.outputs.bird-conf = {
 
 ## Check that it worked
 
-Run the tests. `nix flake check` renders `bird-conf` for each test and runs its check, so a
-broken template fails here, and a `bird.conf` that differs from `bgp-fabric`'s golden file fails
-with a diff:
+Run the tests. `nix flake check` renders `hardware` for each test and runs its check, so a
+broken template fails here, and a `hardware.env` that differs from `hardware-server`'s golden file
+fails with a diff:
 
 ```sh
 nix flake check
 ```
 
 A test that fails names the output in a `FAIL` line, such as
-`FAIL bgp-fabric: output bird-conf differs from its golden files`.
+`FAIL hardware-server: output hardware differs from its golden files`.
 [A failing test shows what it got](test-an-extension.md#a-failing-test-shows-what-it-got) shows the
 diff and how to take the new file.
 
-`chalkctl status node1` lists each output with three columns. `OUTPUT` is its name. `HASH` is the
-start of the hash of the files the node serves, `none` while it serves none. `STATE` is
+`chalkctl status server1` lists each output with three columns. `OUTPUT` is its name. `HASH` is
+the start of the hash of the files the node serves, `none` while it serves none. `STATE` is
 `rendered`, `failed:` with the last failure, or `not rendered yet`. A refused delivery leaves the
 hash of the files the node still serves.
 
@@ -339,19 +308,16 @@ nothing in the status.
 
 After `chalkctl config apply`, a render or check that fails refuses the delivery, and nothing on
 the node changes. A renderer's refusal shows as `the config is refused:` and the refusals. Any
-other failure names the output and the exit status:
-
-```text
-output bird-conf: its check refused the rendered files (exit 1); see the node's journal
-```
+other failure names the output and the exit status, such as
+`output <name>: its check refused the rendered files (exit 1); see the node's journal`.
 
 That message leaves out what the program printed, because a program can echo the documents it
 read. Each program runs as a transient unit, `chalkos-render-<n>.service`. Its journal holds the
 program's standard error, and the journal of `chalkd.service` names the unit beside the failure:
 
 ```sh
-chalkctl logs node1 --unit=chalkd.service
-chalkctl logs node1 --unit=chalkos-render-<n>.service
+chalkctl logs server1 --unit=chalkd.service
+chalkctl logs server1 --unit=chalkos-render-<n>.service
 ```
 
 `chalkctl config apply` while an image is staged, with or without `--staged` and `--dry-run`, and
@@ -363,12 +329,10 @@ A renderer that times out, writes too much or reads a path it may not read hits 
 
 ## What next
 
-- [Test an extension](test-an-extension.md) takes `bird.conf` as a golden file, which every
+- [Test an extension](test-an-extension.md) takes the rendered file as a golden file, which every
   `nix flake check` compares.
-- [React to changes](react-to-changes.md) reloads bird when `bird.conf` changes.
-- [Guard changes with rules and facts](guard-changes.md) refuses a `Peer` change before any
-  render.
-- [Validate config with a program](validate-config.md) refuses an interface the node does not
-  configure.
+- [React to changes](react-to-changes.md) restarts the unit when its file changes.
+- [Guard changes with rules and facts](guard-changes.md) refuses a change before any render.
+- [Validate config with a program](validate-config.md) refuses a config before any render.
 - [The config pipeline](../how-it-works/node/config-pipeline.md) shows where rendering sits in a
   delivery, at boot and after an upgrade.

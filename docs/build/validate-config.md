@@ -8,63 +8,63 @@ description: "Refuse a node's config with a program of your image, for what the 
 This page is for an image author whose kind has constraints that a schema or a CEL rule cannot
 express, or can express only at great cost. At the end a validator, a program of the image,
 checks the node's documents before a delivery changes anything, and the operator sees which
-document and field it refuses. The page continues the homelab's BGP extension,
-`extensions/bgp.nix`: bird binds each session to one of the node's interfaces, so a `Peer` that
-names an interface the node does not configure is refused.
+document and field it refuses. The example reads the `Hardware` and `Rack` kinds of the
+[extensions example](https://github.com/trevex/chalkos/tree/main/examples/extensions), and
+refuses a `Hardware` document on a node that has no `Rack`.
 
 A validator reads the documents of the kinds it names and prints the refusals it finds. chalkd
 runs every validator after the change rules and before the outputs render. A refusal, or a
 validator that fails, refuses the whole delivery, and the node keeps the config it runs.
 
+See it in a full extension:
+[Refuse an interface the node does not configure](../guides/bgp-extension.md#refuse-an-interface-the-node-does-not-configure)
+of the BGP guide checks bird's interfaces against the node's `Network` documents.
+
 ## Before you begin
 
-You need a kind of your own, as [Declare a config kind](declare-a-kind.md) declares `Peer`. Prefer
+You need a kind of your own, as [Declare a config kind](declare-a-kind.md) declares one. Prefer
 a rule where one does the job: [Guard changes with rules and facts](guard-changes.md) shows rules,
 which chalkctl checks too, before it sends anything. A validator suits a check that needs a
 program: a parser, a tool, data of the image's own, or a computation over many documents.
 
 ## Declare the validator
 
-`chalkos.validators.<name>` declares a validator. Here is `bgp-peers`, as `extensions/bgp.nix`
-declares it:
+`chalkos.validators.<name>` declares a validator:
 
 ```nix
---8<-- "examples/homelab/extensions/bgp.nix:validator"
+chalkos.validators.hardware-rack = {
+  inputs = [ "Hardware" "Rack" ];
+  program = chalkosLib.validate.jq ./hardware-rack.jq;
+};
 ```
 
 The declaration sets two things:
 
-- `inputs` names the kinds whose documents the validator reads: the `Peer` and `Speaker`
-  documents and the node's `Network` documents, which configure its interfaces.
+- `inputs` names the kinds whose documents the validator reads, here `Hardware` and `Rack`.
 - `program` is the validator: here a jq program.
 
 The name is lower-case letters, digits and dashes, as an output's.
 
 ## Read the validator's input
 
-chalkd appends `validate bgp-peers` to the command, and writes one JSON object to the program's
-standard input: the input a renderer reads, as
-[Program input](../reference/extension-runtime.md#program-input) describes. For node1 of the
-homelab the object reads, trimmed to one `Network` and indented here:
+chalkd appends `validate hardware-rack` to the command, and writes one JSON object to the
+program's standard input: the input a renderer reads, as
+[Program input](../reference/extension-runtime.md#program-input) describes. On a node named
+`example` that holds a `Hardware` and a `Rack`, the object reads, indented here:
 
 ```json
 {
   "documents": {
-    "Network": [
-      {"apiVersion": "networkd.chalkos.dev/v1alpha1", "kind": "Network", "metadata": {"name": "20-enp1s0"},
-       "spec": {"match": {"name": "enp1s0"}, "network": {"ipv6AcceptRA": true}}}
+    "Hardware": [
+      {"apiVersion": "hardware.example.org/v1alpha1", "kind": "Hardware", "metadata": {"name": "hardware"},
+       "spec": {"assetTag": null, "model": "SYS-E300-9D", "vendor": "Supermicro"}}
     ],
-    "Peer": [
-      {"apiVersion": "bgp.example.org/v1alpha1", "kind": "Peer", "metadata": {"name": "router"},
-       "spec": {"address": "fdc8:a1b2:c3d4:1::1", "asn": 65000, "bfd": true, "interfaces": ["enp1s0", "enp2s0"],
-                "password": {"secretRef": {"name": "bgp", "key": "password"}}}}
-    ],
-    "Speaker": [
-      {"apiVersion": "bgp.example.org/v1alpha1", "kind": "Speaker", "metadata": {"name": "bgp"},
-       "spec": {"asn": 65001, "export": {"interfaces": ["node0"]}, "routerID": "0.0.0.11"}}
+    "Rack": [
+      {"apiVersion": "rack.example.org/v1alpha1", "kind": "Rack", "metadata": {"name": "rack"},
+       "spec": {"location": "rack-a/u12"}}
     ]
   },
-  "node": {"name": "node1"}
+  "node": {"name": "example"}
 }
 ```
 
@@ -74,7 +74,7 @@ A validator refuses a config by printing one JSON object on standard output, the
 refusals that a renderer prints too:
 
 ```json
-{"refusals": [{"kind": "Peer", "name": "router", "path": "spec.interfaces[2]", "message": "enp3s0 has no Network document; bird binds the session to an interface the node configures"}]}
+{"refusals": [{"kind": "Hardware", "name": "hardware", "path": "metadata.name", "message": "a node with a Hardware document needs a Rack document, which says where the server is mounted"}]}
 ```
 
 Each refusal names the document by `kind` and `name`, the field by its `path`, and says in
@@ -85,23 +85,28 @@ and of the report, which a validator and a renderer share.
 ## Validate with a jq program
 
 `chalkosLib.validate.jq` turns a jq program into a validator: jq reads the input, and what the
-program outputs is the report. `bgp-peers.jq` collects the interface names of the node's `Network`
-documents and refuses each interface of a `Peer` or the `Speaker` that is not among them:
+program outputs is the report. `hardware-rack.jq` refuses the `Hardware` document of a node
+whose input holds no `Rack`:
 
-```text title="bgp-peers.jq"
---8<-- "examples/homelab/extensions/bgp-peers.jq"
+```text title="hardware-rack.jq"
+# Refuses Hardware documents on a node without a Rack document.
+{
+  refusals: [
+    if (.documents.Hardware | length) > 0 and (.documents.Rack | length) == 0 then
+      {
+        kind: "Hardware",
+        name: .documents.Hardware[0].metadata.name,
+        path: "metadata.name",
+        message: "a node with a Hardware document needs a Rack document, which says where the server is mounted"
+      }
+    else empty end
+  ]
+}
 ```
 
-A section of a networkd document may be one object or a list of them, and a key one value or a
-list, so the program reads `name` from every `[Match]` section, and splits a value that holds
-several names. It compares the names as written. A glob such as `enp*` may or may not match
-an interface, so the program takes it for no name, and a `Peer` on such an interface is refused.
-
-The program also refuses `Peer` documents without a `Speaker`, which gives bird its AS number and
-router ID. The template refuses the same config, as
-[Refuse a config from the renderer](render-config.md#refuse-a-config-from-the-renderer) shows, but the
-validators run before the renderers, so the operator sees this refusal. The homelab's tests run
-the program on these cases and on `enp3s0` below.
+A template can refuse the same config, as
+[Refuse a config from the renderer](render-config.md#refuse-a-config-from-the-renderer) shows,
+but the validators run before the renderers, so the operator sees the validator's refusal.
 
 ## Validate with any program of the store
 
@@ -110,8 +115,8 @@ and the validator's name. A script made by `pkgs.writeShellScript` reads the inp
 input and prints the report with `echo` or `jq`:
 
 ```nix
-chalkos.validators.bgp-peers.program = pkgs.writeShellScript "bgp-peers" ''
-  exec ${lib.getExe pkgs.jq} -c -f ${./bgp-peers.jq}
+chalkos.validators.hardware-rack.program = pkgs.writeShellScript "hardware-rack" ''
+  exec ${lib.getExe pkgs.jq} -c -f ${./hardware-rack.jq}
 '';
 ```
 
@@ -123,12 +128,9 @@ exit 0. A program that serves as a renderer too reads the same input in both rol
 A test of `chalkos.tests` runs every validator on a config file, as chalkd does for a delivery,
 and compares the refusals with those the test expects. A test that expects none expects the config
 accepted. `nix flake check` runs the tests, so a jq program with a syntax error, or one that
-refuses a config it should accept, fails there before any node gets the image. `bgp.nix` tests
-`bgp-peers` on a config file per case below `tests/`: interfaces matched by lists, by a glob and by
-names separated by spaces, a `Peer` without a `Speaker`, a `Speaker` that exports an interface
-without a `Network` document and a node without `Peer` documents. It also tests
-`bgp-examples/fabric.yaml`, with a node's `Speaker`, its `Peer` and the `Network` documents of its
-ports and of `node0`, which the validator accepts.
+refuses a config it should accept, fails there before any node gets the image. Cover each branch
+of the program: a config it accepts, and one per refusal. For `hardware-rack`, that is a node
+with both kinds, one with a `Hardware` alone and one with neither.
 
 ## Check that it worked
 
@@ -138,18 +140,18 @@ Run the tests:
 nix flake check
 ```
 
-The homelab's test `bgp-unconfigured-peer-interface` gives the `Peer` a third interface, `enp3s0`,
-without a `Network` document, and expects the refusal of the report above:
+This test gives the node a `Hardware` without a `Rack`, and expects the refusal of the report
+above:
 
 ```nix
-chalkos.tests.bgp-unconfigured-peer-interface = {
-  config = ./tests/unconfigured-peer-interface.yaml;
+chalkos.tests.hardware-without-rack = {
+  config = ./tests/hardware-without-rack.yaml;
   refusals = [
     {
-      kind = "Peer";
-      name = "router";
-      path = "spec.interfaces[2]";
-      message = "enp3s0 has no Network document; bird binds the session to an interface the node configures";
+      kind = "Hardware";
+      name = "hardware";
+      path = "metadata.name";
+      message = "a node with a Hardware document needs a Rack document, which says where the server is mounted";
     }
   ];
 };
@@ -159,20 +161,13 @@ A validator that fails, or whose refusals differ from those the test expects, fa
 a `FAIL` line of the refusals it expected and those it got, as
 [Test an extension](test-an-extension.md#a-failing-test-shows-what-it-got) shows.
 
-On a node, say the `Peer` of `bgp/fabric.yaml` gains the same interface, `enp3s0`, that the nodes
-have no `Network` for. `chalkctl config apply node1` checks the config as far as chalkctl can,
-then the node runs the validator and refuses the delivery:
+On a node, `chalkctl config apply` checks the config as far as chalkctl can and prints what
+changed. Then the node runs the validator and refuses the delivery, and chalkctl prints the
+node's refusal after `the config is refused:`. The node changed nothing.
+`chalkctl config apply --dry-run` prints the same refusal without a delivery.
 
-```console
-$ chalkctl config apply node1
-node1: config 0 added, 0 removed, 1 changed
-chalkctl: node1: the config is refused: Peer/router: spec.interfaces[2]: enp3s0 has no Network document; bird binds the session to an interface the node configures
-```
-
-The node changed nothing. `chalkctl config apply --dry-run node1` prints the same refusal without
-a delivery. `chalkctl validate` accepts the config: chalkctl runs only the validators it links,
-the router layer's `router` on router images, and an image's own validator runs on the node
-alone.
+`chalkctl validate` accepts such a config: chalkctl runs only the validators it links, the router
+layer's `router` on router images, and an image's own validator runs on the node alone.
 
 ## If it fails
 
@@ -181,8 +176,8 @@ A validator that fails names itself and its exit status. Each run is a transient
 the journal of `chalkd.service` names the unit beside the failure:
 
 ```sh
-chalkctl logs node1 --unit=chalkd.service
-chalkctl logs node1 --unit=chalkos-render-<n>.service
+chalkctl logs server1 --unit=chalkd.service
+chalkctl logs server1 --unit=chalkos-render-<n>.service
 ```
 
 `chalkctl config apply` while an image is staged, with or without `--staged`, and
@@ -219,7 +214,6 @@ the node alone:
 - [Guard changes with rules and facts](guard-changes.md) refuses a change with a CEL rule, which
   chalkctl checks before it sends anything.
 - [Test an extension](test-an-extension.md) tests the files, refusals and effects of a config.
-- [Render config files](render-config.md) renders `bird.conf` from the `Speaker` and `Peer`
-  documents.
+- [Render config files](render-config.md) renders a service's config from the documents.
 - [The config pipeline](../how-it-works/node/config-pipeline.md) shows where the validators run in
   a delivery.

@@ -75,7 +75,6 @@ in
           }
         ];
       };
-      # --8<-- [start:rule]
       # A neighbour's AS number is part of who it is: a new one is a new Peer.
       asn = chalkosLib.mkOption {
         type = lib.types.ints.between 1 4294967295;
@@ -89,7 +88,6 @@ in
           }
         ];
       };
-      # --8<-- [end:rule]
       # Each name lands in bird.conf in quotes. A name holds no glob, so a Peer lists each port by its
       # exact name.
       interfaces = chalkosLib.mkOption {
@@ -228,7 +226,7 @@ in
       };
       # --8<-- [end:tests]
       # A Peer keeps its AS number: the change rule of the field asn refuses a new one. The
-      # refusal docs/build/test-an-extension.md shows, which the check
+      # refusal docs/guides/bgp-extension.md shows, which the check
       # example-homelab-validator-docs finds in the page.
       bgp-new-asn = {
         before = ./bgp-examples/fabric.yaml;
@@ -243,7 +241,7 @@ in
         ];
       };
     }
-    # The refusal docs/build/validate-config.md shows, which the check
+    # The refusal docs/guides/bgp-extension.md shows, which the check
     # example-homelab-validator-docs finds in the page.
     // validatorTest "unconfigured-peer-interface" [
       {

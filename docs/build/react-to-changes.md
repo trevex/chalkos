@@ -7,12 +7,16 @@ description: "Restart, reload or run a command when a delivery changes an output
 
 This page is for an image author whose service must pick up new config without a reboot. At the
 end a delivery reloads or restarts the service when its config changes, and leaves it alone when
-nothing it reads changed. The page continues the homelab's BGP extension: bird reloads when
-`bird.conf` changes.
+nothing it reads changed. The examples use the unit `hardware-info` of the
+[extensions example](https://github.com/trevex/chalkos/tree/main/examples/extensions), which
+reads the environment file that the output `hardware` renders.
 
 An effect is what a delivery does to the node's services once it is applied: restart a unit,
 reload it or run a command. A grant or an output never restarts a unit by itself. Which changes
 matter to a service is the service's to say, in an effect.
+
+See it in a full extension: [Reload bird on a change](../guides/bgp-extension.md#reload-bird-on-a-change)
+of the BGP guide reloads bird and tests the effect of a new password.
 
 ## Before you begin
 
@@ -20,32 +24,37 @@ You need a service that reads config from the node: its documents through a gran
 [Read config in a service](read-config.md) sets up, or a rendered file, as
 [Render config files](render-config.md) sets up.
 
-## Reload bird when its config changes
+## Restart a unit when its file changes
 
-`chalkos.effects.<name>` declares an effect. Here is bird's, as `extensions/bgp.nix` declares it:
+`chalkos.effects.<name>` declares an effect. Here is `hardware-info`'s, with the unit, as
+`hardware.nix` declares them:
 
-```nix
---8<-- "examples/homelab/extensions/bgp.nix:effect"
+```nix title="hardware.nix"
+--8<-- "examples/extensions/hardware.nix:tail"
 ```
 
-`chalkosLib.reloadOn` takes the triggers and the units. The line above is the same effect as:
+`chalkosLib.restartOn` takes the triggers and the units. The effect above is the same as:
 
 ```nix
-chalkos.effects.bird = {
-  outputs = [ "bird-conf" ];
+chalkos.effects.hardware-info = {
+  outputs = [ "hardware" ];
   kinds = [ ];
-  reload = [ "bird.service" ];
+  restart = [ "hardware-info.service" ];
 };
 ```
 
-Once a delivery is applied, chalkd reloads `bird.service` when the files of `bird-conf` changed.
-bird's `ExecReload` runs `birdc configure`, which reads the config again and keeps the sessions
-that a restart would drop. A delivery that leaves `bird.conf` and its password unchanged reloads
-nothing.
+Once a delivery is applied, chalkd restarts `hardware-info.service` when the files of `hardware`
+changed. A delivery that leaves `hardware.env` unchanged restarts nothing.
 
-`chalkosLib.restartOn` builds an effect that restarts its units instead. The rack unit of the
-[extensions example](https://github.com/trevex/chalkos/tree/main/examples/extensions) reads its
-`Rack` when it starts, so a changed `Rack` restarts it:
+`chalkosLib.reloadOn` builds an effect that reloads its units instead, for a service whose
+`ExecReload` reads its config again without a restart:
+
+```nix
+chalkos.effects.myapp = chalkosLib.reloadOn { outputs = [ "myapp-conf" ]; } [ "myapp.service" ];
+```
+
+The rack unit of the extensions example reads its `Rack` document itself when it starts, so its
+effect names the kind:
 
 ```nix
 chalkos.effects.rack-location = chalkosLib.restartOn { kinds = [ "Rack" ]; } [
@@ -66,18 +75,18 @@ fails:
 
 Use `outputs` for a service that reads a rendered file, and `kinds` for a service that reads its
 documents itself when it starts. Both count a rotated `Secret` value as a change, because the
-service reads the value as a credential beside its files. bird's password reaches it that way, as
-[Pass secrets to a service](pass-secrets.md) sets up, so a new password reloads bird although
-`bird.conf` names the same constant.
+service reads the value as a credential beside its files. A new password therefore restarts or
+reloads the service, although its rendered file names the same credential, as
+[Pass secrets to a service](pass-secrets.md) sets up.
 
 `kinds` cannot name `Secret` or a withheld kind, such as `Addon`. A `Secret` counts through the
 kinds whose documents reference it, and chalkd reads a withheld kind's documents itself.
 
 Delivery is idempotent: a delivery that changes nothing an effect compares takes no effect. The
-same config delivered twice reloads bird once. A delivery that fails part way leaves a baseline,
-and the next delivery compares with it, so it takes every effect of the failed one again. The
-next delivery also compares with the config and facts of the failed delivery, so a delivery of
-the config from before it takes the effects that undo it.
+same config delivered twice restarts `hardware-info` once. A delivery that fails part way leaves
+a baseline, and the next delivery compares with it, so it takes every effect of the failed one
+again. The next delivery also compares with the config and facts of the failed delivery, so a
+delivery of the config from before it takes the effects that undo it.
 [The config pipeline](../how-it-works/node/config-pipeline.md#the-baseline-survives-a-failed-delivery)
 describes the baseline.
 
@@ -124,31 +133,31 @@ chalkd takes the actions of every due effect together, every reload before any r
 gives the order, and what the Kubernetes layer's `chalkd` actions do.
 
 A oneshot unit that should run again on a change sets `RemainAfterExit = true`, so it stays
-active and `try-restart` runs it again. The extensions example's rack unit does.
+active and `try-restart` runs it again. `hardware-info` and the rack unit both do.
 
 ## Fire the effect on a condition
 
 `when` holds a CEL expression, the language of [change rules](guard-changes.md). It fires an
-effect on a condition that neither an output nor a whole kind expresses. Say a BGP exporter reads
-the peers' addresses when it starts, and never their passwords. An effect on `kinds = [ "Peer" ]`
-would restart it whenever a password rotates. This effect restarts it only when the addresses
-change:
+effect on a condition that neither an output nor a whole kind expresses. Say an inventory agent
+reports the server's model when it starts, and never its asset tag. An effect on
+`kinds = [ "Hardware" ]` would restart it whenever the asset tag changes. This effect restarts it
+only when the model changes:
 
 ```nix
-# The exporter reads the peers' addresses alone, so a new password restarts nothing.
-chalkos.effects.bgp-exporter = {
+# The agent reports the model alone, so a new asset tag restarts nothing.
+chalkos.effects.inventory-agent = {
   when = ''
-    cel.bind(api, "bgp.example.org/v1alpha1",
-      (api in config && "Peer" in config[api] ? config[api].Peer.map(n, config[api].Peer[n].spec.address) : [])
-        != (api in oldConfig && "Peer" in oldConfig[api] ? oldConfig[api].Peer.map(n, oldConfig[api].Peer[n].spec.address) : []))
+    cel.bind(api, "hardware.example.org/v1alpha1",
+      (api in config && "Hardware" in config[api] ? config[api].Hardware.map(n, config[api].Hardware[n].spec.model) : [])
+        != (api in oldConfig && "Hardware" in oldConfig[api] ? oldConfig[api].Hardware.map(n, oldConfig[api].Hardware[n].spec.model) : []))
   '';
-  restart = [ "bgp-exporter.service" ];
+  restart = [ "inventory-agent.service" ];
 };
 ```
 
-`config` maps apiVersion, kind and name to each document. A node without `Peer` documents has no
-such key, so the expression checks with `in` before it reads one. A map iterates in the order of
-its keys, so both lists of addresses follow the peers' names.
+`config` maps apiVersion, kind and name to each document. A node without `Hardware` documents has
+no such key, so the expression checks with `in` before it reads one. A map iterates in the order
+of its keys, so both lists follow the documents' names.
 
 The expression reads the config and facts as they are once the delivery is applied, and as they
 were before it. [Effect conditions](../reference/extension-runtime.md#effect-condition-variables)
@@ -164,36 +173,52 @@ describes them and the effects images with Kubernetes add.
 
 ## Check that it worked
 
-A test of a change checks which effects it takes, before any node gets the image. The homelab's
-test `bgp-new-password` changes the password of the `Peer`'s `Secret` alone, and expects the
-effect `bird`. `bird.conf` stays the same, but the `outputs` trigger counts a changed value of a
-`Secret` that the output's input documents reference:
+A test of a change checks which effects it takes, before any node gets the image. Here `before`
+holds a `Hardware` with the asset tag `HL-0042`, and `config` the same document with `HL-0043`.
+`hardware.env` changes, so `hardware-info` fires, and the model stays, so `inventory-agent` does
+not:
 
 ```nix
-chalkos.tests.bgp-new-password = {
-  before = ./bgp-examples/fabric.yaml;
-  config = ./tests/fabric-new-password.yaml;
-  outputs.bird-conf = ./tests/fabric/bird-conf;
-  effects = [ "bird" ];
+chalkos.tests.hardware-new-asset-tag = {
+  before = ./hardware-examples/server.yaml;
+  config = ./tests/new-asset-tag.yaml;
+  effects = [ "hardware-info" ];
 };
 ```
 
-`nix flake check` runs it, and fails with `FAIL bgp-new-password: effects differ:` and the effects
-expected and taken when the effect does not fire. [Effects are those of a
-change](test-an-extension.md#effects-are-those-of-a-change) describes such tests.
+`nix flake check` runs it, and fails with `FAIL hardware-new-asset-tag: effects differ:` and the
+effects expected and taken when they differ. A config with a new model takes both:
+
+```console
+$ cat result/hardware-new-model/effects.json
+["hardware-info","inventory-agent"]
+```
+
+[Effects are those of a change](test-an-extension.md#effects-are-those-of-a-change) describes such
+tests.
 
 On a node, `chalkctl config apply` prints each unit it restarted, as `restarted <unit>`, then the
-config the node runs. Reloaded units are not listed. Check bird's journal for the reload:
+config the node runs. Reloaded units are not listed. In the lab of
+[Write your first extension](first-extension.md#change-the-document-on-w1), a new asset tag
+restarts the unit:
+
+```console
+$ chalkctl config apply w1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml --secrets secrets.json
+w1: config 0 added, 0 removed, 1 changed
+restarted hardware-info.service
+w1 runs config 9307d1da8a3a17a8e611ded2cdbdd577692950cc6eb963ce1712ecf656a25416
+```
+
+For a reloaded unit, its journal shows the reload:
 
 ```sh
-chalkctl config apply node1
-chalkctl logs node1 --unit=bird.service
+chalkctl logs server1 --unit=myapp.service
 ```
 
 ## If it fails
 
 A reload, command or restart that fails fails the delivery. The delivery is applied by then, so
-the error ends with what is still to do: for example `reload bird.service by hand once that is
+the error ends with what is still to do: for example `reload myapp.service by hand once that is
 fixed, or deliver it again`.
 
 A warning that starts with `the rule of effect` names a `when` that could not be evaluated, whose
@@ -202,8 +227,8 @@ effect chalkd took all the same. A unit that did not restart was not running: an
 
 ## What next
 
-- [Pass secrets to a service](pass-secrets.md) delivers bird's password, whose rotation fires
-  bird's effect.
+- [Pass secrets to a service](pass-secrets.md) delivers a value whose rotation fires the
+  effects.
 - [Guard changes with rules and facts](guard-changes.md) refuses a change before any effect.
 - [Render config files](render-config.md) for the outputs an effect names.
 - [Test an extension](test-an-extension.md) for tests of the effects of a change.

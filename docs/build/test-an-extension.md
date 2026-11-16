@@ -8,12 +8,17 @@ description: "Check what an image renders, refuses and reloads for a config, wit
 This page is for an image author whose extension renders files, refuses configs or reloads
 services. At the end the extension carries tests: config files a node could be given, each with
 the files its outputs render, the refusals it gets or the effects a change to it takes.
-`nix flake check` runs them before any node gets the image. The page uses the tests of the
-homelab's BGP extension, `extensions/bgp.nix`.
+`nix flake check` runs them before any node gets the image. The examples use the tests of the
+[extensions example](https://github.com/trevex/chalkos/tree/main/examples/extensions) and its
+`Hardware` and `Rack` kinds.
 
 A test runs a config through the checks chalkd runs for a delivery: the kinds' schemas, the change
 rules, the validators, every output's renderer and check, and the plan of effects. It runs them in
 the Nix sandbox, without a node, and compares what it got with what the test expects.
+
+See it in a full extension:
+[Keep the rendered file as golden files](../guides/bgp-extension.md#keep-the-rendered-file-as-golden-files)
+of the BGP guide tests bird's config, an effect, a change rule and a validator.
 
 ## Before you begin
 
@@ -24,18 +29,20 @@ it, and an extension with an output, a validator or an effect, as
 
 ## A test is a config and what the image makes of it
 
-`chalkos.tests.<name>` declares a test. `extensions/bgp.nix` declares these two in
-`chalkos.tests`:
+`chalkos.tests.<name>` declares a test. `hardware.nix` declares this one:
 
-```nix
---8<-- "examples/homelab/extensions/bgp.nix:tests"
+```nix title="hardware.nix"
+--8<-- "examples/extensions/hardware.nix:test"
 ```
 
 `config` is a YAML or JSON file of a node's documents, as a delivery gives them. The test checks
 them as a set, without the documents of the node's identity, so a test's file need not hold a
-`SystemDisk`, and holds only the documents it is about. `bgp-examples/fabric.yaml` holds a node's
-`Speaker`, the `Peer` of the router, the `Secret` with its password and the `Network` documents
-the validator `bgp-peers` reads.
+`SystemDisk`, and holds only the documents it is about. `hardware-examples/server.yaml` holds one
+`Hardware` document:
+
+```yaml title="hardware-examples/server.yaml"
+--8<-- "examples/extensions/hardware-examples/server.yaml"
+```
 
 The other fields say what the test expects:
 
@@ -59,8 +66,8 @@ outputs, one per config file of `modules/node/examples`, such as `chrony-servers
 
 ## Golden files hold what an output renders
 
-`outputs.bird-conf = ./tests/fabric/bird-conf` names a directory that holds exactly the files
-`bird-conf` renders from the config. A missing, extra or different file fails the test.
+`outputs.hardware = ./tests/server/hardware` names a directory that holds exactly the files
+`hardware` renders from the config. A missing, extra or different file fails the test.
 
 The golden files are what the test renders, once checked by eye. Declare the test without
 `outputs`, and build what each test got:
@@ -74,26 +81,28 @@ the test rendered:
 
 ```console
 $ cat result/summary.txt
-PASS bgp-configured-interfaces
-PASS bgp-fabric
-...
+PASS chrony-empty
+PASS chrony-servers
+PASS hardware-server
+PASS networkd-none
+PASS networkd-static
 PASS networkd-vlan
-$ ls result/bgp-fabric result/bgp-fabric/outputs
-result/bgp-fabric:
+$ ls result/hardware-server result/hardware-server/outputs
+result/hardware-server:
 effects.json  outputs  refusals.json
 
-result/bgp-fabric/outputs:
-bird-conf  chrony  networkd
+result/hardware-server/outputs:
+chrony  hardware  networkd
 ```
 
-Read `result/bgp-fabric/outputs/bird-conf/bird.conf`. When it is the file bird should get, copy
-the directory into the flake, add it to git, since a flake sees only the files git tracks, and
-name it in the test:
+Read `result/hardware-server/outputs/hardware/hardware.env`. When it is the file the unit should
+get, copy the directory into the flake, add it to git, since a flake sees only the files git
+tracks, and name it in the test:
 
 ```sh
-mkdir -p extensions/tests/fabric
-cp -r --no-preserve=mode result/bgp-fabric/outputs/bird-conf extensions/tests/fabric/bird-conf
-git add extensions/tests/fabric
+mkdir -p tests/server
+cp -r --no-preserve=mode result/hardware-server/outputs/hardware tests/server/hardware
+git add tests/server
 ```
 
 A store path in a rendered file changes whenever a dependency of the image changes, so the test
@@ -109,50 +118,46 @@ empty directory, so a test leaves such an output out of `outputs`.
 
 ## Refusals name the document, the field and the message
 
-A test of a config the image refuses lists the refusals it expects. The homelab's
-`bgp-unconfigured-peer-interface` gives the `Peer` a third interface, `enp3s0`, without a `Network`
-document, which [Validate config with a program](validate-config.md) shows the validator refuse:
+A test of a config the image refuses lists the refusals it expects. The `Rack` rule of
+[Guard changes with rules and facts](guard-changes.md#read-node-state-from-a-fact) reads the fact
+`rackSurvey`, which a test gives in `facts`. This test gives a survey that found the node
+elsewhere than its `Rack` says:
 
 ```nix
-chalkos.tests.bgp-unconfigured-peer-interface = {
-  config = ./tests/unconfigured-peer-interface.yaml;
+chalkos.tests.rack-moved = {
+  config = ./tests/rack.yaml;
+  facts.rackSurvey = {
+    location = "rack-b/u3";
+  };
   refusals = [
     {
-      kind = "Peer";
-      name = "router";
-      path = "spec.interfaces[2]";
-      message = "enp3s0 has no Network document; bird binds the session to an interface the node configures";
+      kind = "Rack";
+      name = "rack";
+      path = "spec.location";
+      message = "the survey found the node at rack-b/u3, not at rack-a/u12; fix the location, or survey the node again";
     }
   ];
 };
 ```
 
-`bgp.nix` declares its refusal tests through a function of its own, `validatorTest`, which takes
-the name of the file below `tests/` and the refusals. Each refusal has the fields of a validator's
-report: `kind` and `name` of the document, `path` of the field, and `message` exactly as chalkctl
-prints it. The test compares the whole list, in the order chalkctl prints the refusals, each once.
-`result/<test>/refusals.json` holds what the test got:
+Each refusal has the fields of a validator's report: `kind` and `name` of the document, `path` of
+the field, and `message` exactly as chalkctl prints it. The test compares the whole list, in the
+order chalkctl prints the refusals, each once. `result/<test>/refusals.json` holds what the test
+got:
 
 ```console
-$ cat result/bgp-unconfigured-peer-interface/refusals.json
-[{"kind":"Peer","name":"router","path":"spec.interfaces[2]","message":"enp3s0 has no Network document; bird binds the session to an interface the node configures"}]
+$ cat result/rack-moved/refusals.json
+[{"kind":"Rack","name":"rack","path":"spec.location","message":"the survey found the node at rack-b/u3, not at rack-a/u12; fix the location, or survey the node again"}]
 ```
 
-Refusals come from every stage of the check. A change rule's refusal needs `before`, since the
-rule compares with the config the node runs. The homelab's `bgp-new-asn` has
-`before = ./bgp-examples/fabric.yaml` and a config whose `Peer` has the AS number 65002, which
-the `Peer` rule of [Guard changes with rules and facts](guard-changes.md) refuses:
-
-```console
-$ cat result/bgp-new-asn/refusals.json
-[{"kind":"Peer","name":"router","path":"spec.asn","message":"the AS number stays 65000; add a Peer of another name for 65002"}]
-```
+Refusals come from every stage of the check. A change rule that reads `oldSelf` refuses only in a
+test with `before`, since the rule compares with the config the node runs.
 
 A schema's refusal, and any other failure of the check that names no field, has an empty `kind`,
-`name` and `path`. A `Peer` with `asn: 0` gets this one:
+`name` and `path`. A `Hardware` with `model` misspelled as `modle` gets this one:
 
 ```json
-[{"kind":"","name":"","path":"","message":"Peer \"router\": - at '/spec/asn': minimum: got 0, want 1"}]
+[{"kind":"","name":"","path":"","message":"Hardware \"hardware\": - at '/spec': additional properties 'modle' not allowed\n- at '/spec': missing property 'model'"}]
 ```
 
 A test of such a refusal leaves those three fields out, since each defaults to the empty string,
@@ -161,15 +166,21 @@ and gives the `message` alone.
 ## Effects are those of a change
 
 A test with `before` checks a change from the documents of `before` to those of `config`. The
-change rules compare the two, and the effects due are those of the change. `bgp-new-password`
-changes the password in the `Peer`'s `Secret` and nothing else. `bird.conf` names the credential
-and not its value, so the file stays the same, and the golden files are those of `bgp-fabric`. The
-effect `bird` of [React to changes](react-to-changes.md) still fires, because its `outputs` trigger
-counts a changed value of a `Secret` that the input documents of `bird-conf` reference:
+change rules compare the two, and the effects due are those of the change. Here `config` gives the
+server of `hardware-examples/server.yaml` the asset tag `HL-0043`. `hardware.env` changes, so the
+effect `hardware-info` of [React to changes](react-to-changes.md) fires:
+
+```nix
+chalkos.tests.hardware-new-asset-tag = {
+  before = ./hardware-examples/server.yaml;
+  config = ./tests/new-asset-tag.yaml;
+  effects = [ "hardware-info" ];
+};
+```
 
 ```console
-$ cat result/bgp-new-password/effects.json
-["bird"]
+$ cat result/hardware-new-asset-tag/effects.json
+["hardware-info"]
 ```
 
 `effects` lists the names of the effects of `chalkos.effects` the change takes, sorted by name, as
@@ -177,7 +188,7 @@ chalkd's plan lists them, and `[ ]` expects none. A test that sets `effects` nee
 Without it the evaluation fails:
 
 ```text
-error: chalkos.tests.bgp-new-password.effects: effects are those of a change, so the test needs before
+error: chalkos.tests.hardware-new-asset-tag.effects: effects are those of a change, so the test needs before
 ```
 
 A `before` that the image refuses fails the test.
@@ -189,10 +200,10 @@ not declare fails the evaluation.
 ## nix flake check runs the tests
 
 Each image `mkImages` returns carries its tests as `tests`. `chalkos.lib.testsOf` collects them by
-the images' names, and the homelab's flake exports them as its checks:
+the images' names, and the extensions example's flake exports them as its checks:
 
 ```nix
-checks.${system} = chalkos.lib.testsOf images;
+checks.x86_64-linux = chalkos.lib.testsOf images;
 ```
 
 `nix flake check` then builds every image's tests, along with the flake's other checks:
@@ -200,16 +211,17 @@ checks.${system} = chalkos.lib.testsOf images;
 ```console
 $ nix flake check
 evaluating flake...
-...
+checking flake output 'packages'...
+checking derivation packages.x86_64-linux.node-metal...
+derivation evaluated to /nix/store/074srcqyv18ccx6hx2bi3i509i90f9xb-chalkos-image.drv
+checking flake output 'nixosConfigurations'...
+checking NixOS configuration 'nixosConfigurations.node-metal'...
 checking flake output 'checks'...
-checking derivation checks.x86_64-linux.router-metal...
-derivation evaluated to /nix/store/hq8nrh0035j90d0265l7jxq00rcnh5x5-chalkos-tests.drv
 checking derivation checks.x86_64-linux.node-metal...
-derivation evaluated to /nix/store/lg0m7da2jlwrv8qsszjskrnk7imidjq8-chalkos-tests.drv
-...
+derivation evaluated to /nix/store/gzf2c16shp7qavf32rj28b9rryh8p8w6-chalkos-tests.drv
 running 2 flake checks...
-building '/nix/store/hq8nrh0035j90d0265l7jxq00rcnh5x5-chalkos-tests.drv'...
-building '/nix/store/lg0m7da2jlwrv8qsszjskrnk7imidjq8-chalkos-tests.drv'...
+building '/nix/store/s3qr7ib2r3hh32bs9vvhpk3v6y7g4bpq-chalkos-test-results.drv'...
+building '/nix/store/gzf2c16shp7qavf32rj28b9rryh8p8w6-chalkos-tests.drv'...
 all checks passed!
 ```
 
@@ -230,45 +242,38 @@ chalkos.testsOnBuild = true;
 ## A failing test shows what it got
 
 A failing test fails its check with a `FAIL` line, and with a diff for each output whose files
-differ from its golden files. Say `bird.conf.tmpl` changes `connect retry time 5` to `10`.
+differ from its golden files. Say `hardware.env.tmpl` renames `MODEL` to `SERVER_MODEL`.
 `nix flake check` fails on `checks.x86_64-linux.node-metal` and shows the end of the log.
 `nix log` prints all of it:
 
 ```console
-$ nix log /nix/store/sssdj3ip9jl1c68dhamqkv8lx872lhf7-chalkos-tests.drv
-FAIL bgp-fabric: output bird-conf differs from its golden files
-FAIL bgp-new-password: output bird-conf differs from its golden files
+$ nix log /nix/store/6yvb277n46dvsrb3klmzlhfrgymj6mj7-chalkos-tests.drv
+FAIL hardware-server: output hardware differs from its golden files
 
-test bgp-fabric, output bird-conf: the golden files differ from what it rendered:
-diff -ruN /nix/store/bmiyqqwiamjm9y4x1rj849z6as1qk70b-bird-conf/bird.conf /nix/store/0h116raxpzn4ih4i6m4mg7rsx2jrrhm4-chalkos-test-results/bgp-fabric/outputs/bird-conf/bird.conf
---- /nix/store/bmiyqqwiamjm9y4x1rj849z6as1qk70b-bird-conf/bird.conf	1970-01-01 00:00:01.000000000 +0000
-+++ /nix/store/0h116raxpzn4ih4i6m4mg7rsx2jrrhm4-chalkos-test-results/bgp-fabric/outputs/bird-conf/bird.conf	1970-01-01 00:00:01.000000000 +0000
-@@ -27,7 +27,7 @@
-   neighbor fdc8:a1b2:c3d4:1::1 as 65000;
-   interface "enp1s0";
-   direct;
--  connect retry time 5;
-+  connect retry time 10;
-   bfd on;
-   authentication md5;
-   password 'secret_bgp.password';
-...
-to take what it rendered, with DIR the directory of chalkos.tests.bgp-fabric.outputs.bird-conf:
-  rm -r DIR && cp -r --no-preserve=mode /nix/store/0h116raxpzn4ih4i6m4mg7rsx2jrrhm4-chalkos-test-results/bgp-fabric/outputs/bird-conf DIR && git add DIR
-...
+test hardware-server, output hardware: the golden files differ from what it rendered:
+diff -ruN /nix/store/vkkqfy6rabgxblk9gsbwbp3ban80mizz-hardware/hardware.env /nix/store/l9mvgkpb0q7xiwg0cgwzl9yxa13m01pa-chalkos-test-results/hardware-server/outputs/hardware/hardware.env
+--- /nix/store/vkkqfy6rabgxblk9gsbwbp3ban80mizz-hardware/hardware.env	1970-01-01 00:00:01.000000000 +0000
++++ /nix/store/l9mvgkpb0q7xiwg0cgwzl9yxa13m01pa-chalkos-test-results/hardware-server/outputs/hardware/hardware.env	1970-01-01 00:00:01.000000000 +0000
+@@ -1,3 +1,3 @@
+ VENDOR="Supermicro"
+-MODEL="SYS-E300-9D"
++SERVER_MODEL="SYS-E300-9D"
+ ASSET_TAG="HL-0042"
+to take what it rendered, with DIR the directory of chalkos.tests.hardware-server.outputs.hardware:
+  rm -r DIR && cp -r --no-preserve=mode /nix/store/l9mvgkpb0q7xiwg0cgwzl9yxa13m01pa-chalkos-test-results/hardware-server/outputs/hardware DIR && git add DIR
 ```
 
-When the new file is the one bird should get, run the command that follows its diff, with `DIR`
-the golden directory, here `extensions/tests/fabric/bird-conf`. Both tests name that
-directory, so one copy fixes both.
+When the new file is the one the unit should get, run the command that follows its diff, with
+`DIR` the golden directory, here `tests/server/hardware`. Each test that names the directory then
+compares with the new file.
 
-Say a test `bgp-asn-zero` gives the `Peer` `asn: 0` and expects the config accepted, and
-`bgp-new-password` sets `effects = [ ]`. Each gets one line, with what the test expected and what
-it got:
+Say a test `hardware-no-model` gives the `Hardware` the misspelled `modle` and expects the config
+accepted, and `hardware-new-asset-tag` sets `effects = [ ]`. Each gets one line, with what the
+test expected and what it got:
 
 ```text
-FAIL bgp-asn-zero: refusals differ: expected [], got [{"kind":"","name":"","path":"","message":"Peer \"router\": - at '/spec/asn': minimum: got 0, want 1"}]
-FAIL bgp-new-password: effects differ: expected [], got ["bird"]
+FAIL hardware-new-asset-tag: effects differ: expected [], got ["hardware-info"]
+FAIL hardware-no-model: refusals differ: expected [], got [{"kind":"","name":"","path":"","message":"Hardware \"hardware\": - at '/spec': additional properties 'modle' not allowed\n- at '/spec': missing property 'model'"}]
 ```
 
 An effect's `when` that cannot be evaluated fails no test. The summary and the log show it as a

@@ -7,9 +7,9 @@ description: "Refuse a config change a node cannot make, with CEL rules on your 
 
 This page is for an image author whose kind has values that must not change freely once a node
 runs them. At the end the kind carries change rules, chalkctl and chalkd refuse a change that
-breaks one, and the refusal tells the operator what to do instead. The page uses two example
-extensions: the `Peer` kind of the homelab's `extensions/bgp.nix` and the `Rack` kind of
-`rack.nix` in the [extensions example](https://github.com/trevex/chalkos/tree/main/examples/extensions).
+breaks one, and the refusal tells the operator what to do instead. The examples use a `Site`
+kind of a web server, myapp, and the `Rack` kind of `rack.nix` in the
+[extensions example](https://github.com/trevex/chalkos/tree/main/examples/extensions).
 
 A change rule is a CEL expression that every config the node accepts makes true. The rules are
 part of the image's schemas, so what a node accepts changes with an upgrade. A rule that needs
@@ -19,6 +19,9 @@ node state, such as what a survey found, reads it from a fact: the JSON of a fil
 reads, its cost limits and its errors. [The config pipeline](../how-it-works/node/config-pipeline.md#chalkctl-and-chalkd-both-run-the-rules)
 explains where the rules run.
 
+See it in a full extension: [Keep a Peer's AS number](../guides/bgp-extension.md#keep-a-peers-as-number)
+of the BGP guide keeps a neighbour's AS number and tests the refusal.
+
 ## Before you begin
 
 You need a kind of your own, as [Declare a config kind](declare-a-kind.md) declares one. Rules
@@ -27,32 +30,39 @@ on a field need `chalkosLib.mkOption`, which that page introduces. CEL is the
 
 ## Keep a field's value with a field rule
 
-A BGP neighbour's AS number is part of who it is: a new number is a new neighbour. The `asn`
-field of `Peer` declares a rule that keeps it:
+Clients reach a site by its hostname, so a new hostname is a new site. The `hostname` field of
+`Site` declares a rule that keeps it:
 
 ```nix
---8<-- "examples/homelab/extensions/bgp.nix:rule"
+hostname = chalkosLib.mkOption {
+  type = lib.types.nonEmptyStr;
+  description = "Name the site answers to.";
+  rules = [
+    {
+      description = "A Site keeps its hostname.";
+      rule = "self == oldSelf";
+      messageExpression = ''"the hostname stays " + oldSelf + "; add a Site of another name for " + self'';
+    }
+  ];
+};
 ```
 
 In a field's rule, `self` is the field's value in the delivered document and `oldSelf` its value
-in the document of the same name that the node runs. `self == oldSelf` holds when the number stays
-the same. A rule that reads `oldSelf` runs only where the node's running config holds the field,
-so a new `Peer` takes any number.
+in the document of the same name that the node runs. `self == oldSelf` holds when the hostname
+stays the same. A rule that reads `oldSelf` runs only where the node's running config holds the
+field, so a new `Site` takes any hostname.
 
-Say `bgp/fabric.yaml` changes the `asn` of the `Peer` `router` from 65000 to 65100.
-`chalkctl config apply node1` fetches the node's config, prints what changed, runs the rule
-against the node's config, and stops before it sends anything:
+Say the `Site` `shop` changes its hostname from `shop.example.org` to `store.example.org`.
+`chalkctl config apply` fetches the node's config, prints what changed, runs the rule against the
+node's config, and stops before it sends anything. It prints the node, then the refusal:
 
-```console
-$ chalkctl config apply node1
-node1: config 0 added, 0 removed, 1 changed
-chalkctl: node1: the config is refused: Peer/router: spec.asn: the AS number stays 65000; add a Peer of another name for 65100
+```text
+the config is refused: Site/shop: spec.hostname: the hostname stays shop.example.org; add a Site of another name for store.example.org
 ```
 
-The error names the node, then the refusal. A field rule's refusal starts with the kind and the
-document's name, then the field, as `Peer/router: spec.asn:`, the form a renderer's refusal takes
-too. The rest comes from `messageExpression`, which builds the message from the same variables as
-the rule.
+A field rule's refusal starts with the kind and the document's name, then the field, as
+`Site/shop: spec.hostname:`, the form a renderer's refusal takes too. The rest comes from
+`messageExpression`, which builds the message from the same variables as the rule.
 
 ## Say what the refused change takes
 
@@ -78,26 +88,21 @@ volume's new format is possible once the volume is recreated.
 
 A rule over all documents of a kind goes into
 [`chalkos.kinds.<name>.rules`](../reference/extension-api.md#chalkoskindsrules). Here `documents` maps
-the names of the delivered `Peer` documents to the documents:
+the names of the delivered `Site` documents to the documents:
 
 ```nix
-chalkos.kinds.Peer.rules = [
+chalkos.kinds.Site.rules = [
   {
     rule = "size(documents) <= 2";
-    message = "a node has two BGP neighbours at most";
+    message = "a node serves two sites at most";
   }
 ];
 ```
 
-With two more `Peer` documents in `bgp/fabric.yaml`, `chalkctl validate` refuses the three nodes
-that get the file:
+With three `Site` documents in a node's files, `chalkctl validate` refuses the node:
 
-```console
-$ chalkctl validate
-chalkctl: the config of 3 nodes is invalid:
-node node1: the config is refused: a node has two BGP neighbours at most
-node node2: the config is refused: a node has two BGP neighbours at most
-node node3: the config is refused: a node has two BGP neighbours at most
+```text
+the config is refused: a node serves two sites at most
 ```
 
 A kind's message names nothing by itself, so it says which kind it is about.
@@ -114,24 +119,24 @@ value with every other one costs two nested loops, which comes close to the
 A rule that compares fields of one document goes into
 [`chalkos.kinds.<name>.specRules`](../reference/extension-api.md#chalkoskindsspecrules). Its `self`
 is the spec of one delivered document and `oldSelf` the spec of the running config's document of
-the same name, so it runs as a field's rule does, once for each document. The `Session` of
+the same name, so it runs as a field's rule does, once for each document. The `Site` of
 [Make a field's values unique](declare-a-kind.md#make-a-fields-values-unique) keeps its
-neighbours off its peer's address:
+backend's address out of its list of clients:
 
 ```nix
-chalkos.kinds.Session.specRules = [
+chalkos.kinds.Site.specRules = [
   {
-    description = "A Session's neighbours leave out its peer's address.";
-    rule = ''self.neighbours.all(n, n.address != document("Peer", self.peer).spec.address)'';
-    message = "a neighbour has the peer's own address; list the peer's neighbours alone";
+    description = "A Site's clients leave out its backend.";
+    rule = ''self.allow.all(c, c.address != document("Backend", self.backend).spec.address)'';
+    message = "the backend's address is no client; list the site's clients alone";
   }
 ];
 ```
 
 A spec rule's message starts like a field rule's, with the kind, the document's name and `spec`:
-`Session/up: spec: a neighbour has the peer's own address; list the peer's neighbours alone`.
+`Site/shop: spec: the backend's address is no client; list the site's clients alone`.
 
-The same check as a kind rule loops over `documents` around the loop over the neighbours. A kind
+The same check as a kind rule loops over `documents` around the loop over the clients. A kind
 rule that compares two lists of each document, such as each reservation of a subnet with each of
 its pools, therefore costs three nested loops, which exceeds the
 [cost limit](../reference/extension-runtime.md#cost-limits). As a spec rule it costs two.
@@ -200,7 +205,10 @@ chalkctl validate
 
 The rules that read `oldSelf` run on `chalkctl config apply`, against the node's config. Rules
 that read facts run on the node alone; `chalkctl config apply --dry-run` has the node run them
-without delivering the config.
+without delivering the config. A test of the image runs every rule without a node. It gives the
+rules that read `oldSelf` its `before`, and those that read facts its `facts`, as
+[Test an extension](test-an-extension.md#refusals-name-the-document-the-field-and-the-message)
+shows.
 
 ## If it fails
 

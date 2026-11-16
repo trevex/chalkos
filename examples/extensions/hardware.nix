@@ -35,11 +35,13 @@
       };
     };
   };
+  # --8<-- [start:output]
   # hardware.env, with VENDOR, MODEL and ASSET_TAG; empty on a node without a Hardware document.
   chalkos.outputs.hardware = {
     inputs = [ "Hardware" ];
     render = chalkosLib.render.template ./hardware.env.tmpl;
   };
+  # --8<-- [end:output]
   # --8<-- [end:head]
   # --8<-- [start:test]
   # The image accepts the example and renders the hardware.env of the golden file from it.

@@ -25,6 +25,7 @@ let
       "hardware.nix"
       "hardware.env.tmpl"
       "hardware-examples"
+      "tests"
     ];
     "templates/lab" = [ "cluster" ];
   };
