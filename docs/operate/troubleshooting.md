@@ -158,8 +158,55 @@ explains what the confirmation waits for.
 
 `chalkctl upgrade` stops at a node whose new image did not become healthy. The status shows
 `upgrade to <new> failed: rolled back to <old>` and the failed boot's journal lines.
-[If something goes wrong](upgrade.md#if-something-goes-wrong) on the upgrade page lists the
-messages and their fixes.
+[A node rolled back during the upgrade](upgrade.md#a-node-rolled-back-during-the-upgrade) says
+how to go on. The run also stops with one of these messages:
+
+- `the boot of chalkos_2+2-1.efi has not been found healthy yet; upgrade once it is, ...`: the node
+  runs an image whose health check still runs. Installing another would remove the image it falls
+  back to. Wait for the check, at most the health timeout per try.
+- `Secure Boot would refuse the UKI: ...`: the image is unsigned, or signed with a key the
+  firmware's db does not hold. Sign the build with `chalkbuild sign` and the db key.
+- `node3 runs an image built for kvm, but its image node-metal is built for metal; changing a node's
+  platform is a reinstall`: the inventory names a build of another platform for the node. Fix the
+  inventory, or reinstall the node.
+- `the config of <node>: ...`: the new image does not accept the node's config, such as a document
+  of a kind the image no longer declares. Change the node's files.
+- `upgrade needs the operator role; the reader role may not upgrade nodes`: the client file has the
+  reader role. Use an operator or admin client file.
+- `config not delivered: the operator role cannot deliver config; each node gives the image its pending config, else carries its own over`:
+  the run used an operator client file. Delivering config with the image needs the secrets file or
+  an admin client file, and so does `--diff`.
+- `activate: no image is staged in the inactive slot` or
+  `activate: the image staged in the inactive slot is <a>, not <b>`: `chalkctl node activate`
+  found no image staged, or another one than the inventory or `--image` names for the node. Stage
+  the image with `chalkctl upgrade --nodes <node> --until stage` first, with the same `--image`
+  when you activate one.
+- `node3: its boot of <image> settled and is not healthy: ...`: the node runs the image, but its
+  boot failed the node's health checks for a minute in a row, after systemd finished starting it
+  and the image's health timeout passed. The checks are that chalkd serves and then those of the
+  image's layer: on Kubernetes, the etcd member, the API server and the kubelet of a control
+  plane, or the kubelet and the Node of a worker. A node whose layer does not decide fails on a
+  failed unit or an identity that was not applied. The message names the check that failed. A
+  boot of a blessed entry is not counted, so the node does not fall back. `chalkctl status node3`
+  lists failed units, and `chalkctl logs node3` shows the boot's journal. A boot that is still
+  starting at `--timeout` ends with
+  `node3: waiting for <image> to be found healthy: its boot is not healthy yet: ...` instead. When
+  the node's status gave no boot ID before the reboot, chalkctl cannot tell the new boot from the
+  old one and waits until `--timeout`, ending with `its boot settled and is not healthy: ...`.
+- `node3: activate: ...; <image> boots next all the same, so it stays cordoned: ...`: the node's
+  activation failed after it made the image boot next. Uncordoned, the node would boot the image
+  at its next reboot without a drain, so it stays cordoned. `chalkctl node reboot node3` boots the
+  image and uncordons the node.
+- `no node keeps a previous image to roll back to: ...`: `--rollback` found no node with an image
+  to boot again. A node keeps none after an install, after an upgrade or rollback it fell back
+  from, and while an image staged or activated with `--until` holds its inactive slot. Make a
+  staged image boot with `chalkctl node activate` and `chalkctl node reboot`.
+- `the nodes roll back to different images: node1 to <a>; router to <b>; roll them back separately with --nodes`:
+  the nodes ran different images before, such as control planes and workers on images of their
+  own. Roll each group back with its own `--nodes`.
+- `w2 does not run <old>, which the other nodes roll back to, and keeps no previous image: ...; leave
+  it out with --nodes`: the node was installed with the image the others run now and never
+  upgraded. Leave it out with `--nodes`.
 
 With the Kubernetes layer, the run also stops at a control plane whose reboot would cost etcd its
 quorum, and at a drain that does not finish.

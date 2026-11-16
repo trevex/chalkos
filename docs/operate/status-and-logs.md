@@ -152,7 +152,7 @@ still checks ends in `, not found healthy yet`. More lines follow after an upgra
 - `upgrade to <image> failed: rolled back to <image>`: the new image was not found healthy, and
   the node booted its previous one. The last 30 lines that chalkd and the health check logged in
   the failed boot follow, indented.
-  [A node that fails its health check rolls back](upgrade.md#a-node-that-fails-its-health-check-rolls-back)
+  [A node rolled back during the upgrade](upgrade.md#a-node-rolled-back-during-the-upgrade)
   says what to do.
 - `its store's root hash is ..., not that of the image ... the inventory names, ...`: the image was
   rebuilt since the node's upgrade. The line ends in `chalkctl upgrade --nodes node1 installs that

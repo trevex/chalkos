@@ -291,7 +291,7 @@ boots it next.
 - [Upgrades](upgrades.md) for how a new image is installed.
 - [Storage and encryption](storage.md) for STATE, VAR and their keys.
 - [Security model](security.md) for what Secure Boot and PCR 7 protect.
-- [Upgrade nodes](../../operate/upgrade.md#a-node-that-fails-its-health-check-rolls-back) for
+- [Upgrade nodes](../../operate/upgrade.md#a-node-rolled-back-during-the-upgrade) for
   what to do after a rollback.
 - [Recover a node](../../operate/recover-node.md) and
   [Troubleshooting](../../operate/troubleshooting.md).

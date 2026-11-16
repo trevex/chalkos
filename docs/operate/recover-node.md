@@ -104,7 +104,7 @@ upgrade to <new> failed: rolled back to <old>
 chalkd and the health check logged in the failed boot. The new image did not become healthy within
 its tries, and systemd-boot booted the previous one. The node runs healthy on the old image.
 Find the cause in the journal lines, fix it in a new build and upgrade again, as
-[A node that fails its health check rolls back](upgrade.md#a-node-that-fails-its-health-check-rolls-back)
+[A node rolled back during the upgrade](upgrade.md#a-node-rolled-back-during-the-upgrade)
 describes.
 
 ## A change misbehaves after the node was found healthy

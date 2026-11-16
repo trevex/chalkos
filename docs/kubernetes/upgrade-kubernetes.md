@@ -340,8 +340,7 @@ cordoned itself.
 
 ## Choose the flags for Kubernetes
 
-These flags of `chalkctl upgrade` change how it treats the cluster. [Upgrade
-nodes](../operate/upgrade.md#control-planes-go-first-then-the-other-nodes-in-batches) lists the
+These flags of `chalkctl upgrade` change how it treats the cluster. [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) lists the
 others.
 
 | Flag | Default | Effect |
@@ -398,8 +397,8 @@ w1: installing 23112865089f (v2)
 
 A node of the cluster whose new image is not found healthy boots its previous image and stays
 cordoned, so you can look at it before workloads return. The run stops with
-`rolled back to <old>; it stays cordoned`. [A node that fails its health check rolls
-back](../operate/upgrade.md#a-node-that-fails-its-health-check-rolls-back) explains how to find the
+`rolled back to <old>; it stays cordoned`. [A node rolled back during the
+upgrade](../operate/upgrade.md#a-node-rolled-back-during-the-upgrade) explains how to find the
 cause.
 
 The next run that installs an image on the node uncordons it once the node is healthy, with a fixed

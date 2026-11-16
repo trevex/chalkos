@@ -92,7 +92,8 @@ Before it sends anything, chalkctl checks each image against the nodes:
 - the config the inventory gives each node that gets the image suits the `schemas/` and
   `facts/` in the image's directory, as an install checks the config it delivers.
 
-chalkctl checks every node's config before it changes the first node. It needs the inventory for
+chalkctl checks every node's config before it changes the first node, and a config the image does
+not accept stops the run with `the config of <node>: ...`. It needs the inventory for
 that, whatever it authenticates with. Without one, the node's own check is all there is. For an
 image in a registry, chalkctl checks the config against the artifact's contract and reads no UKI,
 so the node alone checks the UKI's `usrhash=` and os-release.
@@ -124,6 +125,14 @@ Without an inventory, chalkctl sends no config either. In both cases the node gi
 its pending config, when it holds one, or else carries the documents of the running image's slot
 over, checked against the new image the same way.
 
+Before it asks for any password or drains a node, chalkctl asks the first node it upgrades for its
+config. A node that refuses to show its config to the credentials would refuse config with the
+upgrade too. The run then delivers no config to any node and prints
+`<node> refuses to show its config to these credentials; config not delivered, each node gives the image its pending config, else carries its own over`.
+Without an inventory, as with `--image` and `--address <node>=<address>` outside the inventory's
+directory, it prints for each node
+`<node>: no inventory to compare the config with; the node gives the image its pending config, else carries its own over`.
+
 The pending config is the set that `chalkctl config apply --staged` stores in
 `/state/config/pending` on a node without a staged image. Every later `config apply` to the
 running image replaces it with the config the running image applied, so the next upgrade boots the
@@ -133,7 +142,13 @@ upgrade staged that image, and activated it unless the upgrade stops at staging,
 got it or the upgrade carried config of its own. An upgrade that fails before, in the image's
 check or while chalkd stages the image, keeps it. An activation that fails, in an upgrade that
 activates the image as well, leaves the image staged while the node keeps the pending config.
-Sending that image again without config then rewrites its slot with the pending config. Should
+Sending that image again without config then rewrites its slot with the pending config. After the
+line of the install, the run prints
+`<node>: the image took the pending config <version>, which it checked first` or
+`<node>: the inventory's config replaced the pending config <version>`. An upgrade that stages the
+known-good image a rollback left keeps the pending config, because that image keeps the config it
+last ran. So does an upgrade to the image the node runs already. The run then prints
+`<node>: keeps the pending config <version> for a later upgrade`. Should
 the removal itself fail, chalkd logs it, the upgrade still succeeds, and status keeps showing the
 pending config until `config discard` removes it. An upgrade that pulls its image
 takes the Registry and Mirror documents from the same config: the upgrade's, else the pending
@@ -145,7 +160,10 @@ config meets the running image's. The rules compare it with the running slot's c
 storage STATE records. A storage change that takes a reset or a reinstall is refused, and so is a
 change of a setting the rules fix. A new volume is created before the image
 boots, while the running image runs. chalkctl sends the fallback secret such a volume is enrolled
-with: the recovery key from the secrets file, or a password from `--password-file`.
+with: the recovery key from the secrets file, or a password from `--password-file`. Without
+`--password-file`, chalkctl asks for each node's password on the terminal before it drains the
+first node. The new image's checker fills in its own defaults on both sides of the comparison, so a
+default that changed between the images is no change to a rule that keeps a field's value.
 [Config and the inventory](config.md#change-rules-decide-which-changes-a-node-accepts) lists what
 each change takes.
 
@@ -264,12 +282,17 @@ node and waits until it runs the new image's root hash in a new boot, as the boo
 tells, and its boot was found healthy: the entry is blessed, and the node's status, which runs the
 health check's checks when chalkctl asks, finds the boot itself healthy. The status check also
 covers the boot of an entry blessed before, which systemd-boot does not count.
-`chalkctl node reboot` runs the same step. systemd-boot counts the new entry's tries, and the
+`chalkctl node reboot` runs the same step. Once the boot has settled, after systemd finished starting it and
+the image's health timeout passed, chalkctl stops when the boot stays unhealthy for a minute. A
+check that fails once, such as an etcd health check that answered late, does not stop it, and a
+healthy look starts the minute over. systemd-boot counts the new entry's tries, and the
 health check blesses the entry once the boot is good.
 [Boot, health and rollback](boot-and-rollback.md) explains the counted tries, the health check,
 the blessed boot and the fallback.
 
-chalkctl upgrades nodes without Kubernetes in batches of `--max-unavailable`, 1 by default. With
+chalkctl upgrades nodes without Kubernetes in batches of `--max-unavailable`, 1 by default. Within
+each group the nodes go in the order of their names, and a node without Kubernetes counts with the
+workers. A batch that fails stops the run once the batch's other nodes finish. With
 `--until stage`, it stages the image on every node and stops, and `chalkctl node activate` later
 makes it boot next. With `--until activate`, it stages and activates the image on every node
 without holding or rebooting it, and each node boots the new image at its next reboot. A node that
@@ -297,6 +320,10 @@ Running the same command again continues where the last run stopped:
 - A node that booted the new image and is still being counted is waited for.
 - A node that has the image staged or active already is activated, where it is staged, and
   rebooted without the image being sent again.
+- chalkctl uncordons only the nodes it cordoned itself.
+
+An image whose transfer was interrupted leaves the inactive slot empty, and the node keeps booting
+its current image. The next run writes the slot in full.
 
 A node that fell back from the image stops every later run too, so a known-bad image never boots
 again by itself. `--retry-failed` installs it once more on such nodes, as the next generation, for
@@ -319,7 +346,17 @@ slot. While the running image's boot was found healthy the new name carries the 
 the boot is counted and falls back to the running image. Before that it carries none, as
 [Boot, health and rollback](boot-and-rollback.md#a-blessed-image-is-rolled-back-only-on-request)
 explains. An upgrade's staged or active image has written over the inactive slot, so a rollback
-is refused while the slot holds one.
+is refused while the slot holds one. A node also keeps no previous image after an install, and
+after an upgrade or rollback it fell back from.
+
+A counted rollback that fails its tries falls back to the image the node ran, and the run stops
+with `<node>: rollback to <old> failed: it fell back to <new>`. A node whose running image was not
+found healthy yet gets the image before without boot counting. That image was found healthy
+before, so it is the node's known-good image again, and the node never falls back from it.
+chalkctl says so on the `boots next` line, releases the node once its layers report it ready, and
+ends the node's steps with `<node>: runs <old> (its boots are not counted)`. Until the running boot
+is found healthy, the node keeps the config that image last ran, and refuses `config apply
+--staged` and an upgrade to that image with other config.
 
 The run around it is an upgrade's: the same order, batches, layer hooks, reboot and wait for a
 healthy boot. chalkctl picks one target image for the run at plan time, from the selected nodes'
@@ -327,7 +364,11 @@ status. chalkd records on STATE the image the last rollback went to, `/state/cha
 and status reports that record while the node runs or stages the image. A node's vote is that
 record, else its previous image. Nodes that already run the target are skipped, so a run started
 again continues instead of booting the rolled-back nodes forward, and a second rollback after a
-finished one changes nothing. Nodes whose votes differ are refused before anything changes.
+finished one changes nothing. Nodes whose votes differ are refused before anything changes. Votes
+differ on a cluster whose control planes and workers run different images, and for a node that
+went through other upgrades, such as one installed after the others' last upgrade: its previous
+image is the one it was installed with. A rollback run with `--until activate` boots at the next
+reboot.
 
 An upgrade removes the record. `chalkctl upgrade` to the inventory's image therefore undoes a
 rollback once the node runs the image before: the newer image is still in the inactive slot and
