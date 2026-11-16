@@ -3,8 +3,11 @@ package chalkctl
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 
 	"github.com/trevex/chalkos/pkg/internal/cli/clitest"
 )
@@ -128,4 +131,26 @@ func TestAddressValueName(t *testing.T) {
 // Every command is described for its help and the reference pages.
 func TestCommandsDescribed(t *testing.T) {
 	clitest.CheckDescribed(t, newCommand(&app{}))
+}
+
+// client new's help names exactly the commands that take a client file, --config.
+func TestClientNewNamesClientCommands(t *testing.T) {
+	var want []string
+	var walk func(cmd *cobra.Command)
+	walk = func(cmd *cobra.Command) {
+		if cmd.LocalFlags().Lookup("config") != nil {
+			want = append(want, strings.TrimPrefix(cmd.CommandPath(), "chalkctl "))
+		}
+		for _, c := range cmd.Commands() {
+			walk(c)
+		}
+	}
+	walk(newCommand(&app{}))
+	_, list, _ := strings.Cut(strings.Join(strings.Fields(clientNewLong), " "), "A client file works for ")
+	list, _, _ = strings.Cut(list, ";")
+	got := strings.Split(strings.Replace(list, " and ", ", ", 1), ", ")
+	slices.Sort(want)
+	if !slices.Equal(got, want) {
+		t.Errorf("client new's help names %q, want the commands that take --config, %q", got, want)
+	}
 }
