@@ -13,6 +13,9 @@ what its firewall lets through, whom it exchanges routes with over BGP, which li
 table, how it translates IPv6 to IPv4 and resolves names, which addresses it leases, and which peers
 reach it through WireGuard.
 
+To see a router run first, [Quick start: a router](../get-started/router-quick-start.md) runs one
+with a client on its LAN as virtual machines, in about 15 minutes.
+
 <div class="grid cards" markdown>
 
 -   :material-router-network: __Set up a router__

@@ -6,8 +6,8 @@ description: "What chalkos is, a first lab cluster and what a node needs"
 # Get started
 
 These pages are for readers new to chalkos. They explain the model of a cluster, run a lab
-cluster on one machine and list what real machines need. The [guides](../guides/index.md) go on
-to a home lab on real machines.
+cluster or a lab router on one machine and list what real machines need. The
+[guides](../guides/index.md) go on to a cluster on real machines.
 
 <div class="grid cards" markdown>
 
@@ -28,6 +28,15 @@ to a home lab on real machines.
     remove it, in about 15 minutes.
 
     [:octicons-arrow-right-24: Start](quick-start.md)
+
+-   :material-router-network: __Quick start: a router__
+
+    ---
+
+    Run a router and a client on its LAN as QEMU virtual machines, check its DHCP, DNS and
+    masquerade, and change its firewall on trial, in about 15 minutes.
+
+    [:octicons-arrow-right-24: Start](router-quick-start.md)
 
 -   :material-clipboard-check-outline: __Requirements__
 
