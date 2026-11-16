@@ -128,6 +128,3 @@ Each row names where a change goes and the checks that cover it. `nix build
 - [Internals](internals/index.md) maps the node API, layer plugins, config redaction, chalkd's
   sandbox, the install, staging and storage matching to their code.
 - [Development setup](development.md) lists the commands of a development loop.
-
-An install runs in fixed steps, which [The install in code](internals/install.md) follows.
-{ #an-install-runs-in-fixed-steps }

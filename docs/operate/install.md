@@ -241,7 +241,7 @@ system disk, and the image checks the config with its own checker, as
 [An image that does not run checks its own config](../how-it-works/node/config-pipeline.md#an-image-that-does-not-run-checks-its-own-config)
 describes. Then the installer sets up STATE, VAR and the volumes, and adds a UEFI boot entry named
 `chalkos`, as
-[An install runs in fixed steps](../contribute/architecture.md#an-install-runs-in-fixed-steps)
+[The install in code](../contribute/internals/install.md)
 follows step by step. A refused config leaves the machine in maintenance mode, as
 [If it fails](#if-it-fails) describes.
 
@@ -368,7 +368,7 @@ covers a node that does not come up after the reboot.
 ## What next
 
 - [Add and remove nodes](add-remove-nodes.md) grows or shrinks the cluster later.
-- [Architecture for developers](../contribute/architecture.md#an-install-runs-in-fixed-steps) follows
+- [The install in code](../contribute/internals/install.md) follows
   an install step by step through chalkctl, chalkd and the disk.
 - [Sign images for Secure Boot](../build/sign-images.md) covers the key's life and why it must
   not change for an installed node.
