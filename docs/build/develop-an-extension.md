@@ -45,10 +45,10 @@ secrets file.
 Nix reads a flake from the files git tracks. A new module, template or test file that git does not
 track is missing from every build, which fails with
 `error: Path '…' in the repository "…" is not tracked by Git.` and names the `git add` that fixes
-it. Add each new file before you build:
+it. Add each new file before you build, here those of the extensions example:
 
 ```sh
-git add extensions
+git add hardware.nix hardware.env.tmpl tests
 ```
 
 The file need not be committed. Nix reads changes to tracked files from the working tree.
@@ -222,11 +222,11 @@ in" names the first step of the loop that shows it.
 | `chalkos.kinds.Hardware.spec.biosFile: the option type absolute path has no JSON Schema mapping. Kinds accept str, …` | the schemas | A field's option type has no JSON Schema, here `path`. | Use a type of the field types reference, such as `nonEmptyStr`. |
 | `attribute 'hardwre' missing` … `Did you mean hardware?` | the test results | `config.chalkos.outputs.hardwre.dir` names an output the image does not declare. | Use the output's name, as the error suggests. |
 | `chalkos-rules: Hardware spec: rule "self.vendor = 'Supermicro'": ERROR: <input>:1:13: Syntax error: …` | the test results | The rule is no valid CEL. CEL compares with `==`. | Fix the expression the error points at. |
-| `cannot check: Hardware/hardware: spec: a rule cannot be evaluated: no such key` | `chalkctl validate` | The rule reads a field the document lacks, such as `self.modle`. The build does not check the field names a rule reads. | Fix the field's name, or test an optional field with `has()` first. |
+| `cannot check: Hardware/hardware: spec: a rule cannot be evaluated: no such key` | the test results, in `refusals differ`, when a test holds a document of the kind; `chalkctl validate` otherwise | The rule reads a field the document lacks, such as `self.modle`. The build does not check the field names a rule reads, so only a document of the kind shows it. | Fix the field's name, or test an optional field with `has()` first. |
 | `systemd.services.hardware-info.chalkos.kinds: the image declares no kind Hardwre; it declares Hardware, …` | the test results | A unit's grant names a kind the image does not declare. | Fix the name, or add the module that declares the kind to the image. |
 | `chalkos.outputs.server.inputs: the image declares no kind Server; it declares …` | the test results | An output's `inputs` names a kind the image does not declare. The `kinds` of an effect give the same error. | Fix the name, or add the module that declares the kind. |
 | `chalkos.kinds.Rack.get: the path "spec.locaton" does not follow the kind's options: spec has no field locaton; its fields are location` | the test results | A `get` names a field the kind does not declare. | Use one of the fields the error lists. |
-| `chalkos-rules: …/diagnostics.json: diagnostic pci-devices: its command or network namespace names {slot}, which is no parameter` | the test results | A placeholder in the diagnostic's command has no parameter. `nix flake check` and the image build report it under `Failed assertions:`. | Declare `parameters.slot`, or drop the placeholder. |
+| `chalkos-rules: …/diagnostics.json: diagnostic pci-devices: its command or network namespace names {slot}, which is no parameter` | the test results | A placeholder in the diagnostic's command has no parameter. `nix flake check` and the image build report it under `Failed assertions:` as `chalkos.diagnostics.pci-devices: the command or networkNamespace names {slot}, which is no parameter`. | Declare `parameters.slot`, or drop the placeholder. |
 | `chalkos-rules: effect hardware-log: the image defines no unit hardware-log.service` | the image build | An effect restarts a unit the image does not define. | Fix the unit's name, or define the unit. |
 
 ## What next
