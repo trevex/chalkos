@@ -22,7 +22,7 @@ The images of the `Cluster` document must suit the kubelet that the node's image
 directory names that kubelet's release in `facts/kubernetes.json`:
 
 ```console
-$ cat images/node-kvm/facts/kubernetes.json
+$ cat images/node-metal/facts/kubernetes.json
 {"cni":"flannel","version":"1.37.2"}
 ```
 
