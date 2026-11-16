@@ -26,6 +26,45 @@ set of NixOS modules: a layer that chalkos ships, such as Kubernetes or the rout
 and drivers the nodes need, and config kinds of the image's own. Each node boots the exact image
 that was built and signed, and changes only through its API.
 
+## Choose your path
+
+Start with the path that matches your work. Each one assumes the one before it, so an image
+author knows the quick start and a contributor knows both. chalkos publishes no prebuilt images
+yet, so every path needs Nix to build an image.
+
+<div class="grid cards" markdown>
+
+-   :material-server: __Use chalkos__
+
+    ---
+
+    For operators. Run a lab cluster of two virtual machines on one machine in about 15 minutes.
+    Then take it to real machines with [Build a home lab](guides/home-lab.md), or do one task at a
+    time from [Operate nodes](operate/index.md).
+
+    [:octicons-arrow-right-24: Quick start](get-started/quick-start.md)
+
+-   :material-puzzle-outline: __Customise images__
+
+    ---
+
+    For image authors. Write [your first image flake](build/first-image.md), then
+    [your first extension](build/first-extension.md) in about 15 minutes on the lab. The rest of
+    [Build images](build/index.md) covers one task per page.
+
+    [:octicons-arrow-right-24: First image flake](build/first-image.md)
+
+-   :material-source-pull: __Contribute__
+
+    ---
+
+    For contributors to chalkos itself. Enter the development shell, run one package's tests and
+    commit a first change in about 10 minutes.
+
+    [:octicons-arrow-right-24: First change](contribute/development.md#first-change-in-10-minutes)
+
+</div>
+
 A Nix flake calls `mkImages`, which builds each image the flake names, for its platform, from NixOS
 modules. An image holds a read-only Nix store on dm-verity, a unified kernel image (UKI) that
 Secure Boot verifies, and the JSON Schemas of its config kinds. YAML documents in the style of
