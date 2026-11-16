@@ -156,7 +156,8 @@ cp1 gets no `Hardware` document, so its unit finds no file.
 
 ## Check the config against the image
 
-Build the image where the inventory points, and check each node's config against it:
+Build the image where the inventory points, and check each node's config against it with
+[`chalkctl validate`](../reference/cli/chalkctl_validate.md):
 
 ```console
 $ nix build .#node-kvm -o images/node-kvm
@@ -252,8 +253,8 @@ A change to the template that alters `hardware.env` now fails the check, with a 
 
 ## Run the extension on the lab
 
-The tests change nothing in the image, so `images/node-kvm` is still current. Create the lab, as
-the quick start does:
+The tests change nothing in the image, so `images/node-kvm` is still current. Create the lab with
+[`chalklab create`](../reference/cli/chalklab_create.md), as the quick start does:
 
 ```console
 $ chalklab create --secrets secrets.json
@@ -268,19 +269,22 @@ wrote /home/alice/.local/state/chalklab/lab/kubeconfig; its certificate is valid
 the lab lab runs cp1, w1; next:
   export KUBECONFIG=/home/alice/.local/state/chalklab/lab/kubeconfig
   export CHALKOSCONFIG=/home/alice/.local/state/chalklab/lab/chalkctl.json
+  export CHALKOSINVENTORY=/home/alice/.local/state/chalklab/lab/chalkos.yaml
 ...
 ```
 
-Export the client file, so chalkctl can reach the nodes. Then read the unit's journal on each node
-with `chalkctl logs`:
+Export the client file and the lab's inventory, as `chalklab create` printed, so chalkctl can
+reach the nodes. Then read the unit's journal on each node
+with [`chalkctl logs`](../reference/cli/chalkctl_logs.md):
 
 ```console
 $ export CHALKOSCONFIG=~/.local/state/chalklab/lab/chalkctl.json
-$ chalkctl logs w1 --unit=hardware-info.service --inventory ~/.local/state/chalklab/lab/chalkos.yaml
+$ export CHALKOSINVENTORY=~/.local/state/chalklab/lab/chalkos.yaml
+$ chalkctl logs w1 --unit=hardware-info.service
 2026-11-16T10:54:36+00:00 w1 systemd[1]: Starting hardware-info.service...
 2026-11-16T10:54:36+00:00 w1 9ci6jmda4j998yhh2wvridqpdga1jw23-hardware-info[508]: hardware: Supermicro SYS-E300-9D
 2026-11-16T10:54:36+00:00 w1 systemd[1]: Finished hardware-info.service.
-$ chalkctl logs cp1 --unit=hardware-info.service --inventory ~/.local/state/chalklab/lab/chalkos.yaml
+$ chalkctl logs cp1 --unit=hardware-info.service
 2026-11-16T10:54:17+00:00 cp1 systemd[1]: Starting hardware-info.service...
 2026-11-16T10:54:18+00:00 cp1 9ci6jmda4j998yhh2wvridqpdga1jw23-hardware-info[522]: hardware: unknown unknown
 2026-11-16T10:54:18+00:00 cp1 systemd[1]: Finished hardware-info.service.
@@ -300,14 +304,15 @@ metadata: {name: hardware}
 spec: {vendor: Supermicro, model: SYS-E300-9D, assetTag: LAB-0001}
 ```
 
-Check the config, then deliver it to w1 with `chalkctl config apply`. Delivering config needs the secrets
+Check the config, then deliver it to w1 with
+[`chalkctl config apply`](../reference/cli/chalkctl_config_apply.md). Delivering config needs the secrets
 file:
 
 ```console
 $ chalkctl validate
 cp1: valid for the image node-kvm (node-kvm on kvm, root hash 5425995f5799), config cff86e2957830b9ec4a10a6f6966660695c5a332fca12103d59f79ab4c1ccc15
 w1: valid for the image node-kvm (node-kvm on kvm, root hash 5425995f5799), config 9307d1da8a3a17a8e611ded2cdbdd577692950cc6eb963ce1712ecf656a25416
-$ chalkctl config apply w1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml --secrets secrets.json
+$ chalkctl config apply w1 --secrets secrets.json
 w1: config 0 added, 0 removed, 1 changed
 restarted hardware-info.service
 w1 runs config 9307d1da8a3a17a8e611ded2cdbdd577692950cc6eb963ce1712ecf656a25416
@@ -317,7 +322,7 @@ The node rendered a new `hardware.env`, and the effect restarted the unit. No ne
 needed. The unit's journal shows the new line:
 
 ```console
-$ chalkctl logs w1 --unit=hardware-info.service --inventory ~/.local/state/chalklab/lab/chalkos.yaml
+$ chalkctl logs w1 --unit=hardware-info.service
 ...
 2026-11-16T10:55:02+00:00 w1 systemd[1]: Starting hardware-info.service...
 2026-11-16T10:55:02+00:00 w1 9ci6jmda4j998yhh2wvridqpdga1jw23-hardware-info[1173]: hardware: Supermicro SYS-E300-9D, asset tag LAB-0001
@@ -326,10 +331,10 @@ $ chalkctl logs w1 --unit=hardware-info.service --inventory ~/.local/state/chalk
 
 ## Check that it worked
 
-`chalkctl status` lists the new output among the node's outputs, rendered:
+[`chalkctl status`](../reference/cli/chalkctl_status.md) lists the new output among the node's outputs, rendered:
 
 ```console
-$ chalkctl status w1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml
+$ chalkctl status w1
 config 9307d1da8a3a17a8e611ded2cdbdd577692950cc6eb963ce1712ecf656a25416 (the inventory's)
 previous config d8ddf99001390c55c88d34312a8ce7db6eee5f3d08a19f47e4b5fc50f90eaa55 (config rollback restores it)
 platform kvm (the inventory's)
@@ -343,7 +348,7 @@ networkd  195ac3c4ec51  rendered
 ...
 ```
 
-Remove the lab when you are done:
+Remove the lab with [`chalklab destroy`](../reference/cli/chalklab_destroy.md) when you are done:
 
 ```console
 $ chalklab destroy

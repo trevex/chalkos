@@ -188,9 +188,11 @@ copy of an image directory with them, and `chalkctl upgrade --image` takes the c
 ```sh
 rm -rf images/node-kvm-signed
 chalklab sign images/node-kvm --out images/node-kvm-signed
-chalkctl upgrade --image images/node-kvm-signed \
-  --inventory ~/.local/state/chalklab/lab/chalkos.yaml --allow-downtime
+chalkctl upgrade --image images/node-kvm-signed --allow-downtime
 ```
+
+The upgrade reads the lab's inventory, which `$CHALKOSINVENTORY` names once you export it as
+`chalklab create` prints.
 
 `chalklab status` names the lab's db key and certificate. They are test keys of that lab alone.
 
