@@ -11,7 +11,7 @@ spec:
   all: {files: [cluster/*.yaml]}
   groups:
     test: {imageName: test-metal}
-    k8s: {imageName: k8s-kvm, files: [groups/k8s.yaml]}
+    k8s: {imageName: k8s-kvm, files: [groups/k8s.yaml, groups/registries.yaml]}
     router: {imageName: router-kvm, files: [groups/router.yaml]}
   nodes:
     chalklab:

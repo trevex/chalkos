@@ -25,7 +25,7 @@ import (
 
 // The private repository of startRegistry's registry, which answers only the user e2e with
 // privatePassword. The chalklab cluster's nodes reach it as privateImage through a Mirror of
-// private.chalkos.test, whose Registry in groups/k8s.yaml holds the password.
+// private.chalkos.test, whose Registry in groups/registries.yaml holds the password.
 const (
 	privateRepo     = "e2e/busybox"
 	privatePassword = "pull-s3cret"
