@@ -15,7 +15,7 @@ let
 in
 {
   options.chalkos.kubernetes = chalkosLib.internal.feature "Kubernetes" "bgp" {
-    carries = "FRR, which runs BGP and BFD, with the Python of frr-reload.py,";
+    carries = "FRR, which runs BGP and BFD, with the Python its closure holds,";
     kinds = lib.attrNames kinds;
   };
 
