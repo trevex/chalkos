@@ -374,17 +374,12 @@ Site/b: spec.allow[0].address, spec.allow[1].address: "2001:db8::1" is not uniqu
 
 ## Change a kind in a new version
 
-An image declares one version of each kind, and chalkos converts no document from one version to
-another. Changes that keep existing documents valid need no new version:
-
-- a new field with a default;
-- a looser type, such as a wider integer range.
-
-Other changes refuse documents the nodes already hold. A new required field, a removed field or
-a narrower type are among them. Make such a change a new `version`, and change the documents'
-`apiVersion` in the same commit as the module. `chalkctl upgrade` checks the documents against
-the new image's schemas and delivers them with the image. The image before keeps its own config
-slot with the old documents, so a fallback boots with the config it ran.
+An image declares one version of each kind. A new field with a default or a looser type keeps
+the nodes' documents valid. A change that refuses them, such as a new required field, goes into a
+new `version`, with the documents moved to it in the same commit. `chalkctl upgrade` then delivers
+them with the image, and the image before keeps the old documents.
+[Change a kind incompatibly](change-a-kind.md) walks through such a change, a rename and a
+removal.
 
 ## Compare with the extensions example's kinds
 

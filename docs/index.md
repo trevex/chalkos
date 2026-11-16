@@ -97,7 +97,8 @@ a node runs before the node sees it.
 
 A node keeps a config slot for each image it holds. An upgrade brings config that the new image
 checks itself, while the image before keeps its own, so a kind can change between images and a
-rollback still boots with config it understands.
+rollback still boots with config it understands. [Change a kind incompatibly](build/change-a-kind.md)
+shows such a change.
 
 :material-shield-check: __Verified from build to boot__
 { .card }
