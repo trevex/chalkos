@@ -159,7 +159,7 @@ chalkctl secureboot enroll --keys keys --address=<address> --fingerprint=<finger
 
 The node writes the keys and reboots with Secure Boot on. It boots with a new certificate, so
 chalkctl prints a new fingerprint: compare it with the console and use it from here on.
-[Firmware in Setup Mode](../build/sign-images.md#firmware-in-setup-mode-chalkctl-secureboot-enroll)
+[Enrol the keys in Setup Mode](secure-boot.md#enrol-the-keys-in-setup-mode)
 explains the checks, `--microsoft` and `--option-roms`, and what to do when the enrolment fails.
 
 ## Choose the system disk
@@ -357,7 +357,7 @@ chalkctl reports the installer's other refusals as its error. The common errors 
 | --- | --- |
 | `the maintenance image trusts another OS CA than the secrets file, so it refuses chalkctl's certificate` | The installer or the image was built before the OS CA was rotated, or from another cluster's `secrets.pub.json`. Build and sign both again from the current one. |
 | `Secure Boot would refuse the UKI: ...` or `Secure Boot would refuse the boot loader: ...` | The image is unsigned, or signed with a key whose certificate is not in this machine's db. Sign the build again with `chalkbuild sign` and the enrolled key, or enrol the key's certificate. |
-| `under the new db, Secure Boot would refuse the drivers the firmware loaded ...` from `chalkctl secureboot enroll` | The machine's cards carry option ROMs that db would not allow under the new keys. Enrol their digests with `--option-roms` or Microsoft's CAs with `--microsoft`, as [Option ROMs](../build/sign-images.md#option-roms) explains. |
+| `under the new db, Secure Boot would refuse the drivers the firmware loaded ...` from `chalkctl secureboot enroll` | The machine's cards carry option ROMs that db would not allow under the new keys. Enrol their digests with `--option-roms` or Microsoft's CAs with `--microsoft`, as [Allow the cards' option ROMs](secure-boot.md#allow-the-cards-option-roms) explains. |
 | `STATE on the target disk ... does not open on this machine, so it belongs to another node` | The disk was installed in another machine. Use `--wipe-disk` if its data may go. |
 | The first boot asks for a recovery key | The installer and the image were signed with different keys, or Secure Boot changed between install and boot. Type the key that `chalkctl recovery-key node1` prints. |
 

@@ -92,7 +92,7 @@ Turn Secure Boot off in each machine's firmware setup. The steps marked optional
 with keys of your own: [Sign the images](#sign-the-images-optional) and
 [Enrol the Secure Boot keys](#enrol-the-secure-boot-keys-optional). A machine whose firmware is in
 Setup Mode gets the keys from chalkctl. For any other machine, enrol the db certificate in its
-firmware as [Sign images for Secure Boot](../build/sign-images.md#firmware-not-in-setup-mode)
+firmware as [Enrol the certificate without Setup Mode](../operate/secure-boot.md#enrol-the-certificate-without-setup-mode)
 describes before you install it.
 
 Without Secure Boot, the TPM still unlocks the disks at every boot. It seals their keys to PCR 7,
@@ -355,11 +355,11 @@ Secure Boot is on; install the node with chalkctl install
 
 The router reboots into the installer, now with Secure Boot on; pick the USB stick in the boot menu
 if it boots something else. chalkd makes a new certificate at that boot: use the new fingerprint
-from here on. [Sign images for Secure Boot](../build/sign-images.md#firmware-in-setup-mode-chalkctl-secureboot-enroll)
+from here on. [Enrol Secure Boot keys](../operate/secure-boot.md#if-it-fails)
 explains what to do when the enrolment fails.
 
 When the router's network cards carry option ROMs, the node refuses the keys and names them: add
-`--option-roms` to enrol their digests, as [Option ROMs](../build/sign-images.md#option-roms)
+`--option-roms` to enrol their digests, as [Allow the cards' option ROMs](../operate/secure-boot.md#allow-the-cards-option-roms)
 explains.
 
 ### Find the disk and the ports

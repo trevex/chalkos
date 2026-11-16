@@ -51,6 +51,14 @@ These pages go from a new workstation to the first installed node.
 
     [:octicons-arrow-right-24: Read](install-vm.md)
 
+-   :material-shield-key: __Enrol Secure Boot keys__
+
+    ---
+
+    Put the cluster's Secure Boot keys into a machine's firmware before it is installed.
+
+    [:octicons-arrow-right-24: Read](secure-boot.md)
+
 </div>
 
 ## Day 2

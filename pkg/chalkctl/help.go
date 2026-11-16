@@ -526,7 +526,7 @@ const validateExample = `  # Check every node of chalkos.yaml.
 const securebootLong = `Creates the Secure Boot keys of the machines an operator owns and enrols them in the firmware of a
 node in maintenance mode whose firmware is in Setup Mode, without the firmware's setup screen. The
 private keys stay on the workstation: chalkctl signs the updates of the firmware's variables, and
-the node writes them. See https://trevex.github.io/chalkos/build/sign-images/.`
+the node writes them. See https://trevex.github.io/chalkos/operate/secure-boot/.`
 
 const securebootExample = `  chalkctl secureboot new keys
   chalkctl secureboot enroll --keys keys --address 192.168.1.50 --insecure --secrets secrets.age`

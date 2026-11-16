@@ -8,7 +8,7 @@ description: "Create Secure Boot keys and enrol them in a node's firmware"
 Creates the Secure Boot keys of the machines an operator owns and enrols them in the firmware of a
 node in maintenance mode whose firmware is in Setup Mode, without the firmware's setup screen. The
 private keys stay on the workstation: chalkctl signs the updates of the firmware's variables, and
-the node writes them. See [Sign images for Secure Boot](../../build/sign-images.md).
+the node writes them. See [Enrol Secure Boot keys](../../operate/secure-boot.md).
 
 ## Examples
 
