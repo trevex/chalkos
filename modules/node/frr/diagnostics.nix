@@ -26,7 +26,7 @@ let
     type = "pattern";
     regex = "^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$";
     default = "default";
-    description = "VRF to ask about, by the name of its VRF document, or default for the default VRF.";
+    description = "VRF to ask about: default for the default VRF, or a router's VRF by the name of its VRF document.";
   };
 in
 {
@@ -44,7 +44,7 @@ in
             peer = {
               type = "pattern";
               regex = "^([0-9A-Fa-f:.]+|[A-Za-z0-9_.:@-]{1,15})$";
-              description = "The session's interface or the neighbour's address, as the node's status lists it.";
+              description = "The neighbour's address or the session's interface, as bgp-summary lists it.";
             };
             inherit vrf;
           };

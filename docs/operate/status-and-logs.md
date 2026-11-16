@@ -343,16 +343,16 @@ $ chalkctl node diag node1 --secrets secrets.age
 DIAGNOSTIC            ROLE      DESCRIPTION
 addresses             reader    The addresses of the node's interfaces, as ip -json address show prints them.
 bfd-peers             reader    One VRF's BFD sessions and their state, as show bfd peers prints them.
-  [vrf=<pattern>]               VRF to ask about, by the name of its VRF document, or default for the default VRF. Matches ^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$. Default: default.
+  [vrf=<pattern>]               VRF to ask about: default for the default VRF, or a router's VRF by the name of its VRF document. Matches ^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$. Default: default.
 bgp-neighbor          reader    One BGP session in detail, as show bgp neighbors prints it: its state, timers, capabilities and routes.
-  peer=<pattern>                The session's interface or the neighbour's address, as the node's status lists it. Matches ^([0-9A-Fa-f:.]+|[A-Za-z0-9_.:@-]{1,15})$.
-  [vrf=<pattern>]               VRF to ask about, by the name of its VRF document, or default for the default VRF. Matches ^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$. Default: default.
+  peer=<pattern>                The neighbour's address or the session's interface, as bgp-summary lists it. Matches ^([0-9A-Fa-f:.]+|[A-Za-z0-9_.:@-]{1,15})$.
+  [vrf=<pattern>]               VRF to ask about: default for the default VRF, or a router's VRF by the name of its VRF document. Matches ^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$. Default: default.
 bgp-route             reader    One VRF's BGP paths to a prefix, as show bgp prints them: each path's AS path, next hop and attributes, and the best.
   prefix=<prefix>               Address range of the family, such as ::/0.
-  [vrf=<pattern>]               VRF to ask about, by the name of its VRF document, or default for the default VRF. Matches ^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$. Default: default.
+  [vrf=<pattern>]               VRF to ask about: default for the default VRF, or a router's VRF by the name of its VRF document. Matches ^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$. Default: default.
   [family=<enum>]               Address family of the prefix. One of ipv4, ipv6. Default: ipv6.
 bgp-summary           reader    One VRF's BGP sessions of each address family, as show bgp summary prints them.
-  [vrf=<pattern>]               VRF to ask about, by the name of its VRF document, or default for the default VRF. Matches ^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$. Default: default.
+  [vrf=<pattern>]               VRF to ask about: default for the default VRF, or a router's VRF by the name of its VRF document. Matches ^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$. Default: default.
 dns-query             operator  Looks up a name in DNS, through the node's resolver or the server given.
   name=<hostname>               Name to look up.
   [type=<enum>]                 Record type; A when left out. One of A, AAAA, CAA, CNAME, DS, DNSKEY, MX, NS, PTR, SOA, SRV, TXT.
