@@ -435,6 +435,56 @@ The checker of another image compares the config with the running slot's documen
 delivered and fills in its own schemas' defaults, as chalkctl's own check of the rules does. The
 running image's defaults are those of its own schemas, which the other image's rules do not read.
 
+## A staged image and the next upgrade take config of their own
+
+`chalkctl config apply` to a node with a staged or active image in its inactive slot ends with
+`<node> boots config <version> with its staged image too`, as
+[Deliver config to a staged image](../../operate/change-config.md#deliver-config-to-a-staged-image)
+shows. A refusal by the staged image in step 2 starts with
+`the image <hash> staged in the inactive slot:`. A volume the config adds is created once and
+serves both images.
+
+chalkctl sends the fallback secret when the running image's storage enrols it on a new volume. The
+staged image may encrypt a volume that the running image does not. Its storage then needs the
+secret alone, and the staged image refuses the config with `... no fallback secret was sent`. The
+error names `chalkctl config apply --staged <node> --secrets FILE`. With `--staged`, chalkctl
+translates the config for the node's image in the inventory, which is the staged image, and sends
+the secret its storage needs.
+
+The error of a failed step 4 lists in parentheses the volumes the node recorded for the delivery,
+the units it restarted and its warnings. A storage change that fails before the node records it
+lists no volume, although a partition it made may stay. The delivery sent again finds the volumes
+and partitions already made.
+
+A dry run's plan ends with the staged slot: `<node>: staged image's config <previous-version> →
+<version>`. A dry run with `--staged` plans the staged slot alone, with no outputs and no effects:
+the staged image renders its outputs and takes its effects when it boots. A delivery with
+`--staged` is checked by chalkctl against the node's image in the inventory, then by the staged
+image itself, and restarts nothing.
+
+After a rollback from a boot that was not found healthy, the image in the inactive slot is the
+node's known-good image. It keeps the config it last ran, and a delivery warns:
+`the image <hash> staged to boot next is the one the node falls back to while the boot of <entry> is not found healthy; its config stays as it last ran`.
+
+A node without a staged image keeps `--staged` config as its pending config. chalkctl checks the
+files against the node's image in the inventory, the image the next upgrade installs. The node only
+parses them, because it has no image to check them against yet. Another `--staged` replaces the
+pending config, and its diff compares with the pending config. A dry run with `--staged` reports
+that the node would hold the config pending and stores nothing. A dry run without it names the
+pending config the delivery would replace. A delivery to the running image replaces the pending
+config and says so:
+
+```console
+$ chalkctl config apply node1 --secrets secrets.age
+node1: config 1 added, 0 removed, 0 changed
+node1 runs config <version>
+node1 holds config <version> pending, unchecked, in place of its pending config; the next upgrade checks it against its image
+```
+
+A later `--staged` then holds config for the next image alone again.
+[Operator upgrades carry no config](upgrades.md#operator-upgrades-carry-no-config) describes how
+the next upgrade takes the pending config.
+
 ## A trial rolls a config back unless it is confirmed
 
 `chalkctl config apply --try` delivers config on trial, as
@@ -460,15 +510,24 @@ At the deadline, chalkd rolls the config back through the same steps as
 `config rollback`, then removes the record. A rollback that fails, as when the image's
 rules refuse it or an output does not render, leaves the record with the reason and whether the
 attempt changed the node. chalkd tries the rollback again each minute. ConfirmConfig still ends
-the trial, unless the failed attempt changed the node. Status reports the trial, with the reason
-of the last failure.
+the trial, unless the failed attempt changed the node, and `chalkctl config confirm` tries for two
+minutes past the deadline. After an attempt that changed the node, `config rollback` finishes the
+rollback at once. Status reports the trial with the reason of the last failure, in the lines that
+[The config line compares the node with the inventory](../../operate/status-and-logs.md#the-config-line-compares-the-node-with-the-inventory)
+lists.
 
 While the record exists, chalkd refuses every delivery, upgrade and image rollback with
 `config <version> is on trial until <deadline>: confirm it with chalkctl config confirm
 <node>, or roll it back with chalkctl config rollback <node>, before ...`. A rollback to
 the config from before the trial ends the trial. A volume reset, a reboot and the requests of the
-image's layers go ahead. A record that chalkd cannot read refuses every change and every
-confirmation until a rollback removes it.
+image's layers go ahead.
+
+A record that chalkd cannot read refuses every change and every confirmation until a rollback
+removes it. Neither the deadline nor a reboot ends such a trial. `config rollback` delivers the
+previous config and removes the record, and chalkctl first warns which config it delivers. When a
+rollback at the deadline replaced the config already, the previous config is the one that was on
+trial, and a second rollback undoes it. A node without a previous config gets the config it runs
+delivered again, which removes the record as well.
 
 A trial survives a restart of chalkd. When chalkd starts, it reads the record once it serves.
 It arms the timer again from the recorded deadline, or rolls the config back at once when the
@@ -480,10 +539,60 @@ slot's two links, so the config from before the trial is the slot's config again
 trial its previous one. Then it removes the record. A slot that it cannot read or restore keeps the
 record, with the boot's time as the deadline, and chalkd rolls the trial back as it starts.
 
+After every rollback of a trial, at the deadline, on request or at boot, the config that was on
+trial is the slot's previous config. `config rollback` then delivers it again, without a trial.
+
 A rollback after a delivery that failed part way, the rollback of a trial included, takes the
 effects that delivery took, as
 [The baseline survives a failed delivery](config-pipeline.md#the-baseline-survives-a-failed-delivery)
 describes.
+
+## chalkctl confirms a trial over a new connection
+
+After a delivery on trial, chalkctl waits until the image's layers find the node serving with the
+config. On a Kubernetes node, that means its Node is Ready. On a control plane, its API server,
+controller-manager and scheduler must also run the images the config names and be Ready. A Node
+that is not Ready only because no CNI runs yet passes: its Ready condition names
+`NetworkReady=false` as its only cause. When the layers do not find the node serving by the
+deadline, chalkctl rolls the config back at once.
+
+Then chalkctl closes the delivery's connection and asks the node to confirm over a new one, every 3
+seconds until the deadline. The connection that delivered the change can survive a firewall that
+drops new connections, so only a new one proves that the node is still reachable. `chalkctl config
+confirm` confirms in the same way. The node confirms once it is healthy, as the health check of a
+new image's boot finds it: chalkd serves, no unit of the boot has failed, and the image's layers
+find their services healthy.
+[The health check decides whether a counted boot is good](boot-and-rollback.md#the-health-check-decides-whether-a-counted-boot-is-good)
+describes the check.
+
+A unit that failed before the trial keeps the node from confirming as well. The check leaves out
+the units the image lists in
+[`chalkos.upgrade.healthIgnoreUnits`](../../reference/image-options.md#chalkosupgradehealthignoreunits)
+and those that `--ignore-unit` names. Before the delivery, chalkctl warns of every failed unit
+that the node's status reports and `--ignore-unit` does not name. The warning can therefore name a
+unit that the check leaves out anyway, such as a timer's job or a unit the image ignores. The
+record keeps the trial's ignored units, so `config confirm` and a restart of chalkd leave them out
+too, and status lists them on the trial's line.
+
+When chalkctl cannot confirm the config by the deadline, it waits up to two minutes past it, over
+new connections, for the node to report how the trial ended, and exits non-zero. When the node
+does not answer in those two minutes either, the error adds `the node did not answer after the
+deadline either: ...; chalkctl status <node> shows where it stands`. A config that cuts chalkctl
+off usually also loses the answer to its delivery. chalkctl never confirms a config whose delivery
+it saw no answer to. Interrupting chalkctl, for example with Ctrl-C, leaves the trial open, and the
+error names the deadline and the two commands that end the trial earlier.
+
+A delivery on trial can fail after it wrote the config, as when a restart fails. The config then
+stays on trial until the deadline, the error says `config <version> stays on trial until
+<deadline>`, and chalkctl does not try to confirm it. A delivery that fails before it wrote the
+config ends the trial: the node delivers the config from before it again, and the error says
+`config <previous-version> is delivered again, and no trial is open`.
+
+chalkctl refuses `--try` with `--staged`, `--diff` and the layers' payload flags such as
+`--kubernetes-share`, and with the config that the node runs already. While a trial is open,
+chalkctl checks first, before it changes anything. It refuses every other delivery, the
+certificates and shares that `chalkctl node renew` and `chalkctl rotate` deliver, `chalkctl
+upgrade` and `chalkctl upgrade --rollback`.
 
 ## Change rules decide which changes a node accepts
 

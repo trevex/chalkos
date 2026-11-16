@@ -303,7 +303,7 @@ keeps it, and the error names it. An upgrade that stages the known-good image a 
 keeps it too, because that image keeps the config it last ran, and so does an upgrade to the image
 the node runs already. The run then prints
 `<node>: keeps the pending config <version> for a later upgrade`.
-[Prepare config for the next upgrade](change-config.md#prepare-config-for-the-next-upgrade)
+[A staged image and the next upgrade take config of their own](../how-it-works/node/config.md#a-staged-image-and-the-next-upgrade-take-config-of-their-own)
 describes how to hold config pending.
 
 An image the run leaves staged or active, with `--until stage` or `--until activate`, boots with

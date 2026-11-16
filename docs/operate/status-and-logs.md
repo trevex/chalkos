@@ -98,7 +98,7 @@ writes the staged config. Otherwise they say that the trial must end first.
 A node that holds config for its next upgrade adds
 `pending config <version> (unchecked, since <time>; the next upgrade checks it against its image)`.
 The time is when the node stored the config, in RFC 3339.
-[Prepare config for the next upgrade](change-config.md#prepare-config-for-the-next-upgrade)
+[A staged image and the next upgrade take config of their own](../how-it-works/node/config.md#a-staged-image-and-the-next-upgrade-take-config-of-their-own)
 explains the pending config.
 
 `previous config <version> (config rollback restores it)` names the config the running

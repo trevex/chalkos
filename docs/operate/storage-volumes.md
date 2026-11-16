@@ -231,7 +231,7 @@ The refusal names the volume and what carries the change out:
 the config takes chalkctl storage reset: Volume scratch: format xfs instead of ext4; reset it with chalkctl storage reset node1 scratch
 ```
 
-[Change a node's config](change-config.md#a-refusal-names-what-the-change-takes) explains the
+[Change a node's config](change-config.md#if-it-fails) explains the
 refusals. VAR, a removed volume and a volume that moves to another disk take a reinstall, which
 [Reinstall a node on its machine](add-remove-nodes.md#reinstall-a-node-on-its-machine) covers.
 
