@@ -10,6 +10,28 @@ has a date; the plans are ordered roughly by how much else depends on them. Each
 happens today, so a cluster can be planned around it. [Contribute](index.md) says what a
 change that takes one up needs.
 
+## Good first changes
+
+These changes are small, and a check proves each of them. The code or the docs need each one
+today:
+
+- Carry the kernel modules of every `NetDev` kind. A `NetDev` document's schema accepts
+  `spec.l2tp`, `spec.macsec`, `spec.batmanAdvanced` and `spec.bareUDP`, but no group of
+  `chalkos.kernel.groups` carries their modules, so networkd cannot create the device. Add the
+  directories `net/l2tp` and `net/batman-adv` and the modules `macsec` and `bareudp` to the
+  `network` group in `modules/node/kernel.nix`, and build `kernel-modules` and `image-size`.
+- Open the NodePort range for UDP. `modules/node/kubernetes/firewall.nix` opens ports 30000 to
+  32767 for TCP alone, as [Known limits](#networking) says. Add the same range to
+  `allowedUDPPortRanges`, and update
+  [Ports and firewall](../reference/ports-and-firewall.md) and this page.
+- Export the lab's inventory on the remaining build pages. `docs/build/first-extension.md` and
+  `docs/build/sign-images.md` pass `--inventory` to every chalkctl command of a lab. Export
+  `CHALKOSINVENTORY` once, as the [quick start](../get-started/quick-start.md) does.
+- Hold the guides to the link rule of tutorials. The
+  [docs style guide](style.md#terms-and-links) lets a tutorial step link only the reference of a
+  command it runs. `docs/guides/home-lab.md` and `docs/guides/bgp-extension.md` link other pages
+  inside their steps; move those links to their last sections.
+
 ## Planned work
 
 Each item says what chalkos does today and what the plan changes.
@@ -56,6 +78,17 @@ the old one to fall back to.
 
 chalkos defines the platforms `metal` and `kvm`. Planned are ESXi and cloud platforms, PXE and
 HTTP boot, and compressed images for distribution.
+
+### More router protocols
+
+Today the router layer routes dynamically with BGP alone, through FRR, and routers share no
+address. The plan adds these protocols, each as a feature an image can leave out:
+
+| Item | What it adds |
+| --- | --- |
+| OSPF | OSPFv2 and OSPFv3 through FRR, beside BGP. |
+| VRRP | Addresses that move to another router when one fails, and later the sync of connection tracking state between the routers. |
+| LLDP | Discovery of the neighbours on the router's links, and announcement of the router to them. |
 
 ### Smaller items
 
