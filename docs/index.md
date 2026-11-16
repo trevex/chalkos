@@ -1,7 +1,7 @@
 ---
 icon: lucide/layers
 title: "chalkos"
-description: "An image-based NixOS for nodes that run as appliances"
+description: "A toolkit that builds API-driven, immutable Linux distributions from NixOS modules"
 ---
 
 <div class="ck-hero" markdown>
@@ -9,9 +9,8 @@ description: "An image-based NixOS for nodes that run as appliances"
 # chalkos
 
 <p class="ck-tagline" markdown>
-chalkos is an image-based NixOS for nodes that run as appliances, today as Kubernetes nodes and
-routers.
-Nix builds the images, and Secure Boot verifies them at every boot.
+chalkos builds API-driven, immutable Linux distributions from NixOS modules. It ships layers for
+Kubernetes nodes and routers, and its images carry the schemas of the config they accept.
 </p>
 
 [Get started :material-arrow-right:](get-started/quick-start.md){ .md-button .md-button--primary }
@@ -20,20 +19,45 @@ Nix builds the images, and Secure Boot verifies them at every boot.
 </div>
 
 A machine that is changed in place drifts. Packages, hand edits and half-done upgrades pile up
-until nobody can say what a node runs. A failed upgrade leaves a machine that someone repairs at
-the console. chalkos changes a node only by replacing its whole image. Each node boots the exact
-image that was built and signed, and it has no login through which anyone could change it.
+until nobody can say what a node runs. [Talos Linux](https://www.talos.dev/) answers this for
+Kubernetes with a read-only image, no logins and an API that manages each node. chalkos takes that
+operating model and makes the distribution itself something an image author builds. An image is a
+set of NixOS modules: a layer that chalkos ships, such as Kubernetes or the router, the services
+and drivers the nodes need, and config kinds of the image's own. Each node boots the exact image
+that was built and signed, and changes only through its API.
 
 A Nix flake calls `mkImages`, which builds each image the flake names, for its platform, from NixOS
-modules. An image holds a read-only Nix store on dm-verity and a unified kernel image (UKI) that
-Secure Boot verifies. YAML documents in the style of Kubernetes objects configure each node.
-chalkctl delivers the documents and the images to the nodes and never runs Nix. chalkd, the agent on
-each node, applies the config and writes an upgrade into the inactive one of two A/B slots. When the
-new image does not boot healthy, the node returns to the image before.
+modules. An image holds a read-only Nix store on dm-verity, a unified kernel image (UKI) that
+Secure Boot verifies, and the JSON Schemas of its config kinds. YAML documents in the style of
+Kubernetes objects configure each node. chalkctl checks them against the node's image, then
+delivers the documents and the images to the nodes, and never runs Nix. chalkd, the agent on each
+node, applies the config and writes an upgrade into the inactive one of two A/B slots. When the new
+image does not boot healthy, the node returns to the image before.
 
 ## What chalkos is
 
 <div class="grid" markdown>
+
+:material-hammer-wrench: __A distribution builder__
+{ .card }
+
+An image is built from ordinary NixOS modules and the packages of nixpkgs, so it can add any
+software, driver or kernel setting. The Kubernetes layer makes a node much like a Talos node; the
+router layer makes it a router in the manner of VyOS, managed the same way.
+
+:material-file-check: __Config the image checks__
+{ .card }
+
+A module declares a config kind as Kubernetes declares a custom resource: fields, defaults and
+CEL rules. The image carries the kinds' schemas, so chalkctl refuses a mistake against the image
+a node runs before the node sees it.
+
+:material-swap-horizontal: __Config per image__
+{ .card }
+
+A node keeps a config slot for each image it holds. An upgrade brings config that the new image
+checks itself, while the image before keeps its own, so a kind can change between images and a
+rollback still boots with config it understands.
 
 :material-shield-check: __Verified from build to boot__
 { .card }
@@ -49,12 +73,12 @@ Nodes have no SSH and no login. chalkd serves an API over mutual TLS, and the ro
 certificate decides what it may call. A node boots a new image with a fixed number of tries and
 returns to the image before when none of them comes up healthy.
 
-:material-puzzle: __Extend with NixOS modules__
+:material-test-tube: __A toolkit to extend and test__
 { .card }
 
-An image is built from ordinary NixOS modules, so it can add any software, driver or kernel
-setting. A module can also declare a config kind of its own, render a service's config files
-from it, and reload or restart the service when those files change.
+An extension renders a service's config files from its kinds, reloads the service on a change and
+adds diagnostics. Its tests run in `nix flake check`, and chalklab runs a whole cluster as virtual
+machines on one host.
 
 </div>
 

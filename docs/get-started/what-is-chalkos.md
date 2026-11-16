@@ -1,9 +1,16 @@
 ---
 title: "What is chalkos"
-description: "The model of a chalkos cluster on one page, from images and config documents to an upgrade"
+description: "What chalkos builds, what sets it apart, and the model of a cluster from images and config to an upgrade"
 ---
 
 # What is chalkos
+
+chalkos is a toolkit that builds API-driven, immutable Linux distributions from NixOS modules. It
+takes its operating model from [Talos Linux](https://www.talos.dev/): nodes boot a read-only
+image, have no logins, and change only through an API. Talos is one distribution, made for
+Kubernetes. chalkos lets an image author build the distribution a set of machines needs, from the
+modules and packages of the NixOS ecosystem, and ships two layers to start from: Kubernetes and a
+router.
 
 A chalkos cluster's nodes boot read-only images that Nix builds, take every setting of the
 cluster from YAML documents, run a node agent instead of logins, and are upgraded by replacing the
@@ -56,6 +63,48 @@ Kubernetes node name, its partition UUIDs, its recovery key and by default its h
 it. `chalkctl validate` checks every node's documents against its image's schemas without reaching
 a node; chalkctl delivers them at install and with `chalkctl config apply`, and chalkd applies them
 at every boot. See [Config and the inventory](../how-it-works/node/config.md).
+
+## Layers make the distribution
+
+The node OS alone boots, takes its network, disks and time servers from config, and serves the
+node API. A layer adds a purpose to it. The Kubernetes layer runs the kubelet, etcd and the
+control plane, which makes a node much like a Talos node. The router layer forwards between the
+node's networks, with a firewall, NAT, BGP, VRFs, NAT64, a resolver, DHCP and WireGuard, which
+makes the node a router in the manner of VyOS, managed through the same API. An image lists a layer
+in its modules, beside the modules of its own extensions, and an image without a layer is a
+minimal appliance for whatever its own modules run. See
+[How a node works](../how-it-works/node/overview.md), the
+[Kubernetes layer](../how-it-works/kubernetes/overview.md) and the
+[router layer](../how-it-works/router/overview.md).
+
+## The image carries the schemas of its config
+
+Each kind is declared in a NixOS module of the image, much as a CustomResourceDefinition declares
+a resource in Kubernetes: its fields as NixOS options with types and defaults, and CEL rules that
+compare a document with the one the node runs. chalkos declares its own kinds this way, and an
+extension declares more beside them. The image build turns every kind into a JSON Schema and puts
+the schemas into the image and its image directory.
+
+The schemas travel with the image, so config is always checked against the image that will run
+it. `chalkctl validate` checks each node's documents against the schemas of the node's image,
+without reaching a node. A delivery checks them again on the node, where the image's validators
+and renderers also run, before anything changes. A misspelled field, a value a service cannot
+read, or a change a kind forbids is refused with the document and field it concerns. See
+[Declare a config kind](../build/declare-a-kind.md).
+
+## A node keeps config per image
+
+A node keeps one config slot for each image it holds, named by the image's root hash. An upgrade
+delivers the documents for the new image with it, and the new image checks them with its own
+schemas, rules and renderers before the node writes anything to its inactive slot. The image
+before keeps the slot it ran with.
+
+A kind can therefore change incompatibly from one image to the next, such as a new required field
+or a new API version. The upgrade carries documents of the new form to the new image, and a
+rollback boots the image before with documents of the old form, which it still understands. An
+operator can also stage config for an image that is not running yet, with
+`chalkctl config apply --staged`. See
+[A node keeps one config slot per image](../how-it-works/node/config.md#a-node-keeps-one-config-slot-per-image).
 
 ## The secrets file stays with the operator
 
@@ -129,10 +178,12 @@ node certificate needs `chalkctl node renew`. A CA or key changes only when an o
 
 chalkos suits machines that should run as appliances, on bare metal or as virtual machines under
 KVM. Every node that runs an image boots the same verified bytes, and nobody logs in to change it.
-An upgrade either becomes healthy or rolls back by itself. Today its nodes run Kubernetes. It suits
-teams that already describe systems in Nix, because an image can use any NixOS module. Only the
-images need Nix. chalkctl reads the YAML files and the image directories a build produced, so the
-machine that installs and operates the nodes needs no Nix, an airgapped one included.
+An upgrade either becomes healthy or rolls back by itself. Its layers make such machines Kubernetes
+nodes or routers, and an image author adds the services of any other appliance as NixOS modules,
+with config kinds of their own. It suits teams that already describe systems in Nix, because an
+image can use any NixOS module and any package of nixpkgs. Only the images need Nix. chalkctl
+reads the YAML files and the image directories a build produced, so the machine that installs and
+operates the nodes needs no Nix, an airgapped one included.
 
 chalkos is a poor fit where a node needs hand changes or interactive logins. Today it is also a
 poor fit for machines that are neither x86-64 bare metal nor KVM virtual machines. Debugging goes
@@ -140,14 +191,16 @@ through the node API and, on a Kubernetes node, a privileged pod from `kubectl d
 
 ## Compared with Talos
 
-chalkos follows the operating model of [Talos Linux](https://www.talos.dev/): an immutable OS
-without logins, managed through a mutual-TLS API with a client file of a client role (reader,
-operator or admin), A/B upgrades, and a control plane that holds its virtual IP through an etcd
-election. It differs where Nix changes the trade-offs:
+chalkos follows the operating model of Talos Linux: an immutable OS without logins, managed
+through a mutual-TLS API with a client file of a client role (reader, operator or admin), A/B
+upgrades, and a control plane that holds its virtual IP through an etcd election. Talos is a distribution for Kubernetes; chalkos builds distributions, of which a
+Kubernetes node is one. It differs where that and Nix change the trade-offs:
 
 | Topic | Talos | chalkos |
 | --- | --- | --- |
+| Purpose | A distribution for Kubernetes nodes. | A toolkit that builds distributions: Kubernetes nodes and routers through the layers it ships, other appliances through an image's own modules. |
 | Configuration | One machine configuration per node in Talos's own YAML schema, applied through the API. | YAML documents in the style of Kubernetes objects, one kind per concern, such as `Node`, `Network`, `SystemDisk` and `Cluster`, which an inventory assigns to nodes. chalkctl and chalkd check them against the JSON Schemas the image carries, and a NixOS module in the image can declare a kind of its own. |
+| Config across upgrades | One machine configuration per node, which the node keeps across upgrades. | One config slot per image on each node. An upgrade brings the config for the new image, which that image checks, and a rollback boots the image before with its own config, so a kind can change incompatibly between images. |
 | Images | One image for every node, extended with signed system extensions. | One image per kind of node and platform, built from NixOS modules, so a GPU image carries the GPU drivers and the others do not. The kernel is nixpkgs's, with its modules filtered per image, so the binary cache keeps working. |
 | Node certificates | Control planes hold the root CA's key. | Control planes hold a node CA, an intermediate that may issue only server and client certificates. The OS CA's key stays in the secrets file. |
 | Upgrades | The node pulls an installer image from a registry. | chalkctl streams an image Nix built to chalkd, or chalkd pulls it from a registry by the digest chalkctl names, and writes it into the inactive slot. |

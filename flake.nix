@@ -1,5 +1,5 @@
 {
-  description = "chalkos: an image-based NixOS for Kubernetes nodes";
+  description = "chalkos: a toolkit that builds API-driven, immutable Linux distributions from NixOS modules";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   # The Go toolchain: the Go project's release that go.mod names.

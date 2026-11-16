@@ -15,8 +15,8 @@ to a home lab on real machines.
 
     ---
 
-    The model of a cluster on one page, from the images and the config documents to an upgrade,
-    and how chalkos compares with Talos and NixOS.
+    What chalkos builds and what sets it apart, the model of a cluster from the images and the
+    config documents to an upgrade, and how chalkos compares with Talos and NixOS.
 
     [:octicons-arrow-right-24: Read](what-is-chalkos.md)
 
