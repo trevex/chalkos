@@ -234,13 +234,11 @@ The output follows the life of a node:
 3. Each virtual machine boots its image in
    maintenance mode, where
    chalkd prints its certificate's fingerprint on the console.
-   chalklab reads it there and runs [`chalkctl install`](../reference/cli/chalkctl_install.md)
-   with `--fingerprint`, so chalkctl talks only to that chalkd. The install creates the node's
-   encrypted STATE and VAR
-   partitions, sealed to its TPM, writes its config and certificates and reboots it.
-4. After the reboot, cp1 waits to be bootstrapped. chalklab runs
-   [`chalkctl bootstrap`](../reference/cli/chalkctl_bootstrap.md), which starts etcd and the
-   control plane; the worker joins on its own.
+   chalklab reads it there and runs `chalkctl install` with `--fingerprint`, so chalkctl talks
+   only to that chalkd. The install creates the node's encrypted STATE and VAR partitions, sealed
+   to its TPM, writes its config and certificates and reboots it.
+4. After the reboot, cp1 waits to be bootstrapped. chalklab runs `chalkctl bootstrap`, which
+   starts etcd and the control plane; the worker joins on its own.
 5. Last, chalklab writes a kubeconfig that reaches the API server through its forwarded port.
 
 The commands chalklab prints last export the kubeconfig for kubectl, and the client file and the
@@ -381,8 +379,8 @@ Three lines matter at first:
   Ready in Kubernetes.
 
 The other lines list the node's volumes, the files it renders from its config, its certificates,
-the CAs it trusts and its clock. [Status, logs and the console](../operate/status-and-logs.md)
-explains each of them.
+the CAs it trusts and its clock. The page on status, logs and the console, linked under "What
+next", explains each of them.
 
 [`chalklab status`](../reference/cli/chalklab_status.md) shows the lab itself: the virtual
 machines, their forwarded ports and the lab's files.
@@ -424,8 +422,8 @@ $ chalklab console cp1
 
 A node's config is the YAML of its files, which changes without a new image.
 [`chalkctl config apply`](../reference/cli/chalkctl_config_apply.md) delivers it to a running
-node, which applies it in place; [`chalkctl apply`](../reference/cli/chalkctl_apply.md) is its short
-form. Add a file to `cluster/` that gives every node another time server:
+node, which applies it in place; `chalkctl apply` is its short form. Add a file to `cluster/`
+that gives every node another time server:
 
 ```yaml title="cluster/time.yaml"
 apiVersion: time.chalkos.dev/v1alpha1
@@ -468,8 +466,7 @@ healthy, the node falls back to the image it ran before.
 
 Any change to an image's modules makes a new image, which its store's root hash tells apart from
 the one before; there is no version to raise. Edit `flake.nix` so the image `node-kvm` turns on
-[`chalkos.debug.tools`](../reference/image-options.md#chalkosdebugtools), which adds the tools
-`kubectl debug` uses on a node:
+`chalkos.debug.tools`, which adds the tools `kubectl debug` uses on a node:
 
 ```diff
 -            modules = [ chalkos.nixosModules.kubernetes ];
@@ -617,9 +614,8 @@ removed the lab in /home/alice/.local/state/chalklab/lab
 
 The files and the image stay, so `chalklab create --secrets secrets.json` makes the same cluster
 again. A lab you keep stays on disk across a reboot of your machine, but its virtual machines do
-not start by themselves;
-[`chalklab start`](../reference/cli/chalklab_start.md) starts them again with their disks, TPM
-state and ports.
+not start by themselves; `chalklab start` starts them again with their disks, TPM state and
+ports.
 
 ## Fix a lab that does not start
 
@@ -653,5 +649,6 @@ follow the operator guides in order:
 To follow one fixed path on real machines instead, [Build a home lab](../guides/home-lab.md) turns four
 machines and a switch into a router and three control planes.
 
-Keep the [command cheat sheet](../reference/cheat-sheet.md) at hand: it lists the command and the
-credential for each common task.
+[Status, logs and the console](../operate/status-and-logs.md) explains every line of
+`chalkctl status`. Keep the [command cheat sheet](../reference/cheat-sheet.md) at hand: it lists
+the command and the credential for each common task.

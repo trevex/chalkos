@@ -129,8 +129,10 @@ Glossary terms show their definition as a tooltip on every page. Do not link the
   such as Node, Image or Lab.
 - A new term goes into the glossary. Then `nix run .#docgen` regenerates the tooltips.
 
-Link a page only where the reader needs it to go on. Never link inside a table or a tutorial
-step. Link text names the target, never "here". Link upstream documentation for upstream
+Link a page only where the reader needs it to go on. Never link inside a table. A tutorial step
+links only the reference page of a command it runs, once, where the command first appears; every
+other link waits for the tutorial's last section, so the reader stays on the path. Link text names
+the target, never "here". Link upstream documentation for upstream
 behaviour, rather than restating it.
 
 ## Admonitions
