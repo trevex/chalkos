@@ -1,41 +1,76 @@
-/* chalkos's palette: chalkboard green-grey with chalk yellow. */
+/* ChalkOS theme for Zensical. */
+@font-face {
+  font-family: "Big Shoulders";
+  src: url("../assets/fonts/big-shoulders-latin.woff2") format("woff2");
+  font-weight: 700 900;
+  font-display: swap;
+}
+
+/* Shared design tokens. Keep the ribbon colors in sync with assets/logo.svg. */
 :root {
-  --md-primary-fg-color: #2f3e46;
-  --md-primary-fg-color--light: #52796f;
-  --md-primary-fg-color--dark: #1f2a30;
-  --md-accent-fg-color: #c99a2e;
+  --chalkos-font-display: "Big Shoulders", "Arial Narrow", sans-serif;
+  --chalkos-radius: .3rem;
+  --chalkos-radius-inner: calc(var(--chalkos-radius) - 1px);
+  --chalkos-ribbon-pink: #dc4c77;
+  --chalkos-ribbon-orange: #ed813c;
+  --chalkos-ribbon-yellow: #edb832;
+  --chalkos-ribbon-green: #53935b;
+  --chalkos-ribbon-blue: #4688af;
+  --chalkos-ribbon-gradient: linear-gradient(
+    145deg,
+    var(--chalkos-ribbon-pink) 0% 20%,
+    var(--chalkos-ribbon-orange) 20% 40%,
+    var(--chalkos-ribbon-yellow) 40% 60%,
+    var(--chalkos-ribbon-green) 60% 80%,
+    var(--chalkos-ribbon-blue) 80%
+  );
+}
+
+/* Light and dark palettes. The --md-* tokens are consumed by Zensical. */
+[data-md-color-scheme="default"] {
+  --md-default-bg-color: #faf4e5;
+  --md-default-fg-color: #36251d;
+  --md-default-fg-color--light: #614936;
+  --md-default-fg-color--lighter: #806d59;
+  --md-default-fg-color--lightest: #d8c9aa;
+  --md-primary-fg-color: #3d281d;
+  --md-primary-fg-color--light: #644334;
+  --md-primary-fg-color--dark: #2d1e17;
+  --md-primary-bg-color: #fff3da;
+  --md-typeset-a-color: #9a3029;
+  --md-accent-fg-color: #a3342d;
+  --md-accent-fg-color--transparent: #a3342d22;
+  --md-code-bg-color: #f0e6cf;
+  --md-code-fg-color: #36251d;
+  --chalkos-panel-background: #f1e6cb;
+  --chalkos-panel-border: #806d59;
+  --chalkos-hero-button-background: #9b3029;
+  --chalkos-hero-button-text: #fff3da;
 }
 
 [data-md-color-scheme="slate"] {
-  --md-primary-fg-color: #354f52;
-  --md-accent-fg-color: #e9c46a;
+  --md-default-bg-color: #241e1b;
+  --md-default-fg-color: #f0e3cf;
+  --md-default-fg-color--light: #cfbda6;
+  --md-default-fg-color--lighter: #ad9981;
+  --md-default-fg-color--lightest: #57483d;
+  --md-primary-fg-color: #3c2b23;
+  --md-primary-bg-color: #f3e5cc;
+  --md-typeset-a-color: #f5ae94;
+  --md-accent-fg-color: #f5ae94;
+  --md-accent-fg-color--transparent: #f5ae9422;
+  --md-code-bg-color: #312823;
+  --chalkos-panel-background: #332922;
+  --chalkos-panel-border: #a5866d;
+  --chalkos-hero-button-background: #f5ae94;
+  --chalkos-hero-button-text: #30201a;
 }
 
-/* Landing page hero. */
-.ck-hero {
-  padding: 1.2rem 0 0.4rem;
-}
-
-.ck-hero .ck-tagline {
-  max-width: 46rem;
-  font-size: 1.15rem;
-  line-height: 1.6;
-  color: var(--md-default-fg-color--light);
-}
-
-/* Cards on the landing page and the section indexes, with a hover border in the accent colour. */
-.md-typeset .grid.cards > ul > li,
-.md-typeset .grid > .card {
-  border-radius: 0.6rem;
-  transition:
-    border-color 120ms ease,
-    box-shadow 120ms ease;
-}
-
-.md-typeset .grid.cards > ul > li:hover,
-.md-typeset .grid > .card:hover {
-  border-color: var(--md-accent-fg-color);
-  box-shadow: var(--md-shadow-z2);
+/* Content typography */
+.md-typeset :is(h1, h2) {
+  font-family: var(--chalkos-font-display);
+  font-weight: 800;
+  letter-spacing: 0;
 }
 
 /* Glossary terms carry a tooltip on every page. The theme underlines each with a dotted border,
@@ -52,4 +87,254 @@
 [data-md-color-scheme] .md-typeset abbr[title]:hover {
   text-decoration: underline dotted var(--md-default-fg-color--light);
   text-underline-offset: 0.2em;
+}
+
+/* Header, navigation and search */
+/* Keep the site name visible when Zensical switches header topics on scroll. */
+.md-header__title .md-header__topic:first-child {
+  font-family: var(--chalkos-font-display);
+  font-size: 1rem;
+  font-weight: 900;
+  z-index: auto;
+  pointer-events: auto;
+  opacity: 1;
+  transform: none;
+}
+
+.md-header__title [data-md-component="header-topic"] {
+  display: none;
+}
+
+/* Repeat the label's color sequence along the existing tab underline. */
+.md-tabs__item {
+  --chalkos-tab-accent: var(--chalkos-ribbon-pink);
+  box-shadow: inset 0 -2px var(--chalkos-tab-accent);
+}
+
+.md-tabs__item:nth-child(5n + 2) {
+  --chalkos-tab-accent: var(--chalkos-ribbon-orange);
+}
+
+.md-tabs__item:nth-child(5n + 3) {
+  --chalkos-tab-accent: var(--chalkos-ribbon-yellow);
+}
+
+.md-tabs__item:nth-child(5n + 4) {
+  --chalkos-tab-accent: var(--chalkos-ribbon-green);
+}
+
+.md-tabs__item:nth-child(5n) {
+  --chalkos-tab-accent: var(--chalkos-ribbon-blue);
+}
+
+.md-tabs__item--active,
+.md-tabs__item:is(:hover, :focus-within) {
+  background: color-mix(in srgb, var(--chalkos-tab-accent) 12%, transparent);
+  box-shadow: inset 0 -4px var(--chalkos-tab-accent);
+}
+
+.md-tabs__item--active {
+  border-bottom-color: var(--chalkos-tab-accent);
+}
+
+.md-tabs__link {
+  font-weight: 500;
+  opacity: 1;
+}
+
+.md-tabs__item--active .md-tabs__link {
+  font-weight: 600;
+}
+
+.md-search .md-search__button {
+  border-radius: var(--chalkos-radius);
+  background-color: var(--md-default-bg-color);
+  box-shadow: inset 0 0 0 1px var(--md-default-fg-color--lightest);
+}
+
+.md-search__button:is(:hover, :focus) {
+  box-shadow: inset 0 0 0 1px var(--md-default-fg-color--lighter);
+}
+
+/* Admonitions use the ribbon palette with Zensical's type-specific icons. */
+[data-md-color-scheme] .md-typeset :is(.admonition, details) {
+  --chalkos-admonition-accent: var(--chalkos-ribbon-blue);
+  --chalkos-admonition-icon: color-mix(in srgb, var(--chalkos-admonition-accent) 60%, var(--md-default-fg-color));
+  background-color: color-mix(in srgb, var(--chalkos-admonition-accent) 13%, var(--md-default-bg-color));
+  border-radius: var(--chalkos-radius);
+}
+
+.md-typeset :is(.admonition, details):is(.info, .question) {
+  --chalkos-admonition-accent: var(--chalkos-ribbon-yellow);
+}
+
+.md-typeset :is(.admonition, details):is(.tip, .success) {
+  --chalkos-admonition-accent: var(--chalkos-ribbon-green);
+}
+
+.md-typeset :is(.admonition, details).warning {
+  --chalkos-admonition-accent: var(--chalkos-ribbon-orange);
+}
+
+.md-typeset :is(.admonition, details):is(.danger, .failure, .bug) {
+  --chalkos-admonition-accent: var(--chalkos-ribbon-pink);
+}
+
+.md-typeset :is(.admonition, details).quote {
+  --chalkos-admonition-accent: var(--chalkos-panel-border);
+}
+
+[data-md-color-scheme] .md-typeset :is(.admonition, details) > :is(.admonition-title, summary)::before {
+  background-color: var(--chalkos-admonition-icon);
+}
+
+[data-md-color-scheme] .md-typeset details > summary::after {
+  color: var(--chalkos-admonition-icon);
+}
+
+/* Mermaid inherits these tokens into its shadow DOM. Zensical uses the faint
+   foreground token for subgraph backgrounds and state diagram dividers. */
+.mermaid {
+  --md-default-fg-color--lightest: var(--chalkos-panel-background);
+  --md-mermaid-label-fg-color: var(--md-default-fg-color);
+}
+
+/* List cards share a subtle background and cycle the color of their top stripes. */
+.md-typeset .grid.cards > :is(ul, ol) > li {
+  --chalkos-card-accent: var(--chalkos-ribbon-green);
+  border: .05rem solid var(--md-default-fg-color--lightest);
+  border-top: .18rem solid var(--chalkos-card-accent);
+  border-radius: var(--chalkos-radius);
+  background-color: color-mix(in srgb, var(--chalkos-panel-background) 35%, var(--md-default-bg-color));
+  transition: box-shadow 120ms ease;
+}
+
+.md-typeset .grid.cards > :is(ul, ol) > li:nth-child(3n + 2) {
+  --chalkos-card-accent: var(--chalkos-ribbon-orange);
+}
+
+.md-typeset .grid.cards > :is(ul, ol) > li:nth-child(3n) {
+  --chalkos-card-accent: var(--chalkos-ribbon-blue);
+}
+
+.md-typeset .grid.cards > :is(ul, ol) > li:is(:hover, :focus-within) {
+  border-color: var(--md-default-fg-color--lightest);
+  border-top-color: var(--chalkos-card-accent);
+  box-shadow: var(--md-shadow-z2);
+}
+
+/* Homepage hero */
+.md-typeset .chalkos-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(3rem, 12vw, 7rem);
+  border: 1px solid var(--chalkos-panel-border);
+  border-radius: var(--chalkos-radius);
+  background: var(--chalkos-panel-background);
+  margin-bottom: 1.35rem;
+}
+
+.chalkos-hero::after {
+  content: "";
+  border-inline-start: 1px solid var(--chalkos-panel-border);
+  border-start-end-radius: var(--chalkos-radius-inner);
+  border-end-end-radius: var(--chalkos-radius-inner);
+  background: var(--chalkos-ribbon-gradient);
+}
+
+.chalkos-hero__content {
+  display: flex;
+  flex-direction: column;
+  gap: .75rem;
+  padding: clamp(1rem, 3.2vw, 2.1rem);
+  min-width: 0;
+}
+
+.md-typeset .chalkos-hero h1 {
+  margin: 0;
+  color: var(--md-default-fg-color);
+  font-size: clamp(3rem, 7vw, 5.8rem);
+  font-weight: 900;
+  line-height: .88;
+  letter-spacing: -.025em;
+}
+
+.md-typeset .chalkos-hero h1 .headerlink {
+  display: none;
+}
+
+.md-typeset .chalkos-hero .chalkos-hero__tagline {
+  max-width: 34em;
+  margin: 0;
+  font-size: .92rem;
+  line-height: 1.55;
+  color: var(--md-default-fg-color);
+}
+
+.md-typeset .chalkos-hero__content > p:last-child {
+  margin: 0;
+}
+
+.md-typeset .chalkos-hero .md-button {
+  margin: 0 .35rem .35rem 0;
+  border-color: var(--chalkos-hero-button-background);
+  border-radius: var(--chalkos-radius);
+  background: transparent;
+  color: var(--chalkos-hero-button-background);
+}
+
+.md-typeset .chalkos-hero .md-button--primary,
+.md-typeset .chalkos-hero .md-button:is(:hover, :focus-visible) {
+  background: var(--chalkos-hero-button-background);
+  color: var(--chalkos-hero-button-text);
+}
+
+.md-typeset .chalkos-hero .md-button:focus-visible {
+  outline: 2px solid var(--chalkos-hero-button-background);
+  outline-offset: 3px;
+}
+
+/* Homepage overview */
+.md-typeset .chalkos-overview > dl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  border-block-start: 1px solid var(--md-default-fg-color--lightest);
+}
+
+.md-typeset .chalkos-overview > dl > :is(dt, dd) {
+  margin: 0;
+  padding-block: .7rem;
+  border-block-end: 1px solid var(--md-default-fg-color--lightest);
+}
+
+.md-typeset .chalkos-overview > dl > dt {
+  padding-inline-end: 1rem;
+  font-weight: 700;
+}
+
+@media screen and (max-width: 38em) {
+  .md-typeset .chalkos-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .chalkos-hero::after {
+    min-height: .65rem;
+    border-inline-start: 0;
+    border-block-start: 1px solid var(--chalkos-panel-border);
+    border-start-end-radius: 0;
+    border-end-start-radius: var(--chalkos-radius-inner);
+  }
+
+  .md-typeset .chalkos-overview > dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .md-typeset .chalkos-overview > dl > dt {
+    padding-block-end: .2rem;
+    padding-inline-end: 0;
+    border-block-end: 0;
+  }
+
+  .md-typeset .chalkos-overview > dl > dd {
+    padding-block-start: 0;
+  }
 }

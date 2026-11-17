@@ -1,14 +1,15 @@
 ---
 icon: lucide/layers
-title: "chalkos"
+title: "Home"
 description: "A toolkit that builds API-driven, immutable Linux distributions from NixOS modules"
 ---
 
-<div class="ck-hero" markdown>
+<div class="chalkos-hero" markdown="1">
+<div class="chalkos-hero__content" markdown="1">
 
 # chalkos
 
-<p class="ck-tagline" markdown>
+<p class="chalkos-hero__tagline" markdown>
 chalkos builds API-driven, immutable Linux distributions from NixOS modules. It ships layers for
 Kubernetes nodes and routers, and its images carry the schemas of the config they accept.
 </p>
@@ -16,6 +17,7 @@ Kubernetes nodes and routers, and its images carry the schemas of the config the
 [Get started :material-arrow-right:](get-started/quick-start-kubernetes.md){ .md-button .md-button--primary }
 [What is chalkos](get-started/what-is-chalkos.md){ .md-button }
 
+</div>
 </div>
 
 A machine that is changed in place drifts. Packages, hand edits and half-done upgrades pile up
@@ -76,50 +78,38 @@ image does not boot healthy, the node returns to the image before.
 
 ## What chalkos is
 
-<div class="grid" markdown>
+<div class="chalkos-overview" markdown>
 
-:material-hammer-wrench: __A distribution builder__
-{ .card }
+:material-hammer-wrench: A distribution builder
+:   An image is built from ordinary NixOS modules and the packages of nixpkgs, so it can add any
+    software, driver or kernel setting. The Kubernetes layer makes a node much like a Talos node; the
+    router layer makes it a router in the manner of VyOS, managed the same way.
 
-An image is built from ordinary NixOS modules and the packages of nixpkgs, so it can add any
-software, driver or kernel setting. The Kubernetes layer makes a node much like a Talos node; the
-router layer makes it a router in the manner of VyOS, managed the same way.
+:material-file-check: Config the image checks
+:   A module declares a config kind as Kubernetes declares a custom resource: fields, defaults and
+    CEL rules. The image carries the kinds' schemas, so chalkctl refuses a mistake against the image
+    a node runs before the node sees it.
 
-:material-file-check: __Config the image checks__
-{ .card }
+:material-swap-horizontal: Config per image
+:   A node keeps a config slot for each image it holds. An upgrade brings config that the new image
+    checks itself, while the image before keeps its own, so a kind can change between images and a
+    rollback still boots with config it understands. [Change a kind incompatibly](build/change-a-kind.md)
+    shows such a change.
 
-A module declares a config kind as Kubernetes declares a custom resource: fields, defaults and
-CEL rules. The image carries the kinds' schemas, so chalkctl refuses a mistake against the image
-a node runs before the node sees it.
+:material-shield-check: Verified from build to boot
+:   Secure Boot verifies the signed UKI, and the UKI pins the root hash of the store. dm-verity then
+    checks every block the node reads against what Nix built. The TPM unseals the node's encrypted
+    state only under the same Secure Boot state.
 
-:material-swap-horizontal: __Config per image__
-{ .card }
+:material-backup-restore: Appliance nodes
+:   Nodes have no SSH and no login. chalkd serves an API over mutual TLS, and the role in a client's
+    certificate decides what it may call. A node boots a new image with a fixed number of tries and
+    returns to the image before when none of them comes up healthy.
 
-A node keeps a config slot for each image it holds. An upgrade brings config that the new image
-checks itself, while the image before keeps its own, so a kind can change between images and a
-rollback still boots with config it understands. [Change a kind incompatibly](build/change-a-kind.md)
-shows such a change.
-
-:material-shield-check: __Verified from build to boot__
-{ .card }
-
-Secure Boot verifies the signed UKI, and the UKI pins the root hash of the store. dm-verity then
-checks every block the node reads against what Nix built. The TPM unseals the node's encrypted
-state only under the same Secure Boot state.
-
-:material-backup-restore: __Appliance nodes__
-{ .card }
-
-Nodes have no SSH and no login. chalkd serves an API over mutual TLS, and the role in a client's
-certificate decides what it may call. A node boots a new image with a fixed number of tries and
-returns to the image before when none of them comes up healthy.
-
-:material-test-tube: __A toolkit to extend and test__
-{ .card }
-
-An extension renders a service's config files from its kinds, reloads the service on a change and
-adds diagnostics. Its tests run in `nix flake check`, and chalklab runs a whole cluster as virtual
-machines on one host.
+:material-test-tube: A toolkit to extend and test
+:   An extension renders a service's config files from its kinds, reloads the service on a change and
+    adds diagnostics. Its tests run in `nix flake check`, and chalklab runs a whole cluster as virtual
+    machines on one host.
 
 </div>
 
