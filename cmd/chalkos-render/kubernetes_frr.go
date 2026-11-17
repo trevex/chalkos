@@ -209,6 +209,12 @@ func kubernetesFRRConfig(node string, speakers []bgpDocument[bgpSpeaker], peers 
 		if p.spec.BFD {
 			fmt.Fprintf(&b, " neighbor %s bfd\n", g)
 		}
+		// networkd's SLAAC and DHCP addresses can have noprefixroute: their subnet
+		// routes come from networkd, so zebra sees kernel routes, not connected ones.
+		// Keep the single-hop TTL and interface binding, but let NHT use those routes.
+		if p.address.IsValid() {
+			fmt.Fprintf(&b, " neighbor %s disable-connected-check\n", g)
+		}
 		fmt.Fprintf(&b, " neighbor %s timers connect %d\n", g, bgpConnectRetry)
 		if p.extendedNextHop() {
 			fmt.Fprintf(&b, " neighbor %s capability extended-nexthop\n", g)

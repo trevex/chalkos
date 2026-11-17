@@ -99,6 +99,7 @@ var (
 		r(`neighbor (?P<n>\S+) bfd`),
 		r(`neighbor (?P<n>\S+) bfd profile \S+`).slotted("neighbor $n bfd profile"),
 		r(`neighbor (?P<n>\S+) capability extended-nexthop`),
+		r(`neighbor (?P<n>\S+) disable-connected-check`),
 		r(`neighbor (?P<n>\S+) shutdown`),
 		r(`neighbor (?P<n>\S+) timers connect \d+`).slotted("neighbor $n timers connect"),
 		r(`neighbor (?P<n>\S+) interface \S+`).slotted("neighbor $n interface"),

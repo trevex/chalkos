@@ -117,9 +117,9 @@ func TestKubernetesFRRAddresses(t *testing.T) {
 	for _, want := range []string{
 		"exit\n!\ninterface eth0\n ipv6 nd ra-lifetime 0\nexit\n!\nrouter bgp 65001\n",
 		" bgp router-id 192.0.2.11\n",
-		" neighbor peer-tor-v4 remote-as 65000\n neighbor peer-tor-v4 timers connect 10\n neighbor 192.0.2.1 peer-group peer-tor-v4\n",
-		" neighbor peer-tor-v6 password @secret_bgp.password@\n neighbor peer-tor-v6 bfd\n neighbor peer-tor-v6 timers connect 10\n neighbor peer-tor-v6 capability extended-nexthop\n neighbor 2001:db8::1 peer-group peer-tor-v6\n neighbor 2001:db8::1 interface eth0\n",
-		" neighbor peer-tor-b timers connect 10\n neighbor 2001:db8::2 peer-group peer-tor-b\n !\n",
+		" neighbor peer-tor-v4 remote-as 65000\n neighbor peer-tor-v4 disable-connected-check\n neighbor peer-tor-v4 timers connect 10\n neighbor 192.0.2.1 peer-group peer-tor-v4\n",
+		" neighbor peer-tor-v6 password @secret_bgp.password@\n neighbor peer-tor-v6 bfd\n neighbor peer-tor-v6 disable-connected-check\n neighbor peer-tor-v6 timers connect 10\n neighbor peer-tor-v6 capability extended-nexthop\n neighbor 2001:db8::1 peer-group peer-tor-v6\n neighbor 2001:db8::1 interface eth0\n",
+		" neighbor peer-tor-b disable-connected-check\n neighbor peer-tor-b timers connect 10\n neighbor 2001:db8::2 peer-group peer-tor-b\n !\n",
 		"  neighbor peer-tor-v4 activate\n  neighbor peer-tor-v4 route-map import-none in\n",
 		"  neighbor peer-tor-v6 activate\n  neighbor peer-tor-v6 route-map import-ipv4 in\n",
 		" address-family ipv6 unicast\n  redistribute connected route-map export\n  maximum-paths 16\n  neighbor peer-tor-v6 activate\n",

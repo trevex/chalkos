@@ -140,6 +140,11 @@ the best path alone. zebra installs a default route from BGP only while the node
 other one. A default route from a router advertisement or a DHCP lease wins, and the BGP route
 stays in FRR's table unused.
 
+networkd can give SLAAC and DHCP addresses the `noprefixroute` flag and install their subnet
+routes itself. FRR sees these as kernel routes rather than connected routes. Numbered peers use
+`disable-connected-check` so FRR can resolve the neighbour through those routes. Sessions still
+use a TTL of 1 and, when configured, bind to their interface; this does not enable multihop.
+
 For the default route to come from BGP, leave the gateway out of the fabric's `Network` documents:
 `ipv6AcceptRA: {useGateway: false}` for router advertisements, `dhcpv4: {useGateway: false}` for
 DHCP, and no `gateway`. Then BFD takes a failed port's next hop away within about a second. A node
