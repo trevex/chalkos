@@ -176,6 +176,9 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 // reboots its nodes holds each of them, so it stops when one needs a coordinator the cluster
 // lacks.
 func (r *upgradeRun) coordinate(ctx context.Context, probed map[string]bool) error {
+	if r.force {
+		return nil
+	}
 	var held []*rebootNode
 	if r.until == untilReboot {
 		for _, name := range slices.Sorted(maps.Keys(r.nodes)) {

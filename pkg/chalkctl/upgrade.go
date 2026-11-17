@@ -68,6 +68,8 @@ const (
 // upgradeOptions are how a run upgrades, as its flags give it.
 type upgradeOptions struct {
 	until upgradeStep
+	// force recovers named nodes without cluster rollout checks or layer coordination.
+	force bool
 	// retryFailed installs the image again on nodes that fell back from it; each node is upgraded
 	// once per run, so a second fall back stops the run.
 	retryFailed    bool
@@ -107,6 +109,7 @@ func (a *app) upgradeCommand() *cobra.Command {
 		}
 	}
 	fs.Var(cli.Enum(&f.until, "step", untilStage, untilActivate, untilReboot), "until", "how far each node gets: stage installs its image and leaves it staged, which chalkctl node activate makes boot next, with the same --image when the run had one; activate makes it boot next, which chalkctl node reboot boots; reboot drains and reboots the node and waits until it is healthy")
+	fs.BoolVar(&f.force, "force", false, "recover explicitly named nodes without cluster version checks, quorum checks or draining; still validate the image and config and wait for a healthy boot")
 	fs.BoolVar(&f.retryFailed, "retry-failed", false, "install an image again, once, on nodes that fell back from it")
 	fs.BoolVar(&f.rollback, "rollback", false, "boot the image the nodes ran before their last upgrade again, which their inactive slots still hold, instead of installing an image")
 	fs.DurationVar(&f.timeout, "timeout", 30*time.Minute, "how long to wait for each node to come back healthy and for its drain")
@@ -116,6 +119,9 @@ func (a *app) upgradeCommand() *cobra.Command {
 }
 
 func (a *app) upgrade(ctx context.Context, f upgradeFlags) error {
+	if f.force && f.nodes == "" {
+		return cli.Usagef("--force requires --nodes to name the nodes to recover")
+	}
 	if f.maxUnavailable < 1 {
 		return cli.Usagef("--max-unavailable must be at least 1")
 	}
@@ -160,11 +166,15 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags) error {
 		rebooter: &rebooter{
 			a: a, cluster: c, reach: s,
 			rebootOptions: a.rebootOptions(f.layers, f.timeout),
+			skipLayers:    f.force,
 		},
 		upgradeOptions: f.upgradeOptions, role: creds.role(),
 		rollback: f.rollback,
 	}
 	r.fellBack = r.rolledBack
+	if f.force {
+		r.Say("force: skipping cluster version checks and layer coordination; nodes are not drained or uncordoned; image and config validation and boot health checks still apply")
+	}
 	if f.rollback {
 		if err := r.planRollback(ctx, named); err != nil {
 			return err
@@ -451,10 +461,10 @@ func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 		case untilActivate:
 			return activate()
 		}
-		// The image boots next only once the node's layers hold it.
-		return r.reboot(ctx, &n.rebootNode, bootOf(image, target, st), true, activate)
+		// A coordinated run makes the image boot next only once the node's layers hold it.
+		return r.reboot(ctx, &n.rebootNode, bootOf(image, target, st), !r.force, activate)
 	}
-	return r.release(ctx, &n.rebootNode, bootTarget{image: image, root: target}, true)
+	return r.release(ctx, &n.rebootNode, bootTarget{image: image, root: target}, !r.force)
 }
 
 // stage stages the image on the node, as chalkctl upgrade --until stage does: it sends the image

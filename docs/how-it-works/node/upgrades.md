@@ -27,6 +27,12 @@ healthy is replaced by the one before. This page follows one node's upgrade.
     drains each node before it reboots. [Kubernetes upgrades](../kubernetes/upgrades.md) describes
     the roll.
 
+For recovery while chalkd answers but the cluster does not, `chalkctl upgrade --force --nodes
+<node>` skips cluster version checks and layer coordination. It still validates the image and
+config and waits for a healthy new boot. The node's checks below, including protection of its
+fallback image, are unchanged. [Recover a node whose cluster is unavailable](../../operate/upgrade.md#recover-a-node-whose-cluster-is-unavailable)
+shows the command and the checks it skips.
+
 ## An upgrade replaces the whole image
 
 An upgrade replaces the whole image with another, which its store's root hash identifies. Any

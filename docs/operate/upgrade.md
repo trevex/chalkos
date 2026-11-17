@@ -51,6 +51,29 @@ and reboots into it. A boot that passes the health check is blessed, and a node 
 out boots its previous image again. [Upgrades](../how-it-works/node/upgrades.md) and
 [Boot, health and rollback](../how-it-works/node/boot-and-rollback.md) explain the mechanism.
 
+## Recover a node whose cluster is unavailable
+
+When chalkd is reachable but Kubernetes or etcd cannot start, use a chalkctl with `--force` to
+install the repair image over the node API. Name every target explicitly:
+
+```sh
+chalkctl upgrade --nodes cp1 --force --secrets secrets.age
+```
+
+The run reaches only the selected nodes, in batches of `--max-unavailable` without coordinator
+ordering. It skips cluster version checks, the guard against
+config changes that normally need an ordered rollout, and the layers' role queries, quorum
+checks, drains and uncordons. Workloads can be interrupted and etcd can lose quorum. The node's
+image and config checks, Secure Boot checks and protection of its fallback image still apply.
+chalkctl still waits for the new boot to pass the node's health checks and stops if it falls back.
+A node cordoned before recovery stays cordoned. If the node refuses to overwrite the fallback of
+an unblessed boot, `chalkctl upgrade --nodes cp1 --rollback --force --secrets secrets.age`
+recovers by booting the previous image first.
+
+`--force` is a client option; the installed chalkd needs no new API. Use it with `--until stage`
+or `--until activate` to stop before rebooting. Repeat `upgrade --nodes cp1 --force` to continue
+from the staged or activated image.
+
 ## Sign the new image and validate it
 
 Without `--image`, `chalkctl upgrade` gives each node its image in the inventory. The template's

@@ -465,6 +465,15 @@ newer than the oldest API server the control planes run. An upgrade also refuses
 changes a version the layers bound against the config a node runs, such as the Kubernetes API
 server's: chalkctl config apply delivers that change first, in the order the layers need.
 
+--force recovers the nodes explicitly named by --nodes when their cluster cannot serve an
+ordinary upgrade. It skips cluster version checks, config rollout guards and layer coordination:
+no layer role queries, quorum checks, draining or uncordoning. It needs only the selected nodes'
+chalkd endpoints, processes them in --max-unavailable batches without coordinator ordering, and
+still checks credentials, image integrity and config, and waits for the new
+boot to pass the node's health checks. It may interrupt workloads or lose etcd quorum. The node's
+protection of a fallback image while its running boot is unblessed still applies. The flag is
+client-side and works with installed nodes that have no force option of their own.
+
 Each node gets its config with the image, checked against it before any node is drained, and
 chalkctl prints a line of what it changes and warns of each image reference in the config that
 names a tag but no digest; --diff prints the whole diff and changes nothing.
@@ -488,6 +497,9 @@ operator client file or the secrets file.`
 
 const upgradeExample = `  # Upgrade the whole cluster, each node to the image the inventory names for it.
   chalkctl upgrade
+
+  # Recover a node whose cluster cannot serve the upgrade.
+  chalkctl upgrade --nodes cp1 --force
 
   # Upgrade the nodes running an image of its name, two at a time, with an image chalkbuild signed.
   chalkctl upgrade --image ./worker-image --max-unavailable 2

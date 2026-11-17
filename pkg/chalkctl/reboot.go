@@ -36,6 +36,8 @@ type rebooter struct {
 	// coordinators are the cluster's nodes that act for the others, which the layers drain and
 	// release nodes through.
 	coordinators []string
+	// skipLayers recovers nodes through their core API without querying their layer services.
+	skipLayers bool
 	// fellBack builds the error for a node that fell back from its image, with what its boots
 	// logged; nil uses the default message.
 	fellBack func(n *rebootNode, boot *nodev1.BootStatus) error
@@ -364,8 +366,10 @@ func (b *rebooter) probe(ctx context.Context, name string) (*nodev1.InfoResponse
 		if err != nil {
 			return err
 		}
-		if roles, err = readRoles(ctx, conn, i.Msg.Layers); err != nil {
-			return err
+		if !b.skipLayers {
+			if roles, err = readRoles(ctx, conn, i.Msg.Layers); err != nil {
+				return err
+			}
 		}
 		info, st = i.Msg, s.Msg
 		return nil

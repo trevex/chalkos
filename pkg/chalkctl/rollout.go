@@ -274,6 +274,9 @@ func (r *configRollout) summary(ctx context.Context) {
 // against what the nodes of their clusters run, before any node is sent its image. A layer reads
 // the nodes' versions only when an image concerns a node of its cluster.
 func (r *upgradeRun) checkImages(ctx context.Context) error {
+	if r.force {
+		return nil
+	}
 	layers := compiled[layer.Rollout]()
 	images := map[string][]*anypb.Any{}
 	for name, n := range r.nodes {
@@ -367,6 +370,9 @@ func (n *rolloutNode) roleIn(l layer.Rollout) layer.UpgradeRole {
 // upgrade does not. A run that withholds config delivers none, and a node that refuses to show its
 // config has the run withhold it.
 func (r *upgradeRun) checkChanges(ctx context.Context) error {
+	if r.force {
+		return nil
+	}
 	layers := compiled[layer.Rollout]()
 	if len(layers) == 0 {
 		return nil
