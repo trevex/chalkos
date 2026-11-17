@@ -10,6 +10,7 @@
 package routerv1
 
 import (
+	v1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -67,7 +68,7 @@ type StatusResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The router's BGP sessions, by VRF, the default first, then by BGPPeer document and by
 	// interface or address.
-	Peers []*BGPPeerStatus `protobuf:"bytes,1,rep,name=peers,proto3" json:"peers,omitempty"`
+	Peers []*v1.BGPPeerStatus `protobuf:"bytes,1,rep,name=peers,proto3" json:"peers,omitempty"`
 	// Why FRR's BGP state could not be read, such as vtysh's error; empty when it was. peers is
 	// then empty.
 	BgpError string `protobuf:"bytes,2,opt,name=bgp_error,json=bgpError,proto3" json:"bgp_error,omitempty"`
@@ -123,7 +124,7 @@ func (*StatusResponse) Descriptor() ([]byte, []int) {
 	return file_chalkos_router_v1_router_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *StatusResponse) GetPeers() []*BGPPeerStatus {
+func (x *StatusResponse) GetPeers() []*v1.BGPPeerStatus {
 	if x != nil {
 		return x.Peers
 	}
@@ -621,116 +622,6 @@ func (x *DHCPRelayStatus) GetError() string {
 	return ""
 }
 
-// One BGP session of a router: a BGPPeer's address, or one of its interfaces.
-type BGPPeerStatus struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Name of the BGPPeer document.
-	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	// The interface the session runs on, for a peer of interface or interfaces, or the neighbour's
-	// address.
-	Neighbor string `protobuf:"bytes,2,opt,name=neighbor,proto3" json:"neighbor,omitempty"`
-	// The session's BGP state: Idle, Connect, Active, OpenSent, OpenConfirm or Established.
-	State string `protobuf:"bytes,3,opt,name=state,proto3" json:"state,omitempty"`
-	// How long the session has been established, in seconds; 0 while it is not.
-	UptimeSeconds uint64 `protobuf:"varint,4,opt,name=uptime_seconds,json=uptimeSeconds,proto3" json:"uptime_seconds,omitempty"`
-	// Routes the router accepted from the neighbour, of every family.
-	PrefixesReceived uint32 `protobuf:"varint,5,opt,name=prefixes_received,json=prefixesReceived,proto3" json:"prefixes_received,omitempty"`
-	// Routes the router sends the neighbour, of every family.
-	PrefixesSent uint32 `protobuf:"varint,6,opt,name=prefixes_sent,json=prefixesSent,proto3" json:"prefixes_sent,omitempty"`
-	// The state of the session's BFD: up, down, admin-down or unknown; empty for a peer without bfd.
-	Bfd string `protobuf:"bytes,7,opt,name=bfd,proto3" json:"bfd,omitempty"`
-	// The VRF the session runs in: the name of its VRF document, or default.
-	Vrf           string `protobuf:"bytes,8,opt,name=vrf,proto3" json:"vrf,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *BGPPeerStatus) Reset() {
-	*x = BGPPeerStatus{}
-	mi := &file_chalkos_router_v1_router_proto_msgTypes[8]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *BGPPeerStatus) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*BGPPeerStatus) ProtoMessage() {}
-
-func (x *BGPPeerStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_router_v1_router_proto_msgTypes[8]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use BGPPeerStatus.ProtoReflect.Descriptor instead.
-func (*BGPPeerStatus) Descriptor() ([]byte, []int) {
-	return file_chalkos_router_v1_router_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *BGPPeerStatus) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *BGPPeerStatus) GetNeighbor() string {
-	if x != nil {
-		return x.Neighbor
-	}
-	return ""
-}
-
-func (x *BGPPeerStatus) GetState() string {
-	if x != nil {
-		return x.State
-	}
-	return ""
-}
-
-func (x *BGPPeerStatus) GetUptimeSeconds() uint64 {
-	if x != nil {
-		return x.UptimeSeconds
-	}
-	return 0
-}
-
-func (x *BGPPeerStatus) GetPrefixesReceived() uint32 {
-	if x != nil {
-		return x.PrefixesReceived
-	}
-	return 0
-}
-
-func (x *BGPPeerStatus) GetPrefixesSent() uint32 {
-	if x != nil {
-		return x.PrefixesSent
-	}
-	return 0
-}
-
-func (x *BGPPeerStatus) GetBfd() string {
-	if x != nil {
-		return x.Bfd
-	}
-	return ""
-}
-
-func (x *BGPPeerStatus) GetVrf() string {
-	if x != nil {
-		return x.Vrf
-	}
-	return ""
-}
-
 // The request of Routes.
 type RoutesRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -753,7 +644,7 @@ type RoutesRequest struct {
 
 func (x *RoutesRequest) Reset() {
 	*x = RoutesRequest{}
-	mi := &file_chalkos_router_v1_router_proto_msgTypes[9]
+	mi := &file_chalkos_router_v1_router_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -765,7 +656,7 @@ func (x *RoutesRequest) String() string {
 func (*RoutesRequest) ProtoMessage() {}
 
 func (x *RoutesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_router_v1_router_proto_msgTypes[9]
+	mi := &file_chalkos_router_v1_router_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -778,7 +669,7 @@ func (x *RoutesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RoutesRequest.ProtoReflect.Descriptor instead.
 func (*RoutesRequest) Descriptor() ([]byte, []int) {
-	return file_chalkos_router_v1_router_proto_rawDescGZIP(), []int{9}
+	return file_chalkos_router_v1_router_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *RoutesRequest) GetPrefix() string {
@@ -829,7 +720,7 @@ type RoutesResponse struct {
 
 func (x *RoutesResponse) Reset() {
 	*x = RoutesResponse{}
-	mi := &file_chalkos_router_v1_router_proto_msgTypes[10]
+	mi := &file_chalkos_router_v1_router_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -841,7 +732,7 @@ func (x *RoutesResponse) String() string {
 func (*RoutesResponse) ProtoMessage() {}
 
 func (x *RoutesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_router_v1_router_proto_msgTypes[10]
+	mi := &file_chalkos_router_v1_router_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -854,7 +745,7 @@ func (x *RoutesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RoutesResponse.ProtoReflect.Descriptor instead.
 func (*RoutesResponse) Descriptor() ([]byte, []int) {
-	return file_chalkos_router_v1_router_proto_rawDescGZIP(), []int{10}
+	return file_chalkos_router_v1_router_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *RoutesResponse) GetKernel() []*KernelRoute {
@@ -908,7 +799,7 @@ type KernelRoute struct {
 
 func (x *KernelRoute) Reset() {
 	*x = KernelRoute{}
-	mi := &file_chalkos_router_v1_router_proto_msgTypes[11]
+	mi := &file_chalkos_router_v1_router_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -920,7 +811,7 @@ func (x *KernelRoute) String() string {
 func (*KernelRoute) ProtoMessage() {}
 
 func (x *KernelRoute) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_router_v1_router_proto_msgTypes[11]
+	mi := &file_chalkos_router_v1_router_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -933,7 +824,7 @@ func (x *KernelRoute) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KernelRoute.ProtoReflect.Descriptor instead.
 func (*KernelRoute) Descriptor() ([]byte, []int) {
-	return file_chalkos_router_v1_router_proto_rawDescGZIP(), []int{11}
+	return file_chalkos_router_v1_router_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *KernelRoute) GetDestination() string {
@@ -994,7 +885,7 @@ type NextHop struct {
 
 func (x *NextHop) Reset() {
 	*x = NextHop{}
-	mi := &file_chalkos_router_v1_router_proto_msgTypes[12]
+	mi := &file_chalkos_router_v1_router_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1006,7 +897,7 @@ func (x *NextHop) String() string {
 func (*NextHop) ProtoMessage() {}
 
 func (x *NextHop) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_router_v1_router_proto_msgTypes[12]
+	mi := &file_chalkos_router_v1_router_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1019,7 +910,7 @@ func (x *NextHop) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NextHop.ProtoReflect.Descriptor instead.
 func (*NextHop) Descriptor() ([]byte, []int) {
-	return file_chalkos_router_v1_router_proto_rawDescGZIP(), []int{12}
+	return file_chalkos_router_v1_router_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *NextHop) GetGateway() string {
@@ -1073,7 +964,7 @@ type BGPRoute struct {
 
 func (x *BGPRoute) Reset() {
 	*x = BGPRoute{}
-	mi := &file_chalkos_router_v1_router_proto_msgTypes[13]
+	mi := &file_chalkos_router_v1_router_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1085,7 +976,7 @@ func (x *BGPRoute) String() string {
 func (*BGPRoute) ProtoMessage() {}
 
 func (x *BGPRoute) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_router_v1_router_proto_msgTypes[13]
+	mi := &file_chalkos_router_v1_router_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1098,7 +989,7 @@ func (x *BGPRoute) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BGPRoute.ProtoReflect.Descriptor instead.
 func (*BGPRoute) Descriptor() ([]byte, []int) {
-	return file_chalkos_router_v1_router_proto_rawDescGZIP(), []int{13}
+	return file_chalkos_router_v1_router_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *BGPRoute) GetPrefix() string {
@@ -1168,10 +1059,10 @@ var File_chalkos_router_v1_router_proto protoreflect.FileDescriptor
 
 const file_chalkos_router_v1_router_proto_rawDesc = "" +
 	"\n" +
-	"\x1echalkos/router/v1/router.proto\x12\x11chalkos.router.v1\"\x0f\n" +
-	"\rStatusRequest\"\xe0\x03\n" +
-	"\x0eStatusResponse\x126\n" +
-	"\x05peers\x18\x01 \x03(\v2 .chalkos.router.v1.BGPPeerStatusR\x05peers\x12\x1b\n" +
+	"\x1echalkos/router/v1/router.proto\x12\x11chalkos.router.v1\x1a\x1achalkos/node/v1/node.proto\"\x0f\n" +
+	"\rStatusRequest\"\xde\x03\n" +
+	"\x0eStatusResponse\x124\n" +
+	"\x05peers\x18\x01 \x03(\v2\x1e.chalkos.node.v1.BGPPeerStatusR\x05peers\x12\x1b\n" +
 	"\tbgp_error\x18\x02 \x01(\tR\bbgpError\x124\n" +
 	"\x05nat64\x18\x03 \x03(\v2\x1e.chalkos.router.v1.NAT64StatusR\x05nat64\x12\x1f\n" +
 	"\vnat64_error\x18\x04 \x01(\tR\n" +
@@ -1211,16 +1102,7 @@ const file_chalkos_router_v1_router_proto_rawDesc = "" +
 	"\x0fDHCPRelayStatus\x12\x10\n" +
 	"\x03vrf\x18\x01 \x01(\tR\x03vrf\x12\x18\n" +
 	"\arunning\x18\x02 \x01(\bR\arunning\x12\x14\n" +
-	"\x05error\x18\x03 \x01(\tR\x05error\"\xf2\x01\n" +
-	"\rBGPPeerStatus\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
-	"\bneighbor\x18\x02 \x01(\tR\bneighbor\x12\x14\n" +
-	"\x05state\x18\x03 \x01(\tR\x05state\x12%\n" +
-	"\x0euptime_seconds\x18\x04 \x01(\x04R\ruptimeSeconds\x12+\n" +
-	"\x11prefixes_received\x18\x05 \x01(\rR\x10prefixesReceived\x12#\n" +
-	"\rprefixes_sent\x18\x06 \x01(\rR\fprefixesSent\x12\x10\n" +
-	"\x03bfd\x18\a \x01(\tR\x03bfd\x12\x10\n" +
-	"\x03vrf\x18\b \x01(\tR\x03vrf\"k\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\"k\n" +
 	"\rRoutesRequest\x12\x16\n" +
 	"\x06prefix\x18\x01 \x01(\tR\x06prefix\x12\x1a\n" +
 	"\bprotocol\x18\x02 \x01(\tR\bprotocol\x12\x14\n" +
@@ -1270,7 +1152,7 @@ func file_chalkos_router_v1_router_proto_rawDescGZIP() []byte {
 	return file_chalkos_router_v1_router_proto_rawDescData
 }
 
-var file_chalkos_router_v1_router_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_chalkos_router_v1_router_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_chalkos_router_v1_router_proto_goTypes = []any{
 	(*StatusRequest)(nil),    // 0: chalkos.router.v1.StatusRequest
 	(*StatusResponse)(nil),   // 1: chalkos.router.v1.StatusResponse
@@ -1280,15 +1162,15 @@ var file_chalkos_router_v1_router_proto_goTypes = []any{
 	(*DHCPServerStatus)(nil), // 5: chalkos.router.v1.DHCPServerStatus
 	(*DHCPSubnetStatus)(nil), // 6: chalkos.router.v1.DHCPSubnetStatus
 	(*DHCPRelayStatus)(nil),  // 7: chalkos.router.v1.DHCPRelayStatus
-	(*BGPPeerStatus)(nil),    // 8: chalkos.router.v1.BGPPeerStatus
-	(*RoutesRequest)(nil),    // 9: chalkos.router.v1.RoutesRequest
-	(*RoutesResponse)(nil),   // 10: chalkos.router.v1.RoutesResponse
-	(*KernelRoute)(nil),      // 11: chalkos.router.v1.KernelRoute
-	(*NextHop)(nil),          // 12: chalkos.router.v1.NextHop
-	(*BGPRoute)(nil),         // 13: chalkos.router.v1.BGPRoute
+	(*RoutesRequest)(nil),    // 8: chalkos.router.v1.RoutesRequest
+	(*RoutesResponse)(nil),   // 9: chalkos.router.v1.RoutesResponse
+	(*KernelRoute)(nil),      // 10: chalkos.router.v1.KernelRoute
+	(*NextHop)(nil),          // 11: chalkos.router.v1.NextHop
+	(*BGPRoute)(nil),         // 12: chalkos.router.v1.BGPRoute
+	(*v1.BGPPeerStatus)(nil), // 13: chalkos.node.v1.BGPPeerStatus
 }
 var file_chalkos_router_v1_router_proto_depIdxs = []int32{
-	8,  // 0: chalkos.router.v1.StatusResponse.peers:type_name -> chalkos.router.v1.BGPPeerStatus
+	13, // 0: chalkos.router.v1.StatusResponse.peers:type_name -> chalkos.node.v1.BGPPeerStatus
 	2,  // 1: chalkos.router.v1.StatusResponse.nat64:type_name -> chalkos.router.v1.NAT64Status
 	4,  // 2: chalkos.router.v1.StatusResponse.resolver:type_name -> chalkos.router.v1.ResolverStatus
 	4,  // 3: chalkos.router.v1.StatusResponse.vrf_resolvers:type_name -> chalkos.router.v1.ResolverStatus
@@ -1296,13 +1178,13 @@ var file_chalkos_router_v1_router_proto_depIdxs = []int32{
 	7,  // 5: chalkos.router.v1.StatusResponse.dhcp_relays:type_name -> chalkos.router.v1.DHCPRelayStatus
 	3,  // 6: chalkos.router.v1.NAT64Status.pools:type_name -> chalkos.router.v1.NAT64PoolStatus
 	6,  // 7: chalkos.router.v1.DHCPServerStatus.subnets:type_name -> chalkos.router.v1.DHCPSubnetStatus
-	11, // 8: chalkos.router.v1.RoutesResponse.kernel:type_name -> chalkos.router.v1.KernelRoute
-	13, // 9: chalkos.router.v1.RoutesResponse.bgp:type_name -> chalkos.router.v1.BGPRoute
-	12, // 10: chalkos.router.v1.KernelRoute.next_hops:type_name -> chalkos.router.v1.NextHop
+	10, // 8: chalkos.router.v1.RoutesResponse.kernel:type_name -> chalkos.router.v1.KernelRoute
+	12, // 9: chalkos.router.v1.RoutesResponse.bgp:type_name -> chalkos.router.v1.BGPRoute
+	11, // 10: chalkos.router.v1.KernelRoute.next_hops:type_name -> chalkos.router.v1.NextHop
 	0,  // 11: chalkos.router.v1.RouterService.Status:input_type -> chalkos.router.v1.StatusRequest
-	9,  // 12: chalkos.router.v1.RouterService.Routes:input_type -> chalkos.router.v1.RoutesRequest
+	8,  // 12: chalkos.router.v1.RouterService.Routes:input_type -> chalkos.router.v1.RoutesRequest
 	1,  // 13: chalkos.router.v1.RouterService.Status:output_type -> chalkos.router.v1.StatusResponse
-	10, // 14: chalkos.router.v1.RouterService.Routes:output_type -> chalkos.router.v1.RoutesResponse
+	9,  // 14: chalkos.router.v1.RouterService.Routes:output_type -> chalkos.router.v1.RoutesResponse
 	13, // [13:15] is the sub-list for method output_type
 	11, // [11:13] is the sub-list for method input_type
 	11, // [11:11] is the sub-list for extension type_name
@@ -1315,14 +1197,14 @@ func file_chalkos_router_v1_router_proto_init() {
 	if File_chalkos_router_v1_router_proto != nil {
 		return
 	}
-	file_chalkos_router_v1_router_proto_msgTypes[13].OneofWrappers = []any{}
+	file_chalkos_router_v1_router_proto_msgTypes[12].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_chalkos_router_v1_router_proto_rawDesc), len(file_chalkos_router_v1_router_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   14,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

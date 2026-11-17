@@ -49,6 +49,7 @@ buildGoProgram {
     ../../pkg/secureboot
     ../../pkg/storage
     ../../pkg/storeslot
+    ../../pkg/frr/status
     ../../pkg/tool
     ../../pkg/uki
     ../../pkg/upgrade

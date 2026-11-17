@@ -56,7 +56,5 @@ in
       # A new peer's ports are open before FRR reloads.
       after = [ "chalkos-firewall.service" ];
     };
-    # chalkd reads FRR's state with vtysh for the node's status and its routes.
-    systemd.services.chalkd.path = [ pkgs.frr ];
   };
 }

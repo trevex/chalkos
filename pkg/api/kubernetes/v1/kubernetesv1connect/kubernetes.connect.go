@@ -38,6 +38,9 @@ const (
 	// KubernetesServiceStatusProcedure is the fully-qualified name of the KubernetesService's Status
 	// RPC.
 	KubernetesServiceStatusProcedure = "/chalkos.kubernetes.v1.KubernetesService/Status"
+	// KubernetesServiceBGPStatusProcedure is the fully-qualified name of the KubernetesService's
+	// BGPStatus RPC.
+	KubernetesServiceBGPStatusProcedure = "/chalkos.kubernetes.v1.KubernetesService/BGPStatus"
 	// KubernetesServiceBootstrapProcedure is the fully-qualified name of the KubernetesService's
 	// Bootstrap RPC.
 	KubernetesServiceBootstrapProcedure = "/chalkos.kubernetes.v1.KubernetesService/Bootstrap"
@@ -76,6 +79,9 @@ type KubernetesServiceClient interface {
 	// its etcd membership, its Node, VIPs, control plane and the revoked nodes. Available in normal
 	// mode to readers, on images with the Kubernetes layer. The console may call it.
 	Status(context.Context, *connect.Request[v1.StatusRequest]) (*connect.Response[v1.StatusResponse], error)
+	// BGPStatus reports the node's local BGP sessions without contacting Kubernetes. Available in
+	// normal mode to readers, on images with the Kubernetes layer. The console may call it.
+	BGPStatus(context.Context, *connect.Request[v1.BGPStatusRequest]) (*connect.Response[v1.BGPStatusResponse], error)
 	// Bootstrap initialises etcd on a control-plane node, starts the control plane and applies
 	// chalkos's add-ons and the objects of the node's Addon documents. It is refused on a node that
 	// is bootstrapped or holds etcd data, so no second cluster is ever initialised. Available in
@@ -158,6 +164,12 @@ func NewKubernetesServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(kubernetesServiceMethods.ByName("Status")),
 			connect.WithClientOptions(opts...),
 		),
+		bGPStatus: connect.NewClient[v1.BGPStatusRequest, v1.BGPStatusResponse](
+			httpClient,
+			baseURL+KubernetesServiceBGPStatusProcedure,
+			connect.WithSchema(kubernetesServiceMethods.ByName("BGPStatus")),
+			connect.WithClientOptions(opts...),
+		),
 		bootstrap: connect.NewClient[v1.BootstrapRequest, v1.BootstrapResponse](
 			httpClient,
 			baseURL+KubernetesServiceBootstrapProcedure,
@@ -224,6 +236,7 @@ func NewKubernetesServiceClient(httpClient connect.HTTPClient, baseURL string, o
 // kubernetesServiceClient implements KubernetesServiceClient.
 type kubernetesServiceClient struct {
 	status               *connect.Client[v1.StatusRequest, v1.StatusResponse]
+	bGPStatus            *connect.Client[v1.BGPStatusRequest, v1.BGPStatusResponse]
 	bootstrap            *connect.Client[v1.BootstrapRequest, v1.BootstrapResponse]
 	etcdMembers          *connect.Client[v1.EtcdMembersRequest, v1.EtcdMembersResponse]
 	etcdRemoveMember     *connect.Client[v1.EtcdRemoveMemberRequest, v1.EtcdRemoveMemberResponse]
@@ -239,6 +252,11 @@ type kubernetesServiceClient struct {
 // Status calls chalkos.kubernetes.v1.KubernetesService.Status.
 func (c *kubernetesServiceClient) Status(ctx context.Context, req *connect.Request[v1.StatusRequest]) (*connect.Response[v1.StatusResponse], error) {
 	return c.status.CallUnary(ctx, req)
+}
+
+// BGPStatus calls chalkos.kubernetes.v1.KubernetesService.BGPStatus.
+func (c *kubernetesServiceClient) BGPStatus(ctx context.Context, req *connect.Request[v1.BGPStatusRequest]) (*connect.Response[v1.BGPStatusResponse], error) {
+	return c.bGPStatus.CallUnary(ctx, req)
 }
 
 // Bootstrap calls chalkos.kubernetes.v1.KubernetesService.Bootstrap.
@@ -298,6 +316,9 @@ type KubernetesServiceHandler interface {
 	// its etcd membership, its Node, VIPs, control plane and the revoked nodes. Available in normal
 	// mode to readers, on images with the Kubernetes layer. The console may call it.
 	Status(context.Context, *connect.Request[v1.StatusRequest]) (*connect.Response[v1.StatusResponse], error)
+	// BGPStatus reports the node's local BGP sessions without contacting Kubernetes. Available in
+	// normal mode to readers, on images with the Kubernetes layer. The console may call it.
+	BGPStatus(context.Context, *connect.Request[v1.BGPStatusRequest]) (*connect.Response[v1.BGPStatusResponse], error)
 	// Bootstrap initialises etcd on a control-plane node, starts the control plane and applies
 	// chalkos's add-ons and the objects of the node's Addon documents. It is refused on a node that
 	// is bootstrapped or holds etcd data, so no second cluster is ever initialised. Available in
@@ -376,6 +397,12 @@ func NewKubernetesServiceHandler(svc KubernetesServiceHandler, opts ...connect.H
 		connect.WithSchema(kubernetesServiceMethods.ByName("Status")),
 		connect.WithHandlerOptions(opts...),
 	)
+	kubernetesServiceBGPStatusHandler := connect.NewUnaryHandler(
+		KubernetesServiceBGPStatusProcedure,
+		svc.BGPStatus,
+		connect.WithSchema(kubernetesServiceMethods.ByName("BGPStatus")),
+		connect.WithHandlerOptions(opts...),
+	)
 	kubernetesServiceBootstrapHandler := connect.NewUnaryHandler(
 		KubernetesServiceBootstrapProcedure,
 		svc.Bootstrap,
@@ -440,6 +467,8 @@ func NewKubernetesServiceHandler(svc KubernetesServiceHandler, opts ...connect.H
 		switch r.URL.Path {
 		case KubernetesServiceStatusProcedure:
 			kubernetesServiceStatusHandler.ServeHTTP(w, r)
+		case KubernetesServiceBGPStatusProcedure:
+			kubernetesServiceBGPStatusHandler.ServeHTTP(w, r)
 		case KubernetesServiceBootstrapProcedure:
 			kubernetesServiceBootstrapHandler.ServeHTTP(w, r)
 		case KubernetesServiceEtcdMembersProcedure:
@@ -471,6 +500,10 @@ type UnimplementedKubernetesServiceHandler struct{}
 
 func (UnimplementedKubernetesServiceHandler) Status(context.Context, *connect.Request[v1.StatusRequest]) (*connect.Response[v1.StatusResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.kubernetes.v1.KubernetesService.Status is not implemented"))
+}
+
+func (UnimplementedKubernetesServiceHandler) BGPStatus(context.Context, *connect.Request[v1.BGPStatusRequest]) (*connect.Response[v1.BGPStatusResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.kubernetes.v1.KubernetesService.BGPStatus is not implemented"))
 }
 
 func (UnimplementedKubernetesServiceHandler) Bootstrap(context.Context, *connect.Request[v1.BootstrapRequest]) (*connect.Response[v1.BootstrapResponse], error) {

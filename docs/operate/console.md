@@ -125,7 +125,9 @@ DNS servers: 192.168.1.1, 2001:db8::1
 ```
 
 The tab runs the diagnostics `addresses` and `routes` every 5 seconds while it is on screen, and
-reads the DNS servers from systemd-resolved.
+reads the DNS servers from systemd-resolved. On a Kubernetes node with a configured BGP speaker,
+it also shows the local BGP sessions, their state and BFD status. This read works while the
+Kubernetes API server is down.
 
 ## Storage shows the disks and the volumes
 

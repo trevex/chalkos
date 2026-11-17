@@ -102,6 +102,9 @@ in
       configFile = "/run/frr/frr.conf";
     };
 
+    # chalkd reads the speaker's sessions for the router and Kubernetes layers.
+    systemd.services.chalkd.path = [ pkgs.frr ];
+
     systemd.services.frr = {
       # networkd has read the links' units before FRR reloads: a delivery reloads these units with
       # one systemctl call, whose job of each unit takes this order.

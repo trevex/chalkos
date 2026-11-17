@@ -11,101 +11,16 @@ import (
 	"net/netip"
 	"slices"
 	"strings"
-
-	"github.com/trevex/chalkos/pkg/router/derive"
 )
 
 // The vtysh commands whose JSON the parsers read.
 const (
-	// NeighborsCommand lists the sessions of every VRF's instance.
-	NeighborsCommand = "show bgp vrf all neighbors json"
 	// RoutesCommand is the command of the default VRF's paths of a family, ipv4 or ipv6.
 	RoutesCommand = "show bgp %s unicast detail json"
 	// VRFRoutesCommand is the command of a VRF's paths of a family: the VRF's name, then ipv4 or
 	// ipv6.
 	VRFRoutesCommand = "show bgp vrf %s %s unicast detail json"
 )
-
-// neighbor is a session as show bgp vrf all neighbors json prints it.
-type neighbor struct {
-	PeerGroup         string `json:"peerGroup"`
-	State             string `json:"bgpState"`
-	UpMsec            uint64 `json:"bgpTimerUpMsec"`
-	AddressFamilyInfo map[string]struct {
-		Accepted uint32 `json:"acceptedPrefixCounter"`
-		Sent     uint32 `json:"sentPrefixCounter"`
-	} `json:"addressFamilyInfo"`
-	BFD *struct {
-		Status string `json:"status"`
-	} `json:"peerBfdInfo"`
-}
-
-// ParsePeers reads the sessions of show bgp vrf all neighbors json, an object per VRF of its
-// vrfId, its vrfName and its sessions keyed by interface or address, into the peers of a router's
-// status: by VRF, the default first, then by BGPPeer document and neighbour. A session of no
-// BGPPeer's peer group is left out; FRR prints {} without a BGP instance.
-func ParsePeers(data []byte) ([]*Peer, error) {
-	if err := answered(data); err != nil {
-		return nil, err
-	}
-	var vrfs map[string]map[string]json.RawMessage
-	if err := json.Unmarshal(data, &vrfs); err != nil {
-		return nil, fmt.Errorf("read FRR's BGP neighbours: %w", err)
-	}
-	var peers []*Peer
-	for vrf, entries := range vrfs {
-		for key, raw := range entries {
-			// vrfId and vrfName are no sessions.
-			if !bytes.HasPrefix(bytes.TrimSpace(raw), []byte("{")) {
-				continue
-			}
-			var n neighbor
-			if err := json.Unmarshal(raw, &n); err != nil {
-				return nil, fmt.Errorf("read FRR's BGP neighbour %s of the VRF %s: %w", key, vrf, err)
-			}
-			name, ok := strings.CutPrefix(n.PeerGroup, derive.PeerGroupPrefix)
-			if !ok {
-				continue
-			}
-			p := &Peer{VRF: vrf, Name: name, Neighbor: key, State: n.State}
-			if n.State == "Established" {
-				p.UptimeSeconds = n.UpMsec / 1000
-			}
-			for _, af := range n.AddressFamilyInfo {
-				p.PrefixesReceived += af.Accepted
-				p.PrefixesSent += af.Sent
-			}
-			if n.BFD != nil {
-				p.BFD = bfdState(n.BFD.Status)
-			}
-			peers = append(peers, p)
-		}
-	}
-	slices.SortFunc(peers, func(a, b *Peer) int {
-		return cmp.Or(derive.CompareVRFs(a.VRF, b.VRF), strings.Compare(a.Name, b.Name), strings.Compare(a.Neighbor, b.Neighbor))
-	})
-	return peers, nil
-}
-
-// answered refuses vtysh's empty output, which it prints while bgpd is not running.
-func answered(data []byte) error {
-	if len(bytes.TrimSpace(data)) == 0 {
-		return errors.New("bgpd did not answer")
-	}
-	return nil
-}
-
-// bfdState is FRR's BFD status, Up, Down, Admin Down or Unknown, as the status names it: up, down,
-// admin-down or unknown.
-func bfdState(s string) string {
-	switch s := strings.ToLower(s); s {
-	case "up", "down":
-		return s
-	case "admin down":
-		return "admin-down"
-	}
-	return "unknown"
-}
 
 // path is a path as show bgp [vrf <name>] <family> unicast detail json prints it.
 type path struct {
@@ -148,8 +63,8 @@ type path struct {
 // routes BGP selected: the best path of each prefix and the equal paths installed beside it, by
 // prefix. FRR prints a warning and no routes without a BGP instance.
 func ParseRoutes(data []byte) ([]*BGPRoute, error) {
-	if err := answered(data); err != nil {
-		return nil, err
+	if len(bytes.TrimSpace(data)) == 0 {
+		return nil, errors.New("bgpd did not answer")
 	}
 	var table struct {
 		Routes map[string][]path `json:"routes"`

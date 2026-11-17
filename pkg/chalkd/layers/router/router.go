@@ -23,6 +23,7 @@ import (
 	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
 	"github.com/trevex/chalkos/pkg/api/router/v1/routerv1connect"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
+	frrstatus "github.com/trevex/chalkos/pkg/frr/status"
 	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -160,14 +161,6 @@ func (p *Plugin) hasBGP() bool {
 	return !errors.Is(err, fs.ErrNotExist)
 }
 
-// vtysh runs one of the show commands of package router, which may carry a VRF's name that
-// matched router.ShortName.
-func (p *Plugin) vtysh(ctx context.Context, command string) ([]byte, error) {
-	budget, cancel := context.WithTimeout(ctx, askTimeout)
-	defer cancel()
-	return p.ask(ctx, budget, "vtysh", "-c", command)
-}
-
 // status is the state of the router: its BGP sessions, its NAT64 instances and its resolver, or
 // why a daemon did not say; an image without BGP asks FRR nothing. The daemons are asked side by
 // side, so daemons that hang cost one timeout altogether.
@@ -176,17 +169,9 @@ func (p *Plugin) status(ctx context.Context) *routerv1.StatusResponse {
 	var wg sync.WaitGroup
 	if !st.BgpAbsent {
 		wg.Go(func() {
-			out, err := p.vtysh(ctx, routing.NeighborsCommand)
-			var peers []*routing.Peer
-			if err == nil {
-				peers, err = routing.ParsePeers(out)
-			}
-			if err != nil {
+			var err error
+			if st.Peers, err = frrstatus.ReadPeers(ctx, p.run); err != nil {
 				st.BgpError = err.Error()
-				return
-			}
-			for _, p := range peers {
-				st.Peers = append(st.Peers, peerStatus(p))
 			}
 		})
 	}
@@ -489,7 +474,7 @@ func (p *Plugin) Routes(ctx context.Context, req *connect.Request[routerv1.Route
 			if named {
 				command = fmt.Sprintf(routing.VRFRoutesCommand, vrf, family)
 			}
-			out, err := p.vtysh(ctx, command)
+			out, err := frrstatus.Query(ctx, p.run, command)
 			var routes []*routing.BGPRoute
 			if err == nil {
 				routes, err = routing.ParseRoutes(out)
@@ -534,12 +519,6 @@ func (p *Plugin) vrfTable(name string) (uint32, error) {
 		return 0, fmt.Errorf("read the VRF %s: its document holds no table", name)
 	}
 	return doc.Spec.Table, nil
-}
-
-// peerStatus is a BGP session as the router's status reports it.
-func peerStatus(p *routing.Peer) *routerv1.BGPPeerStatus {
-	return &routerv1.BGPPeerStatus{Vrf: p.VRF, Name: p.Name, Neighbor: p.Neighbor, State: p.State, UptimeSeconds: p.UptimeSeconds,
-		PrefixesReceived: p.PrefixesReceived, PrefixesSent: p.PrefixesSent, Bfd: p.BFD}
 }
 
 // kernelRoute is a kernel route as Routes answers it.

@@ -16,6 +16,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkd"
 	"github.com/trevex/chalkos/pkg/chalkd/chalkdtest"
 	routerplugin "github.com/trevex/chalkos/pkg/chalkd/layers/router"
+	frrstatus "github.com/trevex/chalkos/pkg/frr/status"
 	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/router"
 	"github.com/trevex/chalkos/pkg/tool"
@@ -36,7 +37,7 @@ func routerNode(t *testing.T, ta *testApp) string {
 		return string(data)
 	}
 	r := &tooltest.Runner{Rules: []tooltest.Rule{
-		{Prefix: "vtysh -c " + router.NeighborsCommand, Out: frr("neighbors.json")},
+		{Prefix: "vtysh -c " + frrstatus.NeighborsCommand, Out: frr("neighbors.json")},
 		{Prefix: "vtysh -c show bgp ipv4 unicast detail json", Out: frr("ipv4-detail.json")},
 		{Prefix: "vtysh -c show bgp ipv6 unicast detail json", Out: frr("ipv6-detail.json")},
 		{Prefix: "vtysh -c show bgp vrf tenant ipv4 unicast detail json", Out: "{}"},

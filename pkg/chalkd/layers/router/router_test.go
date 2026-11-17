@@ -19,6 +19,7 @@ import (
 
 	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
+	frrstatus "github.com/trevex/chalkos/pkg/frr/status"
 	"github.com/trevex/chalkos/pkg/internal/testwait"
 	routing "github.com/trevex/chalkos/pkg/router"
 	"github.com/trevex/chalkos/pkg/router/services"
@@ -89,19 +90,19 @@ func routerRecording(t *testing.T, name string) string {
 // why and the rest of the status stands.
 func TestRouterStatus(t *testing.T) {
 	s, r := routerNode(t)
-	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "vtysh -c " + routing.NeighborsCommand, Out: routerRecording(t, "neighbors.json"), Times: 1})
+	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "vtysh -c " + frrstatus.NeighborsCommand, Out: routerRecording(t, "neighbors.json"), Times: 1})
 	st := routerStatus(t, s)
 	if st == nil || st.BgpError != "" || len(st.Peers) != 4 || st.Peers[0].Name != "fabric" || st.Peers[0].State != "Established" || st.Peers[0].Vrf != "default" || st.Peers[3].Vrf != "tenant" {
 		t.Fatalf("router status = %v", st)
 	}
-	if c, _ := r.Cmd("vtysh -c " + routing.NeighborsCommand); !c.Quiet {
+	if c, _ := r.Cmd("vtysh -c " + frrstatus.NeighborsCommand); !c.Quiet {
 		t.Error("vtysh's standard error reaches the console")
 	}
 	// Without NAT64 documents, Jool is not asked.
 	if st.Nat64Error != "" || slices.ContainsFunc(r.Calls, func(c string) bool { return strings.HasPrefix(c, "jool") }) {
 		t.Errorf("a router without NAT64 asked jool: %q, %v", st.Nat64Error, r.Calls)
 	}
-	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "vtysh -c " + routing.NeighborsCommand, Err: &tool.Error{Command: "vtysh", Code: 1, Stderr: "Exiting: failed to connect to any daemons.\n"}})
+	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "vtysh -c " + frrstatus.NeighborsCommand, Err: &tool.Error{Command: "vtysh", Code: 1, Stderr: "Exiting: failed to connect to any daemons.\n"}})
 	st = routerStatus(t, s)
 	if st == nil || len(st.Peers) != 0 || !strings.Contains(st.BgpError, "failed to connect to any daemons") {
 		t.Errorf("router status while FRR is down = %v", st)

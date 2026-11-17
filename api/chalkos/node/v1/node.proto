@@ -1240,3 +1240,32 @@ message ShutdownRequest {}
 
 // The response of Shutdown, which the node sends before it powers off.
 message ShutdownResponse {}
+
+// One BGP session: a BGPPeer's address, or one of its interfaces.
+message BGPPeerStatus {
+  // Name of the BGPPeer document.
+  string name = 1;
+  // The interface the session runs on, for a peer of interface or interfaces, or the neighbour's
+  // address.
+  string neighbor = 2;
+  // The session's BGP state: Idle, Connect, Active, OpenSent, OpenConfirm or Established.
+  string state = 3;
+  // How long the session has been established, in seconds; 0 while it is not.
+  uint64 uptime_seconds = 4;
+  // Routes the node accepted from the neighbour, of every family.
+  uint32 prefixes_received = 5;
+  // Routes the node sends the neighbour, of every family.
+  uint32 prefixes_sent = 6;
+  // The state of the session's BFD: up, down, admin-down or unknown; empty for a peer without bfd.
+  string bfd = 7;
+  // The VRF the session runs in: the name of its VRF document, or default.
+  string vrf = 8;
+}
+
+// BGPStatus is the state of the configured speaker, independent of other node services.
+message BGPStatus {
+  // Sessions ordered by VRF, BGPPeer name and neighbour. Empty when there are none.
+  repeated BGPPeerStatus peers = 1;
+  // Why the sessions could not be read, or empty when FRR answered.
+  string error = 2;
+}

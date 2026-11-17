@@ -181,7 +181,8 @@ chalkctl validate
 chalkctl config apply cp1 --secrets=secrets.age
 ```
 
-The node's status lists no BGP sessions. Four diagnostics show FRR's state: `bgp-summary` the
+The console's Network tab lists the configured speaker's BGP sessions. Four diagnostics show
+FRR's state: `bgp-summary` the
 sessions, `bgp-neighbor` one session in detail, `bfd-peers` the BFD sessions and `bgp-route` the
 paths to a prefix. The output below comes from the node `k1`, which peers with `r1` through the
 peer `r1` above and announces its address and the VIP from the dummy interface `kube0`:
@@ -350,7 +351,6 @@ builds such an image with bird in place of FRR.
 
 ## Limits
 
-- The node's status lists no BGP sessions; the diagnostics show them.
 - The speaker announces the addresses of interfaces alone: no pod ranges, no LoadBalancer
   addresses and no routing policy beyond `import`.
 - A peer's address must be on a subnet of one of the node's interfaces: eBGP runs with a TTL of

@@ -5,6 +5,7 @@ import (
 	"math"
 	"testing"
 
+	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
 	"github.com/trevex/chalkos/pkg/internal/golden"
 )
@@ -14,7 +15,7 @@ import (
 func TestWrite(t *testing.T) {
 	var b bytes.Buffer
 	err := Write(&b, &routerv1.StatusResponse{
-		Peers: []*routerv1.BGPPeerStatus{
+		Peers: []*nodev1.BGPPeerStatus{
 			{Name: "fabric", Neighbor: "eth1", State: "Established", UptimeSeconds: 3723, PrefixesReceived: 1, PrefixesSent: 2, Bfd: "up"},
 			{Vrf: "tenant", Name: "transit", Neighbor: "203.0.113.254", State: "Active"},
 		},

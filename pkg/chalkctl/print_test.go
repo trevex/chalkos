@@ -75,7 +75,7 @@ type routerStatus struct {
 
 func (routerStatus) Status(context.Context, *connect.Request[routerv1.StatusRequest]) (*connect.Response[routerv1.StatusResponse], error) {
 	return connect.NewResponse(&routerv1.StatusResponse{
-		Peers: []*routerv1.BGPPeerStatus{
+		Peers: []*nodev1.BGPPeerStatus{
 			{Name: "fabric", Neighbor: "eth1", State: "Established", UptimeSeconds: 3723, PrefixesReceived: 1, PrefixesSent: 2, Bfd: "up"},
 			{Vrf: "tenant", Name: "transit", Neighbor: "203.0.113.254", State: "Active"},
 		},

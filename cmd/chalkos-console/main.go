@@ -26,8 +26,9 @@ func main() {
 	conn := client.DialSocket(socket)
 	defer conn.Close()
 	m := console.New(console.NewClient(conn), console.Options{
-		Tabs:    layerTabs(conn),
-		Actions: os.Getenv("CHALKOS_CONSOLE_ACTIONS") == "1",
+		Tabs:       layerTabs(conn),
+		NetworkBGP: networkBGP(conn),
+		Actions:    os.Getenv("CHALKOS_CONSOLE_ACTIONS") == "1",
 	})
 	if _, err := tea.NewProgram(m, tea.WithAltScreen()).Run(); err != nil {
 		log.Fatal(err)

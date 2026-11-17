@@ -28,7 +28,7 @@ func (s statusOf) Status(context.Context, *connect.Request[routerv1.StatusReques
 // subnet; without NAT64 when nat64 is false.
 func status(nat64 bool) *routerv1.StatusResponse {
 	st := &routerv1.StatusResponse{
-		Peers: []*routerv1.BGPPeerStatus{
+		Peers: []*nodev1.BGPPeerStatus{
 			{Name: "fabric", Neighbor: "eth1", State: "Established", UptimeSeconds: 3723, PrefixesReceived: 1, PrefixesSent: 2, Bfd: "up"},
 			{Name: "upstream", Neighbor: "203.0.113.254", State: "Active"},
 		},

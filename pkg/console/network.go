@@ -4,8 +4,10 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -27,6 +29,8 @@ type network struct {
 	routes4 Source[[]ipRoute]
 	routes6 Source[[]ipRoute]
 	dns     Source[[]string]
+	bgp     Source[*nodev1.BGPStatus]
+	node    NodeMsg
 	reading bool
 	read    time.Time
 	pane    Pane
@@ -47,11 +51,18 @@ type networkMsg struct {
 	routes6Err       error
 	dns              []string
 	dnsErr           error
+	bgp              *nodev1.BGPStatus
+	bgpErr           error
 	at               time.Time
 }
 
 func (n *network) Update(msg tea.Msg) (Tab, tea.Cmd) {
 	switch msg := msg.(type) {
+	case NodeMsg:
+		n.node = msg
+		if !msg.Normal() {
+			n.bgp = Source[*nodev1.BGPStatus]{}
+		}
 	case TickMsg:
 		if msg.Shown && !msg.Idle && !n.reading && msg.Now.Sub(n.read) >= networkEvery {
 			n.reading = true
@@ -62,6 +73,9 @@ func (n *network) Update(msg tea.Msg) (Tab, tea.Cmd) {
 		n.routes4.Set(msg.routes4, msg.routes4Err, msg.at)
 		n.routes6.Set(msg.routes6, msg.routes6Err, msg.at)
 		n.dns.Set(msg.dns, msg.dnsErr, msg.at)
+		if n.node.Normal() {
+			n.bgp.Set(msg.bgp, msg.bgpErr, msg.at)
+		}
 		n.reading, n.read = false, msg.at
 	case tea.KeyMsg:
 		n.pane.Key(msg)
@@ -72,11 +86,16 @@ func (n *network) Update(msg tea.Msg) (Tab, tea.Cmd) {
 // readAll runs the diagnostics one after the other, as chalkd runs few at a time and the header
 // may run one too, and reads the DNS servers.
 func (n *network) readAll(now time.Time) tea.Cmd {
-	c, dnsServers := n.c, n.o.DNSServers
+	c, dnsServers, bgp, node := n.c, n.o.DNSServers, n.o.NetworkBGP, n.node
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
 		defer cancel()
 		r := networkMsg{at: now}
+		// Read BGP alongside the diagnostics so a slow diagnostic does not hide local peer status.
+		var wg sync.WaitGroup
+		if bgp != nil && node.Normal() {
+			wg.Go(func() { r.bgp, r.bgpErr = bgp(ctx, node.Info.Value) })
+		}
 		var out []byte
 		if out, r.linksErr = c.Diagnostic(ctx, "addresses", nil); r.linksErr == nil {
 			r.links, r.linksErr = parseLinks(out)
@@ -88,6 +107,7 @@ func (n *network) readAll(now time.Time) tea.Cmd {
 			r.routes6, r.routes6Err = parseRoutes(out)
 		}
 		r.dns, r.dnsErr = dnsServers()
+		wg.Wait()
 		return r
 	}
 }
@@ -138,6 +158,14 @@ func (n *network) View(width, height int) string {
 	}
 	for _, r := range routes {
 		b.WriteString("  " + r + "\n")
+	}
+	if p := n.bgp.Problem("bgp status"); p != "" {
+		b.WriteString(ErrorStyle.Render(p) + "\n")
+	}
+	if bgp := n.bgp.Value; bgp != nil {
+		b.WriteString(Section(func(w io.Writer) error {
+			return statusview.WriteBGP(w, bgp.Peers, bgp.Error, OneLine)
+		}))
 	}
 	if p := n.dns.Problem("DNS servers"); p != "" {
 		b.WriteString(ErrorStyle.Render(p) + "\n")

@@ -40,13 +40,13 @@ func routerOf(c *client.Conn) routerv1connect.RouterServiceClient {
 }
 
 // session is the router's session of the BGPPeer on enp0s3, as its status reports it.
-func (rl *routerLab) session(name, peer string) (*routerv1.BGPPeerStatus, error) {
+func (rl *routerLab) session(name, peer string) (*nodev1.BGPPeerStatus, error) {
 	return rl.sessionWith(name, peer, "enp0s3")
 }
 
 // sessionWith is the router's session of the BGPPeer with the neighbour, an interface or an
 // address, as its status reports it.
-func (rl *routerLab) sessionWith(name, peer, neighbor string) (*routerv1.BGPPeerStatus, error) {
+func (rl *routerLab) sessionWith(name, peer, neighbor string) (*nodev1.BGPPeerStatus, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	resp, err := routerOf(rl.conns[name]).Status(ctx, connect.NewRequest(&routerv1.StatusRequest{}))
@@ -66,7 +66,7 @@ func (rl *routerLab) sessionWith(name, peer, neighbor string) (*routerv1.BGPPeer
 }
 
 // establishedIn is the router's session of the peer once it is up in the VRF, with BFD up.
-func (rl *routerLab) establishedIn(name, peer, vrf string) (*routerv1.BGPPeerStatus, error) {
+func (rl *routerLab) establishedIn(name, peer, vrf string) (*nodev1.BGPPeerStatus, error) {
 	p, err := rl.session(name, peer)
 	if err != nil {
 		return nil, err

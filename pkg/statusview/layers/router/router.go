@@ -8,7 +8,6 @@ import (
 	"io"
 	"math"
 	"strconv"
-	"time"
 
 	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
 	"github.com/trevex/chalkos/pkg/statusview"
@@ -17,8 +16,10 @@ import (
 // Write writes the router layer's status section, the default VRF's first. A part the image or the
 // router lacks, such as BGP or NAT64, writes no line.
 func Write(w io.Writer, r *routerv1.StatusResponse) error {
-	if err := bgpStatus(w, r); err != nil {
-		return err
+	if !r.BgpAbsent {
+		if err := statusview.WriteBGP(w, r.Peers, r.BgpError, nil); err != nil {
+			return err
+		}
 	}
 	switch {
 	case r.Nat64Error != "":
@@ -92,32 +93,6 @@ func Write(w io.Writer, r *routerv1.StatusResponse) error {
 		}
 	}
 	return nil
-}
-
-// bgpStatus writes a router's BGP sessions, in chalkd's order, by VRF, or why their state is
-// unknown.
-func bgpStatus(w io.Writer, r *routerv1.StatusResponse) error {
-	switch {
-	case r.BgpAbsent:
-		return nil
-	case r.BgpError != "":
-		fmt.Fprintf(w, "bgp: unknown: %s\n", r.BgpError)
-		return nil
-	case len(r.Peers) == 0:
-		fmt.Fprintln(w, "bgp: no sessions")
-		return nil
-	}
-	fmt.Fprintln(w, "bgp:")
-	t := statusview.Table(w)
-	fmt.Fprintln(t, "  VRF\tPEER\tNEIGHBOR\tSTATE\tUPTIME\tRECEIVED\tSENT\tBFD")
-	for _, p := range r.Peers {
-		uptime := "-"
-		if p.State == "Established" {
-			uptime = (time.Duration(p.UptimeSeconds) * time.Second).String()
-		}
-		fmt.Fprintf(t, "  %s\t%s\t%s\t%s\t%s\t%d\t%d\t%s\n", cmp.Or(p.Vrf, "default"), p.Name, p.Neighbor, p.State, uptime, p.PrefixesReceived, p.PrefixesSent, cmp.Or(p.Bfd, "-"))
-	}
-	return t.Flush()
 }
 
 // dhcpCount is a count of a DHCP server's status, which chalkd saturates at the largest number

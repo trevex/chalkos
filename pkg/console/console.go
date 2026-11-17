@@ -97,6 +97,8 @@ type TickMsg struct {
 type Options struct {
 	// Tabs are the layers' tabs, shown after the built-in ones while they apply.
 	Tabs []Tab
+	// NetworkBGP reads a layer's local BGP status for the Network tab. Nil status hides it.
+	NetworkBGP func(context.Context, *nodev1.InfoResponse) (*nodev1.BGPStatus, error)
 	// Actions says whether the image allows the console's actions.
 	Actions bool
 	// Interval is the time between two reads of the node; 2 seconds by default.

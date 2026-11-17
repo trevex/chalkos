@@ -7,6 +7,7 @@ package chalkos.kubernetes.v1;
 option go_package = "github.com/trevex/chalkos/pkg/api/kubernetes/v1;kubernetesv1";
 
 import "google/protobuf/timestamp.proto";
+import "chalkos/node/v1/node.proto";
 
 // KubernetesService is the API of the node's Kubernetes side. Each method's comment names the
 // modes it is available in and the least role a client certificate needs, as on NodeService.
@@ -17,6 +18,9 @@ service KubernetesService {
   // its etcd membership, its Node, VIPs, control plane and the revoked nodes. Available in normal
   // mode to readers, on images with the Kubernetes layer. The console may call it.
   rpc Status(StatusRequest) returns (StatusResponse);
+  // BGPStatus reports the node's local BGP sessions without contacting Kubernetes. Available in
+  // normal mode to readers, on images with the Kubernetes layer. The console may call it.
+  rpc BGPStatus(BGPStatusRequest) returns (BGPStatusResponse);
   // Bootstrap initialises etcd on a control-plane node, starts the control plane and applies
   // chalkos's add-ons and the objects of the node's Addon documents. It is refused on a node that
   // is bootstrapped or holds etcd data, so no second cluster is ever initialised. Available in
@@ -156,6 +160,15 @@ message StatusResponse {
   string pods_error = 17;
   // How many pods on the node do not run, of which pods_not_running lists the first 20.
   uint32 pods_not_running_total = 18;
+}
+
+// The request of BGPStatus.
+message BGPStatusRequest {}
+
+// The response of BGPStatus.
+message BGPStatusResponse {
+  // The local speaker's status. Unset while BGP is disabled or there is no BGPSpeaker.
+  chalkos.node.v1.BGPStatus bgp = 1;
 }
 
 // Where a node stands in its Kubernetes cluster. On a control-plane node it follows the node's

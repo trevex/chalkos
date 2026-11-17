@@ -3396,6 +3396,7 @@ lib.runTests {
         "e2fsprogs"
         "efibootmgr"
         "findutils"
+        "frr"
         "gnugrep"
         "gnused"
         "systemd"
@@ -3918,6 +3919,7 @@ lib.runTests {
       };
       expected = {
         removed = {
+          chalkd = [ "frr" ];
           kinds = [
             "BGPPeer"
             "BGPSpeaker"

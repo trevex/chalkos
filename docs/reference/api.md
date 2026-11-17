@@ -686,6 +686,32 @@ No fields.
 
 These messages are held by fields of other messages.
 
+### BGPPeerStatus { #message-bgppeerstatus }
+
+One BGP session: a BGPPeer's address, or one of its interfaces.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `name` | string | Name of the BGPPeer document. |
+| `neighbor` | string | The interface the session runs on, for a peer of interface or interfaces, or the neighbour's address. |
+| `state` | string | The session's BGP state: Idle, Connect, Active, OpenSent, OpenConfirm or Established. |
+| `uptime_seconds` | uint64 | How long the session has been established, in seconds; 0 while it is not. |
+| `prefixes_received` | uint32 | Routes the node accepted from the neighbour, of every family. |
+| `prefixes_sent` | uint32 | Routes the node sends the neighbour, of every family. |
+| `bfd` | string | The state of the session's BFD: up, down, admin-down or unknown; empty for a peer without bfd. |
+| `vrf` | string | The VRF the session runs in: the name of its VRF document, or default. |
+
+### BGPStatus { #message-bgpstatus }
+
+BGPStatus is the state of the configured speaker, independent of other node services.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `peers` | list of BGPPeerStatus | Sessions ordered by VRF, BGPPeer name and neighbour. Empty when there are none. |
+| `error` | string | Why the sessions could not be read, or empty when FRR answered. |
+
+Field types: [BGPPeerStatus](#message-bgppeerstatus).
+
 ### BootHealth { #message-boothealth }
 
 The health of the boot a node runs.
@@ -1170,6 +1196,27 @@ The response of Status: the state of the node's Kubernetes.
 
 Field types: [Phase](#kubernetes-enum-phase), [RevokedNode](#kubernetes-message-revokednode), [NodePod](#kubernetes-message-nodepod).
 
+### BGPStatus { #kubernetes-method-bgpstatus }
+
+BGPStatus reports the node's local BGP sessions without contacting Kubernetes. Available in
+normal mode to readers, on images with the Kubernetes layer. The console may call it.
+
+Request: BGPStatusRequest. Response: BGPStatusResponse.
+
+#### BGPStatusRequest { #kubernetes-message-bgpstatusrequest }
+
+The request of BGPStatus.
+
+No fields.
+
+#### BGPStatusResponse { #kubernetes-message-bgpstatusresponse }
+
+The response of BGPStatus.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `bgp` | chalkos.node.v1.BGPStatus | The local speaker's status. Unset while BGP is disabled or there is no BGPSpeaker. |
+
 ### Bootstrap { #kubernetes-method-bootstrap }
 
 Bootstrap initialises etcd on a control-plane node, starts the control plane and applies
@@ -1580,7 +1627,7 @@ resolvers and its DHCP servers.
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `peers` | list of BGPPeerStatus | The router's BGP sessions, by VRF, the default first, then by BGPPeer document and by interface or address. |
+| `peers` | list of chalkos.node.v1.BGPPeerStatus | The router's BGP sessions, by VRF, the default first, then by BGPPeer document and by interface or address. |
 | `bgp_error` | string | Why FRR's BGP state could not be read, such as vtysh's error; empty when it was. peers is then empty. |
 | `nat64` | list of NAT64Status | The router's NAT64 instances, one per Jool instance, which a NAT64 document names, by name. |
 | `nat64_error` | string | Why Jool's state could not be read, such as jool's error; empty when it was. nat64 is then empty. |
@@ -1590,7 +1637,7 @@ resolvers and its DHCP servers.
 | `bgp_absent` | bool | Whether the image carries no BGP, as an image that leaves FRR out: peers and bgp_error are then empty. |
 | `dhcp_relays` | list of DHCPRelayStatus | The router's DHCP relays, one per VRF whose links DHCPRelay documents relay, the default VRF's first, then by VRF. |
 
-Field types: [BGPPeerStatus](#router-message-bgppeerstatus), [NAT64Status](#router-message-nat64status), [ResolverStatus](#router-message-resolverstatus), [DHCPServerStatus](#router-message-dhcpserverstatus), [DHCPRelayStatus](#router-message-dhcprelaystatus).
+Field types: [NAT64Status](#router-message-nat64status), [ResolverStatus](#router-message-resolverstatus), [DHCPServerStatus](#router-message-dhcpserverstatus), [DHCPRelayStatus](#router-message-dhcprelaystatus).
 
 ### Routes { #router-method-routes }
 
@@ -1628,21 +1675,6 @@ Field types: [KernelRoute](#router-message-kernelroute), [BGPRoute](#router-mess
 ## Messages of chalkos.router.v1 { #router-messages }
 
 These messages are held by fields of other messages.
-
-### BGPPeerStatus { #router-message-bgppeerstatus }
-
-One BGP session of a router: a BGPPeer's address, or one of its interfaces.
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `name` | string | Name of the BGPPeer document. |
-| `neighbor` | string | The interface the session runs on, for a peer of interface or interfaces, or the neighbour's address. |
-| `state` | string | The session's BGP state: Idle, Connect, Active, OpenSent, OpenConfirm or Established. |
-| `uptime_seconds` | uint64 | How long the session has been established, in seconds; 0 while it is not. |
-| `prefixes_received` | uint32 | Routes the router accepted from the neighbour, of every family. |
-| `prefixes_sent` | uint32 | Routes the router sends the neighbour, of every family. |
-| `bfd` | string | The state of the session's BFD: up, down, admin-down or unknown; empty for a peer without bfd. |
-| `vrf` | string | The VRF the session runs in: the name of its VRF document, or default. |
 
 ### BGPRoute { #router-message-bgproute }
 

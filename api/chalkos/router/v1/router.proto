@@ -6,6 +6,8 @@ package chalkos.router.v1;
 
 option go_package = "github.com/trevex/chalkos/pkg/api/router/v1;routerv1";
 
+import "chalkos/node/v1/node.proto";
+
 // RouterService is the API of the node's router side. Each method's comment names the modes it is
 // available in and the least role a client certificate needs, as on NodeService. On an image
 // without the router layer every method fails with UNIMPLEMENTED, before the mode and the role are
@@ -30,7 +32,7 @@ message StatusRequest {}
 message StatusResponse {
   // The router's BGP sessions, by VRF, the default first, then by BGPPeer document and by
   // interface or address.
-  repeated BGPPeerStatus peers = 1;
+  repeated chalkos.node.v1.BGPPeerStatus peers = 1;
   // Why FRR's BGP state could not be read, such as vtysh's error; empty when it was. peers is
   // then empty.
   string bgp_error = 2;
@@ -128,27 +130,6 @@ message DHCPRelayStatus {
   bool running = 2;
   // Why the relay does not run, such as the state of its unit; empty while it runs.
   string error = 3;
-}
-
-// One BGP session of a router: a BGPPeer's address, or one of its interfaces.
-message BGPPeerStatus {
-  // Name of the BGPPeer document.
-  string name = 1;
-  // The interface the session runs on, for a peer of interface or interfaces, or the neighbour's
-  // address.
-  string neighbor = 2;
-  // The session's BGP state: Idle, Connect, Active, OpenSent, OpenConfirm or Established.
-  string state = 3;
-  // How long the session has been established, in seconds; 0 while it is not.
-  uint64 uptime_seconds = 4;
-  // Routes the router accepted from the neighbour, of every family.
-  uint32 prefixes_received = 5;
-  // Routes the router sends the neighbour, of every family.
-  uint32 prefixes_sent = 6;
-  // The state of the session's BFD: up, down, admin-down or unknown; empty for a peer without bfd.
-  string bfd = 7;
-  // The VRF the session runs in: the name of its VRF document, or default.
-  string vrf = 8;
 }
 
 // The request of Routes.
