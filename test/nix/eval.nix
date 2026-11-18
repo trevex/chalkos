@@ -4076,7 +4076,9 @@ lib.runTests {
         removed = {
           kinds = [ "ClusterRegistry" ];
           tests = [
+            "kubernetes-registry-bad-fields"
             "kubernetes-registry-elsewhere"
+            "kubernetes-registry-spelled"
             "kubernetes-registry-worker"
           ];
         };

@@ -8,7 +8,7 @@
 }:
 let
   inherit (lib) mkOption types;
-  inherit (chalkosLib.internal) builtin cel dnsName;
+  inherit (chalkosLib.internal) builtin cel;
   inherit (chalkosLib.internal.api) groups apiVersions;
   inherit (chalkosLib.types) address;
   k = config.chalkos.kubernetes;
@@ -26,10 +26,11 @@ in
     chalkos.kinds.ClusterRegistry = builtin groups.kubernetes // {
       description = "The cluster registry: chalkos-registry on the nodes whose static addresses its endpoints name, every control plane among them. containerd on every node pulls the images of the mirrored hosts from it first, before their Mirror endpoints and the hosts themselves.";
       spec = {
-        # A host is the first component of the repository paths below which the cluster registry
-        # holds its images, which takes neither a port nor an IPv6 address.
         mirrors = chalkosLib.mkOption {
-          type = types.nonEmptyListOf (types.strMatching dnsName);
+          # A host is the first component of the repository paths below which the cluster registry
+          # holds its images, as the distribution spec takes it in any case (Go lower-cases it):
+          # neither a port nor an IPv6 address, and no two separators in a row.
+          type = types.nonEmptyListOf (types.strMatching "[A-Za-z0-9]+(([._]|__|-+)[A-Za-z0-9]+)*");
           unique = {
             across = "list";
             as = "host";
@@ -65,9 +66,9 @@ in
           ];
         };
         port = mkOption {
-          type = types.ints.between 1 65535;
+          type = types.ints.between 1024 65535;
           default = 5000;
-          description = "TCP port the cluster registry serves on, over HTTPS with the node certificate.";
+          description = "TCP port the cluster registry serves on, over HTTPS with the node certificate: 1024 or above, as chalkos-registry runs without privileges.";
         };
       };
     };

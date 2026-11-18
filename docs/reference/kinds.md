@@ -148,7 +148,7 @@ A node's config holds at most one. It has a [change rule](builtins.md#rules-clus
 | --- | --- | --- | --- |
 | `spec.endpoints` | list of IP address | required | IP addresses of the nodes that serve the cluster registry, in the order nodes pull from them; a node that serves it pulls from itself first. A node serves it when one of these is one of its static addresses, the Address= values of its Network documents, and every control plane serves it. chalkctl registry push pushes to each, and nothing copies images between them. Each item is unique within the list, compared as addresses. |
 | `spec.mirrors` | list of string | required | Registry hosts whose images containerd pulls from the cluster registry first, as image references name them, without a port; docker.io is Docker Hub. The cluster registry holds an image below its host's name, in lower case: docker.io/library/nginx is &lt;endpoint>/docker.io/library/nginx. Each item is unique within the list, compared as registry hosts. |
-| `spec.port` | integer from 1 to 65535 | `5000` | TCP port the cluster registry serves on, over HTTPS with the node certificate. |
+| `spec.port` | integer from 1024 to 65535 | `5000` | TCP port the cluster registry serves on, over HTTPS with the node certificate: 1024 or above, as chalkos-registry runs without privileges. |
 
 ### Flannel { #flannel }
 

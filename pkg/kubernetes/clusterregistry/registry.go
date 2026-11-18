@@ -62,8 +62,8 @@ func New(s Spec) (Registry, error) {
 		return Registry{}, errors.New("endpoints: none; name the addresses of the nodes that serve the cluster registry")
 	}
 	r := Registry{Port: cmp.Or(s.Port, DefaultPort)}
-	if r.Port < 1 || r.Port > 65535 {
-		return Registry{}, fmt.Errorf("port: %d is no TCP port", r.Port)
+	if r.Port < 1024 || r.Port > 65535 {
+		return Registry{}, fmt.Errorf("port: %d is no TCP port from 1024 to 65535, which chalkos-registry serves on without privileges", r.Port)
 	}
 	named := map[string]string{}
 	for _, m := range s.Mirrors {

@@ -1,0 +1,14 @@
+# Hosts a repository path cannot start with, and a port only root may serve on.
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: default}
+spec:
+  type: worker
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: ClusterRegistry
+metadata: {name: cluster}
+spec:
+  mirrors: [docker.io, a..b, foo-.bar]
+  endpoints: ["fd00::11"]
+  port: 443

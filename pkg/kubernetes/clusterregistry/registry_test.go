@@ -41,6 +41,9 @@ func TestNewRefuses(t *testing.T) {
 		{Spec{Mirrors: []string{"docker.io"}, Endpoints: []string{"fe80::1%eth0"}}, `"fe80::1%eth0" is no IP address without a zone`},
 		{Spec{Mirrors: []string{"docker.io"}, Endpoints: []string{"fd00::11", "fd00:0::11"}}, "fd00::11 and fd00:0::11 are the same address"},
 		{Spec{Mirrors: []string{"docker.io"}, Endpoints: []string{"fd00::11"}, Port: 70000}, "port: 70000 is no TCP port"},
+		{Spec{Mirrors: []string{"docker.io"}, Endpoints: []string{"fd00::11"}, Port: 443}, "port: 443 is no TCP port from 1024"},
+		{Spec{Mirrors: []string{"a..b"}, Endpoints: []string{"fd00::11"}}, `"a..b" cannot start a repository path`},
+		{Spec{Mirrors: []string{"foo-.bar"}, Endpoints: []string{"fd00::11"}}, `"foo-.bar" cannot start a repository path`},
 	} {
 		if _, err := New(tc.spec); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("New(%+v) = %v, want %q", tc.spec, err, tc.want)
