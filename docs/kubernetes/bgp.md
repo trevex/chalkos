@@ -352,6 +352,8 @@ builds such an image with bird in place of FRR.
 
 ## Limits
 
+- `chalkctl status` lists no Kubernetes BGP sessions. The console's Network tab and the
+  diagnostics show them.
 - The speaker announces the addresses of interfaces alone: no pod ranges, no LoadBalancer
   addresses and no routing policy beyond `import`.
 - A peer's address must be on a subnet of one of the node's interfaces: eBGP runs with a TTL of
