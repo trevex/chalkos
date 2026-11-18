@@ -182,8 +182,8 @@ type Batch struct {
 // BatchProgress records work around a batch. Before can reuse an earlier
 // completion. After is called only for batches this invocation actually ran.
 type BatchProgress struct {
-	Before func(Batch) (skip bool, err error)
-	After  func(Batch, bool) error
+	Before func(Batch) (skip bool)
+	After  func(Batch, bool)
 }
 
 // Apply executes the ordered schedule, preserving the usual systemd ordering
@@ -205,12 +205,7 @@ func (s Schedule) Apply(ctx context.Context, r tool.Runner, defs map[string]Defi
 			for _, group := range batch {
 				step.Effects = append(step.Effects, group.names...)
 			}
-			skip, err := progress.Before(step)
-			if err != nil {
-				errs = append(errs, err)
-				break
-			}
-			if skip {
+			if progress.Before(step) {
 				continue
 			}
 		}
@@ -279,10 +274,7 @@ func (s Schedule) Apply(ctx context.Context, r tool.Runner, defs map[string]Defi
 			errs = append(errs, ctx.Err())
 		}
 		if progress != nil {
-			if err := progress.After(step, before == len(errs) && ctx.Err() == nil); err != nil {
-				errs = append(errs, err)
-				break
-			}
+			progress.After(step, before == len(errs) && ctx.Err() == nil)
 		}
 		if ctx.Err() != nil {
 			break

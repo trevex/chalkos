@@ -10,6 +10,8 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/contract"
+	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
 )
@@ -117,5 +119,43 @@ func TestActivationStatusAfterDaemonOrBootRestart(t *testing.T) {
 	}
 	if a := s.activationStatus(dir+"-new-image", "v2", "boot-two"); a.GetState() != "unrecorded" || a.GetCompletedVersion() != "" {
 		t.Fatalf("other image activation = %v", a)
+	}
+}
+
+// TestDeliveryGoesOnWithoutTheActivationRecord: a record chalkd cannot write fails no delivery,
+// and a delivery that fails before its slot still acts on chalkd's loops.
+func TestDeliveryGoesOnWithoutTheActivationRecord(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes to read-only directories")
+	}
+	s, r := configServer(t)
+	addKubernetes(t, s, k8s.KindWorker, true)
+	writeContract(t, s, contract.EffectsFile, `{"named": {"when": "config[\"demo.example.org/v1alpha1\"].Demo.one.spec.name != oldConfig[\"demo.example.org/v1alpha1\"].Demo.one.spec.name", "chalkd": "kubernetes:reload"},
+	  "demo": {"outputs": ["demo"], "restart": ["demo.service"]}}`)
+	var acted []string
+	s.actedOnSelf = func(name string) { acted = append(acted, name) }
+	// A directory that is not empty takes no record in its place.
+	write(t, filepath.Join(s.activationPath(), "in-the-way"), "")
+	slots := filepath.Dir(slotOf(t, s))
+	if err := os.Chmod(slots, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(slots, 0o755) })
+	if _, err := sendConfig(s, nextConfig); err == nil || !strings.Contains(err.Error(), "store the config") {
+		t.Fatalf("err = %v, want the slot's failure", err)
+	}
+	if !slices.Equal(acted, []string{"kubernetes:reload"}) {
+		t.Fatalf("the failed delivery acted on itself %v, want kubernetes:reload", acted)
+	}
+	if err := os.Chmod(slots, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	acted = nil
+	r.ResetCalls()
+	if _, err := sendConfig(s, nextConfig); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(acted, []string{"kubernetes:reload"}) || !slices.Contains(r.Calls, "systemctl try-restart demo.service") {
+		t.Errorf("acted on itself %v, commands %v", acted, r.Calls)
 	}
 }

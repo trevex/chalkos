@@ -97,7 +97,7 @@ type activation struct {
 	checkpoint bool
 }
 
-func (d *delivery) beginActivation() (*activation, error) {
+func (d *delivery) beginActivation() *activation {
 	s := d.s
 	prior, err := s.readActivation()
 	if err != nil {
@@ -109,11 +109,9 @@ func (d *delivery) beginActivation() (*activation, error) {
 		// config version. An intervening delivery invalidates an interrupted apply's checkpoints.
 		if prior.Plan != "" {
 			prior.Plan, prior.CompletedBatches = "", 0
-			if err := s.writeActivation(prior); err != nil {
-				return nil, err
-			}
+			s.saveActivation(prior)
 		}
-		return nil, nil
+		return nil
 	}
 	boot := s.bootID()
 	r := activationRecord{
@@ -132,11 +130,8 @@ func (d *delivery) beginActivation() (*activation, error) {
 		}
 	}
 	s.activating.Store(r.Attempt)
-	if err := s.writeActivation(r); err != nil {
-		s.activating.Store(0)
-		return nil, err
-	}
-	return &activation{node: s, record: r, checkpoint: checkpoint}, nil
+	s.saveActivation(r)
+	return &activation{node: s, record: r, checkpoint: checkpoint}
 }
 
 func (s *Server) writeActivation(r activationRecord) error {
@@ -150,17 +145,31 @@ func (s *Server) writeActivation(r activationRecord) error {
 	return nil
 }
 
-func (a *activation) step(name string) error {
-	if a == nil {
-		return nil
+// saveActivation writes r for Status and a later retry. A delivery goes on without it: the
+// failure goes to the journal, and the record it would replace is removed, so no later delivery
+// resumes from checkpoints that no longer hold.
+func (s *Server) saveActivation(r activationRecord) {
+	err := s.writeActivation(r)
+	if err == nil {
+		return
 	}
-	a.record.Step = name
-	return a.node.writeActivation(a.record)
+	log.Printf("%v; the delivery goes on without it", err)
+	if err := os.Remove(s.activationPath()); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		log.Printf("remove the config activation record: %v", err)
+	}
 }
 
-func (a *activation) finish(err error) error {
+func (a *activation) step(name string) {
 	if a == nil {
-		return nil
+		return
+	}
+	a.record.Step = name
+	a.node.saveActivation(a.record)
+}
+
+func (a *activation) finish(err error) {
+	if a == nil {
+		return
 	}
 	defer a.node.activating.Store(0)
 	if err != nil {
@@ -174,12 +183,12 @@ func (a *activation) finish(err error) error {
 		a.record.Step, a.record.FailedStep = "", ""
 		a.record.Plan, a.record.CompletedBatches = "", 0
 	}
-	return a.node.writeActivation(a.record)
+	a.node.saveActivation(a.record)
 }
 
-func (a *activation) plan(due []string, states map[string]outputs.State, force bool) error {
+func (a *activation) plan(due []string, states map[string]outputs.State, force bool) {
 	if a == nil || !a.checkpoint {
-		return nil
+		return
 	}
 	// Go's JSON encoder sorts map keys. Output states include both file and
 	// referenced secret hashes. The image slot pins the effect definitions.
@@ -189,14 +198,15 @@ func (a *activation) plan(due []string, states map[string]outputs.State, force b
 		Force   bool
 	}{due, states, force})
 	if err != nil {
-		return err
+		log.Printf("the plan of the effects: %v; running every batch", err)
+		a.checkpoint = false
+		return
 	}
 	key := fmt.Sprintf("%x", sha256.Sum256(data))
 	if a.record.Plan != key {
 		a.record.Plan, a.record.CompletedBatches = key, 0
-		return a.node.writeActivation(a.record)
+		a.node.saveActivation(a.record)
 	}
-	return nil
 }
 
 // hooks resume only a contiguous prefix of batches that did declarative unit work. A probe,
@@ -226,29 +236,27 @@ func (a *activation) hooks(ctx context.Context, defs map[string]effects.Definiti
 		return true
 	}
 	return &effects.BatchProgress{
-		Before: func(batch effects.Batch) (bool, error) {
-			step := fmt.Sprintf("effect batch %d (%s)", batch.Index+1, strings.Join(batch.Effects, ", "))
-			if batch.Index < a.record.CompletedBatches {
-				if reusable(batch) {
-					return true, a.step(step)
-				}
+		Before: func(batch effects.Batch) bool {
+			skip := batch.Index < a.record.CompletedBatches && reusable(batch)
+			if !skip && batch.Index < a.record.CompletedBatches {
 				// A replayed prerequisite can invalidate every later checkpoint.
 				a.record.CompletedBatches = batch.Index
 			}
-			return false, a.step(step)
+			a.step(fmt.Sprintf("effect batch %d (%s)", batch.Index+1, strings.Join(batch.Effects, ", ")))
+			return skip
 		},
-		After: func(batch effects.Batch, succeeded bool) error {
+		After: func(batch effects.Batch, succeeded bool) {
 			if !succeeded {
 				if a.record.FailedStep == "" {
 					a.record.FailedStep = a.record.Step
 				}
-				return a.node.writeActivation(a.record)
+				a.node.saveActivation(a.record)
+				return
 			}
 			if batch.Index == a.record.CompletedBatches && reusable(batch) {
 				a.record.CompletedBatches++
-				return a.node.writeActivation(a.record)
+				a.node.saveActivation(a.record)
 			}
-			return nil
 		},
 	}
 }

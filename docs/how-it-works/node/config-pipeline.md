@@ -265,7 +265,9 @@ The version in the running slot describes what is stored. The live activation re
 `/state/activation.json` tracks the target version, the current or failed step, and
 the last version whose activation finished. It contains phase and effect names, version
 hashes, and a checkpoint hash. Status can read it while a delivery is running. If the daemon
-stops mid-apply, the record shows the step it had reached. Boot health continues to describe
+stops mid-apply, the record shows the step it had reached. A record chalkd cannot write fails no
+delivery: chalkd logs the failure to the journal and removes the old record, so no later retry
+resumes from its checkpoints. Boot health continues to describe
 what happened when loading and starting the config at boot.
 
 On an ordinary retry of the identical stored config in the same boot, chalkd can skip a

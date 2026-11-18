@@ -208,9 +208,7 @@ const effectsTimeout = 10 * time.Minute
 // warnings of rules that could not be evaluated, and removes the baseline once every effect is
 // taken; until then a retry compares with it and takes them again.
 func (s *Server) consume(ctx context.Context, e *pendingEffects, staged *outputs.Staged, activation *activation, stored bool, secret string, forceReadiness bool) ([]string, []string, error) {
-	if err := activation.step("plan runtime effects"); err != nil {
-		return nil, nil, err
-	}
+	activation.step("plan runtime effects")
 	states := staged.States()
 	due, warnings, err := s.due(ctx, e, states, secret)
 	if err != nil {
@@ -220,13 +218,9 @@ func (s *Server) consume(ctx context.Context, e *pendingEffects, staged *outputs
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := activation.plan(due, states, forceReadiness); err != nil {
-		return nil, nil, err
-	}
+	activation.plan(due, states, forceReadiness)
 	if stored || e.baselined {
-		if err := activation.step("publish unit config"); err != nil {
-			return nil, nil, err
-		}
+		activation.step("publish unit config")
 		if err := s.Loader.LoadConfig(); err != nil {
 			// What the layer actions read, the slot and the layers' files, is in place.
 			a := effects.ActionsOf(e.defs, due)
@@ -235,9 +229,7 @@ func (s *Server) consume(ctx context.Context, e *pendingEffects, staged *outputs
 		}
 	}
 	// The outputs, checked before the delivery changed anything, follow the documents.
-	if err := activation.step("publish rendered outputs"); err != nil {
-		return nil, nil, err
-	}
+	activation.step("publish rendered outputs")
 	if err := staged.Swap(); err != nil {
 		a := effects.ActionsOf(e.defs, due)
 		s.actOnSelf(a.Chalkd)

@@ -2,7 +2,6 @@ package chalkd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -308,25 +307,15 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 // its additive changes are made, so a retry makes none twice.
 func (d *delivery) commit(ctx context.Context) (_ *connect.Response[nodev1.ApplyConfigResponse], err error) {
 	s, m := d.s, d.msg
-	activation, err := d.beginActivation()
-	if err != nil {
-		s.refused(d.fx)
-		return nil, err
-	}
-	defer func() {
-		if recordErr := activation.finish(err); recordErr != nil {
-			err = errors.Join(err, recordErr)
-		}
-	}()
+	activation := d.beginActivation()
+	defer func() { activation.finish(err) }()
 	if err := s.recordAttempt(d.fx, d.staged.States()); err != nil {
 		s.refused(d.fx)
 		return nil, err
 	}
 	d.started = true
 	if len(m.Trust) > 0 {
-		if err := activation.step("replace OS trust"); err != nil {
-			return nil, err
-		}
+		activation.step("replace OS trust")
 		if err := s.Certificate.ReplaceTrust(d.osCA, peerOf(ctx)...); err != nil {
 			if isRefusedTrust(err) {
 				d.started = false
@@ -337,16 +326,12 @@ func (d *delivery) commit(ctx context.Context) (_ *connect.Response[nodev1.Apply
 		log.Printf("trusting %s from now on", strs.Count(strings.Count(d.osCA, "-----BEGIN CERTIFICATE-----"), "OS CA"))
 	}
 	if !d.keep {
-		if err := activation.step("apply machine storage"); err != nil {
-			return nil, err
-		}
+		activation.step("apply machine storage")
 		if err := s.applyMachine(ctx, d.machine, m.FallbackSecret); err != nil {
 			return nil, err
 		}
 		// networkd and chrony read the identity's units and time servers again as their effects say.
-		if err := activation.step("apply node identity"); err != nil {
-			return nil, err
-		}
+		activation.step("apply node identity")
 		if err := s.Loader.Apply(d.identity.data); err != nil {
 			return nil, fmt.Errorf("apply the identity: %w", err)
 		}
@@ -354,9 +339,7 @@ func (d *delivery) commit(ctx context.Context) (_ *connect.Response[nodev1.Apply
 			if c.Config == nil {
 				continue
 			}
-			if err := activation.step("apply layer config"); err != nil {
-				return nil, err
-			}
+			activation.step("apply layer config")
 			if err := c.Config(); err != nil {
 				s.failedPartWay(ctx, d.fx, m.FallbackSecret)
 				return nil, layer.Errorf(connect.CodeInternal, "%w", err)
@@ -364,9 +347,7 @@ func (d *delivery) commit(ctx context.Context) (_ *connect.Response[nodev1.Apply
 		}
 	}
 	if len(m.NodeCertificate) > 0 {
-		if err := activation.step("replace node certificate"); err != nil {
-			return nil, err
-		}
+		activation.step("replace node certificate")
 		if err := s.Certificate.Replace(string(m.NodeCertificate), string(m.NodeKey), time.Now()); err != nil {
 			s.failedPartWay(ctx, d.fx, m.FallbackSecret)
 			return nil, layer.Errorf(connect.CodeInvalidArgument, "%w", err)
@@ -377,9 +358,7 @@ func (d *delivery) commit(ctx context.Context) (_ *connect.Response[nodev1.Apply
 		if c.Payloads == nil {
 			continue
 		}
-		if err := activation.step("apply layer payloads"); err != nil {
-			return nil, err
-		}
+		activation.step("apply layer payloads")
 		if err := c.Payloads(s.Paths.StateDir); err != nil {
 			s.failedPartWay(ctx, d.fx, m.FallbackSecret)
 			return nil, layer.Errorf(connect.CodeInternal, "%w", err)
@@ -387,9 +366,7 @@ func (d *delivery) commit(ctx context.Context) (_ *connect.Response[nodev1.Apply
 	}
 	// The documents and the identity are written in one rename.
 	if !d.keep && !d.held {
-		if err := activation.step("store config"); err != nil {
-			return nil, err
-		}
+		activation.step("store config")
 		d.stored.Identity = d.identity.data
 		if err := slot.WriteKeepingPrevious(d.dir, d.stored); err != nil {
 			s.failedPartWay(ctx, d.fx, m.FallbackSecret)
