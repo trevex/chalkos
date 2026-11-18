@@ -312,20 +312,21 @@ that cut it off. To try the config again after its trial rolled back, deliver it
 
 If a `waitFor` check blocks a config delivery, fix the condition it reports and retry. If
 you have verified that the dependent service can safely run, repeat the config delivery with
-`--force`:
+`--ignore-readiness`:
 
 ```sh
-chalkctl config apply cp1 --secrets secrets.age --force
+chalkctl config apply cp1 --secrets secrets.age --ignore-readiness
 ```
 
 The probe still runs within its configured deadline. A failure is reported as a warning and
 the dependent effect can continue. Config validation, prerequisite actions, service failures
-and the health checks for confirming a trial still apply. Use `--try` with `--force` when
-the node can accept a trial and you want rollback if it becomes unreachable. A later rollback
-runs its own readiness checks normally.
+and the health checks for confirming a trial still apply. Use `--try` with
+`--ignore-readiness` when the node can accept a trial and you want rollback if it becomes
+unreachable. A later rollback runs its own readiness checks normally.
 
-With `--kubernetes-share`, `--force` retains its certificate-delivery behavior and runtime
-readiness stays enforced.
+`--ignore-readiness` goes with config alone. A delivery with `--kubernetes-share` runs the
+readiness checks as usual, and its own `--force` delivers the share without asking whether the
+node is revoked.
 
 ## If it fails
 

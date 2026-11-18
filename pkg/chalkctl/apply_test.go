@@ -225,10 +225,11 @@ func TestApplyConfigForceHelp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := cmd.Flags().Lookup("force")
-	if f == nil || !strings.Contains(f.Usage, "runtime readiness") ||
-		!strings.Contains(f.Usage, "with --kubernetes-share, deliver without asking whether the node is revoked") {
+	if f := cmd.Flags().Lookup("force"); f == nil || f.Usage != "with --kubernetes-share, deliver without asking whether the node is revoked" {
 		t.Errorf("--force: %v", f)
+	}
+	if f := cmd.Flags().Lookup("ignore-readiness"); f == nil || !strings.Contains(f.Usage, "runtime readiness") {
+		t.Errorf("--ignore-readiness: %v", f)
 	}
 }
 
@@ -245,8 +246,8 @@ func TestApplyConfigForceRetriesAfterFailedReadiness(t *testing.T) {
 	r.setFail("probe-failure")
 	run := ta.runner(addr)
 
-	if err := run("config", "apply", "n1", "--dry-run", "--force"); err != nil ||
-		!strings.Contains(ta.stderr.String(), "failed runtime readiness checks would be overridden by --force") ||
+	if err := run("config", "apply", "n1", "--dry-run", "--ignore-readiness"); err != nil ||
+		!strings.Contains(ta.stderr.String(), "failed runtime readiness checks would be ignored") ||
 		slices.Contains(r.calls, "/nix/store/demo/bin/probe probe-failure") {
 		t.Fatalf("dry run: %v, stderr = %q, commands = %v", err, ta.stderr, r.calls)
 	}
@@ -254,8 +255,8 @@ func TestApplyConfigForceRetriesAfterFailedReadiness(t *testing.T) {
 		slices.Contains(r.calls, "systemctl try-restart resolver.service") {
 		t.Fatalf("plain apply: %v, commands = %v", err, r.calls)
 	}
-	if err := run("config", "apply", "n1", "--force"); err != nil ||
-		!strings.Contains(ta.stderr.String(), "--force overrode a runtime readiness check: effect resolver") ||
+	if err := run("config", "apply", "n1", "--ignore-readiness"); err != nil ||
+		!strings.Contains(ta.stderr.String(), "ignored a failed runtime readiness check: effect resolver") ||
 		!slices.Contains(r.calls, "systemctl try-restart resolver.service") {
 		t.Fatalf("forced retry: %v, stderr = %q, commands = %v", err, ta.stderr, r.calls)
 	}
@@ -335,11 +336,14 @@ func TestApplyIsConfigApply(t *testing.T) {
 	if !strings.Contains(short.Long, "short form of chalkctl config apply") {
 		t.Errorf("apply's help does not name config apply:\n%s", short.Long)
 	}
-	for _, flag := range []string{"--diff", "--staged"} {
-		err = ta.run(context.Background(), []string{"apply", "n1", "--force", flag, "--inventory", ta.inventory})
-		if err == nil || !strings.Contains(err.Error(), "--force needs a delivery or dry run for the running image") {
+	for _, flag := range []string{"--diff", "--staged", "--kubernetes-share"} {
+		err = ta.run(context.Background(), []string{"apply", "n1", "--ignore-readiness", flag, "--inventory", ta.inventory})
+		if err == nil || !strings.Contains(err.Error(), "--ignore-readiness goes with config for the running image") {
 			t.Errorf("apply %s: err = %v", flag, err)
 		}
+	}
+	if err := ta.run(context.Background(), []string{"apply", "n1", "--force", "--inventory", ta.inventory}); err == nil || !strings.Contains(err.Error(), "--force goes with --kubernetes-share") {
+		t.Errorf("apply --force: err = %v", err)
 	}
 }
 

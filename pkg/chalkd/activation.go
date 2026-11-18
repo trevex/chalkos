@@ -210,17 +210,17 @@ func (a *activation) finish(err error) {
 	a.node.saveActivation(a.record)
 }
 
-func (a *activation) plan(due []string, states map[string]outputs.State, force bool) {
+func (a *activation) plan(due []string, states map[string]outputs.State, ignoreReadiness bool) {
 	if a == nil || !a.checkpoint {
 		return
 	}
 	// Go's JSON encoder sorts map keys. Output states include both file and
 	// referenced secret hashes. The image slot pins the effect definitions.
 	data, err := json.Marshal(struct {
-		Due     []string
-		Outputs map[string]outputs.State
-		Force   bool
-	}{due, states, force})
+		Due             []string
+		Outputs         map[string]outputs.State
+		IgnoreReadiness bool
+	}{due, states, ignoreReadiness})
 	if err != nil {
 		log.Printf("the plan of the effects: %v; running every batch", err)
 		a.checkpoint = false

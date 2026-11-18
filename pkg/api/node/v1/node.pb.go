@@ -1934,9 +1934,9 @@ type ApplyConfigRequest struct {
 	// readiness probe fails. Its failure is a warning. Validation, prerequisite
 	// actions, and trial confirmation still apply. A later rollback runs its own
 	// readiness checks normally.
-	ForceReadiness bool `protobuf:"varint,12,opt,name=force_readiness,json=forceReadiness,proto3" json:"force_readiness,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	IgnoreReadiness bool `protobuf:"varint,12,opt,name=ignore_readiness,json=ignoreReadiness,proto3" json:"ignore_readiness,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *ApplyConfigRequest) Reset() {
@@ -2046,9 +2046,9 @@ func (x *ApplyConfigRequest) GetDiscardPending() bool {
 	return false
 }
 
-func (x *ApplyConfigRequest) GetForceReadiness() bool {
+func (x *ApplyConfigRequest) GetIgnoreReadiness() bool {
 	if x != nil {
-		return x.ForceReadiness
+		return x.IgnoreReadiness
 	}
 	return false
 }
@@ -6057,7 +6057,7 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\n" +
 	"ImageChunk\x12\x12\n" +
 	"\x04data\x18\x01 \x01(\fR\x04data\"\x11\n" +
-	"\x0fInstallResponse\"\xb2\x03\n" +
+	"\x0fInstallResponse\"\xb4\x03\n" +
 	"\x12ApplyConfigRequest\x12'\n" +
 	"\x0ffallback_secret\x18\x01 \x01(\tR\x0efallbackSecret\x12)\n" +
 	"\x10node_certificate\x18\x02 \x01(\fR\x0fnodeCertificate\x12\x19\n" +
@@ -6070,8 +6070,8 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\fignore_units\x18\t \x03(\tR\vignoreUnits\x12\x17\n" +
 	"\adry_run\x18\n" +
 	" \x01(\bR\x06dryRun\x12'\n" +
-	"\x0fdiscard_pending\x18\v \x01(\bR\x0ediscardPending\x12'\n" +
-	"\x0fforce_readiness\x18\f \x01(\bR\x0eforceReadiness\"F\n" +
+	"\x0fdiscard_pending\x18\v \x01(\bR\x0ediscardPending\x12)\n" +
+	"\x10ignore_readiness\x18\f \x01(\bR\x0fignoreReadiness\"F\n" +
 	"\x10GetConfigRequest\x12\x16\n" +
 	"\x06staged\x18\x01 \x01(\bR\x06staged\x12\x1a\n" +
 	"\bprevious\x18\x02 \x01(\bR\bprevious\"K\n" +

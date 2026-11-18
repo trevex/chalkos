@@ -33,9 +33,9 @@ type applyRequest struct {
 func (s *Server) ApplyConfig(ctx context.Context, req *connect.Request[nodev1.ApplyConfigRequest]) (*connect.Response[nodev1.ApplyConfigResponse], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if m := req.Msg; m.ForceReadiness && (m.Config == "" || m.Staged || m.DiscardPending ||
+	if m := req.Msg; m.IgnoreReadiness && (m.Config == "" || m.Staged || m.DiscardPending ||
 		len(m.Layers) != 0 || len(m.Trust) != 0 || len(m.NodeCertificate) != 0 || len(m.NodeKey) != 0) {
-		return nil, layer.Errorf(connect.CodeInvalidArgument, "force_readiness requires a config-only delivery to the running image")
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "ignore_readiness requires a config-only delivery to the running image")
 	}
 	// A config on trial is confirmed or rolled back before the node takes another delivery.
 	if err := s.refuseOnTrial("another delivery", false); err != nil {
@@ -106,8 +106,8 @@ func (s *Server) dryRun(ctx context.Context, r applyRequest) (*connect.Response[
 	if err != nil {
 		return nil, err
 	}
-	if r.msg.ForceReadiness {
-		warnings = append(warnings, "failed runtime readiness checks would be overridden by --force")
+	if r.msg.IgnoreReadiness {
+		warnings = append(warnings, "failed runtime readiness checks would be ignored: their effects would continue")
 	}
 	plan := &nodev1.Plan{Outputs: p.Outputs}
 	if !d.keep {
@@ -373,7 +373,7 @@ func (d *delivery) commit(ctx context.Context) (_ *connect.Response[nodev1.Apply
 			return nil, fmt.Errorf("store the config: %w", err)
 		}
 	}
-	restarted, warnings, err := s.consume(ctx, d.fx, d.staged, activation, !d.keep, m.FallbackSecret, m.ForceReadiness)
+	restarted, warnings, err := s.consume(ctx, d.fx, d.staged, activation, !d.keep, m.FallbackSecret, m.IgnoreReadiness)
 	if err != nil {
 		return nil, err
 	}

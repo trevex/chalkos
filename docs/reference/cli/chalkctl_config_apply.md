@@ -43,10 +43,10 @@ those it could not check, such as a node on trial. It goes without --diff, --try
 --ignore-unit and the layers' payload flags. With --staged the plan has no outputs or
 effects, which that image takes when it boots.
 
-For config delivered to the running image, --force makes failed runtime readiness checks
-warnings and lets their effects continue. It still runs the probes, validates the config,
-requires prerequisite actions to succeed, and uses the usual trial health checks. A dry run
-shows the override without running those probes.
+For config delivered to the running image, --ignore-readiness makes failed runtime readiness
+checks warnings and lets their effects continue. It still runs the probes, validates the config,
+requires prerequisite actions to succeed, and uses the usual trial health checks. A dry run says
+that failed checks would be ignored, without running the probes.
 
 Each image on a node keeps its own config, which it checks itself. A delivery to the running image
 goes to the staged image too, which checks it before anything changes; once the running image
@@ -74,8 +74,7 @@ rollback ends it at once. See
 
 --kubernetes-share also delivers a new Kubernetes share, such as a worker's new kubelet
 certificate. It is refused to a node revoked with chalkctl node revoke, and while no control plane
-says which nodes are revoked; with this flag, --force delivers it without asking and keeps
-runtime readiness checks enforced. The command needs the secrets
+says which nodes are revoked; --force delivers it without asking. The command needs the secrets
 file.
 
 ## Flags
@@ -87,8 +86,9 @@ file.
 | `--allow-downtime`{ #flag-allow-downtime } | boolean | `false` | Deliver a new API server version to a control plane of a cluster with one or two, whose API may be unavailable while that control plane's API server restarts. |
 | `--diff`{ #flag-diff } | boolean | `false` | Print the diff against the node's config and change nothing; the node checks nothing. |
 | `--dry-run`{ #flag-dry-run } | boolean | `false` | Have the node check the config as for a delivery and print the diff and plan; changes nothing. |
-| `--force`{ #flag-force } | boolean | `false` | Apply config even if a runtime readiness check fails; with --kubernetes-share, deliver without asking whether the node is revoked. |
+| `--force`{ #flag-force } | boolean | `false` | With --kubernetes-share, deliver without asking whether the node is revoked. |
 | `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |
+| `--ignore-readiness`{ #flag-ignore-readiness } | boolean | `false` | Make failed runtime readiness checks of a delivery to the running image warnings, and let their effects continue. |
 | `--ignore-unit`{ #flag-ignore-unit } | list of string | — | With --try, leave the unit out of the health check the confirmation waits for, as the image's check leaves out the units it ignores. |
 | `--inventory`{ #flag-inventory } | string | $CHALKOSINVENTORY, else chalkos.yaml in the current directory, when it exists | Inventory naming the cluster's nodes, their addresses and their config files. |
 | `--kubernetes-share`{ #flag-kubernetes-share } | boolean | `false` | Also deliver a new Kubernetes share, such as a new kubelet certificate for a worker. |

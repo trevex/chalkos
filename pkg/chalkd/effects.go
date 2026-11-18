@@ -207,7 +207,7 @@ const effectsTimeout = 10 * time.Minute
 // swaps in the staged outputs, and takes the effects. It returns the restarted units and the
 // warnings of rules that could not be evaluated, and removes the baseline once every effect is
 // taken; until then a retry compares with it and takes them again.
-func (s *Server) consume(ctx context.Context, e *pendingEffects, staged *outputs.Staged, activation *activation, stored bool, secret string, forceReadiness bool) ([]string, []string, error) {
+func (s *Server) consume(ctx context.Context, e *pendingEffects, staged *outputs.Staged, activation *activation, stored bool, secret string, ignoreReadiness bool) ([]string, []string, error) {
 	activation.step("plan runtime effects")
 	states := staged.States()
 	due, warnings, err := s.due(ctx, e, states, secret)
@@ -218,7 +218,7 @@ func (s *Server) consume(ctx context.Context, e *pendingEffects, staged *outputs
 	if err != nil {
 		return nil, nil, err
 	}
-	activation.plan(due, states, forceReadiness)
+	activation.plan(due, states, ignoreReadiness)
 	if stored || e.baselined {
 		activation.step("publish unit config")
 		if err := s.Loader.LoadConfig(); err != nil {
@@ -236,9 +236,9 @@ func (s *Server) consume(ctx context.Context, e *pendingEffects, staged *outputs
 		return nil, nil, fmt.Errorf("%w%s", err, a.ByHand())
 	}
 	var warnReadiness func(error)
-	if forceReadiness {
+	if ignoreReadiness {
 		warnReadiness = func(err error) {
-			warning := fmt.Sprintf("--force overrode a runtime readiness check: %v", err)
+			warning := fmt.Sprintf("ignored a failed runtime readiness check: %v", err)
 			log.Print(warning)
 			warnings = append(warnings, warning)
 		}

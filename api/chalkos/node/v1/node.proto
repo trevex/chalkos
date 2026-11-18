@@ -551,7 +551,7 @@ message ApplyConfigRequest {
   // readiness probe fails. Its failure is a warning. Validation, prerequisite
   // actions, and trial confirmation still apply. A later rollback runs its own
   // readiness checks normally.
-  bool force_readiness = 12;
+  bool ignore_readiness = 12;
 }
 
 // The request of GetConfig.
