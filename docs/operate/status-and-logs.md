@@ -116,12 +116,13 @@ slots of both images, or `chalkctl config apply --staged node1` when the running
 inventory's config already, or when the staged image is the inventory's and the running image is
 not. When neither image is the inventory's, they name `chalkctl upgrade --nodes node1`, as the
 config line does. A staged image that is not the inventory's on a node that runs the inventory's
-image adds the same condition as the config line. After a rollback from a boot that was not found
-healthy, the staged image is the rollback image, and the parentheses say that it keeps the config
-it last ran until the boot is found healthy. During a trial the node takes no delivery. When the
-inventory's config is on trial, the parentheses name `chalkctl config confirm node1`, because the
-confirmation writes the staged config. Otherwise they say what must end the trial first, as the
-config line does.
+image adds the same condition as the config line. When status cannot compare the config, the
+staged line names `chalkctl config apply --staged --diff node1`, which compares the staged slot.
+After a rollback from a boot that was not found healthy, the staged image is the rollback image,
+and the parentheses say that it keeps the config it last ran until the boot is found healthy.
+During a trial the node takes no delivery. When the inventory's config is on trial, the
+parentheses name `chalkctl config confirm node1`, because the confirmation writes the staged
+config. Otherwise they say what must end the trial first, as the config line does.
 
 A node that holds config for its next upgrade adds
 `pending config <version> (unchecked, since <time>; the next upgrade checks it against its image)`.

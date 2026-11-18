@@ -129,6 +129,15 @@ func TestStatusDecryptsNoSecretSource(t *testing.T) {
 	if out := ta.stdout.String(); !strings.Contains(out, "not compared with the inventory's, which takes Secret values from sops or age sources that status does not decrypt; chalkctl config apply --diff n1 compares them") {
 		t.Errorf("status = %q", out)
 	}
+	ctx := context.WithValue(t.Context(), secretSourcesKey{}, &secretSources{ctx: t.Context(), app: ta.app})
+	c, err := loadInventory(ctx, ta.inventory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	staged := nodeInventory{c: c, name: "n1"}.StagedConfigState(&nodev1.StatusResponse{StagedConfigVersion: "v1", Boot: &nodev1.BootStatus{}})
+	if !strings.HasSuffix(staged, "; chalkctl config apply --staged --diff n1 compares them") {
+		t.Errorf("staged config = %q", staged)
+	}
 	if _, err := os.Stat(calls); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("status ran sops: %v", err)
 	}

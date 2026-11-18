@@ -88,19 +88,20 @@ func (i nodeInventory) PlatformLine(reported string) string {
 // config chalkctl delivers to it, as runningAdvice advises.
 func (i nodeInventory) ConfigState(s *nodev1.StatusResponse) string {
 	name, img := i.name, i.imageOf(s.Boot)
-	return i.slotState(s.ConfigVersion, func(want string) string { return runningAdvice(name, want, img, s) })
+	return i.slotState(s.ConfigVersion, "chalkctl config apply --diff "+name, func(want string) string { return runningAdvice(name, want, img, s) })
 }
 
 // StagedConfigState says whether the slot of the image the status s names as staged holds the
 // config chalkctl delivers to the node, as stagedAdvice advises.
 func (i nodeInventory) StagedConfigState(s *nodev1.StatusResponse) string {
 	name, img := i.name, i.imageOf(s.Boot)
-	return i.slotState(s.StagedConfigVersion, func(want string) string { return stagedAdvice(name, want, img, s) })
+	return i.slotState(s.StagedConfigVersion, "chalkctl config apply --staged --diff "+name, func(want string) string { return stagedAdvice(name, want, img, s) })
 }
 
 // slotState says whether a slot of the node holds version, the config chalkctl delivers to it, and
-// when it does not, what advice says delivers it, given the inventory's version.
-func (i nodeInventory) slotState(version string, advice func(want string) string) string {
+// when it does not, what advice says delivers it, given the inventory's version. diff is the command
+// that compares the slot's config with the inventory's when status cannot.
+func (i nodeInventory) slotState(version, diff string, advice func(want string) string) string {
 	c, name := i.c, i.name
 	if c.Partial() {
 		return "no inventory to compare it with"
@@ -109,7 +110,7 @@ func (i nodeInventory) slotState(version string, advice func(want string) string
 	switch {
 	case errors.Is(err, errEncryptedSources):
 		// status decrypts nothing, so it does not know the config's version.
-		return "not compared with the inventory's, which takes Secret values from sops or age sources that status does not decrypt; chalkctl config apply --diff " + name + " compares them"
+		return "not compared with the inventory's, which takes Secret values from sops or age sources that status does not decrypt; " + diff + " compares them"
 	case err != nil:
 		return "cannot read the config the inventory gives it: " + err.Error()
 	case want != version:
