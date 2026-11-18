@@ -53,7 +53,7 @@ out boots its previous image again. [Upgrades](../how-it-works/node/upgrades.md)
 
 ## Recover a node whose cluster is unavailable
 
-When chalkd is reachable but Kubernetes or etcd cannot start, use a chalkctl with `--force` to
+When chalkd is reachable but Kubernetes or etcd cannot start, run `chalkctl upgrade --force` to
 install the repair image over the node API. Name every target explicitly:
 
 ```sh
@@ -61,9 +61,8 @@ chalkctl upgrade --nodes cp1 --force --secrets secrets.age
 ```
 
 The run reaches only the selected nodes, in batches of `--max-unavailable` without coordinator
-ordering. It skips cluster version checks, the guard against
-config changes that normally need an ordered rollout, and the layers' role queries, quorum
-checks, drains and uncordons. Workloads can be interrupted and etcd can lose quorum. The node's
+ordering. It skips cluster version checks, the guard against config changes that normally need an
+ordered rollout, and the layers' role queries, quorum checks, drains and uncordons. Workloads can be interrupted and etcd can lose quorum. The node's
 image and config checks, Secure Boot checks and protection of its fallback image still apply.
 chalkctl still waits for the new boot to pass the node's health checks and stops if it falls back.
 A node cordoned before recovery stays cordoned. If the node refuses to overwrite the fallback of

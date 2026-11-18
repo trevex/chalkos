@@ -114,7 +114,7 @@ func (s *Server) activationStatus(dir, stored, boot string) *nodev1.ConfigActiva
 }
 
 // activation tracks one commit while the node's delivery lock is held. The durable snapshot lets
-// Status answer independently of that lock and lets a restarted chalkd recognize completed work.
+// Status answer independently of that lock and lets a restarted chalkd recognise completed work.
 type activation struct {
 	node       *Server
 	record     activationRecord

@@ -3,9 +3,10 @@ package statusview
 import (
 	"cmp"
 	"fmt"
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"io"
 	"time"
+
+	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 )
 
 // WriteBGP writes the peer table or why its state is unknown. The console passes a function

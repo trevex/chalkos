@@ -9,7 +9,7 @@
 }:
 let
   frr = pkgs.chalkos.frr;
-  # Normalized documents as chalkd hands them to the renderer; BFD and authentication are
+  # Normalised documents as chalkd hands them to the renderer; BFD and authentication are
   # independent of neighbour route resolution and are left out here.
   input = pkgs.writeText "bgp-nht.json" (
     builtins.toJSON {

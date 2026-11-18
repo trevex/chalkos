@@ -109,8 +109,8 @@ before the rotation. Keep `.prev` and `.lock` out of version control.
 chalkctl rotate kubernetes-ca --secrets secrets.enc.json
 ```
 
-Follow the command's instructions at each pause. For SOPS, use version 3.11 or newer.
-Chalkctl updates the file in place, using its existing SOPS keys and encryption settings.
+Follow the command's instructions at each pause. For SOPS, use version 3.11 or newer: chalkctl
+updates the file in place, using its existing SOPS keys and encryption settings.
 Native JSON and age bundles also support the existing `--out` workflow, which is required
 when using stdin for a rotation. See the
 [Kubernetes CA rotation guide](../kubernetes/rotate-kubernetes-cas.md) and

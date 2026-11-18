@@ -133,7 +133,7 @@ explains the pending config.
 <version>` is the last version whose live delivery finished its activation work. An apply
 can update the stored version before a later step fails. While a delivery is running,
 failed, or interrupted, the activation line shows its target version and the current or
-failed step. A completed activation from a previous boot is labeled as such. A node that
+failed step. A completed activation from a previous boot is labelled as such. A node that
 has only loaded config at boot may have no completed live activation recorded.
 
 `previous config <version> (config rollback restores it)` names the config the running

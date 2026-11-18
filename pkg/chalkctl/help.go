@@ -479,10 +479,10 @@ server's: chalkctl config apply delivers that change first, in the order the lay
 ordinary upgrade. It skips cluster version checks, config rollout guards and layer coordination:
 no layer role queries, quorum checks, draining or uncordoning. It needs only the selected nodes'
 chalkd endpoints, processes them in --max-unavailable batches without coordinator ordering, and
-still checks credentials, image integrity and config, and waits for the new
-boot to pass the node's health checks. It may interrupt workloads or lose etcd quorum. The node's
-protection of a fallback image while its running boot is unblessed still applies. The flag is
-client-side and works with installed nodes that have no force option of their own.
+still checks credentials, image integrity and config, and waits for the new boot to pass the
+node's health checks. It may interrupt workloads or lose etcd quorum. The node's protection of a
+fallback image while its running boot is unblessed still applies. The flag is client-side and
+works with installed nodes that have no force option of their own.
 
 Each node gets its config with the image, checked against it before any node is drained, and
 chalkctl prints a line of what it changes and warns of each image reference in the config that

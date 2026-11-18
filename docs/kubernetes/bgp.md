@@ -183,10 +183,10 @@ chalkctl config apply cp1 --secrets=secrets.age
 ```
 
 The console's Network tab lists the configured speaker's BGP sessions. Four diagnostics show
-FRR's state: `bgp-summary` the
-sessions, `bgp-neighbor` one session in detail, `bfd-peers` the BFD sessions and `bgp-route` the
-paths to a prefix. The output below comes from the node `k1`, which peers with `r1` through the
-peer `r1` above and announces its address and the VIP from the dummy interface `kube0`:
+FRR's state: `bgp-summary` the sessions, `bgp-neighbor` one session in detail, `bfd-peers` the BFD
+sessions and `bgp-route` the paths to a prefix. The output below comes from the node `k1`, which
+peers with `r1` through the peer `r1` above and announces its address and the VIP from the dummy
+interface `kube0`:
 
 ```console
 $ chalkctl node diag k1 bgp-summary
