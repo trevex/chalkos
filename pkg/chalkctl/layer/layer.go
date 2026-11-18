@@ -176,6 +176,8 @@ type Upgrading interface {
 type Host interface {
 	// Stdout is the standard output of the command that runs.
 	Stdout() io.Writer
+	// Stderr is the standard error of the command that runs.
+	Stderr() io.Writer
 	// Table writes aligned columns, separated by tabs, to standard output once flushed.
 	Table() *tabwriter.Writer
 	// Command makes cmd run run with the environment and streams of the command that runs.

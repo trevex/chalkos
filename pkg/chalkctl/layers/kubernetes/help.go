@@ -112,47 +112,75 @@ const registryExample = `  chalkctl registry push busybox.tar docker.io/library/
 
 const registryPushLong = `Pushes the image of SOURCE to every endpoint of the cluster's ClusterRegistry, under REFERENCE
 below the endpoint: docker.io/library/nginx:1.27 goes to <endpoint>/docker.io/library/nginx:1.27,
-where containerd looks for it. REFERENCE's host must be one the ClusterRegistry mirrors. SOURCE is
-an OCI image layout directory, an OCI archive, a docker archive as docker save writes it, or an
-image in a registry that the workstation reaches, read with its docker config. An index goes
-after the images it names. chalkctl checks that each endpoint serves the image's digest, reports
-each endpoint, and fails unless every one has the image. --connect-to reaches an endpoint through
-another address, such as a forwarded port, while it still verifies the endpoint's certificate.
-The command needs an admin client file or the secrets file.`
+where containerd looks for it. REFERENCE's host must be one the ClusterRegistry mirrors.
+REFERENCE may be written as the kinds write images, repository:tag@sha256:<digest>: the image goes
+under the tag, and chalkctl refuses a source of another digest before it reaches an endpoint. A
+reference by digest alone pushes the manifest without a tag.
+
+SOURCE is an OCI image layout directory, an OCI archive, a docker archive as docker save writes
+it, or an image in a registry that the workstation reaches, read with its docker config. chalkctl
+reads a local source through before the first endpoint, so a missing blob fails at once; it
+unpacks an OCI archive below $TMPDIR. A docker archive holds one platform's image, whose digest
+differs from the one its registry serves, so pods and documents that pin the upstream digest do
+not find it: push the upstream image or an OCI layout copied from it instead. An index goes with
+every image it names, after them, attestations included, so an index of many platforms takes
+several times the space of one image. chalkctl may read an image from a registry on a loopback or
+private address over plain HTTP; pin REFERENCE to the image's digest, and chalkctl refuses
+anything else it reads.
+
+chalkctl prints the image's digest, checks that each endpoint serves it, reports each endpoint,
+and fails unless every one has the image. --connect-to reaches an endpoint through another
+address, such as a forwarded port, while it still verifies the endpoint's certificate. The
+command needs an admin client file or the secrets file.`
 
 const registryPushExample = `  chalkctl registry push busybox.tar docker.io/library/busybox:1.37.0 --secrets secrets.age
 
-  # An image from a registry the workstation reaches.
-  chalkctl registry push registry.k8s.io/pause:3.10.2 registry.k8s.io/pause:3.10.2
+  # The control-plane image a Cluster names, from a registry the workstation reaches.
+  chalkctl registry push registry.k8s.io/kube-apiserver:v1.37.2 \
+    registry.k8s.io/kube-apiserver:v1.37.2@sha256:3e563afb5cb5b72a10bac7012698dd09f5a42bde7d22de8d7d3c12e654df86b4
 
   # Through a forwarded port to the endpoint fd00::11.
   chalkctl registry push busybox.tar docker.io/library/busybox:1.37.0 --connect-to fd00::11=127.0.0.1:15000`
 
 const registryDeleteLong = `Deletes REFERENCE, a tag or a digest, below every endpoint of the cluster's ClusterRegistry, as
 registry push names it there. An endpoint that does not hold it counts as done, and the command
-fails unless every endpoint deleted it or never held it. A tag goes alone; a digest takes the
-manifest and the tags that name it. The image's layers stay on disk until chalkctl registry gc.
-The command needs an admin client file or the secrets file.`
+fails unless every endpoint deleted it or never held it.
 
-const registryDeleteExample = `  chalkctl registry delete docker.io/library/busybox:1.36.1`
+A tag goes alone: chalkctl prints the digest it named and the tags that still name it. When none
+do, the manifest stays, and with it its layers, until chalkctl registry delete
+<repository>@<digest>. A digest takes the manifest. Before it deletes anything, chalkctl refuses a
+digest that tags name unless --with-tags is given, and then prints each tag it deleted with it;
+it always refuses a digest that a tagged index names, as the index would break. The layers stay
+on disk until chalkctl registry gc. The command needs an admin client file or the secrets file.`
+
+const registryDeleteExample = `  # Take the tag away; the manifest stays.
+  chalkctl registry delete docker.io/library/busybox:1.36.1
+
+  # Delete the manifest and every tag that names it.
+  chalkctl registry delete docker.io/library/busybox@sha256:7b3ccabffc97de872a30dfd234fd972a66d247c8cfc69b0550f276481852627c --with-tags`
 
 const registryGCLong = `Collects garbage on every endpoint of the cluster's ClusterRegistry, one after the other: each
 removes the layers and configs that no manifest references, keeps every manifest, tagged or not,
 and reports the space it freed. Nothing collects garbage on its own, so run the command after
-registry delete. While an endpoint collects, it serves pulls and refuses pushes and deletes, and
-a push whose layers went up before the collection started may fail on them, so run the command
-when no push is in progress. An endpoint that collects already says so, and the command fails
-for it. The command needs an admin client file or the secrets file.`
+registry delete of a digest; deleting a tag frees nothing, since its manifest stays.
 
-const registryGCExample = `  chalkctl registry delete docker.io/library/busybox:1.36.1
+While an endpoint collects, it serves pulls and refuses pushes and deletes, and a push whose
+layers went up before the collection started may fail on them, so run the command when no push
+is in progress. An endpoint that collects already says so, and the command fails for it. A
+collection runs to its end on the endpoint once begun: Ctrl-C stops chalkctl, not the
+collection. The command needs an admin client file or the secrets file.`
+
+const registryGCExample = `  chalkctl registry delete docker.io/library/busybox@sha256:7b3ccabffc97de872a30dfd234fd972a66d247c8cfc69b0550f276481852627c --with-tags
   chalkctl registry gc`
 
 const registryListLong = `Lists the repositories, tags and digests of every endpoint of the cluster's ClusterRegistry, with
-the endpoints that serve each, and marks an image that some endpoint lacks or serves with another
-digest. Nothing copies images between the endpoints, so the command exits 1 when they differ or
-an endpoint cannot be listed; a push of the image to every endpoint mends a difference. Images
-pushed by digest alone, without a tag, are not listed. The registry serves reads to anyone, but
-chalkctl verifies the endpoints by the OS CA of a client file or the secrets file, so the command
-needs a client file of any role or the secrets file.`
+the endpoints that serve each. A tag's digest is the one most endpoints serve; the command marks
+an endpoint that lacks the tag, serves it with another digest, or lacks images of a tagged index,
+which would fail a pull of that platform. Nothing copies images between the endpoints, so the
+command exits 1 when any is marked or an endpoint cannot be listed; a push of the image to every
+endpoint mends it. Images pushed by digest alone, without a tag, are not listed.
+
+The registry serves reads to anyone, but chalkctl verifies the endpoints by the OS CA of a client
+file or the secrets file, so the command needs a client file of any role or the secrets file.`
 
 const registryListExample = `  chalkctl registry list`

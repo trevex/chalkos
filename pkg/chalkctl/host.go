@@ -21,6 +21,7 @@ type host struct{ a *app }
 var _ layer.Host = host{}
 
 func (h host) Stdout() io.Writer        { return h.a.stdout }
+func (h host) Stderr() io.Writer        { return h.a.stderr }
 func (h host) Table() *tabwriter.Writer { return h.a.table() }
 
 func (h host) Command(cmd *cobra.Command, run func(layer.Host, context.Context, []string) error) *cobra.Command {

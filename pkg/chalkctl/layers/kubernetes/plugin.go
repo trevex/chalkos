@@ -1,6 +1,7 @@
 // Package kubernetes is chalkctl's Kubernetes layer: the bootstrap, kubeconfig, etcd, cluster
 // registry and node revocation commands, and the Kubernetes hooks of status, inventory checks,
-// delivery, upgrade, rollout and rotation. Its Rollout hooks hold the cluster to Kubernetes's version skew policy.
+// delivery, upgrade, rollout and rotation. Its Rollout hooks hold the cluster to Kubernetes's
+// version skew policy.
 package kubernetes
 
 import (

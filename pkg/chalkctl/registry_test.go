@@ -91,6 +91,10 @@ func TestRegistryPush(t *testing.T) {
 	if want := "--connect-to names 192.0.2.9, which is no endpoint of the ClusterRegistry; its endpoints are 192.0.2.1 and 192.0.2.2"; err == nil || !strings.Contains(err.Error(), want) {
 		t.Errorf("registry push to another endpoint = %v, want %q", err, want)
 	}
+	err = l.run(context.Background(), append(push, "--connect-to", "192.0.2.1=127.0.0.1:1"))
+	if want := "--connect-to names 192.0.2.1 twice"; err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("registry push with an endpoint named twice = %v, want %q", err, want)
+	}
 }
 
 // TestRegistryManage lists, deletes and collects garbage on both endpoints; a reader's client
@@ -126,13 +130,17 @@ func TestRegistryManage(t *testing.T) {
 			t.Errorf("%s with a reader's client file = %v, want %q", strings.Join(cmd, " "), err, want)
 		}
 	}
-	if err := run("registry", "delete", "busybox:1.37.0"); err != nil || strings.Count(l.stdout.String(), ": deleted ") != 2 {
-		t.Errorf("registry delete = %v, %q, want the tag deleted on both endpoints", err, l.stdout)
+	digest, _ := img.Digest()
+	if err := run("registry", "delete", "busybox@"+digest.String()); err == nil || !strings.Contains(err.Error(), "pass --with-tags") {
+		t.Errorf("registry delete of a tagged digest = %v, want it refused", err)
+	}
+	if err := run("registry", "delete", "busybox@"+digest.String(), "--with-tags"); err != nil || strings.Count(l.stdout.String(), " and its tags 1.37.0\n") != 2 {
+		t.Errorf("registry delete --with-tags = %v, %q, want the digest and its tag deleted on both endpoints", err, l.stdout)
 	}
 	if err := run("registry", "list"); err != nil || l.stdout.String() != "REPOSITORY  TAG  DIGEST  ENDPOINTS\n" {
 		t.Errorf("registry list after the delete = %v, %q, want the header alone", err, l.stdout)
 	}
-	if err := run("registry", "gc"); err != nil || strings.Count(l.stdout.String(), ": freed ") != 2 {
+	if err := run("registry", "gc"); err != nil || strings.Count(l.stdout.String(), ": freed ") != 2 || strings.Contains(l.stdout.String(), "freed 0 B") {
 		t.Errorf("registry gc = %v, %q, want the space freed on both endpoints", err, l.stdout)
 	}
 }

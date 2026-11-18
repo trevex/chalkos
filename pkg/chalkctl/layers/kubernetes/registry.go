@@ -1,27 +1,19 @@
 package kubernetes
 
 import (
-	"archive/tar"
 	"context"
 	"crypto/tls"
-	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"net"
 	"net/http"
 	"net/netip"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 
-	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
-	"github.com/google/go-containerregistry/pkg/v1/layout"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
@@ -48,7 +40,7 @@ func registryPushCommand(h layer.Host) *cobra.Command {
 		Example: registryPushExample,
 		Args:    cli.ExactArgs(2),
 	}, func(h layer.Host, ctx context.Context, args []string) error {
-		ref, err := parseReference(args[1])
+		ref, err := parseImageRef(args[1])
 		if err != nil {
 			return err
 		}
@@ -56,7 +48,7 @@ func registryPushCommand(h layer.Host) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		if _, err := s.targetOf(s.Endpoints[0], ref); err != nil {
+		if _, err := s.repoAt(s.Endpoints[0], ref); err != nil {
 			return err
 		}
 		img, cleanup, err := openSource(ctx, args[0])
@@ -64,18 +56,61 @@ func registryPushCommand(h layer.Host) *cobra.Command {
 			return err
 		}
 		defer cleanup()
-		return s.push(ctx, h.Stdout(), img, ref)
+		return s.push(ctx, h.Stdout(), h.Stderr(), img, ref)
 	})
 	f.register(cmd.Flags(), pki.RoleAdmin)
 	return cmd
 }
 
-func parseReference(s string) (name.Reference, error) {
-	ref, err := name.ParseReference(s)
-	if err != nil {
-		return nil, cli.Usagef("%s is no image reference: %v", s, err)
+// imageRef is a REFERENCE of the registry commands: a repository with a tag, a digest or both,
+// as the kinds write images. A reference with neither names the tag latest.
+type imageRef struct {
+	repo name.Repository
+	// tag and digest are empty when the reference names none.
+	tag, digest string
+}
+
+func parseImageRef(s string) (imageRef, error) {
+	base, digest, pinned := strings.Cut(s, "@")
+	var ref imageRef
+	if pinned {
+		d, err := name.NewDigest(s)
+		if err != nil {
+			return imageRef{}, cli.Usagef("%s is no image reference: %v", s, err)
+		}
+		ref.repo, ref.digest = d.Context(), digest
+		// go-containerregistry drops the tag of repository:tag@digest.
+		if last := base[strings.LastIndex(base, "/")+1:]; !strings.Contains(last, ":") {
+			return ref, nil
+		}
 	}
+	t, err := name.NewTag(base)
+	if err != nil {
+		return imageRef{}, cli.Usagef("%s is no image reference: %v", s, err)
+	}
+	ref.repo, ref.tag = t.Context(), t.TagStr()
 	return ref, nil
+}
+
+// name is the repository as containerd names it, docker.io/library/nginx for nginx.
+func (r imageRef) name() string {
+	host, err := clusterregistry.Prefix(r.repo.RegistryStr())
+	if err != nil {
+		host = r.repo.RegistryStr()
+	}
+	return host + "/" + r.repo.RepositoryStr()
+}
+
+// String is the reference as containerd names it, docker.io/library/nginx:1.27 for nginx:1.27.
+func (r imageRef) String() string {
+	s := r.name()
+	if r.tag != "" {
+		s += ":" + r.tag
+	}
+	if r.digest != "" {
+		s += "@" + r.digest
+	}
+	return s
 }
 
 // endpointFlags are the flags of the registry commands, which reach every endpoint.
@@ -93,7 +128,7 @@ func (f *endpointFlags) register(fs *pflag.FlagSet, need pki.Role) {
 		file = "admin client file"
 	}
 	fs.StringVar(&f.node.Config, "config", "", file+" to authenticate with instead of the secrets file (default $CHALKOSCONFIG, else ~/.config/chalkos/config, unless --secrets is given)")
-	fs.StringArrayVar(&f.connect, "connect-to", nil, "ENDPOINT=HOST:PORT: reach an endpoint at another address, such as a forwarded port, while still verifying its certificate for the endpoint; may be repeated")
+	fs.StringArrayVar(&f.connect, "connect-to", nil, "ENDPOINT=HOST:PORT: reach an endpoint at another address, such as a forwarded port, while still verifying its certificate for the endpoint; may be repeated, once per endpoint")
 }
 
 // endpoints is the cluster's ClusterRegistry with the flags' credentials, refused for command
@@ -120,8 +155,12 @@ func (f endpointFlags) endpoints(h layer.Host, ctx context.Context, command stri
 		if err != nil {
 			return endpoints{}, cli.Usagef("--connect-to %q: want ENDPOINT=HOST:PORT, such as fd00::11=127.0.0.1:15000", v)
 		}
-		if a = a.Unmap(); !slices.Contains(r.Endpoints, a) {
+		a = a.Unmap()
+		if !slices.Contains(r.Endpoints, a) {
 			return endpoints{}, cli.Usagef("--connect-to names %s, which is no endpoint of the ClusterRegistry; its endpoints are %s", e, strs.And(endpointNames(r.Endpoints)))
+		}
+		if other, ok := s.connect[a]; ok {
+			return endpoints{}, cli.Usagef("--connect-to names %s twice, at %s and %s; give each endpoint one address", a, other, via)
 		}
 		s.connect[a] = via
 	}
@@ -230,19 +269,49 @@ func (t httpsTo) RoundTrip(r *http.Request) (*http.Response, error) {
 	return resp, err
 }
 
+// repoAt is the repository of ref below the endpoint e: <endpoint>/<prefix of ref's
+// host>/<repository>. A host the ClusterRegistry does not mirror is refused.
+func (s endpoints) repoAt(e netip.Addr, ref imageRef) (name.Repository, error) {
+	prefix, err := clusterregistry.Prefix(ref.repo.RegistryStr())
+	if err != nil {
+		return name.Repository{}, err
+	}
+	if !slices.Contains(s.Mirrors, prefix) {
+		return name.Repository{}, fmt.Errorf("the ClusterRegistry mirrors %s, not %s, so containerd never pulls %s from it; add %s to its mirrors", strs.And(s.Mirrors), prefix, ref, prefix)
+	}
+	return name.NewRepository(s.Host(e) + "/" + prefix + "/" + ref.repo.RepositoryStr())
+}
+
+// targetOf is ref below the endpoint e, by its tag when it names one, else by its digest.
+func (s endpoints) targetOf(e netip.Addr, ref imageRef) (name.Reference, error) {
+	repo, err := s.repoAt(e, ref)
+	if err != nil {
+		return nil, err
+	}
+	if ref.tag != "" {
+		return repo.Tag(ref.tag), nil
+	}
+	return repo.Digest(ref.digest), nil
+}
+
 // pushable is an image or an index of images, as a source gives it.
 type pushable interface {
 	Digest() (v1.Hash, error)
 }
 
-// push pushes img to each endpoint in turn, reports each, and fails unless every endpoint serves
-// img's digest under the target of ref.
-func (s endpoints) push(ctx context.Context, out io.Writer, img pushable, ref name.Reference) error {
+// push pushes img to each endpoint in turn, under ref's tag, else by its digest, and fails
+// unless every endpoint serves img's digest there. A digest ref names must be img's. It reports
+// each endpoint, a failed one to errOut.
+func (s endpoints) push(ctx context.Context, out, errOut io.Writer, img pushable, ref imageRef) error {
 	want, err := img.Digest()
 	if err != nil {
 		return err
 	}
-	var missing []string
+	if ref.digest != "" && ref.digest != want.String() {
+		return fmt.Errorf("%s names the digest %s, but the source's image is %s; push a source of that digest, such as the image in its registry by that reference, since docker save and rebuilt images get other digests", ref, ref.digest, want)
+	}
+	fmt.Fprintf(out, "pushing %s as %s@%s\n", ref, ref.name(), want)
+	var failed []string
 	for _, e := range s.Endpoints {
 		target, err := s.targetOf(e, ref)
 		if err == nil {
@@ -252,33 +321,16 @@ func (s endpoints) push(ctx context.Context, out io.Writer, img pushable, ref na
 			}
 		}
 		if err != nil {
-			fmt.Fprintf(out, "%s: failed: %v\n", e, err)
-			missing = append(missing, e.String())
+			fmt.Fprintf(errOut, "%s: failed: %v\n", e, err)
+			failed = append(failed, e.String())
 			continue
 		}
 		fmt.Fprintf(out, "%s: pushed %s as %s\n", e, target, want)
 	}
-	if len(missing) > 0 {
-		return fmt.Errorf("the image is missing on %d of %d endpoints of the cluster registry: %s; nothing copies it between them, so push it again once they are reachable", len(missing), len(s.Endpoints), strings.Join(missing, ", "))
+	if len(failed) > 0 {
+		return fmt.Errorf("the push failed on %d of %d endpoints of the cluster registry: %s; nothing copies images between them, so push again once they are reachable", len(failed), len(s.Endpoints), strings.Join(failed, ", "))
 	}
 	return nil
-}
-
-// targetOf is ref below the endpoint e: <endpoint>/<prefix of ref's host>/<repository>, with
-// ref's tag or digest. A host the ClusterRegistry does not mirror is refused.
-func (s endpoints) targetOf(e netip.Addr, ref name.Reference) (name.Reference, error) {
-	prefix, err := clusterregistry.Prefix(ref.Context().RegistryStr())
-	if err != nil {
-		return nil, err
-	}
-	if !slices.Contains(s.Mirrors, prefix) {
-		return nil, fmt.Errorf("the ClusterRegistry mirrors %s, not %s, so containerd never pulls %s from it; add %s to its mirrors", strs.And(s.Mirrors), prefix, ref, prefix)
-	}
-	repo := s.Host(e) + "/" + prefix + "/" + ref.Context().RepositoryStr()
-	if d, ok := ref.(name.Digest); ok {
-		return name.NewDigest(repo + "@" + d.DigestStr())
-	}
-	return name.NewTag(repo + ":" + ref.Identifier())
 }
 
 // write pushes img to target; an index after the images it names, which the registry wants
@@ -300,158 +352,4 @@ func served(target name.Reference, want v1.Hash, opts ...remote.Option) error {
 		return fmt.Errorf("the endpoint serves %s, not %s", desc.Digest, want)
 	}
 	return nil
-}
-
-// openSource reads the image of source: an OCI image layout directory, an OCI archive (a tar of
-// one) or a docker archive as docker save writes it, each of one image or index, or else a
-// reference to an image in a registry, read with the docker config's credentials. cleanup removes
-// what reading it unpacked.
-func openSource(ctx context.Context, source string) (img pushable, cleanup func(), err error) {
-	cleanup = func() {}
-	fi, err := os.Stat(source)
-	switch {
-	case err == nil && fi.IsDir():
-		img, err = fromLayout(source)
-		return img, cleanup, err
-	case err == nil:
-		return fromArchive(source)
-	case !errors.Is(err, fs.ErrNotExist):
-		return nil, cleanup, err
-	}
-	ref, err := name.ParseReference(source)
-	if err != nil {
-		return nil, cleanup, fmt.Errorf("%s is no file, no directory and no image reference: %w", source, err)
-	}
-	desc, err := remote.Get(ref, remote.WithContext(ctx), remote.WithAuthFromKeychain(authn.DefaultKeychain))
-	if err != nil {
-		return nil, cleanup, fmt.Errorf("%s is no file and no directory, and as an image reference: %w", source, err)
-	}
-	if desc.MediaType.IsIndex() {
-		img, err = desc.ImageIndex()
-	} else {
-		img, err = desc.Image()
-	}
-	return img, cleanup, err
-}
-
-// fromLayout reads the one image or index the OCI image layout dir names.
-func fromLayout(dir string) (pushable, error) {
-	idx, err := layout.ImageIndexFromPath(dir)
-	if err != nil {
-		return nil, err
-	}
-	m, err := idx.IndexManifest()
-	if err != nil {
-		return nil, err
-	}
-	if len(m.Manifests) != 1 {
-		return nil, fmt.Errorf("%s names %d images; push a layout of one image", dir, len(m.Manifests))
-	}
-	d := m.Manifests[0]
-	if d.MediaType.IsIndex() {
-		return idx.ImageIndex(d.Digest)
-	}
-	return idx.Image(d.Digest)
-}
-
-// fromArchive reads an OCI archive, unpacked into a directory that cleanup removes, or a docker
-// archive of one image.
-func fromArchive(path string) (pushable, func(), error) {
-	none := func() {}
-	oci, err := holds(path, "oci-layout")
-	if err != nil {
-		return nil, none, err
-	}
-	if !oci {
-		img, err := tarball.ImageFromPath(path, nil)
-		if err != nil {
-			return nil, none, fmt.Errorf("%s is neither an OCI archive nor a docker archive of one image: %w", path, err)
-		}
-		return img, none, nil
-	}
-	dir, err := os.MkdirTemp("", "chalkctl-oci-")
-	if err != nil {
-		return nil, none, err
-	}
-	cleanup := func() { os.RemoveAll(dir) }
-	var img pushable
-	err = unpack(path, dir)
-	if err == nil {
-		img, err = fromLayout(dir)
-	}
-	if err != nil {
-		cleanup()
-		return nil, none, fmt.Errorf("%s: %w", path, err)
-	}
-	return img, cleanup, nil
-}
-
-// holds reports whether the tar archive at path holds the file name at its top.
-func holds(path, file string) (bool, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return false, err
-	}
-	defer f.Close()
-	tr := tar.NewReader(f)
-	for {
-		h, err := tr.Next()
-		if errors.Is(err, io.EOF) {
-			return false, nil
-		}
-		if err != nil {
-			return false, fmt.Errorf("%s: %w", path, err)
-		}
-		if filepath.Clean(h.Name) == file {
-			return true, nil
-		}
-	}
-}
-
-// unpack writes the directories and regular files of the tar archive at path into dir, and
-// refuses an entry that leaves it.
-func unpack(path, dir string) error {
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	tr := tar.NewReader(f)
-	for {
-		h, err := tr.Next()
-		if errors.Is(err, io.EOF) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if !filepath.IsLocal(h.Name) {
-			return fmt.Errorf("the entry %s leaves the archive's directory", h.Name)
-		}
-		target := filepath.Join(dir, h.Name)
-		switch h.Typeflag {
-		case tar.TypeDir:
-			err = os.MkdirAll(target, 0o755)
-		case tar.TypeReg:
-			err = writeEntry(target, tr)
-		}
-		if err != nil {
-			return err
-		}
-	}
-}
-
-func writeEntry(target string, r io.Reader) error {
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		return err
-	}
-	f, err := os.Create(target)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(f, r); err != nil {
-		f.Close()
-		return err
-	}
-	return f.Close()
 }
