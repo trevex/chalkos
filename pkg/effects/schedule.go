@@ -39,14 +39,11 @@ type effectGroup struct {
 	after []string
 }
 
-// Schedule is the ordered batches of due effects. A zero schedule uses the
-// legacy single batch. Effects that share an action are grouped so the action
-// is performed once and every prerequisite of that action is honored.
+// Schedule is the ordered batches of due effects. Effects that share an action are grouped so
+// the action is performed once and every prerequisite of that action is met.
 type Schedule struct {
 	batches [][]effectGroup
 }
-
-func (s Schedule) Ordered() bool { return len(s.batches) != 0 }
 
 // ScheduledEffect describes an effect and its effective prerequisites for previews.
 type ScheduledEffect struct {
@@ -98,12 +95,6 @@ func validateSchedule(defs map[string]Definition) error {
 // PlanSchedule orders only due effects. An edge to an unchanged effect does
 // not run it. A consumer's readiness probe still runs if the consumer is due.
 func PlanSchedule(defs map[string]Definition, due []string) (Schedule, error) {
-	if !slices.ContainsFunc(due, func(name string) bool {
-		d := defs[name]
-		return len(d.After) != 0 || d.WaitFor != nil
-	}) {
-		return Schedule{}, nil
-	}
 	due = slices.Clone(due)
 	slices.Sort(due)
 	owners := map[string]string{}
@@ -273,8 +264,7 @@ func (s Schedule) Apply(ctx context.Context, r tool.Runner, defs map[string]Defi
 				failed[id] = true
 			}
 		}
-		// Preserve the legacy layer action order after the systemd jobs. The
-		// ordered path reports failures to dependents and to the caller.
+		// Layer actions follow the batch's systemd jobs; a failed one blocks its dependents.
 		for _, name := range a.Chalkd {
 			if err := layer(ctx, name); err != nil {
 				errs = append(errs, fmt.Errorf("layer action %s: %w", name, err))

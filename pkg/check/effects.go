@@ -128,21 +128,16 @@ type PlannedEffect struct {
 func PlanOf(fx Effects, o Outcome) (Plan, error) {
 	p := Plan{Outputs: o.Outputs}
 	var names []string
-	var order []effects.ScheduledEffect
 	fired := map[string][]string{}
 	for _, f := range o.Effects {
 		names = append(names, f.Name)
-		order = append(order, effects.ScheduledEffect{Name: f.Name})
 		fired[f.Name] = f.By
 	}
 	schedule, err := effects.PlanSchedule(fx.Defs, names)
 	if err != nil {
 		return Plan{}, err
 	}
-	if schedule.Ordered() {
-		order = schedule.Order()
-	}
-	for _, effect := range order {
+	for _, effect := range schedule.Order() {
 		d := fx.Defs[effect.Name]
 		var steps []string
 		if len(effect.After) != 0 {

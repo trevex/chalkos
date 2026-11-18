@@ -8,7 +8,6 @@ import (
 	"maps"
 	"path/filepath"
 	"slices"
-	"strings"
 
 	"connectrpc.com/connect"
 
@@ -240,27 +239,17 @@ func (s *Server) consume(ctx context.Context, e *pendingEffects, staged *outputs
 		s.actOnSelf(a.Chalkd)
 		return nil, nil, fmt.Errorf("%w%s", err, a.ByHand())
 	}
-	var restarted []string
-	if schedule.Ordered() {
-		var warnReadiness func(error)
-		if forceReadiness {
-			warnReadiness = func(err error) {
-				warning := fmt.Sprintf("--force overrode a runtime readiness check: %v", err)
-				log.Print(warning)
-				warnings = append(warnings, warning)
-			}
+	var warnReadiness func(error)
+	if forceReadiness {
+		warnReadiness = func(err error) {
+			warning := fmt.Sprintf("--force overrode a runtime readiness check: %v", err)
+			log.Print(warning)
+			warnings = append(warnings, warning)
 		}
-		restarted, err = schedule.Apply(ctx, s.Run, e.defs, s.runLayerAction, warnReadiness, activation.hooks(ctx, e.defs))
-		if ae, ok := errors.AsType[*effects.ApplyError](err); ok && ae.Why != "" {
-			err = layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
-		}
-	} else {
-		if len(due) != 0 {
-			if err := activation.step("runtime effects (" + strings.Join(due, ", ") + ")"); err != nil {
-				return nil, nil, err
-			}
-		}
-		restarted, err = s.applyEffects(ctx, effects.ActionsOf(e.defs, due), activation != nil)
+	}
+	restarted, err := schedule.Apply(ctx, s.Run, e.defs, s.runLayerAction, warnReadiness, activation.hooks(ctx, e.defs))
+	if ae, ok := errors.AsType[*effects.ApplyError](err); ok && ae.Why != "" {
+		err = layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
 	}
 	if err != nil {
 		return nil, nil, err
@@ -298,35 +287,14 @@ func (s *Server) failedPartWay(ctx context.Context, e *pendingEffects, secret st
 	s.actOnSelf(a.Chalkd)
 }
 
-// applyEffects carries out the effects' actions on the units, as effects.Apply does, and runs their
-// layer actions last.
-func (s *Server) applyEffects(ctx context.Context, a effects.Actions, tracked bool) ([]string, error) {
-	// Once the units it restarts read the new config, and whether or not they could: the files
-	// the layer actions read are in place.
-	restarted, err := effects.Apply(ctx, s.Run, a)
-	if layerErr := s.actOnSelf(a.Chalkd); tracked && layerErr != nil {
-		err = errors.Join(err, layerErr)
-	}
-	if ae, ok := errors.AsType[*effects.ApplyError](err); ok && ae.Why != "" {
-		return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
-	}
-	if err != nil {
-		return nil, err
-	}
-	return restarted, nil
-}
-
-// actOnSelf runs the layer actions the delivery's effects name, on what only the running chalkd
-// holds.
-func (s *Server) actOnSelf(names []string) error {
-	var errs []error
+// actOnSelf runs the layer actions of a delivery that failed before its effects, on what only the
+// running chalkd holds, and logs their failures.
+func (s *Server) actOnSelf(names []string) {
 	for _, name := range names {
 		if err := s.runLayerAction(context.Background(), name); err != nil {
-			log.Printf("%s: %v", name, err)
-			errs = append(errs, fmt.Errorf("layer action %s: %w", name, err))
+			log.Printf("layer action %s: %v", name, err)
 		}
 	}
-	return errors.Join(errs...)
 }
 
 func (s *Server) runLayerAction(ctx context.Context, name string) error {

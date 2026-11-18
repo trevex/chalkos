@@ -183,6 +183,32 @@ func TestScheduleRejectsInvalidPrerequisites(t *testing.T) {
 	}
 }
 
+func TestScheduleRunsEffectsWithoutPrerequisitesInOneBatch(t *testing.T) {
+	defs := map[string]Definition{
+		"resolver": {Reload: []string{"resolver.service"}},
+		"layer":    {Chalkd: "refresh"},
+	}
+	s, err := PlanSchedule(defs, []string{"resolver", "layer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.batches) != 1 || len(s.Order()) != 2 {
+		t.Fatalf("schedule = %+v", s.batches)
+	}
+	r := &tooltest.Runner{}
+	var ran []string
+	layer := func(_ context.Context, name string) error {
+		ran = append(ran, name)
+		return errors.New("refused")
+	}
+	if _, err := s.Apply(t.Context(), r, defs, layer, nil, nil); err == nil || !strings.Contains(err.Error(), "layer action refresh: refused") {
+		t.Fatalf("Apply = %v", err)
+	}
+	if !slices.Equal(ran, []string{"refresh"}) || !slices.Contains(r.Calls, "systemctl reload resolver.service") {
+		t.Fatalf("layer actions = %v, commands = %v", ran, r.Calls)
+	}
+}
+
 func TestReadinessRespectsEarlierDeadline(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
