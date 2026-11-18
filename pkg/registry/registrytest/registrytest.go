@@ -9,11 +9,11 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/registry"
 )
@@ -23,10 +23,8 @@ type Registry struct {
 	*registry.Server
 	// Host is the registry's address and port, as image references name it.
 	Host string
-	// Certificate and CA are the files the registry reads its node certificate and the OS CAs
-	// from; NodeCA issued the node certificate.
-	Certificate, CA string
-	NodeCA          pki.CertKey
+	// NodeCA issued the registry's node certificate.
+	NodeCA pki.CertKey
 
 	roots  *x509.CertPool
 	server *httptest.Server
@@ -34,7 +32,7 @@ type Registry struct {
 
 // Start serves a registry until the test ends: on ::1 with ipv6, else on 127.0.0.1, with a node
 // certificate for both addresses from a node CA of osCA. wrap, when not nil, wraps the
-// registry's handler, as a test that breaks some requests does.
+// registry's handler, as a test that breaks or holds some requests does.
 func Start(t testing.TB, osCA pki.CertKey, ipv6 bool, wrap func(http.Handler) http.Handler) *Registry {
 	t.Helper()
 	now := time.Now()
@@ -42,20 +40,22 @@ func Start(t testing.TB, osCA pki.CertKey, ipv6 bool, wrap func(http.Handler) ht
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir := t.TempDir()
-	r := &Registry{
-		Certificate: filepath.Join(dir, "node.pem"),
-		CA:          filepath.Join(dir, "ca.crt"),
-		NodeCA:      nodeCA,
-		roots:       x509.NewCertPool(),
-	}
-	r.roots.AppendCertsFromPEM([]byte(osCA.Certificate))
-	r.WriteNodeCertificate(t)
-	if err := atomicfile.WriteFile(r.CA, []byte(osCA.Certificate), 0o644); err != nil {
+	names := pki.NodeNames{CommonName: "registry", IPs: []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback}}
+	cert, err := pki.IssueNode(nodeCA, names, now)
+	if err != nil {
 		t.Fatal(err)
 	}
-	r.Server, err = registry.New(context.Background(), registry.Config{Storage: filepath.Join(dir, "storage"), Certificate: r.Certificate, CA: r.CA})
-	if err != nil {
+	dir := t.TempDir()
+	c := registry.Config{Storage: filepath.Join(dir, "storage"), Certificate: filepath.Join(dir, "node.pem"), CA: filepath.Join(dir, "ca.crt")}
+	if err := os.WriteFile(c.Certificate, []byte(cert.Certificate+cert.Key), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(c.CA, []byte(osCA.Certificate), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := &Registry{NodeCA: nodeCA, roots: x509.NewCertPool()}
+	r.roots.AppendCertsFromPEM([]byte(osCA.Certificate))
+	if r.Server, err = registry.New(context.Background(), c); err != nil {
 		t.Fatal(err)
 	}
 	var h http.Handler = r.Server
@@ -71,30 +71,13 @@ func Start(t testing.TB, osCA pki.CertKey, ipv6 bool, wrap func(http.Handler) ht
 		r.server.Listener.Close()
 		r.server.Listener = l
 	}
+	r.server.EnableHTTP2 = true
 	r.server.TLS = r.TLSConfig()
+	r.server.Config.ErrorLog = registry.ErrorLog(os.Stderr)
 	r.server.StartTLS()
 	t.Cleanup(r.Close)
 	r.Host = r.server.Listener.Addr().String()
 	return r
-}
-
-// WriteNodeCertificate issues a new node certificate for 127.0.0.1 and ::1 and replaces the
-// registry's with it, as chalkd renews it: the chain, then the key, renamed over the old file.
-func (r *Registry) WriteNodeCertificate(t testing.TB) *x509.Certificate {
-	t.Helper()
-	names := pki.NodeNames{CommonName: "registry", IPs: []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback}}
-	cert, err := pki.IssueNode(r.NodeCA, names, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := atomicfile.WriteFile(r.Certificate, []byte(cert.Certificate+cert.Key), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	leaf, err := pki.FirstCertificate([]byte(cert.Certificate))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return leaf
 }
 
 // Transport reaches the registry trusting the OS CA, presenting client when it is not nil.

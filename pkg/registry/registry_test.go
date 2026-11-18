@@ -35,14 +35,17 @@ type testRegistry struct {
 	clients map[string]http.RoundTripper
 }
 
-func startRegistry(t *testing.T) *testRegistry {
+func startRegistry(t *testing.T) *testRegistry { return startWrapped(t, nil) }
+
+// startWrapped is startRegistry with the handler wrapped by wrap.
+func startWrapped(t *testing.T, wrap func(http.Handler) http.Handler) *testRegistry {
 	t.Helper()
 	now := time.Now()
 	osCA, err := pki.NewOSCA(now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	reg := registrytest.Start(t, osCA, false, nil)
+	reg := registrytest.Start(t, osCA, false, wrap)
 	r := &testRegistry{Registry: reg, osCA: osCA, clients: map[string]http.RoundTripper{"anyone": reg.Transport(t, nil)}}
 	for _, role := range []pki.Role{pki.RoleAdmin, pki.RoleReader} {
 		c, err := pki.IssueClient(osCA, "client-"+string(role), role, time.Hour, now)

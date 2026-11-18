@@ -1,8 +1,13 @@
 // Command chalkos-registry serves pkg/registry on a port of every address, and is the catalog
 // diagnostic of the unit that runs it.
+//
+// It runs as a system user of its own and reads the node certificate and the OS CAs once, from
+// the systemd credentials its unit loads from chalkd's files, which only root may read. When
+// chalkd replaces them, the unit restarts it.
 package main
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -13,6 +18,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -27,10 +33,10 @@ const usage = `usage: chalkos-registry serve [--port PORT] [--storage DIR] [--ce
        chalkos-registry catalog PORT
 
 serve serves the registry on PORT of every address of both families, 5000 unless given, over
-TLS with the node certificate's chain and key in FILE, /state/chalkd/node.pem unless given. It
-verifies client certificates against the OS CAs of --ca, /state/chalkd/ca.crt unless given, and
-keeps the images in DIR, /var/lib/chalkos-registry unless given. catalog prints the repositories
-of the registry on PORT of this node.`
+TLS with the node certificate's chain and key in FILE. It verifies client certificates against
+the OS CAs of --ca and keeps the images in DIR, /var/lib/chalkos-registry unless given. The
+files default to the credentials node.pem and ca.crt of $CREDENTIALS_DIRECTORY. catalog prints
+the repositories of the registry on PORT of this node.`
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -58,35 +64,53 @@ func command(ctx context.Context, args []string, stdout io.Writer) error {
 		port := fs.Int("port", 5000, "")
 		c := registry.Config{}
 		fs.StringVar(&c.Storage, "storage", "/var/lib/chalkos-registry", "")
-		fs.StringVar(&c.Certificate, "certificate", "/state/chalkd/node.pem", "")
-		fs.StringVar(&c.CA, "ca", "/state/chalkd/ca.crt", "")
+		fs.StringVar(&c.Certificate, "certificate", "", "")
+		fs.StringVar(&c.CA, "ca", "", "")
 		if err := fs.Parse(args[1:]); err != nil || fs.NArg() != 0 {
 			return errUsage
 		}
-		return run(ctx, *port, c)
+		if c.Certificate == "" || c.CA == "" {
+			dir := os.Getenv("CREDENTIALS_DIRECTORY")
+			if dir == "" {
+				return errors.New("no credentials directory; give --certificate and --ca")
+			}
+			c.Certificate = cmp.Or(c.Certificate, filepath.Join(dir, "node.pem"))
+			c.CA = cmp.Or(c.CA, filepath.Join(dir, "ca.crt"))
+		}
+		registry.QuietLogs()
+		// A failure to read the credentials ends the process with one line, which the unit's
+		// restart repeats no more often than its restart delay.
+		s, err := registry.New(ctx, c)
+		if err != nil {
+			return err
+		}
+		l, err := net.Listen("tcp", net.JoinHostPort("", strconv.Itoa(*port)))
+		if err != nil {
+			return err
+		}
+		return run(ctx, l, s)
 	}
 	return errUsage
 }
 
-// run serves the registry until ctx ends. The journal gets distribution's warnings and errors,
-// and no line for a request that the client got wrong, such as a pull of a missing image.
-func run(ctx context.Context, port int, c registry.Config) error {
-	registry.QuietLogs()
-	s, err := registry.New(ctx, c)
-	if err != nil {
-		return err
-	}
-	l, err := net.Listen("tcp", net.JoinHostPort("", strconv.Itoa(port)))
-	if err != nil {
-		return err
-	}
+// run serves s on l until ctx ends. The journal gets distribution's warnings and errors, and no
+// line for a request that the client got wrong, such as a pull of a missing image, nor for a
+// failed TLS handshake.
+func run(ctx context.Context, l net.Listener, s *registry.Server) error {
 	// The unit is Type=notify: systemctl start and restart return once the port is open, so the
 	// effects ordered after the registry's find it answering. Outside systemd it sends nothing.
 	if _, err := daemon.SdNotify(false, daemon.SdNotifyReady); err != nil {
 		l.Close()
 		return err
 	}
-	srv := &http.Server{Handler: s, TLSConfig: s.TLSConfig(), ReadHeaderTimeout: 30 * time.Second}
+	srv := &http.Server{
+		Handler:           s,
+		TLSConfig:         s.TLSConfig(),
+		ReadHeaderTimeout: 30 * time.Second,
+		// A connection without a request closes after two minutes.
+		IdleTimeout: 2 * time.Minute,
+		ErrorLog:    registry.ErrorLog(os.Stderr),
+	}
 	go func() {
 		<-ctx.Done()
 		srv.Shutdown(context.Background())

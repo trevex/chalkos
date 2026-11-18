@@ -1,84 +1,65 @@
 package registry_test
 
 import (
-	"crypto/tls"
 	"crypto/x509"
-	"math/big"
 	"net/http"
+	"net/http/httptrace"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/registry"
 )
 
-// TestCredentialsReload serves the node certificate chalkd renamed over the old one from the next
-// handshake on, verifies clients of an OS CA once the bundle holds it, and keeps the last
-// certificate while the file is broken.
-func TestCredentialsReload(t *testing.T) {
+// TestWritesVerifiedPerRequest refuses a write of an admin whose OS CA the registry stopped
+// trusting, on the connection whose handshake verified it, and closes that connection.
+func TestWritesVerifiedPerRequest(t *testing.T) {
 	r := startRegistry(t)
-	roots := x509.NewCertPool()
-	roots.AppendCertsFromPEM([]byte(r.osCA.Certificate))
-	served := func() *big.Int {
+	client := r.clients["admin"]
+	collect := func() (status int, reused bool, closed bool) {
 		t.Helper()
-		conn, err := tls.Dial("tcp", r.Host, &tls.Config{RootCAs: roots})
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer conn.Close()
-		return conn.ConnectionState().PeerCertificates[0].SerialNumber
-	}
-	first := served()
-	renewed := r.WriteNodeCertificate(t)
-	if got := served(); got.Cmp(renewed.SerialNumber) != 0 || got.Cmp(first) == 0 {
-		t.Errorf("after the renewal the registry serves %s, want %s", got, renewed.SerialNumber)
-	}
-
-	now := time.Now()
-	otherCA, err := pki.NewOSCA(now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	other, err := pki.IssueClient(otherCA, "other", pki.RoleAdmin, time.Hour, now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	client := r.Transport(t, &other)
-	collect := func() (int, error) {
-		req, err := http.NewRequest(http.MethodPost, "https://"+r.Host+registry.GCPath, nil)
+		trace := &httptrace.ClientTrace{GotConn: func(info httptrace.GotConnInfo) { reused = info.Reused }}
+		req, err := http.NewRequestWithContext(httptrace.WithClientTrace(t.Context(), trace), http.MethodPost, "https://"+r.Host+registry.GCPath, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 		resp, err := client.RoundTrip(req)
 		if err != nil {
-			return 0, err
+			t.Fatal(err)
 		}
 		resp.Body.Close()
-		return resp.StatusCode, nil
+		return resp.StatusCode, reused, resp.Close
 	}
-	if code, err := collect(); err == nil {
-		t.Errorf("a client of an OS CA the node does not trust: %d", code)
+	if status, _, _ := collect(); status != http.StatusOK {
+		t.Fatalf("the admin's collection: %d", status)
 	}
-	if err := atomicfile.WriteFile(r.CA, []byte(pki.Bundle(r.osCA.Certificate, otherCA.Certificate)), 0o644); err != nil {
+	otherCA, err := pki.NewOSCA(time.Now())
+	if err != nil {
 		t.Fatal(err)
 	}
-	if code, err := collect(); err != nil || code != http.StatusOK {
-		t.Errorf("a client of an OS CA the node trusts now: %d, %v", code, err)
-	}
-
-	if err := atomicfile.WriteFile(r.Certificate, []byte("broken"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if got := served(); got.Cmp(renewed.SerialNumber) != 0 {
-		t.Errorf("with a broken file the registry serves %s, want the last one %s", got, renewed.SerialNumber)
+	roots := x509.NewCertPool()
+	roots.AppendCertsFromPEM([]byte(otherCA.Certificate))
+	r.SetRoots(roots)
+	status, reused, closed := collect()
+	if status != http.StatusUnauthorized || !reused || !closed {
+		t.Errorf("a write once the OS CA is gone: %d, reused %v, closed %v; want 401 on the same connection, which closes", status, reused, closed)
 	}
 }
 
-// TestNewNeedsCredentials refuses to start without the node certificate.
+// TestNewNeedsCredentials refuses to start without a node certificate, and names the file.
 func TestNewNeedsCredentials(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := registry.New(t.Context(), registry.Config{Storage: dir + "/storage", Certificate: dir + "/node.pem", CA: dir + "/ca.crt"}); err == nil {
-		t.Error("New without files")
+	c := registry.Config{Storage: filepath.Join(dir, "storage"), Certificate: filepath.Join(dir, "node.pem"), CA: filepath.Join(dir, "ca.crt")}
+	if _, err := registry.New(t.Context(), c); err == nil || !strings.Contains(err.Error(), "the node certificate") {
+		t.Errorf("New without files: %v", err)
+	}
+	if err := os.WriteFile(c.Certificate, []byte("broken"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := registry.New(t.Context(), c); err == nil || !strings.Contains(err.Error(), "the node certificate") {
+		t.Errorf("New with a broken certificate: %v", err)
 	}
 }

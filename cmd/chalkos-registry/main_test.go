@@ -7,13 +7,13 @@ import (
 	"crypto/x509"
 	"errors"
 	"net"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/registry"
 )
@@ -35,11 +35,10 @@ func TestRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	c := registry.Config{Storage: filepath.Join(dir, "storage"), Certificate: filepath.Join(dir, "node.pem"), CA: filepath.Join(dir, "ca.crt")}
-	if err := atomicfile.WriteFile(c.Certificate, []byte(node.Certificate+node.Key), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "node.pem"), []byte(node.Certificate+node.Key), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := atomicfile.WriteFile(c.CA, []byte(osCA.Certificate), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "ca.crt"), []byte(osCA.Certificate), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	socket := filepath.Join(dir, "notify")
@@ -49,17 +48,19 @@ func TestRun(t *testing.T) {
 	}
 	defer notify.Close()
 	t.Setenv("NOTIFY_SOCKET", socket)
-	// A port that was free a moment ago.
-	free, err := net.Listen("tcp", ":0")
+	s, err := registry.New(t.Context(), registry.Config{Storage: filepath.Join(dir, "storage"), Certificate: filepath.Join(dir, "node.pem"), CA: filepath.Join(dir, "ca.crt")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	port := free.Addr().(*net.TCPAddr).Port
-	free.Close()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := strconv.Itoa(l.Addr().(*net.TCPAddr).Port)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- run(ctx, port, c) }()
+	go func() { done <- run(ctx, l, s) }()
 	buf := make([]byte, 64)
 	n, err := notify.Read(buf)
 	if err != nil || string(buf[:n]) != "READY=1" {
@@ -67,23 +68,39 @@ func TestRun(t *testing.T) {
 	}
 	roots := x509.NewCertPool()
 	roots.AppendCertsFromPEM([]byte(osCA.Certificate))
-	addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
-	conn, err := tls.Dial("tcp", addr, &tls.Config{RootCAs: roots})
+	conn, err := tls.Dial("tcp", l.Addr().String(), &tls.Config{RootCAs: roots, NextProtos: []string{"h2"}})
 	if err != nil {
 		t.Fatalf("a handshake once ready: %v", err)
 	}
+	if p := conn.ConnectionState().NegotiatedProtocol; p != "h2" {
+		t.Errorf("negotiated %q, want h2", p)
+	}
 	conn.Close()
 	var out bytes.Buffer
-	if err := command(ctx, []string{"catalog", strconv.Itoa(port)}, &out); err != nil || strings.TrimSpace(out.String()) != `{"repositories":[]}` {
+	if err := command(ctx, []string{"catalog", port}, &out); err != nil || strings.TrimSpace(out.String()) != `{"repositories":[]}` {
 		t.Errorf("catalog = %q, %v", out.String(), err)
-	}
-	for _, args := range [][]string{nil, {"serve", "extra"}, {"serve", "--nope"}, {"catalog"}} {
-		if err := command(ctx, args, &out); !errors.Is(err, errUsage) {
-			t.Errorf("%q: %v, want the usage", args, err)
-		}
 	}
 	cancel()
 	if err := <-done; err != nil {
 		t.Errorf("run after its context ended: %v", err)
+	}
+}
+
+// TestCommand refuses command lines it does not take, and serve without the files of its
+// credentials.
+func TestCommand(t *testing.T) {
+	var out bytes.Buffer
+	for _, args := range [][]string{nil, {"serve", "extra"}, {"serve", "--nope"}, {"catalog"}} {
+		if err := command(t.Context(), args, &out); !errors.Is(err, errUsage) {
+			t.Errorf("%q: %v, want the usage", args, err)
+		}
+	}
+	t.Setenv("CREDENTIALS_DIRECTORY", "")
+	if err := command(t.Context(), []string{"serve"}, &out); err == nil || !strings.Contains(err.Error(), "no credentials directory") {
+		t.Errorf("serve without credentials: %v", err)
+	}
+	t.Setenv("CREDENTIALS_DIRECTORY", t.TempDir())
+	if err := command(t.Context(), []string{"serve", "--storage", t.TempDir()}, &out); err == nil || !strings.Contains(err.Error(), "the node certificate") {
+		t.Errorf("serve with empty credentials: %v", err)
 	}
 }

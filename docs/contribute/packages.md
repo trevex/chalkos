@@ -63,7 +63,7 @@ which have no logins, so it has no `completion` command.
 | Program | What its main does |
 | --- | --- |
 | `cmd/chalkd` | Builds chalkd's cobra command tree with `chalkd.NewCommand` and runs it with `chalkd.Execute`: `serve` (chalkd.service), `load-config` (chalkos-config.service), `health` (chalkos-health.service), `check` (an image's checker, which another image's chalkd runs) and each layer's commands as `chalkd <layer> <command>`, such as `chalkd kubernetes prepare` (chalkos-kubernetes.service). Lists the layer plugins compiled into chalkd in `plugins.go`, and loads the credentials `serve` starts with. |
-| `cmd/chalkos-registry` | `serve` serves `pkg/registry` on a port of every address and tells systemd once it listens; `catalog PORT` prints the repositories of the registry on this node, for a diagnostic. |
+| `cmd/chalkos-registry` | `serve` serves `pkg/registry` on a port of every address, with the node certificate and OS CAs from its systemd credentials, and tells systemd once it listens; `catalog PORT` prints the repositories of the registry on this node, for a diagnostic. |
 
 | Package | What it does |
 | --- | --- |
@@ -73,7 +73,7 @@ which have no logins, so it has no `completion` command.
 | `chalkd/renewal` | Renews a certificate, or a set of them, once it is due, for the node certificate and a layer's own; without anything to renew it with, it logs once that the certificate is due. |
 | `layers` | Reads the layers an image carries from their markers in `/etc/chalkos/layers`, for the plugins chalkd activates and the `layers` of Info and Contract. |
 | `pki` | The OS CA and node CA, client and node certificates and their checks, client roles, PEM keys and certificate bundles. |
-| `registry` | An OCI registry: distribution's registry handlers with the filesystem storage driver alone, over TLS with the node certificate, which it reads again once chalkd replaced it. Anyone reads, and an `Authorization` header on a read is ignored; writes, deletes and garbage collection take a client certificate of the admin role, which no certificate of the node CA has. Garbage collection runs on an admin's request alone and refuses writes while it runs. |
+| `registry` | An OCI registry: distribution's registry handlers with the filesystem storage driver alone, over TLS with the node certificate, which it reads once: its unit restarts it when chalkd replaces the certificate. Anyone reads, and an `Authorization` header on a read is ignored; writes, deletes and garbage collection take a client certificate of the admin role, verified again for every request, which no certificate of the node CA has. Garbage collection runs on an admin's request alone and refuses writes while it runs. |
 | `diagnostics` | Reads the image's `diagnostics.json`, checks a call's arguments against their parameters' types, builds the command line, and runs it as a transient systemd unit with a sandbox of its own. |
 | `askpassword` | A systemd password agent: answers the password requests that `ask.*` files in `/run/systemd/ask-password` name. |
 | `tool` | Runs the command-line tools chalkd, the installer and the storage code drive, such as cryptsetup, sfdisk and systemctl. |

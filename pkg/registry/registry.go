@@ -5,18 +5,23 @@
 package registry
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/distribution/distribution/v3"
 	"github.com/distribution/distribution/v3/configuration"
@@ -34,6 +39,10 @@ import (
 // GCPath is where an admin's POST collects garbage.
 const GCPath = "/chalkos/v1/gc"
 
+// WriteIdle is how long a write's body may send nothing before the registry ends the request, so
+// that a stalled upload does not keep a collection waiting.
+const WriteIdle = 5 * time.Minute
+
 // GCResult is the answer to a collection.
 type GCResult struct {
 	FreedBytes int64 `json:"freedBytes"`
@@ -47,8 +56,8 @@ type Config struct {
 	// Storage is the directory of the images.
 	Storage string
 	// Certificate holds the node certificate's chain and its key, as chalkd's node.pem does; CA
-	// the OS CAs client certificates are verified by. The registry reads both again whenever
-	// chalkd replaces them.
+	// the OS CAs client certificates are verified by. The registry reads both once, at New; its
+	// unit restarts it when chalkd replaces them.
 	Certificate, CA string
 }
 
@@ -62,20 +71,27 @@ type Server struct {
 	// held or wanted is refused rather than waiting for the collection.
 	writes     sync.RWMutex
 	collecting atomic.Bool
-	tls        *credentials
+	cert       tls.Certificate
+	// roots are the OS CAs every write's client certificate is verified against again.
+	roots atomic.Pointer[x509.CertPool]
 }
 
 // New is the registry of c. Deletion is on, so explicit deletes work. No blob descriptor cache
 // is configured, so a blob a collection removed is uploaded again rather than found in a cache.
 func New(ctx context.Context, c Config) (*Server, error) {
-	creds := &credentials{certificate: c.Certificate, ca: c.CA}
-	if _, err := creds.current(); err != nil {
+	cert, roots, err := loadCredentials(c.Certificate, c.CA)
+	if err != nil {
 		return nil, err
 	}
 	cfg := &configuration.Configuration{
 		Storage: configuration.Storage{
 			"filesystem": configuration.Parameters{"rootdirectory": c.Storage},
 			"delete":     configuration.Parameters{"enabled": true},
+			// Removes uploads begun more than a week ago and never finished, once a day, as
+			// distribution does by default; never an image.
+			"maintenance": configuration.Parameters{"uploadpurging": map[any]any{
+				"enabled": true, "age": "168h", "interval": "24h", "dryrun": false,
+			}},
 		},
 	}
 	// Signs the state of uploads in progress, which one process alone serves.
@@ -94,15 +110,20 @@ func New(ctx context.Context, c Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Server{app: app, driver: driver, namespace: namespace, storage: c.Storage, tls: creds}, nil
+	s := &Server{app: app, driver: driver, namespace: namespace, storage: c.Storage, cert: cert}
+	s.roots.Store(roots)
+	return s, nil
 }
 
-// TLSConfig serves the node certificate and verifies a client certificate when a client gives
-// one, each handshake with the files as they are then.
+// TLSConfig serves the node certificate over HTTP/2 or HTTP/1.1 and verifies a client
+// certificate when a client gives one.
 func (s *Server) TLSConfig() *tls.Config {
 	return &tls.Config{
-		MinVersion:         tls.VersionTLS13,
-		GetConfigForClient: func(*tls.ClientHelloInfo) (*tls.Config, error) { return s.tls.current() },
+		MinVersion:   tls.VersionTLS13,
+		Certificates: []tls.Certificate{s.cert},
+		ClientCAs:    s.roots.Load(),
+		ClientAuth:   tls.VerifyClientCertIfGiven,
+		NextProtos:   []string{"h2", "http/1.1"},
 	}
 }
 
@@ -118,7 +139,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.app.ServeHTTP(w, r)
 		return
 	}
-	if status, err := admin(r); err != nil {
+	if status, err := s.admin(w, r); err != nil {
 		writeError(w, status, "DENIED", err.Error())
 		return
 	}
@@ -127,20 +148,42 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer s.writes.RUnlock()
+	r.Body = idleBody{r.Body, http.NewResponseController(w)}
 	s.app.ServeHTTP(w, r)
 }
 
-// admin refuses a request without a client certificate of the admin role. pki.ClientRole makes a
-// certificate of the node CA a node's, whatever its Organization, so no node writes.
-func admin(r *http.Request) (int, error) {
-	if r.TLS == nil || len(r.TLS.VerifiedChains) == 0 {
-		return http.StatusUnauthorized, errors.New("writing to the registry needs a client certificate of the admin role")
+// admin refuses a request without a client certificate of the admin role. It verifies the
+// certificate again, against the OS CAs and at the time of the request, as chalkd does: the
+// handshake's verification would otherwise last as long as the client keeps the connection. On a
+// failure the connection closes, so the client's next one takes a new handshake. pki.ClientRole
+// makes a certificate of the node CA a node's, whatever its Organization, so no node writes.
+func (s *Server) admin(w http.ResponseWriter, r *http.Request) (int, error) {
+	const need = "writing to the registry needs a client certificate of the admin role"
+	if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
+		return http.StatusUnauthorized, errors.New(need)
 	}
-	role, ok := pki.ClientRole(r.TLS.VerifiedChains)
+	chains, err := pki.VerifyClient(r.TLS.PeerCertificates, s.roots.Load(), time.Now())
+	if err != nil {
+		w.Header().Set("Connection", "close")
+		return http.StatusUnauthorized, fmt.Errorf("%s; this one does not verify: %w", need, err)
+	}
+	role, ok := pki.ClientRole(chains)
 	if !ok || !role.Allows(pki.RoleAdmin) {
-		return http.StatusForbidden, fmt.Errorf("writing to the registry needs a client certificate of the admin role, not of %q", role)
+		return http.StatusForbidden, fmt.Errorf("%s, not of %q", need, role)
 	}
 	return 0, nil
+}
+
+// idleBody ends a write whose client sends nothing for WriteIdle, which releases the collection
+// that waits for it.
+type idleBody struct {
+	io.ReadCloser
+	rc *http.ResponseController
+}
+
+func (b idleBody) Read(p []byte) (int, error) {
+	_ = b.rc.SetReadDeadline(time.Now().Add(WriteIdle))
+	return b.ReadCloser.Read(p)
 }
 
 func (s *Server) serveCollect(w http.ResponseWriter, r *http.Request) {
@@ -148,11 +191,12 @@ func (s *Server) serveCollect(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "UNSUPPORTED", "collect garbage with POST")
 		return
 	}
-	if status, err := admin(r); err != nil {
+	if status, err := s.admin(w, r); err != nil {
 		writeError(w, status, "DENIED", err.Error())
 		return
 	}
-	freed, err := s.Collect(r.Context())
+	// A collection runs to its end once begun, also when the client goes away.
+	freed, err := s.Collect(context.WithoutCancel(r.Context()))
 	switch {
 	case errors.Is(err, ErrCollecting):
 		writeError(w, http.StatusConflict, "UNAVAILABLE", err.Error())
@@ -165,9 +209,11 @@ func (s *Server) serveCollect(w http.ResponseWriter, r *http.Request) {
 }
 
 // Collect removes the blobs no manifest references and returns the bytes it freed. It keeps
-// untagged manifests. It waits for the writes in flight, refuses new ones while it runs, and
-// leaves reads alone. A push whose blobs were uploaded before it and whose manifest comes after
-// it fails on the missing blobs and is pushed again.
+// untagged manifests. It waits for the writes in flight, each of which ends after WriteIdle
+// without data, refuses new ones while it runs, and leaves reads alone. Writes between requests
+// are not held: a push whose blobs were uploaded before it and whose manifest comes after it
+// fails on the missing blobs and is pushed again, and an upload begun before it and finished
+// after it leaves a blob that the next collection frees unless a manifest references it.
 func (s *Server) Collect(ctx context.Context) (int64, error) {
 	if !s.collecting.CompareAndSwap(false, true) {
 		return 0, ErrCollecting
@@ -196,12 +242,18 @@ func (s *Server) Collect(ctx context.Context) (int64, error) {
 	return before - after, nil
 }
 
-// usage is the size of the regular files below dir.
+// usage is the size of the regular files below dir, apart from uploads in progress, which the
+// upload purger may remove while a collection runs.
 func usage(dir string) (int64, error) {
 	var n int64
 	err := filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
-		if err != nil || !d.Type().IsRegular() {
+		switch {
+		case err != nil:
 			return err
+		case d.IsDir() && d.Name() == "_uploads":
+			return fs.SkipDir
+		case !d.Type().IsRegular():
+			return nil
 		}
 		info, err := d.Info()
 		if err == nil {
@@ -220,19 +272,38 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 }
 
 // QuietLogs has the process's logrus logger, which distribution's handlers log through, write
-// warnings and errors alone, and none about a request answered with a client error: a pull of
-// an image the registry lacks is one, and containerd's mirror lookups make them all the time.
+// warnings and errors alone, and of a request only that the registry failed it: anyone can make
+// requests the registry refuses, a pull of an image it lacks is one, and containerd's mirror
+// lookups make them all the time.
 func QuietLogs() {
 	logrus.SetLevel(logrus.WarnLevel)
 	logrus.SetFormatter(quiet{logrus.StandardLogger().Formatter})
 }
 
-// quiet drops the lines of requests answered with a status below 500.
+// quiet drops the lines of a request, which carry its ID, unless they report a status of 500 or
+// above.
 type quiet struct{ logrus.Formatter }
 
 func (q quiet) Format(e *logrus.Entry) ([]byte, error) {
-	if status, ok := e.Data["http.response.status"].(int); ok && status < http.StatusInternalServerError {
-		return nil, nil
+	if _, ok := e.Data["http.request.id"]; ok {
+		if status, _ := e.Data["http.response.status"].(int); status < http.StatusInternalServerError {
+			return nil, nil
+		}
 	}
 	return q.Formatter.Format(e)
+}
+
+// ErrorLog is the http.Server's error log, written to w without the failed TLS handshakes, which
+// anyone who connects can cause.
+func ErrorLog(w io.Writer) *log.Logger {
+	return log.New(handshakes{w}, "", 0)
+}
+
+type handshakes struct{ w io.Writer }
+
+func (h handshakes) Write(p []byte) (int, error) {
+	if bytes.HasPrefix(p, []byte("http: TLS handshake error")) {
+		return len(p), nil
+	}
+	return h.w.Write(p)
 }
