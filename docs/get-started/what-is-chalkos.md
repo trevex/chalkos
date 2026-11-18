@@ -184,7 +184,7 @@ nodes or routers, and an image author adds the services of any other appliance a
 with config kinds of their own. It suits teams that already describe systems in Nix, because an
 image can use any NixOS module and any package of nixpkgs. Only the images need Nix. chalkctl
 reads the YAML files and the image directories a build produced, so the machine that installs and
-operates the nodes needs no Nix, an airgapped one included.
+operates the nodes needs no Nix, an air-gapped one included.
 
 chalkos is a poor fit where a node needs hand changes or interactive logins. Today it is also a
 poor fit for machines that are neither x86-64 bare metal nor KVM virtual machines. Debugging goes

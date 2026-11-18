@@ -259,6 +259,10 @@ and file, and install it. It joins as cp2 and cp3 did, with no further command.
 Grow to five control planes, not four. Four voters need three for a quorum, so they tolerate one
 failure, the same as three.
 
+A cluster with a `ClusterRegistry` needs the new control plane's address in its `endpoints` first,
+on every node, as
+[Add or remove a control plane](cluster-registry.md#add-or-remove-a-control-plane) describes.
+
 ## Remove a control plane
 
 Take the node out of etcd before you switch it off.
@@ -278,7 +282,8 @@ kubernetes controlplane: left etcd; reinstall the node to join the cluster again
 
 It does not join again on its own, also after a reboot. Delete its Node with
 `kubectl delete node cp2`, power it off, and remove it from the inventory and its file from the
-repository.
+repository. In a cluster with a `ClusterRegistry`, take its address out of `endpoints` and apply
+the config to every remaining node.
 
 The leave is refused when the voters left would have fewer healthy members than their quorum,
 because etcd would then stop accepting writes. With cp3 down, the leave of cp2 is refused, and the

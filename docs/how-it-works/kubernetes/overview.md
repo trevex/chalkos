@@ -243,11 +243,65 @@ spec:
 `/run/containerd/certs.d/<registry>/hosts.toml` from the `Mirror` and
 [`Registry`](../../reference/kinds.md#registry) documents. It runs before containerd starts and
 whenever the documents change. containerd reads those files on every pull. Each file lists the
-endpoints as the `Mirror` names them, then the registry itself.
+endpoints as the `Mirror` names them, then the registry itself. A host that a `ClusterRegistry`
+mirrors gets the cluster registry's endpoints before them, as
+[the next section](#the-cluster-registry-serves-images-from-the-control-planes) describes.
 
 A registry whose `Registry` sets `insecure` is reached over HTTP. It gets a file even without a
 `Mirror`. An `http://` endpoint needs a `Registry` of its host with `insecure: true`, because
 nothing authenticates what a plain HTTP endpoint serves.
+
+## The cluster registry serves images from the control planes
+
+A [`ClusterRegistry`](../../reference/kinds.md#clusterregistry) document runs a registry on the
+control planes, for clusters that cannot reach the registries their images come from. A node
+whose static address is 192.0.2.12, with a `ClusterRegistry` of the endpoints `fd00::11` and
+`192.0.2.12` that mirrors `docker.io`, and a `Mirror` of `docker.io` at `https://mirror.example`,
+gets this `docker.io/hosts.toml`:
+
+```toml
+server = "https://registry-1.docker.io"
+
+[host."https://192.0.2.12:5000/v2/docker.io"]
+  capabilities = ["pull", "resolve"]
+  override_path = true
+  ca = "/state/chalkd/ca.crt"
+
+[host."https://[fd00::11]:5000/v2/docker.io"]
+  capabilities = ["pull", "resolve"]
+  override_path = true
+  ca = "/state/chalkd/ca.crt"
+
+[host."https://mirror.example"]
+  capabilities = ["pull", "resolve"]
+```
+
+The node serves `192.0.2.12`, so that endpoint comes first, then the others in the order of
+`endpoints`, then the `Mirror`'s, then the host. containerd verifies the cluster registry by the OS
+CAs in STATE's `chalkd/ca.crt`. A node serves the cluster registry when one of its static
+addresses is an endpoint, and the image's rule on `endpoints` refuses a control plane that does
+not.
+
+chalkos-registry is the registry: distribution's registry handlers with its filesystem storage,
+in a binary of chalkos's own. It runs as `chalkos-registry.service` under its own user, ID 333,
+without capabilities, and keeps the images in `/var/lib/chalkos-registry`. The output
+`cluster-registry` renders its port and firewall table on serving nodes alone, and the unit does
+not start without them. The unit is ready once the registry listens, and the `kubernetes` effect
+runs after the registry's effects, so a kubelet restarted by the same delivery finds its node's
+registry answering. At boot the registry starts before the kubelet.
+
+The registry holds each image below its host's name: `docker.io/library/nginx` lives at
+`<endpoint>:5000/docker.io/library/nginx`. containerd's `override_path` makes the endpoint's path,
+`/v2/docker.io`, the root of the registry API it asks, so one registry serves every mirrored host. [Kubernetes certificates](certificates.md#the-cluster-registry-serves-the-node-certificate)
+describes who may read and write. Nothing copies images between the endpoints:
+`chalkctl registry push` and `chalkctl registry delete` act on each endpoint in turn.
+
+Nothing deletes images on its own. A tag deleted leaves its manifest. A manifest deleted leaves
+its layers until an admin asks for garbage collection, which runs distribution's mark and sweep
+and keeps untagged manifests. While it runs, the registry serves reads and refuses writes with
+503, so no upload lands in the middle of a sweep. A push whose layers went up before the
+collection and whose manifest comes after it fails, and is pushed again. A second collection
+asked for while one runs gets 409. A collection runs to its end even when its client goes away.
 
 ## Pods pull private images with node credentials
 
@@ -310,10 +364,18 @@ image's registry.
 - A mirror of an authenticated registry receives that registry's credentials on container pulls,
   so it needs the trust the registry has.
 - Image hosts in a pod spec match a `Registry` only in lower case.
+- The endpoints of the cluster registry do not copy images to each other. An endpoint that missed
+  a push lacks the image until it is pushed again.
+- containerd mirrors whole hosts, so the cluster registry cannot mirror some repositories of a host
+  alone.
+- The cluster registry's endpoints are node addresses, which the node certificate names; a VIP
+  cannot be one.
+- Anyone who reaches the cluster registry's port can pull every image it holds.
 
 ## Related pages
 
 - [The control plane](control-plane.md): the static pods, the bootstrap, the joins and the add-ons.
+- [Run an air-gapped cluster with the cluster registry](../../kubernetes/cluster-registry.md).
 - [Kubernetes networking](networking.md), [Kubernetes certificates](certificates.md) and
   [Kubernetes upgrades](upgrades.md).
 - [Config and the inventory](../node/config.md): how the Kubernetes documents reach the nodes.

@@ -79,6 +79,13 @@ worker. A node with `type: controlplane` joins etcd and the control plane. Grow 
 to an odd number, as [Add a control plane](../kubernetes/ha-control-plane.md#add-a-control-plane)
 explains.
 
+In a cluster with a `ClusterRegistry`, every control plane serves the cluster registry, so a new
+control plane is the exception to the rule above. Add its address to the document's `endpoints`
+before you install it, because its config is refused until the list names it. Apply the config to
+every node, and after the install push the cluster registry's images again, so the new endpoint
+holds them. [Add or remove a control plane](../kubernetes/cluster-registry.md#add-or-remove-a-control-plane)
+lists the steps.
+
 ## Install the new node
 
 Install `w1` as [Install a node](install.md) describes: boot it into maintenance mode, note the
@@ -151,6 +158,11 @@ To remove `w1`:
 2. Power the machine off.
 3. Delete its entry from `spec.nodes` in `chalkos.yaml`.
 4. Delete its file, `nodes/w1.yaml`, unless another node still names it.
+
+A control plane of a cluster with a `ClusterRegistry` serves an endpoint of the cluster registry.
+Once it is out of the inventory, take its address out of the document's `endpoints` and apply the
+config to every remaining node. Until then, containerd passes over the missing endpoint to the
+next source.
 
 chalkctl then no longer knows the node:
 

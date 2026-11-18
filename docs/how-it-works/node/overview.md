@@ -48,7 +48,7 @@ The three trust edges are the anchors of a node:
   only while the firmware boots under the same keys.
 
 chalkctl reads only the inventory, the YAML documents, the secrets file and the image
-directories, so a machine without Nix, an airgapped one included, can drive the nodes.
+directories, so a machine without Nix, an air-gapped one included, can drive the nodes.
 [Architecture](architecture.md) names the parts of a node and where each one runs.
 [Security model](security.md) explains each trust anchor.
 

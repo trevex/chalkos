@@ -235,6 +235,34 @@ lists for every node, it leaves these:
 - Every rotation skips a revoked node left in the inventory, and other commands still reach it
   until it is removed from the inventory.
 
+## The cluster registry serves the node certificate
+
+The [cluster registry](overview.md#the-cluster-registry-serves-images-from-the-control-planes)
+serves HTTPS, TLS 1.3 at least, with the node's node certificate, which names the node's static
+addresses. Its endpoints are such addresses, so containerd and chalkctl verify an endpoint by the
+OS CA, as they verify chalkd.
+
+chalkos-registry runs as a user of its own, which cannot read STATE. systemd hands it copies of
+`/state/chalkd/node.pem` and `/state/chalkd/ca.crt` as credentials of its unit, and the registry
+reads them once as it starts. A path unit watches both files. When chalkd renews the node
+certificate, or a rotation changes the OS CAs, it restarts the registry, which then serves the new
+certificate. containerd passes over the endpoint to the next one while it restarts.
+
+The registry takes a client certificate when the client offers one, and checks it per request:
+
+- A pull, any GET or HEAD request, needs none. The registry drops an `Authorization` header from
+  it, so credentials containerd sends along mean nothing there.
+- Every other request needs a client certificate of the admin role: a push, a delete, and
+  garbage collection through `POST /chalkos/v1/gc`. The registry verifies the certificate against
+  the OS CAs again at the time of each request, after the handshake did, and reads its role as
+  chalkd does. A certificate the node CA issued is a node's, whatever its Organization, so no node
+  writes.
+
+A request without a certificate, or with one that does not verify, gets 401; one of another role
+gets 403. Both say `writing to the registry needs a client certificate of the admin role`.
+`chalkctl registry push`, `delete` and `gc` authenticate with the one-hour admin certificate
+chalkctl issues from the secrets file, or with an admin client file.
+
 ## Limits
 
 - Nothing revokes a single kubeconfig. It works until its certificate expires or the Kubernetes CA

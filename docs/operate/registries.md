@@ -134,8 +134,9 @@ without `imagePullSecrets`.
 [Pods pull private images with node credentials](../how-it-works/kubernetes/overview.md#pods-pull-private-images-with-node-credentials)
 describes how the kubelet gets the credentials.
 
-A cluster without internet access pulls every container image from a mirror, so the mirror must
-hold them all. Besides the workloads' images, these are the images the `images` block of the
+A cluster without internet access pulls every container image from a mirror, or from the
+[cluster registry](#pull-from-the-cluster-registry), which must hold them all. Besides the
+workloads' images, these are the images the `images` block of the
 [`Cluster`](../reference/kinds.md#cluster) document names: the API server, the controller-manager,
 the scheduler, kube-proxy, etcd, CoreDNS, the pod sandbox and, on an image with flannel, flannel.
 The mirror serves each under the repository and the tag or digest the reference names.
@@ -146,6 +147,29 @@ The mirror serves each under the repository and the tag or digest the reference 
     belong to. containerd sends them to every endpoint that asks for credentials, and to the token
     service such an endpoint names. A mirror of an authenticated registry therefore receives that
     registry's credentials on container pulls. Give its endpoints the trust you give the registry.
+
+## Pull from the cluster registry
+
+With the Kubernetes layer, a `ClusterRegistry` document runs a registry on the control planes, and
+containerd on every node looks there first for the images of the hosts its `mirrors` names.
+[Run an air-gapped cluster with the cluster registry](../kubernetes/cluster-registry.md) sets it up.
+For a mirrored host, containerd tries these sources in turn:
+
+1. the node's own endpoint of the cluster registry, when the node serves one;
+2. the other endpoints of the cluster registry, in the order of `endpoints`;
+3. the endpoints of the host's `Mirror`, in order;
+4. the host itself, over plain HTTP when its `Registry` sets `insecure`.
+
+A host without a `Mirror` goes from the cluster registry straight to the host. containerd verifies
+the cluster registry's endpoints by the OS CA, because they serve the node certificate.
+
+chalkd does not use the cluster registry. It pulls OS images through the `Mirror` and `Registry`
+documents alone, as the sections above describe.
+
+containerd sends a host's credentials to an endpoint only when the endpoint asks for them. The
+cluster registry serves pulls to anyone and never asks, so the credentials of a mirrored host's
+`Registry` do not reach it, and it ignores any that a client sends with a pull. The warning above
+still holds for the host's `Mirror` endpoints.
 
 ## Check that it worked
 

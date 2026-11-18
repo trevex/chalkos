@@ -336,7 +336,8 @@ These units cover most of a node's own work:
 The Kubernetes layer adds `chalkos-kubernetes.service`, which prepares the node's addresses and
 Kubernetes files before the kubelet starts, and `kubelet.service` and `containerd.service`.
 `chalkos-registry-credentials.service` and `chalkos-registry-mirrors.service` write the
-credentials and mirrors for the pods' image pulls.
+credentials and mirrors for the pods' image pulls. `chalkos-registry.service` serves the cluster
+registry on the nodes that a `ClusterRegistry` names.
 
 `chalkctl logs` shows the current boot only. For a boot that fell back after an upgrade,
 `chalkctl status` shows the lines the failed boot logged.

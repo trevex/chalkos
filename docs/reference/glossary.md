@@ -117,6 +117,14 @@ It is `spec.endpoint` of the [`Cluster`](kinds.md#cluster) document. Nodes also 
 a [VIP](#vip) or a load balancer that forwards both ports. See
 [Kubernetes networking](../how-it-works/kubernetes/networking.md).
 
+## Cluster registry { #cluster-registry }
+
+A container registry on a Kubernetes cluster's control planes, which containerd on every node asks
+first for the images of the hosts it mirrors. The [`ClusterRegistry`](kinds.md#clusterregistry)
+document lists its endpoints, and `chalkctl registry push` fills each of them, since they do not
+copy images to each other. See
+[Run an air-gapped cluster with the cluster registry](../kubernetes/cluster-registry.md).
+
 ## Config { #config }
 <!-- abbr: none -->
 

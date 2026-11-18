@@ -4,6 +4,7 @@
 *[image directories]: The build output of an image: the raw disk image with its metadata and config schemas.
 *[node certificates]: The certificate chalkd serves and authenticates with.
 *[Cluster endpoint]: The URL of the cluster's API server, which kubelets, kubeconfigs and joining control planes use.
+*[Cluster registry]: A container registry on a Kubernetes cluster's control planes, which containerd on every node asks first for the images of the hosts it mirrors.
 *[Config documents]: One object of a node's config, written in YAML like a Kubernetes object.
 *[Fallback keyslot]: The second keyslot of every encrypted partition, which unlocks it when the TPM does not.
 *[Kubernetes layer]: A predefined set of NixOS modules that chalkos ships, which an image lists in its modules like any other module to take on a role.
@@ -11,6 +12,7 @@
 *[Maintenance mode]: The mode chalkd runs in on a node that is not installed.
 *[Node certificate]: The certificate chalkd serves and authenticates with.
 *[cluster endpoint]: The URL of the cluster's API server, which kubelets, kubeconfigs and joining control planes use.
+*[cluster registry]: A container registry on a Kubernetes cluster's control planes, which containerd on every node asks first for the images of the hosts it mirrors.
 *[config documents]: One object of a node's config, written in YAML like a Kubernetes object.
 *[fallback keyslot]: The second keyslot of every encrypted partition, which unlocks it when the TPM does not.
 *[maintenance mode]: The mode chalkd runs in on a node that is not installed.

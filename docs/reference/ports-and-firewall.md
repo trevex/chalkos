@@ -16,7 +16,7 @@ listen on locally, the nftables tables on a node and the connections a node make
 
 The firewall accepts new connections on these ports alone. Every node has the first; the others
 depend on whether the image has Kubernetes, on the node's type (`Node.spec.type`:
-`controlplane` or `worker`) and on the CNI. A router image filters with a table of its own,
+`controlplane` or `worker`), on the CNI and on the `ClusterRegistry` document. A router image filters with a table of its own,
 which [Router images](#router-images) describes.
 
 | Port | Protocol | Service | Nodes | Connects to it |
@@ -29,11 +29,19 @@ which [Router images](#router-images) describes.
 | 30000–32767 | TCP | NodePort services | control planes and workers | clients of NodePort services |
 | 8472 | UDP | flannel's VXLAN | control planes and workers, with flannel | the other nodes |
 | 3784 | UDP | BFD, FRR's bfdd: single-hop control | control planes and workers whose image carries the BGP speaker | the BGP neighbours of a `BGPPeer` with `bfd` |
+| 5000, or the `ClusterRegistry`'s `port` | TCP | chalkos-registry, the cluster registry: HTTPS with the node certificate; pulls for anyone, pushes, deletes and garbage collection for a client certificate of the admin role | nodes whose static address is one of the `ClusterRegistry`'s `endpoints`, every control plane among them | containerd on every Kubernetes node; chalkctl registry |
 
 Ports 2379 and 2380 accept only certificates of the cluster's etcd CA, but a control plane's
 firewall opens them to every source, not only to the other control planes' addresses.
 
 The firewall opens the NodePort range for TCP only.
+
+The cluster registry's port is open on a node that serves an endpoint of the
+[`ClusterRegistry`](kinds.md#clusterregistry), to every source. The table `inet chalkos-registry`,
+which `chalkos-registry.service` loads before the registry starts and deletes when it stops, marks
+TCP to the port with the bit `0x04000000`, and the firewall accepts packets that carry it. The
+table clears the bit before it marks and after the firewall's chain, as the control plane's table
+does. A node that serves no endpoint runs no registry, loads no table and keeps the port closed.
 
 ## VXLAN rule
 
@@ -99,14 +107,16 @@ table and leaves the others in place.
 
 | Table | Owner | Contents |
 | --- | --- | --- |
-| `inet nixos-fw` | NixOS firewall | The input policy: drop, except for the loopback interface, established and related connections, the open ports above, ICMP echo requests, ICMPv6 other than redirects and node information queries, DHCPv6 replies to link-local addresses, and the control plane's ports and VXLAN carrying their marks. A reverse-path check in prerouting drops packets from a source address the node has no route back to. |
+| `inet nixos-fw` | NixOS firewall | The input policy: drop, except for the loopback interface, established and related connections, the open ports above, ICMP echo requests, ICMPv6 other than redirects and node information queries, DHCPv6 replies to link-local addresses, and the control plane's ports, VXLAN and the cluster registry's port carrying their marks. A reverse-path check in prerouting drops packets from a source address the node has no route back to. |
 | `inet chalkos-controlplane` | chalkos | On a control plane, the mark of the control plane's ports and its clearing. |
 | `inet chalkos-vxlan` | chalkos | The VXLAN mark, its clearing and the forward drop. |
+| `inet chalkos-registry` | chalkos | On a node that serves the cluster registry, the mark of its port and its clearing. |
 | `ip kube-proxy`, `ip6 kube-proxy` | kube-proxy | Service and NodePort translation, in kube-proxy's nftables mode. |
 | flannel's tables | flanneld | Masquerading of pod traffic, with `EnableNFTables`. |
 | the portmap plugin's table | CNI portmap plugin | Host ports of pods, with its nftables backend. |
 
-The `input-allow` chain, as NixOS renders it for a node with Kubernetes and flannel:
+The `input-allow` chain, as NixOS renders it for a node with Kubernetes, flannel and the cluster
+registry:
 
 ```text
 chain input-allow {
@@ -117,6 +127,7 @@ chain input-allow {
    ip6 daddr fe80::/64 udp dport 546 accept comment "DHCPv6 client"
    tcp dport { 6443, 2379, 2380 } meta mark & 0x02000000 == 0x02000000 accept
    udp dport 8472 meta mark & 0x01000000 == 0x01000000 accept
+   meta mark & 0x04000000 == 0x04000000 accept
 }
 ```
 
@@ -184,6 +195,7 @@ between the nodes.
 | Destination | Port | Protocol | Purpose |
 | --- | --- | --- | --- |
 | Container registries, or the endpoints their `Mirror` documents name | 443, or the endpoint's port | TCP | Images of the control plane's static pods, kube-proxy, flannel, CoreDNS and workloads. An endpoint may use plain HTTP when a `Registry` of its host sets `spec.insecure`. |
+| The endpoints of the `ClusterRegistry` | 5000, or its `port` | TCP | Images of the hosts the cluster registry mirrors, which containerd on every Kubernetes node looks for there first. HTTPS, verified by the OS CA. |
 | The registry of an install's or upgrade's image, when the inventory names the image in a registry, or the endpoints of its `Mirror` | 443, or the port of the image reference or the endpoint | TCP | chalkd pulling the image, on the installer during `chalkctl install` and on the node during `chalkctl upgrade`. Plain HTTP only when the `Registry` of the host or endpoint sets `spec.insecure`. |
 | Time servers of the `TimeSync` document's `spec.servers` | 4460 | TCP | NTS key exchange, for servers with `nts`, the default. |
 | Time servers | 123, or the server's `port` | UDP | NTP. |
@@ -204,6 +216,6 @@ control plane that holds it and announces it to the neighbours with ARP or IPv6 
 advertisements. A routed VIP travels in the BGP sessions above.
 
 Sources: the firewall rules of `modules/node/chalkd.nix`, `modules/node/kubernetes`,
-`modules/node/router`, `cmd/chalkos-render/nftables.go` and `pkg/kubernetes/vxlan`, and the
-listeners of `cmd/chalkd`, `pkg/kubernetes/manifests/manifests.go`, `pkg/kubernetes/addons` and
-`modules/node/kubernetes`.
+`modules/node/router`, `cmd/chalkos-render/nftables.go`, `pkg/kubernetes/vxlan` and
+`pkg/kubernetes/clusterregistry`, and the listeners of `cmd/chalkd`, `cmd/chalkos-registry`,
+`pkg/kubernetes/manifests/manifests.go`, `pkg/kubernetes/addons` and `modules/node/kubernetes`.

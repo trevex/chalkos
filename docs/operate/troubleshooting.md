@@ -271,7 +271,8 @@ endpoint needs a `Registry` of its host with `insecure: true`.
     the endpoints to `/run/containerd/certs.d/<registry>/hosts.toml`, and
     `chalkos-registry-credentials.service` writes the credentials. Their logs show when they could
     not. The kubelet asks for `registry.example.com:5000/app` only with a `Registry` of
-    `registry.example.com:5000`. A cluster without internet access needs every image in a mirror.
+    `registry.example.com:5000`. A cluster without internet access needs every image in a mirror
+    or on every endpoint of its cluster registry, which `chalkctl registry list` checks.
 
 ## A Kubernetes symptom
 

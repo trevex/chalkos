@@ -50,7 +50,10 @@ and `chalkctl upgrade` both have the node pull an image the inventory names in a
 through the endpoints of a [`Mirror`](../reference/kinds.md#mirror) when the node has one, and
 authenticated by a [`Registry`](../reference/kinds.md#registry) document for each host. The same
 `Registry` documents give the kubelet the credentials of pods' container images, without
-`imagePullSecrets`. The plan adds a check of a signature of the artefact itself.
+`imagePullSecrets`. An air-gapped Kubernetes cluster pulls its container images from the
+[cluster registry](../kubernetes/cluster-registry.md) on its control planes, which
+`chalkctl registry push` fills endpoint by endpoint. The plan adds a check of a signature of the
+artefact itself.
 
 ### An in-cluster upgrade controller
 
@@ -92,7 +95,7 @@ address. The plan adds these protocols, each as a feature an image can leave out
 | KMS and SSH unlock | Unlocking encrypted partitions in the initrd through a key management service, or over SSH, besides the TPM and the recovery key. |
 | Adding an IP family | Turning a single-stack cluster into a dual-stack one while it runs. |
 | etcd backup and restore | Snapshots of etcd and a restore into a new control plane. |
-| A node-local registry cache | A cache of container images on each node. |
+| Replication of the cluster registry | Images pushed to one endpoint of the cluster registry copied to the others, so an endpoint that missed a push, or a new control plane, catches up without another push. |
 | Cilium | A CNI besides flannel. |
 | Bootstrap through TPM attestation | Nodes that install themselves from a management server that verifies their TPM. |
 | External secret sources | The secrets file's contents in Vault or OpenBao. |
@@ -128,8 +131,11 @@ These limits hold in the current code, grouped by area.
   the other control planes; etcd accepts only certificates of its CA there.
 - The firewall opens the NodePort range for TCP only.
 - Packets a node receives lose the packet mark bit 0x02000000, which the firewall's rule for the
-  control plane's ports uses, so a network plugin of the cluster's own
-  (`chalkos.cni.provider = "none"`) must not use it.
+  control plane's ports uses, and on a node that serves the cluster registry the bit 0x04000000
+  of its port's rule. A network plugin of the cluster's own (`chalkos.cni.provider = "none"`)
+  must not use them.
+- The endpoints of the cluster registry do not replicate. Each holds what was pushed to it, and
+  `chalkctl registry list` shows where they differ.
 - The Kubernetes layer's BGP speaker announces the addresses of interfaces alone, such as the
   node's address and a routed VIP: no pod ranges and no LoadBalancer addresses.
 

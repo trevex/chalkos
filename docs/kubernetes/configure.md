@@ -109,7 +109,8 @@ chalkctl: warning: node1: Cluster "default": images.proxy: registry.k8s.io/kube-
 containerd pulls the images when the static pods, the add-ons and the pods need them, through the
 `Registry` and `Mirror` documents. A cluster without internet access serves them from a mirror, as
 [Registries and mirrors](../operate/registries.md#pull-container-images-with-the-same-documents)
-describes.
+describes, or from its control planes, as
+[Run an air-gapped cluster with the cluster registry](cluster-registry.md) describes.
 
 ### Keep the versions within the skew policy
 
