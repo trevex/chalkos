@@ -130,11 +130,11 @@ func (f failures) String() string {
 // would, and returns what a valid config warrants a warning for. Its errors and warnings name the
 // node.
 func validateNode(cl *cluster, name string) (string, []string, error) {
-	nc, md, err := cl.image(name)
+	_, md, err := cl.image(name)
 	if err != nil {
 		return "", nil, err
 	}
-	nc, err = cl.desiredConfig(name)
+	nc, err := cl.desiredConfig(name)
 	if err != nil {
 		return "", nil, err
 	}
