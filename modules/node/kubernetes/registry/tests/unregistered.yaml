@@ -1,0 +1,13 @@
+# A worker without a ClusterRegistry.
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: default}
+spec:
+  type: worker
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-lan}
+spec:
+  match: {name: eth0}
+  network: {address: [192.0.2.13/24, "fd00::13/64"]}

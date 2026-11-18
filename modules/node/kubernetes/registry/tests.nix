@@ -1,13 +1,38 @@
 # The tests of the cluster registry on Kubernetes images: the refusals of a ClusterRegistry's
 # fields and of a control plane that serves no endpoint, the files the output renders on a node
 # that serves an endpoint spelled otherwise, and nothing on one that serves none, and the effects
-# of a new port.
+# of a new port and of a moved address.
 { pkgs }:
 let
   # The schema's pattern of a mirrored host.
   host = "^(?:[A-Za-z0-9]+(([._]|__|-+)[A-Za-z0-9]+)*)$";
+  # The config of file with the node's IPv4 address moved.
+  moved =
+    file:
+    builtins.toFile "moved-${baseNameOf file}" (
+      builtins.replaceStrings [ "192.0.2.13/24" ] [ "192.0.2.14/24" ] (builtins.readFile file)
+    );
 in
 {
+  # A moved address rewrites containerd's hosts.toml when a ClusterRegistry orders the node's
+  # endpoints, and not without one.
+  kubernetes-registry-moved = {
+    before = ./tests/worker.yaml;
+    config = moved ./tests/worker.yaml;
+    effects = [
+      "kubernetes"
+      "networkd"
+      "registry-mirrors"
+    ];
+  };
+  kubernetes-registry-moved-unregistered = {
+    before = ./tests/unregistered.yaml;
+    config = moved ./tests/unregistered.yaml;
+    effects = [
+      "kubernetes"
+      "networkd"
+    ];
+  };
   # A worker of no endpoint is accepted and runs no registry.
   kubernetes-registry-worker = {
     config = ./tests/worker.yaml;

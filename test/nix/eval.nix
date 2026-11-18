@@ -4094,6 +4094,8 @@ lib.runTests {
           tests = [
             "kubernetes-registry-bad-fields"
             "kubernetes-registry-elsewhere"
+            "kubernetes-registry-moved"
+            "kubernetes-registry-moved-unregistered"
             "kubernetes-registry-port"
             "kubernetes-registry-spelled"
             "kubernetes-registry-worker"
