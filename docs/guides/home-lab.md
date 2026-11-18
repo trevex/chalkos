@@ -63,19 +63,17 @@ with a random /48 of your own in [Prepare the files](#prepare-the-files).
 | The router on the home network | an IPv4 address by DHCP, `192.168.1.2` in the example |
 
 The fabric carries IPv6 alone. The router's advertisements give every port on the fabric an
-address by SLAAC, the resolver and the NAT64 prefix. The resolver answers a name that has only IPv4
+address by SLAAC, a default gateway, the resolver and the NAT64 prefix. The resolver answers a name that has only IPv4
 addresses with addresses in `64:ff9b::/96`, and the NAT64 carries connections to them to the IPv4
 internet, out of the router's port on the home network. A node's own address is a /128 on its dummy
 interface `node0`. FRR, the BGP speaker of the nodes' image, announces it to the router over a
 session on each port, each to one of the router's two addresses on the fabric, and the control
 plane that holds the API's VIP announces the VIP the same way. The router then has two equal paths
 to each address. When a cable or port fails, BFD ends that port's session within about a second,
-and the traffic takes the other port. The nodes take only a default route from the router, which
-arrives over BGP; they ignore the one its advertisements carry. Traffic between two nodes therefore
-passes through the router too: the router is the one machine of the design whose failure stops
-the cluster. Each port also has a static route to the workstation's prefix,
-`fdc8:a1b2:c3d4:f0::/64`, through the router's address on its link, so a node without a BGP
-session still answers the workstation at its ports' addresses.
+and the router forwards over the other port. In the other direction, networkd uses the default
+gateway from the surviving port's advertisements when a port loses carrier. The installer and
+installed nodes can reach the workstation and IPv4 internet before BGP comes up. Traffic between
+nodes' routed addresses passes through the router, so the cluster still depends on the router.
 
 ## Before you begin
 
@@ -644,9 +642,8 @@ so every machine of the same model shows the same two.
 ### Adapt the node's file
 
 `bgp/fabric.yaml`, which every node gets, configures the ports: a `Network` document for each port,
-which takes the router's advertisements without their default route and holds the static route
-to the workstation's prefix, and a `BGPPeer` for each port, which runs a BGP session over that
-port with one of the router's two addresses. It names the ports `enp1s0` and `enp2s0`. When the
+which takes the default gateway and other settings from the router's advertisements, and a `BGPPeer`
+for each port, which advertises node and VIP addresses to the router. It names the ports `enp1s0` and `enp2s0`. When the
 `addresses` diagnostic shows other names, replace `enp1s0` and `enp2s0` throughout
 `bgp/fabric.yaml` with them. You do this once, for node1: node2 and node3 have the same names when
 they are the same model. A node whose ports have other names, such as a machine of another model,
@@ -780,17 +777,17 @@ $ chalkctl status router --secrets=secrets.age
 ...
 bgp:
   VRF      PEER   NEIGHBOR                         STATE        UPTIME  RECEIVED  SENT  BFD
-  default  nodes  fdc8:a1b2:c3d4:1:0:ff:fe00:1101  Established  12m4s   2         1     up
-  default  nodes  fdc8:a1b2:c3d4:1:0:ff:fe00:1102  Established  12m3s   2         1     up
-  default  nodes  fdc8:a1b2:c3d4:1:0:ff:fe00:1201  Established  9m40s   1         1     up
-  default  nodes  fdc8:a1b2:c3d4:1:0:ff:fe00:1202  Established  9m40s   1         1     up
-  default  nodes  fdc8:a1b2:c3d4:1:0:ff:fe00:1301  Established  7m12s   1         1     up
-  default  nodes  fdc8:a1b2:c3d4:1:0:ff:fe00:1302  Established  7m11s   1         1     up
+  default  nodes  fdc8:a1b2:c3d4:1:0:ff:fe00:1101  Established  12m4s   2         0     up
+  default  nodes  fdc8:a1b2:c3d4:1:0:ff:fe00:1102  Established  12m3s   2         0     up
+  default  nodes  fdc8:a1b2:c3d4:1:0:ff:fe00:1201  Established  9m40s   1         0     up
+  default  nodes  fdc8:a1b2:c3d4:1:0:ff:fe00:1202  Established  9m40s   1         0     up
+  default  nodes  fdc8:a1b2:c3d4:1:0:ff:fe00:1301  Established  7m12s   1         0     up
+  default  nodes  fdc8:a1b2:c3d4:1:0:ff:fe00:1302  Established  7m11s   1         0     up
 ...
 ```
 
 Each node sends its address on each session, and the holder of the VIP the VIP as well, so node1
-shows 2 routes received. The router sends each node the default route alone. The routes to the
+shows 2 routes received. The router sends zero BGP routes. The routes to the
 nodes' addresses have two next hops each, one per port:
 
 ```console
@@ -871,14 +868,25 @@ chalkbuild sign --key keys/db.key --cert keys/db.crt installer installer-signed
 
 Then roll the images out to the nodes with `chalkctl upgrade`, as
 [Upgrade nodes](../operate/upgrade.md) describes. chalkctl upgrades the control planes one at a
-time, so the Kubernetes API stays up. The router is different: while it reboots, the nodes lose
-their default route, and with it their traffic to each other and to the Kubernetes API. Upgrade it
+time, so the Kubernetes API stays up. While the router reboots, traffic between the nodes'
+routed addresses, to the Kubernetes API, and to the internet is interrupted. Upgrade the router
 in a step of its own, at a time when that pause suits you:
 
 ```sh
 chalkctl upgrade --nodes node1,node2,node3 --secrets=secrets.age
 chalkctl upgrade --nodes router --secrets=secrets.age
 ```
+
+## Switch an existing lab to advertised gateways
+
+If the nodes still take their default route over BGP, apply the new `bgp/fabric.yaml` to the nodes
+one at a time while the router still sends a BGP default. Try the node config with
+`chalkctl config apply node1 --secrets=secrets.age --try 5m --no-confirm`. Use
+`chalkctl node diag node1 --secrets=secrets.age routes family=inet6` to check for an IPv6
+default route with protocol `ra` on each connected fabric port. Check management and internet
+access before keeping the trial with `chalkctl config confirm node1 --secrets=secrets.age`.
+After every node uses an advertised gateway, apply the router config to stop announcing the BGP
+default.
 
 ## Troubleshooting
 
@@ -897,8 +905,8 @@ diagnostic shows into `bgp/fabric.yaml`, as in [Adapt the node's file](#adapt-th
 
 The router's `bgp:` table shows no line for a port that never connected. Without a session the
 router has no route to the node's address, so chalkctl does not reach the node there. The node
-still answers at its ports' addresses of the fabric, through its static route to the workstation's
-prefix. The router's `neighbours` diagnostic lists them, as the tip "Find the installer through
+still answers at its ports' addresses of the fabric, through its advertised default gateway.
+The router's `neighbours` diagnostic lists them, as the tip "Find the installer through
 the router" in [Install the nodes](#install-the-nodes) shows; pass one with `--address`:
 
 ```sh

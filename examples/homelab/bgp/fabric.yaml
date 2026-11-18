@@ -9,25 +9,15 @@
 # A node whose ports have other names, as on other hardware, or that peers differently leaves this
 # file out and takes a file of its own.
 #
-# Each port takes an address of the fabric's prefix, the resolver and the NAT64 prefix from the
-# router's advertisements. useGateway false leaves out the default route they carry: FRR installs
-# the default route the router sends over BGP, with a next hop per session, which BFD takes away
-# when a port fails. FRR installs no default route while the kernel holds another.
-#
-# A static route to the workstation's WireGuard prefix through the router's address on each port
-# keeps the node's answers to the workstation flowing while it has no BGP session, and so no default
-# route: chalkctl then reaches the node at a port's address of the fabric. The routes are more
-# specific than the default route, so they do not compete with it. The second port's has the higher
-# metric, and takes over when networkd removes the first port's on the loss of its carrier.
+# Each port learns its IPv6 address, default gateway, resolver and NAT64 prefix from the
+# router's advertisements. The default gateway reaches the workstation and the internet
+# before BGP starts. The BGP sessions advertise the node's and API's addresses to the router.
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network
 metadata: {name: 20-enp1s0}
 spec:
   match: {name: enp1s0}
   network: {ipv6AcceptRA: true}
-  ipv6AcceptRA: {useGateway: false}
-  route:
-    - {destination: "fdc8:a1b2:c3d4:f0::/64", gateway: "fdc8:a1b2:c3d4:1::1", metric: 1024}
 ---
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network
@@ -35,15 +25,13 @@ metadata: {name: 20-enp2s0}
 spec:
   match: {name: enp2s0}
   network: {ipv6AcceptRA: true}
-  ipv6AcceptRA: {useGateway: false}
-  route:
-    - {destination: "fdc8:a1b2:c3d4:f0::/64", gateway: "fdc8:a1b2:c3d4:1::2", metric: 1025}
 ---
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: BGPPeer
 metadata: {name: router-enp1s0}
 spec:
   asn: 65000
+  import: none
   address: "fdc8:a1b2:c3d4:1::1"
   interfaces: [enp1s0]
   password: {secretRef: {name: bgp, key: password}}
@@ -53,6 +41,7 @@ kind: BGPPeer
 metadata: {name: router-enp2s0}
 spec:
   asn: 65000
+  import: none
   address: "fdc8:a1b2:c3d4:1::2"
   interfaces: [enp2s0]
   password: {secretRef: {name: bgp, key: password}}

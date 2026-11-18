@@ -8,7 +8,7 @@ description: "Announce a Kubernetes node's addresses and the routed VIP with the
 This page shows how to announce a Kubernetes node's addresses to the routers of its network over
 BGP. Each node runs FRR, the Kubernetes layer's BGP speaker. It announces the addresses of the
 interfaces its config names, such as the node's own address on a dummy interface and the API's VIP
-while the node holds it, and takes the default route its peers send. Use it when the nodes sit
+while the node holds it, and can take the default route its peers send. Use it when the nodes sit
 on a routed fabric instead of one layer-2 segment, when a node's address should stay reachable
 over whichever of its ports works, or when the VIP runs in the `routed` mode.
 
@@ -149,8 +149,9 @@ For the default route to come from BGP, leave the gateway out of the fabric's `N
 `ipv6AcceptRA: {useGateway: false}` for router advertisements, `dhcpv4: {useGateway: false}` for
 DHCP, and no `gateway`. Then BFD takes a failed port's next hop away within about a second. A node
 with no session has no default route, so give it a static route to the networks you manage it
-from. The homelab's `bgp/fabric.yaml` above routes the workstation's prefix through the router's
-address on each port.
+from. The homelab above uses router advertisements for the default route and sets
+`import: none` on the BGP peers. A workstation can reach a node at its fabric port address
+before BGP starts.
 
 ## Announce the VIP
 

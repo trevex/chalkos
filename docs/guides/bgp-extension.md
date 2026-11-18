@@ -198,9 +198,6 @@ metadata: {name: 20-enp1s0}
 spec:
   match: {name: enp1s0}
   network: {ipv6AcceptRA: true}
-  ipv6AcceptRA: {useGateway: false}
-  route:
-    - {destination: "fdc8:a1b2:c3d4:f0::/64", gateway: "fdc8:a1b2:c3d4:1::1", metric: 1024}
 ---
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network
@@ -208,9 +205,6 @@ metadata: {name: 20-enp2s0}
 spec:
   match: {name: enp2s0}
   network: {ipv6AcceptRA: true}
-  ipv6AcceptRA: {useGateway: false}
-  route:
-    - {destination: "fdc8:a1b2:c3d4:f0::/64", gateway: "fdc8:a1b2:c3d4:1::2", metric: 1025}
 ---
 apiVersion: bgp.example.org/v1alpha1
 kind: Peer
@@ -343,9 +337,10 @@ $ cat result/bgp-fabric/outputs/bird-conf/bird.conf
 
 It holds a `protocol bgp` per interface of the `Peer`, named after the `Peer` and the interface
 and bound to that interface. The `Speaker` gives the router ID, the AS number of every session
-and the interfaces of `node_addresses`, whose addresses each session announces. A session takes
-the default route alone from the neighbour, and `merge paths` installs it with a next hop per
-session, so the node keeps it while one port works. The test's node is named `example`. After
+and the interfaces of `node_addresses`, whose addresses each session announces. If a neighbour
+sends a default route, the extension accepts it and `merge paths` can install it with a next hop
+per session. The homelab router sends its gateway in router advertisements. The test's node is
+named `example`. After
 each change to the template, build the results again and read the new file.
 
 ### Find out why a render fails
@@ -710,8 +705,8 @@ router_enp2s0  BGP        ---        up     10:02:16.902  Established
 
 A session in `Connect` or `Active` reaches no neighbour. `protocol=router_enp1s0` shows one session
 alone. The base diagnostics show the rest of the path: `addresses` that the ports and `node0` hold
-their addresses, `neighbours` that the router answers on the port, and `routes` that bird installed
-the default route with a next hop per session:
+their addresses, `neighbours` that the router answers on the port, and `routes` that the node
+has a default route with protocol `ra`:
 
 ```sh
 chalkctl node diag node1 --secrets=secrets.age addresses

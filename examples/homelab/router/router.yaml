@@ -1,8 +1,8 @@
 # The router: its port wan on the home network, which gives it an IPv4 address by DHCP, and its
 # port fabric on the switch of the three nodes. The fabric is IPv6 alone. Router advertisements
 # give each node an address, the resolver and the NAT64 prefix, and the NAT64 carries the nodes'
-# connections to the IPv4 internet out of wan. Each node announces its address over BGP and takes
-# its default route from the router there, and the workstation reaches the fabric through
+# connections to the IPv4 internet out of wan. Each node takes its default route from the
+# advertisements and announces its address over BGP. The workstation reaches the fabric through
 # WireGuard.
 #
 # The two Link documents name the ports by their permanent MAC addresses, which a VLAN or a bond
@@ -42,8 +42,8 @@ spec:
 ---
 # The fabric's two addresses, ::1 and ::2, to which each node's two ports run a BGP session each,
 # and its router advertisements: the prefix, from which each node's ports take their addresses,
-# the resolver and the NAT64 prefix. The nodes ignore the default router the advertisements name
-# and take their default route over BGP.
+# the default route, the resolver and the NAT64 prefix. Installers and installed nodes
+# use the advertised gateway before a BGP session comes up.
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network
 metadata: {name: 20-fabric}
@@ -126,10 +126,9 @@ spec:
   multipath: {ebgp: 2}
 ---
 # The router accepts a session from every address of the fabric's prefix: the ports of the nodes
-# take their addresses by SLAAC, so the router does not know them in advance. It sends the nodes a
-# default route alone: to-nodes rejects every other route, and FRR sends the default route that
-# defaultOriginate makes past the export policy. It takes from them only the addresses of
-# fdc8:a1b2:c3d4:ff::/64, the nodes' and the API's VIP.
+# take their addresses by SLAAC, so the router does not know them in advance. It takes only
+# host routes for the nodes and the API's VIP from fdc8:a1b2:c3d4:ff::/64. The export policy
+# rejects all routes because the nodes learn their gateway from router advertisements.
 apiVersion: router.chalkos.dev/v1alpha1
 kind: BGPPeer
 metadata: {name: nodes}
@@ -140,7 +139,7 @@ spec:
   password: {secretRef: {name: bgp, key: password}}
   description: the Kubernetes nodes
   families:
-    ipv6: {defaultOriginate: true, import: from-nodes, export: to-nodes}
+    ipv6: {import: from-nodes, export: to-nodes}
 ---
 apiVersion: router.chalkos.dev/v1alpha1
 kind: RoutingPolicy
