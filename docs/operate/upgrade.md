@@ -62,12 +62,13 @@ chalkctl upgrade --nodes cp1 --force --secrets secrets.age
 
 The run reaches only the selected nodes, in batches of `--max-unavailable` without coordinator
 ordering. It skips cluster version checks, the guard against config changes that normally need an
-ordered rollout, and the layers' role queries, quorum checks, drains and uncordons. Workloads can be interrupted and etcd can lose quorum. The node's
-image and config checks, Secure Boot checks and protection of its fallback image still apply.
-chalkctl still waits for the new boot to pass the node's health checks and stops if it falls back.
-A node cordoned before recovery stays cordoned. If the node refuses to overwrite the fallback of
-an unblessed boot, `chalkctl upgrade --nodes cp1 --rollback --force --secrets secrets.age`
-recovers by booting the previous image first.
+ordered rollout, and the layers' role queries, quorum checks, drains and uncordons. Workloads can
+be interrupted and etcd can lose quorum. The node's image and config checks, Secure Boot checks
+and protection of its fallback image still apply. chalkctl still waits for the new boot to pass
+the node's health checks and stops if it falls back. A node cordoned before recovery stays
+cordoned. If the node refuses to overwrite the fallback of an unblessed boot,
+`chalkctl upgrade --nodes cp1 --rollback --force --secrets secrets.age` recovers by booting the
+previous image first.
 
 `--force` is a client option; the installed chalkd needs no new API. Use it with `--until stage`
 or `--until activate` to stop before rebooting. Repeat `upgrade --nodes cp1 --force` to continue

@@ -1930,10 +1930,10 @@ type ApplyConfigRequest struct {
 	// Whether chalkd drops the node's pending config, which staged without an image staged keeps.
 	// It goes with staged alone, without config. The response names the config dropped.
 	DiscardPending bool `protobuf:"varint,11,opt,name=discard_pending,json=discardPending,proto3" json:"discard_pending,omitempty"`
-	// For a config delivery to the running image, continue when a runtime
-	// readiness probe fails. Its failure is a warning. Validation, prerequisite
-	// actions, and trial confirmation still apply. A later rollback runs its own
-	// readiness checks normally.
+	// For a config delivery to the running image, ignore failed runtime readiness probes: an
+	// ignored readiness failure is a warning, and its effect continues. Validation, prerequisite
+	// actions and the trial's confirmation still apply, and a later rollback runs its readiness
+	// probes as usual.
 	IgnoreReadiness bool `protobuf:"varint,12,opt,name=ignore_readiness,json=ignoreReadiness,proto3" json:"ignore_readiness,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache

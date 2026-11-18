@@ -236,9 +236,8 @@ runs, finds the inventory and reads the image directory. The repository then hol
 file and `secrets.pub.json`. Your client file lives in `~/.config/chalkos/config`.
 
 If `validate` cannot open `chalkos.yaml`, run it in the repository's root, or name the inventory
-with `--inventory` or `$CHALKOSINVENTORY`.
-If a command says that `no usable age identity was found`, pass
-the key the secrets file or the age source was encrypted to with `--identity`.
+with `--inventory` or `$CHALKOSINVENTORY`. If a command says that `no usable age identity was
+found`, pass the key the secrets file or the age source was encrypted to with `--identity`.
 
 ## What next
 
