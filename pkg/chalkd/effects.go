@@ -8,6 +8,7 @@ import (
 	"maps"
 	"path/filepath"
 	"slices"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -197,6 +198,9 @@ func (s *Server) recordAttempt(e *pendingEffects, states map[string]outputs.Stat
 	return nil
 }
 
+// effectsTimeout bounds the effects of one delivery, which the client cannot cancel.
+const effectsTimeout = 10 * time.Minute
+
 // consume takes the effects of an applied delivery, in this order: it writes the running slot's
 // documents for the granted units when stored says the delivery wrote the slot, or when it
 // compares with a baseline (a failed delivery may have written the slot and not its documents),
@@ -247,7 +251,12 @@ func (s *Server) consume(ctx context.Context, e *pendingEffects, staged *outputs
 			warnings = append(warnings, warning)
 		}
 	}
-	restarted, err := schedule.Apply(ctx, s.Run, e.defs, s.runLayerAction, warnReadiness, activation.hooks(ctx, e.defs))
+	// The node runs the delivered config by now, so the effects run to the end, or to effectsTimeout,
+	// even when the client goes away: a layer action left out would leave chalkd's loops on the
+	// config from before.
+	work, cancel := context.WithTimeout(context.WithoutCancel(ctx), effectsTimeout)
+	defer cancel()
+	restarted, err := schedule.Apply(work, s.Run, e.defs, s.runLayerAction, warnReadiness, activation.hooks(work, e.defs))
 	if ae, ok := errors.AsType[*effects.ApplyError](err); ok && ae.Why != "" {
 		err = layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
 	}

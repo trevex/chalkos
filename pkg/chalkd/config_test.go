@@ -24,6 +24,7 @@ import (
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/identity"
+	"github.com/trevex/chalkos/pkg/internal/testwait"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/rules"
@@ -780,6 +781,33 @@ func TestApplyConfigActsOnItselfInProcess(t *testing.T) {
 	if want := []string{"kubernetes:reload", "kubernetes:restart"}; !slices.Equal(acted, want) {
 		t.Errorf("acted on itself %v, want %v", acted, want)
 	}
+}
+
+// TestApplyConfigTakesEffectsAfterTheClientCancels: a client that goes away while an effect waits
+// for readiness does not stop the effects; the layer action still runs.
+func TestApplyConfigTakesEffectsAfterTheClientCancels(t *testing.T) {
+	testwait.Bubble(t, func(t *testing.T) {
+		s, r := configServer(t)
+		addKubernetes(t, s, k8s.KindWorker, true)
+		writeContract(t, s, contract.EffectsFile, `{"reload": {"when": "true", "chalkd": "kubernetes:reload",
+		  "waitFor": {"description": "the route", "argv": ["/nix/store/demo/bin/check-route"], "timeoutSeconds": 5}}}`)
+		var acted []string
+		s.actedOnSelf = func(name string) { acted = append(acted, name) }
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		r.Rules = append([]tooltest.Rule{{Prefix: "/nix/store/demo/bin/check-route", Err: &tool.Error{Code: 75}, Times: 1}}, r.Rules...)
+		r.Before = func(line string) {
+			if strings.HasPrefix(line, "/nix/store/demo/bin/check-route") {
+				cancel()
+			}
+		}
+		if _, err := s.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{Config: baseConfig})); err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(acted, []string{"kubernetes:reload"}) {
+			t.Errorf("acted on itself %v, commands %v", acted, r.Calls)
+		}
+	})
 }
 
 // TestApplyConfigRefusesAnUnknownAction: an effect that names an action no layer of the image has

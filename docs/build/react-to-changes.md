@@ -158,7 +158,7 @@ chalkos.effects.resolver = {
 The probe is a read-only executable from the image's Nix store. It reads the live node and
 gets no config or credentials from chalkd. It exits with 0 when ready, 75 to retry, or another
 nonzero status to fail the effect. Chalkd runs one bounded attempt at a time and stops at the
-configured timeout or the request deadline. The description is shown in the plan and on
+configured timeout. The description is shown in the plan and on
 failure, so it should name the condition rather than a command.
 
 The image rejects cycles and missing prerequisites. Effects sharing a unit or command run

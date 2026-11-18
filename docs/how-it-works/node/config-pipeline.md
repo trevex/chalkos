@@ -191,13 +191,18 @@ The diagram shows the decision for each effect and the order of the actions of a
     action once, however many effects name it. chalkos's own Kubernetes effects use them; an
     image without the Kubernetes layer has neither.
 
-Effects with an explicit prerequisite or readiness probe use this same action order within
-each batch. Chalkd runs a dependent batch once the needed effects have succeeded. If a
-systemctl command covering several units fails, chalkd treats the actions in that command as
-failed for prerequisite purposes. Effects outside the failed dependency chains can still run.
-A readiness probe runs before its effect, with its own deadline, and a timeout has the same
-effect on its dependents as a failed action. A retry or a trial rollback still uses the
-baseline described below.
+chalkd takes the due effects in batches and uses this action order within each batch. A batch
+holds the effects whose due prerequisites ran in an earlier batch, so a delivery whose effects
+name no prerequisite takes them all in one batch. chalkd runs a dependent batch once the needed
+effects have succeeded. If a systemctl command covering several units fails, chalkd treats the
+actions in that command as failed for prerequisite purposes. Effects outside the failed
+dependency chains can still run. A readiness probe runs before its effect, with its own
+deadline, and a timeout has the same effect on its dependents as a failed action. A retry or a
+trial rollback still uses the baseline described below.
+
+Once the node runs the delivered config, the effects run to the end even when chalkctl goes
+away, for at most 10 minutes. A layer action left out would leave chalkd's loops on the config
+from before.
 
 ## Built-in outputs and effects
 
