@@ -144,6 +144,7 @@ in
           "chalkd"
           "chalkos-console"
           "chalkos-networkd-schema"
+          "chalkos-registry"
           "chalkos-render"
           "chalkos-rules"
           "chalkos-storage"

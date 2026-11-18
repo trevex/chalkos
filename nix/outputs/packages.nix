@@ -17,6 +17,7 @@ in
     chalklab
     chalklab-e2e
     chalkos-console
+    chalkos-registry
     chalkos-storage
     ;
 
