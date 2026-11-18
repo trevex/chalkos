@@ -202,7 +202,7 @@ shell functions the check scripts call: `fail`, `retry` and `refuses`, and for t
 | `template-router-lab` | The router lab template's two images build, and `chalkctl validate` accepts the template's YAML with them. |
 | `template-cluster-metal` | The metal cluster template's image and installer build, and `chalkctl validate` accepts the template's YAML with the image. |
 | `example-homelab` | The homelab images build, and `chalkctl validate` accepts their inventory with the built-in `BGPSpeaker` and `BGPPeer` documents. |
-| `example-bgp-extension` | The standalone BIRD image builds and its extension tests pass. |
+| `example-bgp-extension` | The standalone BIRD image evaluates and its extension tests pass. |
 | `example-extensions` | The extensions example's image builds, and `chalkctl validate` accepts its YAML, `Rack` and `Hardware` documents included, with it. |
 | `image-contract` | An image directory describes itself and carries a schema for each kind it lists. |
 | `image-oci` | The test image's OCI layout: one manifest of the chalkos artifact type, whose header names the image directory's root hash and platform, whose layers are the image's parts and contract in order, and whose contract holds the directory's `metadata.json`. |

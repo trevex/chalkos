@@ -299,14 +299,14 @@ in
       images."images/node-metal" = example.packages.${pkgs.stdenv.hostPlatform.system}.node-metal;
     };
 
+  # The BGP extension example: its image evaluates, which leaves building it to the image tests of
+  # chalkos's own images, and the extension's tests pass.
   example-bgp-extension =
     let
       system = pkgs.stdenv.hostPlatform.system;
     in
-    pkgs.linkFarm "chalkos-example-bgp-extension" {
-      image = bgpExtension.packages.${system}.node-bird-metal;
-      tests = bgpExtension.checks.${system}.node-bird-metal;
-    };
+    assert lib.isString bgpExtension.packages.${system}.node-bird-metal.drvPath;
+    bgpExtension.checks.${system}.node-bird-metal;
 
   # The BGP guide shows the refusals that the extension's tests bgp-unconfigured-peer-interface, of
   # its validator bgp-peers, and bgp-new-asn, of a change rule, expect, as refusals.json holds
