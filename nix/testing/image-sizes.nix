@@ -5,11 +5,12 @@
 {
   images = {
     k8s-metal = {
-      storeData = 281;
-      hashTree = 2.2;
+      storeData = 314;
+      hashTree = 2.5;
       uki = 51;
     };
     # FRR takes about 15 MiB of the Kubernetes image's store, which holds no Python.
+    # chalkos-registry, the cluster registry, takes about 7.6 MiB of the Kubernetes images' store.
     k8s-kvm = {
       storeData = 330;
       hashTree = 2.6;
