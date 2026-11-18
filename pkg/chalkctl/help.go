@@ -435,10 +435,11 @@ that stopped, at an unreachable node for example, or paused for the operator con
 --resume. See
 https://trevex.github.io/chalkos/how-it-works/node/certificates/#a-rotation-replaces-a-ca-in-four-phases.
 
-The secrets file records the phase reached and is updated in place, keeping its previous version
-as <file>.prev, unless --out names a new file. An encrypted file is encrypted again to the
-recipients it records, which --recipient replaces. One rotation runs at a time, and one chalkctl
-command at a time changes the secrets file, holding <file>.lock.
+Use a dedicated cluster secrets file. It records the phase reached and is updated in place,
+keeping the version from before the rotation as <file>.prev. SOPS files use their existing keys
+and support in-place updates only. For native JSON and age bundles, --out can name a new file
+and --recipient can change the age recipients. One chalkctl command at a time changes the
+secrets file, holding <file>.lock.
 
 Nodes revoked with chalkctl node revoke are skipped and named; rotate stops while a layer cannot
 say which nodes are revoked, as when no Kubernetes control plane answers, unless none was

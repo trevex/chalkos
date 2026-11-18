@@ -87,7 +87,7 @@ func TestValidateSecretSourcesMatchesLiteralConfig(t *testing.T) {
 	}
 }
 
-func TestBundleAndServiceSecretShareOneSOPSRead(t *testing.T) {
+func TestSOPSSelectorsAreForServiceSecrets(t *testing.T) {
 	ta := newTestApp(t)
 	bundle, err := ta.secrets.Encode()
 	if err != nil {
@@ -104,9 +104,12 @@ func TestBundleAndServiceSecretShareOneSOPSRead(t *testing.T) {
 	t.Setenv("PATH", ta.dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	sources := &secretSources{ctx: t.Context(), app: ta.app}
 	ctx := context.WithValue(t.Context(), secretSourcesKey{}, sources)
-	got, err := ta.loadSecrets(ctx, layer.SecretsFlags{Path: "sops://" + path + "#/chalkos"})
-	if err != nil || got.Public().OSCA != ta.secrets.Public().OSCA {
-		t.Fatalf("bundle: %v", err)
+	selected := layer.SecretsFlags{Path: "sops://" + path + "#/chalkos"}
+	if _, err := ta.loadSecrets(ctx, selected); err == nil || !strings.Contains(err.Error(), "dedicated") {
+		t.Fatalf("bundle accepted a selector: %v", err)
+	}
+	if _, err := ta.openSecrets(ctx, selected, changeFlags{}); err == nil || !strings.Contains(err.Error(), "dedicated") {
+		t.Fatalf("rotation accepted a selector: %v", err)
 	}
 	value, err := sources.secretValue("sops://./shared.enc.json#/service/p~1a~0ss/0", ta.dir)
 	if err != nil || value != "example" {
@@ -115,8 +118,5 @@ func TestBundleAndServiceSecretShareOneSOPSRead(t *testing.T) {
 	log, err := os.ReadFile(calls)
 	if err != nil || string(log) != "read\n" {
 		t.Fatalf("sops calls = %q, %v", log, err)
-	}
-	if _, err := ta.openSecrets(ctx, layer.SecretsFlags{Path: path}, changeFlags{}); err == nil || !strings.Contains(err.Error(), "rotation requires a whole") {
-		t.Fatalf("rotation accepted a SOPS source: %v", err)
 	}
 }

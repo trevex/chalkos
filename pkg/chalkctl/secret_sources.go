@@ -33,6 +33,14 @@ type secretSource struct {
 	pointer  string
 }
 
+func clusterSecretsSource(input string) (secretSource, error) {
+	source, err := parseSecretSource(input, "", false)
+	if err == nil && source.pointer != "" {
+		return secretSource{}, errors.New("--secrets requires a dedicated cluster secrets file; selectors are only for Secret documents")
+	}
+	return source, err
+}
+
 var providerPrefix = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+.-]*://`)
 
 func parseSecretSource(input, base string, requireURI bool) (secretSource, error) {
@@ -108,17 +116,9 @@ func (s *secretSources) read(source secretSource) ([]byte, error) {
 	var data []byte
 	var err error
 	if source.provider == "sops" {
-		cmd := exec.CommandContext(s.ctx, "sops", "decrypt", source.path)
-		data, err = cmd.Output()
-		if errors.Is(err, exec.ErrNotFound) {
-			return nil, errors.New("the sops provider requires sops on PATH")
-		}
+		data, err = runSOPS(s.ctx, nil, "decrypt", source.path)
 		if err != nil {
-			if ctxErr := s.ctx.Err(); ctxErr != nil {
-				return nil, ctxErr
-			}
-			// Provider output can include plaintext. Report only the command's failure.
-			return nil, fmt.Errorf("sops decrypt failed: %w", err)
+			return nil, err
 		}
 	} else {
 		data, err = os.ReadFile(source.path)
@@ -138,6 +138,25 @@ func (s *secretSources) read(source secretSource) ([]byte, error) {
 		s.files = make(map[[2]string][]byte)
 	}
 	s.files[key] = data
+	return data, nil
+}
+
+func runSOPS(ctx context.Context, input []byte, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "sops", args...)
+	if input != nil {
+		cmd.Stdin = bytes.NewReader(input)
+	}
+	data, err := cmd.Output()
+	if errors.Is(err, exec.ErrNotFound) {
+		return nil, errors.New("the sops provider requires sops on PATH")
+	}
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		// Provider output can include plaintext. Report only the command's failure.
+		return nil, fmt.Errorf("sops %s failed: %w", args[0], err)
+	}
 	return data, nil
 }
 
@@ -213,30 +232,37 @@ func (s *secretSources) secretValue(value, base string) (string, error) {
 }
 
 func (s *secretSources) bundle(source secretSource) (clustersecrets.Secrets, error) {
-	var zero clustersecrets.Secrets
 	data, err := s.read(source)
 	if err != nil {
-		return zero, err
+		return clustersecrets.Secrets{}, err
 	}
-	if source.pointer == "" && json.Valid(data) {
-		return clustersecrets.ReadJSON(data)
-	}
-	node, err := selectSecret(data, source.pointer)
+	data, err = clusterBundleJSON(data)
 	if err != nil {
-		return zero, err
+		return clustersecrets.Secrets{}, err
+	}
+	return clustersecrets.ReadJSON(data)
+}
+
+func clusterBundleJSON(data []byte) ([]byte, error) {
+	if json.Valid(data) {
+		return data, nil
+	}
+	node, err := selectSecret(data, "")
+	if err != nil {
+		return nil, err
 	}
 	if node.Kind != yaml.MappingNode {
-		return zero, errors.New("the cluster bundle must be an object")
+		return nil, errors.New("the cluster bundle must be an object")
 	}
 	var value map[string]any
 	if node.Decode(&value) != nil {
-		return zero, errors.New("cannot decode the selected cluster bundle")
+		return nil, errors.New("cannot decode the cluster bundle")
 	}
 	data, err = json.Marshal(value)
 	if err != nil {
-		return zero, errors.New("cannot decode the selected cluster bundle")
+		return nil, errors.New("cannot decode the cluster bundle")
 	}
-	return clustersecrets.ReadJSON(data)
+	return data, nil
 }
 
 func (s *secretSources) materialize(nc *inventory.NodeConfig) (*inventory.NodeConfig, error) {

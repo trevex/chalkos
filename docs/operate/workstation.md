@@ -8,7 +8,7 @@ description: "Get chalkctl, lay out the repository, generate the cluster's secre
 This page is for an operator who prepares the machine they run chalkctl on. At the end you have
 chalkctl, a repository laid out like the
 [`cluster-metal` template](https://github.com/trevex/chalkos/tree/main/templates/cluster-metal), the
-cluster's secrets file encrypted with age, and a client file for everyday commands. You also know which
+encrypted cluster secrets, and a client file for everyday commands. You also know which
 credential each command needs.
 
 ## Before you begin
@@ -16,8 +16,7 @@ credential each command needs.
 You need an x86-64 Linux machine. To get chalkctl from the chalkos flake, the machine needs Nix
 with flakes enabled. A machine without Nix can run a copy of the program with mtools installed.
 
-You need an age key or an SSH key of type ed25519 or RSA to encrypt the secrets file to. Each
-person who will hold the secrets file needs one, and so does an offline backup.
+[Manage secrets](secrets.md) covers the keys you need to encrypt and back up the cluster's secrets.
 
 The images come from an image author, who builds them with Nix as
 [Your first image flake](../build/first-image.md) shows. chalkctl needs the image directories the
@@ -109,62 +108,8 @@ may be committed too, as the next section explains.
 
 ## Generate the cluster's secrets with age
 
-The secrets file holds every key of the cluster: the OS CA and the node CA with their keys, the
-Kubernetes CAs and keys, and the secret every node's recovery key derives from. Whoever holds it
-can install a node into the cluster, issue themselves any client certificate and decrypt every
-node's disks with physical access to them.
-
-Generate it once, in the repository's root, encrypted to each administrator's key and to a
-backup key that you keep offline:
-
-```console
-$ chalkctl gen secrets --recipient "$(cat ~/.ssh/id_ed25519.pub)" \
-    --recipient age1nmrqj76cqyf4ft8xtczufd3mtdk0xf2j7tevgwnzjp3zq9tffu3slx5eux
-encrypted secrets.age to ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKMcR1DCFPGSdWXphQ3We8UmkMp2KdufUzVxxC6Hvo9k alice@workstation, age1nmrqj76cqyf4ft8xtczufd3mtdk0xf2j7tevgwnzjp3zq9tffu3slx5eux
-wrote secrets.age and secrets.pub.json
-```
-
-A recipient is an age public key, an SSH public key or an age plugin recipient. A hardware key
-works through a plugin such as age-plugin-yubikey, whose binary must be on the `PATH` of whoever
-runs chalkctl.
-
-The command writes two files:
-
-- `secrets.age` is the secrets file, encrypted to the recipients.
-- `secrets.pub.json` is its public half, with certificates and no keys.
-
-`gen secrets` refuses to overwrite either file, because new secrets would lock you out of every
-installed node:
-
-```console
-$ chalkctl gen secrets --recipient age1nmrqj76cqyf4ft8xtczufd3mtdk0xf2j7tevgwnzjp3zq9tffu3slx5eux
-chalkctl: secrets.age exists; the secrets are generated once per cluster
-```
-
-To decrypt the file, chalkctl tries the identities `--identity` names. Without `--identity`, it
-tries `~/.config/chalkos/age.key`, `~/.ssh/id_ed25519` and `~/.ssh/id_rsa`, skipping those that
-do not exist or that age cannot use. It asks on the terminal for an SSH key's passphrase.
-
-Two other ways to keep the file suit other setups:
-
-- `--plaintext` in place of `--recipient` writes `secrets.json` unencrypted, for a file that
-  something else protects. Keep it out of git.
-- `--out - --public-out secrets.pub.json` writes the secrets file to standard output, for a
-  secret manager. Every command then reads it from standard input with `--secrets -`.
-
-Committing `secrets.age` puts it under the same history and review as the rest of the cluster.
-Every clone then carries it, so its protection rests on the recipients' keys alone.
-`chalkctl rotate` later rewrites the file in place and leaves `secrets.age.prev` and, while it
-runs, `secrets.age.lock` beside it. Keep both out of git. `secrets.age.prev` holds the version
-from before the last change, or after a rotation the version from before the rotation.
-
-!!! danger "A lost secrets file cannot be generated again"
-
-    New secrets do not match the installed nodes. Without the file you cannot install or
-    reinstall a node, deliver config, issue client files or derive a recovery key. Back it up to
-    a second place, as
-    [Back up what you cannot rebuild](recurring-tasks.md#back-up-what-you-cannot-rebuild) lists.
-    [Recover a node](recover-node.md#the-secrets-file-is-lost) lists what still works without it.
+[Manage secrets](secrets.md#generate-the-clusters-secrets-with-age) shows how to create the
+bundle and its public half. It also covers [generation with SOPS](secrets.md#generate-the-clusters-secrets-with-sops).
 
 ## Build the images with the cluster's OS CA
 
@@ -184,62 +129,8 @@ leaves it out, so that it builds before any cluster has secrets, and
 
 ## Keep the services' secrets in Secret documents
 
-A `Secret` document is a config document, unrelated to the secrets file. It holds values that
-the node's services read, such as a password for a BGP peer, and it reaches the node with the
-rest of the node's config. The homelab's `bgp/secrets.yaml` gives the three nodes one, which the
-`BGPPeer` documents `router-enp1s0` and `router-enp2s0` in `bgp/fabric.yaml` name in a
-`secretRef`:
-
-```yaml title="bgp/secrets.yaml"
---8<-- "examples/homelab/bgp/secrets.yaml"
-```
-
-Use `spec.data` for literal values or `spec.sources` to read values from other files.
-Each key in `spec.sources` requires a [provider URI](#secret-source-uris). For example,
-this `Secret` takes its password from the `bgp.password` field of a SOPS file.
-
-```text title="bgp/secrets.yaml"
-apiVersion: chalkos.dev/v1alpha1
-kind: Secret
-metadata: {name: bgp}
-spec:
-  sources:
-    password: "sops://./fabric.enc.yaml#/bgp/password"
-```
-
-The path is relative to `bgp/secrets.yaml`, so this reads `bgp/fabric.enc.yaml`. Name the
-`Secret` document in the inventory and keep the provider file outside its config file globs.
-Other documents still use `secretRef: {name: bgp, key: password}`. A document can mix literal
-and sourced keys. Defining the same key in both maps is an error.
-
-Chalkctl resolves sources when it validates, compares or delivers the desired config. It
-reads and decrypts each source file once per command and puts the values in `spec.data`
-before validation and delivery. Run `chalkctl config apply` after changing a provider value.
-Use inventories you trust, since their sources can read files available to the user running
-chalkctl. On the node, chalkd keeps the delivered `Secret` documents readable by root alone and
-hands each value to units granted the kind that references it.
-
-## Secret source URIs
-
-The same URI syntax works in `Secret.spec.sources` and with `--secrets`.
-
-| Provider | Example | Reads |
-| --- | --- | --- |
-| `file://` | `file://./password.txt` | A plaintext local file. |
-| `sops://` | `sops://./fabric.enc.yaml#/bgp/password` | A local file decrypted by the `sops` executable on `PATH`, using its configured keys. |
-| `age://` | `age://./vault.yaml.age#/bgp/password` | A local file decrypted by chalkctl using `--identity` or the default age and SSH identities. |
-
-The part after `://` is a local path. Use `file:///etc/chalkos/password.txt` for an absolute
-path. Relative paths start at the declaring YAML file for `spec.sources` and in the working
-directory for `--secrets`. Escape a literal `#` in a URI path as `%23`. Quote URIs in shell
-commands.
-
-The optional fragment is a JSON Pointer into a single YAML or JSON document. For example,
-`#/bgp/password` selects the password field under `bgp`, `#/peers/0` selects the first item
-in `peers`, and `~1` and `~0` escape a slash and a tilde in a key. A source without a
-fragment returns the whole file after decryption. A service key selects a string or reads
-the full UTF-8 text, including any trailing newline. The cluster bundle must be a JSON or
-YAML object with the fields of the generated secrets file.
+[Manage secrets](secrets.md#keep-the-services-secrets-in-secret-documents) shows how to
+write `Secret` documents and source their values.
 
 ## Choose a role for each client file
 
@@ -273,28 +164,8 @@ others with a client file of a high enough role, or with the secrets file, which
 [Commands](../reference/access.md#commands) lists the credential each command needs. A command
 that needs the secrets file says so when `--secrets` is missing.
 
-| `--secrets` argument | How chalkctl reads it |
-| --- | --- |
-| `secrets.age` | Decrypts the local file with age. |
-| `secrets.enc.yaml` | Decrypts the local file with SOPS. The filename contains `.enc.` followed by an extension. |
-| `secrets.json` | Reads the local file as plaintext. |
-| `-` | Reads the native JSON or age bundle from standard input. |
-| `'sops://./vault.enc.yaml#/chalkos'` | Uses the named provider and selects a bundle under `chalkos`. |
-
-An explicit provider takes precedence over the filename. For example, use
-`age://./cluster.keys` for age ciphertext without an `.age` suffix. If a bare path matches both
-encrypted filename patterns, `.age` takes precedence. A bare path treats `#` as part of the
-filename. Use a URI to select a value.
-
-For example, issue a reader client file from a cluster bundle stored with other secrets.
-
-```sh
-chalkctl client new --name monitor --role reader --secrets 'sops://./vault.enc.yaml#/chalkos'
-```
-
-`chalkctl rotate` writes rotation state back to a whole native JSON or age bundle. Use a
-native file for rotation, or use the existing stdin workflow with an explicit `--out`.
-SOPS sources and URI fragments are available to commands that read the bundle.
+[Manage secrets](secrets.md#read-the-cluster-secrets-bundle) lists the supported file formats
+and provider URIs.
 
 `chalkctl upgrade` with an operator client file sends no config, and each node gives the new image
 its pending config, else carries its own config over, as
@@ -329,7 +200,7 @@ The secrets file, the client files and the images relate as follows:
 
 ```mermaid
 flowchart LR
-    keys["age or SSH keys"] -->|decrypt| secrets["Secrets file"]
+    keys["Age identities or SOPS keys"] -->|decrypt| secrets["Secrets file"]
     gen["chalkctl gen secrets"] -->|writes| secrets
     gen -->|writes| pub["secrets.pub.json"]
     pub -->|osCA| images["Images and installer"]
@@ -351,9 +222,9 @@ Boot keys, the repository and the previous image.
 
 ## Check that it worked
 
-`chalkctl validate` reads the inventory, the config files and the image directories, and needs no
-credentials. It needs the image directory the inventory names, so the image author builds the
-image first. Run it in the repository's root:
+`chalkctl validate` reads the inventory, the config files and the image directories without
+connecting to the nodes. Provider-backed service secrets require their provider's keys. Build
+the image named by the inventory, then run the command in the repository's root.
 
 ```sh
 chalkctl validate
@@ -361,8 +232,8 @@ chalkctl validate
 
 It prints a line per node, as
 [Write a node's config](node-config.md#check-that-it-worked) shows. The lines show that chalkctl
-runs, finds the inventory and reads the image directory. The repository then holds `secrets.age`
-and `secrets.pub.json`, and `~/.config/chalkos/config` holds your client file.
+runs, finds the inventory and reads the image directory. The repository then holds your encrypted cluster secrets
+file and `secrets.pub.json`. Your client file lives in `~/.config/chalkos/config`.
 
 If `validate` cannot open `chalkos.yaml`, run it in the repository's root, or name the inventory
 with `--inventory` or `$CHALKOSINVENTORY`.

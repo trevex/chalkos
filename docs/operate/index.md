@@ -100,6 +100,14 @@ storage, registries and the tasks that recur.
 
     [:octicons-arrow-right-24: Read](access.md)
 
+-   :material-key-variant: __Manage secrets__
+
+    ---
+
+    Generate and rotate the cluster bundle, and source credentials for node services.
+
+    [:octicons-arrow-right-24: Read](secrets.md)
+
 -   :material-harddisk: __Add storage volumes__
 
     ---

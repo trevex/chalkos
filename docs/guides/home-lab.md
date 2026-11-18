@@ -978,8 +978,8 @@ network. After a delivery to the router, the tunnel works again once the worksta
 
 These pages explain the steps of this tutorial in more depth:
 
-- [Generate the cluster's secrets with age](../operate/workstation.md#generate-the-clusters-secrets-with-age)
-  and [Keep the services' secrets in Secret documents](../operate/workstation.md#keep-the-services-secrets-in-secret-documents)
+- [Generate the cluster's secrets with age](../operate/secrets.md#generate-the-clusters-secrets-with-age)
+  and [Keep the services' secrets in Secret documents](../operate/secrets.md#keep-the-services-secrets-in-secret-documents)
   explain the secrets file, its backup and the Secret documents.
 - [Sign images for Secure Boot](../build/sign-images.md#create-the-keys) and
   [Enrol Secure Boot keys](../operate/secure-boot.md) cover the keys, a failed enrolment and the

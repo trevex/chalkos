@@ -121,7 +121,7 @@ spec:
 `asn` is the neighbour's AS number, which the node refuses to change in place; a neighbour in
 another AS is a peer of another name. `password` names a key of a `Secret` that holds the
 sessions' TCP MD5 password, of 1 to 80 printable characters without white space.
-[Keep the services' secrets in Secret documents](../operate/workstation.md#keep-the-services-secrets-in-secret-documents)
+[Keep the services' secrets in Secret documents](../operate/secrets.md#keep-the-services-secrets-in-secret-documents)
 shows the homelab's. `bfd`, on by default, ends a session within about a second of its link
 failing.
 `import` sets what the node takes from the neighbour: `default`, the default, takes its default

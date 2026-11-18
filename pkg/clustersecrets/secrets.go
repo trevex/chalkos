@@ -268,8 +268,13 @@ func DecryptAge(data []byte, identities func() ([]age.Identity, error)) ([]byte,
 // ReadJSON decodes and validates the plaintext cluster secrets bundle.
 func ReadJSON(plain []byte) (Secrets, error) {
 	var s Secrets
-	if err := json.Unmarshal(plain, &s); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(plain))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&s); err != nil {
 		return Secrets{}, fmt.Errorf("parse the secrets file: %w", err)
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return Secrets{}, errors.New("the secrets file must hold a single cluster bundle")
 	}
 	if err := s.Validate(); err != nil {
 		return Secrets{}, fmt.Errorf("secrets file: %w", err)

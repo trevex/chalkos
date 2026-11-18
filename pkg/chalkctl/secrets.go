@@ -33,7 +33,7 @@ func (a *app) loadSecrets(ctx context.Context, s layer.SecretsFlags) (clustersec
 	if err != nil {
 		return clustersecrets.Secrets{}, err
 	}
-	source, err := parseSecretSource(path, "", false)
+	source, err := clusterSecretsSource(path)
 	if err != nil {
 		return clustersecrets.Secrets{}, err
 	}
@@ -410,6 +410,7 @@ type secretsFile struct {
 	publicOut  string
 	format     clustersecrets.Format
 	recipients []string
+	sops       *sopsSecretsFile
 	// outNew and publicNew are set while out and publicOut are new files that were not written
 	// yet; once written, later writes replace them in place.
 	outNew, publicNew bool
@@ -450,12 +451,12 @@ func (a *app) openSecrets(ctx context.Context, s layer.SecretsFlags, change chan
 		}
 		return a.readSecretsFile(ctx, s, path, data, change)
 	}
-	source, err := parseSecretSource(path, "", false)
+	source, err := clusterSecretsSource(path)
 	if err != nil {
 		return nil, err
 	}
-	if source.provider == "sops" || source.pointer != "" {
-		return nil, errors.New("rotation requires a whole plaintext or age secrets file")
+	if source.provider == "sops" && (change.out != "" || len(change.recipients) != 0) {
+		return nil, errors.New("rotation updates SOPS files in place using their existing keys; omit --out and --recipient")
 	}
 	path = source.path
 	// The file is locked also with --out: a second command would read a rotation's state while
@@ -466,6 +467,15 @@ func (a *app) openSecrets(ctx context.Context, s layer.SecretsFlags, change chan
 	}
 	if err != nil {
 		return nil, err
+	}
+	if source.provider == "sops" {
+		f, err := readSOPSSecretsFile(ctx, path, data, change)
+		if err != nil {
+			file.Close()
+			return nil, err
+		}
+		f.file = file
+		return f, nil
 	}
 	format, err := clustersecrets.DetectFormat(data)
 	if err != nil || (source.provider == "file") != (format == clustersecrets.FormatJSON) {
@@ -492,21 +502,8 @@ func (a *app) readSecretsFile(ctx context.Context, s layer.SecretsFlags, path st
 		return nil, err
 	}
 	f := &secretsFile{secrets: secrets, path: path, out: path, format: format, recipients: secrets.Recipients}
-	public := ""
-	if path != "-" {
-		public = filepath.Join(filepath.Dir(path), "secrets.pub.json")
-	}
-	switch {
-	case c.publicOut != "":
-		f.publicOut, f.publicNew = c.publicOut, true
-		if err := mustNotExist(c.publicOut); err != nil {
-			return nil, err
-		}
-	case c.out == "":
-		f.publicOut = public
-		if err := matchesPublic(public, secrets); err != nil {
-			return nil, err
-		}
+	if err := f.configurePublic(c); err != nil {
+		return nil, err
 	}
 	if c.out != "" {
 		f.out, f.outNew = c.out, true
@@ -537,6 +534,18 @@ func (a *app) readSecretsFile(ctx context.Context, s layer.SecretsFlags, path st
 		return nil, err
 	}
 	return f, nil
+}
+
+func (f *secretsFile) configurePublic(c changeFlags) error {
+	if c.publicOut != "" {
+		f.publicOut, f.publicNew = c.publicOut, true
+		return mustNotExist(c.publicOut)
+	}
+	if c.out == "" && f.path != "-" {
+		f.publicOut = filepath.Join(filepath.Dir(f.path), "secrets.pub.json")
+		return matchesPublic(f.publicOut, f.secrets)
+	}
+	return nil
 }
 
 // matchesPublic refuses to update a secrets.pub.json in place that belongs to other secrets: its
@@ -622,11 +631,20 @@ func (a *app) writeSecretsFile(f *secretsFile, secrets clustersecrets.Secrets) e
 	if err := secrets.Validate(); err != nil {
 		return err
 	}
-	recipients, err := a.ageRecipients(f.recipients)
-	if err != nil {
-		return err
+	var data, plain []byte
+	var err error
+	if f.sops != nil {
+		plain, err = secrets.Encode()
+		if err == nil {
+			data, err = f.sops.encode(plain)
+		}
+	} else {
+		var recipients []age.Recipient
+		recipients, err = a.ageRecipients(f.recipients)
+		if err == nil {
+			data, err = secrets.EncodeAs(f.format, recipients...)
+		}
 	}
-	data, err := secrets.EncodeAs(f.format, recipients...)
 	if err != nil {
 		return err
 	}
@@ -651,6 +669,9 @@ func (a *app) writeSecretsFile(f *secretsFile, secrets clustersecrets.Secrets) e
 		return err
 	}
 	f.duringRotation = rotating
+	if f.sops != nil {
+		f.sops.ciphertext, f.sops.plaintext = data, plain
+	}
 	if f.format != clustersecrets.FormatJSON {
 		a.sayRecipients(f.out, f.recipients)
 	}

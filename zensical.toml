@@ -37,6 +37,7 @@ nav = [
     "operate/index.md",
     { "Set up" = [
       "operate/workstation.md",
+      "operate/secrets.md",
       "operate/node-config.md",
       "operate/install.md",
       "operate/install-vm.md",

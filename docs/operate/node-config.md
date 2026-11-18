@@ -322,7 +322,7 @@ documents in `bgp/fabric.yaml` do so with `password: {secretRef: {name: bgp, key
 the set lacks.
 
 `Secret` documents are config, separate from the cluster's secrets file.
-[Keep the services' secrets in Secret documents](workstation.md#keep-the-services-secrets-in-secret-documents)
+[Keep the services' secrets in Secret documents](secrets.md#keep-the-services-secrets-in-secret-documents)
 says where to keep the files that hold them.
 
 !!! note "With the Kubernetes layer, every node also holds a Cluster and a Node document"

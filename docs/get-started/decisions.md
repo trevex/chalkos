@@ -56,7 +56,7 @@ VIP from the start, even on one control plane, keeps the endpoint when control p
 The secrets file holds every key of the cluster. Encrypted with age to each administrator's key
 and an offline backup key, it can live in the repository. A plaintext file must be kept out of
 version control and protected by other means; `chalkctl gen secrets --plaintext` warns about it.
-[Generate the cluster's secrets with age](../operate/workstation.md#generate-the-clusters-secrets-with-age)
+[Generate the cluster's secrets with age](../operate/secrets.md#generate-the-clusters-secrets-with-age)
 writes an encrypted one.
 
 ## Metal or VM
