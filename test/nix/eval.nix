@@ -4185,7 +4185,7 @@ lib.runTests {
           w.users.groups.chalkos-registry.gid
         ];
         changed = w.systemd.paths.chalkos-registry-credentials-changed.pathConfig.PathChanged;
-        restartOnChange = lib.hasSuffix "systemctl try-restart chalkos-registry.service" w.systemd.services.chalkos-registry-credentials-changed.serviceConfig.ExecStart;
+        restartOnChange = lib.hasSuffix "systemctl --no-block try-restart chalkos-registry.service" w.systemd.services.chalkos-registry-credentials-changed.serviceConfig.ExecStart;
         inherit (effect) restart start;
         kubelet = lib.elem "cluster-registry" w.chalkos.effects.kubernetes.after;
       };

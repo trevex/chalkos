@@ -27,7 +27,8 @@ let
   firewall = config.networking.firewall.enable;
   # The packet mark bit of the cluster registry's port, which the unit's table sets; beside the
   # control plane's 0x02000000 and VXLAN's 0x01000000 of firewall.nix. kube-proxy and flannel
-  # leave it alone, and every packet the node receives has it cleared.
+  # leave it alone, and every packet the node receives has it cleared, so a network plugin of
+  # the cluster's own (cni.provider "none") must not use it.
   mark = "0x04000000";
   # chalkd's node certificate and the OS CAs, which root alone may read; the unit gets copies as
   # its credentials node.pem and ca.crt.
@@ -193,9 +194,12 @@ in
     };
     systemd.services.chalkos-registry-credentials-changed = {
       description = "Start the cluster registry again with chalkd's new credentials";
+      # --no-block queues the restart and ends the service at once: a path unit does not start
+      # an active service again, so waiting for the registry's restart would miss a change of
+      # the other file during it.
       serviceConfig = {
         Type = "oneshot";
-        ExecStart = "${config.systemd.package}/bin/systemctl try-restart chalkos-registry.service";
+        ExecStart = "${config.systemd.package}/bin/systemctl --no-block try-restart chalkos-registry.service";
       };
     };
 
