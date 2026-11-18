@@ -345,8 +345,8 @@ func (s *Server) mux() *http.ServeMux {
 	return mux
 }
 
-// verifyClient verifies a client's certificate, with the certificates it presented after it as
-// intermediates, against the OS CAs the node trusts now.
+// verifyClient verifies a client's certificate with pki.VerifyClient against the OS CAs the node
+// trusts now.
 func (s *Server) verifyClient(presented []*x509.Certificate) ([][]*x509.Certificate, error) {
 	var roots *x509.CertPool
 	switch {
@@ -358,20 +358,11 @@ func (s *Server) verifyClient(presented []*x509.Certificate) ([][]*x509.Certific
 	if roots == nil {
 		return nil, errors.New("the node trusts no OS CA")
 	}
-	intermediates := x509.NewCertPool()
-	for _, cert := range presented[1:] {
-		intermediates.AddCert(cert)
-	}
 	now := time.Now()
 	if s.clock != nil {
 		now = s.clock()
 	}
-	return presented[0].Verify(x509.VerifyOptions{
-		Roots:         roots,
-		Intermediates: intermediates,
-		CurrentTime:   now,
-		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
-	})
+	return pki.VerifyClient(presented, roots, now)
 }
 
 // authorizer refuses calls of a layer the image lacks, in the wrong mode, and with too little a

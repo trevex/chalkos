@@ -86,3 +86,27 @@ func (r Role) Allows(need Role) bool {
 	i := slices.Index(clientRoles, r)
 	return n >= 0 && i >= 0 && i <= n
 }
+
+// VerifyClient verifies a client's certificate, presented[0], with the certificates it presented
+// after it as intermediates, against roots at now, and returns its chains for ClientRole. A
+// server calls it for every request: the chains TLS verified when the connection was made would
+// keep a client of a root it stopped trusting, or one whose certificate expired, authorised for as
+// long as it keeps the connection open.
+func VerifyClient(presented []*x509.Certificate, roots *x509.CertPool, now time.Time) ([][]*x509.Certificate, error) {
+	if len(presented) == 0 {
+		return nil, errors.New("no client certificate")
+	}
+	if roots == nil {
+		return nil, errors.New("no OS CA is trusted")
+	}
+	intermediates := x509.NewCertPool()
+	for _, cert := range presented[1:] {
+		intermediates.AddCert(cert)
+	}
+	return presented[0].Verify(x509.VerifyOptions{
+		Roots:         roots,
+		Intermediates: intermediates,
+		CurrentTime:   now,
+		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	})
+}
