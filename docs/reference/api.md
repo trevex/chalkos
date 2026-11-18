@@ -782,6 +782,7 @@ The latest live config delivery and the last version whose live activation finis
 | `failed_step` | string | The first recorded failed step, if any. |
 | `from_earlier_boot` | bool | The completed version was recorded before this boot. |
 | `attempt_from_earlier_boot` | bool | The latest attempted delivery was recorded before this boot. |
+| `unwritten` | bool | chalkd could not write the record the last time it tried, so it may tell of an earlier delivery or of none; the journal says why. |
 
 Field types: [ActivationState](#enum-activationstate).
 

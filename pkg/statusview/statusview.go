@@ -162,6 +162,10 @@ func writeActivation(w io.Writer, activation *nodev1.ConfigActivation) {
 	}
 	switch activation.GetState() {
 	case nodev1.ActivationState_ACTIVATION_STATE_IN_PROGRESS:
+		if activation.GetTargetVersion() == "" {
+			fmt.Fprintln(w, "an activation is in progress")
+			break
+		}
 		fmt.Fprintf(w, "%s in progress: %s\n", attempt, activation.GetStep())
 	case nodev1.ActivationState_ACTIVATION_STATE_FAILED:
 		fmt.Fprintf(w, "%s failed: %s\n", attempt, activation.GetFailedStep())
@@ -169,6 +173,9 @@ func writeActivation(w io.Writer, activation *nodev1.ConfigActivation) {
 		fmt.Fprintf(w, "%s interrupted: %s\n", attempt, activation.GetStep())
 	case nodev1.ActivationState_ACTIVATION_STATE_UNKNOWN:
 		fmt.Fprintln(w, "the config activation record could not be read")
+	}
+	if activation.GetUnwritten() {
+		fmt.Fprintln(w, "the config activation record could not be written, so it may be out of date; the journal says why")
 	}
 }
 

@@ -1311,4 +1311,7 @@ message ConfigActivation {
   bool from_earlier_boot = 6;
   // The latest attempted delivery was recorded before this boot.
   bool attempt_from_earlier_boot = 7;
+  // chalkd could not write the record the last time it tried, so it may tell of an earlier
+  // delivery or of none; the journal says why.
+  bool unwritten = 8;
 }

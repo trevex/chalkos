@@ -63,32 +63,54 @@ func (s *Server) readActivation() (r activationRecord, err error) {
 	return r, err
 }
 
-// consistentActivation reads the record with read and the live attempt from activating, again
-// while a delivery started or finished during the read, so a finished delivery is not taken for
-// an interrupted one.
-func consistentActivation(activating *atomic.Int64, read func() (activationRecord, error)) (activationRecord, int64, error) {
+// liveActivation is the delivery under way, which Status reads without s.mu.
+type liveActivation struct {
+	// attempt is the live delivery's attempt, zero without one.
+	attempt atomic.Int64
+	// generation counts the changes of attempt. It only grows, so a read between two that see the
+	// same generation saw no delivery start or finish, even one that set attempt back as it was.
+	generation atomic.Uint64
+	// unwritten is set while the last write of the record failed.
+	unwritten atomic.Bool
+}
+
+// set makes attempt the live one. The record of a delivery that finishes is written first, so a
+// read that sees the new generation sees that record too.
+func (l *liveActivation) set(attempt int64) {
+	l.generation.Add(1)
+	l.attempt.Store(attempt)
+}
+
+// snapshot reads the record with read and the live attempt, again while a delivery started or
+// finished during the read, so a finished delivery is not taken for an interrupted one.
+func (l *liveActivation) snapshot(read func() (activationRecord, error)) (r activationRecord, live int64, err error) {
 	for range 3 {
-		before := activating.Load()
-		r, err := read()
-		if after := activating.Load(); err != nil || after == before {
-			return r, after, err
+		before := l.generation.Load()
+		r, err = read()
+		live = l.attempt.Load()
+		if err != nil || l.generation.Load() == before {
+			return r, live, err
 		}
 	}
-	r, err := read()
-	return r, activating.Load(), err
+	r, err = read()
+	return r, l.attempt.Load(), err
 }
 
 func (s *Server) activationStatus(dir, stored, boot string) *nodev1.ConfigActivation {
-	r, live, err := consistentActivation(&s.activating, s.readActivation)
-	if err != nil {
+	r, live, err := s.activating.snapshot(s.readActivation)
+	unwritten := s.activating.unwritten.Load()
+	switch {
+	case err != nil:
 		log.Printf("read the config activation record: %v", err)
-		return &nodev1.ConfigActivation{State: nodev1.ActivationState_ACTIVATION_STATE_UNKNOWN}
-	}
-	if r.Slot != filepath.Base(dir) || r.Target == "" {
-		if stored == "" {
+		return &nodev1.ConfigActivation{State: nodev1.ActivationState_ACTIVATION_STATE_UNKNOWN, Unwritten: unwritten}
+	case live != 0 && r.Attempt != live:
+		// The record is an earlier delivery's, which the live one could not replace.
+		return &nodev1.ConfigActivation{State: nodev1.ActivationState_ACTIVATION_STATE_IN_PROGRESS, Unwritten: unwritten}
+	case r.Slot != filepath.Base(dir) || r.Target == "":
+		if stored == "" && !unwritten {
 			return nil
 		}
-		return &nodev1.ConfigActivation{State: nodev1.ActivationState_ACTIVATION_STATE_UNRECORDED}
+		return &nodev1.ConfigActivation{State: nodev1.ActivationState_ACTIVATION_STATE_UNRECORDED, Unwritten: unwritten}
 	}
 	var state nodev1.ActivationState
 	switch {
@@ -110,6 +132,7 @@ func (s *Server) activationStatus(dir, stored, boot string) *nodev1.ConfigActiva
 		Step: r.Step, FailedStep: r.FailedStep,
 		FromEarlierBoot:        r.Completed != "" && r.CompletedBoot != "" && boot != "" && r.CompletedBoot != boot,
 		AttemptFromEarlierBoot: r.Boot != "" && boot != "" && r.Boot != boot,
+		Unwritten:              unwritten,
 	}
 }
 
@@ -153,7 +176,7 @@ func (d *delivery) beginActivation() *activation {
 			r.Plan, r.CompletedBatches = prior.Plan, prior.CompletedBatches
 		}
 	}
-	s.activating.Store(r.Attempt)
+	s.activating.set(r.Attempt)
 	s.saveActivation(r)
 	return &activation{node: s, record: r, checkpoint: checkpoint}
 }
@@ -174,6 +197,7 @@ func (s *Server) writeActivation(r activationRecord) error {
 // resumes from checkpoints that no longer hold.
 func (s *Server) saveActivation(r activationRecord) {
 	err := s.writeActivation(r)
+	s.activating.unwritten.Store(err != nil)
 	if err == nil {
 		return
 	}
@@ -195,7 +219,7 @@ func (a *activation) finish(err error) {
 	if a == nil {
 		return
 	}
-	defer a.node.activating.Store(0)
+	defer a.node.activating.set(0)
 	if err != nil {
 		a.record.State = activationFailed
 		if a.record.FailedStep == "" {

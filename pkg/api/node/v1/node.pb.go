@@ -5851,8 +5851,11 @@ type ConfigActivation struct {
 	FromEarlierBoot bool `protobuf:"varint,6,opt,name=from_earlier_boot,json=fromEarlierBoot,proto3" json:"from_earlier_boot,omitempty"`
 	// The latest attempted delivery was recorded before this boot.
 	AttemptFromEarlierBoot bool `protobuf:"varint,7,opt,name=attempt_from_earlier_boot,json=attemptFromEarlierBoot,proto3" json:"attempt_from_earlier_boot,omitempty"`
-	unknownFields          protoimpl.UnknownFields
-	sizeCache              protoimpl.SizeCache
+	// chalkd could not write the record the last time it tried, so it may tell of an earlier
+	// delivery or of none; the journal says why.
+	Unwritten     bool `protobuf:"varint,8,opt,name=unwritten,proto3" json:"unwritten,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ConfigActivation) Reset() {
@@ -5930,6 +5933,13 @@ func (x *ConfigActivation) GetFromEarlierBoot() bool {
 func (x *ConfigActivation) GetAttemptFromEarlierBoot() bool {
 	if x != nil {
 		return x.AttemptFromEarlierBoot
+	}
+	return false
+}
+
+func (x *ConfigActivation) GetUnwritten() bool {
+	if x != nil {
+		return x.Unwritten
 	}
 	return false
 }
@@ -6330,7 +6340,7 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x03vrf\x18\b \x01(\tR\x03vrf\"W\n" +
 	"\tBGPStatus\x124\n" +
 	"\x05peers\x18\x01 \x03(\v2\x1e.chalkos.node.v1.BGPPeerStatusR\x05peers\x12\x14\n" +
-	"\x05error\x18\x02 \x01(\tR\x05error\"\xba\x02\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\"\xd8\x02\n" +
 	"\x10ConfigActivation\x12%\n" +
 	"\x0etarget_version\x18\x01 \x01(\tR\rtargetVersion\x12+\n" +
 	"\x11completed_version\x18\x02 \x01(\tR\x10completedVersion\x126\n" +
@@ -6339,7 +6349,8 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\vfailed_step\x18\x05 \x01(\tR\n" +
 	"failedStep\x12*\n" +
 	"\x11from_earlier_boot\x18\x06 \x01(\bR\x0ffromEarlierBoot\x129\n" +
-	"\x19attempt_from_earlier_boot\x18\a \x01(\bR\x16attemptFromEarlierBoot*C\n" +
+	"\x19attempt_from_earlier_boot\x18\a \x01(\bR\x16attemptFromEarlierBoot\x12\x1c\n" +
+	"\tunwritten\x18\b \x01(\bR\tunwritten*C\n" +
 	"\x04Mode\x12\x14\n" +
 	"\x10MODE_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10MODE_MAINTENANCE\x10\x01\x12\x0f\n" +

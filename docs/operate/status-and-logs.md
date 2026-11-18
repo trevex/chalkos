@@ -135,7 +135,9 @@ explains the pending config.
 can update the stored version before a later step fails. While a delivery is running,
 failed, or interrupted, the activation line shows its target version and the current or
 failed step. A completed activation from a previous boot is labelled as such. A node that
-has only loaded config at boot may have no completed live activation recorded.
+has only loaded config at boot may have no completed live activation recorded. `the config
+activation record could not be written` follows when chalkd failed to write the record the last
+time it tried, and the journal says why; the activation line may then be out of date.
 
 `previous config <version> (config rollback restores it)` names the config the running
 image ran before the last delivery.

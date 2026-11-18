@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync/atomic"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -109,11 +108,11 @@ func TestActivationStatusAfterDaemonOrBootRestart(t *testing.T) {
 	if err := s.writeActivation(r); err != nil {
 		t.Fatal(err)
 	}
-	s.activating.Store(r.Attempt)
+	s.activating.set(r.Attempt)
 	if a := s.activationStatus(dir, "v2", "boot-one"); a.GetState() != nodev1.ActivationState_ACTIVATION_STATE_IN_PROGRESS || a.GetStep() != r.Step {
 		t.Fatalf("running activation = %v", a)
 	}
-	s.activating.Store(0)
+	s.activating.set(0)
 	if a := s.activationStatus(dir, "v2", "boot-one"); a.GetState() != nodev1.ActivationState_ACTIVATION_STATE_INTERRUPTED || a.GetFromEarlierBoot() {
 		t.Fatalf("interrupted activation = %v", a)
 	}
@@ -165,22 +164,48 @@ func TestDeliveryGoesOnWithoutTheActivationRecord(t *testing.T) {
 }
 
 // TestActivationStatusOfADeliveryThatFinishesDuringTheRead: a delivery that finishes between the
-// read of its running record and that of the live attempt is read again, not reported interrupted.
+// read of its running record and that of the live attempt is read again, not reported interrupted,
+// also when it started during the read, so the live attempt is zero before and after it.
 func TestActivationStatusOfADeliveryThatFinishesDuringTheRead(t *testing.T) {
-	var activating atomic.Int64
-	activating.Store(41)
-	reads := 0
-	read := func() (activationRecord, error) {
-		reads++
-		if reads == 1 {
+	for _, started := range []bool{false, true} {
+		var l liveActivation
+		if !started {
+			l.set(41)
+		}
+		reads := 0
+		read := func() (activationRecord, error) {
+			reads++
+			if reads > 1 {
+				return activationRecord{Attempt: 41, State: activationComplete}, nil
+			}
 			// The delivery finishes once its running record was read.
-			activating.Store(0)
+			if started {
+				l.set(41)
+			}
+			l.set(0)
 			return activationRecord{Attempt: 41, State: activationRunning}, nil
 		}
-		return activationRecord{Attempt: 41, State: activationComplete}, nil
+		r, live, err := l.snapshot(read)
+		if err != nil || r.State != activationComplete || live != 0 || reads != 2 {
+			t.Fatalf("started during the read %t: record = %+v, live = %d, %v after %d reads", started, r, live, err, reads)
+		}
 	}
-	r, live, err := consistentActivation(&activating, read)
-	if err != nil || r.State != activationComplete || live != 0 || reads != 2 {
-		t.Fatalf("record = %+v, live = %d, %v after %d reads", r, live, err, reads)
+}
+
+// TestActivationStatusWithARecordItCouldNotWrite: a live delivery whose record chalkd could not
+// write, nor remove, is in progress, not the interrupted delivery the record tells of, and the
+// status says the record could not be written.
+func TestActivationStatusWithARecordItCouldNotWrite(t *testing.T) {
+	s, _ := configServer(t)
+	dir := slotOf(t, s)
+	stale := activationRecord{Slot: filepath.Base(dir), Attempt: 41, Target: "v1", State: activationRunning, Step: "store config"}
+	if err := s.writeActivation(stale); err != nil {
+		t.Fatal(err)
+	}
+	s.activating.set(42)
+	s.activating.unwritten.Store(true)
+	a := s.activationStatus(dir, "v2", "")
+	if a.GetState() != nodev1.ActivationState_ACTIVATION_STATE_IN_PROGRESS || a.GetTargetVersion() != "" || !a.GetUnwritten() {
+		t.Fatalf("activation = %v", a)
 	}
 }

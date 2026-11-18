@@ -251,4 +251,10 @@ func TestWriteActivation(t *testing.T) {
 	if out.String() != want {
 		t.Fatalf("status = %q, want %q", out.String(), want)
 	}
+	out.Reset()
+	writeActivation(&out, &nodev1.ConfigActivation{State: nodev1.ActivationState_ACTIVATION_STATE_IN_PROGRESS, Unwritten: true})
+	want = "activated config unrecorded\nan activation is in progress\nthe config activation record could not be written, so it may be out of date; the journal says why\n"
+	if out.String() != want {
+		t.Fatalf("status = %q, want %q", out.String(), want)
+	}
 }

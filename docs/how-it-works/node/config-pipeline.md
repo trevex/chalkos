@@ -276,8 +276,10 @@ the last version whose activation finished. It contains phase and effect names, 
 hashes, and a checkpoint hash. Status can read it while a delivery is running. If the daemon
 stops mid-apply, the record shows the step it had reached. A record chalkd cannot write fails no
 delivery: chalkd logs the failure to the journal and removes the old record, so no later retry
-resumes from its checkpoints. Boot health continues to describe
-what happened when loading and starting the config at boot.
+resumes from its checkpoints. Status then says that the record could not be written, and a
+record of an earlier delivery that chalkd could not remove shows no step of the delivery that
+runs. Boot health continues to describe what happened when loading and starting the config at
+boot.
 
 On an ordinary retry of the identical stored config in the same boot, chalkd can skip a
 contiguous prefix of completed effect batches. The due effects and rendered output hashes
