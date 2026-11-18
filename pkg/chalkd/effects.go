@@ -198,8 +198,38 @@ func (s *Server) recordAttempt(e *pendingEffects, states map[string]outputs.Stat
 	return nil
 }
 
-// effectsTimeout bounds the effects of one delivery, which the client cannot cancel.
+// effectsTimeout bounds what a delivery does once it wrote the slot, which the client cannot
+// cancel.
 const effectsTimeout = 10 * time.Minute
+
+// deliveryContext is the context a delivery runs in from the write of its slot on. The node runs
+// the delivered config by then, and a layer action left out would leave chalkd's loops on the
+// config from before, so the client going away cancels nothing. lifetime, which ends when chalkd
+// stops, does, and so does the earliest of ctx's deadline, until when set, as a trial's deadline,
+// and effectsTimeout from now.
+func deliveryContext(ctx, lifetime context.Context, until time.Time) (context.Context, context.CancelFunc) {
+	deadline := time.Now().Add(effectsTimeout)
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
+	}
+	if !until.IsZero() && until.Before(deadline) {
+		deadline = until
+	}
+	work, cancel := context.WithDeadline(context.WithoutCancel(ctx), deadline)
+	stop := context.AfterFunc(lifetime, cancel)
+	return work, func() {
+		stop()
+		cancel()
+	}
+}
+
+// lifetime ends when chalkd stops: the context ResumeTrial gives, and Background before it.
+func (s *Server) lifetime() context.Context {
+	if s.trial.ctx != nil {
+		return s.trial.ctx
+	}
+	return context.Background()
+}
 
 // consume takes the effects of an applied delivery, in this order: it writes the running slot's
 // documents for the granted units when stored says the delivery wrote the slot, or when it
@@ -243,12 +273,34 @@ func (s *Server) consume(ctx context.Context, e *pendingEffects, staged *outputs
 			warnings = append(warnings, warning)
 		}
 	}
-	// The node runs the delivered config by now, so the effects run to the end, or to effectsTimeout,
-	// even when the client goes away: a layer action left out would leave chalkd's loops on the
-	// config from before.
-	work, cancel := context.WithTimeout(context.WithoutCancel(ctx), effectsTimeout)
-	defer cancel()
-	restarted, err := schedule.Apply(work, s.Run, e.defs, s.runLayerAction, warnReadiness, activation.hooks(work, e.defs))
+	// The time the effects have, for the error of effects cut short.
+	var bound time.Duration
+	if deadline, ok := ctx.Deadline(); ok {
+		bound = time.Until(deadline).Round(time.Second)
+	}
+	ran := map[string]bool{}
+	act := func(ctx context.Context, name string) error {
+		ran[name] = true
+		return s.runLayerAction(ctx, name)
+	}
+	restarted, err := schedule.Apply(ctx, s.Run, e.defs, act, warnReadiness, activation.hooks(ctx, e.defs))
+	if err != nil {
+		// The slot and the layers' files are in place, so chalkd's loops read them also when a
+		// batch failed or the effects were cut short.
+		var rest []string
+		for _, name := range effects.ActionsOf(e.defs, due).Chalkd {
+			if !ran[name] {
+				rest = append(rest, name)
+			}
+		}
+		s.actOnSelf(rest)
+	}
+	switch ctxErr := ctx.Err(); {
+	case errors.Is(ctxErr, context.DeadlineExceeded):
+		err = fmt.Errorf("effects did not finish within %v: %w", bound, err)
+	case ctxErr != nil:
+		err = fmt.Errorf("chalkd stopped before the effects finished: %w", err)
+	}
 	if ae, ok := errors.AsType[*effects.ApplyError](err); ok && ae.Why != "" {
 		err = layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
 	}

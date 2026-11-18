@@ -517,6 +517,7 @@ func (s *Server) applyTrial(ctx context.Context, r applyRequest) (*connect.Respo
 		s.refused(d.fx)
 		return nil, fmt.Errorf("record the trial: %w", err)
 	}
+	d.until = rec.Deadline
 	resp, err := d.commit(ctx)
 	st, ferr := s.settleTrial(rec)
 	if err == nil {

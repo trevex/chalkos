@@ -205,9 +205,13 @@ On a router, the `networkd` effect runs after `vrf`, so networkd creates a VRF a
 therefore reloads no networkd, and no effect that runs after `networkd`, such as `frr` or
 `resolvers`. The delivery fails, and a retry takes those effects again.
 
-Once the node runs the delivered config, the effects run to the end even when chalkctl goes
-away, for at most 10 minutes. A layer action left out would leave chalkd's loops on the config
-from before.
+Once chalkd writes the slot, the node runs the delivered config, and the rest of the delivery
+goes on when chalkctl goes away: a layer action left out would leave chalkd's loops on the config
+from before. chalkd stopping ends it, and so does the earliest of 10 minutes, the deadline of the
+request and, for `--try`, the trial's deadline. The rollback at a trial's deadline keeps its own bound
+of 5 minutes. When the effects end early or a batch fails,
+chalkd still runs the layer actions of the due effects that did not run, and the error says
+whether the time ran out or chalkd stopped.
 
 ## Built-in outputs and effects
 

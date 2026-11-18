@@ -180,6 +180,8 @@ type delivery struct {
 	// resumeEffects allows a plain ApplyConfig to reuse a failed attempt's checkpoints.
 	// Trial and rollback deliveries always run their effects.
 	resumeEffects bool
+	// until, when set, is the latest the delivery may run once it wrote the slot: a trial's deadline.
+	until time.Time
 	// machine is what the config adds to the machine's storage; empty with keep.
 	machine machineChange
 	fx      *pendingEffects
@@ -364,6 +366,9 @@ func (d *delivery) commit(ctx context.Context) (_ *connect.Response[nodev1.Apply
 			return nil, layer.Errorf(connect.CodeInternal, "%w", err)
 		}
 	}
+	// From the slot's write on, the client going away no longer stops the delivery.
+	ctx, cancel := deliveryContext(ctx, s.lifetime(), d.until)
+	defer cancel()
 	// The documents and the identity are written in one rename.
 	if !d.keep && !d.held {
 		activation.step("store config")

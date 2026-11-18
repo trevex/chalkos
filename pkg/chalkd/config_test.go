@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -806,6 +807,100 @@ func TestApplyConfigTakesEffectsAfterTheClientCancels(t *testing.T) {
 		}
 		if !slices.Equal(acted, []string{"kubernetes:reload"}) {
 			t.Errorf("acted on itself %v, commands %v", acted, r.Calls)
+		}
+	})
+}
+
+// TestDeliveryContext: the client's cancellation does not reach a delivery's context, chalkd
+// stopping does, and its deadline is the earliest of the caller's, the trial's and
+// effectsTimeout, so a trial's rollback keeps its own bound.
+func TestDeliveryContext(t *testing.T) {
+	testwait.Bubble(t, func(t *testing.T) {
+		now := time.Now()
+		deadline := func(ctx context.Context) time.Duration {
+			d, _ := ctx.Deadline()
+			return d.Sub(now)
+		}
+		client, cancelClient := context.WithCancel(t.Context())
+		lifetime, stop := context.WithCancel(t.Context())
+		work, cancel := deliveryContext(client, lifetime, time.Time{})
+		defer cancel()
+		cancelClient()
+		if work.Err() != nil || deadline(work) != effectsTimeout {
+			t.Fatalf("after the client's cancellation: %v, deadline in %v", work.Err(), deadline(work))
+		}
+		stop()
+		<-work.Done()
+		if !errors.Is(work.Err(), context.Canceled) {
+			t.Fatalf("after chalkd stopped: %v", work.Err())
+		}
+
+		rollback, cancelRollback := context.WithTimeout(t.Context(), trialRollbackTimeout)
+		defer cancelRollback()
+		work, cancel = deliveryContext(rollback, t.Context(), time.Time{})
+		defer cancel()
+		if deadline(work) != trialRollbackTimeout {
+			t.Errorf("a rollback's deadline in %v, want %v", deadline(work), trialRollbackTimeout)
+		}
+		work, cancel = deliveryContext(t.Context(), t.Context(), now.Add(time.Minute))
+		defer cancel()
+		if deadline(work) != time.Minute {
+			t.Errorf("a trial's deadline in %v, want a minute", deadline(work))
+		}
+	})
+}
+
+// TestTrialWithAHangingEffectRollsBackAtItsDeadline: an effect that waits past the trial's
+// deadline is cut there, its layer action still runs, and the trial rolls back.
+func TestTrialWithAHangingEffectRollsBackAtItsDeadline(t *testing.T) {
+	testwait.Bubble(t, func(t *testing.T) {
+		s, r := configServer(t)
+		stopTrials(t, s)
+		addKubernetes(t, s, k8s.KindWorker, true)
+		// Only the config on trial makes the effect due, so the rollback does not wait.
+		writeContract(t, s, contract.EffectsFile, `{"reload": {"when": "config[\"demo.example.org/v1alpha1\"].Demo.one.spec.name == \"second\"",
+		  "chalkd": "kubernetes:reload",
+		  "waitFor": {"description": "the route", "argv": ["/nix/store/demo/bin/check-route"], "timeoutSeconds": 60}}}`)
+		var acted []string
+		s.actedOnSelf = func(name string) { acted = append(acted, name) }
+		r.Rules = append([]tooltest.Rule{{Prefix: "/nix/store/demo/bin/check-route", Err: &tool.Error{Code: 75}}}, r.Rules...)
+		_, err := sendTrial(s, nextConfig, 10*time.Second)
+		if err == nil || !strings.Contains(err.Error(), "effects did not finish within 10s") {
+			t.Fatalf("trial = %v", err)
+		}
+		if !slices.Equal(acted, []string{"kubernetes:reload"}) {
+			t.Errorf("acted on itself %v", acted)
+		}
+		testwait.Eventually(t, "the rollback", func() bool { return !trialOpenOn(t, s) })
+		if v, _ := slot.Version(slotOf(t, s)); v != hashOf(t, baseConfig) {
+			t.Errorf("the node runs %s, want baseConfig's", v)
+		}
+	})
+}
+
+// TestChalkdStopCancelsTheEffects: chalkd stopping ends a delivery's effects, whose layer actions
+// still run.
+func TestChalkdStopCancelsTheEffects(t *testing.T) {
+	testwait.Bubble(t, func(t *testing.T) {
+		s, r := configServer(t)
+		lifetime, stop := context.WithCancel(t.Context())
+		s.ResumeTrial(lifetime)
+		addKubernetes(t, s, k8s.KindWorker, true)
+		writeContract(t, s, contract.EffectsFile, `{"reload": {"when": "true", "chalkd": "kubernetes:reload",
+		  "waitFor": {"description": "the route", "argv": ["/nix/store/demo/bin/check-route"], "timeoutSeconds": 60}}}`)
+		var acted []string
+		s.actedOnSelf = func(name string) { acted = append(acted, name) }
+		r.Rules = append([]tooltest.Rule{{Prefix: "/nix/store/demo/bin/check-route", Err: &tool.Error{Code: 75}}}, r.Rules...)
+		r.Before = func(line string) {
+			if strings.HasPrefix(line, "/nix/store/demo/bin/check-route") {
+				stop()
+			}
+		}
+		if _, err := sendConfig(s, baseConfig); err == nil || !strings.Contains(err.Error(), "chalkd stopped before the effects finished") {
+			t.Fatalf("apply = %v", err)
+		}
+		if !slices.Equal(acted, []string{"kubernetes:reload"}) {
+			t.Errorf("acted on itself %v", acted)
 		}
 	})
 }
