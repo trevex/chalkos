@@ -76,3 +76,28 @@ func TestMirrorURLs(t *testing.T) {
 		t.Errorf("a node that serves none starts at %s", got)
 	}
 }
+
+// TestUnitFiles writes the unit's port and a table that marks TCP to it alone, with the mark
+// cleared before and after the firewall's chain.
+func TestUnitFiles(t *testing.T) {
+	if got := (Registry{Port: 5001}).Env(); got != "PORT=5001\n" {
+		t.Errorf("Env = %q", got)
+	}
+	want := `table inet chalkos-registry
+delete table inet chalkos-registry
+table inet chalkos-registry {
+  chain input {
+    type filter hook input priority filter - 1; policy accept;
+    meta mark & 0x04000000 == 0x04000000 meta mark set meta mark ^ 0x04000000
+    tcp dport 5001 meta mark set meta mark | 0x04000000
+  }
+  chain clear {
+    type filter hook input priority filter + 1; policy accept;
+    meta mark & 0x04000000 == 0x04000000 meta mark set meta mark ^ 0x04000000
+  }
+}
+`
+	if got := Firewall(5001, "0x04000000"); got != want {
+		t.Errorf("Firewall = %s, want %s", got, want)
+	}
+}

@@ -1,14 +1,30 @@
 # The tests of the cluster registry on Kubernetes images: the refusals of a ClusterRegistry's
-# fields and of a control plane that serves no endpoint, and endpoints spelled otherwise.
+# fields and of a control plane that serves no endpoint, the files the output renders on a node
+# that serves an endpoint spelled otherwise, and nothing on one that serves none, and the effects
+# of a new port.
+{ pkgs }:
 let
   # The schema's pattern of a mirrored host.
   host = "^(?:[A-Za-z0-9]+(([._]|__|-+)[A-Za-z0-9]+)*)$";
 in
 {
-  # A worker of no endpoint is accepted.
-  kubernetes-registry-worker.config = ./tests/worker.yaml;
-  # A control plane serves an endpoint spelled otherwise than its address.
-  kubernetes-registry-spelled.config = ./tests/spelled.yaml;
+  # A worker of no endpoint is accepted and runs no registry.
+  kubernetes-registry-worker = {
+    config = ./tests/worker.yaml;
+    outputs.cluster-registry = pkgs.emptyDirectory;
+  };
+  # A control plane serves an endpoint spelled otherwise than its address: the output renders
+  # the registry's port and firewall table.
+  kubernetes-registry-spelled = {
+    config = ./tests/spelled.yaml;
+    outputs.cluster-registry = ./tests/spelled/cluster-registry;
+  };
+  # A new port starts the registry again.
+  kubernetes-registry-port = {
+    before = ./tests/spelled.yaml;
+    config = ./tests/port.yaml;
+    effects = [ "cluster-registry" ];
+  };
   # Hosts with two separators in a row and a port below 1024 are refused.
   kubernetes-registry-bad-fields = {
     config = ./tests/bad-fields.yaml;

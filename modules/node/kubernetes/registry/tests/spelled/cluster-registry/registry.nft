@@ -1,0 +1,13 @@
+table inet chalkos-registry
+delete table inet chalkos-registry
+table inet chalkos-registry {
+  chain input {
+    type filter hook input priority filter - 1; policy accept;
+    meta mark & 0x04000000 == 0x04000000 meta mark set meta mark ^ 0x04000000
+    tcp dport 5000 meta mark set meta mark | 0x04000000
+  }
+  chain clear {
+    type filter hook input priority filter + 1; policy accept;
+    meta mark & 0x04000000 == 0x04000000 meta mark set meta mark ^ 0x04000000
+  }
+}

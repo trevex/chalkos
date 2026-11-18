@@ -26,13 +26,7 @@ func NetworkMap(docs []Document) map[string]any {
 			continue
 		}
 		spec, _ := d.Object["spec"].(map[string]any)
-		addrs := []any{}
-		for _, n := range oneOrMany(spec["network"]) {
-			if m, ok := n.(map[string]any); ok {
-				addrs = append(addrs, oneOrManyNonNil(m["address"])...)
-			}
-		}
-		entry := map[string]any{"address": addrs}
+		entry := map[string]any{"address": identity.NetworkAddresses(spec)}
 		for _, m := range oneOrMany(spec["match"]) {
 			if mm, ok := m.(map[string]any); ok && mm["macAddress"] != nil {
 				entry["matchConfig"] = map[string]any{"MACAddress": joinValues(mm["macAddress"])}
@@ -41,13 +35,6 @@ func NetworkMap(docs []Document) map[string]any {
 		networks[d.Name] = entry
 	}
 	return map[string]any{"networks": networks}
-}
-
-func oneOrManyNonNil(v any) []any {
-	if v == nil {
-		return nil
-	}
-	return oneOrMany(v)
 }
 
 // joinValues joins a list of strings with spaces and returns any other value unchanged.

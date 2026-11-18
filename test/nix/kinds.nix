@@ -1897,15 +1897,15 @@ lib.runTests {
         "mode=0755"
         "nosuid"
         "nodev"
-        "size=112M"
-        "nr_inodes=114688"
+        "size=144M"
+        "nr_inodes=147456"
       ];
       extension = [
         "mode=0755"
         "nosuid"
         "nodev"
-        "size=176M"
-        "nr_inodes=180224"
+        "size=208M"
+        "nr_inodes=212992"
       ];
     };
   };

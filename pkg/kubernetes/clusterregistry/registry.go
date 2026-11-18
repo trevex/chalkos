@@ -138,6 +138,32 @@ func (r Registry) Host(e netip.Addr) string {
 	return netip.AddrPortFrom(e, uint16(r.Port)).String()
 }
 
+// Env is the environment file of the unit that serves the registry: its port.
+func (r Registry) Env() string {
+	return fmt.Sprintf("PORT=%d\n", r.Port)
+}
+
+// Firewall is the nftables table that opens port where the NixOS firewall accepts packets with
+// mark: its input chain runs before the firewall's, clears the mark and sets it on TCP to port
+// alone; its clear chain runs after the firewall's, so the mark never outlives it.
+func Firewall(port int, mark string) string {
+	clear := fmt.Sprintf("meta mark & %s == %s meta mark set meta mark ^ %s", mark, mark, mark)
+	return fmt.Sprintf(`table inet chalkos-registry
+delete table inet chalkos-registry
+table inet chalkos-registry {
+  chain input {
+    type filter hook input priority filter - 1; policy accept;
+    %s
+    tcp dport %d meta mark set meta mark | %s
+  }
+  chain clear {
+    type filter hook input priority filter + 1; policy accept;
+    %s
+  }
+}
+`, clear, port, mark, clear)
+}
+
 // MirrorURLs returns, by prefix, the URLs of each mirrored host's copy in the cluster registry, in
 // the order a node with the static addresses pulls from them: the registry API's root below which
 // the host's repositories lie, https://<endpoint>/v2/<prefix>.

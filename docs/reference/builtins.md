@@ -1542,6 +1542,7 @@ The outputs images with Kubernetes add.
 | Output | Inputs | Directory | Renderer | Check |
 | --- | --- | --- | --- | --- |
 | `bgp`{ #output-bgp } | `BGPPeer`, `BGPSpeaker`, `Node` | `/run/chalkos/outputs/bgp` | Command `chalkos-render kubernetes-frr` | yes |
+| `cluster-registry`{ #output-cluster-registry } | `ClusterRegistry`, `Network` | `/run/chalkos/outputs/cluster-registry` | Command `chalkos-render cluster-registry 0x04000000` | yes |
 
 ### Router images { #outputs-router-images }
 
@@ -1590,9 +1591,10 @@ The effects images with Kubernetes add.
 | `bgp`{ #effect-bgp } | The output `bgp` changed. | Runs after `networkd` and `links` when those effects are due. Reloads `frr.service`. |
 | `chalkd-cluster`{ #effect-chalkd-cluster } | The `when` after the table holds, which reads the documents of `Cluster` and `Flannel` and the fact `cluster`. | Runs after `kubernetes` when those effects are due. Runs chalkd's action `kubernetes:restart`. |
 | `chalkd-share`{ #effect-chalkd-share } | The `when` after the table holds, which reads the documents of `Addon`, `Cluster`, `Flannel` and `Node` and the facts `cluster` and `share`. | Runs after `kubernetes` when those effects are due. Runs chalkd's action `kubernetes:reload`. |
+| `cluster-registry`{ #effect-cluster-registry } | The output `cluster-registry` changed. | Restarts `chalkos-registry.service`, and starts them when they are stopped. |
 | `containerd-config`{ #effect-containerd-config } | The `when` after the table holds, which reads the documents of `Cluster`. | Restarts `chalkos-containerd-config.service` and `containerd.service`. |
 | `controlplane-ports`{ #effect-controlplane-ports } | The `when` after the table holds, which reads the documents of `Node`. | Restarts `chalkos-controlplane.service`. |
-| `kubernetes`{ #effect-kubernetes } | The `when` after the table holds, which reads the documents of `Cluster`, `Flannel`, `Host`, `Network` and `Node` and the facts `cluster` and `share`. | Runs after `networkd`, `links` and `controlplane-ports` when those effects are due. Restarts `chalkos-kubernetes.service` and `kubelet.service`, and starts them when they are stopped. |
+| `kubernetes`{ #effect-kubernetes } | The `when` after the table holds, which reads the documents of `Cluster`, `Flannel`, `Host`, `Network` and `Node` and the facts `cluster` and `share`. | Runs after `networkd`, `links`, `controlplane-ports` and `cluster-registry` when those effects are due. Restarts `chalkos-kubernetes.service` and `kubelet.service`, and starts them when they are stopped. |
 | `registry-credentials`{ #effect-registry-credentials } | The documents of `Registry`, or a value of a Secret they reference, changed. | Restarts `chalkos-registry-credentials.service` and `kubelet.service`. |
 | `registry-mirrors`{ #effect-registry-mirrors } | The `when` after the table holds, which reads the documents of `Mirror` and `Registry`. | Restarts `chalkos-registry-mirrors.service`. |
 
@@ -1705,6 +1707,7 @@ The diagnostics images with Kubernetes add.
 | `bgp-neighbor`{ #diagnostic-bgp-neighbor } | One BGP session in detail, as show bgp neighbors prints it: its state, timers, capabilities and routes. Runs `vtysh -c show bgp vrf {vrf} neighbors {peer}`. | `peer`, pattern `^([0-9A-Fa-f:.]+|[A-Za-z0-9_.:@-]{1,15})$`; `vrf`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, default `default` | reader | — |
 | `bgp-route`{ #diagnostic-bgp-route } | One VRF's BGP paths to a prefix, as show bgp prints them: each path's AS path, next hop and attributes, and the best. Runs `vtysh -c show bgp vrf {vrf} {family} unicast {prefix}`. | `prefix`, prefix; `vrf`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, default `default`; `family`, enum of `ipv4` or `ipv6`, default `ipv6` | reader | — |
 | `bgp-summary`{ #diagnostic-bgp-summary } | One VRF's BGP sessions of each address family, as show bgp summary prints them. Runs `vtysh -c show bgp vrf {vrf} summary`. | `vrf`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, default `default` | reader | — |
+| `cluster-registry`{ #diagnostic-cluster-registry } | Lists the repositories of the cluster registry the node serves, as its catalog does, or says why it does not answer. Runs `chalkos-registry catalog {port}`. | `port`, int from 1024 to 65535, default `5000` | reader | — |
 
 ### Router images { #diagnostics-router-images }
 

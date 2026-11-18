@@ -96,12 +96,15 @@ in
       kubernetes = {
         when = kubernetesChanged;
         # Prepare addresses and the control plane's ports and etcd directory before the
-        # kubelet starts. Preparation already waits for its selected addresses.
+        # kubelet starts. Preparation already waits for its selected addresses. On a node that
+        # serves the cluster registry the kubelet starts once it answers, so the control plane's
+        # images come from it.
         after = [
           "networkd"
           "links"
           "controlplane-ports"
-        ];
+        ]
+        ++ lib.optional config.chalkos.kubernetes.registry.enable "cluster-registry";
         restart = [
           "chalkos-kubernetes.service"
           "kubelet.service"

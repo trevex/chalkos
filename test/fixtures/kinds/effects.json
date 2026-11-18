@@ -72,6 +72,21 @@
     "start": false,
     "when": "cel.bind(d, ((\"time.chalkos.dev/v1alpha1\" in config && \"TimeSync\" in config[\"time.chalkos.dev/v1alpha1\"]) ? config[\"time.chalkos.dev/v1alpha1\"].TimeSync : {}), d.map(n, d[n].spec)) != cel.bind(d, ((\"time.chalkos.dev/v1alpha1\" in oldConfig && \"TimeSync\" in oldConfig[\"time.chalkos.dev/v1alpha1\"]) ? oldConfig[\"time.chalkos.dev/v1alpha1\"].TimeSync : {}), d.map(n, d[n].spec))"
   },
+  "cluster-registry": {
+    "chalkd": "",
+    "hint": null,
+    "kinds": [],
+    "outputs": [
+      "cluster-registry"
+    ],
+    "reload": [],
+    "restart": [
+      "chalkos-registry.service"
+    ],
+    "run": "",
+    "start": true,
+    "when": ""
+  },
   "containerd-config": {
     "chalkd": "",
     "hint": null,
@@ -103,7 +118,8 @@
     "after": [
       "networkd",
       "links",
-      "controlplane-ports"
+      "controlplane-ports",
+      "cluster-registry"
     ],
     "chalkd": "",
     "hint": {

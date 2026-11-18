@@ -73,3 +73,24 @@ func (id Identity) StaticAddresses() []string {
 	}
 	return addrs
 }
+
+// NetworkAddresses returns the [Network] Address= values of a Network document's spec, of each
+// section in order: networkd's documents give a section, or a value, as one or a list of them.
+// They are the only addresses that count as the node's static ones.
+func NetworkAddresses(spec map[string]any) []any {
+	addrs := []any{}
+	for _, n := range oneOrMany(spec["network"]) {
+		if m, ok := n.(map[string]any); ok && m["address"] != nil {
+			addrs = append(addrs, oneOrMany(m["address"])...)
+		}
+	}
+	return addrs
+}
+
+// oneOrMany is v as a list.
+func oneOrMany(v any) []any {
+	if list, ok := v.([]any); ok {
+		return list
+	}
+	return []any{v}
+}

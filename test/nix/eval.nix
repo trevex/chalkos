@@ -407,7 +407,11 @@ lib.runTests {
         "links"
       ];
       routerNetwork = network ++ [ "router-nftables" ];
-      nodePreparation = network ++ [ "controlplane-ports" ];
+      # The kubelet also starts after the cluster registry it may pull from.
+      nodePreparation = network ++ [
+        "controlplane-ports"
+        "cluster-registry"
+      ];
       after = names: effects: lib.genAttrs names (name: effects.${name}.after or [ ]);
     in
     {
@@ -3761,12 +3765,14 @@ lib.runTests {
     in
     {
       expr = {
-        # The worker adds FRR's diagnostics, which testKubernetesBGPOptional covers.
+        # The worker adds the diagnostics of FRR and the cluster registry, which
+        # testKubernetesBGPOptional and testKubernetesRegistryOptional cover.
         names = lib.subtractLists [
           "bfd-peers"
           "bgp-neighbor"
           "bgp-route"
           "bgp-summary"
+          "cluster-registry"
         ] (lib.attrNames node);
         installer = lib.attrNames inInstaller;
         inStore = lib.all (d: lib.hasPrefix "/nix/store/" (lib.head d.command)) (lib.attrValues node);
@@ -4058,6 +4064,9 @@ lib.runTests {
         effects = names c.chalkos.effects;
         tests = names c.chalkos.tests;
         services = names c.systemd.services;
+        paths = names c.systemd.paths;
+        users = names c.users.users;
+        groups = names c.users.groups;
         diagnostics = names c.chalkos.diagnostics;
         mirrors = c.systemd.services.chalkos-registry-mirrors.chalkos.kinds;
         kubernetesAfter = c.chalkos.effects.kubernetes.after;
@@ -4075,12 +4084,25 @@ lib.runTests {
       expected = {
         removed = {
           kinds = [ "ClusterRegistry" ];
+          outputs = [ "cluster-registry" ];
+          effects = [ "cluster-registry" ];
           tests = [
             "kubernetes-registry-bad-fields"
             "kubernetes-registry-elsewhere"
+            "kubernetes-registry-port"
             "kubernetes-registry-spelled"
             "kubernetes-registry-worker"
           ];
+          services = [
+            "chalkos-registry"
+            "chalkos-registry-credentials-changed"
+          ];
+          paths = [ "chalkos-registry-credentials-changed" ];
+          users = [ "chalkos-registry" ];
+          groups = [ "chalkos-registry" ];
+          diagnostics = [ "cluster-registry" ];
+          kubernetesAfter = [ "cluster-registry" ];
+          firewall = [ "meta mark & 0x04000000 == 0x04000000 accept" ];
         };
         added = { };
         ids = true;
@@ -4124,6 +4146,57 @@ lib.runTests {
       prepareAfter = true;
       filled = "/run/frr/frr.conf";
       condition = "/run/chalkos/credentials/frr";
+    };
+  };
+  # The cluster registry runs on the nodes with a rendered port, as its own user with pinned IDs
+  # and without capabilities, on copies of chalkd's credentials, which a change of either file
+  # makes it read again. It is ready once it listens and comes before the kubelet's effect.
+  testKubernetesRegistry = {
+    expr =
+      let
+        unit = w.systemd.services.chalkos-registry;
+        effect = w.chalkos.effects.cluster-registry;
+      in
+      {
+        option = w.chalkos.kubernetes.registry.enable;
+        condition = unit.unitConfig.ConditionPathExists;
+        inherit (unit.serviceConfig)
+          User
+          CapabilityBoundingSet
+          Type
+          LoadCredential
+          ;
+        ids = [
+          w.users.users.chalkos-registry.uid
+          w.users.groups.chalkos-registry.gid
+        ];
+        changed = w.systemd.paths.chalkos-registry-credentials-changed.pathConfig.PathChanged;
+        restartOnChange = lib.hasSuffix "systemctl try-restart chalkos-registry.service" w.systemd.services.chalkos-registry-credentials-changed.serviceConfig.ExecStart;
+        inherit (effect) restart start;
+        kubelet = lib.elem "cluster-registry" w.chalkos.effects.kubernetes.after;
+      };
+    expected = {
+      option = true;
+      condition = "/run/chalkos/outputs/cluster-registry/registry.env";
+      User = "chalkos-registry";
+      CapabilityBoundingSet = [ "" ];
+      Type = "notify";
+      LoadCredential = [
+        "ca.crt:/state/chalkd/ca.crt"
+        "node.pem:/state/chalkd/node.pem"
+      ];
+      ids = [
+        333
+        333
+      ];
+      changed = [
+        "/state/chalkd/ca.crt"
+        "/state/chalkd/node.pem"
+      ];
+      restartOnChange = true;
+      restart = [ "chalkos-registry.service" ];
+      start = true;
+      kubelet = true;
     };
   };
 }
