@@ -89,7 +89,8 @@ let
                 description = ''
                   Executable from the image's store and its arguments. This read-only probe runs
                   on the node after the due prerequisites succeed. Exit 0 when ready, 75 to
-                  retry, or another nonzero status to fail the effect.
+                  retry, or another nonzero status to fail the effect. An attempt that runs longer
+                  than 2 seconds is stopped and counts as a retry.
                 '';
               };
               timeoutSeconds = lib.mkOption {

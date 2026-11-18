@@ -157,9 +157,11 @@ chalkos.effects.resolver = {
 
 The probe is a read-only executable from the image's Nix store. It reads the live node and
 gets no config or credentials from chalkd. It exits with 0 when ready, 75 to retry, or another
-nonzero status to fail the effect. Chalkd runs one bounded attempt at a time and stops at the
-configured timeout. The description is shown in the plan and on
-failure, so it should name the condition rather than a command.
+nonzero status to fail the effect. chalkd runs one attempt at a time, every 250 milliseconds,
+until the probe is ready or `timeoutSeconds` has passed. It stops an attempt that runs longer
+than 2 seconds and counts it as a retry, so a probe should answer within that time. The
+description is shown in the plan and on failure, so it should name the condition rather than a
+command.
 
 The image rejects cycles and missing prerequisites. Effects sharing a unit or command run
 together, so a dependency between them is invalid. A restart still subsumes a reload of the

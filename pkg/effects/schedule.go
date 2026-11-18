@@ -299,16 +299,23 @@ func actionFailed(err error, a Actions) bool {
 	}) || slices.ContainsFunc(a.Run, func(run string) bool { return slices.Contains(b.Run, run) })
 }
 
+// Readiness probes are tried every probeInterval, and an attempt that runs longer than probeAttempt
+// is stopped and tried again.
+const (
+	probeInterval = 250 * time.Millisecond
+	probeAttempt  = 2 * time.Second
+)
+
 func (p Readiness) wait(ctx context.Context, r tool.Runner) error {
 	wait, cancel := context.WithTimeout(ctx, time.Duration(p.TimeoutSeconds)*time.Second)
 	defer cancel()
-	ticker := time.NewTicker(250 * time.Millisecond)
+	ticker := time.NewTicker(probeInterval)
 	defer ticker.Stop()
 	for {
 		if err := wait.Err(); err != nil {
 			return fmt.Errorf("waiting for %s: %w", p.Description, err)
 		}
-		attempt, stop := context.WithTimeout(wait, 2*time.Second)
+		attempt, stop := context.WithTimeout(wait, probeAttempt)
 		_, err := r.Exec(attempt, tool.Cmd{
 			Name: p.Argv[0], Args: p.Argv[1:], Quiet: true, WaitDelay: 100 * time.Millisecond,
 		})
@@ -319,7 +326,7 @@ func (p Readiness) wait(ctx context.Context, r tool.Runner) error {
 		}
 		if attemptErr == nil {
 			if exit, ok := errors.AsType[*tool.Error](err); !ok {
-				return fmt.Errorf("probe for %s could not run", p.Description)
+				return fmt.Errorf("probe for %s could not run: %w", p.Description, err)
 			} else if exit.Code != 75 {
 				return fmt.Errorf("probe for %s exited with status %d", p.Description, exit.Code)
 			}
