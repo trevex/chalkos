@@ -420,7 +420,7 @@ func TestApplyConfigUndoesADeliveryFailedBeforeItsSlot(t *testing.T) {
 	addKubernetes(t, s, k8s.KindWorker, true)
 	writeContract(t, s, contract.EffectsFile, `{"named": {"when": "config[\"demo.example.org/v1alpha1\"].Demo.one.spec.name != oldConfig[\"demo.example.org/v1alpha1\"].Demo.one.spec.name", "chalkd": "kubernetes:reload"}}`)
 	var acted []string
-	s.actedOnSelf = func(names []string) { acted = append(acted, names...) }
+	s.actedOnSelf = func(name string) { acted = append(acted, name) }
 	slots := filepath.Dir(slotOf(t, s))
 	// The directory of slots takes no new slot directory.
 	if err := os.Chmod(slots, 0o555); err != nil {
@@ -769,7 +769,7 @@ func TestApplyConfigActsOnItselfInProcess(t *testing.T) {
 	writeContract(t, s, contract.EffectsFile, `{"cluster": {"when": "true", "chalkd": "kubernetes:restart"}, "share": {"when": "true", "chalkd": "kubernetes:reload"},
 	  "again": {"when": "true", "chalkd": "kubernetes:reload"}}`)
 	var acted []string
-	s.actedOnSelf = func(names []string) { acted = append(acted, names...) }
+	s.actedOnSelf = func(name string) { acted = append(acted, name) }
 	resp, err := sendConfig(s, baseConfig)
 	if err != nil {
 		t.Fatal(err)

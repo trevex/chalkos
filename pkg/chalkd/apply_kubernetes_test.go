@@ -67,7 +67,7 @@ func withClusterSpec(spec string) string {
 // loops records the layer actions deliveries run.
 func loops(s *Server) *[]string {
 	var acted []string
-	s.actedOnSelf = func(names []string) { acted = append(acted, names...) }
+	s.actedOnSelf = func(name string) { acted = append(acted, name) }
 	return &acted
 }
 

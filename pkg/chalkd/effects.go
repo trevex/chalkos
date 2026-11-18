@@ -319,9 +319,6 @@ func (s *Server) applyEffects(ctx context.Context, a effects.Actions, tracked bo
 // actOnSelf runs the layer actions the delivery's effects name, on what only the running chalkd
 // holds.
 func (s *Server) actOnSelf(names []string) error {
-	if s.actedOnSelf != nil {
-		s.actedOnSelf(names)
-	}
 	var errs []error
 	for _, name := range names {
 		if err := s.runLayerAction(context.Background(), name); err != nil {
@@ -333,6 +330,9 @@ func (s *Server) actOnSelf(names []string) error {
 }
 
 func (s *Server) runLayerAction(ctx context.Context, name string) error {
+	if s.actedOnSelf != nil {
+		s.actedOnSelf(name)
+	}
 	run, err := s.Plugins.Action(name)
 	if err != nil {
 		return err

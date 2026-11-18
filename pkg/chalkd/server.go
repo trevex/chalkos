@@ -194,8 +194,8 @@ type Server struct {
 
 	// clock is the time client certificates are verified at; nil is the system clock.
 	clock func() time.Time
-	// actedOnSelf, when set, is told the layer actions each delivery runs; tests set it.
-	actedOnSelf func([]string)
+	// actedOnSelf, when set, is told each layer action a delivery runs; tests set it.
+	actedOnSelf func(string)
 	// slots are the image slots upgrades, activations and image rollbacks change; nil is the boot
 	// disk's. Tests supply their own.
 	slots imageSlots
