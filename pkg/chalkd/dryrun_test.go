@@ -17,6 +17,8 @@ import (
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/tool"
+	"github.com/trevex/chalkos/pkg/tool/tooltest"
 )
 
 // dryRun sends text as a dry run.
@@ -65,6 +67,46 @@ func TestDryRunPlansAndChangesNothing(t *testing.T) {
 	applied, err := sendConfig(s, next)
 	if err != nil || !slices.Equal(applied.RestartedUnits, []string{"demo.service"}) {
 		t.Errorf("the delivery restarted %v: %v", applied.GetRestartedUnits(), err)
+	}
+}
+
+func TestRuntimePrerequisitesInDryRunAndRetry(t *testing.T) {
+	s, r := configServer(t)
+	writeEffects(t, s, `{
+	  "network": {"outputs": ["demo"], "run": "configure-network"},
+	  "demo": {"outputs": ["demo"], "after": ["network"], "restart": ["demo.service"],
+	    "waitFor": {"description": "the route", "argv": ["/nix/store/demo/bin/check-route"], "timeoutSeconds": 1}}
+	}`)
+	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
+	r.ResetCalls()
+	resp, err := dryRun(s, next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	planned := resp.GetPlan().GetEffects()
+	if len(planned) != 2 || planned[0].Name != "network" ||
+		!slices.Equal(planned[1].Actions, []string{"after network", "wait for the route (up to 1s)", "restart demo.service"}) ||
+		len(r.Calls) != 0 {
+		t.Fatalf("dry run planned %v, commands = %v", planned, r.Calls)
+	}
+
+	r.Rules = append([]tooltest.Rule{{
+		Prefix: "/nix/store/demo/bin/check-route", Err: &tool.Error{Code: 1}, Times: 1,
+	}}, r.Rules...)
+	if _, err := sendConfig(s, next); err == nil || !strings.Contains(err.Error(), "probe for the route exited with status 1") {
+		t.Fatalf("apply error = %v", err)
+	}
+	if !slices.Equal(r.Calls, []string{"configure-network", "/nix/store/demo/bin/check-route"}) {
+		t.Fatalf("commands after failure = %v", r.Calls)
+	}
+
+	r.ResetCalls()
+	if _, err := sendConfig(s, next); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"configure-network", "/nix/store/demo/bin/check-route",
+		"systemctl show --property=ActiveState --value demo.service", "systemctl try-restart demo.service"}; !slices.Equal(r.Calls, want) {
+		t.Fatalf("retry commands = %v, want %v", r.Calls, want)
 	}
 }
 

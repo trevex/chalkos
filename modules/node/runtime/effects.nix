@@ -66,6 +66,43 @@ let
           variables it reads.
         '';
       };
+      after = lib.mkOption {
+        type = lib.types.listOf lib.types.nonEmptyStr;
+        default = [ ];
+        example = [ "networkd" ];
+        description = ''
+          Effects of this image that must succeed before this effect runs when they are due
+          in the same delivery. A prerequisite that has no changes is left alone. A failed
+          prerequisite blocks the effects that depend on it.
+        '';
+      };
+      waitFor = lib.mkOption {
+        type = lib.types.nullOr (
+          lib.types.submodule {
+            options = {
+              description = lib.mkOption {
+                type = lib.types.nonEmptyStr;
+                description = "The runtime condition this effect needs, shown in plans and errors.";
+              };
+              argv = lib.mkOption {
+                type = lib.types.nonEmptyListOf lib.types.nonEmptyStr;
+                description = ''
+                  Executable from the image's store and its arguments. This read-only probe runs
+                  on the node after the due prerequisites succeed. Exit 0 when ready, 75 to
+                  retry, or another nonzero status to fail the effect.
+                '';
+              };
+              timeoutSeconds = lib.mkOption {
+                type = lib.types.ints.between 1 60;
+                default = 15;
+                description = "Maximum time to wait for the condition, in seconds.";
+              };
+            };
+          }
+        );
+        default = null;
+        description = "An optional readiness probe run before this effect, even when its prerequisites are unchanged.";
+      };
       restart = lib.mkOption {
         type = units;
         default = [ ];
@@ -82,7 +119,7 @@ let
         default = [ ];
         example = [ "systemd-networkd.service" ];
         description = ''
-          Units to `systemctl reload`, by their full names, before any restart. A failed unit is
+          Units to `systemctl reload`, by their full names, before the restarts in the same batch. A failed unit is
           restarted instead, as systemd reloads no failed unit.
         '';
       };
@@ -90,7 +127,7 @@ let
         type = lib.types.nullOr lib.types.nonEmptyStr;
         default = null;
         example = "chronyc reload sources";
-        description = "Command, with its arguments, the effect runs after the reloads and before the restarts. chalkd splits it on spaces, with no shell quoting, and runs the first word: a bare program name of chalkd's PATH, or an absolute path in the image's store. chalkd runs it whether or not any unit runs, and a command that fails fails the delivery, so one that talks to a service that may be stopped checks first that the service runs.";
+        description = "Command, with its arguments, the effect runs after the reloads and before the restarts in its batch. chalkd splits it on spaces, with no shell quoting, and runs the first word: a bare program name of chalkd's PATH, or an absolute path in the image's store. chalkd runs it whether or not any unit runs, and a command that fails fails the delivery, so one that talks to a service that may be stopped checks first that the service runs.";
       };
       start = lib.mkOption {
         type = lib.types.bool;
@@ -105,7 +142,7 @@ let
           An action of a layer on what only the running chalkd holds, as `<layer>:<action>`,
           such as `kubernetes:restart`, which starts chalkd's Kubernetes loops again, or
           `kubernetes:reload`, which starts the control plane's loop again. chalkd runs the
-          actions of the due effects once each, after the restarts. The layer must be one of
+          actions of the due effects once each, after their batch's restarts. The layer must be one of
           the image's.
         '';
       };
@@ -135,7 +172,9 @@ let
     };
   };
 
-  # What is wrong with an effect: an output or a layer the image lacks, no trigger or no action.
+  effects = config.chalkos.effects;
+  effectOrder = lib.toposort (a: b: lib.elem a effects.${b}.after) (lib.attrNames effects);
+  # What is wrong with an effect: missing references, invalid prerequisites, no trigger or no action.
   effectProblems =
     name: e:
     let
@@ -187,31 +226,48 @@ let
     ++ lib.optional (
       e.restart == [ ] && e.reload == [ ] && e.run == null && e.chalkd == null
     ) "${where}: it restarts, reloads and runs nothing"
+    ++ map (dep: "${where}.after: the image has no effect ${dep}") (
+      lib.filter (dep: !(effects ? ${dep})) e.after
+    )
+    ++ lib.optional (lib.elem name e.after) "${where}.after: an effect cannot depend on itself"
+    ++ lib.optional (
+      lib.length e.after != lib.length (lib.unique e.after)
+    ) "${where}.after: each prerequisite must be unique"
+    ++ lib.optional (
+      e.waitFor != null && !(lib.hasPrefix "/nix/store/" (lib.head e.waitFor.argv))
+    ) "${where}.waitFor.argv: the executable must be in the image's store"
     ++ effectKindProblems "${where}.kinds" e.kinds;
   # An effect as chalkd reads it.
-  effectJSON = _: e: {
-    inherit (e)
-      outputs
-      restart
-      reload
-      start
-      kinds
-      ;
-    when = lib.defaultTo "" e.when;
-    run = lib.defaultTo "" e.run;
-    chalkd = lib.defaultTo "" e.chalkd;
-    hint =
-      if e.hint == null then
-        null
-      else
-        {
-          inherit (e.hint) text;
-          file = toString e.hint.file;
-        };
-  };
-  effectsJSON = refuse (lib.concatLists (lib.mapAttrsToList effectProblems config.chalkos.effects)) (
-    builtins.toJSON (lib.mapAttrs effectJSON config.chalkos.effects)
-  );
+  effectJSON =
+    _: e:
+    {
+      inherit (e)
+        outputs
+        restart
+        reload
+        start
+        kinds
+        ;
+      when = lib.defaultTo "" e.when;
+      run = lib.defaultTo "" e.run;
+      chalkd = lib.defaultTo "" e.chalkd;
+      hint =
+        if e.hint == null then
+          null
+        else
+          {
+            inherit (e.hint) text;
+            file = toString e.hint.file;
+          };
+    }
+    // lib.optionalAttrs (e.after != [ ]) { inherit (e) after; }
+    // lib.optionalAttrs (e.waitFor != null) { inherit (e) waitFor; };
+  effectsJSON = refuse (
+    lib.concatLists (lib.mapAttrsToList effectProblems effects)
+    ++ lib.optional (
+      effectOrder ? cycle
+    ) "chalkos.effects: prerequisite cycle among ${lib.concatStringsSep ", " effectOrder.cycle}"
+  ) (builtins.toJSON (lib.mapAttrs effectJSON effects));
 in
 {
   options.chalkos.effects = lib.mkOption {

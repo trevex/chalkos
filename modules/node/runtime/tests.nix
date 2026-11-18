@@ -130,7 +130,7 @@ let
         example = [ "bird" ];
         description = ''
           Names of the effects of `chalkos.effects` the change from `before` to `config` takes,
-          sorted by name, as chalkd's plan lists them; an empty list expects none. Null leaves
+          sorted by name. An empty list expects none. Null leaves
           the effects unchecked. A test that sets it needs `before`.
         '';
       };

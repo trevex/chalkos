@@ -53,11 +53,33 @@ func TestDue(t *testing.T) {
 	if !reflect.DeepEqual(o, want) {
 		t.Errorf("outcome = %+v, want %+v", o, want)
 	}
-	plan := PlanOf(fx, o)
+	plan, err := PlanOf(fx, o)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got := plan.Effects[2].Actions; !reflect.DeepEqual(got, []string{"reload names.service", "run /bin/true", "chalkd demo:names"}) {
 		t.Errorf("names does %v", got)
 	}
 	if got := plan.Effects[1].Actions; !reflect.DeepEqual(got, []string{"restart a.service b.service"}) {
 		t.Errorf("named does %v", got)
+	}
+}
+
+func TestPlanShowsRuntimePrerequisitesAndReadiness(t *testing.T) {
+	plan, err := PlanOf(Effects{Defs: map[string]effects.Definition{
+		"resolver": {After: []string{"vrf"}, Run: "reconcile", WaitFor: &effects.Readiness{
+			Description: "VRF to exist", Argv: []string{"/nix/store/demo/bin/check-vrf"}, TimeoutSeconds: 15,
+		}},
+		"vrf": {Run: "replace-vrf"},
+	}}, Outcome{Effects: []Fired{{Name: "resolver"}, {Name: "vrf"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []PlannedEffect{
+		{Name: "vrf", Actions: []string{"run replace-vrf"}},
+		{Name: "resolver", Actions: []string{"after vrf", "wait for VRF to exist (up to 15s)", "run reconcile"}},
+	}
+	if !reflect.DeepEqual(plan.Effects, want) {
+		t.Fatalf("plan = %+v, want %+v", plan.Effects, want)
 	}
 }

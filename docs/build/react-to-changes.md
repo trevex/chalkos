@@ -135,6 +135,38 @@ gives the order, and what the Kubernetes layer's `chalkd` actions do.
 A oneshot unit that should run again on a change sets `RemainAfterExit = true`, so it stays
 active and `try-restart` runs it again. `hardware-info` and the rack unit both do.
 
+## Order effects and wait for readiness
+
+Use `after` when an effect needs another effect from the same delivery to succeed first. An
+unchanged prerequisite does not run. Use `waitFor` to check the runtime state a consumer
+needs, including when its prerequisite has no changes. For example, a router's resolver effect
+waits for the VRFs it uses to exist with their configured routing tables.
+
+```nix
+chalkos.effects.resolver = {
+  outputs = [ "resolver" ];
+  reload = [ "resolver.service" ];
+  after = [ "networkd" ];
+  waitFor = {
+    description = "the resolver's link to be configured";
+    argv = [ (lib.getExe resolverLinkReady) ];
+    timeoutSeconds = 15;
+  };
+};
+```
+
+The probe is a read-only executable from the image's Nix store. It reads the live node and
+gets no config or credentials from chalkd. It exits with 0 when ready, 75 to retry, or another
+nonzero status to fail the effect. Chalkd runs one bounded attempt at a time and stops at the
+configured timeout or the request deadline. The description is shown in the plan and on
+failure, so it should name the condition rather than a command.
+
+The image rejects cycles and missing prerequisites. Effects sharing a unit or command run
+together, so a dependency between them is invalid. A restart still subsumes a reload of the
+same unit. Failed or timed-out effects block their dependents, and independent effects can
+continue. `chalkctl config apply --dry-run` shows scheduled effects, their due prerequisites,
+and their readiness checks. It does not run the checks.
+
 ## Fire the effect on a condition
 
 `when` holds a CEL expression, the language of [change rules](guard-changes.md). It fires an

@@ -125,12 +125,38 @@ type PlannedEffect struct {
 }
 
 // PlanOf is the plan of a delivery that changes o, with the effects of fx.
-func PlanOf(fx Effects, o Outcome) Plan {
+func PlanOf(fx Effects, o Outcome) (Plan, error) {
 	p := Plan{Outputs: o.Outputs}
+	var names []string
+	var order []effects.ScheduledEffect
+	fired := map[string][]string{}
 	for _, f := range o.Effects {
-		p.Effects = append(p.Effects, PlannedEffect{Name: f.Name, FiredBy: f.By, Actions: actions(fx.Defs[f.Name])})
+		names = append(names, f.Name)
+		order = append(order, effects.ScheduledEffect{Name: f.Name})
+		fired[f.Name] = f.By
 	}
-	return p
+	schedule, err := effects.PlanSchedule(fx.Defs, names)
+	if err != nil {
+		return Plan{}, err
+	}
+	if schedule.Ordered() {
+		order = schedule.Order()
+	}
+	for _, effect := range order {
+		d := fx.Defs[effect.Name]
+		var steps []string
+		if len(effect.After) != 0 {
+			steps = append(steps, "after "+strings.Join(effect.After, ", "))
+		}
+		if len(effect.SharedWith) != 0 {
+			steps = append(steps, "shares actions with "+strings.Join(effect.SharedWith, ", "))
+		}
+		if d.WaitFor != nil {
+			steps = append(steps, fmt.Sprintf("wait for %s (up to %ds)", d.WaitFor.Description, d.WaitFor.TimeoutSeconds))
+		}
+		p.Effects = append(p.Effects, PlannedEffect{Name: effect.Name, FiredBy: fired[effect.Name], Actions: append(steps, actions(d)...)})
+	}
+	return p, nil
 }
 
 // actions are what an effect does, in the order chalkd does it for every effect together:

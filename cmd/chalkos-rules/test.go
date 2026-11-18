@@ -204,6 +204,7 @@ func (t tester) run(ctx context.Context, dir string, tc testCase) (testResult, e
 	for _, e := range res.Plan.Effects {
 		effects = append(effects, e.Name)
 	}
+	slices.Sort(effects)
 	// A warning is one line of the summary and of the warnings file.
 	for _, w := range res.Warnings {
 		r.warnings = append(r.warnings, strings.ReplaceAll(w, "\n", " "))

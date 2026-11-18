@@ -211,6 +211,11 @@ func RunTranslated(ctx context.Context, img Image, in Input, docs config.Redacte
 		staged.Discard()
 		return res, err
 	}
-	res.Staged, res.Plan, res.Warnings = staged, PlanOf(img.Effects, o), warnings
+	plan, err := PlanOf(img.Effects, o)
+	if err != nil {
+		staged.Discard()
+		return res, err
+	}
+	res.Staged, res.Plan, res.Warnings = staged, plan, warnings
 	return res, nil
 }

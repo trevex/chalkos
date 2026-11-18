@@ -41,8 +41,10 @@ type Definition struct {
 	Run     string   `json:"run"`
 	Start   bool     `json:"start"`
 	// Chalkd names a layer's action, <layer>:<action>; "" for none.
-	Chalkd string `json:"chalkd"`
-	Hint   *Hint  `json:"hint"`
+	Chalkd  string     `json:"chalkd"`
+	Hint    *Hint      `json:"hint"`
+	After   []string   `json:"after,omitempty"`
+	WaitFor *Readiness `json:"waitFor,omitempty"`
 }
 
 // ReadServices reads the image's services.json; an image without one grants no unit a kind.
@@ -83,6 +85,9 @@ func Read(path string) (map[string]Definition, error) {
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)
 	}
+	if err := validateSchedule(effects); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
 	return effects, nil
 }
 
@@ -114,6 +119,11 @@ func (d Definition) Check() error {
 			return errors.New("its hint has no text")
 		case d.Hint.File != "" && !filepath.IsAbs(d.Hint.File):
 			return fmt.Errorf("its hint's file %q is no absolute path", d.Hint.File)
+		}
+	}
+	if d.WaitFor != nil {
+		if err := d.WaitFor.check(); err != nil {
+			return err
 		}
 	}
 	if d.Run != "" {

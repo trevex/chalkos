@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // Cmd is a tool to run: its name, looked up in PATH, and its arguments.
@@ -26,6 +27,8 @@ type Cmd struct {
 	// Quiet keeps the tool's standard error off the console, so its error carries it alone: for a
 	// tool that runs often and whose failure the caller reports, such as on each status request.
 	Quiet bool
+	// WaitDelay bounds the wait for subprocesses that inherited output pipes.
+	WaitDelay time.Duration
 }
 
 // String is the command line: the name and arguments joined by spaces.
@@ -60,6 +63,7 @@ type ExecRunner struct{}
 
 func (ExecRunner) Exec(ctx context.Context, c Cmd) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, c.Name, c.Args...)
+	cmd.WaitDelay = c.WaitDelay
 	if c.Env != nil {
 		cmd.Env = append(os.Environ(), c.Env...)
 	}

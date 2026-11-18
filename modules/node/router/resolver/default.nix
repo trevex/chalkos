@@ -16,6 +16,42 @@ let
   unbound = config.services.unbound.package;
   dir = config.chalkos.outputs.unbound.dir;
   rendered = "${dir}/unbound.conf";
+  networkd = config.chalkos.outputs.networkd.dir;
+  waitForResolverVRFs = pkgs.writeShellApplication {
+    name = "chalkos-resolver-vrfs-ready";
+    runtimeInputs = [
+      pkgs.gawk
+      pkgs.iproute2
+      pkgs.jq
+    ];
+    text = ''
+      shopt -s nullglob
+      configs=("${dir}"/unbound-*.conf)
+      if ((''${#configs[@]} == 0)); then
+        exit 0
+      fi
+      links=$(ip -d -j link show)
+      for file in "''${configs[@]}"; do
+        vrf=''${file##*/unbound-}
+        vrf=''${vrf%.conf}
+        table=$(awk -F= '$1 == "Table" {print $2}' "${networkd}/00-vrf-$vrf.netdev")
+        if [[ -z $table ]]; then
+          exit 1
+        fi
+        if jq -e --arg vrf "$vrf" --arg table "$table" \
+          'any(.[]; .ifname == $vrf and .linkinfo.info_kind == "vrf"
+            and (.linkinfo.info_data.table | tostring) == $table)' <<<"$links" >/dev/null; then
+          continue
+        else
+          result=$?
+          if ((result == 1)); then
+            exit 75
+          fi
+          exit "$result"
+        fi
+      done
+    '';
+  };
   inherit (chalkosLib.internal) cel;
   inherit (chalkosLib.internal.api) apiVersions;
   # The number of the default VRF's resolvers in the config c.
@@ -86,6 +122,16 @@ in
         "networkd"
       ];
       reload = [ "chalkos-resolvers.service" ];
+      after = [
+        "vrf"
+        "networkd"
+        "router-nftables"
+      ]
+      ++ lib.optional config.chalkos.router.nat64.enable "jool";
+      waitFor = {
+        description = "VRFs used by the rendered resolvers to exist with their configured routing tables";
+        argv = [ (lib.getExe waitForResolverVRFs) ];
+      };
     };
 
     systemd.services.unbound = {

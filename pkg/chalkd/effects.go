@@ -209,6 +209,10 @@ func (s *Server) consume(ctx context.Context, e *pendingEffects, staged *outputs
 	if err != nil {
 		return nil, nil, err
 	}
+	schedule, err := effects.PlanSchedule(e.defs, due)
+	if err != nil {
+		return nil, nil, err
+	}
 	if stored || e.baselined {
 		if err := s.Loader.LoadConfig(); err != nil {
 			// What the layer actions read, the slot and the layers' files, is in place.
@@ -223,7 +227,15 @@ func (s *Server) consume(ctx context.Context, e *pendingEffects, staged *outputs
 		s.actOnSelf(a.Chalkd)
 		return nil, nil, fmt.Errorf("%w%s", err, a.ByHand())
 	}
-	restarted, err := s.applyEffects(ctx, effects.ActionsOf(e.defs, due))
+	var restarted []string
+	if schedule.Ordered() {
+		restarted, err = schedule.Apply(ctx, s.Run, e.defs, s.runLayerAction)
+		if ae, ok := errors.AsType[*effects.ApplyError](err); ok && ae.Why != "" {
+			err = layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
+		}
+	} else {
+		restarted, err = s.applyEffects(ctx, effects.ActionsOf(e.defs, due))
+	}
 	if err != nil {
 		return nil, nil, err
 	}
@@ -283,12 +295,16 @@ func (s *Server) actOnSelf(names []string) {
 		s.actedOnSelf(names)
 	}
 	for _, name := range names {
-		run, err := s.Plugins.Action(name)
-		if err == nil {
-			err = run(context.Background())
-		}
-		if err != nil {
+		if err := s.runLayerAction(context.Background(), name); err != nil {
 			log.Printf("%s: %v", name, err)
 		}
 	}
+}
+
+func (s *Server) runLayerAction(ctx context.Context, name string) error {
+	run, err := s.Plugins.Action(name)
+	if err != nil {
+		return err
+	}
+	return run(ctx)
 }
