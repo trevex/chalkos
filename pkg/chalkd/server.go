@@ -203,6 +203,8 @@ type Server struct {
 	// mu serialises calls that change the node.
 	mu        sync.Mutex
 	installed bool
+	// activating identifies the live delivery whose durable record Status reads without mu.
+	activating atomic.Int64
 	// upgrading is held while an upgrade runs, which changes only the inactive slot and the ESP.
 	upgrading sync.Mutex
 	// trial rolls the config on trial back at its deadline; s.mu guards it.

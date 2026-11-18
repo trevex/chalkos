@@ -9,8 +9,9 @@ description: "Show an installed node's status"
 chalkctl status <node> [flags]
 ```
 
-Shows an installed node's status: the config it runs and whether it is the one the inventory
-gives; its platform; the image it booted, by its store's root hash and the tag and revision it
+Shows an installed node's status: the config stored for the running image and whether it is the
+one the inventory gives; the last completed live activation and any current or failed activation
+step; its platform; the image it booted, by its store's root hash and the tag and revision it
 was built from as far as the node knows them, the boot entry and whether that boot was found
 healthy; an upgrade that is staged, or active and boots next; an upgrade that failed and was
 rolled back,

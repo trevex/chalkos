@@ -233,10 +233,10 @@ announces are no output, because they come from the network at runtime.
 A delivery can fail after step 4, as when a restart fails. Until a delivery is applied whole, the
 effects compare with the baseline. It holds the state from before the first delivery that failed
 part way, in `/run/chalkd/effects-baseline.json`, readable by root alone, with `Secret` values as
-their hashes. A retry, or another delivery, renders again and takes every effect of the failed
-delivery again, the reloads and restarts that succeeded included, because what it compares with
-predates them. The delivery that succeeds removes the file. A delivery refused before it changed
-anything leaves the file as it was.
+their hashes. A retry, or another delivery, renders again and plans the effects of the failed
+delivery, including the reloads and restarts that succeeded. An identical retry may reuse
+completed batches as described below. The delivery that succeeds removes the file. A delivery
+refused before it changed anything leaves the file as it was.
 
 The file also records each delivery since the baseline as an attempt, including a delivery without
 config changes, which can change a fact alone. Before step 4, chalkd adds the delivery's config and
@@ -254,6 +254,22 @@ A delivery without config, such as a Kubernetes share, the OS CAs or a node cert
 from the running slot's documents and does not change them. It runs no validator. An output that
 fails then goes to the status and the journal, the delivery goes ahead, and the output keeps the
 files it served.
+
+## Live activation records its progress
+
+The version in the running slot describes what is stored. The live activation record in
+`/state/activation.json` tracks the target version, the current or failed step, and
+the last version whose activation finished. It contains phase and effect names, version
+hashes, and a checkpoint hash. Status can read it while a delivery is running. If the daemon
+stops mid-apply, the record shows the step it had reached. Boot health continues to describe
+what happened when loading and starting the config at boot.
+
+On an ordinary retry of the identical stored config in the same boot, chalkd can skip a
+contiguous prefix of completed effect batches. The due effects and rendered output hashes
+must still match, and the units in each skipped batch must still be active. Only batches
+containing declarative unit actions qualify. Commands, layer actions, runtime rules, and
+readiness probes run again. Any unfinished batch is retried. A changed plan, reboot, or
+rollback uses the usual effect replay rules.
 
 ## Every boot renders the outputs again
 

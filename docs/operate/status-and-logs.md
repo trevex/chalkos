@@ -124,6 +124,13 @@ The time is when the node stored the config, in RFC 3339.
 [A staged image and the next upgrade take config of their own](../how-it-works/node/config.md#a-staged-image-and-the-next-upgrade-take-config-of-their-own)
 explains the pending config.
 
+`config <version>` is the version stored in the running image's slot. `activated config
+<version>` is the last version whose live delivery finished its activation work. An apply
+can update the stored version before a later step fails. While a delivery is running,
+failed, or interrupted, the activation line shows its target version and the current or
+failed step. A completed activation from a previous boot is labeled as such. A node that
+has only loaded config at boot may have no completed live activation recorded.
+
 `previous config <version> (config rollback restores it)` names the config the running
 image ran before the last delivery.
 [Roll back a config change](change-config.md#roll-back-a-config-change) delivers it again. The line

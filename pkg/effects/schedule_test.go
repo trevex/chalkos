@@ -32,7 +32,7 @@ func TestScheduleRunsReadinessAfterFailedUnitRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Apply(t.Context(), r, defs, nil, nil); err != nil {
+	if _, err := s.Apply(t.Context(), r, defs, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{
@@ -65,7 +65,7 @@ func TestScheduleBlocksDependentsAndKeepsIndependentEffects(t *testing.T) {
 	}
 	if _, err := s.Apply(t.Context(), r, defs, nil, func(err error) {
 		t.Errorf("force overrode a failed prerequisite: %v", err)
-	}); err == nil ||
+	}, nil); err == nil ||
 		!strings.Contains(err.Error(), "resolver blocked by prerequisite networkd") ||
 		!strings.Contains(err.Error(), "app blocked by prerequisite resolver") {
 		t.Fatalf("Apply error = %v", err)
@@ -88,13 +88,13 @@ func TestScheduleWaitsForReadinessWithUnchangedPrerequisite(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &tooltest.Runner{}
-	if _, err := s.Apply(t.Context(), r, defs, nil, nil); err != nil || len(r.Calls) != 3 ||
+	if _, err := s.Apply(t.Context(), r, defs, nil, nil, nil); err != nil || len(r.Calls) != 3 ||
 		r.Calls[0] != "/nix/store/demo/bin/check-route fabric" || r.Calls[2] != "systemctl reload resolver.service" {
 		t.Fatalf("Apply = %v, commands = %v", err, r.Calls)
 	}
 
 	r = &tooltest.Runner{Rules: []tooltest.Rule{{Prefix: "/nix/store/demo/bin/check-route", Err: &tool.Error{Code: 75}}}}
-	if _, err := s.Apply(t.Context(), r, defs, nil, nil); !errors.Is(err, context.DeadlineExceeded) ||
+	if _, err := s.Apply(t.Context(), r, defs, nil, nil, nil); !errors.Is(err, context.DeadlineExceeded) ||
 		!strings.Contains(err.Error(), "waiting for a configured route") {
 		t.Fatalf("timeout = %v", err)
 	}
@@ -103,7 +103,7 @@ func TestScheduleWaitsForReadinessWithUnchangedPrerequisite(t *testing.T) {
 	}
 
 	r = &tooltest.Runner{Rules: []tooltest.Rule{{Prefix: "/nix/store/demo/bin/check-route", Err: &tool.Error{Code: 1, Stderr: "do not disclose"}}}}
-	if _, err := s.Apply(t.Context(), r, defs, nil, nil); err == nil || !strings.Contains(err.Error(), "exited with status 1") ||
+	if _, err := s.Apply(t.Context(), r, defs, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "exited with status 1") ||
 		strings.Contains(err.Error(), "do not disclose") || len(r.Calls) != 1 {
 		t.Fatalf("fatal probe = %v, commands = %v", err, r.Calls)
 	}
@@ -120,7 +120,7 @@ func TestScheduleMergesSharedActionsBeforeOrdering(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &tooltest.Runner{}
-	if _, err := s.Apply(t.Context(), r, defs, nil, nil); err != nil {
+	if _, err := s.Apply(t.Context(), r, defs, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{"configure-network", "systemctl show --property=ActiveState --value resolver.service", "systemctl restart resolver.service"}
@@ -139,7 +139,7 @@ func TestScheduleForcesReadinessTimeoutButStopsOnCancellation(t *testing.T) {
 		{Prefix: "/nix/store/demo/bin/check-route", Err: &tool.Error{Code: 75}},
 	}}
 	var warning error
-	if _, err := s.Apply(t.Context(), r, defs, nil, func(err error) { warning = err }); err != nil ||
+	if _, err := s.Apply(t.Context(), r, defs, nil, func(err error) { warning = err }, nil); err != nil ||
 		!errors.Is(warning, context.DeadlineExceeded) || !slices.Contains(r.Calls, "reload-resolver") {
 		t.Fatalf("force = %v, warning = %v, commands = %v", err, warning, r.Calls)
 	}
@@ -148,7 +148,7 @@ func TestScheduleForcesReadinessTimeoutButStopsOnCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	r.Before = func(string) { cancel() }
-	if _, err := s.Apply(ctx, r, defs, nil, func(err error) { t.Errorf("overrode cancellation: %v", err) }); !errors.Is(err, context.Canceled) ||
+	if _, err := s.Apply(ctx, r, defs, nil, func(err error) { t.Errorf("overrode cancellation: %v", err) }, nil); !errors.Is(err, context.Canceled) ||
 		slices.Contains(r.Calls, "reload-resolver") {
 		t.Fatalf("canceled force = %v, commands = %v", err, r.Calls)
 	}

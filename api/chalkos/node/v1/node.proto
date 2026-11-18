@@ -770,7 +770,7 @@ message StatusResponse {
   BootStatus boot = 7;
   // The platform the running image was built for.
   string platform = 8;
-  // The version of the config the node runs: SHA-256, in lower-case hex, of the documents
+  // The version of the config stored in the running image's slot: SHA-256, in lower-case hex, of the documents
   // GetConfigResponse.documents holds, in canonical JSON, ordered by apiVersion, kind and name.
   // Empty on a node that runs no config.
   string config_version = 9;
@@ -791,6 +791,8 @@ message StatusResponse {
   string trial_error = 14;
   // The config the node holds pending for its next upgrade, unchecked; unset without one.
   PendingConfig pending_config = 15;
+  // Progress of live activation for the running image. Older nodes omit this field.
+  ConfigActivation config_activation = 16;
 }
 
 // A config on trial, which the node rolls back by itself at the deadline unless ConfirmConfig
@@ -1273,4 +1275,22 @@ message BGPStatus {
   repeated BGPPeerStatus peers = 1;
   // Why the sessions could not be read, or empty when FRR answered.
   string error = 2;
+}
+
+// The latest live config delivery and the last version whose live activation finished.
+message ConfigActivation {
+  // The version that the latest delivery attempted to activate.
+  string target_version = 1;
+  // The last completed version, empty when none was recorded.
+  string completed_version = 2;
+  // One of unrecorded, unknown, in_progress, interrupted, failed, or complete.
+  string state = 3;
+  // The latest activation step started, if any.
+  string step = 4;
+  // The first recorded failed step, if any.
+  string failed_step = 5;
+  // The completed version was recorded before this boot.
+  bool from_earlier_boot = 6;
+  // The latest attempted delivery was recorded before this boot.
+  bool attempt_from_earlier_boot = 7;
 }

@@ -182,20 +182,48 @@ func actionKeys(d Definition) []string {
 	return keys
 }
 
+// Batch is one group of effects executed using the usual systemd action order.
+type Batch struct {
+	Index   int
+	Effects []string
+}
+
+// BatchProgress records work around a batch. Before can reuse an earlier
+// completion. After is called only for batches this invocation actually ran.
+type BatchProgress struct {
+	Before func(Batch) (skip bool, err error)
+	After  func(Batch, bool) error
+}
+
 // Apply executes the ordered schedule, preserving the usual systemd ordering
 // within each batch. A systemctl error can cover several units in one command,
 // so every effect that requested one of those units is treated as failed.
 // When warnReadiness is set, a readiness failure is a warning and the effect
 // can continue. The delivery context still bounds the work.
-func (s Schedule) Apply(ctx context.Context, r tool.Runner, defs map[string]Definition, layer func(context.Context, string) error, warnReadiness func(error)) ([]string, error) {
+func (s Schedule) Apply(ctx context.Context, r tool.Runner, defs map[string]Definition, layer func(context.Context, string) error, warnReadiness func(error), progress *BatchProgress) ([]string, error) {
 	failed := map[string]bool{}
 	var errs []error
 	var restarted []string
-	for _, batch := range s.batches {
+	for index, batch := range s.batches {
 		if ctx.Err() != nil {
 			errs = append(errs, ctx.Err())
 			break
 		}
+		step := Batch{Index: index}
+		if progress != nil {
+			for _, group := range batch {
+				step.Effects = append(step.Effects, group.names...)
+			}
+			skip, err := progress.Before(step)
+			if err != nil {
+				errs = append(errs, err)
+				break
+			}
+			if skip {
+				continue
+			}
+		}
+		before := len(errs)
 		var runnable []effectGroup
 		var due []string
 		for _, group := range batch {
@@ -256,6 +284,18 @@ func (s Schedule) Apply(ctx context.Context, r tool.Runner, defs map[string]Defi
 					}
 				}
 			}
+		}
+		if ctx.Err() != nil {
+			errs = append(errs, ctx.Err())
+		}
+		if progress != nil {
+			if err := progress.After(step, before == len(errs) && ctx.Err() == nil); err != nil {
+				errs = append(errs, err)
+				break
+			}
+		}
+		if ctx.Err() != nil {
+			break
 		}
 	}
 	slices.Sort(restarted)

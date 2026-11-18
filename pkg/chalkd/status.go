@@ -36,6 +36,7 @@ func (s *Server) Status(ctx context.Context, req *connect.Request[nodev1.StatusR
 		return nil, err
 	}
 	resp.ConfigVersion = version
+	resp.ConfigActivation = s.activationStatus(dir, version, s.bootID())
 	if resp.PreviousConfigVersion, err = slot.PreviousVersion(dir); err != nil {
 		return nil, fmt.Errorf("read the previous config's version: %w", err)
 	}

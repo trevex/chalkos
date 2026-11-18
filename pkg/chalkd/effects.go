@@ -8,6 +8,7 @@ import (
 	"maps"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"connectrpc.com/connect"
 
@@ -203,7 +204,10 @@ func (s *Server) recordAttempt(e *pendingEffects, states map[string]outputs.Stat
 // swaps in the staged outputs, and takes the effects. It returns the restarted units and the
 // warnings of rules that could not be evaluated, and removes the baseline once every effect is
 // taken; until then a retry compares with it and takes them again.
-func (s *Server) consume(ctx context.Context, e *pendingEffects, staged *outputs.Staged, stored bool, secret string, forceReadiness bool) ([]string, []string, error) {
+func (s *Server) consume(ctx context.Context, e *pendingEffects, staged *outputs.Staged, activation *activation, stored bool, secret string, forceReadiness bool) ([]string, []string, error) {
+	if err := activation.step("plan runtime effects"); err != nil {
+		return nil, nil, err
+	}
 	states := staged.States()
 	due, warnings, err := s.due(ctx, e, states, secret)
 	if err != nil {
@@ -213,7 +217,13 @@ func (s *Server) consume(ctx context.Context, e *pendingEffects, staged *outputs
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := activation.plan(due, states, forceReadiness); err != nil {
+		return nil, nil, err
+	}
 	if stored || e.baselined {
+		if err := activation.step("publish unit config"); err != nil {
+			return nil, nil, err
+		}
 		if err := s.Loader.LoadConfig(); err != nil {
 			// What the layer actions read, the slot and the layers' files, is in place.
 			a := effects.ActionsOf(e.defs, due)
@@ -222,6 +232,9 @@ func (s *Server) consume(ctx context.Context, e *pendingEffects, staged *outputs
 		}
 	}
 	// The outputs, checked before the delivery changed anything, follow the documents.
+	if err := activation.step("publish rendered outputs"); err != nil {
+		return nil, nil, err
+	}
 	if err := staged.Swap(); err != nil {
 		a := effects.ActionsOf(e.defs, due)
 		s.actOnSelf(a.Chalkd)
@@ -237,12 +250,17 @@ func (s *Server) consume(ctx context.Context, e *pendingEffects, staged *outputs
 				warnings = append(warnings, warning)
 			}
 		}
-		restarted, err = schedule.Apply(ctx, s.Run, e.defs, s.runLayerAction, warnReadiness)
+		restarted, err = schedule.Apply(ctx, s.Run, e.defs, s.runLayerAction, warnReadiness, activation.hooks(ctx, e.defs))
 		if ae, ok := errors.AsType[*effects.ApplyError](err); ok && ae.Why != "" {
 			err = layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
 		}
 	} else {
-		restarted, err = s.applyEffects(ctx, effects.ActionsOf(e.defs, due))
+		if len(due) != 0 {
+			if err := activation.step("runtime effects (" + strings.Join(due, ", ") + ")"); err != nil {
+				return nil, nil, err
+			}
+		}
+		restarted, err = s.applyEffects(ctx, effects.ActionsOf(e.defs, due), activation != nil)
 	}
 	if err != nil {
 		return nil, nil, err
@@ -282,11 +300,13 @@ func (s *Server) failedPartWay(ctx context.Context, e *pendingEffects, secret st
 
 // applyEffects carries out the effects' actions on the units, as effects.Apply does, and runs their
 // layer actions last.
-func (s *Server) applyEffects(ctx context.Context, a effects.Actions) ([]string, error) {
+func (s *Server) applyEffects(ctx context.Context, a effects.Actions, tracked bool) ([]string, error) {
 	// Once the units it restarts read the new config, and whether or not they could: the files
 	// the layer actions read are in place.
-	defer s.actOnSelf(a.Chalkd)
 	restarted, err := effects.Apply(ctx, s.Run, a)
+	if layerErr := s.actOnSelf(a.Chalkd); tracked && layerErr != nil {
+		err = errors.Join(err, layerErr)
+	}
 	if ae, ok := errors.AsType[*effects.ApplyError](err); ok && ae.Why != "" {
 		return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
 	}
@@ -298,15 +318,18 @@ func (s *Server) applyEffects(ctx context.Context, a effects.Actions) ([]string,
 
 // actOnSelf runs the layer actions the delivery's effects name, on what only the running chalkd
 // holds.
-func (s *Server) actOnSelf(names []string) {
+func (s *Server) actOnSelf(names []string) error {
 	if s.actedOnSelf != nil {
 		s.actedOnSelf(names)
 	}
+	var errs []error
 	for _, name := range names {
 		if err := s.runLayerAction(context.Background(), name); err != nil {
 			log.Printf("%s: %v", name, err)
+			errs = append(errs, fmt.Errorf("layer action %s: %w", name, err))
 		}
 	}
+	return errors.Join(errs...)
 }
 
 func (s *Server) runLayerAction(ctx context.Context, name string) error {

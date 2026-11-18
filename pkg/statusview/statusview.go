@@ -54,6 +54,9 @@ func Write(w io.Writer, s *nodev1.StatusResponse, o Options) error {
 		config += " (" + o.Inventory.ConfigState(s) + ")"
 	}
 	fmt.Fprintln(w, config)
+	if activation := s.GetConfigActivation(); activation != nil {
+		writeActivation(w, activation)
+	}
 	if s.Trial != nil {
 		fmt.Fprintln(w, TrialLine(s.Trial))
 	}
@@ -141,6 +144,32 @@ func Write(w io.Writer, s *nodev1.StatusResponse, o Options) error {
 		fmt.Fprintf(w, "failed unit %s\n", u)
 	}
 	return nil
+}
+
+func writeActivation(w io.Writer, activation *nodev1.ConfigActivation) {
+	if version := activation.GetCompletedVersion(); version != "" {
+		earlier := ""
+		if activation.GetFromEarlierBoot() {
+			earlier = " (earlier boot)"
+		}
+		fmt.Fprintf(w, "activated config %s%s\n", version, earlier)
+	} else {
+		fmt.Fprintln(w, "activated config unrecorded")
+	}
+	attempt := "activation of " + activation.GetTargetVersion()
+	if activation.GetAttemptFromEarlierBoot() {
+		attempt += " (earlier boot)"
+	}
+	switch activation.GetState() {
+	case "in_progress":
+		fmt.Fprintf(w, "%s in progress: %s\n", attempt, activation.GetStep())
+	case "failed":
+		fmt.Fprintf(w, "%s failed: %s\n", attempt, activation.GetFailedStep())
+	case "interrupted":
+		fmt.Fprintf(w, "%s interrupted: %s\n", attempt, activation.GetStep())
+	case "unknown":
+		fmt.Fprintln(w, "the config activation record could not be read")
+	}
 }
 
 // VolumeState is a volume's state in the status's volume table.

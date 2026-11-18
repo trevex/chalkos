@@ -289,15 +289,16 @@ The response of Status: the state of an installed node.
 | `trust` | list of TrustStatus | What the node trusts and issues with, by fingerprint. |
 | `boot` | BootStatus | The image the node booted, and what upgrades installed beside it. |
 | `platform` | string | The platform the running image was built for. |
-| `config_version` | string | The version of the config the node runs: SHA-256, in lower-case hex, of the documents GetConfigResponse.documents holds, in canonical JSON, ordered by apiVersion, kind and name. Empty on a node that runs no config. |
+| `config_version` | string | The version of the config stored in the running image's slot: SHA-256, in lower-case hex, of the documents GetConfigResponse.documents holds, in canonical JSON, ordered by apiVersion, kind and name. Empty on a node that runs no config. |
 | `staged_config_version` | string | The version of the config kept for the image in the inactive slot, BootStatus.staged, as config_version gives the running one's; empty without a staged image or config for it. |
 | `outputs` | list of OutputStatus | The image's outputs, by name. |
 | `previous_config_version` | string | The version of the running image's previous config, which RollbackConfig delivers again, as config_version gives the running one's; empty while the node keeps none, as after an install or an upgrade. |
 | `trial` | ConfigTrial | The config on trial, while one is; unset otherwise. |
 | `trial_error` | string | Why the record of a config's trial cannot be read, while it cannot; trial is unset then. The node refuses every other change until RollbackConfig rolls the config back, which removes the record. Empty otherwise. |
 | `pending_config` | PendingConfig | The config the node holds pending for its next upgrade, unchecked; unset without one. |
+| `config_activation` | ConfigActivation | Progress of live activation for the running image. Older nodes omit this field. |
 
-Field types: [DiskStatus](#message-diskstatus), [VolumeStatus](#message-volumestatus), [CertificateStatus](#message-certificatestatus), [TimeStatus](#message-timestatus), [TrustStatus](#message-truststatus), [BootStatus](#message-bootstatus), [OutputStatus](#message-outputstatus), [ConfigTrial](#message-configtrial), [PendingConfig](#message-pendingconfig).
+Field types: [DiskStatus](#message-diskstatus), [VolumeStatus](#message-volumestatus), [CertificateStatus](#message-certificatestatus), [TimeStatus](#message-timestatus), [TrustStatus](#message-truststatus), [BootStatus](#message-bootstatus), [OutputStatus](#message-outputstatus), [ConfigTrial](#message-configtrial), [PendingConfig](#message-pendingconfig), [ConfigActivation](#message-configactivation).
 
 ### Logs { #method-logs }
 
@@ -767,6 +768,20 @@ A certificate the node holds or issues with.
 | `problem` | string | Why a renewal fails, such as "renewal failing: &lt;reason>; expires &lt;date>", or a warning, such as "less than a third of its lifetime remains" or "the node certificate expires on &lt;date>; this image cannot renew it on its own; run chalkctl node renew &lt;node>"; empty when there is nothing to do. A command it advises names the node, or says &lt;node> when the node cannot tell its name. |
 | `fingerprint` | string | The SHA-256 fingerprint of the certificate, in lower-case hex. |
 | `issuer` | string | The SHA-256 fingerprint of the certificate that issued it, in lower-case hex; empty when the node does not hold that one. |
+
+### ConfigActivation { #message-configactivation }
+
+The latest live config delivery and the last version whose live activation finished.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `target_version` | string | The version that the latest delivery attempted to activate. |
+| `completed_version` | string | The last completed version, empty when none was recorded. |
+| `state` | string | One of unrecorded, unknown, in_progress, interrupted, failed, or complete. |
+| `step` | string | The latest activation step started, if any. |
+| `failed_step` | string | The first recorded failed step, if any. |
+| `from_earlier_boot` | bool | The completed version was recorded before this boot. |
+| `attempt_from_earlier_boot` | bool | The latest attempted delivery was recorded before this boot. |
 
 ### ConfigTrial { #message-configtrial }
 

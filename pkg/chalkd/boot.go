@@ -23,9 +23,7 @@ func (s *Server) bootStatus() *nodev1.BootStatus {
 	st := &nodev1.BootStatus{}
 	// A client that rebooted the node waits for another boot by its ID; without one it waits for
 	// the image alone.
-	if id, err := os.ReadFile(s.Paths.BootID); err == nil {
-		st.BootId = strings.TrimSpace(string(id))
-	}
+	st.BootId = s.bootID()
 	running, err := uki.RunningHash(s.Paths.Cmdline)
 	if err != nil {
 		st.Error = err.Error()
