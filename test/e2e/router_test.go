@@ -1010,10 +1010,10 @@ func (rl *routerLab) kubernetes(t *testing.T) {
 		t.Errorf("status of k1 shows a failed unit or no VIP held: %v\n%s", err, out)
 	}
 
-	// A dry run of k1's delivery plans FRR's reload on its output.
-	plan := regexp.MustCompile(`(?m)^  (?:effects:  | {10})bgp: reload frr\.service \(output bgp\)$`)
+	// The new export interface must be configured before FRR reloads.
+	plan := regexp.MustCompile(`(?m)^ +bgp: after networkd, reload frr\.service \(output bgp\)$`)
 	if out, err := chalkctl(t, k1, "kubernetes", "config", "apply", "--dry-run", "k1"); err != nil || !plan.MatchString(out) {
-		t.Fatalf("config apply --dry-run of k1 plans no reload of FRR: %v\n%s", err, out)
+		t.Fatalf("config apply --dry-run of k1 did not plan an FRR reload after networkd: %v\n%s", err, out)
 	}
 	before, err := rl.sessionWith("r1", "kubernetes", k1Switch)
 	if err != nil {
