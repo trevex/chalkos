@@ -137,9 +137,10 @@ as `apiServerVersion`, such as `1.37.2` for both; the image's rules read them as
 
 ## Every node holds the same cluster documents
 
-Every node of an inventory whose set holds a `Cluster` document must hold the same `Cluster` spec
-and the same `Flannel` spec, or no `Flannel` document on any of them, because each node builds the
-cluster from its own documents. The specs compare as written, whatever the documents are called: a
+Every node of an inventory whose set holds a `Cluster` document must hold the same `Cluster` spec,
+the same `Flannel` spec, or no `Flannel` document on any of them, and likewise the same
+`ClusterRegistry` spec or none, because each node builds the cluster from its own documents. The
+specs compare as written, whatever the documents are called: a
 field left to its default differs from one set to the default value. Only the order of the
 `Flannel` document's `vxlanSourceSubnets` makes no difference. `chalkctl validate` and every
 chalkctl command that reads the inventory refuse an inventory whose nodes differ. The error names
@@ -147,7 +148,7 @@ the first field that differs, in the order of the fields' names, and the nodes o
 values:
 
 ```text
-chalkos.yaml: the nodes hold different Flannel specs: spec.mtu is 1480 on node1 and node2, 1450 on node3; every node of the cluster holds the same Cluster and Flannel specs
+chalkos.yaml: the nodes hold different Flannel specs: spec.mtu is 1480 on node1 and node2, 1450 on node3; every node of the cluster holds the same Cluster, Flannel and ClusterRegistry specs
 ```
 
 A node without the `Flannel` document is named as holding none, as in `none on node3`. A node whose

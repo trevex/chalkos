@@ -1053,6 +1053,7 @@ lib.runTests {
       "BGPPeer"
       "BGPSpeaker"
       "Cluster"
+      "ClusterRegistry"
       "Flannel"
       "Host"
       "Link"

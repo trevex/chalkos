@@ -12,6 +12,7 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/internal/strs"
 	"github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/clusterregistry"
 )
 
 // NodeType is the spec.type of the Kubernetes Node document among docs: controlplane or worker;
@@ -44,14 +45,15 @@ func NodeDocuments(docs []config.Document) []config.Document {
 }
 
 // clusterKinds are the kinds every node of the cluster holds alike: each node builds the cluster
-// from its own documents, so nodes that differ would each run another one.
-var clusterKinds = []string{"Cluster", "Flannel"}
+// from its own documents, so nodes that differ would each run another one. Every node pulls from
+// the endpoints of the ClusterRegistry, and every control plane serves one of them.
+var clusterKinds = []string{"Cluster", "Flannel", clusterregistry.Kind}
 
 // Endpoint returns the API server URL that the nodes' Cluster documents share, or "" when no node
 // has one; documents gives a node's documents. Nodes without a Cluster document are skipped. Nodes
-// whose Cluster or Flannel specs differ as written, apart from the order of vxlanSourceSubnets, are
-// refused, whatever the documents are called; a field left to its default differs from one set to
-// it.
+// whose Cluster, Flannel or ClusterRegistry specs differ as written, apart from the order of
+// vxlanSourceSubnets, are refused, whatever the documents are called; a field left to its default
+// differs from one set to it.
 func Endpoint(nodes []string, documents func(name string) ([]config.Document, error)) (string, error) {
 	var members []string
 	held := map[string]map[string]map[string]any{}
@@ -149,7 +151,7 @@ func alike(kind string, nodes []string, spec func(string) map[string]any) error 
 			parts = append(parts, part)
 		}
 	}
-	return fmt.Errorf("the nodes hold different %s specs: %s; every node of the cluster holds the same Cluster and Flannel specs", kind, strings.Join(parts, ", "))
+	return fmt.Errorf("the nodes hold different %s specs: %s; every node of the cluster holds the same Cluster, Flannel and ClusterRegistry specs", kind, strings.Join(parts, ", "))
 }
 
 // normalized is a spec of the kind as alike compares it: Flannel's vxlanSourceSubnets sorted, as

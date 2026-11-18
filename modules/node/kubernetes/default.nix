@@ -45,6 +45,7 @@ in
     ./kernel.nix
     ./kinds.nix
     ./bgp
+    ./registry
   ];
 
   options.chalkos.kubernetes = {

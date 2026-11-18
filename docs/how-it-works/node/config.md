@@ -208,10 +208,11 @@ Beyond the schemas, chalkctl and chalkd translate the set as the node will use i
 what a schema cannot express: overlapping ranges, a VIP outside the node's networks, a volume that
 does not fit its disk, an extra flag that would override one chalkos sets.
 
-!!! note "With the Kubernetes layer, every node holds the same Cluster and Flannel specs"
+!!! note "With the Kubernetes layer, every node holds the same cluster documents"
 
     Each node builds the cluster from its own documents, so chalkctl refuses an inventory whose
-    nodes hold different `Cluster` or `Flannel` specs, naming the first field that differs.
+    nodes hold different `Cluster`, `Flannel` or `ClusterRegistry` specs, naming the first field
+    that differs.
     [Every node holds the same cluster documents](../kubernetes/overview.md#every-node-holds-the-same-cluster-documents)
     explains the comparison.
 

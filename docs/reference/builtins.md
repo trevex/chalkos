@@ -336,6 +336,24 @@ Message of rule 5:
 "the config changes the cluster's ipFamilies from " + oldSelf.join(", ") + " to " + self.join(", ") + "; they are fixed once the cluster exists, so keep them, or reinstall the node into a new cluster"
 ```
 
+#### ClusterRegistry { #rules-clusterregistry }
+
+| Rule | Field | Guards | Takes | Expression | Message |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `spec.endpoints` | Every control plane serves the cluster registry: one of its static addresses is an endpoint. | `refuse` | after the table | after the table |
+
+Expression of rule 1:
+
+```text
+cel.bind(nodes, (("kubernetes.chalkos.dev/v1alpha1" in config && "Node" in config["kubernetes.chalkos.dev/v1alpha1"]) ? config["kubernetes.chalkos.dev/v1alpha1"].Node : {}), !nodes.exists(n, nodes[n].spec.type == "controlplane")) || node.addresses.exists(a, self.exists(e, ip(e) == ip(a)))
+```
+
+Message of rule 1:
+
+```text
+"the control plane " + node.name + " serves the cluster registry, but the ClusterRegistry's endpoints name none of its static addresses (" + (size(node.addresses) == 0 ? "none" : node.addresses.join(", ")) + "); add one of them to the endpoints and apply the config to every node"
+```
+
 #### Node { #rules-node }
 
 | Rule | Field | Guards | Takes | Expression | Message |

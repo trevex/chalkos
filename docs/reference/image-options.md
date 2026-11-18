@@ -119,6 +119,12 @@ Kubernetes's version skew policy against this kubelet's. Set it for a release
 `chalkos.kubernetes.version` does not offer, such as another patch release; an image
 that sets both names one minor in both.
 
+### `chalkos.kubernetes.registry.enable` { #chalkoskubernetesregistryenable }
+
+Type: boolean · Default: `true` · Declared in: [modules/node/kubernetes/registry/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/registry/default.nix)
+
+Whether Kubernetes images carry chalkos-registry, the cluster registry, and accept the kind `ClusterRegistry`. Only with the Kubernetes layer; set it false in an image's modules to leave the feature out of it.
+
 ### `chalkos.kubernetes.version` { #chalkoskubernetesversion }
 
 Type: one of `1.35`, `1.36`, `1.37` · Default: `lib.versions.majorMinor pkgs.kubernetes.version` · Declared in: [modules/node/kubernetes/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/default.nix)

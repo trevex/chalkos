@@ -11,8 +11,8 @@ func (*Plugin) NodeDocuments(docs []config.Document) []config.Document {
 	return translate.NodeDocuments(docs)
 }
 
-// CheckInventory refuses nodes that hold different Cluster or Flannel specs, or a node that holds
-// two Cluster or two Flannel documents.
+// CheckInventory refuses nodes that hold different Cluster, Flannel or ClusterRegistry specs, or a
+// node that holds two documents of one of these kinds.
 func (*Plugin) CheckInventory(c layer.Cluster) error {
 	_, err := endpoint(c)
 	return err

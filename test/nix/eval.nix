@@ -4047,6 +4047,43 @@ lib.runTests {
         ids = true;
       };
     };
+  # The cluster registry that an image disables with chalkos.kubernetes.registry.enable = false
+  # leaves nothing of itself in the image, and nothing comes in its place.
+  testKubernetesRegistryOptional =
+    let
+      names = lib.attrNames;
+      parts = c: {
+        kinds = names c.chalkos.kinds;
+        outputs = names c.chalkos.outputs;
+        effects = names c.chalkos.effects;
+        tests = names c.chalkos.tests;
+        services = names c.systemd.services;
+        diagnostics = names c.chalkos.diagnostics;
+        mirrors = c.systemd.services.chalkos-registry-mirrors.chalkos.kinds;
+        kubernetesAfter = c.chalkos.effects.kubernetes.after;
+        firewall = lib.filter (l: l != "") (lib.splitString "\n" c.networking.firewall.extraInputRules);
+      };
+      without = worker [ { chalkos.kubernetes.registry.enable = false; } ];
+      diff = a: b: lib.filterAttrs (_: v: v != [ ]) (lib.mapAttrs (k: v: lib.subtractLists b.${k} v) a);
+    in
+    {
+      expr = {
+        removed = diff (parts w) (parts without);
+        added = diff (parts without) (parts w);
+        ids = unpinned without == unpinned w;
+      };
+      expected = {
+        removed = {
+          kinds = [ "ClusterRegistry" ];
+          tests = [
+            "kubernetes-registry-elsewhere"
+            "kubernetes-registry-worker"
+          ];
+        };
+        added = { };
+        ids = true;
+      };
+    };
   # On a Kubernetes image FRR runs the output bgp's config, which vtysh checks, reloads when it
   # changes, loads the BGPPeers' passwords, and announces the node's addresses before the
   # Kubernetes preparation picks them.

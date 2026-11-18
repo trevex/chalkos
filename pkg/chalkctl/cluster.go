@@ -47,7 +47,7 @@ func loadCluster(ctx context.Context, f layer.ClusterFlags) (*cluster, error) {
 }
 
 // loadInventory reads and checks the inventory at path. A compiled layer may refuse its nodes, such
-// as nodes with different Cluster or Flannel specs.
+// as nodes with different Cluster, Flannel or ClusterRegistry specs.
 func loadInventory(ctx context.Context, path string) (*cluster, error) {
 	c, err := readInventory(ctx, path)
 	if err != nil {

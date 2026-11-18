@@ -136,6 +136,20 @@ A node's config holds at most one. It has 5 [change rules](builtins.md#rules-clu
 | `spec.vip.addresses` | list of IP address | `[]` | Virtual addresses of the API server, at most one per family; empty means no virtual IP. |
 | `spec.vip.mode` | one of `l2`, `routed` | `"l2"` | Way the node holding the VIP makes its addresses reachable: `l2` adds them to an interface and announces them to the neighbours with gratuitous ARP and unsolicited neighbour advertisements; `routed` adds them to an interface as host addresses, /32 or /128, and announces nothing, so a routing daemon on the node announces them. In `routed`, every control plane names its `vip.interface`. |
 
+### ClusterRegistry { #clusterregistry }
+
+The cluster registry: chalkos-registry on the nodes whose static addresses its endpoints name, every control plane among them. containerd on every node pulls the images of the mirrored hosts from it first, before their Mirror endpoints and the hosts themselves.
+
+`apiVersion: kubernetes.chalkos.dev/v1alpha1`
+
+A node's config holds at most one. It has a [change rule](builtins.md#rules-clusterregistry).
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `spec.endpoints` | list of IP address | required | IP addresses of the nodes that serve the cluster registry, in the order nodes pull from them; a node that serves it pulls from itself first. A node serves it when one of these is one of its static addresses, the Address= values of its Network documents, and every control plane serves it. chalkctl registry push pushes to each, and nothing copies images between them. Each item is unique within the list, compared as addresses. |
+| `spec.mirrors` | list of string | required | Registry hosts whose images containerd pulls from the cluster registry first, as image references name them, without a port; docker.io is Docker Hub. The cluster registry holds an image below its host's name, in lower case: docker.io/library/nginx is &lt;endpoint>/docker.io/library/nginx. Each item is unique within the list, compared as registry hosts. |
+| `spec.port` | integer from 1 to 65535 | `5000` | TCP port the cluster registry serves on, over HTTPS with the node certificate. |
+
 ### Flannel { #flannel }
 
 The settings of flannel, the cluster's CNI, for the VXLAN between the nodes.

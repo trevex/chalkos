@@ -86,15 +86,19 @@ func TestEndpoint(t *testing.T) {
 			endpointDoc("cluster", want) + flannelDoc("flannel", "{mtu: 1400}"), ""},
 		"a node without Kubernetes": {endpointDoc("default", want) + flannelDoc("default", "{mtu: 1400}"), plainHost, ""},
 		"another endpoint": {endpointDoc("default", want), endpointDoc("default", "https://10.0.0.99:6443"),
-			`the nodes hold different Cluster specs: spec.endpoint is "https://10.0.0.11:6443" on cp1, "https://10.0.0.99:6443" on w1; every node of the cluster holds the same Cluster and Flannel specs`},
+			`the nodes hold different Cluster specs: spec.endpoint is "https://10.0.0.11:6443" on cp1, "https://10.0.0.99:6443" on w1; every node of the cluster holds the same Cluster, Flannel and ClusterRegistry specs`},
 		"another MTU": {
 			endpointDoc("default", want) + flannelDoc("default", "{mtu: 1400}"),
 			endpointDoc("default", want) + flannelDoc("default", "{mtu: 1450}"),
-			"the nodes hold different Flannel specs: spec.mtu is 1400 on cp1, 1450 on w1; every node of the cluster holds the same Cluster and Flannel specs"},
+			"the nodes hold different Flannel specs: spec.mtu is 1400 on cp1, 1450 on w1; every node of the cluster holds the same Cluster, Flannel and ClusterRegistry specs"},
 		"a Flannel document on one node": {
 			endpointDoc("default", want),
 			endpointDoc("default", want) + flannelDoc("default", "null"),
-			"the nodes hold different Flannel specs: none on cp1, one on w1; every node of the cluster holds the same Cluster and Flannel specs"},
+			"the nodes hold different Flannel specs: none on cp1, one on w1; every node of the cluster holds the same Cluster, Flannel and ClusterRegistry specs"},
+		"a ClusterRegistry on one node": {
+			endpointDoc("default", want) + registryDoc(`{mirrors: [docker.io], endpoints: ["fd00::11"]}`),
+			endpointDoc("default", want),
+			"the nodes hold different ClusterRegistry specs: one on cp1, none on w1; every node of the cluster holds the same Cluster, Flannel and ClusterRegistry specs"},
 		"two Cluster documents": {endpointDoc("default", want), endpointDoc("a", want) + endpointDoc("b", want),
 			"node w1: its files hold 2 Cluster documents, not one"},
 	} {
@@ -130,7 +134,7 @@ func TestEndpointNamesTheNodesOfEachSpec(t *testing.T) {
 	for name, host := range hosts {
 		docs[name] = parseDocs(t, endpointDoc("default", "https://10.0.0."+host+":6443"))
 	}
-	want := `the nodes hold different Cluster specs: spec.endpoint is "https://10.0.0.10:6443" on cp1, cp2 and w2, "https://10.0.0.20:6443" on w1, "https://10.0.0.30:6443" on w3; every node of the cluster holds the same Cluster and Flannel specs`
+	want := `the nodes hold different Cluster specs: spec.endpoint is "https://10.0.0.10:6443" on cp1, cp2 and w2, "https://10.0.0.20:6443" on w1, "https://10.0.0.30:6443" on w3; every node of the cluster holds the same Cluster, Flannel and ClusterRegistry specs`
 	_, err := Endpoint(slices.Sorted(maps.Keys(hosts)), func(n string) ([]config.Document, error) { return docs[n], nil })
 	if err == nil || err.Error() != want {
 		t.Errorf("err = %v, want %q", err, want)
@@ -179,7 +183,7 @@ func TestAlikeNamesTheFirstDifference(t *testing.T) {
 			err := alike(tc.kind, nodes, func(n string) map[string]any { return specs[n] })
 			want := ""
 			if tc.want != "" {
-				want = "the nodes hold different " + tc.kind + " specs: " + tc.want + "; every node of the cluster holds the same Cluster and Flannel specs"
+				want = "the nodes hold different " + tc.kind + " specs: " + tc.want + "; every node of the cluster holds the same Cluster, Flannel and ClusterRegistry specs"
 			}
 			if got := fmt.Sprint(err); (err == nil) != (want == "") || err != nil && got != want {
 				t.Errorf("err = %v, want %q", err, want)
