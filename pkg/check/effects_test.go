@@ -65,6 +65,27 @@ func TestDue(t *testing.T) {
 	}
 }
 
+// A delivery whose effects name no prerequisite plans them in one batch: in the order of their
+// names, with what they share named.
+func TestPlanOfAnUnorderedDelivery(t *testing.T) {
+	plan, err := PlanOf(Effects{Defs: map[string]effects.Definition{
+		"resolver": {Reload: []string{"resolver.service"}},
+		"dns":      {Restart: []string{"resolver.service"}},
+		"chrony":   {Run: "reload-sources"},
+	}}, Outcome{Effects: []Fired{{Name: "chrony", By: []string{"output chrony"}}, {Name: "dns"}, {Name: "resolver"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []PlannedEffect{
+		{Name: "chrony", FiredBy: []string{"output chrony"}, Actions: []string{"run reload-sources"}},
+		{Name: "dns", Actions: []string{"shares actions with resolver", "restart resolver.service"}},
+		{Name: "resolver", Actions: []string{"shares actions with dns", "reload resolver.service"}},
+	}
+	if !reflect.DeepEqual(plan.Effects, want) {
+		t.Fatalf("plan = %+v, want %+v", plan.Effects, want)
+	}
+}
+
 func TestPlanShowsRuntimePrerequisitesAndReadiness(t *testing.T) {
 	plan, err := PlanOf(Effects{Defs: map[string]effects.Definition{
 		"resolver": {After: []string{"vrf"}, Run: "reconcile", WaitFor: &effects.Readiness{
