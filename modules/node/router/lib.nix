@@ -140,31 +140,8 @@ let
           // lib.optionalAttrs (groups != [ ]) { SupplementaryGroups = groups; };
       };
 
-    # The sandbox of a unit of the router: no new privileges, a read-only system, no devices, no
-    # home and a private /tmp, kernel settings, modules, logs, cgroups, clock and host name out of
-    # reach, no namespaces, realtime scheduling or set-user-ID files, and the system calls of a
-    # system service of the native architecture. A unit adds its own capabilities and address
-    # families.
-    hardened = {
-      NoNewPrivileges = true;
-      ProtectSystem = "strict";
-      ProtectHome = true;
-      PrivateTmp = true;
-      PrivateDevices = true;
-      ProtectKernelTunables = true;
-      ProtectKernelModules = true;
-      ProtectKernelLogs = true;
-      ProtectControlGroups = true;
-      ProtectClock = true;
-      ProtectHostname = true;
-      RestrictNamespaces = true;
-      RestrictRealtime = true;
-      RestrictSUIDSGID = true;
-      LockPersonality = true;
-      MemoryDenyWriteExecute = true;
-      SystemCallArchitectures = "native";
-      SystemCallFilter = [ "@system-service" ];
-    };
+    # The sandbox of a unit of the router.
+    inherit (chalkosLib.internal) hardened;
   };
 in
 routerLib

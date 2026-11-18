@@ -144,6 +144,31 @@ in
         RestrictRealtime = true;
         SystemCallArchitectures = "native";
       };
+      # The sandbox of a service that talks to the network: no new privileges, a read-only
+      # system, no devices, no home and a private /tmp, kernel settings, modules, logs, cgroups,
+      # clock and host name out of reach, no namespaces, realtime scheduling or set-user-ID files,
+      # and the system calls of a system service of the native architecture. A unit adds its own
+      # capabilities and address families.
+      hardened = {
+        NoNewPrivileges = true;
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        PrivateTmp = true;
+        PrivateDevices = true;
+        ProtectKernelTunables = true;
+        ProtectKernelModules = true;
+        ProtectKernelLogs = true;
+        ProtectControlGroups = true;
+        ProtectClock = true;
+        ProtectHostname = true;
+        RestrictNamespaces = true;
+        RestrictRealtime = true;
+        RestrictSUIDSGID = true;
+        LockPersonality = true;
+        MemoryDenyWriteExecute = true;
+        SystemCallArchitectures = "native";
+        SystemCallFilter = [ "@system-service" ];
+      };
       # The type of a program option: a command, a package, whose path is the command, or an
       # attribute set of a builder, such as chalkosLib.render's, which the option's module checks.
       programType =
