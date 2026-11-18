@@ -547,6 +547,11 @@ message ApplyConfigRequest {
   // Whether chalkd drops the node's pending config, which staged without an image staged keeps.
   // It goes with staged alone, without config. The response names the config dropped.
   bool discard_pending = 11;
+  // For a config delivery to the running image, continue when a runtime
+  // readiness probe fails. Its failure is a warning. Validation, prerequisite
+  // actions, and trial confirmation still apply. A later rollback runs its own
+  // readiness checks normally.
+  bool force_readiness = 12;
 }
 
 // The request of GetConfig.
@@ -576,8 +581,8 @@ message ApplyConfigResponse {
   repeated StorageChange changes = 1;
   // Units the delivery restarted, as the image's effects say.
   repeated string restarted_units = 2;
-  // Why the rule of an effect could not be evaluated, without the values it read; the delivery
-  // took the effect all the same.
+  // Why an effect ran with an unevaluated rule or a forced readiness failure,
+  // without the values the rule or probe read.
   repeated string warnings = 3;
   // For a dry run, what the delivery would do; unset otherwise.
   Plan plan = 4;

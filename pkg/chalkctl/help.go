@@ -239,8 +239,13 @@ diff, the config the node would run, the outputs that would change, the effects 
 each, the storage changes, and the staged or pending config the delivery writes; a refusal exits 1.
 --dry-run takes several nodes, and its error names the nodes whose config is refused apart from
 those it could not check, such as a node on trial. It goes without --diff, --try, --no-confirm,
---ignore-unit, --force and the layers' payload flags. With --staged the plan has no outputs or
+--ignore-unit and the layers' payload flags. With --staged the plan has no outputs or
 effects, which that image takes when it boots.
+
+For config delivered to the running image, --force makes failed runtime readiness checks
+warnings and lets their effects continue. It still runs the probes, validates the config,
+requires prerequisite actions to succeed, and uses the usual trial health checks. A dry run
+shows the override without running those probes.
 
 Each image on a node keeps its own config, which it checks itself. A delivery to the running image
 goes to the staged image too, which checks it before anything changes; once the running image
@@ -268,7 +273,8 @@ https://trevex.github.io/chalkos/how-it-works/node/config/#a-trial-rolls-a-confi
 
 --kubernetes-share also delivers a new Kubernetes share, such as a worker's new kubelet
 certificate. It is refused to a node revoked with chalkctl node revoke, and while no control plane
-says which nodes are revoked; --force delivers it without asking. The command needs the secrets
+says which nodes are revoked; with this flag, --force delivers it without asking and keeps
+runtime readiness checks enforced. The command needs the secrets
 file.`
 
 const applyConfigExample = `  # Apply w1's changed network and labels.

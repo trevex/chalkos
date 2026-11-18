@@ -192,6 +192,7 @@ Without staged, the config is for the running image and for the image staged in 
 | `ignore_units` | list of string | With try, systemd units the health check that ConfirmConfig waits for leaves out, besides those the image ignores, such as demo.service: a unit that failed before the trial and is not the trial's concern. Each must be a unit name. The node keeps them with the trial. |
 | `dry_run` | bool | Whether the node only checks the request: it runs every check a delivery runs, the image's renderers and their checks among them, refuses the request as the delivery would, and otherwise answers with the delivery's plan and storage changes. With try, it checks the trial's conditions too. It changes nothing: no config, storage, layer payload, certificate or effect. With staged, the staged image checks the config; without an image staged, the response names the config it would hold pending, and nothing is kept. Without staged, the staged image checks the config too, and the response names its slot as the delivery would write it, or the pending config the delivery would replace. |
 | `discard_pending` | bool | Whether chalkd drops the node's pending config, which staged without an image staged keeps. It goes with staged alone, without config. The response names the config dropped. |
+| `force_readiness` | bool | For a config delivery to the running image, continue when a runtime readiness probe fails. Its failure is a warning. Validation, prerequisite actions, and trial confirmation still apply. A later rollback runs its own readiness checks normally. |
 
 #### ApplyConfigResponse { #message-applyconfigresponse }
 
@@ -201,7 +202,7 @@ The response of ApplyConfig: what the delivery changed on the node.
 | ----- | ---- | ----------- |
 | `changes` | list of StorageChange | Storage changes that were applied; for a dry run, those the delivery would apply. |
 | `restarted_units` | list of string | Units the delivery restarted, as the image's effects say. |
-| `warnings` | list of string | Why the rule of an effect could not be evaluated, without the values it read; the delivery took the effect all the same. |
+| `warnings` | list of string | Why an effect ran with an unevaluated rule or a forced readiness failure, without the values the rule or probe read. |
 | `plan` | Plan | For a dry run, what the delivery would do; unset otherwise. |
 | `pending` | PendingConfig | The node's pending config: the config a request with staged keeps, or for a dry run would keep, on a node without an image staged; for discard_pending, the config dropped, unset when the node held none. For config to the running image on a node without an image staged that holds a pending config, the config that replaced it, or without since the one a dry run or a trial's confirmation would replace it with. Unset for other requests. |
 | `staged` | StagedSlot | For config to the running image while an image other than the known-good one is staged in the inactive slot: that image's config slot, which its checker passed, as the delivery wrote it, as a dry run would write it, or as a trial's confirmation writes it. The storage changes its config makes on top of the running image's are among changes. Unset otherwise. |

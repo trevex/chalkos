@@ -32,7 +32,7 @@ type applyConfigFlags struct {
 	dryRun bool
 	force  bool
 	layers []layerFlags
-	// payloadFlags names the layers' flags that ask for payloads, which --force goes with.
+	// payloadFlags lists the layers' flags that request payloads.
 	payloadFlags string
 	// try is how long the config is on trial; zero applies it for good. noConfirm leaves the
 	// trial open. ignoreUnits are the units the trial's health check leaves out.
@@ -86,10 +86,12 @@ func (a *app) applyConfigCommand(short bool) *cobra.Command {
 		payloadFlags = append(payloadFlags, lf.Flag())
 		payloadNames = append(payloadNames, strings.TrimPrefix(lf.Flag(), "--"))
 	}
+	forceHelp := "apply config even if a runtime readiness check fails"
 	if len(payloadFlags) > 0 {
 		f.payloadFlags = strings.Join(payloadFlags, " or ")
-		fs.BoolVar(&f.force, "force", false, "with "+f.payloadFlags+", deliver without asking whether the node is revoked")
+		forceHelp += "; with " + f.payloadFlags + ", deliver without asking whether the node is revoked"
 	}
+	fs.BoolVar(&f.force, "force", false, forceHelp)
 	fs.BoolVar(&f.staged, "staged", false, "deliver the config to the image staged in the inactive slot, which checks it after chalkctl checks it against the node's image in the inventory; without one, the node holds it pending for the next upgrade; with --dry-run, the staged image checks it and nothing is kept; without one, --dry-run says what the node would hold pending")
 	fs.BoolVar(&f.diff, "diff", false, "print the diff against the node's config and change nothing; the node checks nothing")
 	fs.BoolVar(&f.dryRun, "dry-run", false, "have the node check the config as for a delivery and print the diff and plan; changes nothing")
@@ -103,7 +105,7 @@ func (a *app) applyConfigCommand(short bool) *cobra.Command {
 		}
 	}
 	// A trial delivers config alone to the running image and changes it; a dry run checks config
-	// alone. applyConfig checks the flags that need another: --no-confirm, --ignore-unit, --force.
+	// alone. applyConfig checks the flags that need another: --no-confirm and --ignore-unit.
 	cmd.MarkFlagsMutuallyExclusive("dry-run", "diff")
 	for _, other := range append([]string{"staged", "diff", "dry-run"}, payloadNames...) {
 		cmd.MarkFlagsMutuallyExclusive("try", other)
@@ -138,8 +140,8 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 		return cli.Usagef("--ignore-unit goes with --try")
 	case f.try != 0 && (f.try < minTrial || f.try > maxTrial):
 		return cli.Usagef("--try takes from %v to %v, not %v", minTrial, maxTrial, f.try)
-	case f.force && !f.payloads():
-		return cli.Usagef("--force goes with %s", f.payloadFlags)
+	case f.force && !f.payloads() && (f.staged || f.diff):
+		return cli.Usagef("--force needs a delivery or dry run for the running image")
 	}
 	for _, l := range f.layers {
 		if err := l.f.Check(f.staged); err != nil {
@@ -321,7 +323,12 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 		}
 		payloads = append(payloads, p...)
 	}
-	req := &nodev1.ApplyConfigRequest{Config: d.Text, FallbackSecret: fallback, Layers: payloads, Staged: f.staged, DryRun: f.dryRun}
+	// With a layer payload, --force retains its existing revocation-confirmation
+	// meaning. Existing payload callers must still enforce runtime readiness.
+	req := &nodev1.ApplyConfigRequest{
+		Config: d.Text, FallbackSecret: fallback, Layers: payloads,
+		Staged: f.staged, DryRun: f.dryRun, ForceReadiness: f.force && !f.payloads(),
+	}
 	// chalkctl's deadline starts before the node's, so it falls before it. An answer that comes
 	// after it is of no use: the node may have rolled the config back by then.
 	deadline := time.Now().Add(f.try)
@@ -573,8 +580,7 @@ func printApplied(w io.Writer, changes []*nodev1.StorageChange, units []string) 
 	}
 }
 
-// warnDelivery prints why the rule of one of the node's effects could not be evaluated, whose
-// effect the node took all the same.
+// warnDelivery prints delivery warnings, including effects whose rules or readiness checks failed.
 func (a *app) warnDelivery(name string, resp *nodev1.ApplyConfigResponse) {
 	for _, w := range resp.GetWarnings() {
 		fmt.Fprintf(a.stderr, "chalkctl: warning: %s: %s\n", name, w)

@@ -185,7 +185,9 @@ func actionKeys(d Definition) []string {
 // Apply executes the ordered schedule, preserving the usual systemd ordering
 // within each batch. A systemctl error can cover several units in one command,
 // so every effect that requested one of those units is treated as failed.
-func (s Schedule) Apply(ctx context.Context, r tool.Runner, defs map[string]Definition, layer func(context.Context, string) error) ([]string, error) {
+// When warnReadiness is set, a readiness failure is a warning and the effect
+// can continue. The delivery context still bounds the work.
+func (s Schedule) Apply(ctx context.Context, r tool.Runner, defs map[string]Definition, layer func(context.Context, string) error, warnReadiness func(error)) ([]string, error) {
 	failed := map[string]bool{}
 	var errs []error
 	var restarted []string
@@ -209,8 +211,13 @@ func (s Schedule) Apply(ctx context.Context, r tool.Runner, defs map[string]Defi
 			for _, name := range group.names {
 				if p := defs[name].WaitFor; p != nil {
 					if err := p.wait(ctx, r); err != nil {
+						err = fmt.Errorf("effect %s: %w", name, err)
+						if warnReadiness != nil && ctx.Err() == nil {
+							warnReadiness(err)
+							continue
+						}
 						failed[id] = true
-						errs = append(errs, fmt.Errorf("effect %s: %w", name, err))
+						errs = append(errs, err)
 						break
 					}
 				}

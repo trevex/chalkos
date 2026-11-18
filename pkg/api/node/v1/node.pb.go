@@ -1861,6 +1861,11 @@ type ApplyConfigRequest struct {
 	// Whether chalkd drops the node's pending config, which staged without an image staged keeps.
 	// It goes with staged alone, without config. The response names the config dropped.
 	DiscardPending bool `protobuf:"varint,11,opt,name=discard_pending,json=discardPending,proto3" json:"discard_pending,omitempty"`
+	// For a config delivery to the running image, continue when a runtime
+	// readiness probe fails. Its failure is a warning. Validation, prerequisite
+	// actions, and trial confirmation still apply. A later rollback runs its own
+	// readiness checks normally.
+	ForceReadiness bool `protobuf:"varint,12,opt,name=force_readiness,json=forceReadiness,proto3" json:"force_readiness,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1968,6 +1973,13 @@ func (x *ApplyConfigRequest) GetDryRun() bool {
 func (x *ApplyConfigRequest) GetDiscardPending() bool {
 	if x != nil {
 		return x.DiscardPending
+	}
+	return false
+}
+
+func (x *ApplyConfigRequest) GetForceReadiness() bool {
+	if x != nil {
+		return x.ForceReadiness
 	}
 	return false
 }
@@ -2094,8 +2106,8 @@ type ApplyConfigResponse struct {
 	Changes []*StorageChange `protobuf:"bytes,1,rep,name=changes,proto3" json:"changes,omitempty"`
 	// Units the delivery restarted, as the image's effects say.
 	RestartedUnits []string `protobuf:"bytes,2,rep,name=restarted_units,json=restartedUnits,proto3" json:"restarted_units,omitempty"`
-	// Why the rule of an effect could not be evaluated, without the values it read; the delivery
-	// took the effect all the same.
+	// Why an effect ran with an unevaluated rule or a forced readiness failure,
+	// without the values the rule or probe read.
 	Warnings []string `protobuf:"bytes,3,rep,name=warnings,proto3" json:"warnings,omitempty"`
 	// For a dry run, what the delivery would do; unset otherwise.
 	Plan *Plan `protobuf:"bytes,4,opt,name=plan,proto3" json:"plan,omitempty"`
@@ -5867,7 +5879,7 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\n" +
 	"ImageChunk\x12\x12\n" +
 	"\x04data\x18\x01 \x01(\fR\x04data\"\x11\n" +
-	"\x0fInstallResponse\"\x89\x03\n" +
+	"\x0fInstallResponse\"\xb2\x03\n" +
 	"\x12ApplyConfigRequest\x12'\n" +
 	"\x0ffallback_secret\x18\x01 \x01(\tR\x0efallbackSecret\x12)\n" +
 	"\x10node_certificate\x18\x02 \x01(\fR\x0fnodeCertificate\x12\x19\n" +
@@ -5880,7 +5892,8 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\fignore_units\x18\t \x03(\tR\vignoreUnits\x12\x17\n" +
 	"\adry_run\x18\n" +
 	" \x01(\bR\x06dryRun\x12'\n" +
-	"\x0fdiscard_pending\x18\v \x01(\bR\x0ediscardPending\"F\n" +
+	"\x0fdiscard_pending\x18\v \x01(\bR\x0ediscardPending\x12'\n" +
+	"\x0fforce_readiness\x18\f \x01(\bR\x0eforceReadiness\"F\n" +
 	"\x10GetConfigRequest\x12\x16\n" +
 	"\x06staged\x18\x01 \x01(\bR\x06staged\x12\x1a\n" +
 	"\bprevious\x18\x02 \x01(\bR\bprevious\"K\n" +

@@ -166,6 +166,8 @@ together, so a dependency between them is invalid. A restart still subsumes a re
 same unit. Failed or timed-out effects block their dependents, and independent effects can
 continue. `chalkctl config apply --dry-run` shows scheduled effects, their due prerequisites,
 and their readiness checks. It does not run the checks.
+An operator can [override a failed readiness check](../operate/change-config.md#override-a-failed-runtime-readiness-check)
+for one delivery.
 
 ## Fire the effect on a condition
 

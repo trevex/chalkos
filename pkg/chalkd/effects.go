@@ -203,7 +203,7 @@ func (s *Server) recordAttempt(e *pendingEffects, states map[string]outputs.Stat
 // swaps in the staged outputs, and takes the effects. It returns the restarted units and the
 // warnings of rules that could not be evaluated, and removes the baseline once every effect is
 // taken; until then a retry compares with it and takes them again.
-func (s *Server) consume(ctx context.Context, e *pendingEffects, staged *outputs.Staged, stored bool, secret string) ([]string, []string, error) {
+func (s *Server) consume(ctx context.Context, e *pendingEffects, staged *outputs.Staged, stored bool, secret string, forceReadiness bool) ([]string, []string, error) {
 	states := staged.States()
 	due, warnings, err := s.due(ctx, e, states, secret)
 	if err != nil {
@@ -229,7 +229,15 @@ func (s *Server) consume(ctx context.Context, e *pendingEffects, staged *outputs
 	}
 	var restarted []string
 	if schedule.Ordered() {
-		restarted, err = schedule.Apply(ctx, s.Run, e.defs, s.runLayerAction)
+		var warnReadiness func(error)
+		if forceReadiness {
+			warnReadiness = func(err error) {
+				warning := fmt.Sprintf("--force overrode a runtime readiness check: %v", err)
+				log.Print(warning)
+				warnings = append(warnings, warning)
+			}
+		}
+		restarted, err = schedule.Apply(ctx, s.Run, e.defs, s.runLayerAction, warnReadiness)
 		if ae, ok := errors.AsType[*effects.ApplyError](err); ok && ae.Why != "" {
 			err = layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
 		}

@@ -163,7 +163,7 @@ func TestCertificatesRefusedToRevokedNodes(t *testing.T) {
 	if err := ta.run(ctx, ta.args([]string{"config", "apply", "n1", "--diff"}, addr)); err != nil {
 		t.Errorf("config apply --diff: %v", err)
 	}
-	if err := ta.run(ctx, ta.args([]string{"config", "apply", "n1", "--force"}, addr)); err == nil || !strings.Contains(err.Error(), "--force") {
+	if err := ta.run(ctx, ta.args([]string{"config", "apply", "n1", "--force"}, addr)); err != nil {
 		t.Errorf("config apply --force without --kubernetes-share: %v", err)
 	}
 	if err := ta.run(ctx, ta.args([]string{"config", "apply", "n1", "--kubernetes-share", "--force"}, addr)); err != nil && strings.Contains(err.Error(), "revoked") {
