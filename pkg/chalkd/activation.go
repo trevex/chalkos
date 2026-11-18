@@ -82,20 +82,28 @@ func (s *Server) activationStatus(dir, stored, boot string) *nodev1.ConfigActiva
 	r, live, err := consistentActivation(&s.activating, s.readActivation)
 	if err != nil {
 		log.Printf("read the config activation record: %v", err)
-		return &nodev1.ConfigActivation{State: "unknown"}
+		return &nodev1.ConfigActivation{State: nodev1.ActivationState_ACTIVATION_STATE_UNKNOWN}
 	}
 	if r.Slot != filepath.Base(dir) || r.Target == "" {
 		if stored == "" {
 			return nil
 		}
-		return &nodev1.ConfigActivation{State: "unrecorded"}
+		return &nodev1.ConfigActivation{State: nodev1.ActivationState_ACTIVATION_STATE_UNRECORDED}
 	}
-	state := r.State
-	if state == activationRunning && (r.Boot != boot || live != r.Attempt) {
-		state = "interrupted"
-	}
-	if state == activationComplete && stored != r.Target {
-		state = "unrecorded"
+	var state nodev1.ActivationState
+	switch {
+	case r.State == activationRunning && (r.Boot != boot || live != r.Attempt):
+		state = nodev1.ActivationState_ACTIVATION_STATE_INTERRUPTED
+	case r.State == activationRunning:
+		state = nodev1.ActivationState_ACTIVATION_STATE_IN_PROGRESS
+	case r.State == activationFailed:
+		state = nodev1.ActivationState_ACTIVATION_STATE_FAILED
+	case r.State == activationComplete && stored == r.Target:
+		state = nodev1.ActivationState_ACTIVATION_STATE_COMPLETE
+	case r.State == activationComplete:
+		state = nodev1.ActivationState_ACTIVATION_STATE_UNRECORDED
+	default:
+		state = nodev1.ActivationState_ACTIVATION_STATE_UNKNOWN
 	}
 	return &nodev1.ConfigActivation{
 		TargetVersion: r.Target, CompletedVersion: r.Completed, State: state,

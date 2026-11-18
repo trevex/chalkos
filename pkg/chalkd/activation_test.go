@@ -62,7 +62,7 @@ func TestApplyReportsStoredAndActivatedVersionsAndResumes(t *testing.T) {
 				a := resp.Msg.ConfigActivation
 				target, completed := hashOf(t, next), hashOf(t, baseConfig)
 				if resp.Msg.ConfigVersion != target || a.GetCompletedVersion() != completed ||
-					a.GetTargetVersion() != target || a.GetState() != activationFailed || a.GetFailedStep() != "effect batch 2 (demo)" {
+					a.GetTargetVersion() != target || a.GetState() != nodev1.ActivationState_ACTIVATION_STATE_FAILED || a.GetFailedStep() != "effect batch 2 (demo)" {
 					t.Fatalf("stored = %q, activation = %v", resp.Msg.ConfigVersion, a)
 				}
 				record, err := s.readActivation()
@@ -110,18 +110,18 @@ func TestActivationStatusAfterDaemonOrBootRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.activating.Store(r.Attempt)
-	if a := s.activationStatus(dir, "v2", "boot-one"); a.GetState() != activationRunning || a.GetStep() != r.Step {
+	if a := s.activationStatus(dir, "v2", "boot-one"); a.GetState() != nodev1.ActivationState_ACTIVATION_STATE_IN_PROGRESS || a.GetStep() != r.Step {
 		t.Fatalf("running activation = %v", a)
 	}
 	s.activating.Store(0)
-	if a := s.activationStatus(dir, "v2", "boot-one"); a.GetState() != "interrupted" || a.GetFromEarlierBoot() {
+	if a := s.activationStatus(dir, "v2", "boot-one"); a.GetState() != nodev1.ActivationState_ACTIVATION_STATE_INTERRUPTED || a.GetFromEarlierBoot() {
 		t.Fatalf("interrupted activation = %v", a)
 	}
-	if a := s.activationStatus(dir, "v2", "boot-two"); a.GetState() != "interrupted" ||
+	if a := s.activationStatus(dir, "v2", "boot-two"); a.GetState() != nodev1.ActivationState_ACTIVATION_STATE_INTERRUPTED ||
 		!a.GetFromEarlierBoot() || !a.GetAttemptFromEarlierBoot() {
 		t.Fatalf("prior boot activation = %v", a)
 	}
-	if a := s.activationStatus(dir+"-new-image", "v2", "boot-two"); a.GetState() != "unrecorded" || a.GetCompletedVersion() != "" {
+	if a := s.activationStatus(dir+"-new-image", "v2", "boot-two"); a.GetState() != nodev1.ActivationState_ACTIVATION_STATE_UNRECORDED || a.GetCompletedVersion() != "" {
 		t.Fatalf("other image activation = %v", a)
 	}
 }

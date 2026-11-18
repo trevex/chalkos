@@ -161,13 +161,13 @@ func writeActivation(w io.Writer, activation *nodev1.ConfigActivation) {
 		attempt += " (earlier boot)"
 	}
 	switch activation.GetState() {
-	case "in_progress":
+	case nodev1.ActivationState_ACTIVATION_STATE_IN_PROGRESS:
 		fmt.Fprintf(w, "%s in progress: %s\n", attempt, activation.GetStep())
-	case "failed":
+	case nodev1.ActivationState_ACTIVATION_STATE_FAILED:
 		fmt.Fprintf(w, "%s failed: %s\n", attempt, activation.GetFailedStep())
-	case "interrupted":
+	case nodev1.ActivationState_ACTIVATION_STATE_INTERRUPTED:
 		fmt.Fprintf(w, "%s interrupted: %s\n", attempt, activation.GetStep())
-	case "unknown":
+	case nodev1.ActivationState_ACTIVATION_STATE_UNKNOWN:
 		fmt.Fprintln(w, "the config activation record could not be read")
 	}
 }

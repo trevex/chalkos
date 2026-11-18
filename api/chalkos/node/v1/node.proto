@@ -1277,14 +1277,32 @@ message BGPStatus {
   string error = 2;
 }
 
+// The state of a live config activation.
+enum ActivationState {
+  // Not reported.
+  ACTIVATION_STATE_UNSPECIFIED = 0;
+  // The node could not read its activation record.
+  ACTIVATION_STATE_UNKNOWN = 1;
+  // No activation is recorded for the config the running image's slot stores.
+  ACTIVATION_STATE_UNRECORDED = 2;
+  // chalkd is activating the target version now.
+  ACTIVATION_STATE_IN_PROGRESS = 3;
+  // The activation stopped part way, as when chalkd or the node stopped during it.
+  ACTIVATION_STATE_INTERRUPTED = 4;
+  // The activation failed at its failed step.
+  ACTIVATION_STATE_FAILED = 5;
+  // The target version is activated.
+  ACTIVATION_STATE_COMPLETE = 6;
+}
+
 // The latest live config delivery and the last version whose live activation finished.
 message ConfigActivation {
   // The version that the latest delivery attempted to activate.
   string target_version = 1;
   // The last completed version, empty when none was recorded.
   string completed_version = 2;
-  // One of unrecorded, unknown, in_progress, interrupted, failed, or complete.
-  string state = 3;
+  // The state of the latest delivery's activation.
+  ActivationState state = 3;
   // The latest activation step started, if any.
   string step = 4;
   // The first recorded failed step, if any.

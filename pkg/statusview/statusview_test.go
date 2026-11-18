@@ -244,7 +244,7 @@ func TestImageName(t *testing.T) {
 func TestWriteActivation(t *testing.T) {
 	var out strings.Builder
 	writeActivation(&out, &nodev1.ConfigActivation{
-		CompletedVersion: "v1", TargetVersion: "v2", State: "failed",
+		CompletedVersion: "v1", TargetVersion: "v2", State: nodev1.ActivationState_ACTIVATION_STATE_FAILED,
 		Step: "a later batch", FailedStep: "effect batch 2 (resolver)",
 	})
 	want := "activated config v1\nactivation of v2 failed: effect batch 2 (resolver)\n"

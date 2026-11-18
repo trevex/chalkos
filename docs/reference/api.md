@@ -777,11 +777,13 @@ The latest live config delivery and the last version whose live activation finis
 | ----- | ---- | ----------- |
 | `target_version` | string | The version that the latest delivery attempted to activate. |
 | `completed_version` | string | The last completed version, empty when none was recorded. |
-| `state` | string | One of unrecorded, unknown, in_progress, interrupted, failed, or complete. |
+| `state` | ActivationState | The state of the latest delivery's activation. |
 | `step` | string | The latest activation step started, if any. |
 | `failed_step` | string | The first recorded failed step, if any. |
 | `from_earlier_boot` | bool | The completed version was recorded before this boot. |
 | `attempt_from_earlier_boot` | bool | The latest attempted delivery was recorded before this boot. |
+
+Field types: [ActivationState](#enum-activationstate).
 
 ### ConfigTrial { #message-configtrial }
 
@@ -1119,6 +1121,20 @@ A volume of the node's storage.
 | `used_bytes` | uint64 | The bytes the volume's file system uses, while it is mounted; zero otherwise. |
 
 ## Enums { #enums }
+
+### ActivationState { #enum-activationstate }
+
+The state of a live config activation.
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| `ACTIVATION_STATE_UNSPECIFIED` | 0 | Not reported. |
+| `ACTIVATION_STATE_UNKNOWN` | 1 | The node could not read its activation record. |
+| `ACTIVATION_STATE_UNRECORDED` | 2 | No activation is recorded for the config the running image's slot stores. |
+| `ACTIVATION_STATE_IN_PROGRESS` | 3 | chalkd is activating the target version now. |
+| `ACTIVATION_STATE_INTERRUPTED` | 4 | The activation stopped part way, as when chalkd or the node stopped during it. |
+| `ACTIVATION_STATE_FAILED` | 5 | The activation failed at its failed step. |
+| `ACTIVATION_STATE_COMPLETE` | 6 | The target version is activated. |
 
 ### Mode { #enum-mode }
 
