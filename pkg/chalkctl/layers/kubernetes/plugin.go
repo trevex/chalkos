@@ -1,6 +1,6 @@
-// Package kubernetes is chalkctl's Kubernetes layer: the bootstrap, kubeconfig, etcd and node
-// revocation commands, and the Kubernetes hooks of status, inventory checks, delivery, upgrade,
-// rollout and rotation. Its Rollout hooks hold the cluster to Kubernetes's version skew policy.
+// Package kubernetes is chalkctl's Kubernetes layer: the bootstrap, kubeconfig, etcd, cluster
+// registry and node revocation commands, and the Kubernetes hooks of status, inventory checks,
+// delivery, upgrade, rollout and rotation. Its Rollout hooks hold the cluster to Kubernetes's version skew policy.
 package kubernetes
 
 import (
@@ -31,10 +31,10 @@ var (
 // Name is the Kubernetes layer's.
 func (*Plugin) Name() string { return layers.Kubernetes }
 
-// Commands are bootstrap, kubeconfig and etcd, and node revoke and node unrevoke.
+// Commands are bootstrap, kubeconfig, etcd and registry, and node revoke and node unrevoke.
 func (*Plugin) Commands(h layer.Host) map[string][]*cobra.Command {
 	return map[string][]*cobra.Command{
-		"":     {bootstrapCommand(h), kubeconfigCommand(h), etcdCommand(h)},
+		"":     {bootstrapCommand(h), kubeconfigCommand(h), etcdCommand(h), registryCommand(h)},
 		"node": {nodeRevokeCommand(h), nodeUnrevokeCommand(h)},
 	}
 }

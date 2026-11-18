@@ -102,3 +102,27 @@ const nodeUnrevokeExample = `  # Reuse the name w1 once the rotations of os-ca a
   # Let the old w1 back in, certificates and all.
   chalkctl node unrevoke w1 --force
   chalkctl node reboot w1 --no-drain`
+
+const registryLong = `Manages the images of the cluster registry, which chalkos-registry serves on the nodes that a
+ClusterRegistry document's endpoints name. Nothing copies images between the endpoints, so each
+command acts on every one of them, one after the other, and reports each.`
+
+const registryExample = `  chalkctl registry push busybox.tar docker.io/library/busybox:1.37.0`
+
+const registryPushLong = `Pushes the image of SOURCE to every endpoint of the cluster's ClusterRegistry, under REFERENCE
+below the endpoint: docker.io/library/nginx:1.27 goes to <endpoint>/docker.io/library/nginx:1.27,
+where containerd looks for it. REFERENCE's host must be one the ClusterRegistry mirrors. SOURCE is
+an OCI image layout directory, an OCI archive, a docker archive as docker save writes it, or an
+image in a registry that the workstation reaches, read with its docker config. An index goes
+after the images it names. chalkctl checks that each endpoint serves the image's digest, reports
+each endpoint, and fails unless every one has the image. --connect-to reaches an endpoint through
+another address, such as a forwarded port, while it still verifies the endpoint's certificate.
+The command needs an admin client file or the secrets file.`
+
+const registryPushExample = `  chalkctl registry push busybox.tar docker.io/library/busybox:1.37.0 --secrets secrets.age
+
+  # An image from a registry the workstation reaches.
+  chalkctl registry push registry.k8s.io/pause:3.10.2 registry.k8s.io/pause:3.10.2
+
+  # Through a forwarded port to the endpoint fd00::11.
+  chalkctl registry push busybox.tar docker.io/library/busybox:1.37.0 --connect-to fd00::11=127.0.0.1:15000`

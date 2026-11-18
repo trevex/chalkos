@@ -199,6 +199,10 @@ nav = [
           { "unrevoke" = "reference/cli/chalkctl_node_unrevoke.md" },
         ] },
         { "recovery-key" = "reference/cli/chalkctl_recovery-key.md" },
+        { "registry" = [
+          { "Overview" = "reference/cli/chalkctl_registry.md" },
+          { "push" = "reference/cli/chalkctl_registry_push.md" },
+        ] },
         { "rotate" = "reference/cli/chalkctl_rotate.md" },
         { "secureboot" = [
           { "Overview" = "reference/cli/chalkctl_secureboot.md" },

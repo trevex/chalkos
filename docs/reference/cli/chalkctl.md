@@ -44,6 +44,7 @@ chalkctl kubeconfig --secrets secrets.age
 - [chalkctl logs](chalkctl_logs.md): Show a node's journal
 - [chalkctl node](chalkctl_node.md): Manage a node's access, activate its staged image, reboot it and show its diagnostics and routes
 - [chalkctl recovery-key](chalkctl_recovery-key.md): Print a node's recovery key
+- [chalkctl registry](chalkctl_registry.md): Manage the images of the cluster registry
 - [chalkctl rotate](chalkctl_rotate.md): Rotate os-ca, node-ca, kubernetes-ca, service-account-key or encryption-key
 - [chalkctl secureboot](chalkctl_secureboot.md): Create Secure Boot keys and enrol them in a node's firmware
 - [chalkctl status](chalkctl_status.md): Show an installed node's status

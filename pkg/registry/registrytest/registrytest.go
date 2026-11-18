@@ -31,16 +31,17 @@ type Registry struct {
 }
 
 // Start serves a registry until the test ends: on ::1 with ipv6, else on 127.0.0.1, with a node
-// certificate for both addresses from a node CA of osCA. wrap, when not nil, wraps the
-// registry's handler, as a test that breaks or holds some requests does.
-func Start(t testing.TB, osCA pki.CertKey, ipv6 bool, wrap func(http.Handler) http.Handler) *Registry {
+// certificate for both addresses and for ips from a node CA of osCA, as a node serving the cluster
+// registry at those endpoints has. wrap, when not nil, wraps the registry's handler, as a test
+// that breaks or holds some requests does.
+func Start(t testing.TB, osCA pki.CertKey, ipv6 bool, wrap func(http.Handler) http.Handler, ips ...net.IP) *Registry {
 	t.Helper()
 	now := time.Now()
 	nodeCA, err := pki.NewNodeCA(osCA, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	names := pki.NodeNames{CommonName: "registry", IPs: []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback}}
+	names := pki.NodeNames{CommonName: "registry", IPs: append([]net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback}, ips...)}
 	cert, err := pki.IssueNode(nodeCA, names, now)
 	if err != nil {
 		t.Fatal(err)

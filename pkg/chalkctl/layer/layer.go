@@ -6,6 +6,7 @@ package layer
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"io"
 	"text/tabwriter"
@@ -20,6 +21,7 @@ import (
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/outputs"
+	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -189,6 +191,10 @@ type Host interface {
 	Nodes(ctx context.Context, f NodeFlags, via string) (Nodes, error)
 	// Secrets reads the secrets file the flags name.
 	Secrets(ctx context.Context, f SecretsFlags) (clustersecrets.Secrets, error)
+	// ClientTLS is the TLS config of the flags' credentials, the client file or the secrets file,
+	// for a service of the nodes other than chalkd: their client certificate, and the OS CAs as
+	// the roots it verifies the nodes' certificates by. role is the role the credentials grant.
+	ClientTLS(ctx context.Context, f NodeFlags) (config *tls.Config, role pki.Role, err error)
 }
 
 // Cluster is what chalkctl knows of the cluster from its inventory.

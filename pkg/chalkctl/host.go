@@ -2,6 +2,7 @@ package chalkctl
 
 import (
 	"context"
+	"crypto/tls"
 	"io"
 	"text/tabwriter"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/pki"
 )
 
 // host is chalkctl's environment as its layer plugins use it.
@@ -49,6 +51,19 @@ func (h host) Nodes(ctx context.Context, f layer.NodeFlags, via string) (layer.N
 
 func (h host) Secrets(ctx context.Context, f layer.SecretsFlags) (clustersecrets.Secrets, error) {
 	return h.a.loadSecrets(ctx, f)
+}
+
+// ClientTLS is the TLS config of the secrets file or a client file.
+func (h host) ClientTLS(ctx context.Context, f layer.NodeFlags) (*tls.Config, pki.Role, error) {
+	c, err := h.a.loadCredentials(ctx, f.Secrets, f.Config)
+	if err != nil {
+		return nil, "", err
+	}
+	roots, err := c.roots()
+	if err != nil {
+		return nil, "", err
+	}
+	return &tls.Config{Certificates: []tls.Certificate{*c.cert}, RootCAs: roots, MinVersion: tls.VersionTLS12}, c.role(), nil
 }
 
 // The methods below make a cluster, a target and a nodeSet what plugins see of them.

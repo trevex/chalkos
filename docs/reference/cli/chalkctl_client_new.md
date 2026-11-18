@@ -16,11 +16,11 @@ client file names no cluster: its OS CA ties it to one, and a node of another cl
 handshake, which chalkctl reports as a node that does not accept the client file.
 
 A client file works for bootstrap, disks, etcd leave, etcd members, etcd remove-member, logs,
-node activate, node diag, node reboot, node revoke, node routes, node unrevoke, secureboot enroll,
-status, storage reset and upgrade; every other command needs the secrets file or neither file. A
-reader may read nodes' information, disks, status and logs and etcd's members; an operator may
-also upgrade, activate staged images, reboot, drain and uncordon nodes; an admin may call every
-method of chalkd but the node's own renewal. See
+node activate, node diag, node reboot, node revoke, node routes, node unrevoke, registry push,
+secureboot enroll, status, storage reset and upgrade; every other command needs the secrets file
+or neither file. A reader may read nodes' information, disks, status and logs and etcd's members;
+an operator may also upgrade, activate staged images, reboot, drain and uncordon nodes; an admin
+may call every method of chalkd but the node's own renewal, and push to the cluster registry. See
 [chalkd checks the role of every request](../../how-it-works/node/security.md#chalkd-checks-the-role-of-every-request).
 
 The command needs the secrets file and no inventory.
