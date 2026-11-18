@@ -103,8 +103,7 @@
     "after": [
       "networkd",
       "links",
-      "controlplane-ports",
-      "bgp"
+      "controlplane-ports"
     ],
     "chalkd": "",
     "hint": {

@@ -402,7 +402,6 @@ lib.runTests {
       edgeEffects = etcJSON "effects.json" edge;
       edgeWithoutNat64 = etcJSON "effects.json" without.nat64;
       kube = etcJSON "effects.json" w;
-      kubeWithoutBGP = etcJSON "effects.json" (worker [ { chalkos.kubernetes.bgp.enable = false; } ]);
       network = [
         "networkd"
         "links"
@@ -432,7 +431,6 @@ lib.runTests {
           "chalkd-share"
           "registry-credentials"
         ] kube;
-        kubernetesWithoutBGP = kubeWithoutBGP.kubernetes.after;
       };
       expected = {
         plain = {
@@ -464,12 +462,11 @@ lib.runTests {
         ];
         kubernetes = {
           bgp = network;
-          kubernetes = nodePreparation ++ [ "bgp" ];
+          kubernetes = nodePreparation;
           chalkd-cluster = [ "kubernetes" ];
           chalkd-share = [ "kubernetes" ];
           registry-credentials = [ ];
         };
-        kubernetesWithoutBGP = nodePreparation;
       };
     };
   # A router feature that an image disables with chalkos.router.<feature>.enable = false leaves

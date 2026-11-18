@@ -200,6 +200,11 @@ dependency chains can still run. A readiness probe runs before its effect, with 
 deadline, and a timeout has the same effect on its dependents as a failed action. A retry or a
 trial rollback still uses the baseline described below.
 
+On a router, the `networkd` effect runs after `vrf`, so networkd creates a VRF again only once
+`chalkos-vrf.service` removed the old one. A delivery whose `chalkos-vrf.service` fails
+therefore reloads no networkd, and no effect that runs after `networkd`, such as `frr` or
+`resolvers`. The delivery fails, and a retry takes those effects again.
+
 Once the node runs the delivered config, the effects run to the end even when chalkctl goes
 away, for at most 10 minutes. A layer action left out would leave chalkd's loops on the config
 from before.

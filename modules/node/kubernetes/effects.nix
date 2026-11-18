@@ -101,8 +101,7 @@ in
           "networkd"
           "links"
           "controlplane-ports"
-        ]
-        ++ lib.optional config.chalkos.kubernetes.bgp.enable "bgp";
+        ];
         restart = [
           "chalkos-kubernetes.service"
           "kubelet.service"
