@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -116,7 +117,51 @@ func TestHostsTOML(t *testing.T) {
 `,
 		"10.0.0.5:5000": "server = \"http://10.0.0.5:5000\"\n",
 	}
-	if got := r.HostsTOML(); !reflect.DeepEqual(got, want) {
+	if got := r.HostsTOML(nil); !reflect.DeepEqual(got, want) {
+		t.Errorf("HostsTOML = %q, want %q", got, want)
+	}
+}
+
+// TestHostsTOMLFirst puts the endpoints given before a Mirror's, each with its path as the
+// registry API's root and its CA, writes a hosts.toml for a host only they name, and keeps an
+// insecure Registry's upstream last over plain HTTP.
+func TestHostsTOMLFirst(t *testing.T) {
+	r, err := RegistriesOf(parseRegistries(t, registriesDocs), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cluster := func(url string) HostEndpoint {
+		return HostEndpoint{URL: url, OverridePath: true, CA: "/state/chalkd/ca.crt"}
+	}
+	first := map[string][]HostEndpoint{
+		"index.docker.io": {cluster("https://[fd00::11]:5000/v2/docker.io"), cluster("https://192.0.2.12:5000/v2/docker.io")},
+		"ghcr.io":         {cluster("https://[fd00::11]:5000/v2/ghcr.io")},
+		"10.0.0.5:5000":   {cluster("https://[fd00::11]:5000/v2/lan")},
+	}
+	const fromCluster = `
+[host."https://[fd00::11]:5000/v2/%s"]
+  capabilities = ["pull", "resolve"]
+  override_path = true
+  ca = "/state/chalkd/ca.crt"
+`
+	want := map[string]string{
+		"docker.io": `server = "https://registry-1.docker.io"
+` + fmt.Sprintf(fromCluster, "docker.io") + `
+[host."https://192.0.2.12:5000/v2/docker.io"]
+  capabilities = ["pull", "resolve"]
+  override_path = true
+  ca = "/state/chalkd/ca.crt"
+
+[host."https://mirror.example/cache"]
+  capabilities = ["pull", "resolve"]
+
+[host."http://10.0.0.5:5000"]
+  capabilities = ["pull", "resolve"]
+`,
+		"ghcr.io":       `server = "https://ghcr.io"` + "\n" + fmt.Sprintf(fromCluster, "ghcr.io"),
+		"10.0.0.5:5000": `server = "http://10.0.0.5:5000"` + "\n" + fmt.Sprintf(fromCluster, "lan"),
+	}
+	if got := r.HostsTOML(first); !reflect.DeepEqual(got, want) {
 		t.Errorf("HostsTOML = %q, want %q", got, want)
 	}
 }

@@ -22,7 +22,9 @@
   "chalkos-registry-mirrors": {
     "kinds": [
       "Mirror",
-      "Registry"
+      "Registry",
+      "ClusterRegistry",
+      "Network"
     ]
   },
   "frr": {

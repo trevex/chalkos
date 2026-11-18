@@ -19,11 +19,14 @@ in
     config = ./tests/spelled.yaml;
     outputs.cluster-registry = ./tests/spelled/cluster-registry;
   };
-  # A new port starts the registry again.
+  # A new port starts the registry again and rewrites containerd's hosts.toml.
   kubernetes-registry-port = {
     before = ./tests/spelled.yaml;
     config = ./tests/port.yaml;
-    effects = [ "cluster-registry" ];
+    effects = [
+      "cluster-registry"
+      "registry-mirrors"
+    ];
   };
   # Hosts with two separators in a row and a port below 1024 are refused.
   kubernetes-registry-bad-fields = {

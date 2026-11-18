@@ -407,10 +407,12 @@ lib.runTests {
         "links"
       ];
       routerNetwork = network ++ [ "router-nftables" ];
-      # The kubelet also starts after the cluster registry it may pull from.
+      # The kubelet also starts after the cluster registry it may pull from and containerd's
+      # hosts.toml that lists it.
       nodePreparation = network ++ [
         "controlplane-ports"
         "cluster-registry"
+        "registry-mirrors"
       ];
       after = names: effects: lib.genAttrs names (name: effects.${name}.after or [ ]);
     in
@@ -2769,7 +2771,8 @@ lib.runTests {
       scrubUnit = true;
     };
   };
-  # Mirrors come from the Mirror and Registry documents, written to /run before containerd starts.
+  # Mirrors come from the Mirror, Registry and ClusterRegistry documents and the node's static
+  # addresses, written to /run before containerd starts.
   testRegistryMirrorsFromConfig =
     let
       config = w;
@@ -2792,6 +2795,8 @@ lib.runTests {
         grant = [
           "Mirror"
           "Registry"
+          "ClusterRegistry"
+          "Network"
         ];
         beforeContainerd = true;
         afterConfig = true;
@@ -4101,7 +4106,14 @@ lib.runTests {
           users = [ "chalkos-registry" ];
           groups = [ "chalkos-registry" ];
           diagnostics = [ "cluster-registry" ];
-          kubernetesAfter = [ "cluster-registry" ];
+          mirrors = [
+            "ClusterRegistry"
+            "Network"
+          ];
+          kubernetesAfter = [
+            "cluster-registry"
+            "registry-mirrors"
+          ];
           firewall = [ "meta mark & 0x04000000 == 0x04000000 accept" ];
         };
         added = { };

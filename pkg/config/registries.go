@@ -2,7 +2,9 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/imageref"
@@ -136,13 +138,30 @@ func (r Registries) Endpoints(host string) []string {
 	return nil
 }
 
-// HostsTOML returns containerd's hosts.toml of each registry a Mirror names or whose Registry
-// allows plain HTTP, keyed by the directory below config_path that containerd looks it up in.
-// containerd tries the endpoints in order, then the registry itself.
-func (r Registries) HostsTOML() map[string]string {
+// HostEndpoint is an endpoint containerd tries for a registry before the endpoints of its
+// Mirror: its URL, whose path is the registry API's root when OverridePath is set rather than
+// the prefix of /v2, and the file of the CAs containerd verifies it by, empty for the system's.
+type HostEndpoint struct {
+	URL          string
+	OverridePath bool
+	CA           string
+}
+
+// HostsTOML returns containerd's hosts.toml of each registry that first, a Mirror or a Registry
+// that allows plain HTTP names, keyed by the directory below config_path that containerd looks
+// it up in. first names registries by any of their names. containerd tries the endpoints of
+// first, then those of the Mirror, in order, then the registry itself.
+func (r Registries) HostsTOML(first map[string][]HostEndpoint) map[string]string {
+	before := map[string][]HostEndpoint{}
+	for host, endpoints := range first {
+		if reg, err := imageref.RegistryHost(host); err == nil {
+			before[reg] = append(before[reg], endpoints...)
+		}
+	}
 	out := map[string]string{}
-	add := func(host string, endpoints []string) {
-		// RegistriesOf checked the host.
+	add := func(host string) {
+		// RegistriesOf checked the hosts of Mirror and Registry documents, and before holds those
+		// RegistryHost read.
 		reg, _ := imageref.RegistryHost(host)
 		dir, server := reg, reg
 		if reg == imageref.DockerHub {
@@ -157,17 +176,30 @@ func (r Registries) HostsTOML() map[string]string {
 		}
 		var b strings.Builder
 		fmt.Fprintf(&b, "server = %q\n", scheme+"://"+server)
+		endpoints := before[reg]
+		for _, e := range r.Endpoints(reg) {
+			endpoints = append(endpoints, HostEndpoint{URL: e})
+		}
 		for _, e := range endpoints {
-			fmt.Fprintf(&b, "\n[host.%q]\n  capabilities = [\"pull\", \"resolve\"]\n", e)
+			fmt.Fprintf(&b, "\n[host.%q]\n  capabilities = [\"pull\", \"resolve\"]\n", e.URL)
+			if e.OverridePath {
+				b.WriteString("  override_path = true\n")
+			}
+			if e.CA != "" {
+				fmt.Fprintf(&b, "  ca = %q\n", e.CA)
+			}
 		}
 		out[dir] = b.String()
 	}
 	for _, m := range r.Mirrors {
-		add(m.Registry, m.Endpoints)
+		add(m.Registry)
+	}
+	for _, reg := range slices.Sorted(maps.Keys(before)) {
+		add(reg)
 	}
 	for _, l := range r.Logins {
 		if l.Insecure {
-			add(l.Host, nil)
+			add(l.Host)
 		}
 	}
 	return out

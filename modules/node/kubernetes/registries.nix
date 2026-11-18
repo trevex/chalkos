@@ -18,9 +18,15 @@ in
   config = lib.mkIf config.chalkos.kubernetes.enable {
     systemd.services.chalkos-registry-mirrors = {
       description = "Write containerd's registry hosts from the config";
+      # With the cluster registry, its endpoints and the node's static addresses, so the node
+      # pulls from the endpoint it serves first.
       chalkos.kinds = [
         "Mirror"
         "Registry"
+      ]
+      ++ lib.optionals config.chalkos.kubernetes.registry.enable [
+        "ClusterRegistry"
+        "Network"
       ];
       wantedBy = [ "containerd.service" ];
       before = [ "containerd.service" ];

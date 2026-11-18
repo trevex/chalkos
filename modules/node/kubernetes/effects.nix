@@ -12,6 +12,8 @@ let
   inherit (chalkosLib.internal.api) apiVersions;
   # Where chalkd writes the node's Kubernetes files, as default.nix names it.
   run = "/run/chalkos/kubernetes";
+  # Whether the image carries the cluster registry.
+  registry = config.chalkos.kubernetes.registry.enable;
   # The Address= values of each Network's [Network] sections, as written and in the order of the
   # networks' names, which the identity takes the node's static addresses from. They are compared
   # with their prefix lengths: taking those off loops over the addresses of each section of each
@@ -60,10 +62,22 @@ in
 {
   config = lib.mkIf config.chalkos.kubernetes.enable {
     chalkos.effects = {
-      # The registry mirrors read the Mirror and Registry documents when they start; no
-      # password reaches hosts.toml, so a changed Secret alone restarts nothing.
+      # The registry mirrors read the Mirror and Registry documents, and the ClusterRegistry and,
+      # with one, the node's static addresses, when they start; no password reaches hosts.toml,
+      # so a changed Secret alone restarts nothing.
       registry-mirrors = {
-        when = "${cel.specsChanged apiVersions.oci "Mirror"} || ${cel.specsChanged apiVersions.oci "Registry"}";
+        when = lib.concatStringsSep " || " (
+          [
+            (cel.specsChanged apiVersions.oci "Mirror")
+            (cel.specsChanged apiVersions.oci "Registry")
+          ]
+          ++ lib.optionals registry [
+            (cel.specsChanged apiVersions.kubernetes "ClusterRegistry")
+            "(size(${
+              cel.documents "config" apiVersions.kubernetes "ClusterRegistry"
+            }) > 0 && ${staticAddresses "config"} != ${staticAddresses "oldConfig"})"
+          ]
+        );
         restart = [ "chalkos-registry-mirrors.service" ];
       };
       # The kubelet reads its credential provider's config when it starts and caches answers, so
@@ -96,15 +110,19 @@ in
       kubernetes = {
         when = kubernetesChanged;
         # Prepare addresses and the control plane's ports and etcd directory before the
-        # kubelet starts. Preparation already waits for its selected addresses. On a node that
-        # serves the cluster registry the kubelet starts once it answers, so the control plane's
-        # images come from it.
+        # kubelet starts. Preparation already waits for its selected addresses. With the
+        # cluster registry the kubelet starts once the node's own registry answers and
+        # containerd's hosts.toml lists the registry's endpoints, so the control plane's images
+        # come from it.
         after = [
           "networkd"
           "links"
           "controlplane-ports"
         ]
-        ++ lib.optional config.chalkos.kubernetes.registry.enable "cluster-registry";
+        ++ lib.optionals registry [
+          "cluster-registry"
+          "registry-mirrors"
+        ];
         restart = [
           "chalkos-kubernetes.service"
           "kubelet.service"

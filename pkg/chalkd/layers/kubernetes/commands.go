@@ -17,6 +17,7 @@ import (
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/clusterregistry"
 	"github.com/trevex/chalkos/pkg/kubernetes/credprovider"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	"github.com/trevex/chalkos/pkg/kubernetes/translate"
@@ -58,8 +59,9 @@ func (p *Plugin) Commands() []*cobra.Command {
 		{
 			Use:   "containerd-hosts",
 			Short: "Print containerd's hosts.toml of each registry the node's documents name",
-			Long: "Print containerd's hosts.toml of each registry the node's Mirror and Registry documents\n" +
-				"name, each after a line \"=== <directory>\".",
+			Long: "Print containerd's hosts.toml of each registry the node's Mirror, Registry and\n" +
+				"ClusterRegistry documents name, each after a line \"=== <directory>\". The cluster\n" +
+				"registry's endpoints come first, the one the node serves first of them.",
 			Args: cli.NoArgs,
 			RunE: func(cmd *cobra.Command, _ []string) error { return containerdHosts(cmd.OutOrStdout(), runDir) },
 		},
@@ -104,9 +106,14 @@ func prepareKubernetes(withRule bool) error {
 	return knode.State{Paths: knode.DefaultPaths()}.Prepare(time.Now(), knode.WaitForAddresses, firewall)
 }
 
-// containerdHosts prints containerd's hosts.toml of each registry the node's Mirror and Registry
-// documents below runDir name, by its directory below containerd's config_path, each after a line
-// "=== <directory>", for chalkos-registry-mirrors to write.
+// osCAs holds the OS CAs a node trusts: STATE's chalkd/ca.crt. The cluster registry's endpoints
+// serve node certificates, which they verify.
+const osCAs = "/state/chalkd/ca.crt"
+
+// containerdHosts prints containerd's hosts.toml of each registry the node's Mirror, Registry and
+// ClusterRegistry documents below runDir name, by its directory below containerd's config_path,
+// each after a line "=== <directory>", for chalkos-registry-mirrors to write. The cluster
+// registry's endpoints come first, the one this node serves first of them.
 func containerdHosts(w io.Writer, runDir string) error {
 	docs, err := slot.ReadRuntime(runDir)
 	if err != nil {
@@ -116,7 +123,19 @@ func containerdHosts(w io.Writer, runDir string) error {
 	if err != nil {
 		return err
 	}
-	files := r.HostsTOML()
+	cluster, ok, err := translate.ClusterRegistry(docs)
+	if err != nil {
+		return err
+	}
+	first := map[string][]config.HostEndpoint{}
+	if ok {
+		for host, urls := range cluster.MirrorURLs(clusterregistry.Addrs(config.StaticAddresses(docs))) {
+			for _, u := range urls {
+				first[host] = append(first[host], config.HostEndpoint{URL: u, OverridePath: true, CA: osCAs})
+			}
+		}
+	}
+	files := r.HostsTOML(first)
 	for _, dir := range slices.Sorted(maps.Keys(files)) {
 		if _, err := fmt.Fprintf(w, "=== %s\n%s", dir, files[dir]); err != nil {
 			return err
