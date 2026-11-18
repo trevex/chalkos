@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -62,8 +63,23 @@ func (s *Server) readActivation() (r activationRecord, err error) {
 	return r, err
 }
 
+// consistentActivation reads the record with read and the live attempt from activating, again
+// while a delivery started or finished during the read, so a finished delivery is not taken for
+// an interrupted one.
+func consistentActivation(activating *atomic.Int64, read func() (activationRecord, error)) (activationRecord, int64, error) {
+	for range 3 {
+		before := activating.Load()
+		r, err := read()
+		if after := activating.Load(); err != nil || after == before {
+			return r, after, err
+		}
+	}
+	r, err := read()
+	return r, activating.Load(), err
+}
+
 func (s *Server) activationStatus(dir, stored, boot string) *nodev1.ConfigActivation {
-	r, err := s.readActivation()
+	r, live, err := consistentActivation(&s.activating, s.readActivation)
 	if err != nil {
 		log.Printf("read the config activation record: %v", err)
 		return &nodev1.ConfigActivation{State: "unknown"}
@@ -75,7 +91,7 @@ func (s *Server) activationStatus(dir, stored, boot string) *nodev1.ConfigActiva
 		return &nodev1.ConfigActivation{State: "unrecorded"}
 	}
 	state := r.State
-	if state == activationRunning && (r.Boot != boot || s.activating.Load() != r.Attempt) {
+	if state == activationRunning && (r.Boot != boot || live != r.Attempt) {
 		state = "interrupted"
 	}
 	if state == activationComplete && stored != r.Target {

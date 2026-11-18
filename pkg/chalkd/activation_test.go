@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -157,5 +158,26 @@ func TestDeliveryGoesOnWithoutTheActivationRecord(t *testing.T) {
 	}
 	if !slices.Equal(acted, []string{"kubernetes:reload"}) || !slices.Contains(r.Calls, "systemctl try-restart demo.service") {
 		t.Errorf("acted on itself %v, commands %v", acted, r.Calls)
+	}
+}
+
+// TestActivationStatusOfADeliveryThatFinishesDuringTheRead: a delivery that finishes between the
+// read of its running record and that of the live attempt is read again, not reported interrupted.
+func TestActivationStatusOfADeliveryThatFinishesDuringTheRead(t *testing.T) {
+	var activating atomic.Int64
+	activating.Store(41)
+	reads := 0
+	read := func() (activationRecord, error) {
+		reads++
+		if reads == 1 {
+			// The delivery finishes once its running record was read.
+			activating.Store(0)
+			return activationRecord{Attempt: 41, State: activationRunning}, nil
+		}
+		return activationRecord{Attempt: 41, State: activationComplete}, nil
+	}
+	r, live, err := consistentActivation(&activating, read)
+	if err != nil || r.State != activationComplete || live != 0 || reads != 2 {
+		t.Fatalf("record = %+v, live = %d, %v after %d reads", r, live, err, reads)
 	}
 }
