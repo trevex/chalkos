@@ -107,7 +107,8 @@ const registryLong = `Manages the images of the cluster registry, which chalkos-
 ClusterRegistry document's endpoints name. Nothing copies images between the endpoints, so each
 command acts on every one of them, one after the other, and reports each.`
 
-const registryExample = `  chalkctl registry push busybox.tar docker.io/library/busybox:1.37.0`
+const registryExample = `  chalkctl registry push busybox.tar docker.io/library/busybox:1.37.0
+  chalkctl registry list`
 
 const registryPushLong = `Pushes the image of SOURCE to every endpoint of the cluster's ClusterRegistry, under REFERENCE
 below the endpoint: docker.io/library/nginx:1.27 goes to <endpoint>/docker.io/library/nginx:1.27,
@@ -126,3 +127,32 @@ const registryPushExample = `  chalkctl registry push busybox.tar docker.io/libr
 
   # Through a forwarded port to the endpoint fd00::11.
   chalkctl registry push busybox.tar docker.io/library/busybox:1.37.0 --connect-to fd00::11=127.0.0.1:15000`
+
+const registryDeleteLong = `Deletes REFERENCE, a tag or a digest, below every endpoint of the cluster's ClusterRegistry, as
+registry push names it there. An endpoint that does not hold it counts as done, and the command
+fails unless every endpoint deleted it or never held it. A tag goes alone; a digest takes the
+manifest and the tags that name it. The image's layers stay on disk until chalkctl registry gc.
+The command needs an admin client file or the secrets file.`
+
+const registryDeleteExample = `  chalkctl registry delete docker.io/library/busybox:1.36.1`
+
+const registryGCLong = `Collects garbage on every endpoint of the cluster's ClusterRegistry, one after the other: each
+removes the layers and configs that no manifest references, keeps every manifest, tagged or not,
+and reports the space it freed. Nothing collects garbage on its own, so run the command after
+registry delete. While an endpoint collects, it serves pulls and refuses pushes and deletes, and
+a push whose layers went up before the collection started may fail on them, so run the command
+when no push is in progress. An endpoint that collects already says so, and the command fails
+for it. The command needs an admin client file or the secrets file.`
+
+const registryGCExample = `  chalkctl registry delete docker.io/library/busybox:1.36.1
+  chalkctl registry gc`
+
+const registryListLong = `Lists the repositories, tags and digests of every endpoint of the cluster's ClusterRegistry, with
+the endpoints that serve each, and marks an image that some endpoint lacks or serves with another
+digest. Nothing copies images between the endpoints, so the command exits 1 when they differ or
+an endpoint cannot be listed; a push of the image to every endpoint mends a difference. Images
+pushed by digest alone, without a tag, are not listed. The registry serves reads to anyone, but
+chalkctl verifies the endpoints by the OS CA of a client file or the secrets file, so the command
+needs a client file of any role or the secrets file.`
+
+const registryListExample = `  chalkctl registry list`

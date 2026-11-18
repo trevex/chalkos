@@ -35,7 +35,7 @@ import (
 
 func registryCommand(h layer.Host) *cobra.Command {
 	g := cli.Group(&cobra.Command{Use: "registry", Short: "Manage the images of the cluster registry", Long: registryLong, Example: registryExample})
-	g.AddCommand(registryPushCommand(h))
+	g.AddCommand(registryPushCommand(h), registryDeleteCommand(h), registryGCCommand(h), registryListCommand(h))
 	return g
 }
 
@@ -173,12 +173,15 @@ type endpoints struct {
 	pageSize int
 }
 
-// options are the remote options that reach the endpoint e.
-func (s endpoints) options(ctx context.Context, e netip.Addr) []remote.Option {
+// transport reaches the endpoint e with the credentials, at the address --connect-to gives for
+// it, and verifies its certificate for e either way.
+func (s endpoints) transport(e netip.Addr) http.RoundTripper {
 	t := remote.DefaultTransport.(*http.Transport).Clone()
 	t.TLSClientConfig = s.tls.Clone()
 	host := s.Host(e)
 	if via, ok := s.connect[e]; ok {
+		// Straight to via, past any proxy.
+		t.Proxy = nil
 		var d net.Dialer
 		t.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 			if addr == host {
@@ -187,31 +190,42 @@ func (s endpoints) options(ctx context.Context, e netip.Addr) []remote.Option {
 			return d.DialContext(ctx, network, addr)
 		}
 	}
-	opts := []remote.Option{remote.WithContext(ctx), remote.WithTransport(httpsTo{host, t})}
+	// Its host is an address and a port, which go-containerregistry always takes.
+	reg, _ := name.NewRegistry(host)
+	return httpsTo{host: host, scheme: reg.Scheme(), next: t}
+}
+
+// options are the remote options that reach the endpoint e.
+func (s endpoints) options(ctx context.Context, e netip.Addr) []remote.Option {
+	opts := []remote.Option{remote.WithContext(ctx), remote.WithTransport(s.transport(e))}
 	if s.pageSize > 0 {
 		opts = append(opts, remote.WithPageSize(s.pageSize))
 	}
 	return opts
 }
 
-// httpsTo sends every request to host over HTTPS, which the registry alone speaks.
-// go-containerregistry speaks plain HTTP to loopback and RFC 1918 addresses once it chose that
-// scheme. The answer keeps the request as go-containerregistry made it, whose scheme it checks
-// the links to further pages of a list against.
+// httpsTo sends every request to host over HTTPS, which the registry alone speaks, though
+// go-containerregistry tries plain HTTP besides for loopback and RFC 1918 hosts. scheme is the one
+// name.Registry gives host, which go-containerregistry checks the links to a list's further pages
+// against, so the request of an answer from host carries it.
 type httpsTo struct {
-	host string
-	next http.RoundTripper
+	host, scheme string
+	next         http.RoundTripper
 }
 
 func (t httpsTo) RoundTrip(r *http.Request) (*http.Response, error) {
-	if r.URL.Host != t.host || r.URL.Scheme == "https" {
+	if r.URL.Host != t.host {
 		return t.next.RoundTrip(r)
 	}
 	https := r.Clone(r.Context())
 	https.URL.Scheme = "https"
 	resp, err := t.next.RoundTrip(https)
 	if resp != nil {
-		resp.Request = r
+		asked := *resp.Request
+		u := *asked.URL
+		u.Scheme = t.scheme
+		asked.URL = &u
+		resp.Request = &asked
 	}
 	return resp, err
 }

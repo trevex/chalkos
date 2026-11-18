@@ -201,6 +201,9 @@ nav = [
         { "recovery-key" = "reference/cli/chalkctl_recovery-key.md" },
         { "registry" = [
           { "Overview" = "reference/cli/chalkctl_registry.md" },
+          { "delete" = "reference/cli/chalkctl_registry_delete.md" },
+          { "gc" = "reference/cli/chalkctl_registry_gc.md" },
+          { "list" = "reference/cli/chalkctl_registry_list.md" },
           { "push" = "reference/cli/chalkctl_registry_push.md" },
         ] },
         { "rotate" = "reference/cli/chalkctl_rotate.md" },

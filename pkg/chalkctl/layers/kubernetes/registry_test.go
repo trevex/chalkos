@@ -214,7 +214,8 @@ func TestPushChecksTheDigest(t *testing.T) {
 }
 
 // TestPushIndex pushes the images of an index before the index, as the registry wants them, and
-// checks the index's digest.
+// checks the index's digest, also on an endpoint that go-containerregistry would speak plain HTTP
+// to.
 func TestPushIndex(t *testing.T) {
 	var mu sync.Mutex
 	var puts []string
@@ -228,7 +229,7 @@ func TestPushIndex(t *testing.T) {
 			next.ServeHTTP(w, r)
 		})
 	}
-	te := startEndpoints(t, map[string]func(http.Handler) http.Handler{"192.0.2.1": record}, "192.0.2.1", "fd00::2")
+	te := startEndpoints(t, map[string]func(http.Handler) http.Handler{"10.0.0.1": record}, "10.0.0.1", "fd00::2")
 	idx, err := random.Index(512, 1, 2)
 	if err != nil {
 		t.Fatal(err)
@@ -238,7 +239,7 @@ func TestPushIndex(t *testing.T) {
 		t.Fatalf("push = %v; %s", err, out.String())
 	}
 	want := digestOf(t, idx)
-	for _, e := range []string{"192.0.2.1", "fd00::2"} {
+	for _, e := range []string{"10.0.0.1", "fd00::2"} {
 		if d, _ := te.digestAt(t, e, "ghcr.io/a/b:1"); d != want {
 			t.Errorf("%s serves %v, want the index %s", e, d, want)
 		}

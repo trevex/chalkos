@@ -7,9 +7,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
 	"github.com/google/go-containerregistry/pkg/v1/random"
+	"github.com/google/go-containerregistry/pkg/v1/tarball"
 
 	"github.com/trevex/chalkos/pkg/registry"
 	"github.com/trevex/chalkos/pkg/registry/registrytest"
@@ -88,5 +90,49 @@ func TestRegistryPush(t *testing.T) {
 	err = l.run(context.Background(), append(push, "--connect-to", "192.0.2.9=127.0.0.1:1"))
 	if want := "--connect-to names 192.0.2.9, which is no endpoint of the ClusterRegistry; its endpoints are 192.0.2.1 and 192.0.2.2"; err == nil || !strings.Contains(err.Error(), want) {
 		t.Errorf("registry push to another endpoint = %v, want %q", err, want)
+	}
+}
+
+// TestRegistryManage lists, deletes and collects garbage on both endpoints; a reader's client
+// file lists but neither deletes nor collects.
+func TestRegistryManage(t *testing.T) {
+	l := newRegistryLab(t)
+	img, err := random.Image(1024, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	archive := filepath.Join(l.dir, "busybox.tar")
+	tag, _ := name.NewTag("busybox:1.37.0")
+	if err := tarball.WriteToFile(archive, tag, img); err != nil {
+		t.Fatal(err)
+	}
+	run := func(args ...string) error {
+		l.stdout.Reset()
+		return l.run(context.Background(), append(args, l.reach...))
+	}
+	if err := run("registry", "push", archive, "docker.io/library/busybox:1.37.0"); err != nil {
+		t.Fatalf("registry push: %v", err)
+	}
+	if err := run("registry", "list"); err != nil || !strings.Contains(l.stdout.String(), "docker.io/library/busybox  1.37.0  sha256:") || !strings.HasSuffix(l.stdout.String(), "  all\n") {
+		t.Errorf("registry list = %v, %q, want busybox on all endpoints", err, l.stdout)
+	}
+	reader := l.readerFile(t)
+	if err := run("registry", "list", "--config", reader); err != nil {
+		t.Errorf("registry list with a reader's client file: %v", err)
+	}
+	for _, cmd := range [][]string{{"registry", "delete", "busybox:1.37.0"}, {"registry", "gc"}} {
+		err := run(append(cmd, "--config", reader)...)
+		if want := strings.Join(cmd[:2], " ") + " needs the admin role; the reader role may not"; err == nil || err.Error() != want {
+			t.Errorf("%s with a reader's client file = %v, want %q", strings.Join(cmd, " "), err, want)
+		}
+	}
+	if err := run("registry", "delete", "busybox:1.37.0"); err != nil || strings.Count(l.stdout.String(), ": deleted ") != 2 {
+		t.Errorf("registry delete = %v, %q, want the tag deleted on both endpoints", err, l.stdout)
+	}
+	if err := run("registry", "list"); err != nil || l.stdout.String() != "REPOSITORY  TAG  DIGEST  ENDPOINTS\n" {
+		t.Errorf("registry list after the delete = %v, %q, want the header alone", err, l.stdout)
+	}
+	if err := run("registry", "gc"); err != nil || strings.Count(l.stdout.String(), ": freed ") != 2 {
+		t.Errorf("registry gc = %v, %q, want the space freed on both endpoints", err, l.stdout)
 	}
 }
