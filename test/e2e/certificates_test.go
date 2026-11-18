@@ -98,8 +98,10 @@ func renewed(t *testing.T, what, addr string, before *x509.Certificate, timeout 
 }
 
 // renewals renews w1's node certificate through cp1 and cp1's own certificates in place: the
-// test image renews them whenever config is delivered.
-func renewals(t *testing.T, ctx context.Context, cs kubernetes.Interface, nodes map[string]*node, apiPort int) {
+// test image renews them whenever config is delivered. Unless online, cp1's cluster registry,
+// at registryPort, then serves cp1's renewed node certificate: systemd starts it again when chalkd
+// replaces the file.
+func renewals(t *testing.T, ctx context.Context, cs kubernetes.Interface, nodes map[string]*node, apiPort, registryPort int, online bool) {
 	t.Helper()
 	w1, cp1 := nodes["w1"], nodes["cp1"]
 	w1Before, err := peerCertificate(w1.addr)
@@ -123,6 +125,13 @@ func renewals(t *testing.T, ctx context.Context, cs kubernetes.Interface, nodes 
 	if err != nil {
 		t.Fatal(err)
 	}
+	registryAddr := fmt.Sprintf("127.0.0.1:%d", registryPort)
+	var registryBefore *x509.Certificate
+	if !online {
+		if registryBefore, err = peerCertificate(registryAddr); err != nil {
+			t.Fatal(err)
+		}
+	}
 	leaders, err := leaseHolders(ctx, cs, "kube-controller-manager", "kube-scheduler")
 	if err != nil {
 		t.Fatal(err)
@@ -132,6 +141,9 @@ func renewals(t *testing.T, ctx context.Context, cs kubernetes.Interface, nodes 
 		t.Fatal(err)
 	}
 	renewed(t, "cp1's node certificate renewed", cp1.addr, cp1Before, 2*time.Minute)
+	if !online {
+		renewed(t, "the cluster registry serving cp1's renewed node certificate", registryAddr, registryBefore, 2*time.Minute)
+	}
 	renewed(t, "the API server serving renewed certificates", fmt.Sprintf("127.0.0.1:%d", apiPort), apiBefore, 5*time.Minute)
 	waitFor(t, 5*time.Minute, "the API server after the renewal", func() error {
 		_, err := cs.Discovery().RESTClient().Get().AbsPath("/readyz").DoRaw(ctx)

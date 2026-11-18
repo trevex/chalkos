@@ -82,7 +82,9 @@ var probeDoneRE = regexp.MustCompile(`CHALKTEST done=1`)
 // TestKubernetesCluster brings up through chalklab a dual-stack cluster, IPv4 primary, of a
 // control plane and a worker on KVM, and runs its phases in order; a failed phase stops the rest.
 // The images come from a registry the test serves; with CHALKLAB_K8S_ONLINE=1 it serves none, so
-// the nodes' mirror is unreachable and containerd pulls from upstream.
+// the nodes' mirror is unreachable and containerd pulls from upstream. Offline, cp1 then serves
+// the cluster registry, which w1 pulls from, and the renewals check that it serves cp1's renewed
+// node certificate.
 func TestKubernetesCluster(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_CHALKLAB", "CHALKLAB_K8S_IMAGE_DIR"}, chalkdEnv...)...)
 	online := os.Getenv("CHALKLAB_K8S_ONLINE") == "1"
@@ -97,7 +99,7 @@ func TestKubernetesCluster(t *testing.T) {
 		args = []string{"--guest-forward", "10.0.2.100:5000=" + startRegistry(t)}
 	}
 	startNTP(t)
-	nodes, apiPort, kubeconfig := createLab(t, dir, args...)
+	nodes, apiPort, registryPort, kubeconfig := createLab(t, dir, args...)
 	cs, _ := clientsetOf(t, kubeconfig)
 	// The checks of the nodes and of the cluster's networking, again after cp1's reboot. cp1 has
 	// fixed addresses; w1 picks the ones in its validSubnets.
@@ -153,6 +155,10 @@ func TestKubernetesCluster(t *testing.T) {
 		return
 	}
 
+	if !t.Run("cluster-registry", func(t *testing.T) { clusterRegistry(t, ctx, cs, nodes, registryPort, online) }) {
+		return
+	}
+
 	if !t.Run("reboot", func(t *testing.T) {
 		before := servingCertificate(t, apiPort)
 		// The probe's last fact on the console after the reboot marks the new boot; until then
@@ -188,7 +194,7 @@ func TestKubernetesCluster(t *testing.T) {
 		return
 	}
 
-	if !t.Run("renewals", func(t *testing.T) { renewals(t, ctx, cs, nodes, apiPort) }) {
+	if !t.Run("renewals", func(t *testing.T) { renewals(t, ctx, cs, nodes, apiPort, registryPort, online) }) {
 		return
 	}
 
@@ -321,19 +327,26 @@ func revocation(t *testing.T, ctx context.Context, nodes map[string]*node, kubec
 // credentials to the mirror endpoint, as containerd 2.4 does.
 func privatePull(t *testing.T, ctx context.Context, cs kubernetes.Interface) {
 	t.Helper()
-	_, err := cs.CoreV1().Pods("default").Create(ctx, &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: "private"},
-		Spec: corev1.PodSpec{
-			NodeSelector:  map[string]string{"kubernetes.io/hostname": "w1"},
-			RestartPolicy: corev1.RestartPolicyNever,
-			Containers:    []corev1.Container{{Name: "private", Image: privateImage, Command: []string{"true"}}},
-		},
-	}, metav1.CreateOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, 5*time.Minute, "the pod of the private image", func() error {
-		pod, err := cs.CoreV1().Pods("default").Get(ctx, "private", metav1.GetOptions{})
+	podSucceeds(t, ctx, cs, "private", privateImage)
+}
+
+// podSucceeds runs true in a pod of the name and the image on w1, without pull secrets, and waits
+// for it to succeed. It creates the pod again until the API server has it, as a delivery to cp1
+// just before may restart the API server with renewed certificates.
+func podSucceeds(t *testing.T, ctx context.Context, cs kubernetes.Interface, name, image string) {
+	t.Helper()
+	waitFor(t, 5*time.Minute, "the pod of "+image, func() error {
+		pod, err := cs.CoreV1().Pods("default").Get(ctx, name, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			pod, err = cs.CoreV1().Pods("default").Create(ctx, &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: name},
+				Spec: corev1.PodSpec{
+					NodeSelector:  map[string]string{"kubernetes.io/hostname": "w1"},
+					RestartPolicy: corev1.RestartPolicyNever,
+					Containers:    []corev1.Container{{Name: name, Image: image, Command: []string{"true"}}},
+				},
+			}, metav1.CreateOptions{})
+		}
 		if err != nil {
 			return err
 		}
@@ -751,20 +764,35 @@ func vxlanRules(t *testing.T, n *node, inventory, name string) (marks, drops []s
 }
 
 // createLab creates the main cluster's lab of chalklab/lab.yaml through startLab; chalklab
-// bootstraps cp1, and createLab returns the nodes, the forwarded port of cp1's API server and the
-// lab's kubeconfig. chalklab printed the endpoint cp1 waited for, and chalkctl reaches cp1 with the
-// lab's inventory and client file.
-func createLab(t *testing.T, dir string, args ...string) (map[string]*node, int, string) {
+// bootstraps cp1, and createLab returns the nodes, the forwarded ports of cp1's API server and
+// of its cluster registry, and the lab's kubeconfig. chalklab printed the endpoint cp1 waited for,
+// and chalkctl reaches cp1 with the lab's inventory and client file.
+func createLab(t *testing.T, dir string, args ...string) (nodes map[string]*node, apiPort, registryPort int, kubeconfig string) {
 	t.Helper()
 	nodes, l, out, state := startLab(t, dir, labName, "lab.yaml", args...)
 	// The status chalklab saw before the bootstrap names the cluster's endpoint.
 	if want := "cp1: kubernetes controlplane: waiting for bootstrap or for the cluster at https://192.168.100.11:6443"; !strings.Contains(out, want) {
 		t.Errorf("chalklab create did not print %q", want)
 	}
+	for _, n := range l.Nodes {
+		if n.APIPort != 0 {
+			apiPort = n.APIPort
+		}
+		for _, f := range n.Forwards {
+			if n.Name == "cp1" && f.Guest == clusterRegistryPort {
+				registryPort = f.Host
+			}
+		}
+	}
+	if registryPort == 0 {
+		t.Fatalf("the lab forwards no port to cp1's cluster registry, port %d", clusterRegistryPort)
+	}
 	if out, err := runChalklab(t, "status"); err != nil {
 		t.Errorf("chalklab status: %v", err)
 	} else if !strings.Contains(out, "its supervisor runs") {
 		t.Error("chalklab status does not say that its supervisor runs the lab")
+	} else if forward := fmt.Sprintf("%d=127.0.0.1:%d", clusterRegistryPort, registryPort); !strings.Contains(out, forward) {
+		t.Errorf("chalklab status does not list cp1's forward %s", forward)
 	}
 	// The lab's inventory names cp1 at its forwarded port, not at its address on the cluster
 	// network, which the host does not reach.
@@ -776,11 +804,5 @@ func createLab(t *testing.T, dir string, args ...string) (map[string]*node, int,
 	} else if !strings.Contains(statusOut, "kubernetes controlplane: ") {
 		t.Error("chalkctl status with the lab's inventory and client file shows no Kubernetes status of cp1")
 	}
-	apiPort := 0
-	for _, n := range l.Nodes {
-		if n.APIPort != 0 {
-			apiPort = n.APIPort
-		}
-	}
-	return nodes, apiPort, filepath.Join(state, "kubeconfig")
+	return nodes, apiPort, registryPort, filepath.Join(state, "kubeconfig")
 }
