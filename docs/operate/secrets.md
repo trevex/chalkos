@@ -89,7 +89,7 @@ fields at the top level. Keep service secrets in their own files.
 | --- | --- |
 | `secrets.age` | Decrypts the local file with age. |
 | `secrets.enc.json` or `secrets.enc.yaml` | Decrypts the local file with SOPS. The filename contains `.enc.` followed by an extension. |
-| `secrets.json` | Reads the local file as plaintext. |
+| `secrets.json` | Reads the local file as plaintext, or decrypts it with age when it holds an age file. |
 | `-` | Reads a native JSON or age bundle from standard input. |
 | `sops://./cluster.enc.yaml` | Uses the named provider and reads the full file. |
 

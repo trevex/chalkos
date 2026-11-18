@@ -31,6 +31,8 @@ type secretSource struct {
 	provider string
 	path     string
 	pointer  string
+	// inferred tells that the provider comes from the file name, not from a provider URI.
+	inferred bool
 }
 
 func clusterSecretsSource(input string) (secretSource, error) {
@@ -69,7 +71,7 @@ func parseSecretSource(input, base string, requireURI bool) (secretSource, error
 		if input == "-" {
 			return secretSource{path: "-"}, nil
 		}
-		source.path = input
+		source.path, source.inferred = input, true
 		switch name := filepath.Base(input); {
 		case strings.HasSuffix(name, ".age"):
 			source.provider = "age"
@@ -116,7 +118,7 @@ func (s *secretSources) read(source secretSource) ([]byte, error) {
 	var data []byte
 	var err error
 	if source.provider == "sops" {
-		data, err = runSOPS(s.ctx, nil, "decrypt", source.path)
+		data, err = runSOPS(s.ctx, s.app.stderr, nil, "decrypt", source.path)
 		if err != nil {
 			return nil, err
 		}
@@ -125,7 +127,13 @@ func (s *secretSources) read(source secretSource) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		if source.provider == "age" {
+		format, _ := clustersecrets.DetectFormat(data)
+		encrypted := format == clustersecrets.FormatAge || format == clustersecrets.FormatArmoredAge
+		switch {
+		case source.provider == "file" && encrypted && !source.inferred:
+			return nil, errors.New("the file is age-encrypted; name it with age://")
+		case source.provider == "age" || encrypted:
+			// A file named on the command line is read as what it holds, whatever its name.
 			data, err = clustersecrets.DecryptAge(data, func() ([]age.Identity, error) {
 				return s.app.ageIdentities(s.ctx, s.identities)
 			})
@@ -141,11 +149,14 @@ func (s *secretSources) read(source secretSource) ([]byte, error) {
 	return data, nil
 }
 
-func runSOPS(ctx context.Context, input []byte, args ...string) ([]byte, error) {
+// runSOPS runs sops with input on its standard input and returns its standard output, which can
+// hold plaintext. sops's own messages, such as why it could not decrypt, go to stderr.
+func runSOPS(ctx context.Context, stderr io.Writer, input []byte, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "sops", args...)
 	if input != nil {
 		cmd.Stdin = bytes.NewReader(input)
 	}
+	cmd.Stderr = stderr
 	data, err := cmd.Output()
 	if errors.Is(err, exec.ErrNotFound) {
 		return nil, errors.New("the sops provider requires sops on PATH")
@@ -154,8 +165,7 @@ func runSOPS(ctx context.Context, input []byte, args ...string) ([]byte, error) 
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, ctxErr
 		}
-		// Provider output can include plaintext. Report only the command's failure.
-		return nil, fmt.Errorf("sops %s failed: %w", args[0], err)
+		return nil, fmt.Errorf("sops %s failed: %w; its messages are above", args[0], err)
 	}
 	return data, nil
 }

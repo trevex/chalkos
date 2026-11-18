@@ -33,7 +33,8 @@ func TestParseSecretSource(t *testing.T) {
 		if path != "-" {
 			path = filepath.Join(dir, path)
 		}
-		if want := (secretSource{tc.provider, path, tc.pointer}); err != nil || source != want {
+		want := secretSource{provider: tc.provider, path: path, pointer: tc.pointer, inferred: tc.input != "-" && !strings.Contains(tc.input, "://")}
+		if err != nil || source != want {
 			t.Errorf("%s = %+v, %v; want %+v", tc.input, source, err, want)
 		}
 	}
@@ -84,6 +85,66 @@ func TestValidateSecretSourcesMatchesLiteralConfig(t *testing.T) {
 	inventory := writeInventory(t, ta.dir, n1SystemDisk, n1Network, secret+"spec: {sources: {password: plain}}\n")
 	if err := ta.run(t.Context(), []string{"validate", "--inventory", inventory}); err == nil || !strings.Contains(err.Error(), "must use a provider URI") {
 		t.Fatalf("expected URI error, got %v", err)
+	}
+}
+
+// An age-encrypted secrets file named without .age is decrypted as before; a file:// source that
+// holds age is refused with what to name it instead.
+func TestSecretSourcesTellAgeByContent(t *testing.T) {
+	ta := newTestApp(t)
+	key, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity := filepath.Join(ta.dir, "custom.identity")
+	writeFile(t, identity, key.String()+"\n")
+	bundle, err := ta.secrets.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ciphertext bytes.Buffer
+	enc, err := age.Encrypt(&ciphertext, key.Recipient())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := enc.Write(bundle); err != nil {
+		t.Fatal(err)
+	}
+	if err := enc.Close(); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(ta.dir, "secrets.json")
+	writeFile(t, path, ciphertext.String())
+	if _, err := ta.loadSecrets(t.Context(), layer.SecretsFlags{Path: path, Identities: []string{identity}}); err != nil {
+		t.Fatalf("an age file named secrets.json: %v", err)
+	}
+	sources := &secretSources{ctx: t.Context(), app: ta.app, identities: []string{identity}}
+	if _, err := sources.secretValue("file://./secrets.json", ta.dir); err == nil || !strings.Contains(err.Error(), "age-encrypted; name it with age://") {
+		t.Fatalf("file:// source of an age file = %v", err)
+	}
+	if _, err := sources.secretValue("age://./secrets.json", ta.dir); err != nil {
+		t.Fatalf("age:// source = %v", err)
+	}
+}
+
+// sops's messages reach the user's stderr; what it writes to stdout, which can be plaintext, does
+// not reach chalkctl's output.
+func TestSOPSMessagesGoToStderr(t *testing.T) {
+	ta := newTestApp(t)
+	writeFile(t, filepath.Join(ta.dir, "sops"), "#!/bin/sh\necho 'plaintext-value'\necho 'sops: no key could decrypt the data key' >&2\nexit 128\n")
+	if err := os.Chmod(filepath.Join(ta.dir, "sops"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", ta.dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	writeFile(t, filepath.Join(ta.dir, "service.enc.yaml"), "sops: {}\n")
+	sources := &secretSources{ctx: t.Context(), app: ta.app}
+	_, err := sources.secretValue("sops://./service.enc.yaml#/password", ta.dir)
+	if err == nil || !strings.Contains(err.Error(), "sops decrypt failed") || strings.Contains(err.Error(), "plaintext-value") {
+		t.Fatalf("resolve = %v", err)
+	}
+	if !strings.Contains(ta.stderr.String(), "no key could decrypt the data key") ||
+		strings.Contains(ta.stderr.String()+ta.stdout.String(), "plaintext-value") {
+		t.Fatalf("stderr = %q, stdout = %q", ta.stderr, ta.stdout)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"path/filepath"
@@ -15,17 +16,18 @@ import (
 
 type sopsSecretsFile struct {
 	ctx        context.Context
+	stderr     io.Writer
 	format     string
 	ciphertext []byte
 	plaintext  []byte
 }
 
-func readSOPSSecretsFile(ctx context.Context, path string, data []byte, change changeFlags) (*secretsFile, error) {
+func readSOPSSecretsFile(ctx context.Context, stderr io.Writer, path string, data []byte, change changeFlags) (*secretsFile, error) {
 	format := "yaml"
 	if json.Valid(data) {
 		format = "json"
 	}
-	plain, err := runSOPS(ctx, data, "decrypt", "--input-type", format, "--output-type", format, "/dev/stdin")
+	plain, err := runSOPS(ctx, stderr, data, "decrypt", "--input-type", format, "--output-type", format, "/dev/stdin")
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
@@ -39,7 +41,7 @@ func readSOPSSecretsFile(ctx context.Context, path string, data []byte, change c
 	}
 	f := &secretsFile{
 		secrets: secrets, path: path, out: path,
-		sops: &sopsSecretsFile{ctx: ctx, format: format, ciphertext: data, plaintext: plain},
+		sops: &sopsSecretsFile{ctx: ctx, stderr: stderr, format: format, ciphertext: data, plaintext: plain},
 	}
 	return f, f.configurePublic(change)
 }
@@ -69,7 +71,7 @@ func (f *sopsSecretsFile) encode(plain []byte) ([]byte, error) {
 			continue
 		}
 		pointer := fmt.Sprintf("[%q]", key)
-		if _, err := runSOPS(f.ctx, after[key], "set", "--value-stdin", "--input-type", f.format, "--output-type", f.format, path, pointer); err != nil {
+		if _, err := runSOPS(f.ctx, f.stderr, after[key], "set", "--value-stdin", "--input-type", f.format, "--output-type", f.format, path, pointer); err != nil {
 			return nil, fmt.Errorf("update SOPS field %s: %w", key, err)
 		}
 	}
@@ -78,7 +80,7 @@ func (f *sopsSecretsFile) encode(plain []byte) ([]byte, error) {
 			continue
 		}
 		pointer := fmt.Sprintf("[%q]", key)
-		if _, err := runSOPS(f.ctx, nil, "unset", "--input-type", f.format, "--output-type", f.format, path, pointer); err != nil {
+		if _, err := runSOPS(f.ctx, f.stderr, nil, "unset", "--input-type", f.format, "--output-type", f.format, path, pointer); err != nil {
 			return nil, fmt.Errorf("remove SOPS field %s: %w", key, err)
 		}
 	}

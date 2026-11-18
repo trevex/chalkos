@@ -32,7 +32,7 @@ func (f ClusterFlags) Path() string { return cmp.Or(f.Inventory, os.Getenv(inven
 type SecretsFlags struct {
 	// Path is --secrets, - for standard input.
 	Path string
-	// Identities are --identity, the files of age identities that decrypt the secrets file.
+	// Identities are --identity, the files of age identities that decrypt the secrets file and age sources.
 	Identities []string
 }
 

@@ -248,7 +248,7 @@ func Read(data []byte, identities func() ([]age.Identity, error)) (Secrets, erro
 func DecryptAge(data []byte, identities func() ([]age.Identity, error)) ([]byte, error) {
 	format, err := DetectFormat(data)
 	if err != nil || format == FormatJSON {
-		return nil, errors.New("expected an age-encrypted file")
+		return nil, errors.New("the file is not age-encrypted")
 	}
 	ids, err := identities()
 	if err != nil {
@@ -260,7 +260,7 @@ func DecryptAge(data []byte, identities func() ([]age.Identity, error)) ([]byte,
 	}
 	dec, err := age.Decrypt(r, ids...)
 	if err != nil {
-		return nil, fmt.Errorf("decrypt the secrets file: %w", err)
+		return nil, fmt.Errorf("decrypt with age: %w", err)
 	}
 	return io.ReadAll(dec)
 }

@@ -107,7 +107,7 @@ func (a *app) ageIdentities(ctx context.Context, files []string) ([]age.Identity
 		ids = append(ids, parsed...)
 	}
 	if len(ids) == 0 {
-		return nil, errors.New("the secrets file is encrypted and no usable age identity was found; pass --identity")
+		return nil, errors.New("no usable age identity was found; pass --identity")
 	}
 	return ids, nil
 }
@@ -469,7 +469,7 @@ func (a *app) openSecrets(ctx context.Context, s layer.SecretsFlags, change chan
 		return nil, err
 	}
 	if source.provider == "sops" {
-		f, err := readSOPSSecretsFile(ctx, path, data, change)
+		f, err := readSOPSSecretsFile(ctx, a.stderr, path, data, change)
 		if err != nil {
 			file.Close()
 			return nil, err
