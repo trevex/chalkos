@@ -106,12 +106,14 @@ in
     chalkos.effects.unbound = {
       outputs = [ "unbound" ];
       reload = [ "unbound.service" ];
+      after = [ "router-nftables" ];
     };
     # The default VRF's resolver added starts Unbound, and one removed stops it: the unit's
     # condition no longer holds once it restarts.
     chalkos.effects.unbound-start = {
       when = "${defaultResolvers "config"} != ${defaultResolvers "oldConfig"}";
       restart = [ "unbound.service" ];
+      after = [ "router-nftables" ];
       start = true;
     };
     # A VRF's resolver added, changed or removed, and a VRF networkd creates anew, which stopped the

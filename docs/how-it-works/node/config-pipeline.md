@@ -169,9 +169,8 @@ The diagram shows the decision for each effect and the order of the actions of a
    job back only for jobs already queued. chalkd therefore names each unit after the units it is
    ordered after, by its `After=` or their `Before=`, so the reloads keep the units' order. Each
    restart in steps 4 and 5 is ordered the same way, but every restart comes after every reload.
-   A failed unit of `reload` therefore restarts after the units that are ordered after it have
-   reloaded. A unit whose work such a reload depends on asks for the reload again itself, as
-   `chalkos-vrf.service` does for `chalkos-resolvers.service`.
+   These separate commands can put a dependent reload before the restart of its failed
+   prerequisite. An explicit effect prerequisite puts them in separate batches.
 2. It runs the `run` commands, each once, in the order of their effects' names.
 3. It runs `systemctl reset-failed` on the units of `restart` and `reload` that failed. The new
    config may be what they lacked, systemd reloads no failed unit, and their earlier failures

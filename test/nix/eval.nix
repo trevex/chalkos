@@ -395,6 +395,83 @@ lib.runTests {
       edge = false;
     };
   };
+  # Check the prerequisites serialized for live apply, including images without optional effects.
+  testBuiltinEffectPrerequisites =
+    let
+      plain = etcJSON "effects.json" layered.plain-metal.config;
+      edgeEffects = etcJSON "effects.json" edge;
+      edgeWithoutNat64 = etcJSON "effects.json" without.nat64;
+      kube = etcJSON "effects.json" w;
+      kubeWithoutBGP = etcJSON "effects.json" (worker [ { chalkos.kubernetes.bgp.enable = false; } ]);
+      network = [
+        "networkd"
+        "links"
+      ];
+      routerNetwork = network ++ [ "router-nftables" ];
+      nodePreparation = network ++ [ "controlplane-ports" ];
+      after = names: effects: lib.genAttrs names (name: effects.${name}.after or [ ]);
+    in
+    {
+      expr = {
+        plain = after [ "networkd" "links" ] plain;
+        router = after [
+          "networkd"
+          "dhcp"
+          "dhcp-relay"
+          "frr"
+          "jool"
+          "resolvers"
+          "unbound"
+          "unbound-start"
+        ] edgeEffects;
+        resolverWithoutNat64 = edgeWithoutNat64.resolvers.after;
+        kubernetes = after [
+          "bgp"
+          "kubernetes"
+          "chalkd-cluster"
+          "chalkd-share"
+          "registry-credentials"
+        ] kube;
+        kubernetesWithoutBGP = kubeWithoutBGP.kubernetes.after;
+      };
+      expected = {
+        plain = {
+          networkd = [ ];
+          links = [ "networkd" ];
+        };
+        router = {
+          networkd = [ "vrf" ];
+          dhcp = routerNetwork;
+          dhcp-relay = routerNetwork;
+          frr = routerNetwork;
+          jool = [
+            "networkd"
+            "router-nftables"
+          ];
+          resolvers = [
+            "vrf"
+            "networkd"
+            "router-nftables"
+            "jool"
+          ];
+          unbound = [ "router-nftables" ];
+          unbound-start = [ "router-nftables" ];
+        };
+        resolverWithoutNat64 = [
+          "vrf"
+          "networkd"
+          "router-nftables"
+        ];
+        kubernetes = {
+          bgp = network;
+          kubernetes = nodePreparation ++ [ "bgp" ];
+          chalkd-cluster = [ "kubernetes" ];
+          chalkd-share = [ "kubernetes" ];
+          registry-credentials = [ ];
+        };
+        kubernetesWithoutBGP = nodePreparation;
+      };
+    };
   # A router feature that an image disables with chalkos.router.<feature>.enable = false leaves
   # nothing of itself in the image: per feature, exactly the parts listed go and nothing comes in
   # their place, the build allocates the same IDs and networkd keeps the routes others install.

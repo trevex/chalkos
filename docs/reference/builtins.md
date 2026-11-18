@@ -1554,7 +1554,7 @@ The effects every image declares.
 | --- | --- | --- |
 | `chrony`{ #effect-chrony } | The output `chrony` changed. | Runs `chalkos-chrony-reload-sources`. |
 | `chrony-dhcp`{ #effect-chrony-dhcp } | The `when` after the table holds, which reads the documents of `TimeSync`. | Restarts `chalkos-chrony-dhcp.service`. |
-| `links`{ #effect-links } | The documents of `Link`, or a value of a Secret they reference, changed. | Restarts `chalkos-links.service`, and starts them when they are stopped. |
+| `links`{ #effect-links } | The documents of `Link`, or a value of a Secret they reference, changed. | Runs after `networkd` when those effects are due. Restarts `chalkos-links.service`, and starts them when they are stopped. |
 | `networkd`{ #effect-networkd } | The output `networkd` changed. | Reloads `systemd-networkd.service`. |
 
 `when` of `chrony-dhcp`:
@@ -1569,12 +1569,12 @@ The effects images with Kubernetes add.
 
 | Effect | Fires when | Does |
 | --- | --- | --- |
-| `bgp`{ #effect-bgp } | The output `bgp` changed. | Reloads `frr.service`. |
-| `chalkd-cluster`{ #effect-chalkd-cluster } | The `when` after the table holds, which reads the documents of `Cluster` and `Flannel` and the fact `cluster`. | Runs chalkd's action `kubernetes:restart`. |
-| `chalkd-share`{ #effect-chalkd-share } | The `when` after the table holds, which reads the documents of `Addon`, `Cluster`, `Flannel` and `Node` and the facts `cluster` and `share`. | Runs chalkd's action `kubernetes:reload`. |
+| `bgp`{ #effect-bgp } | The output `bgp` changed. | Runs after `networkd` and `links` when those effects are due. Reloads `frr.service`. |
+| `chalkd-cluster`{ #effect-chalkd-cluster } | The `when` after the table holds, which reads the documents of `Cluster` and `Flannel` and the fact `cluster`. | Runs after `kubernetes` when those effects are due. Runs chalkd's action `kubernetes:restart`. |
+| `chalkd-share`{ #effect-chalkd-share } | The `when` after the table holds, which reads the documents of `Addon`, `Cluster`, `Flannel` and `Node` and the facts `cluster` and `share`. | Runs after `kubernetes` when those effects are due. Runs chalkd's action `kubernetes:reload`. |
 | `containerd-config`{ #effect-containerd-config } | The `when` after the table holds, which reads the documents of `Cluster`. | Restarts `chalkos-containerd-config.service` and `containerd.service`. |
 | `controlplane-ports`{ #effect-controlplane-ports } | The `when` after the table holds, which reads the documents of `Node`. | Restarts `chalkos-controlplane.service`. |
-| `kubernetes`{ #effect-kubernetes } | The `when` after the table holds, which reads the documents of `Cluster`, `Flannel`, `Host`, `Network` and `Node` and the facts `cluster` and `share`. | Restarts `chalkos-kubernetes.service` and `kubelet.service`, and starts them when they are stopped. |
+| `kubernetes`{ #effect-kubernetes } | The `when` after the table holds, which reads the documents of `Cluster`, `Flannel`, `Host`, `Network` and `Node` and the facts `cluster` and `share`. | Runs after `networkd`, `links`, `controlplane-ports` and `bgp` when those effects are due. Restarts `chalkos-kubernetes.service` and `kubelet.service`, and starts them when they are stopped. |
 | `registry-credentials`{ #effect-registry-credentials } | The documents of `Registry`, or a value of a Secret they reference, changed. | Restarts `chalkos-registry-credentials.service` and `kubelet.service`. |
 | `registry-mirrors`{ #effect-registry-mirrors } | The `when` after the table holds, which reads the documents of `Mirror` and `Registry`. | Restarts `chalkos-registry-mirrors.service`. |
 
@@ -1616,19 +1616,20 @@ cel.bind(d, (("oci.chalkos.dev/v1alpha1" in config && "Mirror" in config["oci.ch
 
 ### Router images { #effects-router-images }
 
-The effects router images add.
+The effects router images add, and the effect `networkd` of every image as router images declare it.
 
 | Effect | Fires when | Does |
 | --- | --- | --- |
-| `dhcp`{ #effect-dhcp } | One of the outputs `kea` and `networkd` changed. | Reloads `chalkos-dhcp.service`. |
-| `dhcp-relay`{ #effect-dhcp-relay } | One of the outputs `dhcp-relay` and `networkd` changed. | Reloads `chalkos-dhcp-relays.service`. |
-| `frr`{ #effect-frr } | The output `frr` changed. | Reloads `frr.service`. |
-| `jool`{ #effect-jool } | The output `jool` changed. | Reloads `chalkos-nat64.service`. |
-| `resolvers`{ #effect-resolvers } | One of the outputs `unbound` and `networkd` changed. | Reloads `chalkos-resolvers.service`. |
+| `dhcp`{ #effect-dhcp } | One of the outputs `kea` and `networkd` changed. | Runs after `networkd`, `links` and `router-nftables` when those effects are due. Reloads `chalkos-dhcp.service`. |
+| `dhcp-relay`{ #effect-dhcp-relay } | One of the outputs `dhcp-relay` and `networkd` changed. | Runs after `networkd`, `links` and `router-nftables` when those effects are due. Reloads `chalkos-dhcp-relays.service`. |
+| `frr`{ #effect-frr } | The output `frr` changed. | Runs after `networkd`, `links` and `router-nftables` when those effects are due. Reloads `frr.service`. |
+| `jool`{ #effect-jool } | The output `jool` changed. | Runs after `networkd` and `router-nftables` when those effects are due. Reloads `chalkos-nat64.service`. |
+| `networkd`{ #effects-router-images-networkd } | The output `networkd` changed. | Runs after `vrf` when those effects are due. Reloads `systemd-networkd.service`. |
+| `resolvers`{ #effect-resolvers } | One of the outputs `unbound` and `networkd` changed. | Runs after `vrf`, `networkd`, `router-nftables` and `jool` when those effects are due. Waits up to 15 seconds for VRFs used by the rendered resolvers to exist with their configured routing tables. Reloads `chalkos-resolvers.service`. |
 | `router-nftables`{ #effect-router-nftables } | The output `router-nftables` changed. | Reloads `chalkos-firewall.service`. |
 | `router-sysctl`{ #effect-router-sysctl } | The output `router-sysctl` changed. | Restarts `systemd-sysctl.service`. |
-| `unbound`{ #effect-unbound } | The output `unbound` changed. | Reloads `unbound.service`. |
-| `unbound-start`{ #effect-unbound-start } | The `when` after the table holds, which reads the documents of `Resolver`. | Restarts `unbound.service`, and starts them when they are stopped. |
+| `unbound`{ #effect-unbound } | The output `unbound` changed. | Runs after `router-nftables` when those effects are due. Reloads `unbound.service`. |
+| `unbound-start`{ #effect-unbound-start } | The `when` after the table holds, which reads the documents of `Resolver`. | Runs after `router-nftables` when those effects are due. Restarts `unbound.service`, and starts them when they are stopped. |
 | `vrf`{ #effect-vrf } | The output `networkd` changed. | Reloads `chalkos-vrf.service`. |
 
 `when` of `unbound-start`:

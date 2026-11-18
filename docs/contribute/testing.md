@@ -188,7 +188,7 @@ shell functions the check scripts call: `fail`, `retry` and `refuses`, and for t
 | `vxlan-rule` | The VXLAN firewall rule, in network namespaces. |
 | `router-firewall` | A router's firewall unit and rulesets, in network namespaces. |
 | `router-policy-routing` | A router's policy routing: the example's ruleset with the kernel's rules and next-hop tables, in network namespaces. |
-| `router-vrf` | A router's `chalkos-vrf`: the VRFs it removes and keeps, the unreachable defaults it flushes, and its reloads of networkd and `chalkos-resolvers`, with stubs of systemctl and networkctl, in a network namespace. |
+| `router-vrf` | A router's `chalkos-vrf` in a network namespace, covering the VRFs it removes and keeps and the unreachable defaults it flushes. |
 | `router-nat64` | A router's `chalkos-nat64.service`, with a stub of `jool`, in network namespaces. |
 | `router-dhcp` | A router's `kea-dhcp4.service` and the diagnostic `dhcp-leases`, in network namespaces. |
 | `router-dhcp6` | A router's `kea-dhcp6` servers, the records and routes of delegated prefixes and the firewall's DHCPv6 opening, in network namespaces. |

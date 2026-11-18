@@ -138,6 +138,7 @@ in
   # document the delivery brings, where it did not run at boot.
   chalkos.effects.links = {
     kinds = [ "Link" ];
+    after = [ "networkd" ];
     restart = [ "chalkos-links.service" ];
     start = true;
   };

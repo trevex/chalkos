@@ -45,6 +45,10 @@ in
     chalkos.effects.bgp = {
       outputs = [ "bgp" ];
       reload = [ "frr.service" ];
+      after = [
+        "networkd"
+        "links"
+      ];
     };
     # chalkd loads the values the peers' password fields name as frr.service's credentials.
     systemd.services.frr.chalkos.kinds = [ "BGPPeer" ];

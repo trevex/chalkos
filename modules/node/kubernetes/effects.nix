@@ -95,6 +95,14 @@ in
       # its first one changes.
       kubernetes = {
         when = kubernetesChanged;
+        # Prepare addresses and the control plane's ports and etcd directory before the
+        # kubelet starts. Preparation already waits for its selected addresses.
+        after = [
+          "networkd"
+          "links"
+          "controlplane-ports"
+        ]
+        ++ lib.optional config.chalkos.kubernetes.bgp.enable "bgp";
         restart = [
           "chalkos-kubernetes.service"
           "kubelet.service"
@@ -112,12 +120,14 @@ in
       # control plane's objects.
       chalkd-cluster = {
         when = clusterChanged;
+        after = [ "kubernetes" ];
         chalkd = "kubernetes:restart";
       };
       # A restart for a new cluster starts the control plane's loop again too, so a reload is due
       # only without one.
       chalkd-share = {
         when = "(${shareChanged} || ${addonsApplied}) && !(${clusterChanged})";
+        after = [ "kubernetes" ];
         chalkd = "kubernetes:reload";
       };
     };

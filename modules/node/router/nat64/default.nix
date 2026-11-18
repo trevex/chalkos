@@ -281,6 +281,10 @@ in
     chalkos.effects.jool = {
       outputs = [ "jool" ];
       reload = [ "chalkos-nat64.service" ];
+      after = [
+        "networkd"
+        "router-nftables"
+      ];
     };
     # The firewall forwards, translates and tracks the NAT64s' links, and networkd leaves them
     # alone.
@@ -289,9 +293,8 @@ in
 
     systemd.services.chalkos-nat64 = {
       description = "Run the router's NAT64 instances";
-      # Within one delivery the firewall and networkd reload first, then the instances and their
-      # routes, then FRR, which announces a prefix once its route exists. networkd creates a VRF the
-      # instance's link joins.
+      # At boot, networkd creates the VRF each instance's link joins, and the firewall loads
+      # rules for the NAT64 links before the instances start.
       after = [
         "chalkos-config.service"
         "chalkos-firewall.service"

@@ -106,8 +106,7 @@ in
     systemd.services.chalkd.path = [ pkgs.frr ];
 
     systemd.services.frr = {
-      # networkd has read the links' units before FRR reloads: a delivery reloads these units with
-      # one systemctl call, whose job of each unit takes this order.
+      # At boot, networkd reads the links' units before FRR starts.
       after = [
         "chalkos-config.service"
         "systemd-networkd.service"

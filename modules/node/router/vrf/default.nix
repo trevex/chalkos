@@ -1,7 +1,7 @@
 # VRFs on router images: the output networkd renders the VRF documents beside networkd's own, with
 # chalkos-render router-networkd, as a VRF device's units and VRF= on its members' Networks.
 # networkd creates a VRF on reload but neither changes an existing VRF's table nor removes a VRF
-# whose unit went, so chalkos-vrf removes those and reloads networkd, which then creates them anew
+# whose unit went, so chalkos-vrf removes those before networkd creates them anew
 # with their members. networkd keeps a WireGuard device whose unit went too, with its keys and
 # peers, so chalkos-vrf removes those as well.
 {
@@ -15,18 +15,13 @@ let
   kinds = routerLib.kinds ./kinds.nix;
   networkd = config.chalkos.outputs.networkd.dir;
   # Removes each kernel VRF no .netdev declares with its table, after flushing the unreachable
-  # defaults networkd put in the table, and each WireGuard device no .netdev declares. Having
-  # removed a VRF, it reloads networkd, if running, which creates the VRF anew with its members,
-  # and chalkos-resolvers, which restarts the VRF's resolver on the new device. Reloading networkd
-  # itself leaves no VRF removed whatever order a delivery's reloads take; a networkd that does not
-  # run, as at boot, reads every unit when it starts. systemctl and networkctl come from PATH.
+  # defaults networkd put in the table, and each WireGuard device no .netdev declares.
   apply = pkgs.writeShellApplication {
     name = "chalkos-vrf";
     runtimeInputs = [
       pkgs.iproute2
       pkgs.jq
       pkgs.gawk
-      pkgs.coreutils
     ];
     text = ''
       declare -A want=() wireguards=() seen=()
@@ -60,17 +55,14 @@ let
       # kernel's vrf module is not loaded, so jq picks the VRFs from all links.
       vrfs=$(ip -d -j link show | jq -r '.[] | select(.linkinfo.info_kind == "vrf") | "\(.ifname) \(.linkinfo.info_data.table)"')
       failed=()
-      removed=false
       while read -r name table; do
         if [[ -n $name && ''${want[$name]-} != "$table" ]]; then
           # The unreachable defaults that networkd installed, of protocol static, would stay in the
           # old table, which a VRF may take later. They go first, and the VRF only once they went,
           # so that a retry finds the VRF and flushes them again.
-          if ip -4 route flush table "$table" exact 0.0.0.0/0 type unreachable proto static &&
-            ip -6 route flush table "$table" exact ::/0 type unreachable proto static &&
-            ip link delete "$name"; then
-            removed=true
-          else
+          if ! ip -4 route flush table "$table" exact 0.0.0.0/0 type unreachable proto static ||
+            ! ip -6 route flush table "$table" exact ::/0 type unreachable proto static ||
+            ! ip link delete "$name"; then
             failed+=("$name")
           fi
         fi
@@ -82,18 +74,6 @@ let
           failed+=("$name")
         fi
       done <<<"$stale"
-      if $removed && systemctl is-active --quiet systemd-networkd.service && ! networkctl reload; then
-        echo 'chalkos-vrf: failed to reload networkd, which creates the removed VRFs anew' >&2
-        exit 1
-      fi
-      # A reload of chalkos-resolvers that ran before this unit, as when chalkd restarts a failed
-      # chalkos-vrf after its reloads, saw the old VRF. --no-block, as chalkos-resolvers orders
-      # after this unit and its reload waits for this run to end.
-      if $removed && systemctl is-active --quiet chalkos-resolvers.service &&
-        ! systemctl reload --no-block chalkos-resolvers.service; then
-        echo 'chalkos-vrf: failed to reload chalkos-resolvers, which restarts the resolvers of the removed VRFs' >&2
-        exit 1
-      fi
       if ((''${#failed[@]} > 0)); then
         printf 'chalkos-vrf: failed to remove the device %s\n' "''${failed[@]}" >&2
         exit 1
@@ -116,8 +96,11 @@ in
       reload = [ "chalkos-vrf.service" ];
     };
 
-    # A delivery reloads chalkos-vrf and networkd with one systemctl call, whose job of each unit
-    # takes this order.
+    # Both effects fire on the networkd output. Order the cleanup before networkd reloads,
+    # including when recovery requires restarting the failed cleanup unit.
+    chalkos.effects.networkd.after = [ "vrf" ];
+
+    # The same ordering applies at boot.
     systemd.services.chalkos-vrf = {
       description = "Remove the VRFs and WireGuard devices the config no longer declares";
       after = [ "chalkos-config.service" ];

@@ -384,15 +384,13 @@ it again with a new index. A running resolver whose recorded index differs from 
 whose VRF has no device yet, is restarted once the device exists, so its sockets bind to the new
 device. The unit then stops the resolvers that have no config. It waits 30 seconds at most for the
 VRFs' devices and 30 more for the resolvers it started, and then fails, naming each that does not
-run. The effect `resolvers` reloads it when the output `unbound` or `networkd` changes, and
-`chalkos-vrf.service` reloads it, without waiting, after removing a VRF. That covers a failed
-`chalkos-vrf.service` that chalkd restarts only after the reloads. The unit reads the indexes as
-a member of the group `unbound`, without capabilities.
+run. The effect `resolvers` reloads it when the output `unbound` or `networkd` changes.
+The unit reads the indexes as a member of the group `unbound`, without capabilities.
 
-chalkd reloads the units of one delivery in one `systemctl reload`, which follows their order:
-`chalkos-firewall`, then `chalkos-nat64`, then `frr`, `unbound` and `chalkos-resolvers`, which
-also waits for `chalkos-vrf` and networkd. So a resolver's port is open before it answers on a
-new address, and a new prefix's route exists before FRR announces it.
+During a live delivery, the resolver effects follow any due firewall reload. The per-VRF
+resolvers also follow due VRF cleanup, networkd and NAT64 effects, and check that the kernel
+has the configured VRF tables before reconciling. Jool follows the due networkd and firewall
+effects. FRR announces a NAT64 prefix once the route exists.
 
 The node's own name lookups go through systemd-resolved as on every node, not through Unbound.
 

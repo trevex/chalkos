@@ -48,6 +48,11 @@ in
     chalkos.effects.frr = {
       outputs = [ "frr" ];
       reload = [ "frr.service" ];
+      after = [
+        "networkd"
+        "links"
+        "router-nftables"
+      ];
     };
 
     systemd.services.frr = {

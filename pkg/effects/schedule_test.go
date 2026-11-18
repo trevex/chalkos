@@ -21,14 +21,15 @@ var readyProbe = &Readiness{
 
 func TestScheduleRunsReadinessAfterFailedUnitRecovery(t *testing.T) {
 	defs := map[string]Definition{
-		"networkd": {Reload: []string{"networkd.service"}},
+		"vrf":      {Reload: []string{"chalkos-vrf.service"}},
+		"networkd": {After: []string{"vrf"}, Reload: []string{"networkd.service"}},
 		"resolver": {After: []string{"networkd"}, WaitFor: readyProbe, Reload: []string{"resolver.service"}},
 	}
 	r := &tooltest.Runner{Rules: []tooltest.Rule{
-		{Prefix: "systemctl show --property=ActiveState --value networkd.service", Out: "failed\n"},
+		{Prefix: "systemctl show --property=ActiveState --value chalkos-vrf.service", Out: "failed\n"},
 		{Prefix: "/nix/store/demo/bin/check-route", Err: &tool.Error{Code: 75}, Times: 1},
 	}}
-	s, err := PlanSchedule(defs, []string{"resolver", "networkd"})
+	s, err := PlanSchedule(defs, []string{"resolver", "networkd", "vrf"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,9 +37,11 @@ func TestScheduleRunsReadinessAfterFailedUnitRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{
+		"systemctl show --property=ActiveState --value chalkos-vrf.service",
+		"systemctl reset-failed chalkos-vrf.service",
+		"systemctl restart chalkos-vrf.service",
 		"systemctl show --property=ActiveState --value networkd.service",
-		"systemctl reset-failed networkd.service",
-		"systemctl restart networkd.service",
+		"systemctl reload networkd.service",
 		"/nix/store/demo/bin/check-route fabric",
 		"/nix/store/demo/bin/check-route fabric",
 		"systemctl show --property=ActiveState --value resolver.service",

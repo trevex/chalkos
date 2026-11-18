@@ -150,18 +150,18 @@ later would find them there. `chalkos-vrf.service` therefore flushes them from t
 first, and deletes the VRF only once they went. A run that fails between the two finds the VRF
 again and flushes once more.
 
-After it removes a VRF, `chalkos-vrf.service` reloads a running networkd, which creates the VRF
-anew with its new table and puts its links back into it. A change of `table` therefore ends the
-sessions of the VRF, and they start over. `chalkos-vrf.service` also reloads a running
-`chalkos-resolvers.service`, which restarts the VRF's resolver on the new device.
+After the cleanup effect succeeds, chalkd reloads networkd. It creates the VRF with its
+new table and puts its links back into it. A change of `table` therefore ends the sessions
+of the VRF, and they start over. The `resolvers` effect checks the new table before
+reconciling the resolvers on the new device.
 
 networkd keeps a WireGuard device whose `.netdev` went too, with its keys and peers, so a removed
 `WireGuard` document would leave its tunnel working. `chalkos-vrf.service` reads the `.netdev` files
 of `Kind=wireguard` the same way, and deletes each kernel WireGuard device that none declares.
 
-The effect `vrf` reloads `chalkos-vrf.service` whenever the output `networkd` changes. chalkd
-reloads the units of one delivery in one `systemctl reload`, and the units' order applies:
-`chalkos-vrf.service`, then `systemd-networkd.service`, then `frr.service`. At boot,
+The `vrf` and `networkd` effects fire together when the `networkd` output changes. The
+`networkd` effect waits for `vrf` to succeed, including when chalkd has to restart a failed
+`chalkos-vrf.service`. FRR reloads after its due network and firewall prerequisites. At boot,
 `chalkos-vrf.service` runs after `chalkos-config.service` and before networkd.
 
 ## FRR runs an instance per VRF

@@ -93,6 +93,11 @@ in
         "networkd"
       ];
       reload = [ "chalkos-dhcp-relays.service" ];
+      after = [
+        "networkd"
+        "links"
+        "router-nftables"
+      ];
     };
 
     systemd.services.dnsmasq-relay = {

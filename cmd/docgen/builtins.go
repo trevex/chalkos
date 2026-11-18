@@ -596,6 +596,12 @@ func writeEffects(b *strings.Builder, anchor, intro string, names, anchored []st
 			}
 		}
 		var does []string
+		if len(e.After) > 0 {
+			does = append(does, "Runs after "+andList(codes(e.After), "and")+" when those effects are due.")
+		}
+		if e.WaitFor != nil {
+			does = append(does, fmt.Sprintf("Waits up to %d seconds for %s.", e.WaitFor.TimeoutSeconds, e.WaitFor.Description))
+		}
 		if len(e.Reload) > 0 {
 			does = append(does, sentence("reloads "+andList(codes(e.Reload), "and")))
 		}

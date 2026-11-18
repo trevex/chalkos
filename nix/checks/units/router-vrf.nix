@@ -1,6 +1,5 @@
-# chalkos-vrf in a network namespace: which VRFs it removes and keeps, the unreachable defaults it
-# flushes, and the reloads of networkd and chalkos-resolvers through stubbed systemctl and
-# networkctl.
+# chalkos-vrf in a network namespace: which VRFs it removes and keeps and the unreachable
+# defaults it flushes.
 {
   checkLib,
   unitCheck,
@@ -15,28 +14,6 @@ unitCheck "router-vrf" checkLib.networkTools ''
     ip -d link show >&2
   }
   exists() { ip link show "$1" >/dev/null 2>&1; }
-  reloaded() {
-    [ "$(cat networkctl.log)" = reload ] || fail "$1: networkctl was called with: $(cat networkctl.log)"
-    grep -qx 'reload --no-block chalkos-resolvers.service' systemctl.log ||
-      fail "$1: chalkos-resolvers was not reloaded: $(cat systemctl.log)"
-    : >networkctl.log
-    : >systemctl.log
-  }
-  not_reloaded() {
-    [ ! -s networkctl.log ] || fail "$1: networkctl was called with: $(cat networkctl.log)"
-    if grep -q '^reload' systemctl.log; then fail "$1: systemctl was called with: $(cat systemctl.log)"; fi
-    : >systemctl.log
-  }
-  stub networkctl <<'STUB'
-  echo "$@" >>networkctl.log
-  STUB
-  stub systemctl <<'STUB'
-  echo "$@" >>systemctl.log
-  [ "$1" != is-active ] || exit "''${ACTIVE:-0}"
-  STUB
-  : >networkctl.log
-  : >systemctl.log
-  export PATH=$PWD/stub:$PATH
   mkdir -p ${dir} etc/systemd/network
   printf '[NetDev]\nKind=vrf\nName=keep\n\n[VRF]\nTable=100\n\n' >${dir}/00-vrf-keep.netdev
   printf '[NetDev]\nKind=vrf\nName=moved\n\n[VRF]\nTable=300\n\n' >${dir}/00-vrf-moved.netdev
@@ -83,18 +60,11 @@ unitCheck "router-vrf" checkLib.networkTools ''
   exists local || fail "removed a VRF that a unit of /etc declares"
   if exists masked; then fail "kept a VRF whose rendered unit /etc masks"; fi
   exists d0 || fail "removed a link of another kind"
-  reloaded "after removing VRFs"
   ${script} || fail "a second run failed"
   exists keep || fail "a second run removed a declared VRF"
-  not_reloaded "a run that removed nothing"
   rm ${dir}/*.netdev
   ${script} || fail "chalkos-vrf without units failed"
   if exists keep; then fail "kept a VRF without rendered units"; fi
   exists local || fail "removed a VRF of /etc without rendered units"
   exists d0 || fail "removed a link of another kind without rendered units"
-  reloaded "after removing VRFs without rendered units"
-  ip link add other type vrf table 700
-  ACTIVE=3 ${script} || fail "chalkos-vrf failed while networkd does not run"
-  if exists other; then fail "kept a VRF while networkd does not run"; fi
-  not_reloaded "a run while networkd does not run"
 ''

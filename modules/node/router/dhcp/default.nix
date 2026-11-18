@@ -212,6 +212,11 @@ in
         "networkd"
       ];
       reload = [ "chalkos-dhcp.service" ];
+      after = [
+        "networkd"
+        "links"
+        "router-nftables"
+      ];
     };
 
     systemd.services =
