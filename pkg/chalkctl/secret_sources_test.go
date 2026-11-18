@@ -84,7 +84,7 @@ func TestValidateDecryptsNoSecretSource(t *testing.T) {
 	if out := ta.stdout.String(); !strings.Contains(out, "n1: valid for the image") || !strings.HasSuffix(out, "config version unknown\n") {
 		t.Errorf("stdout = %q", out)
 	}
-	if !strings.Contains(ta.stderr.String(), "validate decrypts no sops or age source and checked Secret bgp key other, Secret bgp key password with a placeholder value") {
+	if !strings.Contains(ta.stderr.String(), "warning: node n1: used placeholders for Secret bgp keys other and password, as validate decrypts no sops or age source; chalkctl config apply --dry-run n1 reads their sources") {
 		t.Errorf("stderr = %q", ta.stderr)
 	}
 	if _, err := os.Stat(calls); !errors.Is(err, fs.ErrNotExist) {

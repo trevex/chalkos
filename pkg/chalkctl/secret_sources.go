@@ -23,6 +23,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/trevex/chalkos/pkg/clustersecrets"
+	"github.com/trevex/chalkos/pkg/internal/strs"
 	"github.com/trevex/chalkos/pkg/inventory"
 	"github.com/trevex/chalkos/pkg/schema"
 )
@@ -98,7 +99,7 @@ type secretSources struct {
 	app        *app
 	identities []string
 	mu         sync.Mutex
-	files      map[[2]string][]byte
+	files      map[secretSource][]byte
 }
 
 type secretSourcesKey struct{}
@@ -111,7 +112,7 @@ func sourcesIn(ctx context.Context) *secretSources {
 func (s *secretSources) read(source secretSource) ([]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	key := [2]string{source.provider, source.path}
+	key := secretSource{provider: source.provider, path: source.path, inferred: source.inferred}
 	if data, ok := s.files[key]; ok {
 		return data, nil
 	}
@@ -143,7 +144,7 @@ func (s *secretSources) read(source secretSource) ([]byte, error) {
 		}
 	}
 	if s.files == nil {
-		s.files = make(map[[2]string][]byte)
+		s.files = make(map[secretSource][]byte)
 	}
 	s.files[key] = data
 	return data, nil
@@ -284,7 +285,7 @@ func (s *secretSources) materialize(nc *inventory.NodeConfig) (*inventory.NodeCo
 
 // resolve resolves the sources of nc's Secret documents into their spec.data. With placeholders it
 // decrypts nothing: a key from a sops or age source gets the source's URI as its value, and
-// encrypted names each such key, as "Secret <name> key <key>".
+// encrypted names the keys of each Secret that hold one, as "Secret bgp keys other and password".
 func (s *secretSources) resolve(nc *inventory.NodeConfig, placeholders bool) (_ *inventory.NodeConfig, encrypted []string, _ error) {
 	resolved := *nc
 	resolved.Documents = slices.Clone(nc.Documents)
@@ -315,6 +316,7 @@ func (s *secretSources) resolve(nc *inventory.NodeConfig, placeholders bool) (_ 
 			}
 			data = make(map[string]any)
 		}
+		var placeheld []string
 		for _, key := range slices.Sorted(maps.Keys(sources)) {
 			if _, present := data[key]; present {
 				return nil, nil, fmt.Errorf("%s: key %q is defined in both spec.data and spec.sources", where, key)
@@ -326,7 +328,7 @@ func (s *secretSources) resolve(nc *inventory.NodeConfig, placeholders bool) (_ 
 			if placeholders {
 				if source, err := parseSecretSource(value, "", true); err == nil && source.provider != "file" {
 					data[key] = value
-					encrypted = append(encrypted, fmt.Sprintf("Secret %s key %s", doc.Name, key))
+					placeheld = append(placeheld, key)
 					continue
 				}
 			}
@@ -335,6 +337,13 @@ func (s *secretSources) resolve(nc *inventory.NodeConfig, placeholders bool) (_ 
 				return nil, nil, fmt.Errorf("%s: resolve key %q: %w", where, key, err)
 			}
 			data[key] = resolvedValue
+		}
+		switch len(placeheld) {
+		case 0:
+		case 1:
+			encrypted = append(encrypted, fmt.Sprintf("Secret %s key %s", doc.Name, placeheld[0]))
+		default:
+			encrypted = append(encrypted, fmt.Sprintf("Secret %s keys %s", doc.Name, strs.And(placeheld)))
 		}
 		spec["data"] = data
 		delete(spec, "sources")

@@ -165,7 +165,7 @@ func validateNode(cl *cluster, name string) (string, []string, error) {
 	if len(encrypted) > 0 {
 		// The version hashes the Secret values, which validate does not decrypt.
 		line = fmt.Sprintf("%s: valid for the image %s (%s on %s, root hash %.12s), config version unknown", name, image, md.Name, md.Platform, md.RootHash)
-		warnings = append(warnings, fmt.Sprintf("node %s: validate decrypts no sops or age source and checked %s with a placeholder value; whether the source decrypts and holds the value shows when chalkctl config apply --dry-run %s reads it", name, strings.Join(encrypted, ", "), name))
+		warnings = append(warnings, fmt.Sprintf("node %s: used placeholders for %s, as validate decrypts no sops or age source; chalkctl config apply --dry-run %s reads their sources", name, strs.And(encrypted), name))
 	}
 	return line, warnings, nil
 }

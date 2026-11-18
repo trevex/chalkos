@@ -143,7 +143,7 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 	case f.try != 0 && (f.try < minTrial || f.try > maxTrial):
 		return cli.Usagef("--try takes from %v to %v, not %v", minTrial, maxTrial, f.try)
 	case f.force && !f.payloads():
-		return cli.Usagef("--force goes with %s", f.payloadFlags)
+		return cli.Usagef("--force goes with %s; --ignore-readiness ignores failed readiness checks", f.payloadFlags)
 	case f.ignoreReadiness && (f.staged || f.diff || f.payloads()):
 		return cli.Usagef("--ignore-readiness goes with config for the running image, not with --staged, --diff or a layer's payload flag")
 	}
