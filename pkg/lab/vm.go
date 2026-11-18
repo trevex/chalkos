@@ -59,10 +59,14 @@ type GuestForward struct {
 	Host  string `json:"host"`
 }
 
-// Forward makes a guest TCP port reachable on a host port.
+// Forward makes the TCP port Guest of the VM reachable at the port Host on the host's 127.0.0.1.
 type Forward struct {
-	Host, Guest int
+	Host  int `json:"host"`
+	Guest int `json:"guest"`
 }
+
+// String is the forward as chalklab status shows it, such as 5000=127.0.0.1:15005.
+func (f Forward) String() string { return fmt.Sprintf("%d=127.0.0.1:%d", f.Guest, f.Host) }
 
 // VMDisk is a qcow2 image attached to a VM.
 type VMDisk struct {

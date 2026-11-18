@@ -234,8 +234,8 @@ func prepareDisks(ctx context.Context, l *lab.Lab) error {
 	return nil
 }
 
-// assignPorts picks a free port on 127.0.0.1 for each node's chalkd, and for a control plane's
-// API server.
+// assignPorts picks a free port on 127.0.0.1 for each node's chalkd, for a control plane's API
+// server, and for each further port the lab file forwards.
 func assignPorts(l *lab.Lab) error {
 	var err error
 	for i := range l.Nodes {
@@ -247,6 +247,11 @@ func assignPorts(l *lab.Lab) error {
 		}
 		if n.ChalkdPort, err = lab.FreePort(); err != nil {
 			return err
+		}
+		for j := range n.Forwards {
+			if n.Forwards[j].Host, err = lab.FreePort(); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -304,6 +309,15 @@ func labNodes(inv *inventory.Inventory, lf *labFile) ([]lab.Node, map[string]str
 			for _, d := range m.Disks {
 				n.Disks = append(n.Disks, lab.Disk{Size: d.Size, Serial: d.Serial})
 			}
+		}
+		for _, p := range m.Forwards {
+			switch {
+			case p == lab.ChalkdPort:
+				return nil, nil, fmt.Errorf("%s: chalklab forwards port %d of %s to its chalkd already", lf.path, p, name)
+			case p == 6443 && kind == kubernetes.KindControlPlane:
+				return nil, nil, fmt.Errorf("%s: chalklab forwards port %d of %s to its API server already", lf.path, p, name)
+			}
+			n.Forwards = append(n.Forwards, lab.Forward{Guest: p})
 		}
 		nodes = append(nodes, n)
 		images[name] = nc.ImageDir

@@ -388,9 +388,9 @@ machines, their forwarded ports and the lab's files.
 ```console
 $ chalklab status
 lab lab in /home/alice/.local/state/chalklab/lab; its supervisor runs as PID 2958683
-NODE  TYPE          VM       CHALKD           API SERVER       CONSOLE
-cp1   controlplane  running  127.0.0.1:44061  127.0.0.1:41483  /home/alice/.local/state/chalklab/lab/cp1/console.log
-w1    worker        running  127.0.0.1:39137  -                /home/alice/.local/state/chalklab/lab/w1/console.log
+NODE  TYPE          VM       CHALKD           API SERVER       FORWARDS  CONSOLE
+cp1   controlplane  running  127.0.0.1:44061  127.0.0.1:41483  -         /home/alice/.local/state/chalklab/lab/cp1/console.log
+w1    worker        running  127.0.0.1:39137  -                -         /home/alice/.local/state/chalklab/lab/w1/console.log
 kubeconfig: /home/alice/.local/state/chalklab/lab/kubeconfig
 inventory: /home/alice/.local/state/chalklab/lab/chalkos.yaml
 client file: /home/alice/.local/state/chalklab/lab/chalkctl.json

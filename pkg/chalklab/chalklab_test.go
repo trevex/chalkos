@@ -72,14 +72,15 @@ metadata: {name: lab}
 spec:
   inventory: ./chalkos.yaml
   nodes:
-    cp1: {mac: "52:54:00:7B:00:11"}
+    cp1: {mac: "52:54:00:7B:00:11", forwards: [5000]}
     w1: {mac: "52:54:00:7b:00:12", memory: 1024, cpus: 1, disks: [{size: 20G}, {size: 1G, serial: chalk-data}]}
 `
 
 // TestLabNodes runs the nodes of the lab file, each with its MAC address and the machine its type
 // gives it unless the lab file says otherwise, from the directory of its image in the inventory;
 // it refuses a node of a metal image, two nodes of one MAC address, a multicast MAC address, a
-// node the inventory lacks and an image from a registry.
+// node the inventory lacks, an image from a registry, and a forward of chalkd's or a control
+// plane's API server's port.
 func TestLabNodes(t *testing.T) {
 	dir := t.TempDir()
 	lf, inv := loadLab(t, writeLabFiles(t, dir, testLab))
@@ -88,7 +89,7 @@ func TestLabNodes(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []lab.Node{
-		{Name: "cp1", Kind: "controlplane", MAC: "52:54:00:7b:00:11", MemoryMB: 3072, CPUs: 2, Disks: []lab.Disk{{Size: "16G"}}},
+		{Name: "cp1", Kind: "controlplane", MAC: "52:54:00:7b:00:11", MemoryMB: 3072, CPUs: 2, Disks: []lab.Disk{{Size: "16G"}}, Forwards: []lab.Forward{{Guest: 5000}}},
 		{Name: "w1", Kind: "worker", MAC: "52:54:00:7b:00:12", MemoryMB: 1024, CPUs: 1, Disks: []lab.Disk{{Size: "20G"}, {Size: "1G", Serial: "chalk-data"}}},
 	}
 	if !reflect.DeepEqual(nodes, want) {
@@ -103,6 +104,8 @@ func TestLabNodes(t *testing.T) {
 		"a multicast MAC":          {strings.Replace(testLab, "52:54:00:7b:00:12", "01:00:5e:00:00:12", 1), "", "the MAC address 01:00:5e:00:00:12 of w1 is a multicast address"},
 		"no inventory node":        {strings.Replace(testLab, "    w1:", "    x9: {mac: \"52:54:00:7b:00:19\"}\n    w1:", 1), "", "has no node x9"},
 		"an image from a registry": {testLab, "node-kvm: {source: {oci: registry.example/lab/node-kvm:v1}}", "chalklab boots images from directories, but the image node-kvm of cp1 comes from the registry, registry.example/lab/node-kvm:v1"},
+		"chalkd's port":            {strings.Replace(testLab, "forwards: [5000]", "forwards: [50000]", 1), "", "chalklab forwards port 50000 of cp1 to its chalkd already"},
+		"the API server's port":    {strings.Replace(testLab, "forwards: [5000]", "forwards: [6443]", 1), "", "chalklab forwards port 6443 of cp1 to its API server already"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -158,10 +161,33 @@ func TestLabSchemaDefaults(t *testing.T) {
 	}
 }
 
+// TestAssignPorts gives cp1 distinct free ports for its chalkd, its API server and the guest port
+// its lab file forwards.
+func TestAssignPorts(t *testing.T) {
+	lf, inv := loadLab(t, writeLabFiles(t, t.TempDir(), testLab))
+	nodes, _, err := labNodes(inv, lf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := &lab.Lab{Nodes: nodes}
+	if err := assignPorts(l); err != nil {
+		t.Fatal(err)
+	}
+	cp1 := l.Nodes[0]
+	if len(cp1.Forwards) != 1 || cp1.Forwards[0].Guest != 5000 {
+		t.Fatalf("cp1's forwards = %v", cp1.Forwards)
+	}
+	ports := []int{cp1.ChalkdPort, cp1.APIPort, cp1.Forwards[0].Host}
+	if slices.Contains(ports, 0) || len(slices.Compact(slices.Sorted(slices.Values(ports)))) != 3 {
+		t.Errorf("cp1's ports = %v, want three distinct", ports)
+	}
+}
+
 // TestReadLabFileRefuses refuses a lab file its schema does not accept.
 func TestReadLabFileRefuses(t *testing.T) {
 	for name, tc := range map[string]struct{ lab, want string }{
-		"no MAC address":  {strings.Replace(testLab, `cp1: {mac: "52:54:00:7B:00:11"}`, "cp1: {memory: 2048}", 1), "mac"},
+		"no MAC address":  {strings.Replace(testLab, `cp1: {mac: "52:54:00:7B:00:11", forwards: [5000]}`, "cp1: {memory: 2048}", 1), "mac"},
+		"a port too high": {strings.Replace(testLab, "forwards: [5000]", "forwards: [65536]", 1), "forwards"},
 		"a malformed MAC": {strings.Replace(testLab, "52:54:00:7B:00:11", "52-54-00-7b-00-11", 1), "52-54-00-7b-00-11"},
 		"no nodes":        {strings.SplitAfter(testLab, "  nodes:\n")[0] + "    {}\n", "nodes"},
 		"another kind":    {strings.Replace(testLab, "kind: Lab", "kind: Inventory", 1), `"Inventory"`},
@@ -407,7 +433,7 @@ func writeLab(t *testing.T) string {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	l := &lab.Lab{Dir: dir, Name: "lab", Nodes: []lab.Node{{Name: "cp1", ChalkdPort: 15001, APIPort: 16443}, {Name: "w1", ChalkdPort: 15002}}}
+	l := &lab.Lab{Dir: dir, Name: "lab", Nodes: []lab.Node{{Name: "cp1", ChalkdPort: 15001, APIPort: 16443, Forwards: []lab.Forward{{Host: 15005, Guest: 5000}}}, {Name: "w1", ChalkdPort: 15002}}}
 	if err := l.Write(); err != nil {
 		t.Fatal(err)
 	}
@@ -454,14 +480,20 @@ func TestDestroyTwice(t *testing.T) {
 	}
 }
 
-// TestStatusOfAStoppedLab shows the VMs that do not run and how to start them again.
+// TestStatusOfAStoppedLab shows the VMs that do not run and how to start them again, and the
+// ports each node's forwards reach.
 func TestStatusOfAStoppedLab(t *testing.T) {
 	writeLab(t)
 	a, out := testApp()
 	if err := a.run(context.Background(), []string{"status"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"no supervisor runs it", "cp1 and w1 do not run; chalklab start starts the lab again"} {
+	for _, want := range []string{
+		"no supervisor runs it", "cp1 and w1 do not run; chalklab start starts the lab again",
+		"NODE  TYPE  VM       CHALKD           API SERVER       FORWARDS              CONSOLE",
+		"127.0.0.1:16443  5000=127.0.0.1:15005  /",
+		"127.0.0.1:15002  -                -                     /",
+	} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("status = %q, want %q", out, want)
 		}

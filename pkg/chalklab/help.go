@@ -52,9 +52,9 @@ const createExample = `  chalklab create --secrets secrets.age
   chalklab create --secrets secrets.age --guest-forward 10.0.2.100:5000=127.0.0.1:5000`
 
 const statusLong = `Shows the lab's supervisor, each VM with its node's type, whether it runs, the forwarded ports
-of its chalkd and API server and its console log, and the paths of the lab's kubeconfig,
-inventory, client file and Secure Boot db key and certificate. The command needs no secrets file
-or client file.`
+of its chalkd and API server, the further ports its lab file forwards, as GUEST=HOST, and its
+console log, and the paths of the lab's kubeconfig, inventory, client file and Secure Boot db key
+and certificate. The command needs no secrets file or client file.`
 
 const statusExample = `  chalklab status`
 

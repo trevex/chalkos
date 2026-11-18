@@ -51,11 +51,11 @@ func TestQemuArgs(t *testing.T) {
 		t.Error("a VM without forwards has a NIC")
 	}
 
-	c.Forwards = []Forward{{Host: 15000, Guest: 50000}, {Host: 16443, Guest: 6443}}
+	c.Forwards = []Forward{{Host: 15000, Guest: 50000}, {Host: 16443, Guest: 6443}, {Host: 15005, Guest: 5000}}
 	c.CDROM = "/vm/installer.iso"
 	withNIC := c.qemuArgs("")
 	for _, w := range [][2]string{
-		{"-nic", "user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:15000-:50000,hostfwd=tcp:127.0.0.1:16443-:6443"},
+		{"-nic", "user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:15000-:50000,hostfwd=tcp:127.0.0.1:16443-:6443,hostfwd=tcp:127.0.0.1:15005-:5000"},
 		{"-drive", "if=none,id=cdrom,media=cdrom,readonly=on,file=/vm/installer.iso"},
 		{"-device", "ide-cd,drive=cdrom,bootindex=0"},
 	} {
@@ -69,7 +69,7 @@ func TestQemuArgs(t *testing.T) {
 	c.MAC = "52:54:00:00:01:11"
 	switched := c.qemuArgs("")
 	for _, w := range [][2]string{
-		{"-nic", "user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:15000-:50000,hostfwd=tcp:127.0.0.1:16443-:6443,guestfwd=tcp:10.0.2.100:5000-cmd:socat - TCP:127.0.0.1:15001"},
+		{"-nic", "user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:15000-:50000,hostfwd=tcp:127.0.0.1:16443-:6443,hostfwd=tcp:127.0.0.1:15005-:5000,guestfwd=tcp:10.0.2.100:5000-cmd:socat - TCP:127.0.0.1:15001"},
 		{"-netdev", "vde,id=switch,sock=/vm/switch"},
 		{"-device", "virtio-net-pci,netdev=switch,mac=52:54:00:00:01:11"},
 	} {

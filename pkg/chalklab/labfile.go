@@ -42,6 +42,7 @@ type labMachine struct {
 		Size   string `json:"size"`
 		Serial string `json:"serial"`
 	} `json:"disks"`
+	Forwards []int `json:"forwards"`
 }
 
 // readLabFile reads a lab file and checks it against its schema; its inventory's path is relative

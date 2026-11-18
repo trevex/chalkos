@@ -73,6 +73,12 @@
                     }
                   }
                 }
+              },
+              "forwards": {
+                "type": "array",
+                "uniqueItems": true,
+                "description": "TCP ports of the node that the host reaches at a free port on 127.0.0.1 each, which chalklab status lists. The node's chalkd and a control plane's API server have theirs anyway.",
+                "items": { "type": "integer", "minimum": 1, "maximum": 65535 }
               }
             }
           }

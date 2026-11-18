@@ -876,6 +876,7 @@ The nodes of an inventory that chalklab runs as virtual machines, and their mach
 | `spec.nodes.<name>.disks` | list of object | `[{"size":"16G"}]` | The VM's disks: the first holds the node's image, the others start empty. |
 | `spec.nodes.<name>.disks[].serial` | string | — | Serial number the disk reports to the node, up to 20 letters, digits, _ and -, for a SystemDisk or Volume to select it by. |
 | `spec.nodes.<name>.disks[].size` | string | required | Size of the disk in bytes, or with a K, M, G or T suffix, such as 16G. |
+| `spec.nodes.<name>.forwards` | list of integer from 1 to 65535 | — | TCP ports of the node that the host reaches at a free port on 127.0.0.1 each, which chalklab status lists. The node's chalkd and a control plane's API server have theirs anyway. |
 | `spec.nodes.<name>.mac` | string | required | MAC address of the VM's NIC on the lab network, which the node's Network document must match. |
 | `spec.nodes.<name>.memory` | integer of at least 512 | — | Memory of the VM in MiB; without it, 3072 for a control plane and 2048 for another node. |
 

@@ -43,6 +43,9 @@ type Node struct {
 	// reaches its API server; zero on a node without one.
 	ChalkdPort int `json:"chalkdPort"`
 	APIPort    int `json:"apiPort,omitempty"`
+	// Forwards are the further ports of the node the host reaches on 127.0.0.1, as the lab file
+	// names them.
+	Forwards []Forward `json:"forwards,omitempty"`
 }
 
 // Disk is a disk of a lab's VM: its size, as qemu-img takes it, and the serial number the VM
@@ -127,6 +130,7 @@ func (l *Lab) VMConfig(n Node) VMConfig {
 	if n.APIPort != 0 {
 		forwards = append(forwards, Forward{Host: n.APIPort, Guest: 6443})
 	}
+	forwards = append(forwards, n.Forwards...)
 	return VMConfig{
 		Name:          n.Name,
 		Dir:           filepath.Join(l.Dir, n.Name),

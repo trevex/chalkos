@@ -3,6 +3,7 @@ package lab
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -27,5 +28,16 @@ func TestLabRecordsItsName(t *testing.T) {
 	}
 	if _, err := l.Node("cp1"); err == nil || !strings.Contains(err.Error(), "the lab mylab has no node cp1") {
 		t.Errorf("Node(cp1) = %v", err)
+	}
+}
+
+// TestVMConfigForwards forwards the node's chalkd, a control plane's API server and the further
+// ports of the lab file, in that order.
+func TestVMConfigForwards(t *testing.T) {
+	l := &Lab{Dir: t.TempDir()}
+	got := l.VMConfig(Node{Name: "cp1", ChalkdPort: 15000, APIPort: 16443, Forwards: []Forward{{Host: 15005, Guest: 5000}}}).Forwards
+	want := []Forward{{Host: 15000, Guest: ChalkdPort}, {Host: 16443, Guest: 6443}, {Host: 15005, Guest: 5000}}
+	if !slices.Equal(got, want) {
+		t.Errorf("forwards = %v, want %v", got, want)
 	}
 }

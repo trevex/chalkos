@@ -103,7 +103,7 @@ func (a *app) status(name string) error {
 	fmt.Fprintf(a.stdout, "lab %s in %s; %s\n", l.Name, dir, supervisor)
 	w := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
 	var stopped []string
-	fmt.Fprintln(w, "NODE\tTYPE\tVM\tCHALKD\tAPI SERVER\tCONSOLE")
+	fmt.Fprintln(w, "NODE\tTYPE\tVM\tCHALKD\tAPI SERVER\tFORWARDS\tCONSOLE")
 	for _, n := range l.Nodes {
 		c := l.VMConfig(n)
 		state := "running"
@@ -119,7 +119,11 @@ func (a *app) status(name string) error {
 		if kind == "" {
 			kind = "-"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t127.0.0.1:%d\t%s\t%s\n", n.Name, kind, state, n.ChalkdPort, api, c.ConsolePath())
+		forwards := "-"
+		if len(n.Forwards) > 0 {
+			forwards = strs.Join(n.Forwards, ",")
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t127.0.0.1:%d\t%s\t%s\t%s\n", n.Name, kind, state, n.ChalkdPort, api, forwards, c.ConsolePath())
 	}
 	if err := w.Flush(); err != nil {
 		return err
