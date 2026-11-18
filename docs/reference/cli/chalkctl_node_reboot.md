@@ -40,7 +40,7 @@ command needs an operator client file or the secrets file.
 | `--insecure`{ #flag-insecure } | boolean | `false` | Accept any certificate and print the node's fingerprint. |
 | `--inventory`{ #flag-inventory } | string | $CHALKOSINVENTORY, else chalkos.yaml in the current directory, when it exists | Inventory naming the cluster's nodes, their addresses and their config files. |
 | `--no-drain`{ #flag-no-drain } | boolean | `false` | Reboot the node without its layers holding it before and releasing it after, such as without draining a Kubernetes node. |
-| `--secrets`{ #flag-secrets } | string | — | Secrets file, encrypted with age or not, or - to read it from standard input. |
+| `--secrets`{ #flag-secrets } | string | — | Cluster secrets path (.age, .enc.*, or plaintext), provider URI, or - for standard input. |
 | `--timeout`{ #flag-timeout } | duration | `30m0s` | How long to wait for the node to come back healthy and for its drain. |
 
 ## Examples

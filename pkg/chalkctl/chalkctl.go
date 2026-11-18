@@ -94,7 +94,13 @@ func newCommand(a *app) *cobra.Command {
 // command makes cmd run run with the environment and streams of the command that runs.
 func (a *app) command(cmd *cobra.Command, run func(a *app, ctx context.Context, args []string) error) *cobra.Command {
 	cmd.RunE = func(c *cobra.Command, args []string) error {
-		return run(a.with(c), c.Context(), args)
+		commandApp, ctx := a.with(c), c.Context()
+		var identities []string
+		if c.Flags().Lookup("identity") != nil {
+			identities, _ = c.Flags().GetStringArray("identity")
+		}
+		sources := &secretSources{ctx: ctx, app: commandApp, identities: identities}
+		return run(commandApp, context.WithValue(ctx, secretSourcesKey{}, sources), args)
 	}
 	return cmd
 }

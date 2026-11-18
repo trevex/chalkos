@@ -29,6 +29,8 @@ func (a *app) validateCommand() *cobra.Command {
 		Args:    cobra.ArbitraryArgs,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.validate(ctx, f, pos) })
 	cmd.Flags().StringVar(&f.cluster.Inventory, "inventory", "", "inventory naming the nodes and their config files (default $"+inventory.Env+", else "+inventory.DefaultFile+" in the current directory)")
+	var sources layer.SecretsFlags
+	sources.RegisterIdentity(cmd.Flags())
 	return cmd
 }
 
@@ -129,6 +131,10 @@ func (f failures) String() string {
 // node.
 func validateNode(cl *cluster, name string) (string, []string, error) {
 	nc, md, err := cl.image(name)
+	if err != nil {
+		return "", nil, err
+	}
+	nc, err = cl.desiredConfig(name)
 	if err != nil {
 		return "", nil, err
 	}

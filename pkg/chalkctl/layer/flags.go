@@ -38,7 +38,12 @@ type SecretsFlags struct {
 
 // Register registers --secrets and --identity.
 func (f *SecretsFlags) Register(fs *pflag.FlagSet) {
-	fs.StringVar(&f.Path, "secrets", "", "secrets file, encrypted with age or not, or - to read it from standard input")
+	fs.StringVar(&f.Path, "secrets", "", "cluster secrets path (.age, .enc.*, or plaintext), provider URI, or - for standard input")
+	f.RegisterIdentity(fs)
+}
+
+// RegisterIdentity registers --identity for commands that read age sources.
+func (f *SecretsFlags) RegisterIdentity(fs *pflag.FlagSet) {
 	fs.StringArrayVar(&f.Identities, "identity", nil, "file holding an age identity to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)")
 }
 

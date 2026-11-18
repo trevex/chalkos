@@ -361,7 +361,7 @@ func (r *upgradeRun) checkConfig() error {
 	}
 	for _, name := range slices.Sorted(maps.Keys(r.nodes)) {
 		ct := *r.nodes[name].image.contract
-		nc, err := r.cluster.config(name)
+		nc, err := r.cluster.desiredConfig(name)
 		if err != nil {
 			return err
 		}

@@ -236,24 +236,37 @@ func Read(data []byte, identities func() ([]age.Identity, error)) (Secrets, erro
 	}
 	plain := data
 	if format != FormatJSON {
-		ids, err := identities()
+		plain, err = DecryptAge(data, identities)
 		if err != nil {
 			return Secrets{}, err
 		}
-		var r io.Reader = bytes.NewReader(data)
-		if format == FormatArmoredAge {
-			// DetectFormat trims whitespace to find the armor header, so the reader must see the
-			// same trimmed input or it rejects a leading blank line that DetectFormat ignored.
-			r = armor.NewReader(bytes.NewReader(bytes.TrimSpace(data)))
-		}
-		dec, err := age.Decrypt(r, ids...)
-		if err != nil {
-			return Secrets{}, fmt.Errorf("decrypt the secrets file: %w", err)
-		}
-		if plain, err = io.ReadAll(dec); err != nil {
-			return Secrets{}, fmt.Errorf("decrypt the secrets file: %w", err)
-		}
 	}
+	return ReadJSON(plain)
+}
+
+// DecryptAge reads the contents of a binary or armored age file.
+func DecryptAge(data []byte, identities func() ([]age.Identity, error)) ([]byte, error) {
+	format, err := DetectFormat(data)
+	if err != nil || format == FormatJSON {
+		return nil, errors.New("expected an age-encrypted file")
+	}
+	ids, err := identities()
+	if err != nil {
+		return nil, err
+	}
+	var r io.Reader = bytes.NewReader(data)
+	if format == FormatArmoredAge {
+		r = armor.NewReader(bytes.NewReader(bytes.TrimSpace(data)))
+	}
+	dec, err := age.Decrypt(r, ids...)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt the secrets file: %w", err)
+	}
+	return io.ReadAll(dec)
+}
+
+// ReadJSON decodes and validates the plaintext cluster secrets bundle.
+func ReadJSON(plain []byte) (Secrets, error) {
 	var s Secrets
 	if err := json.Unmarshal(plain, &s); err != nil {
 		return Secrets{}, fmt.Errorf("parse the secrets file: %w", err)

@@ -27,7 +27,7 @@ kubeconfig's cluster, user and context are named after the inventory's metadata.
 | `--inventory`{ #flag-inventory } | string | $CHALKOSINVENTORY, else chalkos.yaml in the current directory, when it exists | Inventory naming the cluster's nodes, their addresses and their config files. |
 | `--name`{ #flag-name } | string | `admin` | User name in the admin certificate. |
 | `--out`{ #flag-out } | string | `kubeconfig` | File to write, - for standard output. |
-| `--secrets`{ #flag-secrets } | string | — | Secrets file, encrypted with age or not, or - to read it from standard input. |
+| `--secrets`{ #flag-secrets } | string | — | Cluster secrets path (.age, .enc.*, or plaintext), provider URI, or - for standard input. |
 | `--server`{ #flag-server } | string | — | URL clients reach the API server at, when it differs from the cluster endpoint; the certificate is still verified for the endpoint. |
 | `--ttl`{ #flag-ttl } | duration | `8760h0m0s` | Validity of the admin certificate. |
 

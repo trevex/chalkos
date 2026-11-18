@@ -33,7 +33,7 @@ admin client file or the secrets file.
 | `--force`{ #flag-force } | boolean | `false` | Unrevoke the node although the OS CA or the Kubernetes CA predates its revocation, so its old certificates work again. |
 | `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |
 | `--inventory`{ #flag-inventory } | string | $CHALKOSINVENTORY, else chalkos.yaml in the current directory, when it exists | Inventory naming the cluster's nodes, their addresses and their config files. |
-| `--secrets`{ #flag-secrets } | string | — | Secrets file, encrypted with age or not, or - to read it from standard input. |
+| `--secrets`{ #flag-secrets } | string | — | Cluster secrets path (.age, .enc.*, or plaintext), provider URI, or - for standard input. |
 | `--via`{ #flag-via } | string | the first one that answers | Control plane that unrevokes the node. |
 
 ## Examples

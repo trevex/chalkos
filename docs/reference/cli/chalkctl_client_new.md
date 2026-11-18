@@ -34,7 +34,7 @@ The command needs the secrets file and no inventory.
 | `--name`{ #flag-name } | string | required | The user's name, which the certificate carries. |
 | `--out`{ #flag-out } | string | ~/.config/chalkos/config | File to write. |
 | `--role`{ #flag-role } | string | required | The role the certificate grants: admin, operator or reader. |
-| `--secrets`{ #flag-secrets } | string | — | Secrets file, encrypted with age or not, or - to read it from standard input. |
+| `--secrets`{ #flag-secrets } | string | — | Cluster secrets path (.age, .enc.*, or plaintext), provider URI, or - for standard input. |
 | `--ttl`{ #flag-ttl } | duration | `8760h0m0s` | Validity of the certificate. |
 
 ## Examples

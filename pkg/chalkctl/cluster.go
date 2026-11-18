@@ -25,6 +25,7 @@ type cluster struct {
 	inv  *inventory.Inventory
 	// configs holds each node's config, once read from the inventory.
 	configs map[string]*inventory.NodeConfig
+	sources *secretSources
 }
 
 // Partial reports whether the cluster comes without an inventory.
@@ -70,7 +71,7 @@ func readInventory(ctx context.Context, path string) (*cluster, error) {
 		return nil, err
 	}
 	inv.SetContext(ctx)
-	return &cluster{name: inv.Name, inv: inv, configs: map[string]*inventory.NodeConfig{}}, nil
+	return &cluster{name: inv.Name, inv: inv, configs: map[string]*inventory.NodeConfig{}, sources: sourcesIn(ctx)}, nil
 }
 
 // check refuses the inventory's nodes when a compiled layer refuses them together.
@@ -119,6 +120,15 @@ func (c *cluster) config(name string) (*inventory.NodeConfig, error) {
 	}
 	c.configs[name] = nc
 	return nc, nil
+}
+
+// desiredConfig resolves sources when a command needs the actual desired values.
+func (c *cluster) desiredConfig(name string) (*inventory.NodeConfig, error) {
+	nc, err := c.config(name)
+	if err != nil {
+		return nil, err
+	}
+	return c.sources.materialize(nc)
 }
 
 // image is the node's config in the inventory and the metadata of its image there.
@@ -214,7 +224,7 @@ func (c *cluster) samePlatform(name, reported string) error {
 
 // version is the version of the config chalkctl delivers to a node.
 func (c *cluster) version(name string) (string, error) {
-	nc, err := c.config(name)
+	nc, err := c.desiredConfig(name)
 	if err != nil {
 		return "", err
 	}

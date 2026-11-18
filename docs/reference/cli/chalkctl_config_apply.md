@@ -94,7 +94,7 @@ file.
 | `--kubernetes-share`{ #flag-kubernetes-share } | boolean | `false` | Also deliver a new Kubernetes share, such as a new kubelet certificate for a worker. |
 | `--no-confirm`{ #flag-no-confirm } | boolean | `false` | With --try, leave the trial open for config confirm. |
 | `--password-file`{ #flag-password-file } | string | — | File holding the password of a node whose fallback is a password. |
-| `--secrets`{ #flag-secrets } | string | — | Secrets file, encrypted with age or not, or - to read it from standard input. |
+| `--secrets`{ #flag-secrets } | string | — | Cluster secrets path (.age, .enc.*, or plaintext), provider URI, or - for standard input. |
 | `--staged`{ #flag-staged } | boolean | `false` | Deliver the config to the image staged in the inactive slot, which checks it after chalkctl checks it against the node's image in the inventory; without one, the node holds it pending for the next upgrade; with --dry-run, the staged image checks it and nothing is kept; without one, --dry-run says what the node would hold pending. |
 | `--try`{ #flag-try } | duration | `0s` | Apply the config on trial for the duration, from 10s to 24h: the node rolls it back by itself unless chalkctl confirms it over a new connection once the node is healthy. |
 | `--until`{ #flag-until } | step | `confirm` | How far the delivery goes: deliver delivers to the first node that does not run the config, on trial, and leaves the trial open for config confirm; confirm delivers to every node. |

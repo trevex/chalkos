@@ -32,6 +32,7 @@ changes nothing.
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
+| `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |
 | `--inventory`{ #flag-inventory } | string | $CHALKOSINVENTORY, else chalkos.yaml in the current directory | Inventory naming the nodes and their config files. |
 
 ## Examples

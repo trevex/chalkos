@@ -55,7 +55,7 @@ or an admin's client file when its image carries an OS CA.
 | `--keys`{ #flag-keys } | string | required | Directory of the keys, as chalkctl secureboot new writes it. |
 | `--microsoft`{ #flag-microsoft } | boolean | `false` | Also enrol Microsoft's KEK CAs and its UEFI and option ROM CAs, which sign the firmware of graphics and network cards and other boot loaders. |
 | `--option-roms`{ #flag-option-roms } | boolean | `false` | Also enrol in db the SHA-256 digests of the option ROMs the node's firmware loaded, as its TPM event log lists them. |
-| `--secrets`{ #flag-secrets } | string | — | Secrets file, encrypted with age or not, or - to read it from standard input. |
+| `--secrets`{ #flag-secrets } | string | — | Cluster secrets path (.age, .enc.*, or plaintext), provider URI, or - for standard input. |
 | `--timeout`{ #flag-timeout } | duration | `10m0s` | How long to wait for the node to boot again with Secure Boot on. |
 
 ## Examples

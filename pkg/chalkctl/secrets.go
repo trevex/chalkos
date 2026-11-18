@@ -33,26 +33,26 @@ func (a *app) loadSecrets(ctx context.Context, s layer.SecretsFlags) (clustersec
 	if err != nil {
 		return clustersecrets.Secrets{}, err
 	}
-	data, err := a.readSecretsData(path)
+	source, err := parseSecretSource(path, "", false)
 	if err != nil {
 		return clustersecrets.Secrets{}, err
 	}
-	return a.decodeSecrets(ctx, s, path, data)
-}
-
-// readSecretsData reads the secrets file at path, - for standard input.
-func (a *app) readSecretsData(path string) ([]byte, error) {
-	var data []byte
-	var err error
 	if path == "-" {
-		data, err = io.ReadAll(a.stdin)
-	} else {
-		data, err = os.ReadFile(path)
+		data, err := io.ReadAll(a.stdin)
+		if err != nil {
+			return clustersecrets.Secrets{}, fmt.Errorf("read the secrets file: %w", err)
+		}
+		return a.decodeSecrets(ctx, s, path, data)
 	}
+	sources := sourcesIn(ctx)
+	if sources == nil {
+		sources = &secretSources{ctx: ctx, app: a, identities: s.Identities}
+	}
+	secrets, err := sources.bundle(source)
 	if err != nil {
-		return nil, fmt.Errorf("read the secrets file: %w", err)
+		return clustersecrets.Secrets{}, fmt.Errorf("read the secrets file %s: %w", source.path, err)
 	}
-	return data, nil
+	return secrets, nil
 }
 
 // decodeSecrets decodes data, the secrets file at path, with the age identities s names when it
@@ -444,12 +444,20 @@ func (a *app) openSecrets(ctx context.Context, s layer.SecretsFlags, change chan
 		return nil, errors.New("the secrets file from standard input cannot be updated in place; pass --out")
 	}
 	if path == "-" {
-		data, err := a.readSecretsData(path)
+		data, err := io.ReadAll(a.stdin)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("read the secrets file: %w", err)
 		}
 		return a.readSecretsFile(ctx, s, path, data, change)
 	}
+	source, err := parseSecretSource(path, "", false)
+	if err != nil {
+		return nil, err
+	}
+	if source.provider == "sops" || source.pointer != "" {
+		return nil, errors.New("rotation requires a whole plaintext or age secrets file")
+	}
+	path = source.path
 	// The file is locked also with --out: a second command would read a rotation's state while
 	// the first one moves it on, and drive the nodes from it.
 	file, data, err := clustersecrets.Open(path)
@@ -458,6 +466,11 @@ func (a *app) openSecrets(ctx context.Context, s layer.SecretsFlags, change chan
 	}
 	if err != nil {
 		return nil, err
+	}
+	format, err := clustersecrets.DetectFormat(data)
+	if err != nil || (source.provider == "file") != (format == clustersecrets.FormatJSON) {
+		file.Close()
+		return nil, fmt.Errorf("%s: expected a %s secrets file", path, source.provider)
 	}
 	f, err := a.readSecretsFile(ctx, s, path, data, change)
 	if err != nil {

@@ -194,11 +194,52 @@ rest of the node's config. The homelab's `bgp/secrets.yaml` gives the three node
 --8<-- "examples/homelab/bgp/secrets.yaml"
 ```
 
-chalkctl reads every config file as plain YAML, `Secret` documents included. A file that holds
-real secret values must therefore be in plain text where chalkctl runs. Keep it out of a public
-repository, or decrypt it into place with a tool such as sops before the command and remove it
-after. On the node, chalkd keeps the `Secret` documents readable by root alone, and hands each
-value only to the units that are granted the kind that names it.
+Use `spec.data` for literal values or `spec.sources` to read values from other files.
+Each key in `spec.sources` requires a [provider URI](#secret-source-uris). For example,
+this `Secret` takes its password from the `bgp.password` field of a SOPS file.
+
+```text title="bgp/secrets.yaml"
+apiVersion: chalkos.dev/v1alpha1
+kind: Secret
+metadata: {name: bgp}
+spec:
+  sources:
+    password: "sops://./fabric.enc.yaml#/bgp/password"
+```
+
+The path is relative to `bgp/secrets.yaml`, so this reads `bgp/fabric.enc.yaml`. Name the
+`Secret` document in the inventory and keep the provider file outside its config file globs.
+Other documents still use `secretRef: {name: bgp, key: password}`. A document can mix literal
+and sourced keys. Defining the same key in both maps is an error.
+
+Chalkctl resolves sources when it validates, compares or delivers the desired config. It
+reads and decrypts each source file once per command and puts the values in `spec.data`
+before validation and delivery. Run `chalkctl config apply` after changing a provider value.
+Use inventories you trust, since their sources can read files available to the user running
+chalkctl. On the node, chalkd keeps the delivered `Secret` documents readable by root alone and
+hands each value to units granted the kind that references it.
+
+## Secret source URIs
+
+The same URI syntax works in `Secret.spec.sources` and with `--secrets`.
+
+| Provider | Example | Reads |
+| --- | --- | --- |
+| `file://` | `file://./password.txt` | A plaintext local file. |
+| `sops://` | `sops://./fabric.enc.yaml#/bgp/password` | A local file decrypted by the `sops` executable on `PATH`, using its configured keys. |
+| `age://` | `age://./vault.yaml.age#/bgp/password` | A local file decrypted by chalkctl using `--identity` or the default age and SSH identities. |
+
+The part after `://` is a local path. Use `file:///etc/chalkos/password.txt` for an absolute
+path. Relative paths start at the declaring YAML file for `spec.sources` and in the working
+directory for `--secrets`. Escape a literal `#` in a URI path as `%23`. Quote URIs in shell
+commands.
+
+The optional fragment is a JSON Pointer into a single YAML or JSON document. For example,
+`#/bgp/password` selects the password field under `bgp`, `#/peers/0` selects the first item
+in `peers`, and `~1` and `~0` escape a slash and a tilde in a key. A source without a
+fragment returns the whole file after decryption. A service key selects a string or reads
+the full UTF-8 text, including any trailing newline. The cluster bundle must be a JSON or
+YAML object with the fields of the generated secrets file.
 
 ## Choose a role for each client file
 
@@ -230,11 +271,30 @@ Pass the secrets file with `--secrets` to the commands that issue certificates o
 config: `install`, `config apply`, `client new`, `recovery-key`, `node renew` and `rotate`. Run the
 others with a client file of a high enough role, or with the secrets file, which counts as admin.
 [Commands](../reference/access.md#commands) lists the credential each command needs. A command
-that needs the secrets file says so when `--secrets` is missing:
+that needs the secrets file says so when `--secrets` is missing.
 
-```text
-chalkctl: pass the secrets file with --secrets FILE, or --secrets - to read it from standard input
+| `--secrets` argument | How chalkctl reads it |
+| --- | --- |
+| `secrets.age` | Decrypts the local file with age. |
+| `secrets.enc.yaml` | Decrypts the local file with SOPS. The filename contains `.enc.` followed by an extension. |
+| `secrets.json` | Reads the local file as plaintext. |
+| `-` | Reads the native JSON or age bundle from standard input. |
+| `'sops://./vault.enc.yaml#/chalkos'` | Uses the named provider and selects a bundle under `chalkos`. |
+
+An explicit provider takes precedence over the filename. For example, use
+`age://./cluster.keys` for age ciphertext without an `.age` suffix. If a bare path matches both
+encrypted filename patterns, `.age` takes precedence. A bare path treats `#` as part of the
+filename. Use a URI to select a value.
+
+For example, issue a reader client file from a cluster bundle stored with other secrets.
+
+```sh
+chalkctl client new --name monitor --role reader --secrets 'sops://./vault.enc.yaml#/chalkos'
 ```
+
+`chalkctl rotate` writes rotation state back to a whole native JSON or age bundle. Use a
+native file for rotation, or use the existing stdin workflow with an explicit `--out`.
+SOPS sources and URI fragments are available to commands that read the bundle.
 
 `chalkctl upgrade` with an operator client file sends no config, and each node gives the new image
 its pending config, else carries its own config over, as

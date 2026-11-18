@@ -39,7 +39,7 @@ takes part, so remove revoked nodes from the inventory first. The command needs 
 | `--public-out`{ #flag-public-out } | string | — | New file to write the public half to, instead of updating secrets.pub.json beside the secrets file in place. |
 | `--recipient`{ #flag-recipient } | list of string | — | Age recipient to encrypt the changed secrets file to instead of those it records; may be repeated. A plaintext secrets file is encrypted only to a new .age file given with --out. |
 | `--resume`{ #flag-resume } | boolean | `false` | Continue the rotation the secrets file records. |
-| `--secrets`{ #flag-secrets } | string | — | Secrets file, encrypted with age or not, or - to read it from standard input. |
+| `--secrets`{ #flag-secrets } | string | — | Cluster secrets path (.age, .enc.*, or plaintext), provider URI, or - for standard input. |
 | `--timeout`{ #flag-timeout } | duration | `10m0s` | How long to wait for each node to apply a phase. |
 
 ## Examples

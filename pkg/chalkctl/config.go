@@ -139,7 +139,7 @@ func (c *cluster) deliveryFor(name string, ct contract) (delivery, error) {
 	if err := c.samePlatform(name, ct.platform); err != nil {
 		return delivery{}, err
 	}
-	nc, err := c.config(name)
+	nc, err := c.desiredConfig(name)
 	if err != nil {
 		return delivery{}, err
 	}

@@ -29,6 +29,8 @@ type NodeConfig struct {
 	// read it. It stays on the operator's machine: the documents chalkctl delivers carry no root
 	// hash.
 	Image *schema.Metadata
+	// documentPaths records the source file for each document.
+	documentPaths map[config.ID]string
 	// inv is the inventory the config comes from, which reads an image in a registry once.
 	inv *Inventory
 }
@@ -62,7 +64,7 @@ func (inv *Inventory) Node(name string) (*NodeConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &NodeConfig{Name: name, ImageName: imageName, ImageDir: source.Directory, ImageOCI: source.OCI, inv: inv}
+	c := &NodeConfig{Name: name, ImageName: imageName, ImageDir: source.Directory, ImageOCI: source.OCI, inv: inv, documentPaths: seen}
 	for _, d := range docs {
 		if d.APIVersion == config.CoreAPI && d.Kind == "Host" {
 			host, _ := d.Object["spec"].(map[string]any)
@@ -75,6 +77,9 @@ func (inv *Inventory) Node(name string) (*NodeConfig, error) {
 	c.Documents = docs
 	return c, nil
 }
+
+// DocumentPath gives the source file of a document in the node's inventory.
+func (c *NodeConfig) DocumentPath(id config.ID) string { return c.documentPaths[id] }
 
 // StaticAddresses are the node's static addresses, as its Network documents give them.
 func (c *NodeConfig) StaticAddresses() []string { return config.StaticAddresses(c.Documents) }
