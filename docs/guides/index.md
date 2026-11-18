@@ -27,7 +27,7 @@ for you, with what each one costs.
 
     ---
 
-    Build the homelab's bird extension from an empty module: its kinds, the rendered config, the
+    Build a BIRD extension from an empty module: its kinds, the rendered config, the
     service, effects, rules, a validator, a diagnostic and their tests, and debug it on a node.
 
     [:octicons-arrow-right-24: Write](bgp-extension.md)

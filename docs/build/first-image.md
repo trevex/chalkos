@@ -10,8 +10,7 @@ flake that builds unsigned images into the directories the cluster's inventory n
 `images/node-metal`, and you know what the build writes there and what else `mkImages` returns.
 The page follows the
 [homelab example](https://github.com/trevex/chalkos/tree/main/examples/homelab): images for bare
-metal, one for its router and one that its three Kubernetes nodes run, and a third that carries
-an extension.
+metal, one for its router and one that its three Kubernetes nodes run.
 
 ## Before you begin
 
@@ -24,8 +23,7 @@ needs that directory and no Nix.
 
 ## The flake calls mkImages
 
-The homelab's flake builds three images. The third, `node-bird-metal`, is the nodes' image with
-an extension that adds two config kinds in place of the Kubernetes layer's BGP speaker:
+The homelab's flake builds a router image, a Kubernetes node image and the installer.
 
 ```nix title="flake.nix"
 --8<-- "examples/homelab/flake.nix"
@@ -39,9 +37,8 @@ The call sets two arguments:
   hash.
 - `images` lists the images to build, each with its name, its platform and its NixOS modules.
   All are for bare metal. `router-metal` lists the router layer, `chalkos.nixosModules.router`.
-  `node-metal` lists the Kubernetes layer, `chalkos.nixosModules.kubernetes`. `node-bird-metal`
-  lists the Kubernetes layer, a module that turns its BGP speaker off, and the extension's
-  modules in `./extensions`.
+  `node-metal` lists the Kubernetes layer, `chalkos.nixosModules.kubernetes`. Both layers
+  provide their own BGP speaker.
 
 A layer is a predefined set of NixOS modules that chalkos ships, listed like any other module.
 An image lists one layer at most, and an image without one runs chalkos's base alone.

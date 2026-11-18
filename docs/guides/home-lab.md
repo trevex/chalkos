@@ -126,14 +126,13 @@ Run every later command in `homelab`. The example's files explain themselves in 
 
 | File | Holds |
 | --- | --- |
-| `flake.nix` | The image builds: `router-metal`, `node-metal`, `node-bird-metal` and the installer. |
+| `flake.nix` | Builds `router-metal`, `node-metal` and the installer. |
 | `chalkos.yaml` | The inventory: the four nodes, the address chalkctl reaches each at, their images and files. |
 | `router/router.yaml` | The router's ports, firewall, NAT64, resolver, BGP and WireGuard. |
 | `router/secrets.yaml` | The router's WireGuard key and BGP password. |
 | `cluster/cluster.yaml` | The Kubernetes cluster that all three nodes share. |
 | `bgp/fabric.yaml`, `bgp/secrets.yaml` | The nodes' ports, their BGP sessions with the router, and the password. |
 | `nodes/node1.yaml` to `nodes/node3.yaml` | Each node's disk, address and BGP speaker. |
-| `extensions/` | The BGP extension of [Write a BGP extension](bgp-extension.md): bird and its `Speaker` and `Peer` kinds, which the image `node-bird-metal` carries in place of the built-in speaker. |
 
 ### Get the tools
 
@@ -851,8 +850,8 @@ router rolls it back when chalkctl loses it. A delivery renames a router port at
 delivery, its `Network`, firewall zone and management interfaces, and deliver it with
 `chalkctl config apply router --try`, so that the router rolls it back when chalkctl loses it.
 
-A new chalkos revision or a change to the images' modules in `flake.nix` takes new images, and a
-change to `extensions/` a new `node-bird-metal`. Update the flake's lock with
+A new chalkos revision or a change to the images' modules in `flake.nix` takes new images.
+Update the flake's lock with
 `nix flake update chalkos`, and enter the shell of [Get the tools](#get-the-tools) again, so that
 chalkctl matches the images. Build the images again, as in
 [Build the images and the installer](#build-the-images-and-the-installer). With Secure Boot, remove
@@ -974,7 +973,7 @@ network. After a delivery to the router, the tunnel works again once the worksta
   election, and how to replace a control plane.
 - [Announce addresses with BGP](../kubernetes/bgp.md) covers the nodes' BGP speaker: its peers,
   the default route, its diagnostics and the deliveries it refuses.
-- [Declare a config kind](../build/declare-a-kind.md) follows the homelab's bird extension, which
+- [Declare a config kind](../build/declare-a-kind.md) follows the BIRD extension example, which
   declares the `Speaker` and `Peer` kinds.
 
 These pages explain the steps of this tutorial in more depth:

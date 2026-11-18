@@ -201,7 +201,8 @@ shell functions the check scripts call: `fail`, `retry` and `refuses`, and for t
 | `template-lab` | The lab template's image builds, and `chalkctl validate` accepts the template's YAML with it. |
 | `template-router-lab` | The router lab template's two images build, and `chalkctl validate` accepts the template's YAML with them. |
 | `template-cluster-metal` | The metal cluster template's image and installer build, and `chalkctl validate` accepts the template's YAML with the image. |
-| `example-homelab` | The homelab example's images build, and `chalkctl validate` accepts its YAML, `BGPSpeaker` and `BGPPeer` documents included, with them. The image with the bird extension evaluates. |
+| `example-homelab` | The homelab images build, and `chalkctl validate` accepts their inventory with the built-in `BGPSpeaker` and `BGPPeer` documents. |
+| `example-bgp-extension` | The standalone BIRD image builds and its extension tests pass. |
 | `example-extensions` | The extensions example's image builds, and `chalkctl validate` accepts its YAML, `Rack` and `Hardware` documents included, with it. |
 | `image-contract` | An image directory describes itself and carries a schema for each kind it lists. |
 | `image-oci` | The test image's OCI layout: one manifest of the chalkos artifact type, whose header names the image directory's root hash and platform, whose layers are the image's parts and contract in order, and whose contract holds the directory's `metadata.json`. |
@@ -238,8 +239,8 @@ chalkos's own modules carry image tests:
   missing directory stands for an output that renders no files, as git keeps no empty directory.
   `router-vrf-strict` renders the VRF example under the strict reverse-path filter.
 - The test image's `Greeting` output has a test per file of `modules/testing/greeting-examples`.
-  The examples' image carries the tests of the homelab's BGP extension and of the extensions
-  example, with golden files below `examples/homelab/extensions/tests` and
+  The examples' image carries the BGP extension and the Rack and Hardware extension tests,
+  with golden files below `examples/bgp-extension/extensions/tests` and
   `examples/extensions/tests`.
 
 The `image-tests` check builds `chalkosTests` of the test image, the router image, each router
@@ -335,9 +336,10 @@ Every check builds with `nix build`, and a change runs the checks of the parts i
 | End-to-end tests in `test/e2e` | `go-lint`, and the end-to-end checks of the changed tests |
 | `api/chalkos/*/v1/*.proto` | `api-generated`, `docs-generated`, `go-unit`, `go-lint` |
 | Command help, option descriptions | `docs-generated`, `docs` |
-| Pages in `docs/` | `docs`, and `example-homelab-validator-docs` for `guides/bgp-extension.md` |
+| Pages in `docs/` | `docs`, and `example-bgp-extension-validator-docs` for `guides/bgp-extension.md` |
 | Modules in `modules/` or `lib/` | `eval`, `eval-kinds`, `image-tests`, and the build and end-to-end checks of what the module does |
-| `examples/homelab` | `example-homelab`, `example-homelab-validator-docs`, `image-tests` |
+| `examples/homelab` | `example-homelab` |
+| `examples/bgp-extension` | `example-bgp-extension`, `example-bgp-extension-validator-docs`, `image-tests` |
 | `examples/extensions` | `example-extensions`, `image-tests` |
 | Kernel modules, closure, image size | `kernel-modules`, `image-size`, `bootspec` |
 | The firewall or VXLAN rule | `vxlan-rule`, `go-unit`, `e2e-kubernetes` |

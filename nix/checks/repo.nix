@@ -26,6 +26,10 @@ let
     chalkos = self;
     self = { };
   };
+  bgpExtension = (import ../../examples/bgp-extension/flake.nix).outputs {
+    chalkos = self;
+    self = { };
+  };
   # chalkctl validate of a tree whose Cluster document pins every image: a reference with a tag
   # and no digest fails the check, and so does an API server that no longer follows the kubelet
   # of nixpkgs's Kubernetes release.
@@ -262,14 +266,13 @@ in
   # The homelab example: its flake builds the router's metal image and the nodes', and chalkctl
   # validate accepts the router's and the nodes' YAML, BGPSpeaker and BGPPeer documents included,
   # with those images where their groups point, and validatePinned checks its Cluster document's
-  # images. The image node-bird-metal, of the BGP extension, evaluates.
+  # images.
   example-homelab =
     let
       packages = homelab.packages.${pkgs.stdenv.hostPlatform.system};
     in
     # The installer, which the guide writes to a USB stick, evaluates.
     assert lib.isString packages.installer.drvPath;
-    assert lib.isString packages.node-bird-metal.drvPath;
     checkLib.validateDirectory {
       name = "example-homelab";
       src = ../../examples/homelab;
@@ -296,15 +299,24 @@ in
       images."images/node-metal" = example.packages.${pkgs.stdenv.hostPlatform.system}.node-metal;
     };
 
-  # The BGP guide shows the refusals that the homelab's tests bgp-unconfigured-peer-interface, of
+  example-bgp-extension =
+    let
+      system = pkgs.stdenv.hostPlatform.system;
+    in
+    pkgs.linkFarm "chalkos-example-bgp-extension" {
+      image = bgpExtension.packages.${system}.node-bird-metal;
+      tests = bgpExtension.checks.${system}.node-bird-metal;
+    };
+
+  # The BGP guide shows the refusals that the extension's tests bgp-unconfigured-peer-interface, of
   # its validator bgp-peers, and bgp-new-asn, of a change rule, expect, as refusals.json holds
   # them. Each sits on one line of its own that starts with [{"kind":"Peer","name":"router","path":
   # and the test's field, spec.interfaces[2] or spec.asn, which is how the check finds it.
-  example-homelab-validator-docs =
+  example-bgp-extension-validator-docs =
     let
-      inherit (homelab.nixosConfigurations.node-bird-metal.config.chalkos) tests;
+      inherit (bgpExtension.nixosConfigurations.node-bird-metal.config.chalkos) tests;
     in
-    pkgs.runCommand "chalkos-example-homelab-validator-docs"
+    pkgs.runCommand "chalkos-example-bgp-extension-validator-docs"
       {
         nativeBuildInputs = [ pkgs.jq ];
         page = ../../docs/guides/bgp-extension.md;

@@ -1,7 +1,7 @@
 # The images the checks and the documentation evaluate without booting them, from one call of
 # mkImages so each is evaluated once: docs, with the Kubernetes layer; plain, without a layer;
-# edge, a router image; and examples, with the Kubernetes layer and the extensions of the homelab
-# and extensions examples.
+# edge, a router image; and examples, with the Kubernetes layer and the BGP, Rack and Hardware
+# extensions.
 { self }:
 let
   inherit (self.nixosModules) kubernetes router;
@@ -27,7 +27,7 @@ self.lib.mkImages {
       platform = "metal";
       modules = [
         kubernetes
-        ../../examples/homelab/extensions
+        ../../examples/bgp-extension/extensions
         ../../examples/extensions
       ];
     }

@@ -1,14 +1,14 @@
 ---
 title: "Write a BGP extension"
-description: "Build the homelab's bird extension from an empty module, test each part, and debug it on a node"
+description: "Build a BIRD BGP extension from an empty module, test each part, and debug it on a node"
 ---
 
 # Write a BGP extension
 
-This tutorial builds the homelab's BGP extension, `extensions/bgp.nix`, from an empty module. The
-homelab's nodes run the Kubernetes layer's built-in BGP speaker, which
-[Announce addresses with BGP](../kubernetes/bgp.md) describes; the extension does the same job
-with bird, in the image `node-bird-metal`, which leaves the built-in speaker out. The extension
+This tutorial builds the BGP extension in
+[`examples/bgp-extension`](https://github.com/trevex/chalkos/tree/main/examples/bgp-extension)
+from an empty module. Its image, `node-bird-metal`, uses BIRD in place of the Kubernetes layer's
+[built-in BGP speaker](../kubernetes/bgp.md). The extension
 runs bird on each node, with two config kinds of its own: `Speaker` for the node's side of its
 sessions and `Peer` for its neighbours. At the end `node-bird-metal` declares both kinds,
 renders `bird.conf` from them, runs bird with the sessions' password, reloads it on a change,
@@ -26,7 +26,7 @@ order of the work and links to them where the details matter.
 
 You need:
 
-- the homelab example in a git repository of its own, with the flake's shell, as
+- a ChalkOS checkout and the homelab example in a git repository of its own, with the flake's shell, as
   [Prepare the files](home-lab.md#prepare-the-files) and [Get the tools](home-lab.md#get-the-tools)
   of the home lab set it up. Run every command of this page in that shell, in the repository;
 - some Nix: NixOS modules, options and `let` bindings;
@@ -39,33 +39,26 @@ The steps up to [Try it on a node](#try-it-on-a-node) need no node: they run in 
 
 ## Start from an empty module
 
-The example already holds the finished extension. Move it aside, to compare with at any step, and
-start an empty one:
+Keep a copy of the finished extension nearby while you build your own. These commands assume
+you made the homelab beside the ChalkOS checkout as shown in the home lab guide.
 
 ```sh
-git mv extensions extensions.done
+cp -r ../chalkos/examples/bgp-extension/extensions extensions.done
 mkdir extensions
 ```
 
-`flake.nix` puts the directory into the image `node-bird-metal`, which turns the Kubernetes layer's
-BGP speaker off, and leaves it out of the router's image and the nodes':
+Add this entry to `images` in the homelab's `flake.nix`. It builds `node-bird-metal` with your
+`extensions/` directory and turns off the Kubernetes layer's built-in BGP in that image.
 
 ```nix
-{
-  name = "node-bird-metal";
-  platform = "metal";
-  modules = [
-    chalkos.nixosModules.kubernetes
-    { chalkos.kubernetes.bgp.enable = false; }
-    ./extensions
-  ];
-}
+--8<-- "examples/bgp-extension/flake.nix:bird-image"
 ```
 
-`extensions/default.nix` imports the extension:
+Add `node-bird-metal` to the list inherited from `images` in `packages.${system}`. Create
+`extensions/default.nix` to import the extension.
 
 ```nix title="extensions/default.nix"
-# The homelab's BGP extension, bird with its Speaker and Peer kinds and the config rendered from
+# The guide's BGP extension, bird with its Speaker and Peer kinds and the config rendered from
 # them, which the image node-bird-metal carries in place of the built-in speaker.
 {
   imports = [ ./bgp.nix ];
@@ -98,7 +91,7 @@ the effects' helpers. Every later step adds attributes to the module's body. Add
 git, because a flake sees only the files git tracks:
 
 ```sh
-git add extensions
+git add flake.nix extensions
 ```
 
 A file that git does not track is missing from the build, and the error names a path that does not
@@ -110,7 +103,7 @@ A kind is the schema of a config document. The image converts its options into a
 chalkctl and chalkd check every document against. Add `Peer` to the module's body:
 
 ```nix
---8<-- "examples/homelab/extensions/bgp.nix:kind"
+--8<-- "examples/bgp-extension/extensions/bgp.nix:kind"
 ```
 
 Each field is a NixOS option. The type decides what the schema accepts, so pick the narrowest one:
@@ -125,7 +118,7 @@ place of `lib.mkOption`.
 Add `Speaker`, of which a node holds one, since it has no `multiple`:
 
 ```nix
---8<-- "examples/homelab/extensions/bgp.nix:speaker"
+--8<-- "examples/bgp-extension/extensions/bgp.nix:speaker"
 ```
 
 chalkctl refuses a second `Speaker` on a node. `export.interfaces` is a nested field: an attribute
@@ -271,7 +264,7 @@ git add extensions
 ```
 
 ```text title="extensions/bird.conf.tmpl"
---8<-- "examples/homelab/extensions/bird.conf.tmpl"
+--8<-- "examples/bgp-extension/extensions/bird.conf.tmpl"
 ```
 
 The template is Go's `text/template`. It reads the node's name as `.node.name` and each input
@@ -291,7 +284,7 @@ bird = config.services.bird.package;
 Then declare the output in the body:
 
 ```nix
---8<-- "examples/homelab/extensions/bgp.nix:output"
+--8<-- "examples/bgp-extension/extensions/bgp.nix:output"
 ```
 
 On a node, chalkd renders and checks every output before a delivery changes anything, and refuses
@@ -332,7 +325,7 @@ passes because it expects nothing yet beyond an accepted config. Read what the o
 
 ```console
 $ cat result/bgp-fabric/outputs/bird-conf/bird.conf
---8<-- "examples/homelab/extensions/tests/fabric/bird-conf/bird.conf"
+--8<-- "examples/bgp-extension/extensions/tests/fabric/bird-conf/bird.conf"
 ```
 
 It holds a `protocol bgp` per interface of the `Peer`, named after the `Peer` and the interface
@@ -394,7 +387,7 @@ command that takes the new file.
 The image needs bird itself, reading the rendered file. Add the service to the body:
 
 ```nix
---8<-- "examples/homelab/extensions/bgp.nix:service"
+--8<-- "examples/bgp-extension/extensions/bgp.nix:service"
 ```
 
 `bird.conf` exists on the node alone, so the NixOS module's check of the config is off, and the
@@ -403,7 +396,7 @@ so a misspelled name fails the evaluation. The service's settings run `bird-cred
 turns the sessions' password into bird constants. Add it to the `let` bindings:
 
 ```nix
---8<-- "examples/homelab/extensions/bgp.nix:credentials"
+--8<-- "examples/bgp-extension/extensions/bgp.nix:credentials"
 ```
 
 `bird-credentials` runs before bird starts and on each reload. It reads each `secret_*` file in
@@ -417,7 +410,7 @@ A renderer never sees a secret's value, so `bird.conf` names the password by its
 bird the values that the `Peer` documents' `password` fields name, as systemd credentials:
 
 ```nix
---8<-- "examples/homelab/extensions/bgp.nix:grant"
+--8<-- "examples/bgp-extension/extensions/bgp.nix:grant"
 ```
 
 The homelab keeps the password in `bgp/secrets.yaml`, a file of its own, so that the file with
@@ -428,7 +421,7 @@ Last, two settings outside bird: networkd leaves the routes bird installs alone,
 firewall lets BFD's packets in:
 
 ```nix
---8<-- "examples/homelab/extensions/bgp.nix:network"
+--8<-- "examples/bgp-extension/extensions/bgp.nix:network"
 ```
 
 Build the image. The build checks what the evaluation cannot, such as a granted unit that runs
@@ -444,7 +437,7 @@ A delivery that changes `bird.conf` must reach bird. An effect says what a deliv
 service once it is applied. Add it to the body:
 
 ```nix
---8<-- "examples/homelab/extensions/bgp.nix:effect"
+--8<-- "examples/bgp-extension/extensions/bgp.nix:effect"
 ```
 
 bird reloads when the files of `bird-conf` change, or when a value of a `Secret` that the output's
@@ -458,7 +451,7 @@ git add extensions
 ```
 
 ```nix
---8<-- "examples/homelab/extensions/bgp.nix:tests"
+--8<-- "examples/bgp-extension/extensions/bgp.nix:tests"
 ```
 
 `bird.conf` names the credential, not its value, so the new password leaves the file as it was,
@@ -523,14 +516,14 @@ git add extensions
 ```
 
 ```nix
---8<-- "examples/homelab/extensions/bgp.nix:validator"
+--8<-- "examples/bgp-extension/extensions/bgp.nix:validator"
 ```
 
 The program reads the same input as a renderer, and prints a report of refusals, one per
 interface that no `Network` names:
 
 ```text title="extensions/bgp-peers.jq"
---8<-- "examples/homelab/extensions/bgp-peers.jq"
+--8<-- "examples/bgp-extension/extensions/bgp-peers.jq"
 ```
 
 A section of a networkd document may be one object or a list of them, and a key one value or a
@@ -585,7 +578,7 @@ A node has no logins, so an operator reads bird's state through a diagnostic, a 
 of the image that chalkd runs on request. Add it to the body:
 
 ```nix
---8<-- "examples/homelab/extensions/bgp.nix:diagnostic"
+--8<-- "examples/bgp-extension/extensions/bgp.nix:diagnostic"
 ```
 
 `birdc -r` asks bird in its read-only mode, through bird's socket, which `groups` makes reachable.
@@ -607,7 +600,7 @@ diff -r extensions.done extensions
 comments and the other tests of the validator. Once you are done comparing, remove the copy:
 
 ```sh
-git rm -r extensions.done
+rm -r extensions.done
 ```
 
 ## Try it on a node

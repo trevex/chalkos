@@ -227,7 +227,7 @@ in
       # --8<-- [end:tests]
       # A Peer keeps its AS number: the change rule of the field asn refuses a new one. The
       # refusal docs/guides/bgp-extension.md shows, which the check
-      # example-homelab-validator-docs finds in the page.
+      # example-bgp-extension-validator-docs finds in the page.
       bgp-new-asn = {
         before = ./bgp-examples/fabric.yaml;
         config = ./tests/new-asn.yaml;
@@ -242,7 +242,7 @@ in
       };
     }
     # The refusal docs/guides/bgp-extension.md shows, which the check
-    # example-homelab-validator-docs finds in the page.
+    # example-bgp-extension-validator-docs finds in the page.
     // validatorTest "unconfigured-peer-interface" [
       {
         kind = "Peer";

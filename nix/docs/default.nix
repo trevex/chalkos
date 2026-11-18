@@ -13,12 +13,15 @@ let
   snippets = {
     "examples/homelab" = [
       "flake.nix"
-      "extensions"
       "chalkos.yaml"
       "nodes"
       "cluster"
       "router"
       "bgp"
+    ];
+    "examples/bgp-extension" = [
+      "flake.nix"
+      "extensions"
     ];
     "examples/extensions" = [
       "rack.nix"

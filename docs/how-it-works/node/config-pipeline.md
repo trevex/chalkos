@@ -6,7 +6,7 @@ description: "How a delivery passes a node's documents through rules, outputs an
 # The config pipeline
 
 A delivery of config to a node either changes nothing or changes everything it carries. When the
-`Peer` documents of the homelab's BGP extension give bird a config that its own parser rejects,
+`Peer` documents of the [BGP extension example](../../guides/bgp-extension.md) give bird a config that its own parser rejects,
 `chalkctl config apply` fails, and its error names the output:
 
 ```text

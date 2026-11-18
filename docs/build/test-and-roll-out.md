@@ -8,10 +8,9 @@ description: "Check an image and the nodes' config, upgrade the nodes, and confi
 This page is for an image author whose changed image is ready to reach running nodes. At the end
 the image has passed its build checks and its tests, every node's config has passed
 `chalkctl validate`, the nodes run the image, and `chalkctl status` and `chalkctl logs` show that
-the outputs rendered and the services read them. The page uses the homelab and its BGP extension,
-`extensions/bgp.nix`, in the image `node-bird-metal`, which node1 runs once
-[Try it on a node](../guides/bgp-extension.md#try-it-on-a-node) of the BGP guide has moved it
-there.
+the outputs rendered and the services read them. The examples use the homelab with the
+`node-bird-metal` image and the BIRD extension added by
+[Write a BGP extension](../guides/bgp-extension.md).
 
 A change reaches a node in one of two ways. A changed image reaches it with
 [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md), which brings the node's config along.
@@ -22,8 +21,9 @@ Changed YAML alone reaches it with
 
 You need:
 
-- The flake and inventory of [Your first image flake](first-image.md), and a cluster whose nodes
-  run an earlier image.
+- The homelab flake and inventory with the BIRD image and node1's files set up as in
+  [Write a BGP extension](../guides/bgp-extension.md#validate-a-nodes-files), and a cluster
+  whose nodes run an earlier image.
 - The secrets file to deliver config, here `secrets.age`. `chalkctl upgrade` also runs with an
   operator client file, and then sends no config.
 - For nodes that enforce Secure Boot, a signed copy of the image, as
