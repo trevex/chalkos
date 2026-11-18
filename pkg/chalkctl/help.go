@@ -361,16 +361,19 @@ const discardPendingExample = `  # Drop the config w1 holds pending.
 
 const statusLong = `Shows an installed node's status: the config stored for the running image and whether it is the
 one the inventory gives; the last completed live activation and any current or failed activation
-step; its platform; the image it booted, by its store's root hash and the tag and revision it
-was built from as far as the node knows them, the boot entry and whether that boot was found
-healthy; an upgrade that is staged, or active and boots next; an upgrade that failed and was
-rolled back,
+step; its platform; the image it booted, by its store's root hash and the tag and revision it was
+built from as far as the node knows them, the boot entry and whether that boot was found healthy;
+an upgrade that is staged, or active and boots next; an upgrade that failed and was rolled back,
 with the journal of the boot that failed; a config on trial and when it rolls back; the config it
 holds pending for its next upgrade, unchecked, and since when; the previous config and image a
 rollback restores; whether its store is the image the inventory names for it; its volumes and
 their state; Kubernetes, with the nodes revoked in the cluster on a control plane; a router's BGP
 sessions; the certificates it serves and when they expire; the CAs it trusts; its clock; and the
-units that failed. The command needs a reader client file or the secrets file.`
+units that failed. The command needs a reader client file or the secrets file.
+
+status decrypts no sops:// or age:// source of a Secret document, so it asks for no key. When the
+config the inventory gives the node takes values from such sources, status does not know its
+version: it says so in place of comparing it, and chalkctl config apply --diff <node> compares it.`
 
 const statusExample = `  chalkctl status cp1
 
@@ -532,6 +535,12 @@ registry, names each node whose config is not, and warns of a node whose SystemD
 which holds its keys and secrets, unencrypted, and of each image reference that names a tag but no
 digest, which nodes pull by whatever the tag points to when they pull. It reaches no node and
 needs no secrets file or client file.
+
+validate reads the file:// sources of Secret documents and decrypts no sops:// or age:// source,
+so it asks for no key. It checks each key of such a source with a placeholder value, which no
+rule or validator sees, as they see a Secret's values as hashes alone. It warns of each such key
+and prints no config version, which hashes the values: whether the source decrypts and holds the
+value shows when a command that delivers the config reads it.
 
 A config validate passes can still be refused on delivery: validate runs no rule that reads the
 node's facts or its running config, none of the image's other validators, and none of its

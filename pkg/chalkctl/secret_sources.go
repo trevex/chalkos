@@ -275,7 +275,17 @@ func clusterBundleJSON(data []byte) ([]byte, error) {
 	return data, nil
 }
 
+// materialize resolves the sources of nc's Secret documents into their spec.data, decrypting
+// those of sops and age.
 func (s *secretSources) materialize(nc *inventory.NodeConfig) (*inventory.NodeConfig, error) {
+	resolved, _, err := s.resolve(nc, false)
+	return resolved, err
+}
+
+// resolve resolves the sources of nc's Secret documents into their spec.data. With placeholders it
+// decrypts nothing: a key from a sops or age source gets the source's URI as its value, and
+// encrypted names each such key, as "Secret <name> key <key>".
+func (s *secretSources) resolve(nc *inventory.NodeConfig, placeholders bool) (_ *inventory.NodeConfig, encrypted []string, _ error) {
 	resolved := *nc
 	resolved.Documents = slices.Clone(nc.Documents)
 	for i, doc := range resolved.Documents {
@@ -288,34 +298,41 @@ func (s *secretSources) materialize(nc *inventory.NodeConfig) (*inventory.NodeCo
 			continue
 		}
 		if s == nil {
-			return nil, errors.New("Secret sources require a chalkctl command")
+			return nil, nil, errors.New("Secret sources require a chalkctl command")
 		}
 		filename := nc.DocumentPath(doc.ID())
 		where := fmt.Sprintf("%s: Secret %q", filename, doc.Name)
 		sources, ok := rawSources.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("%s: spec.sources must map keys to provider URIs", where)
+			return nil, nil, fmt.Errorf("%s: spec.sources must map keys to provider URIs", where)
 		}
 		doc.Object = schema.DeepCopy(doc.Object).(map[string]any)
 		spec = doc.Object["spec"].(map[string]any)
 		data, ok := spec["data"].(map[string]any)
 		if !ok {
 			if _, present := spec["data"]; present {
-				return nil, fmt.Errorf("%s: spec.data must map keys to strings", where)
+				return nil, nil, fmt.Errorf("%s: spec.data must map keys to strings", where)
 			}
 			data = make(map[string]any)
 		}
 		for _, key := range slices.Sorted(maps.Keys(sources)) {
 			if _, present := data[key]; present {
-				return nil, fmt.Errorf("%s: key %q is defined in both spec.data and spec.sources", where, key)
+				return nil, nil, fmt.Errorf("%s: key %q is defined in both spec.data and spec.sources", where, key)
 			}
 			value, ok := sources[key].(string)
 			if !ok {
-				return nil, fmt.Errorf("%s: source for key %q must be a provider URI", where, key)
+				return nil, nil, fmt.Errorf("%s: source for key %q must be a provider URI", where, key)
+			}
+			if placeholders {
+				if source, err := parseSecretSource(value, "", true); err == nil && source.provider != "file" {
+					data[key] = value
+					encrypted = append(encrypted, fmt.Sprintf("Secret %s key %s", doc.Name, key))
+					continue
+				}
 			}
 			resolvedValue, err := s.secretValue(value, filepath.Dir(filename))
 			if err != nil {
-				return nil, fmt.Errorf("%s: resolve key %q: %w", where, key, err)
+				return nil, nil, fmt.Errorf("%s: resolve key %q: %w", where, key, err)
 			}
 			data[key] = resolvedValue
 		}
@@ -323,5 +340,5 @@ func (s *secretSources) materialize(nc *inventory.NodeConfig) (*inventory.NodeCo
 		delete(spec, "sources")
 		resolved.Documents[i] = doc
 	}
-	return &resolved, nil
+	return &resolved, encrypted, nil
 }

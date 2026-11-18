@@ -2,6 +2,10 @@ package chalkctl
 
 import (
 	"context"
+	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -108,4 +112,45 @@ func TestRunningAdvice(t *testing.T) {
 			t.Errorf("%s: %q, want %q", name, got, tc.want)
 		}
 	}
+}
+
+// TestStatusDecryptsNoSecretSource: status runs neither sops nor age for the Secret sources of
+// the node's config, and says which command compares that config in place of comparing it.
+func TestStatusDecryptsNoSecretSource(t *testing.T) {
+	ta := newTestApp(t)
+	s, _ := installedNode(t, ta, []byte(`{}`))
+	addr := ta.startNode(t, s)
+	calls := noSOPS(t, ta)
+	writeFile(t, filepath.Join(ta.dir, "nodes", "vault.yaml.age"), "not age at all")
+	ta.writeNode(t, n1SystemDisk, n1Network, encryptedSecret)
+	if err := ta.run(t.Context(), ta.args([]string{"status", "n1"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if out := ta.stdout.String(); !strings.Contains(out, "not compared with the inventory's, which takes Secret values from sops or age sources that status does not decrypt; chalkctl config apply --diff n1 compares them") {
+		t.Errorf("status = %q", out)
+	}
+	if _, err := os.Stat(calls); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("status ran sops: %v", err)
+	}
+}
+
+// encryptedSecret is a Secret whose keys come from a sops and an age source next to n1's file.
+const encryptedSecret = `apiVersion: chalkos.dev/v1alpha1
+kind: Secret
+metadata: {name: bgp}
+spec: {sources: {password: 'sops://./fabric.enc.yaml#/bgp/password', other: 'age://./vault.yaml.age#/bgp/other'}}
+`
+
+// noSOPS puts a sops on PATH that records each run in the file it returns, and the sops file
+// encryptedSecret names next to n1's file.
+func noSOPS(t *testing.T, ta *testApp) string {
+	t.Helper()
+	calls := filepath.Join(ta.dir, "sops-calls")
+	writeFile(t, filepath.Join(ta.dir, "sops"), "#!/bin/sh\necho run >> "+calls+"\nexit 1\n")
+	if err := os.Chmod(filepath.Join(ta.dir, "sops"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", ta.dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	writeFile(t, filepath.Join(ta.dir, "nodes", "fabric.enc.yaml"), "sops: {}\n")
+	return calls
 }

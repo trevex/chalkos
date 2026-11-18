@@ -29,8 +29,6 @@ func (a *app) validateCommand() *cobra.Command {
 		Args:    cobra.ArbitraryArgs,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.validate(ctx, f, pos) })
 	cmd.Flags().StringVar(&f.cluster.Inventory, "inventory", "", "inventory naming the nodes and their config files (default $"+inventory.Env+", else "+inventory.DefaultFile+" in the current directory)")
-	var sources layer.SecretsFlags
-	sources.RegisterIdentity(cmd.Flags())
 	return cmd
 }
 
@@ -134,7 +132,7 @@ func validateNode(cl *cluster, name string) (string, []string, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	nc, err := cl.desiredConfig(name)
+	nc, encrypted, err := cl.checkedConfig(name)
 	if err != nil {
 		return "", nil, err
 	}
@@ -164,5 +162,10 @@ func validateNode(cl *cluster, name string) (string, []string, error) {
 		image += " at " + a.Reference
 	}
 	line := fmt.Sprintf("%s: valid for the image %s (%s on %s, root hash %.12s), config %s", name, image, md.Name, md.Platform, md.RootHash, d.Version)
+	if len(encrypted) > 0 {
+		// The version hashes the Secret values, which validate does not decrypt.
+		line = fmt.Sprintf("%s: valid for the image %s (%s on %s, root hash %.12s), config version unknown", name, image, md.Name, md.Platform, md.RootHash)
+		warnings = append(warnings, fmt.Sprintf("node %s: validate decrypts no sops or age source and checked %s with a placeholder value; whether the source decrypts and holds the value shows when chalkctl config apply --dry-run %s reads it", name, strings.Join(encrypted, ", "), name))
+	}
 	return line, warnings, nil
 }

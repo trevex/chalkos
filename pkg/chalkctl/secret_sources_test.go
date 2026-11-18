@@ -3,6 +3,8 @@ package chalkctl
 import (
 	"bytes"
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,44 +49,46 @@ func TestParseSecretSource(t *testing.T) {
 
 func TestValidateSecretSourcesMatchesLiteralConfig(t *testing.T) {
 	ta := newTestApp(t)
-	dir := filepath.Join(ta.dir, "nodes")
-	key, err := age.GenerateX25519Identity()
-	if err != nil {
-		t.Fatal(err)
-	}
-	identity := filepath.Join(ta.dir, "custom.identity")
-	writeFile(t, identity, key.String()+"\n")
-	var ciphertext bytes.Buffer
-	enc, err := age.Encrypt(&ciphertext, key.Recipient())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := enc.Write([]byte("bgp: {password: shared-value}\n")); err != nil {
-		t.Fatal(err)
-	}
-	if err := enc.Close(); err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, filepath.Join(dir, "service.age"), ciphertext.String())
-	writeFile(t, filepath.Join(dir, "plain"), "line with newline\n")
+	writeFile(t, filepath.Join(ta.dir, "nodes", "plain"), "line with newline\n")
 	const secret = "apiVersion: chalkos.dev/v1alpha1\nkind: Secret\nmetadata: {name: bgp}\n"
 	validate := func(spec string) string {
 		t.Helper()
 		inventory := writeInventory(t, ta.dir, n1SystemDisk, n1Network, secret+spec)
 		ta.stdout.Reset()
-		if err := ta.run(t.Context(), []string{"validate", "--inventory", inventory, "--identity", identity}); err != nil {
+		if err := ta.run(t.Context(), []string{"validate", "--inventory", inventory}); err != nil {
 			t.Fatal(err)
 		}
 		return ta.stdout.String()
 	}
-	fromSources := validate("spec: {data: {literal: keep}, sources: {password: 'age://./service.age#/bgp/password', file: 'file://./plain'}}\n")
-	fromLiterals := validate("spec: {data: {literal: keep, password: shared-value, file: \"line with newline\\n\"}}\n")
+	fromSources := validate("spec: {data: {literal: keep}, sources: {file: 'file://./plain'}}\n")
+	fromLiterals := validate("spec: {data: {literal: keep, file: \"line with newline\\n\"}}\n")
 	if fromSources != fromLiterals || !strings.Contains(fromSources, "n1: valid") {
 		t.Fatalf("sources = %q; literals = %q", fromSources, fromLiterals)
 	}
 	inventory := writeInventory(t, ta.dir, n1SystemDisk, n1Network, secret+"spec: {sources: {password: plain}}\n")
 	if err := ta.run(t.Context(), []string{"validate", "--inventory", inventory}); err == nil || !strings.Contains(err.Error(), "must use a provider URI") {
 		t.Fatalf("expected URI error, got %v", err)
+	}
+}
+
+// validate runs neither sops nor age: it checks the config with placeholders for the values of
+// encrypted sources, gives no config version and says what it left unchecked.
+func TestValidateDecryptsNoSecretSource(t *testing.T) {
+	ta := newTestApp(t)
+	calls := noSOPS(t, ta)
+	writeFile(t, filepath.Join(ta.dir, "nodes", "vault.yaml.age"), "not age at all")
+	inventory := writeInventory(t, ta.dir, n1SystemDisk, n1Network, encryptedSecret)
+	if err := ta.run(t.Context(), []string{"validate", "--inventory", inventory}); err != nil {
+		t.Fatal(err)
+	}
+	if out := ta.stdout.String(); !strings.Contains(out, "n1: valid for the image") || !strings.HasSuffix(out, "config version unknown\n") {
+		t.Errorf("stdout = %q", out)
+	}
+	if !strings.Contains(ta.stderr.String(), "validate decrypts no sops or age source and checked Secret bgp key other, Secret bgp key password with a placeholder value") {
+		t.Errorf("stderr = %q", ta.stderr)
+	}
+	if _, err := os.Stat(calls); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("validate ran sops: %v", err)
 	}
 }
 

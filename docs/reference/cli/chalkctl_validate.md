@@ -23,6 +23,12 @@ which holds its keys and secrets, unencrypted, and of each image reference that 
 digest, which nodes pull by whatever the tag points to when they pull. It reaches no node and
 needs no secrets file or client file.
 
+validate reads the file:// sources of Secret documents and decrypts no sops:// or age:// source,
+so it asks for no key. It checks each key of such a source with a placeholder value, which no
+rule or validator sees, as they see a Secret's values as hashes alone. It warns of each such key
+and prints no config version, which hashes the values: whether the source decrypts and holds the
+value shows when a command that delivers the config reads it.
+
 A config validate passes can still be refused on delivery: validate runs no rule that reads the
 node's facts or its running config, none of the image's other validators, and none of its
 renderers or their checks. chalkctl config apply --dry-run has the node run all of them, and
@@ -32,7 +38,6 @@ changes nothing.
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
-| `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |
 | `--inventory`{ #flag-inventory } | string | $CHALKOSINVENTORY, else chalkos.yaml in the current directory | Inventory naming the nodes and their config files. |
 
 ## Examples

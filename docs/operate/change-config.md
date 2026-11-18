@@ -61,6 +61,11 @@ cp3: valid for the image node-metal (node-metal on metal, root hash 98bb85096ed9
 The config hash of each node differs from the one before the change. That hash is the config's
 version, which `config apply` and `chalkctl status` print too.
 
+`validate` decrypts no `sops://` or `age://` source of a `Secret` document, so it asks for no
+key. It checks the config with a placeholder for each such value, warns of each one, and prints
+`config version unknown` in place of the hash, which covers the values. Whether a source decrypts
+and holds its value shows when `--diff`, `--dry-run` or a delivery reads it.
+
 ## Preview the change
 
 `--diff` asks the node for the config it runs, compares it with the inventory's and changes

@@ -222,11 +222,29 @@ func (c *cluster) samePlatform(name, reported string) error {
 	return fmt.Errorf("%s runs an image built for %s, but its image %s is built for %s; changing a node's platform is a reinstall", name, reported, nc.ImageName, md.Platform)
 }
 
-// version is the version of the config chalkctl delivers to a node.
+// errEncryptedSources tells that a node's config takes Secret values from sops or age sources,
+// which a command that decrypts nothing cannot know.
+var errEncryptedSources = errors.New("the config takes Secret values from sops or age sources")
+
+// checkedConfig is the node's config as status and validate read it, which decrypt nothing: a key of
+// a Secret from a sops or age source holds a placeholder, and encrypted names each such key.
+func (c *cluster) checkedConfig(name string) (_ *inventory.NodeConfig, encrypted []string, _ error) {
+	nc, err := c.config(name)
+	if err != nil {
+		return nil, nil, err
+	}
+	return c.sources.resolve(nc, true)
+}
+
+// version is the version of the config chalkctl delivers to a node, read without decrypting
+// anything: errEncryptedSources when the config takes Secret values from sops or age sources.
 func (c *cluster) version(name string) (string, error) {
-	nc, err := c.desiredConfig(name)
+	nc, encrypted, err := c.checkedConfig(name)
 	if err != nil {
 		return "", err
+	}
+	if len(encrypted) > 0 {
+		return "", errEncryptedSources
 	}
 	e, err := config.Encode(nc.Documents)
 	if err != nil {

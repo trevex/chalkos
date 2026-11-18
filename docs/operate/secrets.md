@@ -146,9 +146,15 @@ The path is relative to `bgp/secrets.yaml`, so this reads `bgp/fabric.enc.yaml`.
 Other documents still use `secretRef: {name: bgp, key: password}`. A document can mix literal
 and sourced keys. Defining the same key in both maps is an error.
 
-Chalkctl resolves sources when it validates, compares or delivers the desired config. It
-reads and decrypts each source file once per command and puts the values in `spec.data`
-before validation and delivery. Run `chalkctl config apply` after changing a provider value.
+The commands that deliver or compare the config, such as `config apply` with or without `--diff`
+and `--dry-run`, `upgrade` and `install`, resolve the sources. They read and decrypt each source
+file once per command and put the values in `spec.data` before checking and delivering the
+config. `chalkctl validate` and `chalkctl status` decrypt no `sops://` or `age://` source, so they
+ask for no key: `validate` checks a placeholder in place of each such value and prints no config
+version, and `status` does not compare the node's config with the inventory's.
+[Change a node's config](change-config.md#change-the-files-and-validate-them) and
+[Read the config line](status-and-logs.md#read-the-config-line) show their output. Run
+`chalkctl config apply` after changing a provider value.
 Use inventories you trust, since their sources can read files available to the user running
 chalkctl. On the node, chalkd keeps the delivered `Secret` documents readable by root alone and
 hands each value to units granted the kind that references it.

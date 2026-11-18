@@ -3,6 +3,7 @@ package chalkctl
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 
@@ -106,6 +107,9 @@ func (i nodeInventory) slotState(version string, advice func(want string) string
 	}
 	want, err := c.version(name)
 	switch {
+	case errors.Is(err, errEncryptedSources):
+		// status decrypts nothing, so it does not know the config's version.
+		return "not compared with the inventory's, which takes Secret values from sops or age sources that status does not decrypt; chalkctl config apply --diff " + name + " compares them"
 	case err != nil:
 		return "cannot read the config the inventory gives it: " + err.Error()
 	case want != version:

@@ -99,6 +99,11 @@ parentheses say otherwise when they differ:
 - `not the inventory's; the node takes no delivery until chalkctl config rollback node1 removes
   the record of a config's trial that cannot be read`: the node cannot read its trial record and
   refuses every change but a rollback.
+- `not compared with the inventory's, which takes Secret values from sops or age sources that
+  status does not decrypt; chalkctl config apply --diff node1 compares them`: a `Secret` of the
+  node's config takes a value from a `sops://` or `age://` source. The config's version hashes
+  that value, and status decrypts nothing, so it asks for no key and cannot compare the versions.
+  `--diff` decrypts the sources and compares the documents.
 - `cannot read the config the inventory gives it: ...`: chalkctl could not build the node's
   documents from the inventory, for the reason it names.
 - `no inventory to compare it with`: chalkctl found no inventory: neither `--inventory` nor
