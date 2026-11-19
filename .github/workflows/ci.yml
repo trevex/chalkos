@@ -27,22 +27,18 @@ jobs:
       contents: read
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
-      cache-key: ${{ steps.matrix.outputs.cache-key }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31.11.5
-      # Each job's timeout in minutes is its tier's. The base store's key changes with the Nix
-      # code, the flake's inputs and the Go modules.
+      # Each job's timeout in minutes is its tier's, below the six hours the cache's token lasts.
       - name: List the checks to build
         id: matrix
         env:
           EVENT: ${{ github.event_name }}
           LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
-          CACHE_KEY: nix-base-${{ hashFiles('flake.lock', 'go.mod', 'go.sum', '**/*.nix') }}
         run: |
-          echo "cache-key=$CACHE_KEY" >>"$GITHUB_OUTPUT"
           tiers=$(nix eval --json .#ciTiers.x86_64-linux)
           if [ "$EVENT" != pull_request ] || jq -e 'any(. == "e2e")' <<<"$LABELS" >/dev/null; then
             e2e=$(jq -c .e2e <<<"$tiers")
@@ -66,6 +62,8 @@ jobs:
     timeout-minutes: ${{ matrix.timeout }}
     permissions:
       contents: read
+      # Hestia checks which cached packs GitHub has evicted.
+      actions: read
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.tiers.outputs.matrix) }}
@@ -93,22 +91,24 @@ jobs:
         with:
           extra_nix_config: |
             system-features = kvm nixos-test benchmark big-parallel
-      # The base store every job starts from: the development shell, the Go modules, the
-      # Kubernetes releases and the test registry's images. The fast job on main saves it; the
-      # cache job removes older ones.
-      - uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
-        with:
-          primary-key: ${{ needs.tiers.outputs.cache-key }}
-          restore-prefixes-first-match: nix-base-
-          save: ${{ matrix.name == 'fast' && github.ref == 'refs/heads/main' }}
       # A Cachix cache once the repository names it in the variable CACHIX_NAME: every run reads
-      # it, and runs on main push to it with the secret CACHIX_AUTH_TOKEN.
+      # it, and runs on main push to it with the secret CACHIX_AUTH_TOKEN. It pushes at the end
+      # of the job rather than from a post-build hook, which Hestia holds.
       - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
         if: vars.CACHIX_NAME != ''
         with:
           name: ${{ vars.CACHIX_NAME }}
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
           skipPush: ${{ github.ref != 'refs/heads/main' }}
+          useDaemon: false
+      # The binary cache in the GitHub Actions cache: a job substitutes what main's runs and
+      # this pull request's earlier runs built, and uploads what it builds when it ends. Paths
+      # cache.nixos.org signs stay out of it.
+      - uses: Mic92/hestia@dfed9ced335d28978ba74e513939a10db1f71025 # v3.1.0
+        with:
+          version: v3.1.0
+          upstream-cache-filter: true
+          drain-timeout: 900
       # A build that fails is built once more, which rebuilds only what failed, since a download
       # from a module proxy or registry fails now and then.
       - name: Build ${{ matrix.name }}
@@ -122,38 +122,6 @@ jobs:
             echo "::warning title=Retried $NAME::the build of $NAME failed; building it once more"
             nix build --print-build-logs --no-link --keep-going "${installables[@]}"
           fi
-      # The base store holds the roots alone, about 3 GiB, before the cache action saves it.
-      - name: Keep the base store
-        if: matrix.name == 'fast' && github.ref == 'refs/heads/main'
-        run: |
-          roots=$RUNNER_TEMP/roots
-          mkdir -p "$roots"
-          nix develop --profile "$roots/dev-shell" --command true
-          nix build --out-link "$roots/go-modules" .#packages.x86_64-linux.chalkctl.goModules
-          nix build --out-link "$roots/kubelet-releases" .#kubelet-releases
-          nix build --out-link "$roots/test-kubernetes-images" .#test-kubernetes-images
-          nix store gc
-          du -sh /nix/store
-
-  # On main, removes the base stores of other keys than this run's, after the fast job saved it.
-  cache:
-    needs: [tiers, check]
-    if: github.ref == 'refs/heads/main' && needs.check.result == 'success'
-    runs-on: ubuntu-latest
-    permissions:
-      actions: write
-    steps:
-      - name: Remove older base stores
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          KEEP: ${{ needs.tiers.outputs.cache-key }}
-        run: |
-          gh cache list --key nix- --limit 100 --json key --jq '.[].key' | sort -u | while read -r key; do
-            if [ "$key" != "$KEEP" ]; then
-              gh cache delete "$key"
-            fi
-          done
 
   result:
     needs: [tiers, check]

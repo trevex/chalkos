@@ -45,7 +45,7 @@ jobs:
     if: needs.tested.outputs.passed != 'true'
     uses: ./.github/workflows/ci.yml
     permissions:
-      actions: write
+      actions: read
       contents: read
       issues: write
     secrets: inherit

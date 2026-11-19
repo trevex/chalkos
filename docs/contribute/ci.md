@@ -72,17 +72,24 @@ labelled `ci-failure`, or comments on the open one, with a link to the run.
 
 ## Binary cache
 
-CI caches with no setup. Every job starts from a base Nix store in the GitHub Actions cache: the
-development shell with the Go toolchain and test tools, the Go modules, the Kubernetes releases
-and the images of the test registry, about 3 GiB. The `fast` job of a run on `main` saves it
-when the Nix code, the flake's inputs or the Go modules changed, and the run's `cache` job then
-removes the older base. A job builds the rest of its checks from source and `cache.nixos.org`.
-The repository's Actions cache holds 10 GB, which the base keeps well within.
+CI caches with no setup. Every job runs [Hestia](https://github.com/Mic92/hestia), a Nix binary
+cache kept in the repository's GitHub Actions cache: Nix substitutes from it what an earlier run
+built, and at the end of the job Hestia uploads what the job built, in deduplicated chunks. Paths
+that `cache.nixos.org` serves stay out of it.
 
-A [Cachix](https://www.cachix.org/) binary cache adds every path a build produced. Every job
-reads it once the repository names it in the Actions variable `CACHIX_NAME`, and runs on `main`
-push to it with the secret `CACHIX_AUTH_TOKEN`. Pull requests never push, so their code reaches
-no cache. The same cache serves local builds through `cachix use <name>`.
+The Actions cache holds 10 GB for the whole repository. GitHub evicts the entries used least
+recently once it is full, and any entry unused for 7 days; a job rebuilds what was evicted. The
+workflow `.github/workflows/cache-gc.yml` deletes each day the paths that no branch's latest run
+used. A run on `main` writes to `main`'s scope, which every pull request reads; a pull request's
+run writes to a scope of its own, which only that pull request reads and which goes when its
+branch does, so a pull request cannot change what `main` substitutes. The cache's token lasts
+about six hours, longer than any job's timeout. The cache serves CI alone; it is not reachable
+from a developer's machine.
+
+A [Cachix](https://www.cachix.org/) binary cache can serve local builds too. Every job reads it
+once the repository names it in the Actions variable `CACHIX_NAME`, and runs on `main` push to
+it with the secret `CACHIX_AUTH_TOKEN`. Pull requests never push to it. A developer reads it
+with `cachix use <name>`.
 
 Release builds do not rely on the GitHub Actions cache.
 
