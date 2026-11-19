@@ -127,12 +127,12 @@ Whether Kubernetes images carry chalkos-registry, the cluster registry, and acce
 
 ### `chalkos.kubernetes.version` { #chalkoskubernetesversion }
 
-Type: one of `1.35`, `1.36`, `1.37` · Default: `lib.versions.majorMinor pkgs.kubernetes.version` · Declared in: [modules/node/kubernetes/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/default.nix)
+Type: one of `1.35`, `1.36`, `1.37` · Default: `"1.37"` · Declared in: [modules/node/kubernetes/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/default.nix)
 
 Minor release of Kubernetes whose kubelet the image runs, which selects
-`chalkos.kubernetes.package`: nixpkgs's own minor, whose package the binary cache holds,
-or one of the two minors before it. chalkos pins each of those two to a patch release and
-the image's build compiles its kubelet from source.
+`chalkos.kubernetes.package`: one of the three newest minors, the newest by default.
+chalkos pins each to a patch release, whose kubelet the image's build compiles from
+source, so the image's nixpkgs does not choose the release.
 
 Example: `"1.36"`
 

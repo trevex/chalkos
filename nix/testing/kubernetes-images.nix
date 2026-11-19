@@ -3,148 +3,58 @@
 # manifest as the registry served it, so the test's registry serves it under the same digest and
 # the nodes pull the cluster's pinned references through the Mirror. images.json maps each
 # reference, as the e2e clusters name it, to its layout: <name>:<tag>@<digest>, and the workload's
-# busybox, which the test pulls by its tag, <name>:<tag>.
-{ pkgs }:
+# busybox, which the test pulls by its tag (pinned false), <name>:<tag>.
+#
+# kubernetes-images.json lists them, which `nix run .#update-pins` keeps up with
+# modules/node/kubernetes/releases.nix. The images marked haStart are the previous patch release
+# of the control plane's, which the HA test's cluster config names before the test rolls its
+# control plane out through config to the newest.
+{ pkgs, kubernetesReleases }:
 let
-  images = [
-    {
-      name = "registry.k8s.io/kube-apiserver";
-      tag = "v1.37.2";
-      digest = "sha256:f3916d65eddfe52b6d21ff4a17abdf4c52589c8ef62ec7e0c17204f276cd8db6";
-      hash = "sha256-e/43JQBvRwbx5sdMQam/eyVxl68p00F0CLyl2gR5deg=";
-    }
-    {
-      name = "registry.k8s.io/kube-controller-manager";
-      tag = "v1.37.2";
-      digest = "sha256:07fccf8e84f4cdc72c8e59f1a50da68f15acf1299e455004a944610aecac60c4";
-      hash = "sha256-gPeQKbQbin2uMaa3eKNL3rhX1M2Kc1UUTEp+S7X8wJM=";
-    }
-    {
-      name = "registry.k8s.io/kube-scheduler";
-      tag = "v1.37.2";
-      digest = "sha256:e5438c1bb8c569c41ad556d8a1e8eba44fc5b3cfe4da3adf2a17168102434074";
-      hash = "sha256-30HHdJQnWnWWFCNMtv+CBdyCShv+5L+VR6ARB1OC7b8=";
-    }
-    {
-      name = "registry.k8s.io/kube-proxy";
-      tag = "v1.37.2";
-      digest = "sha256:8c355aac6f4397e98a5462d4bb47b55386df688e6e1e46c67bf374155ac02c45";
-      hash = "sha256-luyR8gZ1Z4Ugtmzq5jybX992NIX+0Uw3ZwUJu3qIci0=";
-    }
-    # The previous patch release of the components above, which the HA test's cluster config names
-    # before the test rolls its control plane out through config to the release above.
-    {
-      name = "registry.k8s.io/kube-apiserver";
-      tag = "v1.37.1";
-      digest = "sha256:1f207ab66b1ca6579dd5bf1024396015ca2a0f638157a7741d2d88d7b3c82c51";
-      hash = "sha256-ipcbwAdQETHK9TRZyYcsQDLO+k/mc0LmUkCU2f7pNVE=";
-      haStart = true;
-    }
-    {
-      name = "registry.k8s.io/kube-controller-manager";
-      tag = "v1.37.1";
-      digest = "sha256:24366808a9bf9dfefb3aa171f0fadac61a1dde50a43e578c42eb3d8785cb606e";
-      hash = "sha256-fp1tWLMGhv1b6xy0AKPJAe0+d4M5HDA36yiIFQ7EEBg=";
-      haStart = true;
-    }
-    {
-      name = "registry.k8s.io/kube-scheduler";
-      tag = "v1.37.1";
-      digest = "sha256:e4fc6f552722518aaa7d6cddbb8b638df275a5adbc5d1e5d59276af52692fb2c";
-      hash = "sha256-ugoOn2ufyQDj2o/450VCTkUidfsqRWFcoW/qNNnGgbA=";
-      haStart = true;
-    }
-    {
-      name = "registry.k8s.io/kube-proxy";
-      tag = "v1.37.1";
-      digest = "sha256:abbadc84931b520750bcda3350819f6a828ee44a4a0cab548a26016aa7e2a3b7";
-      hash = "sha256-gv3WvhqAZ0ooTzz6DWqpLtKwzMhXZFyVnZ+5Ib42dDg=";
-      haStart = true;
-    }
-    {
-      name = "registry.k8s.io/etcd";
-      tag = "3.7.0-0";
-      digest = "sha256:1f445fa5dd06b08f3c0cf9f46e2891e9bc66cbf7e0b9c66627c40658edf4bc98";
-      hash = "sha256-CEHvcKeufeG1rUC/s9kMUkB+fos+EsQiAEtXNDtSPj4=";
-    }
-    {
-      name = "registry.k8s.io/pause";
-      tag = "3.10.2";
-      digest = "sha256:412c4a7219cb8a299a37337f3d87810c5340095322e15594a1637785adad0f17";
-      hash = "sha256-fjGj0MQL79KNuyjo5ZdJD7vf/B2ZNDXfwKl//Cb1AQg=";
-    }
-    {
-      name = "registry.k8s.io/coredns/coredns";
-      tag = "v1.14.6";
-      digest = "sha256:1ba6f47265602e2e50a9c4669e3a955e4298a0d30dc82f39293d4bf1a851e0ff";
-      hash = "sha256-1Cobn9wIwXNcSt+excK9XonRuanhKTtM2WafqPy3vQc=";
-    }
-    {
-      name = "ghcr.io/flannel-io/flannel";
-      tag = "v0.28.9";
-      digest = "sha256:d666a036197fe6c8928f82b670d89f38f5830d25e70bfcc35641da06f03cfcad";
-      hash = "sha256-tDJIRBrWIgndC89owvMQYRXd18PUlllTJKxEeZe1Gro=";
-    }
-    # The test's workload, which it pulls by its tag.
-    {
-      name = "docker.io/library/busybox";
-      tag = "1.37.0";
-      digest = "sha256:66a6306db78bf2dbf3487f293aa8d6990d8e506fdffab9cc43fe422becf886e4";
-      hash = "sha256-Cizv1sUJyz4wxAYoRKkSGEGSINnFkdWP+Ts97hxlQsw=";
-      pinned = false;
-    }
-  ];
-  # The image as an OCI layout of the amd64 manifest alone, copied with the manifest's bytes kept.
-  # skopeo's index.json differs between its releases, so the layout's index is written again with
-  # the manifest's descriptor alone, and the hash covers the image's own bytes.
+  inherit (pkgs) lib;
+  images = lib.importJSON ./kubernetes-images.json;
+  imageLayout = import ./image-layout.nix { inherit pkgs; };
   layout =
     image:
     pkgs.runCommand "${baseNameOf image.name}-${image.tag}-oci"
       {
-        nativeBuildInputs = [
-          pkgs.skopeo
-          pkgs.jq
-        ];
+        nativeBuildInputs = [ imageLayout ];
         outputHashMode = "recursive";
         outputHashAlgo = "sha256";
         outputHash = image.hash;
         SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
-        impureEnvVars = pkgs.lib.fetchers.proxyImpureEnvVars;
+        impureEnvVars = lib.fetchers.proxyImpureEnvVars;
       }
       ''
         export HOME=$TMPDIR
-        skopeo --insecure-policy --override-os linux --override-arch amd64 copy --preserve-digests \
-          docker://${image.name}@${image.digest} oci:$out
-        jq -c '{schemaVersion: 2, manifests: [.manifests[] | {mediaType, digest, size}]}' \
-          $out/index.json >index.json
-        mv index.json $out/index.json
+        image-layout ${image.name}@${image.digest} $out
       '';
-  # The Kubernetes components the e2e clusters name follow the kubelet of the test images:
-  # nixpkgs's Kubernetes release. Those the HA test starts from are an earlier patch release of
-  # the same minor, which the skew rules let the API server run behind the kubelet by.
-  kubeletMinor = pkgs.lib.versions.majorMinor pkgs.kubernetes.version;
+  # The Kubernetes components the e2e clusters name follow the kubelet of the test images: the
+  # newest release chalkos pins. Those the HA test starts from are an earlier patch release of the
+  # same minor, which the skew rules let the API server run behind the kubelet by.
+  kubeletMinor = lib.last (lib.sort lib.versionOlder (lib.attrNames kubernetesReleases));
+  kubelet = kubernetesReleases.${kubeletMinor}.version;
   stale = map (image: "${image.name}:${image.tag}") (
     builtins.filter (
       image:
-      pkgs.lib.hasPrefix "registry.k8s.io/kube-" image.name
+      lib.hasPrefix "registry.k8s.io/kube-" image.name
       && (
         if image.haStart or false then
-          pkgs.lib.versions.majorMinor (pkgs.lib.removePrefix "v" image.tag) != kubeletMinor
-          || builtins.compareVersions (pkgs.lib.removePrefix "v" image.tag) pkgs.kubernetes.version >= 0
+          lib.versions.majorMinor (lib.removePrefix "v" image.tag) != kubeletMinor
+          || builtins.compareVersions (lib.removePrefix "v" image.tag) kubelet >= 0
         else
-          image.tag != "v${pkgs.kubernetes.version}"
+          image.tag != "v${kubelet}"
       )
     ) images
   );
 in
-assert pkgs.lib.assertMsg (stale == [ ])
-  "nix/testing/kubernetes-images.nix pins ${toString stale}, but the test images' kubelet is ${pkgs.kubernetes.version}: the cluster's components follow it, and those the HA test starts from are an earlier patch release of ${kubeletMinor}";
+assert lib.assertMsg (stale == [ ])
+  "nix/testing/kubernetes-images.json pins ${toString stale}, but the test images' kubelet is ${kubelet}: the cluster's components follow it, and those the HA test starts from are an earlier patch release of ${kubeletMinor}; run nix run .#update-pins";
 pkgs.writeTextDir "images.json" (
   builtins.toJSON (
     builtins.listToAttrs (
       map (image: {
-        name =
-          "${image.name}:${image.tag}" + pkgs.lib.optionalString (image.pinned or true) "@${image.digest}";
+        name = "${image.name}:${image.tag}" + lib.optionalString (image.pinned or true) "@${image.digest}";
         value = layout image;
       }) images
     )

@@ -14,7 +14,7 @@ spec:
     kube-controller-manager: {}
     kube-scheduler: {}
   # The images the test's registry serves, by the digests of their amd64 manifests, which
-  # nix/testing/kubernetes-images.nix pins. The four versioned components are a patch release
+  # nix/testing/kubernetes-images.json pins. The four versioned components are a patch release
   # behind the image's kubelet; the test rolls them out to the kubelet's release.
   images:
     apiServer: registry.k8s.io/kube-apiserver:v1.37.1@sha256:1f207ab66b1ca6579dd5bf1024396015ca2a0f638157a7741d2d88d7b3c82c51

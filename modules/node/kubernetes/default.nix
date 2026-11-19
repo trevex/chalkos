@@ -12,12 +12,14 @@
 }:
 let
   k = config.chalkos.kubernetes;
-  releases = import ./releases.nix { inherit lib pkgs; };
+  releases = import ./releases.nix;
+  newest = lib.last (lib.sort lib.versionOlder (lib.attrNames releases));
   # Whether the image's modules define an option, so that its default does not stand.
   defined = o: o.highestPrio < (lib.mkOptionDefault null).priority;
   inherit (k) enable;
   inherit (pkgs.chalkos) chalkd;
-  # The kubelet alone: the package holds every component, which control planes run from images.
+  # The kubelet alone: a package of its own may hold every component, which control planes run
+  # from images.
   kubelet = pkgs.runCommand "kubelet-${k.package.version}" { } ''
     install -Dm755 ${k.package}/bin/kubelet $out/bin/kubelet
   '';
@@ -60,19 +62,18 @@ in
     };
     version = lib.mkOption {
       type = lib.types.enum (lib.attrNames releases);
-      default = lib.versions.majorMinor pkgs.kubernetes.version;
-      defaultText = lib.literalExpression "lib.versions.majorMinor pkgs.kubernetes.version";
+      default = newest;
       example = "1.36";
       description = ''
         Minor release of Kubernetes whose kubelet the image runs, which selects
-        `chalkos.kubernetes.package`: nixpkgs's own minor, whose package the binary cache holds,
-        or one of the two minors before it. chalkos pins each of those two to a patch release and
-        the image's build compiles its kubelet from source.
+        `chalkos.kubernetes.package`: one of the three newest minors, the newest by default.
+        chalkos pins each to a patch release, whose kubelet the image's build compiles from
+        source, so the image's nixpkgs does not choose the release.
       '';
     };
     package = lib.mkOption {
       type = lib.types.package;
-      default = releases.${k.version};
+      default = pkgs.callPackage ./kubelet.nix { inherit (releases.${k.version}) version hash; };
       defaultText = lib.literalMD "the release `chalkos.kubernetes.version` selects";
       description = ''
         Kubernetes release whose kubelet the image runs, whose version the image's Kubernetes

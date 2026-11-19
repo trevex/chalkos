@@ -170,11 +170,11 @@ one image.
 
 ## Choose the kubelet's release
 
-An image with Kubernetes runs the kubelet of one Kubernetes release. By default it is the release
-nixpkgs packages, whose kubelet the binary cache holds.
+An image with Kubernetes runs the kubelet of one Kubernetes release. chalkos pins each of the
+three newest minor releases, the ones Kubernetes supports, to one patch release, and the image's
+nixpkgs does not change it. By default the image runs the newest.
 [`chalkos.kubernetes.version`](../reference/image-options.md#chalkoskubernetesversion) picks
-another of the three newest minor releases, the ones Kubernetes supports. Set it in the image's
-modules:
+another of the three. Set it in the image's modules:
 
 ```nix
 {
@@ -187,16 +187,17 @@ modules:
 }
 ```
 
-chalkos pins each of the two older minors to one patch release, 1.36.6 and 1.35.10. The binary
-cache holds neither, so the image's build compiles the kubelet from source, about two minutes on
-16 cores. The image directory's `facts/kubernetes.json` names the kubelet's version, here `1.36.6`.
+The flake's [`lib.kubernetesReleases`](../reference/mkimages.md#kubernetes-releases) lists the
+minors with the patch release of each. Unless a binary cache holds the kubelet, the image's build
+compiles it from source, about two minutes on 16 cores. The image directory's
+`facts/kubernetes.json` names the kubelet's version, the patch release of 1.36 here.
 
 The `Cluster` document names the images of the control plane and kube-proxy apart from the
 kubelet. They may stay at a newer minor than the kubelet, within Kubernetes's
 [version skew policy](https://kubernetes.io/releases/version-skew-policy/), or follow the kubelet's
 minor. The image's checker holds them to that policy against its own kubelet, so
 `chalkctl validate` refuses an API server older than the kubelet or more than three minors newer.
-The lab template's `cluster/cluster.yaml` names the images of nixpkgs's release, which a kubelet
+The lab template's `cluster/cluster.yaml` names the images of the newest release, which a kubelet
 two minors older accepts.
 
 A release the option does not offer, such as another patch release, needs

@@ -20,6 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
+	"github.com/trevex/chalkos/pkg/imageref"
 	"github.com/trevex/chalkos/pkg/lab"
 )
 
@@ -452,7 +453,7 @@ var haComponents = []string{"kube-apiserver", "kube-controller-manager", "kube-s
 type imageRollout struct{ from, to string }
 
 // haRollout is an imageRollout for each of haComponents. The test registry serves two releases of
-// each, which nix/testing/kubernetes-images.nix pins: the one the cluster file names and the
+// each, which nix/testing/kubernetes-images.json pins: the one the cluster file names and the
 // release of the image's kubelet.
 func haRollout(t *testing.T, served map[string]string, cluster string) []imageRollout {
 	t.Helper()
@@ -480,6 +481,20 @@ func haRollout(t *testing.T, served map[string]string, cluster string) []imageRo
 	return rollout
 }
 
+// releaseOf is the Kubernetes release a component's reference names by its tag, such as 1.37.2.
+func releaseOf(t *testing.T, ref string) string {
+	t.Helper()
+	r, err := imageref.Parse(ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := r.Version()
+	if err != nil {
+		t.Fatalf("%s: %v", ref, err)
+	}
+	return v.Release()
+}
+
 // rolloutControlPlane rolls the control plane out to another patch release through config: the
 // cluster file of the fixtures' copy names the new images, which the later phases read too, and
 // config apply delivers it to the three control planes, one at a time in name order, each on trial
@@ -487,11 +502,6 @@ func haRollout(t *testing.T, served map[string]string, cluster string) []imageRo
 func (c *haCluster) rolloutControlPlane(ctx context.Context, cs kubernetes.Interface) {
 	t := c.t
 	t.Helper()
-	// Status reports the API server of the config next to the image's kubelet, a patch behind it.
-	before := "kubernetes versions: API server 1.37.1, kubelet 1.37.2, control-plane pods current\n"
-	if out, err := c.chalkctl("cp1", "status", "cp1"); err != nil || !strings.Contains(out, before) {
-		t.Errorf("cp1's status lacks %q: %v\n%s", before, err, out)
-	}
 	data, err := os.ReadFile(os.Getenv("CHALKLAB_K8S_IMAGES"))
 	if err != nil {
 		t.Fatal(err)
@@ -507,6 +517,13 @@ func (c *haCluster) rolloutControlPlane(ctx context.Context, cs kubernetes.Inter
 	}
 	text := string(data)
 	rollout := haRollout(t, served, text)
+	// Status reports the API server of the config next to the image's kubelet, a patch behind it:
+	// the releases the rollout moves the API server from and to.
+	from, to := releaseOf(t, rollout[0].from), releaseOf(t, rollout[0].to)
+	before := "kubernetes versions: API server " + from + ", kubelet " + to + ", control-plane pods current\n"
+	if out, err := c.chalkctl("cp1", "status", "cp1"); err != nil || !strings.Contains(out, before) {
+		t.Errorf("cp1's status lacks %q: %v\n%s", before, err, out)
+	}
 	for _, r := range rollout {
 		text = strings.ReplaceAll(text, r.from, r.to)
 	}
@@ -574,7 +591,7 @@ func (c *haCluster) rolloutControlPlane(ctx context.Context, cs kubernetes.Inter
 		return nil
 	})
 	// The API server of the config now runs the kubelet's release.
-	want := "kubernetes versions: API server 1.37.2, kubelet 1.37.2, control-plane pods current\n"
+	want := "kubernetes versions: API server " + to + ", kubelet " + to + ", control-plane pods current\n"
 	if out, err := c.chalkctl("cp1", "status", "cp1"); err != nil || !strings.Contains(out, want) {
 		t.Errorf("cp1's status lacks %q: %v\n%s", want, err, out)
 	}

@@ -44,9 +44,13 @@ in
   test-router-image = testing.router-kvm;
 
   # The kubelet of every Kubernetes release an image can run, by minor, to build by hand after a
-  # change of the table. No check builds it: each release but nixpkgs's own compiles from source.
+  # change of the table. Each compiles from source; the checks build only the newest, which the
+  # test images run.
   kubelet-releases = pkgs.linkFarm "kubelet-releases" (
-    import ../../modules/node/kubernetes/releases.nix { inherit lib pkgs; }
+    lib.mapAttrs (
+      _: release:
+      pkgs.callPackage ../../modules/node/kubernetes/kubelet.nix { inherit (release) version hash; }
+    ) self.lib.kubernetesReleases
   );
 
   # The installer without an OS CA: it accepts any client until it installs a node.

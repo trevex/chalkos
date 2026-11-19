@@ -139,6 +139,15 @@ images of every platform, with its evaluated NixOS system as `nixos`.
 
 mkImages returns each image of its `images` by its name, and the installer as `installer`.
 
+## Kubernetes releases { #kubernetes-releases }
+
+`kubernetesReleases` holds each Kubernetes minor an image can run, such as `"1.37"`, as
+`{ version; hash; publish; }`: `version` is the patch release chalkos pins for the minor, `hash`
+the hash of its source, from which the image's build compiles the kubelet, and `publish` whether
+a release of chalkos publishes images of the minor.
+[`chalkos.kubernetes.version`](image-options.md#chalkoskubernetesversion) picks one of the
+minors, the newest by default.
+
 ## Helpers { #helpers }
 
 Each helper takes an attribute set of images, such as mkImages's result, and leaves out what
