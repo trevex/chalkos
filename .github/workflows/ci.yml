@@ -1,0 +1,137 @@
+# Builds the flake's checks by the tiers of nix/checks/tiers.nix: the fast checks in one job, and
+# each image and end-to-end check in a job of its own. A pull request runs the fast and image
+# tiers, and the end-to-end checks its labels name: e2e names them all, e2e:<name> the check
+# e2e-<name>; a label added later runs the workflow again. A push to main and the nightly run,
+# which calls this workflow, run every tier and open or update an issue labelled ci-failure when
+# a check fails. The job result is the one check that branch protection requires.
+name: ci
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  push:
+    branches: [main]
+  workflow_call:
+
+# A pull request's newer run cancels its older one; every commit on main runs to its end.
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions: {}
+
+jobs:
+  tiers:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31.11.5
+      - name: List the checks to build
+        id: matrix
+        env:
+          EVENT: ${{ github.event_name }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          tiers=$(nix eval --json .#ciTiers.x86_64-linux)
+          if [ "$EVENT" != pull_request ] || jq -e 'any(. == "e2e")' <<<"$LABELS" >/dev/null; then
+            e2e=$(jq -c .e2e <<<"$tiers")
+          else
+            e2e=$(jq -c --argjson labels "$LABELS" \
+              '[.e2e[] | select(("e2e:" + ltrimstr("e2e-")) as $label | $labels | any(. == $label))]' \
+              <<<"$tiers")
+          fi
+          matrix=$(jq -c --argjson e2e "$e2e" '{include: (
+            [{name: "fast", checks: (.fast | join(" "))}]
+            + [(.images + $e2e)[] | {name: ., checks: .}]
+          )}' <<<"$tiers")
+          echo "matrix=$matrix" >>"$GITHUB_OUTPUT"
+          jq . <<<"$matrix"
+
+  check:
+    needs: tiers
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.tiers.outputs.matrix) }}
+    steps:
+      # The images and the store of a VM test take more than the runner's free disk.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache /usr/local/share/boost
+          df -h /
+      # The Nix daemon's build users run the VM tests, and the namespace checks run bubblewrap,
+      # which Ubuntu's AppArmor keeps from unprivileged user namespaces.
+      - name: Enable KVM and user namespaces
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31.11.5
+        with:
+          extra_nix_config: |
+            system-features = kvm nixos-test benchmark big-parallel
+      # The binary cache, once the repository names it in the variable CACHIX_NAME. A run pushes
+      # what it builds when it has the secret CACHIX_AUTH_TOKEN, which a fork's pull request
+      # does not get.
+      - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
+        if: vars.CACHIX_NAME != ''
+        with:
+          name: ${{ vars.CACHIX_NAME }}
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          skipPush: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+      - name: Build ${{ matrix.name }}
+        env:
+          CHECKS: ${{ matrix.checks }}
+        run: |
+          read -ra checks <<<"$CHECKS"
+          nix build --print-build-logs --no-link --keep-going "${checks[@]/#/.#checks.x86_64-linux.}"
+
+  result:
+    needs: [tiers, check]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every check passed
+        env:
+          TIERS: ${{ needs.tiers.result }}
+          CHECK: ${{ needs.check.result }}
+        run: |
+          echo "tiers: $TIERS, checks: $CHECK"
+          [ "$TIERS" = success ] && [ "$CHECK" = success ]
+
+  report:
+    needs: [tiers, check]
+    if: failure() && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BODY: "The ${{ github.event_name }} run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }} of ${{ github.sha }} failed."
+        run: |
+          number=$(gh issue list --label ci-failure --state open --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "$BODY"
+          else
+            gh issue create --title "CI fails on main" --label ci-failure --body "$BODY"
+          fi

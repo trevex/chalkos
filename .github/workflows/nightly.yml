@@ -1,0 +1,22 @@
+# Runs every tier of the CI workflow on main each night, end-to-end checks included. A failing
+# check opens or updates the issue labelled ci-failure.
+name: nightly
+
+on:
+  schedule:
+    - cron: "23 2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+      issues: write
+    secrets: inherit
