@@ -1,11 +1,12 @@
 # What the router of the air-gapped lab, chalkos-air-gapped.yaml, gets beside router/router.yaml
 # and router/secrets.yaml. It leaves out router/nat64.yaml, so the fabric reaches no internet,
-# and lets the nodes' NTP in: the router's chrony answers them, as flake.nix allows.
+# and answers the nodes' NTP: the router's chrony serves the time it keeps over wan, and the
+# firewall accepts NTP from the lab's addresses on the fabric's first address alone. Without an
+# uplink, localStratum: 10 makes the router serve its own clock, which drifts from the real time;
+# an air gap that needs accurate time wants a reference clock instead.
 apiVersion: router.chalkos.dev/v1alpha1
-kind: FirewallPolicy
-metadata: {name: fabric-local}
+kind: TimeServer
+metadata: {name: ntp}
 spec:
-  from: fabric
-  to: local
-  rules:
-    - {protocol: udp, destinationPorts: [123], action: accept}
+  listen: ["fdc8:a1b2:c3d4:1::1"]
+  allow: ["fdc8:a1b2:c3d4::/48"]

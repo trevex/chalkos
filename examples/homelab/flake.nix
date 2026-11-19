@@ -16,14 +16,7 @@
           {
             name = "router-metal";
             platform = "metal";
-            modules = [
-              chalkos.nixosModules.router
-              # chrony answers NTP from the lab's addresses, the time server of the air-gapped
-              # lab's nodes. Its firewall lets the queries in only with air-gapped/router.yaml. It
-              # follows the internet's servers over wan; a router without an uplink needs a
-              # reference clock, or "local stratum 10" here, to answer as synchronised.
-              { services.chrony.extraConfig = "allow fdc8:a1b2:c3d4::/48"; }
-            ];
+            modules = [ chalkos.nixosModules.router ];
           }
           {
             name = "node-metal";
