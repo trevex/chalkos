@@ -258,10 +258,13 @@ The registry takes a client certificate when the client offers one, and checks i
   chalkd does. A certificate the node CA issued is a node's, whatever its Organization, so no node
   writes.
 
-A request without a certificate, or with one that does not verify, gets 401; one of another role
-gets 403. Both say `writing to the registry needs a client certificate of the admin role`.
-`chalkctl registry push`, `delete` and `gc` authenticate with the one-hour admin certificate
-chalkctl issues from the secrets file, or with an admin client file.
+A client certificate that does not verify against the OS CAs fails the TLS handshake, before any
+request. A write without a certificate, or with one that no longer verifies when the request comes,
+such as one that expired on a kept connection, gets 401; a certificate of another role gets 403.
+Each answer's message starts with
+`writing to the registry needs a client certificate of the admin role`. `chalkctl registry push`,
+`delete` and `gc` authenticate with the one-hour admin certificate chalkctl issues from the secrets
+file, or with an admin client file.
 
 ## Limits
 

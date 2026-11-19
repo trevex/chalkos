@@ -16,8 +16,8 @@ listen on locally, the nftables tables on a node and the connections a node make
 
 The firewall accepts new connections on these ports alone. Every node has the first; the others
 depend on whether the image has Kubernetes, on the node's type (`Node.spec.type`:
-`controlplane` or `worker`), on the CNI and on the `ClusterRegistry` document. A router image filters with a table of its own,
-which [Router images](#router-images) describes.
+`controlplane` or `worker`), on the CNI and on the `ClusterRegistry` document. A router image
+filters with a table of its own, which [Router images](#router-images) describes.
 
 | Port | Protocol | Service | Nodes | Connects to it |
 | --- | --- | --- | --- | --- |
@@ -115,19 +115,20 @@ table and leaves the others in place.
 | flannel's tables | flanneld | Masquerading of pod traffic, with `EnableNFTables`. |
 | the portmap plugin's table | CNI portmap plugin | Host ports of pods, with its nftables backend. |
 
-The `input-allow` chain, as NixOS renders it for a node with Kubernetes, flannel and the cluster
-registry:
+The `input-allow` chain, as NixOS renders it for a node of the default Kubernetes image, with
+flannel, the BGP speaker and the cluster registry:
 
 ```text
 chain input-allow {
    tcp dport { 10250, 50000, 30000-32767 } accept
+   udp dport { 3784 } accept
    meta l4proto . th dport @temp-ports accept
    icmp type echo-request  accept comment "allow ping"
    icmpv6 type != { nd-redirect, 139 } accept comment "Accept all ICMPv6 messages except redirects and node information queries (type 139).  See RFC 4890, section 4.4."
    ip6 daddr fe80::/64 udp dport 546 accept comment "DHCPv6 client"
+   meta mark & 0x04000000 == 0x04000000 accept
    tcp dport { 6443, 2379, 2380 } meta mark & 0x02000000 == 0x02000000 accept
    udp dport 8472 meta mark & 0x01000000 == 0x01000000 accept
-   meta mark & 0x04000000 == 0x04000000 accept
 }
 ```
 

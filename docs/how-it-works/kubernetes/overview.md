@@ -288,11 +288,16 @@ without capabilities, and keeps the images in `/var/lib/chalkos-registry`. The o
 `cluster-registry` renders its port and firewall table on serving nodes alone, and the unit does
 not start without them. The unit is ready once the registry listens, and the `kubernetes` effect
 runs after the registry's effects, so a kubelet restarted by the same delivery finds its node's
-registry answering. At boot the registry starts before the kubelet.
+registry answering. At boot the registry starts before the kubelet. The unit requires the mount
+of its directory, and its effect also restarts it when a `Volume` mounted at or above
+`/var/lib/chalkos-registry` changes, since systemd gives a new file system to the registry's user
+only as the unit starts.
 
 The registry holds each image below its host's name: `docker.io/library/nginx` lives at
 `<endpoint>:5000/docker.io/library/nginx`. containerd's `override_path` makes the endpoint's path,
-`/v2/docker.io`, the root of the registry API it asks, so one registry serves every mirrored host. [Kubernetes certificates](certificates.md#the-cluster-registry-serves-the-node-certificate)
+`/v2/docker.io`, the root of the registry API it asks, so one registry serves every mirrored
+host.
+[Kubernetes certificates](certificates.md#the-cluster-registry-serves-the-node-certificate)
 describes who may read and write. Nothing copies images between the endpoints:
 `chalkctl registry push` and `chalkctl registry delete` act on each endpoint in turn.
 
@@ -368,8 +373,8 @@ image's registry.
   a push lacks the image until it is pushed again.
 - containerd mirrors whole hosts, so the cluster registry cannot mirror some repositories of a host
   alone.
-- The cluster registry's endpoints are node addresses, which the node certificate names; a VIP
-  cannot be one.
+- An endpoint of the cluster registry is a node's static address, which its node certificate
+  names, so a VIP cannot be one.
 - Anyone who reaches the cluster registry's port can pull every image it holds.
 
 ## Related pages

@@ -15,13 +15,12 @@ planes, and `chalkctl registry list` shows the same images on every endpoint.
 A cluster that reaches the registries, or a mirror on its network that holds every image, does not
 need the cluster registry; [Registries and mirrors](../operate/registries.md) covers those. The
 cluster registry suits a cluster with nothing else to pull from, such as one on an isolated site.
-Its images live on the control planes, which the cluster runs anyway.
 
-The configuration on this page is the homelab's, whose control planes `node1`, `node2` and `node3`
-have the addresses `fdc8:a1b2:c3d4:ff::11` to `fdc8:a1b2:c3d4:ff::13`. The output comes from a lab
-cluster whose control plane `cp1` at 192.168.100.11 serves the registry and whose worker `w1`
-pulls from it. The lab's `ClusterRegistry` mirrors `cluster-registry.chalkos.test`, a host the lab
-cannot reach.
+The configuration on this page adds a `ClusterRegistry` to the homelab, whose control planes
+`node1`, `node2` and `node3` have the addresses `fdc8:a1b2:c3d4:ff::11` to
+`fdc8:a1b2:c3d4:ff::13`. The output comes from a lab cluster whose control plane `cp1` at
+192.168.100.11 serves the registry and whose worker `w1` pulls from it. The lab's
+`ClusterRegistry` mirrors `cluster-registry.chalkos.test`, a host the lab cannot reach.
 
 ## Before you begin
 
@@ -57,7 +56,9 @@ spec:
 references name them and without a port. `docker.io` is Docker Hub. The registry holds each image
 below its host's name: `docker.io/library/nginx:1.27` is
 `<endpoint>:5000/docker.io/library/nginx:1.27`. containerd mirrors whole hosts, so it looks for
-every image of a mirrored host in the cluster registry first.
+every image of a mirrored host in the cluster registry first. In an air-gapped cluster, `mirrors`
+holds every host the `Cluster` document's images come from: `registry.k8s.io` for the control
+plane, CoreDNS and the pod sandbox, and `ghcr.io` for flannel.
 
 `endpoints` lists IP addresses, without names or ports. A node serves the cluster registry when one
 of its static addresses, the `Address=` values of its `Network` documents, is an endpoint. List an
@@ -78,30 +79,14 @@ different `ClusterRegistry` specs, or one on some nodes and none on others, as i
 `Cluster`. A router image does not know the kind, so the file goes to the Kubernetes nodes alone.
 [Config kinds](../reference/kinds.md#clusterregistry) lists the fields.
 
-### What runs on a serving node
-
-On each node that serves an endpoint, `chalkos-registry.service` runs as a user of its own,
-`chalkos-registry` with the ID 333, without capabilities. It keeps its images in
-`/var/lib/chalkos-registry` on VAR, and serves HTTPS on its port with the node certificate. The
-node's firewall opens the port on serving nodes alone. Other nodes run no registry and open no
-port.
-
-Anyone may pull from the registry. A push, a delete or a garbage collection needs a client
-certificate of the admin role, which the registry checks on every request.
-
-### The order nodes pull in
-
-For an image of a mirrored host, containerd on every node tries these sources in turn:
-
-1. the node's own endpoint, when it serves the cluster registry;
-2. the other endpoints, in the order of `endpoints`;
-3. the endpoints of the host's `Mirror` document, when the node has one;
-4. the host itself.
-
-containerd moves on to the next source when one does not answer or lacks the image. A control
-plane therefore pulls from itself, and a worker from the first endpoint that has the image.
-[Registries and mirrors](../operate/registries.md#pull-from-the-cluster-registry) describes how
-the cluster registry combines with `Mirror` and `Registry` documents.
+A serving node runs the registry under a user of its own, keeps its images in
+`/var/lib/chalkos-registry` and opens the port in its firewall. containerd on it pulls from its own
+endpoint first. Every node then tries the other endpoints in the order of `endpoints`, then the
+host's `Mirror` and the host itself.
+[Pull from the cluster registry](../operate/registries.md#pull-from-the-cluster-registry) lists the
+order, and
+[How Kubernetes runs on a node](../how-it-works/kubernetes/overview.md#the-cluster-registry-serves-images-from-the-control-planes)
+the mechanism.
 
 ## Apply the config to every node
 
@@ -113,44 +98,80 @@ every Kubernetes node:
 chalkctl config apply node1 node2 node3 --secrets secrets.age
 ```
 
-The delivery rewrites containerd's mirrors, starts the registry on serving nodes, and restarts the
-kubelet after both. The registry's unit counts as started once the registry listens, so the
-kubelet finds it answering. On the lab's `cp1` the run printed:
+The delivery rewrites containerd's mirrors on every node and starts the registry on serving nodes.
+containerd reads the mirrors on every pull, so the kubelet keeps running. A kubelet that the same
+delivery restarts for another change waits for the node's registry, so it pulls from it at once.
+
+The lab's delivery also added a `Registry` with credentials for `cluster-registry.chalkos.test`.
+That `Registry` restarts `chalkos-registry-credentials.service` and `kubelet.service` on its own,
+as [the credentials](../how-it-works/kubernetes/overview.md#pods-pull-private-images-with-node-credentials)
+need, so the kubelet restarts after the registry. On `cp1` the run printed:
 
 ```text
 cp1: config 2 added, 0 removed, 0 changed
-...
+restarted chalkos-registry-credentials.service
 restarted chalkos-registry-mirrors.service
 restarted chalkos-registry.service
 restarted kubelet.service
 cp1 runs config 68029e1e09940d0aecf780223d9af91ca4dd1e8da3072d8054995cca55de0feb
 ```
 
-A worker restarts `chalkos-registry-mirrors.service` and `kubelet.service` alone.
+A worker serves no endpoint, so a `ClusterRegistry` restarts `chalkos-registry-mirrors.service`
+alone there. In the lab, `w1` restarted the `Registry`'s two units as well:
 
-## Push the control plane's images before bootstrap
+```text
+w1: config 2 added, 0 removed, 0 changed
+restarted chalkos-registry-credentials.service
+restarted chalkos-registry-mirrors.service
+restarted kubelet.service
+w1 runs config 84a6e74a9aa45837cf76805559c058caf3233c9aca73904d1f0c11a9fb4c2f8d
+```
+
+## Bring the images into the air gap
 
 The `images` block of the [`Cluster`](../reference/kinds.md#cluster) document names the images
 of the API server, the controller-manager, the scheduler, kube-proxy, etcd, CoreDNS, the pod
-sandbox and, on an image with flannel, flannel. containerd pulls them once the kubelet starts the
-static pods, at bootstrap and when a node joins. In a cluster that mirrors their hosts, push them
-after the nodes run their config and before
-[`chalkctl bootstrap`](../reference/cli/chalkctl_bootstrap.md).
+sandbox and, on an image with flannel, flannel, each pinned by digest.
+[Name the images of the components](configure.md#name-the-images-of-the-components) explains the
+references and their digests.
 
-Name each image as the `Cluster` document names it, tag and digest together:
+On a machine connected to the registries, copy each image with all its platforms into an OCI image
+layout, keeping its digest. An OCI layout or archive holds one image or index for chalkctl, so give
+each image a directory of its own. With skopeo and yq:
 
 ```sh
-chalkctl registry push kube-apiserver \
-  registry.k8s.io/kube-apiserver:v1.37.2@sha256:3e563afb5cb5b72a10bac7012698dd09f5a42bde7d22de8d7d3c12e654df86b4 \
-  --secrets secrets.age
+for ref in $(yq 'select(.kind == "Cluster") | .spec.images[]' cluster/cluster.yaml); do
+  repo=${ref%%@*}; name=${repo##*/}; name=${name%%:*}
+  skopeo copy --all --preserve-digests "docker://${repo%:*}@${ref#*@}" "oci:images/$name"
+done
 ```
 
-Here `kube-apiserver` is an OCI image layout copied from `registry.k8s.io`.
-[`chalkctl registry push`](../reference/cli/chalkctl_registry_push.md) pushes the image under the
-tag. It refuses a source of another digest before it reaches an endpoint, so a copy that
-changed the image never lands in the registry.
+`--all` copies every platform the index names, and `--preserve-digests` makes skopeo fail rather
+than change a manifest, so the layout serves the digest the `Cluster` document pins. Carry
+`images/` into the air gap. An OCI archive, `oci-archive:<file>` in skopeo, works as well.
 
-Push all eight, then check that every endpoint holds them, as
+## Push the control plane's images before bootstrap
+
+containerd pulls the `Cluster` document's images once the kubelet starts the static pods, at
+bootstrap and when a node joins. On a new cluster, install every control plane with the
+`ClusterRegistry` in its config, push the images, and then run
+[`chalkctl bootstrap`](../reference/cli/chalkctl_bootstrap.md).
+
+Name each image as the `Cluster` document names it, tag and digest together. This loop pushes
+every image of `spec.images` from the directories above:
+
+```sh
+for ref in $(yq 'select(.kind == "Cluster") | .spec.images[]' cluster/cluster.yaml); do
+  repo=${ref%%@*}; name=${repo##*/}; name=${name%%:*}
+  chalkctl registry push "images/$name" "$ref" --secrets secrets.age
+done
+```
+
+[`chalkctl registry push`](../reference/cli/chalkctl_registry_push.md) pushes each image under its
+tag. It refuses a source of another digest before it reaches an endpoint, so a copy that changed
+the image never lands in the registry.
+
+Check that every endpoint holds every image of `spec.images`, as
 [Check the endpoints](#check-the-endpoints) describes. Then bootstrap the cluster as
 [Bootstrap and get a kubeconfig](bootstrap.md) describes.
 
@@ -168,9 +189,7 @@ The first argument of `chalkctl registry push` is one of these:
 chalkctl reads a local source through before it pushes to the first endpoint, so a missing blob
 fails at once. A digest that a `Cluster` document pins is usually that of an index, which names an
 image per platform. The push carries the index with every image it names, attestations included,
-so it takes several times the space of one image. To carry such an image into the air gap, copy
-it with all its platforms into an OCI layout, with a tool that keeps the manifests unchanged.
-chalkctl's digest check refuses a copy that does not.
+so it takes several times the space of one image.
 
 ## Push the workloads' images
 
@@ -293,11 +312,13 @@ spec:
 ```
 
 The registry starts after the mount, and systemd makes the mounted file system the registry
-user's before it starts. Add the volume before you install the node, or reboot the node with
-[`chalkctl node reboot`](../reference/cli/chalkctl_node_reboot.md) after you apply it, so that the
-registry starts on the volume. Images pushed before the volume was mounted stay hidden on VAR
-below it, so push them again. [Add storage volumes](../operate/storage-volumes.md) covers disks
-and formats.
+user's before it starts. Add the volume before you install the node, so the registry stores on it
+from the start. A volume added later with `chalkctl config apply` restarts the registry, which then
+stores on the volume. Images pushed before stay hidden on VAR below the mount, so push them again.
+
+The unit requires the mount, as `RequiresMountsFor=` implies `Requires=`. When the volume's disk is
+missing or its mount fails, the registry does not start on that node, and containerd moves on to
+the next endpoint. [Add storage volumes](../operate/storage-volumes.md) covers disks and formats.
 
 ## Add or remove a control plane
 
@@ -338,7 +359,8 @@ refuses a config that holds a `ClusterRegistry`.
   first; a host cannot be mirrored for some repositories alone.
 - A push that spans a garbage collection may fail and needs to run again.
 - `chalkctl registry list` does not show manifests without a tag.
-- Endpoints are IP addresses, so a VIP cannot be one. `chalkctl validate` does not notice an
+- An endpoint is a node's static address, which its node certificate names, so a VIP cannot be
+  one. `chalkctl validate` does not notice an
   endpoint that no node owns; `chalkctl registry push` fails on it, and containerd passes over it.
 - chalkd does not pull OS images from the cluster registry. Air-gapped upgrades take the images
   from a directory, as [Upgrade nodes](../operate/upgrade.md) describes.
@@ -359,10 +381,12 @@ route to the image's host shows that the node pulled it from the cluster registr
 ## If something goes wrong
 
 - The registry does not run on a node that should serve it. Read its journal with
-  `chalkctl logs <node> --unit chalkos-registry.service`. The line
-  `skipped, unmet condition check ConditionPathExists=/run/chalkos/outputs/cluster-registry/registry.env`
-  means the node does not serve an endpoint: none of its static addresses is in `endpoints`. A
-  delivery whose restart of `chalkos-registry.service` fails names the unit.
+  `chalkctl logs <node> --unit chalkos-registry.service`. When the last line of the unit is
+  `Serve the cluster registry skipped, unmet condition check ConditionPathExists=/run/chalkos/outputs/cluster-registry/registry.env`,
+  the node does not serve an endpoint: none of its static addresses is in `endpoints`. A
+  delivery whose restart of `chalkos-registry.service` fails names the unit. A volume mounted at
+  `/var/lib/chalkos-registry` that is missing keeps the registry from starting, as
+  [Give the registry a disk of its own](#give-the-registry-a-disk-of-its-own) describes.
 - The workstation or the nodes cannot reach the port. `chalkctl node diag <node> nft-ruleset`
   shows the table `inet chalkos-registry`, which opens it. A network firewall in front of the
   nodes must let TCP to the port through, as
