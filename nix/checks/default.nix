@@ -53,7 +53,8 @@ in
 checks
 // {
   # Every check is in exactly one tier, and .github/labels.yml has the label e2e and a label
-  # e2e:<name> for each check e2e-<name>, the labels that run them on a pull request.
+  # e2e:<name> for each check e2e-<name>, the labels that run them on a pull request, and the
+  # label ci-failure of the issues CI opens.
   ci-tiers =
     pkgs.runCommand "chalkos-ci-tiers"
       {
@@ -70,6 +71,10 @@ checks
           echo "$actual" >&2
           echo "and not those of the e2e tier:" >&2
           printf %s "$expected" >&2
+          exit 1
+        fi
+        if ! yq -e '.[] | select(.name == "ci-failure")' "$labels" >/dev/null; then
+          echo "error: .github/labels.yml has no label ci-failure, which CI's failure issues carry" >&2
           exit 1
         fi
         touch $out
