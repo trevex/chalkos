@@ -137,18 +137,40 @@ references and their digests.
 
 On a machine connected to the registries, copy each image with all its platforms into an OCI image
 layout, keeping its digest. An OCI layout or archive holds one image or index for chalkctl, so give
-each image a directory of its own. With skopeo and yq:
+each image a directory of its own. With [crane](https://github.com/google/go-containerregistry/tree/main/cmd/crane)
+and yq:
 
 ```sh
+mkdir -p images/oci
 for ref in $(yq 'select(.kind == "Cluster") | .spec.images[]' cluster/cluster.yaml); do
   repo=${ref%%@*}; name=${repo##*/}; name=${name%%:*}
-  skopeo copy --all --preserve-digests "docker://${repo%:*}@${ref#*@}" "oci:images/$name"
+  rm -rf "images/oci/$name"
+  crane pull --format=oci "$ref" "images/oci/$name"
 done
 ```
 
-`--all` copies every platform the index names, and `--preserve-digests` makes skopeo fail rather
-than change a manifest, so the layout serves the digest the `Cluster` document pins. Carry
-`images/` into the air gap. An OCI archive, `oci-archive:<file>` in skopeo, works as well.
+`crane pull --format=oci` writes the index with every platform it names, with the manifests'
+bytes and media types as the registry serves them, so the layout serves the digest the `Cluster`
+document pins. A pull into a layout that exists adds a second entry to it, which chalkctl refuses,
+so the loop removes the directory first. Carry `images/oci/` into the air gap. A tar of a layout,
+`tar -cf <name>.tar -C images/oci/<name> .`, is an OCI archive, which chalkctl reads too.
+
+The indexes are larger than the images a node runs. The homelab's eight images take about
+1.2 GiB, of which the pause image's index takes about 400 MiB, most of it its Windows images.
+
+!!! note "skopeo keeps no Docker manifest list in an OCI layout"
+
+    registry.k8s.io serves its images as Docker manifest lists. skopeo's `oci:` and
+    `oci-archive:` transports write OCI indexes alone, so
+    `skopeo copy --all --preserve-digests` stops on such an image:
+
+    ```text
+    Manifest list must be converted to type "application/vnd.oci.image.index.v1+json" to be written to destination, but we cannot modify it: "Instructed to preserve digests"
+    ```
+
+    Without `--preserve-digests`, skopeo converts the list, which gives it a digest other than the
+    one the `Cluster` document pins. skopeo copies an image whose index is an OCI index already,
+    such as flannel's, with its digest kept.
 
 ## Push the control plane's images before bootstrap
 
@@ -163,7 +185,7 @@ every image of `spec.images` from the directories above:
 ```sh
 for ref in $(yq 'select(.kind == "Cluster") | .spec.images[]' cluster/cluster.yaml); do
   repo=${ref%%@*}; name=${repo##*/}; name=${name%%:*}
-  chalkctl registry push "images/$name" "$ref" --secrets secrets.age
+  chalkctl registry push "images/oci/$name" "$ref" --secrets secrets.age
 done
 ```
 
