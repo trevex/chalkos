@@ -138,6 +138,30 @@ in
     };
   };
 
+  # Whether the address a is one a service listens on or sends to: no unspecified, link-local,
+  # loopback, multicast or IPv4-mapped address.
+  unicast =
+    a:
+    ''cel.bind(x, ip(${a}), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("169.254.0.0/16").contains(x) && !cidr("fe80::/10").contains(x) && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x) && !cidr("::ffff:0:0/96").contains(x))'';
+  # The declaration that the addresses, or with cidr the ranges, of one list appear once each, in
+  # whatever spelling.
+  once = as: hint: {
+    across = "list";
+    inherit as hint;
+  };
+  # The rule of a service's kind whose documents answer clients of the ranges `allow` on the
+  # addresses `listen`: each document listens on an address of a family its clients are of.
+  listenFamily =
+    kind:
+    let
+      shared = ''cel.bind(s, documents[n].spec, ["ipv4", "ipv6"].exists(f, s.listen.exists(a, ip(a).family() == f) && s.allow.exists(p, cidr(p).ip(0).family() == f)))'';
+    in
+    {
+      description = "A ${kind} listens on an address of a family its clients' ranges are of.";
+      rule = "documents.all(n, ${shared})";
+      messageExpression = ''documents.filter(n, !${shared}).map(n, "${kind} " + n).join(", ") + " listens on no address of a family its clients' ranges are of, so it would answer no one; give listen and allow a family in common"'';
+    };
+
   # The rule that the field p holds a NAT64 prefix, as RFC 6052 gives them and Jool and Unbound
   # take them: an IPv6 range of one of its lengths, no IPv4-mapped one, of no link-local,
   # multicast or unspecified addresses, whose bits 64 to 71 are zero. Those bits are zero when

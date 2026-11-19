@@ -84,7 +84,7 @@ func unboundConfig(name string, r derive.ResolverSpec, vrf, trustAnchor, zoneFil
 		"  use-syslog: no\n" +
 		"  ip-freebind: yes\n" +
 		"  port: 53\n")
-	listen, allow, err := resolverAddresses(r)
+	listen, allow, err := serviceAddresses("DNS", r.Listen, r.Allow)
 	if err != nil {
 		return "", err
 	}
@@ -147,21 +147,21 @@ func unboundConfig(name string, r derive.ResolverSpec, vrf, trustAnchor, zoneFil
 	return b.String(), nil
 }
 
-// resolverAddresses are the addresses the resolver r listens on and the masked ranges of the
-// clients it answers, as netip prints them. It guards an empty listen or allow, for which the
-// firewall would open port 53 on every address or to every client.
-func resolverAddresses(r derive.ResolverSpec) ([]netip.Addr, []netip.Prefix, error) {
-	if len(r.Listen) == 0 {
-		return nil, nil, derive.InternalErrorf("listen names no address, so the firewall would accept DNS on every address of the router")
+// serviceAddresses are the addresses a service of the protocol proto listens on and the masked
+// ranges of the clients it answers, as netip prints them. It guards an empty listen or allow, for
+// which the firewall would open the service's port on every address or to every client.
+func serviceAddresses(proto string, listen []netip.Addr, allow []netip.Prefix) ([]netip.Addr, []netip.Prefix, error) {
+	if len(listen) == 0 {
+		return nil, nil, derive.InternalErrorf("listen names no address, so the firewall would accept %s on every address of the router", proto)
 	}
-	if len(r.Allow) == 0 {
-		return nil, nil, derive.InternalErrorf("allow names no range, so the firewall would accept DNS from every client")
+	if len(allow) == 0 {
+		return nil, nil, derive.InternalErrorf("allow names no range, so the firewall would accept %s from every client", proto)
 	}
-	allow := make([]netip.Prefix, len(r.Allow))
-	for i, p := range r.Allow {
-		allow[i] = p.Masked()
+	masked := make([]netip.Prefix, len(allow))
+	for i, p := range allow {
+		masked[i] = p.Masked()
 	}
-	return r.Listen, allow, nil
+	return listen, masked, nil
 }
 
 // renderedRecords are the records of the local zones rendered so far: each as "<name>. <type>

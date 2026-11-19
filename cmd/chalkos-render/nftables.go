@@ -119,7 +119,7 @@ func resolverOpenings(resolvers []derive.Named[derive.ResolverSpec]) ([]opening,
 	var out []opening
 	for _, r := range resolvers {
 		what := "Resolver " + r.Name
-		listen, allow, err := resolverAddresses(r.Spec)
+		listen, allow, err := serviceAddresses("DNS", r.Spec.Listen, r.Spec.Allow)
 		if err != nil {
 			return nil, derive.Within(what, err)
 		}

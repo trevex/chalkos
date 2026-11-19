@@ -20,19 +20,11 @@ let
     address
     vrfRef
     nat64Prefix
+    unicast
+    once
+    listenFamily
     ;
 
-  # Whether the address a is one a service listens on or sends to: no unspecified, link-local,
-  # loopback, multicast or IPv4-mapped address.
-  unicast =
-    a:
-    ''cel.bind(x, ip(${a}), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("169.254.0.0/16").contains(x) && !cidr("fe80::/10").contains(x) && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x) && !cidr("::ffff:0:0/96").contains(x))'';
-  # The declaration that the addresses, or with cidr the ranges, of one list appear once each, in
-  # whatever spelling.
-  once = as: hint: {
-    across = "list";
-    inherit as hint;
-  };
   # A DNS name in lower case: labels of letters, digits, dashes and underscores, without the root's
   # dot.
   dnsName = types.strMatching "([a-z0-9_]([-a-z0-9_]{0,61}[a-z0-9])?[.])*[a-z0-9_]([-a-z0-9_]{0,61}[a-z0-9])?";
@@ -114,11 +106,7 @@ in
     multiple = true;
     description = "A DNS resolver of the router in one VRF, Unbound: the addresses it answers on, whom it answers, where it sends queries, and its DNS64 and local zones.";
     rules = [
-      {
-        description = "A Resolver listens on an address of a family its clients' ranges are of.";
-        rule = ''documents.all(n, cel.bind(s, documents[n].spec, ["ipv4", "ipv6"].exists(f, s.listen.exists(a, ip(a).family() == f) && s.allow.exists(p, cidr(p).ip(0).family() == f))))'';
-        messageExpression = ''documents.filter(n, cel.bind(s, documents[n].spec, !["ipv4", "ipv6"].exists(f, s.listen.exists(a, ip(a).family() == f) && s.allow.exists(p, cidr(p).ip(0).family() == f)))).map(n, "Resolver " + n).join(", ") + " listens on no address of a family its clients' ranges are of, so it would answer no one; give listen and allow a family in common"'';
-      }
+      (listenFamily "Resolver")
       {
         description = "With DNS64, no local zone holds ipv4only.arpa, which Unbound would answer before DNS64.";
         rule = "documents.all(n, cel.bind(s, documents[n].spec, s.dns64 == null || !s.localZones.exists(z, ${overIPv4Only "z.name"})))";
