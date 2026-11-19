@@ -85,7 +85,7 @@
     ],
     "run": "",
     "start": true,
-    "when": ""
+    "when": "cel.bind(d, ((\"storage.chalkos.dev/v1alpha1\" in config && \"Volume\" in config[\"storage.chalkos.dev/v1alpha1\"]) ? config[\"storage.chalkos.dev/v1alpha1\"].Volume : {}), d.map(n, d[n].spec)).filter(s, s.mountPoint != null && (s.mountPoint == \"/var/lib/chalkos-registry\" || \"/var/lib/chalkos-registry\".startsWith(s.mountPoint + \"/\"))) != cel.bind(d, ((\"storage.chalkos.dev/v1alpha1\" in oldConfig && \"Volume\" in oldConfig[\"storage.chalkos.dev/v1alpha1\"]) ? oldConfig[\"storage.chalkos.dev/v1alpha1\"].Volume : {}), d.map(n, d[n].spec)).filter(s, s.mountPoint != null && (s.mountPoint == \"/var/lib/chalkos-registry\" || \"/var/lib/chalkos-registry\".startsWith(s.mountPoint + \"/\")))"
   },
   "containerd-config": {
     "chalkd": "",

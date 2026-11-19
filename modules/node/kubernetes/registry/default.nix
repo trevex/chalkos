@@ -37,6 +37,13 @@ let
     "ca.crt" = "/state/chalkd/ca.crt";
   };
   storage = "/var/lib/chalkos-registry";
+  # The specs of the Volume documents of the config c mounted at the storage or above it, in the
+  # order of their names.
+  storageMounts =
+    c:
+    ''${
+      cel.specs c apiVersions.storage "Volume"
+    }.filter(s, s.mountPoint != null && (s.mountPoint == "${storage}" || "${storage}".startsWith(s.mountPoint + "/")))'';
 in
 {
   options.chalkos.kubernetes = chalkosLib.internal.feature "Kubernetes" "registry" {
@@ -112,11 +119,14 @@ in
         fi
       '';
     };
-    # A node that starts or stops serving starts or stops the registry. The unit is Type=notify,
-    # so the restart returns once the registry listens, and the effects after this one, such as
-    # the kubelet's, find it answering.
+    # A node that starts or stops serving starts or stops the registry. A Volume mounted at or
+    # above the storage starts it again too: systemd hands the new file system to the registry's
+    # user, and the registry stores on it, only as the unit starts. The unit is Type=notify, so
+    # the restart returns once the registry listens, and the effects after this one, such as the
+    # kubelet's, find it answering.
     chalkos.effects.cluster-registry = {
       outputs = [ "cluster-registry" ];
+      when = "${storageMounts "config"} != ${storageMounts "oldConfig"}";
       restart = [ "chalkos-registry.service" ];
       start = true;
     };

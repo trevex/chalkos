@@ -12,8 +12,33 @@ let
     builtins.toFile "moved-${baseNameOf file}" (
       builtins.replaceStrings [ "192.0.2.13/24" ] [ "192.0.2.14/24" ] (builtins.readFile file)
     );
+  # The config of file with a Volume mounted at mountPoint added.
+  withVolume =
+    name: file: mountPoint:
+    builtins.toFile "${name}-${baseNameOf file}" (
+      builtins.readFile file
+      + ''
+        ---
+        apiVersion: storage.chalkos.dev/v1alpha1
+        kind: Volume
+        metadata: {name: ${name}}
+        spec: {size: 10G, mountPoint: ${mountPoint}}
+      ''
+    );
 in
 {
+  # A Volume mounted at the registry's storage starts the registry again, so that it stores on
+  # the volume; one mounted elsewhere does not.
+  kubernetes-registry-volume = {
+    before = ./tests/spelled.yaml;
+    config = withVolume "registry" ./tests/spelled.yaml "/var/lib/chalkos-registry";
+    effects = [ "cluster-registry" ];
+  };
+  kubernetes-registry-volume-elsewhere = {
+    before = ./tests/spelled.yaml;
+    config = withVolume "scratch" ./tests/spelled.yaml "/var/lib/scratch";
+    effects = [ ];
+  };
   # A moved address rewrites containerd's hosts.toml when a ClusterRegistry orders the node's
   # endpoints, and not without one.
   kubernetes-registry-moved = {

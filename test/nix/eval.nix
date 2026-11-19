@@ -4098,6 +4098,8 @@ lib.runTests {
             "kubernetes-registry-moved-unregistered"
             "kubernetes-registry-port"
             "kubernetes-registry-spelled"
+            "kubernetes-registry-volume"
+            "kubernetes-registry-volume-elsewhere"
             "kubernetes-registry-worker"
           ];
           services = [
