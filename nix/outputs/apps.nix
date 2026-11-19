@@ -27,6 +27,25 @@ let
       exec chalklab-e2e -test.v -test.run '^TestKubernetesCluster$' -test.timeout 60m "$@"
     '';
   };
+
+  # What follows the Kubernetes releases of modules/node/kubernetes/releases.nix, set again after a
+  # change of a version there; see update-pins.sh. It runs nix of the caller's PATH.
+  updatePins = pkgs.writeShellApplication {
+    name = "update-pins";
+    runtimeInputs = [
+      (import ../testing/image-layout.nix { inherit pkgs; })
+      pkgs.coreutils
+      pkgs.crane
+      pkgs.findutils
+      pkgs.git
+      pkgs.gnused
+      pkgs.jq
+      pkgs.perl
+    ];
+    # jq and perl programs in single quotes name their own variables.
+    excludeShellChecks = [ "SC2016" ];
+    text = builtins.readFile ./update-pins.sh;
+  };
 in
 {
   chalklab = {
@@ -48,5 +67,10 @@ in
     type = "app";
     program = lib.getExe kubernetesOnline;
     meta.description = "Run the Kubernetes e2e test with images pulled from the upstream registries";
+  };
+  update-pins = {
+    type = "app";
+    program = lib.getExe updatePins;
+    meta.description = "Set the hashes, image digests and references that follow the pinned Kubernetes releases";
   };
 }
