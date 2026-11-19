@@ -1,0 +1,41 @@
+# The repository's labels, which the labels workflow creates or updates on a push to main. The
+# check ci-tiers wants the label e2e and a label e2e:<name> for each check e2e-<name>.
+- name: e2e
+  color: "5319e7"
+  description: Run every end-to-end test on this pull request
+- name: e2e:image
+  color: "d4c5f9"
+  description: Run the e2e-image check on this pull request
+- name: e2e:secureboot
+  color: "d4c5f9"
+  description: Run the e2e-secureboot check on this pull request
+- name: e2e:install
+  color: "d4c5f9"
+  description: Run the e2e-install check on this pull request
+- name: e2e:installer
+  color: "d4c5f9"
+  description: Run the e2e-installer check on this pull request
+- name: e2e:iso
+  color: "d4c5f9"
+  description: Run the e2e-iso check on this pull request
+- name: e2e:upgrade
+  color: "d4c5f9"
+  description: Run the e2e-upgrade check on this pull request
+- name: e2e:kubernetes
+  color: "d4c5f9"
+  description: Run the e2e-kubernetes check on this pull request
+- name: e2e:kubernetes-ha
+  color: "d4c5f9"
+  description: Run the e2e-kubernetes-ha check on this pull request
+- name: e2e:router
+  color: "d4c5f9"
+  description: Run the e2e-router check on this pull request
+- name: ci-failure
+  color: "b60205"
+  description: CI failed on main or in the nightly run
+- name: dependencies
+  color: "0366d6"
+  description: Updates a dependency
+- name: release
+  color: "0e8a16"
+  description: Prepares a release

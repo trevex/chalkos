@@ -53,6 +53,11 @@
       };
       packages.${system} = import ./nix/outputs/packages.nix arguments;
       checks.${system} = import ./nix/checks arguments;
+      # The names of the checks by the tier CI runs them in, which its workflow reads.
+      ciTiers.${system} = import ./nix/checks/tiers.nix {
+        inherit (pkgs) lib;
+        names = builtins.attrNames self.checks.${system};
+      };
       apps.${system} = import ./nix/outputs/apps.nix arguments;
       devShells.${system}.default = import ./nix/outputs/shell.nix { inherit pkgs self; };
       formatter.${system} = pkgs.nixfmt-tree;
