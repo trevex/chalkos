@@ -60,6 +60,8 @@ jobs:
     timeout-minutes: 360
     permissions:
       contents: read
+      # cache-nix-action purges the job's older stores on main.
+      actions: write
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.tiers.outputs.matrix) }}
@@ -87,15 +89,39 @@ jobs:
         with:
           extra_nix_config: |
             system-features = kvm nixos-test benchmark big-parallel
-      # The binary cache, once the repository names it in the variable CACHIX_NAME. A run pushes
-      # what it builds when it has the secret CACHIX_AUTH_TOKEN, which a fork's pull request
-      # does not get.
+      # A Cachix cache when the repository has the variable CACHIX_NAME and the secret
+      # CACHIX_AUTH_TOKEN, which a fork's pull request does not get; otherwise the Nix store in
+      # the GitHub Actions cache.
+      - name: Choose the cache
+        id: cache
+        env:
+          CACHIX_NAME: ${{ vars.CACHIX_NAME }}
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+        run: |
+          if [ -n "$CACHIX_NAME" ] && [ -n "$CACHIX_AUTH_TOKEN" ]; then
+            echo "cachix=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "cachix=false" >>"$GITHUB_OUTPUT"
+          fi
       - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
-        if: vars.CACHIX_NAME != ''
+        if: steps.cache.outputs.cachix == 'true'
         with:
           name: ${{ vars.CACHIX_NAME }}
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          skipPush: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+      # Each job keeps one store of its own, saved by runs on main alone, which purge the job's
+      # older store; pull requests restore main's. The stores share the repository's 10 GB, so
+      # each is cut to 1.5 GiB before it is saved.
+      - uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
+        if: steps.cache.outputs.cachix != 'true'
+        with:
+          primary-key: nix-${{ matrix.name }}-${{ hashFiles('flake.lock', 'go.sum', '**/*.nix') }}
+          restore-prefixes-first-match: nix-${{ matrix.name }}-
+          save: ${{ github.ref == 'refs/heads/main' }}
+          gc-max-store-size-linux: 1536M
+          purge: ${{ github.ref == 'refs/heads/main' }}
+          purge-prefixes: nix-${{ matrix.name }}-
+          purge-created: 0
+          purge-primary-key: never
       - name: Build ${{ matrix.name }}
         env:
           CHECKS: ${{ matrix.checks }}
