@@ -318,6 +318,13 @@ type ResolverSpec struct {
 	LocalZones []LocalZone `json:"localZones"`
 }
 
+// TimeServerSpec is a TimeServer document's spec.
+type TimeServerSpec struct {
+	Listen       []netip.Addr   `json:"listen"`
+	Allow        []netip.Prefix `json:"allow"`
+	LocalStratum *uint8         `json:"localStratum"`
+}
+
 // LocalZone is a local zone of a Resolver.
 type LocalZone struct {
 	Name    string        `json:"name"`

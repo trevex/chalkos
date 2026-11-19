@@ -87,9 +87,9 @@ in
     ];
 
     chalkos.outputs.router-nftables = {
-      # The Router, the firewall's kinds, and the ports of the BGPPeer, Resolver, DHCPSubnet
-      # and DHCPRelay documents on images whose features declare them: an output reads the kinds
-      # the image declares alone.
+      # The Router, the firewall's kinds, and the ports of the BGPPeer, Resolver, DHCPSubnet,
+      # DHCPRelay, WireGuard and TimeServer documents on images whose features declare them: an
+      # output reads the kinds the image declares alone.
       inputs = [
         "Router"
       ]
@@ -100,6 +100,7 @@ in
         "DHCPSubnet"
         "DHCPRelay"
         "WireGuard"
+        "TimeServer"
       ]
       ++ [
         # The links of each VRF, which the zones and conntrack zones match.

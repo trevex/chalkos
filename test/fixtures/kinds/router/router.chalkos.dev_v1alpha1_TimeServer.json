@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The router's NTP server, chrony: the addresses it answers on, whom it answers, and whether it serves its own clock when it follows no time server.",
+  "properties": {
+    "apiVersion": {
+      "const": "router.chalkos.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "TimeServer"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "allow": {
+          "description": "Address ranges of the clients the time server answers; chrony ignores others, and the firewall accepts NTP from these alone.",
+          "examples": [
+            [
+              "2001:db8:1::/64"
+            ]
+          ],
+          "items": {
+            "format": "cidr",
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array",
+          "x-chalkos-unique": [
+            {
+              "across": "list",
+              "as": "cidr",
+              "hint": "name each range once"
+            }
+          ]
+        },
+        "listen": {
+          "description": "Addresses of the router in the default VRF on which it answers NTP, on UDP port 123; the firewall accepts NTP on them from `allow`. chrony itself answers on every address, so the firewall alone keeps the others closed.",
+          "examples": [
+            [
+              "2001:db8:1::1"
+            ]
+          ],
+          "items": {
+            "format": "ip",
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array",
+          "x-chalkos-rules": [
+            {
+              "description": "The time server listens on unicast addresses.",
+              "messageExpression": "\"the address \" + self.filter(a, !cel.bind(x, ip(a), x != ip(\"0.0.0.0\") && x != ip(\"::\") && !cidr(\"127.0.0.0/8\").contains(x) && x != ip(\"::1\") && !cidr(\"169.254.0.0/16\").contains(x) && !cidr(\"fe80::/10\").contains(x) && !cidr(\"224.0.0.0/4\").contains(x) && !cidr(\"ff00::/8\").contains(x) && !cidr(\"::ffff:0:0/96\").contains(x)))[0] + \" is no unicast address the time server can listen on\"",
+              "rule": "self.all(a, cel.bind(x, ip(a), x != ip(\"0.0.0.0\") && x != ip(\"::\") && !cidr(\"127.0.0.0/8\").contains(x) && x != ip(\"::1\") && !cidr(\"169.254.0.0/16\").contains(x) && !cidr(\"fe80::/10\").contains(x) && !cidr(\"224.0.0.0/4\").contains(x) && !cidr(\"ff00::/8\").contains(x) && !cidr(\"::ffff:0:0/96\").contains(x)))",
+              "takes": "refuse"
+            }
+          ],
+          "x-chalkos-unique": [
+            {
+              "across": "list",
+              "as": "ip",
+              "hint": "name each address once"
+            }
+          ]
+        },
+        "localStratum": {
+          "anyOf": [
+            {
+              "maximum": 15,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Stratum at which the router serves its own clock while it follows no time server, as chrony's `local stratum <n> orphan`: five minutes after chrony starts without a source, or once the estimated error of the source it followed passes a second, its clients take the router's clock, however far from the real time it is. Null answers as unsynchronised then, which clients refuse. Give a stratum above that of every server on the network, such as 10.",
+          "examples": [
+            10
+          ]
+        }
+      },
+      "required": [
+        "allow",
+        "listen"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "TimeServer",
+  "type": "object",
+  "x-chalkos-kind": {
+    "group": "router.chalkos.dev",
+    "kind": "TimeServer",
+    "multiple": false,
+    "rules": [
+      {
+        "description": "A TimeServer listens on an address of a family its clients' ranges are of.",
+        "messageExpression": "documents.filter(n, !cel.bind(s, documents[n].spec, [\"ipv4\", \"ipv6\"].exists(f, s.listen.exists(a, ip(a).family() == f) && s.allow.exists(p, cidr(p).ip(0).family() == f)))).map(n, \"TimeServer \" + n).join(\", \") + \" listens on no address of a family its clients' ranges are of, so it would answer no one; give listen and allow a family in common\"",
+        "rule": "documents.all(n, cel.bind(s, documents[n].spec, [\"ipv4\", \"ipv6\"].exists(f, s.listen.exists(a, ip(a).family() == f) && s.allow.exists(p, cidr(p).ip(0).family() == f))))",
+        "takes": "refuse"
+      }
+    ],
+    "version": "v1alpha1"
+  }
+}

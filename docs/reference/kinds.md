@@ -718,6 +718,20 @@ A node's config may hold several, each with a name of its own. It has 4 [change 
 | `spec.terms[].then.prepend` | integer from 1 to 10 or null | `null` | How often the router puts its own AS number in front of the route's AS path; null puts none. |
 | `spec.terms[].then.removeCommunities` | list of string | `[]` | Communities removed from the route. |
 
+### TimeServer { #timeserver }
+
+The router's NTP server, chrony: the addresses it answers on, whom it answers, and whether it serves its own clock when it follows no time server.
+
+`apiVersion: router.chalkos.dev/v1alpha1`
+
+A node's config holds at most one. It has 2 [change rules](builtins.md#rules-timeserver).
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `spec.allow` | list of address range | required | Address ranges of the clients the time server answers; chrony ignores others, and the firewall accepts NTP from these alone. Each item is unique within the list, compared as masked ranges. |
+| `spec.listen` | list of IP address | required | Addresses of the router in the default VRF on which it answers NTP, on UDP port 123; the firewall accepts NTP on them from `allow`. chrony itself answers on every address, so the firewall alone keeps the others closed. Each item is unique within the list, compared as addresses. |
+| `spec.localStratum` | integer from 1 to 15 or null | `null` | Stratum at which the router serves its own clock while it follows no time server, as chrony's `local stratum <n> orphan`: five minutes after chrony starts without a source, or once the estimated error of the source it followed passes a second, its clients take the router's clock, however far from the real time it is. Null answers as unsynchronised then, which clients refuse. Give a stratum above that of every server on the network, such as 10. |
+
 ### VRF { #vrf }
 
 A VRF of the router: a kernel VRF device of the document's name, its routing table and the links it holds. Other router kinds name it by its name; the default VRF, of every link no VRF holds, has no document.

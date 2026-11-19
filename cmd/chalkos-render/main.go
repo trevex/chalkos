@@ -36,6 +36,7 @@ const usage = `usage: chalkos-render template TEMPLATE FILE
        chalkos-render cluster-registry MARK
        chalkos-render jool
        chalkos-render unbound TRUST-ANCHOR ZONE-FILE
+       chalkos-render chrony-server
        chalkos-render kea PD-HOOK
        chalkos-render dhcp-relay
        chalkos-render validate router
@@ -110,6 +111,8 @@ func run(args []string, stdin io.Reader, stdout io.Writer, out string) error {
 		return renderJool(in, out)
 	case args[0] == "unbound" && len(args) == 3:
 		return renderUnbound(args[1], args[2], in, out)
+	case args[0] == "chrony-server" && len(args) == 1:
+		return renderChronyServer(in, out)
 	case args[0] == "kea" && len(args) == 2:
 		return renderKea(args[1], in, out)
 	case args[0] == "dhcp-relay" && len(args) == 1:

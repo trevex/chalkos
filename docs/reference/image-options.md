@@ -194,6 +194,12 @@ Type: boolean · Default: `true` · Declared in: [modules/node/router/nat64/defa
 
 Whether router images carry Jool, the kernel module and tool of the NAT64 instances, and accept the kind `NAT64`. Only with the router layer; set it false in an image's modules to leave the feature out of it.
 
+### `chalkos.router.ntp.enable` { #chalkosrouterntpenable }
+
+Type: boolean · Default: `true` · Declared in: [modules/node/router/ntp/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/ntp/default.nix)
+
+Whether router images carry an NTP server, the node's chrony, and accept the kind `TimeServer`. Only with the router layer; set it false in an image's modules to leave the feature out of it.
+
 ### `chalkos.router.resolver.enable` { #chalkosrouterresolverenable }
 
 Type: boolean · Default: `true` · Declared in: [modules/node/router/resolver/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/resolver/default.nix)

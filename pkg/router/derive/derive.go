@@ -71,6 +71,7 @@ var routerKinds = []routerKind{
 	kindOf("DHCPRelay", func(m *Model) *[]Named[DHCPRelaySpec] { return &m.DHCPRelays }),
 	kindOf("WireGuard", func(m *Model) *[]Named[WireGuardSpec] { return &m.WireGuards }),
 	kindOf("WireGuardPeer", func(m *Model) *[]Named[WireGuardPeerSpec] { return &m.WireGuardPeers }),
+	kindOf("TimeServer", func(m *Model) *[]Named[TimeServerSpec] { return &m.TimeServers }),
 }
 
 // Named is the spec of a document, with the document's name.
@@ -104,6 +105,7 @@ type Model struct {
 	DHCPRelays      []Named[DHCPRelaySpec]
 	WireGuards      []Named[WireGuardSpec]
 	WireGuardPeers  []Named[WireGuardPeerSpec]
+	TimeServers     []Named[TimeServerSpec]
 	// Links are the interface names the Network documents' [Match] sections name and the
 	// WireGuards' links, sorted.
 	Links []string

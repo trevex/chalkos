@@ -1369,6 +1369,37 @@ Expression of rule 4:
 self.all(t, t["then"].action == "accept" || t["then"].localPref == null && t["then"].med == null && size(t["then"].addCommunities) == 0 && size(t["then"].removeCommunities) == 0 && t["then"].prepend == null)
 ```
 
+#### TimeServer { #rules-timeserver }
+
+| Rule | Field | Guards | Takes | Expression | Message |
+| --- | --- | --- | --- | --- | --- |
+| 1 | — | A TimeServer listens on an address of a family its clients' ranges are of. | `refuse` | after the table | after the table |
+| 2 | `spec.listen` | The time server listens on unicast addresses. | `refuse` | after the table | after the table |
+
+Expression of rule 1:
+
+```text
+documents.all(n, cel.bind(s, documents[n].spec, ["ipv4", "ipv6"].exists(f, s.listen.exists(a, ip(a).family() == f) && s.allow.exists(p, cidr(p).ip(0).family() == f))))
+```
+
+Message of rule 1:
+
+```text
+documents.filter(n, !cel.bind(s, documents[n].spec, ["ipv4", "ipv6"].exists(f, s.listen.exists(a, ip(a).family() == f) && s.allow.exists(p, cidr(p).ip(0).family() == f)))).map(n, "TimeServer " + n).join(", ") + " listens on no address of a family its clients' ranges are of, so it would answer no one; give listen and allow a family in common"
+```
+
+Expression of rule 2:
+
+```text
+self.all(a, cel.bind(x, ip(a), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("169.254.0.0/16").contains(x) && !cidr("fe80::/10").contains(x) && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x) && !cidr("::ffff:0:0/96").contains(x)))
+```
+
+Message of rule 2:
+
+```text
+"the address " + self.filter(a, !cel.bind(x, ip(a), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("169.254.0.0/16").contains(x) && !cidr("fe80::/10").contains(x) && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x) && !cidr("::ffff:0:0/96").contains(x)))[0] + " is no unicast address the time server can listen on"
+```
+
 #### VRF { #rules-vrf }
 
 | Rule | Field | Guards | Takes | Expression | Message |
@@ -1517,7 +1548,7 @@ The validators router images add.
 
 | Validator | Inputs | Command |
 | --- | --- | --- |
-| `router`{ #validator-router } | `AddressSet`, `BGP`, `BGPPeer`, `CommunityList`, `DHCPRelay`, `DHCPSubnet`, `FirewallPolicy`, `FirewallZone`, `NAT64`, `NATRule`, `NextHop`, `PolicyRoute`, `PrefixList`, `Resolver`, `Router`, `RoutingPolicy`, `VRF`, `WireGuard`, `WireGuardPeer`, `Network` | `chalkos-render validate router` |
+| `router`{ #validator-router } | `AddressSet`, `BGP`, `BGPPeer`, `CommunityList`, `DHCPRelay`, `DHCPSubnet`, `FirewallPolicy`, `FirewallZone`, `NAT64`, `NATRule`, `NextHop`, `PolicyRoute`, `PrefixList`, `Resolver`, `Router`, `RoutingPolicy`, `TimeServer`, `VRF`, `WireGuard`, `WireGuardPeer`, `Network` | `chalkos-render validate router` |
 
 ## Outputs { #outputs }
 
@@ -1550,12 +1581,13 @@ The outputs router images add, and the output `networkd` of every image as route
 
 | Output | Inputs | Directory | Renderer | Check |
 | --- | --- | --- | --- | --- |
+| `chrony-server`{ #output-chrony-server } | `TimeServer` | `/run/chalkos/outputs/chrony-server` | Command `chalkos-render chrony-server` | yes |
 | `dhcp-relay`{ #output-dhcp-relay } | `DHCPRelay`, `VRF`, `Network`, `DHCPSubnet`, `NAT64` | `/run/chalkos/outputs/dhcp-relay` | Command `chalkos-render dhcp-relay` | yes |
 | `frr`{ #output-frr } | `BGP`, `BGPPeer`, `CommunityList`, `PrefixList`, `RoutingPolicy`, `Network`, `VRF`, `WireGuard` | `/run/chalkos/outputs/frr` | Command `chalkos-render frr` | yes |
 | `jool`{ #output-jool } | `NAT64`, `VRF`, `Network` | `/run/chalkos/outputs/jool` | Command `chalkos-render jool` | yes |
 | `kea`{ #output-kea } | `DHCPSubnet`, `VRF`, `Network`, `NAT64` | `/run/chalkos/outputs/kea` | Command `chalkos-render kea chalkos-dhcp6-pd` | yes |
 | `networkd`{ #outputs-router-images-networkd } | `Link`, `NetDev`, `Network`, `NAT64`, `VRF`, `NextHop`, `PolicyRoute`, `WireGuard`, `WireGuardPeer` | `/run/systemd/network` | Command `chalkos-render router-networkd chalkos-networkd-schemas` | no |
-| `router-nftables`{ #output-router-nftables } | `Router`, `AddressSet`, `FirewallPolicy`, `FirewallZone`, `NATRule`, `BGPPeer`, `Resolver`, `DHCPSubnet`, `DHCPRelay`, `WireGuard`, `VRF`, `Network`, `NAT64`, `NextHop`, `PolicyRoute` | `/run/chalkos/outputs/router-nftables` | Command `chalkos-render router-nftables 50000` | yes |
+| `router-nftables`{ #output-router-nftables } | `Router`, `AddressSet`, `FirewallPolicy`, `FirewallZone`, `NATRule`, `BGPPeer`, `Resolver`, `DHCPSubnet`, `DHCPRelay`, `WireGuard`, `TimeServer`, `VRF`, `Network`, `NAT64`, `NextHop`, `PolicyRoute` | `/run/chalkos/outputs/router-nftables` | Command `chalkos-render router-nftables 50000` | yes |
 | `router-sysctl`{ #output-router-sysctl } | `Router` | `/run/sysctl.d` | Command `chalkos-render router-sysctl` | no |
 | `unbound`{ #output-unbound } | `Resolver`, `VRF`, `Network` | `/run/chalkos/outputs/unbound` | Command `chalkos-render unbound root.key ipv4only.arpa.zone` | yes |
 
@@ -1646,6 +1678,7 @@ The effects router images add, and the effect `networkd` of every image as route
 
 | Effect | Fires when | Does |
 | --- | --- | --- |
+| `chrony-server`{ #effect-chrony-server } | The output `chrony-server` changed. | Runs after `router-nftables` when those effects are due. Restarts `chronyd.service`. |
 | `dhcp`{ #effect-dhcp } | One of the outputs `kea` and `networkd` changed. | Runs after `networkd`, `links` and `router-nftables` when those effects are due. Reloads `chalkos-dhcp.service`. |
 | `dhcp-relay`{ #effect-dhcp-relay } | One of the outputs `dhcp-relay` and `networkd` changed. | Runs after `networkd`, `links` and `router-nftables` when those effects are due. Reloads `chalkos-dhcp-relays.service`. |
 | `frr`{ #effect-frr } | The output `frr` changed. | Runs after `networkd`, `links` and `router-nftables` when those effects are due. Reloads `frr.service`. |
@@ -1727,6 +1760,7 @@ The diagnostics router images add.
 | `bgp-summary`{ #diagnostics-router-images-bgp-summary } | One VRF's BGP sessions of each address family, as show bgp summary prints them. Runs `vtysh -c show bgp vrf {vrf} summary`. | `vrf`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, default `default` | reader | — |
 | `dhcp-leases`{ #diagnostic-dhcp-leases } | The leases of the DHCPv4 and DHCPv6 servers of every VRF, or of one subnet or MAC address: each lease's VRF, subnet, address or delegated prefix, MAC address, host name and end, as Kea's lease commands report them. Runs `bash -c <script> dhcp-leases --subnet={subnet} --mac={mac}`, with the script after the table. | `subnet`, pattern `^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`, optional; `mac`, pattern `^[0-9a-f]{2}(:[0-9a-f]{2}){5}$`, optional | operator | — |
 | `nat64-sessions`{ #diagnostic-nat64-sessions } | A NAT64 instance's sessions, as jool session display prints them: each translated TCP, UDP and ICMP connection's IPv6 and IPv4 addresses and ports, and when it expires. Runs `bash -c <script> nat64-sessions {instance}`, with the script after the table. | `instance`, pattern `^[a-z0-9]([-a-z0-9.]{0,9}[a-z0-9])?$` | operator | `CAP_NET_ADMIN` |
+| `ntp-clients`{ #diagnostic-ntp-clients } | The NTP clients the router's time server answered, as chronyc -n clients prints them, and its counts of requests, as chronyc serverstats prints them. Runs `bash -c <script>`, with the script after the table. | — | reader | — |
 | `traceroute`{ #diagnostic-traceroute } | The routers on the path to an address, as traceroute -n prints them: one probe a hop, 30 hops at most. Runs `traceroute -n -m 30 -q 1 -w 2 {address}`. | `address`, address | operator | — |
 | `wireguard`{ #diagnostic-wireguard } | The router's WireGuard interfaces and their peers, as wg show prints them: public keys, endpoints, allowed IPs, the latest handshakes and the bytes sent and received. It shows no private or preshared key. Runs `wg show {interface}`. | `interface`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, optional | reader | `CAP_NET_ADMIN` |
 
@@ -1786,6 +1820,14 @@ Script of `nat64-sessions`:
 for protocol in --tcp --udp --icmp; do
   jool -i "$1" session display --numeric "$protocol" || exit
 done
+```
+
+Script of `ntp-clients`:
+
+```text
+chronyc -h 127.0.0.1,::1 -n clients
+echo
+exec chronyc -h 127.0.0.1,::1 serverstats
 ```
 
 Sources: the schemas, `facts.json`, `validators.json`, `outputs.json`, `effects.json` and

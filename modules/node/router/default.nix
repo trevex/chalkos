@@ -68,6 +68,7 @@ in
     ./dhcp
     ./dhcp-relay
     ./wireguard
+    ./ntp
     ./validator.nix
   ];
 

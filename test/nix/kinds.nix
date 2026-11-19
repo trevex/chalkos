@@ -135,6 +135,7 @@ let
     "Resolver"
     "Router"
     "RoutingPolicy"
+    "TimeServer"
     "VRF"
     "WireGuard"
     "WireGuardPeer"

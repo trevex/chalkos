@@ -38,7 +38,7 @@ func check(byKind map[string]any) error {
 	_, derr := d.Subnets()
 	_, rerr := d.Relays()
 	_, werr := d.WireGuardInterfaces()
-	return errors.Join(nerr, d.checkFirewall(nat64), serr, d.checkResolvers(), derr, rerr, werr)
+	return errors.Join(nerr, d.checkFirewall(nat64), serr, d.checkListeners(), derr, rerr, werr)
 }
 
 // readDocuments is the documents of data, a validator's input, by kind, as Build takes them: each

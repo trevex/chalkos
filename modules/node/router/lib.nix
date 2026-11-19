@@ -28,6 +28,7 @@ let
       "dhcp"
       "dhcpRelay"
       "wireguard"
+      "ntp"
     ];
 
     # The outputs of the router layer, which the tests of its examples compare with golden files on
@@ -41,6 +42,7 @@ let
       "networkd"
       "kea"
       "dhcp-relay"
+      "chrony-server"
     ];
 
     # The option chalkos.router.<name>.enable of a feature, true unless an image leaves the

@@ -297,3 +297,24 @@ func TestResolverListenRefusals(t *testing.T) {
 	refused(t, vrfOnly,
 		"Resolver/resolver: spec.listen[0]: the address 2001:db8:3::1 of listen belongs to links of Network 40-guest in VRF guest alone, so the resolver of VRF default never receives its queries; listen on an address of the VRF's links")
 }
+
+// A time server's listen address that Network documents give only to links of a VRF is refused:
+// chrony runs in the default VRF. One the default VRF's links hold too passes, and so does one
+// that no Network gives.
+func TestTimeServerListenRefusals(t *testing.T) {
+	docs := func(listen string) map[string][]any {
+		return map[string][]any{
+			"VRF": {derivetest.RouterDoc(t, "VRF", "guest", `{"table": 300, "interfaces": ["eth3"]}`)},
+			"Network": {
+				derivetest.Doc(t, "Network", "10-eth0", `{"match": {"name": "eth0"}, "network": {"address": ["2001:db8:ffff::1/128", "2001:db8:3::9/64"]}}`),
+				derivetest.Doc(t, "Network", "40-guest", `{"match": {"name": "eth3"}, "network": {"address": ["2001:db8:3::1/64", "2001:db8:3::9/64"]}}`),
+			},
+			"TimeServer": {derivetest.RouterDoc(t, "TimeServer", "ntp", `{"listen": ["2001:db8:ffff::2", "`+listen+`"], "allow": ["2001:db8::/32"]}`)},
+		}
+	}
+	for _, listen := range []string{"2001:db8:ffff::1", "2001:db8:3::9", "2001:db8:3::53"} {
+		accepted(t, docs(listen))
+	}
+	refused(t, docs("2001:db8:3::1"),
+		"TimeServer/ntp: spec.listen[1]: the address 2001:db8:3::1 of listen belongs to links of Network 40-guest in VRF guest alone, so the time server of VRF default never receives its queries; listen on an address of the VRF's links")
+}

@@ -1,0 +1,8 @@
+[Match]
+Name=lan0
+
+[Network]
+Address=192.0.2.1/24
+Address=2001:db8:1::1/64
+IPv6AcceptRA=false
+

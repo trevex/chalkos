@@ -1,0 +1,23 @@
+# A LAN router that serves NTP. Its chrony answers the LAN's clients in both families on lan0's
+# addresses, and the firewall accepts NTP from the LAN's ranges to those addresses alone. It keeps
+# its own clock with the node's TimeSync and, without a source, serves that clock at stratum 10.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: Router
+metadata: {name: router}
+spec:
+  management: {interfaces: [lan0]}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-lan0}
+spec:
+  match: {name: lan0}
+  network: {address: [192.0.2.1/24, "2001:db8:1::1/64"], ipv6AcceptRA: false}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: TimeServer
+metadata: {name: ntp}
+spec:
+  listen: [192.0.2.1, "2001:db8:1::1"]
+  allow: [192.0.2.0/24, "2001:db8:1::/64"]
+  localStratum: 10

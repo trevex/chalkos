@@ -428,6 +428,7 @@ lib.runTests {
           "resolvers"
           "unbound"
           "unbound-start"
+          "chrony-server"
         ] edgeEffects;
         resolverWithoutNat64 = edgeWithoutNat64.resolvers.after;
         kubernetes = after [
@@ -460,6 +461,7 @@ lib.runTests {
           ];
           unbound = [ "router-nftables" ];
           unbound-start = [ "router-nftables" ];
+          chrony-server = [ "router-nftables" ];
         };
         resolverWithoutNat64 = [
           "vrf"
@@ -693,6 +695,14 @@ lib.runTests {
             ];
             examples = [ "edge.yaml" ];
           };
+          ntp = {
+            kinds = [ "TimeServer" ];
+            outputs = [ "chrony-server" ];
+            effects = [ "chrony-server" ];
+            diagnostics = [ "ntp-clients" ];
+            reads = [ "router-nftables:TimeServer" ];
+            examples = [ "time-server.yaml" ];
+          };
         };
         added = [ ];
         ids = true;
@@ -786,10 +796,11 @@ lib.runTests {
       "nat64.yaml"
       "none.yaml"
       "policy.yaml"
+      "time-server.yaml"
       "vrf.yaml"
     ];
   };
-  # On a router image with every feature, the test of each router example compares all eight
+  # On a router image with every feature, the test of each router example compares all nine
   # router outputs with golden files, and router-vrf-strict the ruleset; on one without a feature,
   # no router test compares any.
   testRouterGoldens =
@@ -802,6 +813,7 @@ lib.runTests {
       # The outputs each test of the router's examples of an image compares, by test.
       compared = c: lib.genAttrs (exampleTests c) (outputsOf c);
       routerOutputs = [
+        "chrony-server"
         "dhcp-relay"
         "frr"
         "jool"
@@ -870,12 +882,12 @@ lib.runTests {
       };
     };
   };
-  # A router image without BGP, NAT64, the resolver, DHCP, the DHCP relay and WireGuard keeps the
-  # router's core: the router kinds of the firewall, VRFs and policy routing, the outputs and units
-  # of the firewall, the kernel settings and the VRFs, the console and the copy of chalkd's lines
-  # to the serial port every metal image runs, and the diagnostics of every image and traceroute.
-  # Its tests run the examples of none of the six, and its build allocates the IDs of the
-  # same users and groups as an image with every feature.
+  # A router image without BGP, NAT64, the resolver, DHCP, the DHCP relay, WireGuard and NTP keeps
+  # the router's core: the router kinds of the firewall, VRFs and policy routing, the outputs and
+  # units of the firewall, the kernel settings and the VRFs, the console and the copy of chalkd's
+  # lines to the serial port every metal image runs, and the diagnostics of every image and
+  # traceroute. Its tests run the examples of none of the seven, and its build allocates the IDs
+  # of the same users and groups as an image with every feature.
   testRouterWithoutFeatures = {
     expr =
       let
@@ -886,6 +898,7 @@ lib.runTests {
           "dhcp"
           "dhcpRelay"
           "wireguard"
+          "ntp"
         ];
       in
       {

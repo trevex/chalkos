@@ -38,6 +38,11 @@ func renderRouterNftables(port string, closed bool, in map[string]any, out strin
 		return err
 	}
 	fw.openings = append(fw.openings, dns...)
+	ntp, err := timeServerOpenings(d.TimeServers)
+	if err != nil {
+		return err
+	}
+	fw.openings = append(fw.openings, ntp...)
 	dhcp, err := dhcpOpenings(d)
 	if err != nil {
 		return err
