@@ -162,6 +162,6 @@ These limits hold in the current code, grouped by area.
 - Changing a node's platform is a reinstall: chalkd
   refuses an image of another platform than the one it runs, and translates
   config for its own.
-- CI builds and publishes the documentation alone. The flake checks, with their VM tests, run on
-  a developer's machine, because they need `/dev/kvm`.
+- CI runs on GitHub-hosted x86-64 runners alone. The end-to-end checks run on a pull request
+  only when a label asks for them; [Continuous integration](ci.md) lists the tiers.
 - The documentation is not versioned; it describes `main`.

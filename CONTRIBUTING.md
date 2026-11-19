@@ -55,3 +55,11 @@ A change carries its tests, the documentation it affects and the generated files
 produce.
 [What a change needs](https://trevex.github.io/chalkos/contribute/#what-a-change-needs) lists
 each one.
+
+## Open a pull request
+
+Every change reaches `main` through a pull request whose title is a Conventional Commit. CI runs
+the fast and image checks on every pull request; add the label `e2e`, or `e2e:<name>` for one
+check, when the change touches boot, the install, upgrades or a layer.
+[Continuous integration](https://trevex.github.io/chalkos/contribute/ci/) explains the tiers and
+labels.
