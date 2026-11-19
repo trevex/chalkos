@@ -3281,8 +3281,20 @@ lib.runTests {
       installer = true;
     };
   };
+  # The Kubernetes layer annotates its image's manifest with its Kubernetes release; an image
+  # without the layer has no such annotation.
+  testKubernetesAnnotation = {
+    expr = lib.mapAttrs (_: image: image.config.chalkos.imageDirectory.annotations) {
+      inherit (layered) node-metal plain-metal;
+    };
+    expected = {
+      node-metal."dev.chalkos.kubernetes.version" = kubernetesReleases.${newestKubernetes}.version;
+      plain-metal = { };
+    };
+  };
   # mkImages gives its revision and tag to every image and the installer, which only metadata.json
-  # reads: the store, and so the root hash, is the same without them. Both default to null.
+  # reads and annotates the image's manifest with: the store, and so the root hash, is the same
+  # without them. Both default to null.
   testMkImagesPassesProvenance = {
     expr =
       let
@@ -3304,8 +3316,15 @@ lib.runTests {
           given.node-metal.nixos.config.system.build.toplevel.drvPath
           == none.nixos.config.system.build.toplevel.drvPath;
         mistyped = fails (mkImage (node // { revision = 1; })).nixos.config.chalkos.provenance;
+        annotations = given.node-metal.nixos.config.chalkos.imageDirectory.annotations;
+        noAnnotations = none.nixos.config.chalkos.imageDirectory.annotations;
       };
     expected = {
+      annotations = {
+        "org.opencontainers.image.revision" = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678";
+        "org.opencontainers.image.version" = "v1.5.0";
+      };
+      noAnnotations = { };
       given = {
         installer = {
           revision = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678";

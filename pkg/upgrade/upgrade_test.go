@@ -1071,7 +1071,7 @@ func TestInstallPassesOverAHeldStoreOfAPull(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	oci, err := ociimage.Build(oh,
+	oci, err := ociimage.Build(oh, nil,
 		ociimage.BytesBlob(ociimage.StoreType, img.Store),
 		ociimage.BytesBlob(ociimage.HashTreeType, img.HashTree),
 		ociimage.BytesBlob(ociimage.UKIType, img.UKI),

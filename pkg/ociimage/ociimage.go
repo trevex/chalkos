@@ -1,7 +1,8 @@
 // Package ociimage reads and writes chalkos images as OCI artifacts: one image manifest of the
-// artifact type application/vnd.chalkos.image.v1, whose config is the image's header and whose
-// layers are its store, hash tree, UKI, boot loader and contract, stored uncompressed. A layer is
-// found by its media type, not its position.
+// artifact type application/vnd.chalkos.image.v1, whose config is the image's header, whose
+// layers are its store, hash tree, UKI, boot loader and contract, stored uncompressed, and whose
+// annotations are those of its metadata.json. A layer is found by its media type, not its
+// position.
 package ociimage
 
 import (
@@ -106,9 +107,9 @@ func SectionBlob(mediaType types.MediaType, s *io.SectionReader) (Blob, error) {
 	})
 }
 
-// Build is the chalkos image of the header and the blobs of its store, hash tree, UKI, boot
-// loader and contract.
-func Build(h Header, store, hashTree, uki, bootLoader, contract Blob) (v1.Image, error) {
+// Build is the chalkos image of the header, the manifest's annotations and the blobs of its store,
+// hash tree, UKI, boot loader and contract.
+func Build(h Header, annotations map[string]string, store, hashTree, uki, bootLoader, contract Blob) (v1.Image, error) {
 	if err := h.check(); err != nil {
 		return nil, fmt.Errorf("the image: %w", err)
 	}
@@ -116,11 +117,11 @@ func Build(h Header, store, hashTree, uki, bootLoader, contract Blob) (v1.Image,
 	if err != nil {
 		return nil, err
 	}
-	return build(config, []Blob{store, hashTree, uki, bootLoader, contract})
+	return build(config, annotations, []Blob{store, hashTree, uki, bootLoader, contract})
 }
 
-// Replace is img with the blobs in place of its layers of their media types; its config and its
-// other layers stay as they are. It refuses an img whose manifest holds a layer besides the five
+// Replace is img with the blobs in place of its layers of their media types; its config, its
+// annotations and its other layers stay as they are. It refuses an img whose manifest holds a layer besides the five
 // known ones.
 func Replace(img v1.Image, blobs ...Blob) (v1.Image, error) {
 	if _, err := ReadHeader(img); err != nil {
@@ -157,11 +158,12 @@ func Replace(img v1.Image, blobs ...Blob) (v1.Image, error) {
 		}
 		layers[i] = Blob{MediaType: mt, Size: size, Digest: digest, Open: l.Compressed}
 	}
-	return build(config, layers)
+	return build(config, m.Annotations, layers)
 }
 
-// build is the image of the config and the layers, of the media types of layerTypes in order.
-func build(config []byte, layers []Blob) (v1.Image, error) {
+// build is the image of the config, the manifest's annotations and the layers, of the media types
+// of layerTypes in order.
+func build(config []byte, annotations map[string]string, layers []Blob) (v1.Image, error) {
 	configDigest, configSize, err := v1.SHA256(bytes.NewReader(config))
 	if err != nil {
 		return nil, err
@@ -171,6 +173,7 @@ func build(config []byte, layers []Blob) (v1.Image, error) {
 		MediaType:     types.OCIManifestSchema1,
 		ArtifactType:  ArtifactType,
 		Config:        v1.Descriptor{MediaType: HeaderType, Size: configSize, Digest: configDigest},
+		Annotations:   annotations,
 	}
 	a := &artifact{config: config, blobs: map[v1.Hash]Blob{}}
 	for i, b := range layers {

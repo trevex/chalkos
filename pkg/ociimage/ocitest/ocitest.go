@@ -85,7 +85,7 @@ func Image(t testing.TB, h ociimage.Header, c ociimage.Contract) v1.Image {
 	if err != nil {
 		t.Fatal(err)
 	}
-	img, err := ociimage.Build(h,
+	img, err := ociimage.Build(h, nil,
 		ociimage.BytesBlob(ociimage.StoreType, []byte("store")),
 		ociimage.BytesBlob(ociimage.HashTreeType, []byte("hash tree")),
 		ociimage.BytesBlob(ociimage.UKIType, []byte("uki")),

@@ -75,7 +75,7 @@ func FromDirectory(ctx context.Context, dir string) (_ v1.Image, closeImage func
 	if err != nil {
 		return nil, nil, err
 	}
-	img, err := Build(h, store, hashTree, uki, bootLoader, BytesBlob(ContractType, contract))
+	img, err := Build(h, md.Annotations, store, hashTree, uki, bootLoader, BytesBlob(ContractType, contract))
 	if err != nil {
 		return nil, nil, err
 	}

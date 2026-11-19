@@ -122,6 +122,8 @@ in
     # directory, which chalkctl checks config against.
     chalkos.imageDirectory.facts.kubernetes = imageFile;
     environment.etc."chalkos/kubernetes/image.json".source = imageFile;
+    # The Kubernetes release on the image's OCI manifest, for registries and their users to read.
+    chalkos.imageDirectory.annotations."dev.chalkos.kubernetes.version" = k.package.version;
 
     # Certificates, kubeconfigs and kubelet flags from the node's share and identity, prepared once
     # the node's addresses settled, waiting up to nodeIP.timeout for them. With flannel's VXLAN
