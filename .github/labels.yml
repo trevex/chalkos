@@ -1,5 +1,5 @@
 # The repository's labels, which the labels workflow creates or updates on a push to main. The
-# check ci-tiers wants the label e2e and a label e2e:<name> for each check e2e-<name>.
+# check ci-tiers wants the label e2e and each label of e2eLabels in nix/checks/tiers.nix.
 - name: e2e
   color: "5319e7"
   description: Run every end-to-end test on this pull request
@@ -30,6 +30,9 @@
 - name: e2e:router
   color: "d4c5f9"
   description: Run the e2e-router check on this pull request
+- name: e2e:examples
+  color: "d4c5f9"
+  description: Run the example checks, which build the examples' images, on this pull request
 - name: ci-failure
   color: "b60205"
   description: CI failed on main or in the nightly run

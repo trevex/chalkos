@@ -31,20 +31,21 @@ nix eval --json .#ciTiers.x86_64-linux
 | Tier | Checks | Runs on | Jobs |
 | --- | --- | --- | --- |
 | `fast` | the evaluation tests, linters, generated files, the docs, the Go unit tests and the namespace checks | every pull request, every push to `main` and the nightly run | one job, `fast`, of at most 90 minutes |
-| `images` | the image builds and their checks, the templates and examples, `fixtures`, and the NixOS VM checks `frr-reload` and `image-checker` | every pull request, every push to `main` and the nightly run | one job per check, of at most 120 minutes |
-| `e2e` | every `e2e-*` check | every push to `main`, the nightly run, and a pull request by its labels | one job per check, of at most 180 minutes |
+| `images` | the image builds and their checks, the templates, `fixtures`, and the NixOS VM checks `frr-reload` and `image-checker` | every pull request, every push to `main` and the nightly run | one job per check, of at most 120 minutes |
+| `e2e` | every `e2e-*` check, and the `example-*` checks, which build the examples' images that no other check shares | every push to `main`, the nightly run, and a pull request by its labels | one job per check, of at most 180 minutes |
 
 A job whose build fails builds once more, which rebuilds only what failed, because a download
 from a module proxy or a registry fails now and then. The job's log warns of the retry.
 
 A check in no tier, in two tiers, or a name in a tier that is no check fails the evaluation of
-the checks, so a new check cannot be left out of CI. The `e2e` tier takes every check whose name
-starts with `e2e-`; a new check of another tier goes in the `fast` or `images` list of
-`tiers.nix`. A check goes in `fast` when it builds no image and boots no VM, and in `images`
-otherwise.
+the checks, so a new check cannot be left out of CI. The `e2e` tier takes the checks of the
+labels in `e2eLabels` of `tiers.nix`: every check whose name starts with `e2e-`, and the
+examples' checks. A new example check goes in the `examples` list there; a new check of another
+kind goes in the `fast` or `images` list. A check goes in `fast` when it builds no image and boots
+no VM, and in `images` when it builds or boots images that other checks share.
 
-The `ci-tiers` check also wants a label in `.github/labels.yml` for each end-to-end check, so a
-new end-to-end check needs its label there too, and the label `ci-failure`.
+The `ci-tiers` check also wants each label of `e2eLabels` in `.github/labels.yml`, so a new
+end-to-end check needs its label there too, and the label `ci-failure`.
 
 ## End-to-end labels
 
@@ -54,9 +55,10 @@ A pull request runs no end-to-end check unless a label asks for it:
 | --- | --- |
 | `e2e` | every end-to-end check |
 | `e2e:<name>` | the check `e2e-<name>`, such as `e2e:upgrade` for `e2e-upgrade` |
+| `e2e:examples` | the checks of the examples: `example-homelab`, `example-extensions`, `example-bgp-extension` and `example-bgp-extension-validator-docs` |
 
-Add `e2e` when a change touches boot, the install, upgrades or a layer, and `e2e:<name>` when one
-check covers the change. Adding any label, an end-to-end one or another, runs the workflow again:
+Add `e2e` when a change touches boot, the install, upgrades or a layer, `e2e:<name>` when one
+check covers the change, and `e2e:examples` when it touches `examples/`. Adding any label, an end-to-end one or another, runs the workflow again:
 the fast and image tiers, and the end-to-end checks the pull request's labels name. Only
 people with triage access to the repository can add labels, so a pull request from a fork boots
 no end-to-end VM before a maintainer has read it.
