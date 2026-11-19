@@ -30,3 +30,4 @@ chalkbuild push oci/node-metal-signed ghcr.io/example/node-metal:v1
 - [chalkbuild oci](chalkbuild_oci.md): Write an image directory as an OCI image layout
 - [chalkbuild push](chalkbuild_push.md): Push an OCI image layout to a registry
 - [chalkbuild sign](chalkbuild_sign.md): Sign a copy of an image directory or an OCI image layout for Secure Boot
+- [chalkbuild version](chalkbuild_version.md): Print the version and the git revision of the build

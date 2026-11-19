@@ -31,6 +31,7 @@ buildGoProgram {
     ../../pkg/secureboot
     ../../pkg/uki
     ../../pkg/verity
+    ../../pkg/version
   ];
   nativeBuildInputs = [ makeWrapper ];
   postFixup = ''

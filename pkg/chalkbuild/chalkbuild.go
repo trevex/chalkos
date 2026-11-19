@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/trevex/chalkos/pkg/internal/cli"
+	"github.com/trevex/chalkos/pkg/version"
 )
 
 // NewCommand returns chalkbuild's root command.
@@ -21,7 +22,7 @@ func NewCommand() *cobra.Command {
 		// A flag before a subcommand's name is parsed as the root's, which has none: a usage error.
 		TraverseChildren: true,
 	})
-	root.AddCommand(ociCommand(), pushCommand(), signCommand())
+	root.AddCommand(ociCommand(), pushCommand(), signCommand(), version.Command("chalkbuild"))
 	return root
 }
 

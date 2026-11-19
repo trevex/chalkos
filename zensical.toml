@@ -224,6 +224,7 @@ nav = [
         ] },
         { "upgrade" = "reference/cli/chalkctl_upgrade.md" },
         { "validate" = "reference/cli/chalkctl_validate.md" },
+        { "version" = "reference/cli/chalkctl_version.md" },
       ] },
       { "chalklab" = [
         { "Overview" = "reference/cli/chalklab.md" },
@@ -241,6 +242,7 @@ nav = [
         { "oci" = "reference/cli/chalkbuild_oci.md" },
         { "push" = "reference/cli/chalkbuild_push.md" },
         { "sign" = "reference/cli/chalkbuild_sign.md" },
+        { "version" = "reference/cli/chalkbuild_version.md" },
       ] },
       { "chalkcfg" = [
         { "Overview" = "reference/cli/chalkcfg.md" },
