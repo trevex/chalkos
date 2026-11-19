@@ -48,6 +48,10 @@ The router serves plain NTP without NTS, so its clients name it with `nts: false
 router passes on is the time of its own `TimeSync`'s servers. A router that reaches none of them
 answers as unsynchronised, at stratum 16, and its clients refuse that time.
 
+chrony answers each client once every two seconds on average, with bursts of up to 16 answers,
+such as those of a client that starts with `iburst`. It drops the requests beyond that, so a
+misconfigured client that polls too often gets fewer answers and loads the router less.
+
 ## Serve the router's clock without a source
 
 `localStratum` lets the router serve its own clock when it follows no time server, as chrony's
@@ -63,6 +67,10 @@ estimated error of the source it followed grows past one second. Its clients the
 router's clock, however far it drifts from the real time, and a router whose clock was wrong at
 boot passes the error on. Give a stratum above that of every other server the clients may reach,
 such as 10, so they prefer any server that has a real source.
+
+After a boot or a restart of chronyd without a reachable source, such as a delivery that changes
+the `TimeServer`, the router answers as unsynchronised for up to those five minutes. Its clients
+refuse the answers meanwhile and keep their clocks running from where they stand.
 
 A production air gap needs accurate time for certificates that other systems check, so give it a
 reference clock, such as a GPS receiver with its own NTP server, and name that server in the
@@ -141,11 +149,12 @@ NTP hardware RX timestamps : 0
 NTP hardware TX timestamps : 0
 ```
 
-`fd00:300::31` is `k1`, which sent three NTP requests: `NTP` counts the requests, `Drop` those
-chrony dropped for their rate, and `Last` the seconds since the latest. `127.0.0.1` is chronyc
-itself, whose commands chrony counts under `Cmd`. A client that does not appear sent no request
-that reached chrony: check its `TimeSync`, its route to the router, and that `allow` holds the
-address it sends from. The diagnostic needs a reader client.
+`fd00:300::31` is `k1`, which sent three NTP requests. `NTP` counts the requests, `Drop` those
+chrony dropped beyond its rate limit, and `Last` the seconds since the latest. `127.0.0.1` is
+chronyc itself, whose commands chrony counts under `Cmd`. A client that does not appear sent no
+request that reached chrony: check its `TimeSync`, its route to the router, and that `allow` holds
+the address it sends from. A client with drops polls more often than the rate limit allows. The
+diagnostic needs a reader client.
 
 ## Fix a refused delivery
 

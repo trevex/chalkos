@@ -125,7 +125,8 @@ spec:
 The built-in output `chrony` renders the servers into a sources file that chrony reads, so one
 image serves nodes with different servers. `dhcp: true` adds the servers that DHCP announces,
 which are not authenticated. chrony keeps its NTS cookies on VAR, so after a reboot it needs no new
-key exchange with each server. A node runs no NTP server for other machines.
+key exchange with each server. A node runs no NTP server for other machines, except a router with
+a `TimeServer`, as [Serve time with NTP](../../router/time-server.md) describes.
 
 The clock decides which certificates a node accepts, as
 [The clock decides whether a certificate is valid](certificates.md#the-clock-decides-whether-a-certificate-is-valid)
