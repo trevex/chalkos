@@ -128,16 +128,19 @@ Run every later command in `homelab`. The example's files explain themselves in 
 | --- | --- |
 | `flake.nix` | Builds `router-metal`, `node-metal` and the installer. |
 | `chalkos.yaml` | The inventory: the four nodes, the address chalkctl reaches each at, their images and files. |
-| `router/router.yaml` | The router's ports, firewall, NAT64, resolver, BGP and WireGuard. |
+| `router/router.yaml` | The router's ports, firewall, resolver, BGP and WireGuard. |
+| `router/nat64.yaml` | The router's NAT64, the fabric's way to the IPv4 internet. |
 | `router/secrets.yaml` | The router's WireGuard key and BGP password. |
 | `cluster/cluster.yaml` | The Kubernetes cluster that all three nodes share. |
 | `bgp/fabric.yaml`, `bgp/secrets.yaml` | The nodes' ports, their BGP sessions with the router, and the password. |
 | `nodes/node1.yaml` to `nodes/node3.yaml` | Each node's disk, address and BGP speaker. |
+| `chalkos-air-gapped.yaml`, `air-gapped/` | The lab without internet access, an optional variant near the end of this tutorial. |
 
 ### Get the tools
 
 The flake's shell holds chalkctl and chalkbuild of the chalkos revision that `flake.lock` pins,
-with kubectl, jq, openssl, wg, arp-scan and nc. Lock the flake's chalkos input and enter the shell:
+with kubectl, jq, openssl, wg, arp-scan, nc, crane and yq. Lock the flake's chalkos input and
+enter the shell:
 
 ```sh
 nix flake lock
@@ -875,6 +878,204 @@ in a step of its own, at a time when that pause suits you:
 chalkctl upgrade --nodes node1,node2,node3 --secrets=secrets.age
 chalkctl upgrade --nodes router --secrets=secrets.age
 ```
+
+## Run the lab without internet access (optional)
+
+This optional variant cuts the fabric off the internet. The router drops its NAT64, the control
+planes serve the container images from the cluster registry, and the router serves the nodes'
+time. The workstation keeps its tunnel and reaches every node as before. Follow it in place of
+[Bootstrap Kubernetes](#bootstrap-kubernetes) once the three nodes wait for their bootstrap, or on
+a running lab, where the bootstrap step drops out.
+[Build an air-gapped cluster](air-gapped.md) explains the approach for any cluster.
+
+### What connects the fabric to the internet
+
+The NAT64 is the fabric's only way out. The fabric holds unique local addresses alone, and the
+router takes no IPv6 route from the home network, so the router has no IPv6 route beyond the lab's
+/48. Its firewall policies forward between the fabric and the tunnel alone. The NAT64's
+connections pass ahead of the policies, out of `wan` from the router's IPv4 address. The router
+sends the nodes no BGP routes: their default route from its advertisements leads to the router
+and no further.
+
+Without the NAT64, the router has no route to `64:ff9b::/96`, so the nodes' connections there fail.
+The resolver stays: it answers names from the root servers over `wan`, as the router's own
+connections still leave there, and DNS64 still answers with addresses in `64:ff9b::/96`, which
+lead nowhere now. CoreDNS keeps a server to forward to. The nodes reach the cluster registry, the
+router's time and each other by their addresses, and need no names. In a real air gap the router
+has no uplink either, and its resolver answers no name outside the lab.
+
+Two things the nodes take from the internet stop with the NAT64:
+
+| What | Through the NAT64 | In the variant |
+| --- | --- | --- |
+| Container images | `registry.k8s.io`, `ghcr.io` and `docker.io` | the cluster registry on the three control planes |
+| Time | `ptbtime1.ptb.de` to `ptbtime3.ptb.de` | the router's chrony at `fdc8:a1b2:c3d4:1::1`, over plain NTP |
+
+The images and the installer need no change: chalkctl reads them from `images/` on the workstation
+and sends them to the nodes.
+
+### Look at the variant's files
+
+The example keeps the variant beside the lab's files, so the default inventory stays as it is.
+`chalkos-air-gapped.yaml` is the variant's inventory. Its router leaves out `router/nat64.yaml`
+and takes `air-gapped/router.yaml`, and its nodes take `air-gapped/nodes.yaml` as well:
+
+```yaml title="chalkos-air-gapped.yaml"
+--8<-- "examples/homelab/chalkos-air-gapped.yaml"
+```
+
+Keep its nodes' addresses the same as those of `chalkos.yaml`. `air-gapped/nodes.yaml` turns the
+cluster registry on, with the three control planes' addresses as its endpoints and the hosts of
+the lab's images as its mirrors, and names the router as the nodes' time server:
+
+```yaml title="air-gapped/nodes.yaml"
+--8<-- "examples/homelab/air-gapped/nodes.yaml"
+```
+
+`air-gapped/router.yaml` lets NTP from the fabric reach the router:
+
+```yaml title="air-gapped/router.yaml"
+--8<-- "examples/homelab/air-gapped/router.yaml"
+```
+
+The router's chrony answers only the addresses its `allow` line names. The example's `flake.nix`
+gives the router's image that line:
+
+```nix
+{ services.chrony.extraConfig = "allow fdc8:a1b2:c3d4::/48"; }
+```
+
+Without the policy, the firewall drops the queries, so the line changes nothing on a connected
+lab. A router installed from an image without it needs a new image: add the line, build the image
+and upgrade the router, as [Change things later](#change-things-later) describes.
+
+### Copy the images to the workstation
+
+The workstation keeps its own internet access, so it fetches the images. Copy every image of the
+`Cluster` document into an OCI image layout of its own with crane, and busybox, which the checks
+below run:
+
+```sh
+mkdir -p images/oci
+for ref in $(yq 'select(.kind == "Cluster") | .spec.images[]' cluster/cluster.yaml); do
+  repo=${ref%%@*}; name=${repo##*/}; name=${name%%:*}
+  rm -rf "images/oci/$name"
+  crane pull --format=oci "$ref" "images/oci/$name"
+done
+rm -rf images/oci/busybox
+crane pull --format=oci docker.io/library/busybox:1.37.0 images/oci/busybox
+```
+
+The copies keep every platform of each image's index and take about 1.2 GiB.
+[Bring the images into the air gap](../kubernetes/cluster-registry.md#bring-the-images-into-the-air-gap)
+explains why the loop uses crane and not skopeo.
+
+### Cut the fabric off
+
+Run chalkctl with the variant's inventory for the rest of this section:
+
+```sh
+export CHALKOSINVENTORY=chalkos-air-gapped.yaml
+chalkctl validate
+```
+
+Have the router check its new config first. The dry run prints the documents that change, the
+NAT64 removed and the policy `fabric-local` added, and the outputs and effects that follow:
+
+```sh
+chalkctl config apply router --secrets=secrets.age --dry-run
+```
+
+Deliver it on trial, because it changes the router's firewall, and then the nodes' config:
+
+```sh
+chalkctl config apply router --secrets=secrets.age --try 5m
+chalkctl config apply node1 node2 node3 --secrets=secrets.age
+```
+
+The router stops its NAT64 and accepts NTP from the fabric. Each control plane starts the cluster
+registry at its node address, and every node's containerd looks there first for the images of
+`registry.k8s.io`, `ghcr.io` and `docker.io`.
+
+### Push the images
+
+Push every image to the three endpoints through the tunnel:
+
+```sh
+for ref in $(yq 'select(.kind == "Cluster") | .spec.images[]' cluster/cluster.yaml); do
+  repo=${ref%%@*}; name=${repo##*/}; name=${name%%:*}
+  chalkctl registry push "images/oci/$name" "$ref" --secrets=secrets.age
+done
+chalkctl registry push images/oci/busybox docker.io/library/busybox:1.37.0 --secrets=secrets.age
+```
+
+Each push prints the image's digest and a line for each endpoint, such as those of the API
+server's image:
+
+```text
+pushing registry.k8s.io/kube-apiserver:v1.37.2@sha256:3e563afb5cb5b72a10bac7012698dd09f5a42bde7d22de8d7d3c12e654df86b4 as registry.k8s.io/kube-apiserver@sha256:3e563afb5cb5b72a10bac7012698dd09f5a42bde7d22de8d7d3c12e654df86b4
+fdc8:a1b2:c3d4:ff::11: pushed [fdc8:a1b2:c3d4:ff::11]:5000/registry.k8s.io/kube-apiserver:v1.37.2 as sha256:3e563afb5cb5b72a10bac7012698dd09f5a42bde7d22de8d7d3c12e654df86b4
+fdc8:a1b2:c3d4:ff::12: pushed [fdc8:a1b2:c3d4:ff::12]:5000/registry.k8s.io/kube-apiserver:v1.37.2 as sha256:3e563afb5cb5b72a10bac7012698dd09f5a42bde7d22de8d7d3c12e654df86b4
+fdc8:a1b2:c3d4:ff::13: pushed [fdc8:a1b2:c3d4:ff::13]:5000/registry.k8s.io/kube-apiserver:v1.37.2 as sha256:3e563afb5cb5b72a10bac7012698dd09f5a42bde7d22de8d7d3c12e654df86b4
+```
+
+Check that every endpoint holds every image:
+
+```console
+$ chalkctl registry list --secrets=secrets.age
+REPOSITORY                               TAG      DIGEST               ENDPOINTS
+docker.io/library/busybox                1.37.0   sha256:a7dbc319b143  all
+ghcr.io/flannel-io/flannel               v0.28.9  sha256:708a2c9c1cfb  all
+registry.k8s.io/coredns/coredns          v1.14.6  sha256:900f9c109f7a  all
+registry.k8s.io/etcd                     3.7.0-0  sha256:6ecefbe2510c  all
+registry.k8s.io/kube-apiserver           v1.37.2  sha256:3e563afb5cb5  all
+registry.k8s.io/kube-controller-manager  v1.37.2  sha256:28e62daf706e  all
+registry.k8s.io/kube-proxy               v1.37.2  sha256:b2e075697d7a  all
+registry.k8s.io/kube-scheduler           v1.37.2  sha256:028c847fc321  all
+registry.k8s.io/pause                    3.10.2   sha256:f548e0e8e3dc  all
+```
+
+### Bootstrap and check the cut
+
+On a lab that waits for its bootstrap, bootstrap node1 and write a kubeconfig, as in
+[Bootstrap Kubernetes](#bootstrap-kubernetes). The control planes pull their images from the
+cluster registry. Then check that the nodes run and that a pod pulls busybox from the registry:
+
+```sh
+kubectl get nodes
+kubectl run airgap-check --rm -it --restart=Never --image=busybox:1.37.0 -- true
+```
+
+Check that the fabric no longer reaches the internet. The `tcp-connect` diagnostic to
+`64:ff9b::101:101`, which connected in [Bootstrap Kubernetes](#bootstrap-kubernetes), fails now,
+and `chalkctl status router` shows no `nat64:` table:
+
+```sh
+chalkctl node diag node1 --secrets=secrets.age tcp-connect address=64:ff9b::101:101 port=443
+chalkctl status router --secrets=secrets.age
+```
+
+`chalkctl status node1 --secrets=secrets.age` prints a line `time:` that names
+`fdc8:a1b2:c3d4:1::1`, the router, as the server the node's clock follows.
+
+A pod whose image is not in the registry stays in `ImagePullBackOff`. Copy and push its image as
+above;
+[If something goes wrong](../kubernetes/cluster-registry.md#if-something-goes-wrong) covers other
+failures.
+
+### Connect the lab again
+
+Deliver the config of `chalkos.yaml` to the router and the nodes:
+
+```sh
+unset CHALKOSINVENTORY
+chalkctl config apply router --secrets=secrets.age --try 5m
+chalkctl config apply node1 node2 node3 --secrets=secrets.age
+```
+
+The router runs its NAT64 again, the nodes take their time from the internet, and containerd pulls
+from the registries themselves. The pushed images stay on the control planes, in
+`/var/lib/chalkos-registry`, and the registry serves them again when the variant's config returns.
 
 ## Switch an existing lab to advertised gateways
 

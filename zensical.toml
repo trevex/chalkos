@@ -30,6 +30,7 @@ nav = [
   { "Guides" = [
     "guides/index.md",
     "guides/cluster-on-machines.md",
+    "guides/air-gapped.md",
     "guides/bgp-extension.md",
     "guides/home-lab.md",
   ] },
