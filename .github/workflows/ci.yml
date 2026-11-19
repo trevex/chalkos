@@ -1,9 +1,9 @@
 # Builds the flake's checks by the tiers of nix/checks/tiers.nix: the fast checks in one job, and
 # each image and end-to-end check in a job of its own. A pull request runs the fast and image
 # tiers, and the end-to-end checks its labels name: e2e names them all, e2e:<name> the check
-# e2e-<name>; a label added later runs the workflow again. A push to main and the nightly run,
-# which calls this workflow, run every tier and open or update an issue labelled ci-failure when
-# a check fails. The job result is the one check that branch protection requires.
+# e2e-<name>; adding any label runs the workflow again. A push to main and the nightly run, which
+# calls this workflow, run every tier and open or update an issue labelled ci-failure when a
+# check fails. The job result is the one check that branch protection requires.
 name: ci
 
 on:
@@ -27,17 +27,22 @@ jobs:
       contents: read
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
+      cache-key: ${{ steps.matrix.outputs.cache-key }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31.11.5
+      # Each job's timeout in minutes is its tier's. The base store's key changes with the Nix
+      # code, the flake's inputs and the Go modules.
       - name: List the checks to build
         id: matrix
         env:
           EVENT: ${{ github.event_name }}
           LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          CACHE_KEY: nix-base-${{ hashFiles('flake.lock', 'go.mod', 'go.sum', '**/*.nix') }}
         run: |
+          echo "cache-key=$CACHE_KEY" >>"$GITHUB_OUTPUT"
           tiers=$(nix eval --json .#ciTiers.x86_64-linux)
           if [ "$EVENT" != pull_request ] || jq -e 'any(. == "e2e")' <<<"$LABELS" >/dev/null; then
             e2e=$(jq -c .e2e <<<"$tiers")
@@ -47,8 +52,9 @@ jobs:
               <<<"$tiers")
           fi
           matrix=$(jq -c --argjson e2e "$e2e" '{include: (
-            [{name: "fast", checks: (.fast | join(" "))}]
-            + [(.images + $e2e)[] | {name: ., checks: .}]
+            [{name: "fast", checks: (.fast | join(" ")), timeout: 90}]
+            + [.images[] | {name: ., checks: ., timeout: 120}]
+            + [$e2e[] | {name: ., checks: ., timeout: 180}]
           )}' <<<"$tiers")
           echo "matrix=$matrix" >>"$GITHUB_OUTPUT"
           jq . <<<"$matrix"
@@ -57,11 +63,9 @@ jobs:
     needs: tiers
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: ${{ matrix.timeout }}
     permissions:
       contents: read
-      # cache-nix-action purges the job's older stores on main.
-      actions: write
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.tiers.outputs.matrix) }}
@@ -89,45 +93,67 @@ jobs:
         with:
           extra_nix_config: |
             system-features = kvm nixos-test benchmark big-parallel
-      # A Cachix cache when the repository has the variable CACHIX_NAME and the secret
-      # CACHIX_AUTH_TOKEN, which a fork's pull request does not get; otherwise the Nix store in
-      # the GitHub Actions cache.
-      - name: Choose the cache
-        id: cache
-        env:
-          CACHIX_NAME: ${{ vars.CACHIX_NAME }}
-          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
-        run: |
-          if [ -n "$CACHIX_NAME" ] && [ -n "$CACHIX_AUTH_TOKEN" ]; then
-            echo "cachix=true" >>"$GITHUB_OUTPUT"
-          else
-            echo "cachix=false" >>"$GITHUB_OUTPUT"
-          fi
+      # The base store every job starts from: the development shell, the Go modules, the
+      # Kubernetes releases and the test registry's images. The fast job on main saves it; the
+      # cache job removes older ones.
+      - uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
+        with:
+          primary-key: ${{ needs.tiers.outputs.cache-key }}
+          restore-prefixes-first-match: nix-base-
+          save: ${{ matrix.name == 'fast' && github.ref == 'refs/heads/main' }}
+      # A Cachix cache once the repository names it in the variable CACHIX_NAME: every run reads
+      # it, and runs on main push to it with the secret CACHIX_AUTH_TOKEN.
       - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
-        if: steps.cache.outputs.cachix == 'true'
+        if: vars.CACHIX_NAME != ''
         with:
           name: ${{ vars.CACHIX_NAME }}
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-      # Each job keeps one store of its own, saved by runs on main alone, which purge the job's
-      # older store; pull requests restore main's. The stores share the repository's 10 GB, so
-      # each is cut to 1.5 GiB before it is saved.
-      - uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
-        if: steps.cache.outputs.cachix != 'true'
-        with:
-          primary-key: nix-${{ matrix.name }}-${{ hashFiles('flake.lock', 'go.sum', '**/*.nix') }}
-          restore-prefixes-first-match: nix-${{ matrix.name }}-
-          save: ${{ github.ref == 'refs/heads/main' }}
-          gc-max-store-size-linux: 1536M
-          purge: ${{ github.ref == 'refs/heads/main' }}
-          purge-prefixes: nix-${{ matrix.name }}-
-          purge-created: 0
-          purge-primary-key: never
+          skipPush: ${{ github.ref != 'refs/heads/main' }}
+      # A build that fails is built once more, which rebuilds only what failed, since a download
+      # from a module proxy or registry fails now and then.
       - name: Build ${{ matrix.name }}
         env:
           CHECKS: ${{ matrix.checks }}
+          NAME: ${{ matrix.name }}
         run: |
           read -ra checks <<<"$CHECKS"
-          nix build --print-build-logs --no-link --keep-going "${checks[@]/#/.#checks.x86_64-linux.}"
+          installables=("${checks[@]/#/.#checks.x86_64-linux.}")
+          if ! nix build --print-build-logs --no-link --keep-going "${installables[@]}"; then
+            echo "::warning title=Retried $NAME::the build of $NAME failed; building it once more"
+            nix build --print-build-logs --no-link --keep-going "${installables[@]}"
+          fi
+      # The base store holds the roots alone, about 3 GiB, before the cache action saves it.
+      - name: Keep the base store
+        if: matrix.name == 'fast' && github.ref == 'refs/heads/main'
+        run: |
+          roots=$RUNNER_TEMP/roots
+          mkdir -p "$roots"
+          nix develop --profile "$roots/dev-shell" --command true
+          nix build --out-link "$roots/go-modules" .#packages.x86_64-linux.chalkctl.goModules
+          nix build --out-link "$roots/kubelet-releases" .#kubelet-releases
+          nix build --out-link "$roots/test-kubernetes-images" .#test-kubernetes-images
+          nix store gc
+          du -sh /nix/store
+
+  # On main, removes the base stores of other keys than this run's, after the fast job saved it.
+  cache:
+    needs: [tiers, check]
+    if: github.ref == 'refs/heads/main' && needs.check.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Remove older base stores
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          KEEP: ${{ needs.tiers.outputs.cache-key }}
+        run: |
+          gh cache list --key nix- --limit 100 --json key --jq '.[].key' | sort -u | while read -r key; do
+            if [ "$key" != "$KEEP" ]; then
+              gh cache delete "$key"
+            fi
+          done
 
   result:
     needs: [tiers, check]

@@ -13,9 +13,9 @@ run and the binary cache.
 
 ## Pull requests
 
-A pull request targets `main`, and its title is a
-[Conventional Commit](https://www.conventionalcommits.org/), because a rebase merge keeps the
-commits on `main` and the changelog comes from them. Branch protection requires the `result`
+A pull request targets `main`, and each of its commits is a
+[Conventional Commit](https://www.conventionalcommits.org/): a rebase merge puts the commits on
+`main` as they are, and the changelog comes from them. Branch protection requires the `result`
 check, which passes when every check of the run passed, and a review from the code owners of
 `.github/CODEOWNERS`. The pull request template asks for the end-to-end labels the change needs.
 
@@ -30,9 +30,12 @@ nix eval --json .#ciTiers.x86_64-linux
 
 | Tier | Checks | Runs on | Jobs |
 | --- | --- | --- | --- |
-| `fast` | the evaluation tests, linters, generated files, the docs, the Go unit tests and the namespace checks | every pull request and push to `main` | one job, `fast` |
-| `images` | the image builds and their checks, the templates and examples, `fixtures`, and the NixOS VM checks `frr-reload` and `image-checker` | every pull request and push to `main` | one job per check |
-| `e2e` | every `e2e-*` check | every push to `main`, the nightly run, and a pull request by its labels | one job per check |
+| `fast` | the evaluation tests, linters, generated files, the docs, the Go unit tests and the namespace checks | every pull request, every push to `main` and the nightly run | one job, `fast`, of at most 90 minutes |
+| `images` | the image builds and their checks, the templates and examples, `fixtures`, and the NixOS VM checks `frr-reload` and `image-checker` | every pull request, every push to `main` and the nightly run | one job per check, of at most 120 minutes |
+| `e2e` | every `e2e-*` check | every push to `main`, the nightly run, and a pull request by its labels | one job per check, of at most 180 minutes |
+
+A job whose build fails builds once more, which rebuilds only what failed, because a download
+from a module proxy or a registry fails now and then. The job's log warns of the retry.
 
 A check in no tier, in two tiers, or a name in a tier that is no check fails the evaluation of
 the checks, so a new check cannot be left out of CI. The `e2e` tier takes every check whose name
@@ -41,7 +44,7 @@ starts with `e2e-`; a new check of another tier goes in the `fast` or `images` l
 otherwise.
 
 The `ci-tiers` check also wants a label in `.github/labels.yml` for each end-to-end check, so a
-new end-to-end check needs its label there too.
+new end-to-end check needs its label there too, and the label `ci-failure`.
 
 ## End-to-end labels
 
@@ -53,7 +56,8 @@ A pull request runs no end-to-end check unless a label asks for it:
 | `e2e:<name>` | the check `e2e-<name>`, such as `e2e:upgrade` for `e2e-upgrade` |
 
 Add `e2e` when a change touches boot, the install, upgrades or a layer, and `e2e:<name>` when one
-check covers the change. Adding a label runs the workflow again with the checks it names. Only
+check covers the change. Adding any label, an end-to-end one or another, runs the workflow again:
+the fast and image tiers, and the end-to-end checks the pull request's labels name. Only
 people with triage access to the repository can add labels, so a pull request from a fork boots
 no end-to-end VM before a maintainer has read it.
 
@@ -62,23 +66,25 @@ The workflow `.github/workflows/labels.yml` creates or updates the repository's 
 
 ## Nightly run and failures
 
-The workflow `.github/workflows/nightly.yml` runs every tier on `main` each night, and can be
-started by hand. When a check fails on a push to `main` or in the nightly run, CI opens an issue
+The workflow `.github/workflows/nightly.yml` runs every tier on `main` each night, unless a run
+of a push already passed on `main`'s latest commit. A run started by hand always builds. When a check fails on a push to `main` or in the nightly run, CI opens an issue
 labelled `ci-failure`, or comments on the open one, with a link to the run.
 
 ## Binary cache
 
-CI needs no setup for caching. By default each job keeps its Nix store in the GitHub Actions
-cache: a run on `main` saves the job's store, cut to 1.5 GiB, and removes the job's older one,
-and pull requests restore the store `main` saved. The repository's Actions cache holds 10 GB, and
-GitHub evicts the least recently used entries beyond that, so this cache saves part of a build,
-not all of it.
+CI caches with no setup. Every job starts from a base Nix store in the GitHub Actions cache: the
+development shell with the Go toolchain and test tools, the Go modules, the Kubernetes releases
+and the images of the test registry, about 3 GiB. The `fast` job of a run on `main` saves it
+when the Nix code, the flake's inputs or the Go modules changed, and the run's `cache` job then
+removes the older base. A job builds the rest of its checks from source and `cache.nixos.org`.
+The repository's Actions cache holds 10 GB, which the base keeps well within.
 
-A [Cachix](https://www.cachix.org/) binary cache replaces it when the repository has both the
-Actions variable `CACHIX_NAME`, the cache's name, and the secret `CACHIX_AUTH_TOKEN`. Every job
-then reads from and pushes to that cache, which holds every path a build produced and also
-serves local builds through `cachix use <name>`. A pull request from a fork gets no secrets, so
-it uses the GitHub Actions cache.
+A [Cachix](https://www.cachix.org/) binary cache adds every path a build produced. Every job
+reads it once the repository names it in the Actions variable `CACHIX_NAME`, and runs on `main`
+push to it with the secret `CACHIX_AUTH_TOKEN`. Pull requests never push, so their code reaches
+no cache. The same cache serves local builds through `cachix use <name>`.
+
+Release builds do not rely on the GitHub Actions cache.
 
 ## Reproduce a job
 

@@ -1,5 +1,6 @@
-# Runs every tier of the CI workflow on main each night, end-to-end checks included. A failing
-# check opens or updates the issue labelled ci-failure.
+# Runs every tier of the CI workflow on main each night, end-to-end checks included, unless a push
+# run already passed on main's latest commit; a run started by hand always builds. A failing
+# check opens or updates the issue labelled ci-failure. Forks do not run it.
 name: nightly
 
 on:
@@ -14,7 +15,34 @@ concurrency:
 permissions: {}
 
 jobs:
+  tested:
+    if: github.repository == 'trevex/chalkos'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      passed: ${{ steps.main.outputs.passed }}
+    steps:
+      - name: Look for a passed run of main's latest commit
+        id: main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          runs=$(gh run list --workflow ci.yml --branch main --event push --commit "$SHA" \
+            --status success --json databaseId --jq length)
+          if [ "$EVENT" = schedule ] && [ "$runs" -gt 0 ]; then
+            echo "A push run already passed on $SHA."
+            echo "passed=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "passed=false" >>"$GITHUB_OUTPUT"
+          fi
+
   ci:
+    needs: tested
+    if: needs.tested.outputs.passed != 'true'
     uses: ./.github/workflows/ci.yml
     permissions:
       actions: write

@@ -1,6 +1,6 @@
 <!--
-The title is a Conventional Commit, such as "fix(chalkctl): check every node of an image's name".
-A rebase merge keeps the commits, and the changelog comes from them.
+Each commit is a Conventional Commit, such as "fix(chalkctl): check every node of an image's
+name": a rebase merge puts the commits on main as they are, and the changelog comes from them.
 
 Add the label e2e when the change touches boot, install, upgrade or a layer, or e2e:<name> to run
 one end-to-end check, such as e2e:upgrade. A label added later runs CI again with those checks.
