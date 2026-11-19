@@ -6,7 +6,10 @@ the layers and the tests, and an outline of the air-gapped home lab demo. The de
 self-contained HTML file, `index.html`, with its CSS and JavaScript inline. It loads its fonts from
 Google Fonts and needs no build step.
 
-The documentation site does not publish this directory: `zensical.toml` excludes `slides/`.
+The documentation site serves the deck at
+<https://trevex.github.io/chalkos/slides/chalkos-intro/>, and lists it on the
+[Talks and slides](../../contribute/slides.md) page. The site leaves this README out:
+`zensical.toml` excludes `slides/**/README.md`.
 
 ## View the deck
 

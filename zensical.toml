@@ -9,11 +9,11 @@ repo_name = "trevex/chalkos"
 docs_dir = "docs"
 site_dir = "site"
 extra_css = ["stylesheets/chalkos.css"]
-# Files the pages include, which the site does not publish as pages of their own, and the slide
-# decks, which are HTML files of their own.
+# Files the pages include, which the site does not publish as pages of their own, and the READMEs
+# of the slide decks, which the repository shows. The decks themselves are copied as they are.
 exclude_docs = """
 includes/
-slides/
+slides/**/README.md
 """
 nav = [
   { "Home" = "index.md" },
@@ -296,6 +296,7 @@ nav = [
     { "Docs" = [
       "contribute/writing-docs.md",
       "contribute/style.md",
+      "contribute/slides.md",
     ] },
     "contribute/roadmap.md",
   ] },

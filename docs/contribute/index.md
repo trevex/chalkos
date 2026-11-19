@@ -117,6 +117,14 @@ These pages explain how the documentation is built and written.
 
     [:octicons-arrow-right-24: Read](style.md)
 
+-   :material-presentation: __Talks and slides__
+
+    ---
+
+    The slide decks of talks on chalkos, which the site serves, and how to add one.
+
+    [:octicons-arrow-right-24: Read](slides.md)
+
 </div>
 
 ## Plans
