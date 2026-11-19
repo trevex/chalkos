@@ -68,17 +68,17 @@ labelled `ci-failure`, or comments on the open one, with a link to the run.
 
 ## Binary cache
 
-The jobs use a [Cachix](https://www.cachix.org/) binary cache once the repository names it in
-the Actions variable `CACHIX_NAME`. A run pushes what it builds when it has the secret
-`CACHIX_AUTH_TOKEN`; a pull request from a fork gets no secrets, so it reads the cache and
-pushes nothing. Without the variable, every job builds from source and the substitutes of
-`cache.nixos.org`.
+CI needs no setup for caching. By default each job keeps its Nix store in the GitHub Actions
+cache: a run on `main` saves the job's store, cut to 1.5 GiB, and removes the job's older one,
+and pull requests restore the store `main` saved. The repository's Actions cache holds 10 GB, and
+GitHub evicts the least recently used entries beyond that, so this cache saves part of a build,
+not all of it.
 
-The same cache speeds up local builds:
-
-```sh
-cachix use chalkos
-```
+A [Cachix](https://www.cachix.org/) binary cache replaces it when the repository has both the
+Actions variable `CACHIX_NAME`, the cache's name, and the secret `CACHIX_AUTH_TOKEN`. Every job
+then reads from and pushes to that cache, which holds every path a build produced and also
+serves local builds through `cachix use <name>`. A pull request from a fork gets no secrets, so
+it uses the GitHub Actions cache.
 
 ## Reproduce a job
 
