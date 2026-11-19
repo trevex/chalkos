@@ -1,7 +1,7 @@
 # Builds the flake's checks by the tiers of nix/checks/tiers.nix: the fast checks in one job, and
 # each image and end-to-end check in a job of its own. A pull request runs the fast and image
-# tiers, and the end-to-end checks its labels name: e2e names them all, e2e:<name> the check
-# e2e-<name>; adding any label runs the workflow again. A push to main and the nightly run, which
+# tiers, and the end-to-end checks its labels name: e2e names them all, and each other label the
+# checks e2eLabels of the tiers maps it to; adding any label runs the workflow again. A push to main and the nightly run, which
 # calls this workflow, run every tier and open or update an issue labelled ci-failure when a
 # check fails. The job result is the one check that branch protection requires.
 name: ci
@@ -44,7 +44,7 @@ jobs:
             e2e=$(jq -c .e2e <<<"$tiers")
           else
             e2e=$(jq -c --argjson labels "$LABELS" \
-              '[.e2e[] | select(("e2e:" + ltrimstr("e2e-")) as $label | $labels | any(. == $label))]' \
+              '[.e2eLabels | to_entries[] | select(.key as $label | $labels | any(. == $label)) | .value[]] | unique' \
               <<<"$tiers")
           fi
           matrix=$(jq -c --argjson e2e "$e2e" '{include: (

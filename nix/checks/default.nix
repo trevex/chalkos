@@ -52,17 +52,15 @@ let
 in
 checks
 // {
-  # Every check is in exactly one tier, and .github/labels.yml has the label e2e and a label
-  # e2e:<name> for each check e2e-<name>, the labels that run them on a pull request, and the
-  # label ci-failure of the issues CI opens.
+  # Every check is in exactly one tier, and .github/labels.yml has the label e2e and the labels of
+  # the tiers' e2eLabels, which run end-to-end checks on a pull request, and the label ci-failure
+  # of the issues CI opens.
   ci-tiers =
     pkgs.runCommand "chalkos-ci-tiers"
       {
         nativeBuildInputs = [ pkgs.yq-go ];
         labels = ../../.github/labels.yml;
-        expected = lib.concatLines (
-          lib.sort lib.lessThan ([ "e2e" ] ++ map (name: "e2e:" + lib.removePrefix "e2e-" name) tiers.e2e)
-        );
+        expected = lib.concatLines (lib.sort lib.lessThan ([ "e2e" ] ++ lib.attrNames tiers.e2eLabels));
       }
       ''
         actual=$(yq -r '.[].name | select(test("^e2e(:|$)"))' "$labels" | LC_ALL=C sort)
