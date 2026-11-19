@@ -906,8 +906,8 @@ lead nowhere now. CoreDNS keeps a server to forward to. The nodes reach the clus
 router's time and each other by their addresses, and need no names. In a real air gap the router
 has no uplink either, and its resolver answers no name outside the lab. Its chrony then has no
 server to follow and answers the nodes as unsynchronised, at stratum 16, which they refuse. Give
-the router a reference clock, or add `local stratum 10` to the same `extraConfig`, which serves
-its own clock.
+the router a reference clock, or add `localStratum: 10` to its `TimeServer`, which serves the
+router's own clock.
 
 Two things the nodes take from the internet stop with the NAT64:
 
@@ -938,22 +938,16 @@ the lab's images as its mirrors, and names the router as the nodes' time server:
 --8<-- "examples/homelab/air-gapped/nodes.yaml"
 ```
 
-`air-gapped/router.yaml` lets NTP from the fabric reach the router:
+`air-gapped/router.yaml` makes the router the fabric's time server:
 
 ```yaml title="air-gapped/router.yaml"
 --8<-- "examples/homelab/air-gapped/router.yaml"
 ```
 
-The router's chrony answers only the addresses its `allow` line names. The example's `flake.nix`
-gives the router's image that line:
-
-```nix
-{ services.chrony.extraConfig = "allow fdc8:a1b2:c3d4::/48"; }
-```
-
-Without the policy, the firewall drops the queries, so the line changes nothing on a connected
-lab. A router installed from an image without it needs a new image: add the line, build the image
-and upgrade the router, as [Change things later](#change-things-later) describes.
+The `TimeServer` lets the router's chrony answer the lab's addresses, and the firewall accepts NTP
+from them on the fabric's first address alone. The router keeps following the internet's time
+servers over `wan`, so it answers as synchronised. The image needs no change: router images carry
+the time server, as [Serve time with NTP](../router/time-server.md) describes.
 
 ### Copy the images to the workstation
 
@@ -986,7 +980,7 @@ chalkctl validate
 ```
 
 Have the router check its new config first. The dry run prints the documents that change, the
-NAT64 removed and the policy `fabric-local` added, and the outputs and effects that follow:
+NAT64 removed and the `TimeServer` added, and the outputs and effects that follow:
 
 ```sh
 chalkctl config apply router --secrets=secrets.age --dry-run
@@ -999,7 +993,7 @@ chalkctl config apply router --secrets=secrets.age --try 5m
 chalkctl config apply node1 node2 node3 --secrets=secrets.age
 ```
 
-The router stops its NAT64 and accepts NTP from the fabric. Each control plane starts the cluster
+The router stops its NAT64 and answers NTP from the fabric. Each control plane starts the cluster
 registry at its node address, and every node's containerd looks there first for the images of
 `registry.k8s.io`, `ghcr.io` and `docker.io`.
 

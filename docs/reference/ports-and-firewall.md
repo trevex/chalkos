@@ -79,7 +79,7 @@ connections from other machines. They are reachable from the node itself.
 | Port | Protocol | Service | Address | Nodes |
 | --- | --- | --- | --- | --- |
 | 53 | UDP and TCP | systemd-resolved's stub resolver, which the node's own name lookups use | `127.0.0.53` and `127.0.0.54` | every node |
-| 323 | UDP | chrony's command port, for chronyc | `127.0.0.1` and `::1` | every node |
+| 323 | UDP | chrony's command port, for chronyc; on router images with the time server it also answers `clients` and `serverstats`, which the diagnostic `ntp-clients` reads | `127.0.0.1` and `::1` | every node |
 | 2379 | TCP | etcd's client port, for the local API server | the loopback address of the primary family | control planes |
 | 2381 | TCP | etcd's metrics and health, plain HTTP | the loopback address of the primary family | control planes |
 | 8081 | TCP | flanneld's health | every address | nodes with flannel |
@@ -97,7 +97,8 @@ opens no port on the node.
 
 A node runs no SSH server, so port 22 is closed, and there are no logins on the console.
 [Status, logs and the console](../operate/status-and-logs.md) shows how to debug a node through
-`kubectl debug node/<node>` and the node API. chrony keeps the clock and serves no NTP clients.
+`kubectl debug node/<node>` and the node API. chrony keeps the clock and serves no NTP clients,
+except on a router with a `TimeServer`.
 
 ## Firewall tables
 
@@ -152,6 +153,7 @@ no other table of chalkos filters the router's traffic.
 | 3784, 3785 | UDP | BFD, FRR's bfdd: single-hop control and echo | as port 179, for each `BGPPeer` with `bfd` |
 | 4784 | UDP | BFD, FRR's bfdd: multi-hop control | from the address of each `BGPPeer` of `address` with `bfd`, as port 179 |
 | 53 | UDP and TCP | DNS, Unbound | from the ranges of each `Resolver`'s `allow` to the addresses of its `listen`; for a resolver with `vrf`, on the links of its VRF alone, with the VRF's device as `iifname` |
+| 123 | UDP | NTP, chrony | from the ranges of the `TimeServer`'s `allow` to the addresses of its `listen`, in the default VRF; chrony listens on every address, and the table keeps the others closed |
 | 67 | UDP | DHCPv4, Kea | the links of each `DHCPSubnet`'s `interfaces`, through raw sockets ahead of the table, which has no line for it; see below |
 | 547 | UDP | DHCPv6, Kea | from link-local addresses on the link of each IPv6 `DHCPSubnet`, with the VRF's device as `iifname` and the link as `sdifname` for a link of a VRF |
 | 67 | UDP | DHCPv4 relay, dnsmasq | on the links of each `DHCPRelay` with an IPv4 server, matched as above |

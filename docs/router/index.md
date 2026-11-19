@@ -1,6 +1,6 @@
 ---
 title: "Run a router"
-description: "Set up chalkos nodes as routers: forwarding, the node API's interfaces, the firewall, NAT, BGP, VRFs, policy routing, NAT64, DNS, DHCP and WireGuard"
+description: "Set up chalkos nodes as routers: forwarding, the node API's interfaces, the firewall, NAT, BGP, VRFs, policy routing, NAT64, DNS, DHCP, WireGuard and NTP"
 ---
 
 # Run a router
@@ -10,8 +10,8 @@ layer, `chalkos.nixosModules.router`. They build on [Operate nodes](../operate/i
 installs, upgrades and recovers like any node, and its interfaces and addresses are `Network`
 documents as on any node. A router's own documents, of `router.chalkos.dev`, set how it forwards,
 what its firewall lets through, whom it exchanges routes with over BGP, which links share a routing
-table, how it translates IPv6 to IPv4 and resolves names, which addresses it leases, and which peers
-reach it through WireGuard.
+table, how it translates IPv6 to IPv4 and resolves names, which addresses it leases, which peers
+reach it through WireGuard, and whom it serves time.
 
 To see a router run first, [Quick start: router](../get-started/quick-start-router.md) runs one
 with a client on its LAN as virtual machines, in about 15 minutes.
@@ -110,5 +110,14 @@ These pages give the router's networks their services.
     check their handshakes.
 
     [:octicons-arrow-right-24: Read](wireguard.md)
+
+-   :material-clock-outline: __Serve time with NTP__
+
+    ---
+
+    Let the router answer NTP for its networks, serve its own clock without a source and list
+    the clients it answered.
+
+    [:octicons-arrow-right-24: Read](time-server.md)
 
 </div>

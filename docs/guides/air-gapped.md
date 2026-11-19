@@ -51,12 +51,12 @@ router.
   program as [Requirements](../get-started/requirements.md#workstation) describes.
 - The workstation inside the air gap holds the age identity or SSH key that `secrets.age` is
   encrypted to, as [Requirements](../get-started/requirements.md#workstation) lists.
-- A time server answers NTP inside the air gap, such as a clock with a GPS receiver or a machine
-  that runs chrony as a server. A chrony server without a reference clock answers as unsynchronised,
-  at stratum 16, and its clients refuse it, unless its config holds `local stratum 10`, which
-  serves its own clock. chalkos images run no NTP server for other machines by default; an image
-  module can add one, as the
-  [home lab's router](home-lab.md#run-the-lab-without-internet-access-optional) does.
+- A time server answers NTP inside the air gap, such as a clock with a GPS receiver or a chalkos
+  router with a `TimeServer`, as [Serve time with NTP](../router/time-server.md) and the
+  [home lab's router](home-lab.md#run-the-lab-without-internet-access-optional) show. A server
+  without a reference clock answers as unsynchronised, at stratum 16, and its clients refuse it,
+  unless it serves its own clock, as a `TimeServer` with `localStratum: 10` does. Other chalkos
+  nodes run no NTP server for other machines.
 - A way to carry files into the air gap, such as a USB disk.
 
 ## Prepare on a connected machine
@@ -241,10 +241,11 @@ describes.
   directories instead.
 - The copies take more space than the nodes run: crane copies every platform of an index. The
   `cluster-metal` template's eight images take about 1.2 GiB.
-- A time server without a reference clock serves only with chrony's `local stratum 10`, and
-  optionally `orphan` among several such servers. It keeps the nodes' clocks together, but they
-  drift from real time with its clock. Certificates that other systems issue, and those chalkos
-  issues for them, are checked against these clocks.
+- A time server without a reference clock serves only its own clock, as a router's `TimeServer`
+  does with `localStratum`, or chrony's `local stratum 10 orphan` on another machine. It keeps
+  the nodes' clocks together, but they drift from real time with its clock. Certificates that
+  other systems issue, and those chalkos issues for them, are checked against these clocks, so a
+  production air gap takes its time from a reference clock.
 - Names outside the cluster do not resolve. Anything that needs one, such as a webhook of an
   external service, needs that service and its name inside the air gap.
 

@@ -91,6 +91,7 @@ nav = [
       "router/nat64-and-dns.md",
       "router/dhcp.md",
       "router/wireguard.md",
+      "router/time-server.md",
     ] },
   ] },
   { "Build images" = [
