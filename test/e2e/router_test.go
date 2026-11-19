@@ -229,6 +229,10 @@ const (
 	k1AS      = "65031"
 )
 
+// r1Switch is r1's address on the switch of chalklab/nodes/r1-kubernetes.yaml, where k1 peers with
+// it and takes its time.
+const r1Switch = "fd00:300::1"
+
 // TestRouterLab boots r1 and r2 through chalklab, with IPv6 link-local addresses alone between
 // them, peering unnumbered over BGP on enp0s3 with BFD and a password, and k1, a Kubernetes
 // control plane on the same switch that chalklab bootstraps, whose images come from the test's
@@ -955,7 +959,7 @@ func (rl *routerLab) k1Session() error {
 // and reaches the API server at the VIP over that route. k1's BGP takes r1's default route, which
 // zebra leaves out of the kernel beside the default route of enp0s2. A delivery that announces
 // lb0's address as well reaches r1 while the session stays up, applied by chalkos-frr-reload in
-// one clean pass.
+// one clean pass, and points k1's clock at r1's TimeServer, whose clients r1 lists.
 func (rl *routerLab) kubernetes(t *testing.T) {
 	k1 := rl.nodes["k1"]
 	// A failed phase logs k1's FRR.
@@ -1040,6 +1044,11 @@ func (rl *routerLab) kubernetes(t *testing.T) {
 		t.Errorf("k1's journal shows no reload by chalkos-frr-reload")
 	case strings.Contains(out, "chalkos-frr-reload: pass 2") || strings.Contains(out, "vtysh refused commands"):
 		t.Errorf("chalkos-frr-reload took more than one clean pass on k1")
+	}
+	// The delivery also points k1's clock at r1's time server.
+	synchronised(t, k1, "kubernetes", "k1", r1Switch)
+	if out, err := diag("r1", "ntp-clients"); err != nil || !regexp.MustCompile(`(?m)^`+regexp.QuoteMeta(k1Switch)+`\s+[1-9]`).MatchString(out) {
+		t.Errorf("ntp-clients of r1 lists no NTP requests from k1: %v\n%s", err, out)
 	}
 	rl.noFailedUnits("kubernetes", "r1", "k1")
 }

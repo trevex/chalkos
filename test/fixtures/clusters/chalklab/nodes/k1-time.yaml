@@ -1,0 +1,9 @@
+# k1's time server in router-kubernetes.yaml: r1, at its address on the switch, whose TimeServer of
+# r1-kubernetes.yaml answers the switch. Plain NTP, as r1's chrony serves no NTS.
+apiVersion: time.chalkos.dev/v1alpha1
+kind: TimeSync
+metadata: {name: time}
+spec:
+  dhcp: false
+  servers:
+    - {host: "fd00:300::1", nts: false}

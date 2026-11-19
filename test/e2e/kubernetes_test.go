@@ -130,7 +130,7 @@ func TestKubernetesCluster(t *testing.T) {
 			t.Errorf("status of w1: %v\n%s", err, out)
 		}
 		for _, name := range []string{"cp1", "w1"} {
-			synchronised(t, nodes[name], name)
+			synchronised(t, nodes[name], "base", name, testNTP)
 			if out, err := chalkctl(t, nodes[name], "base", "status", name); err != nil || strings.Contains(out, "failed unit") {
 				t.Errorf("status of %s shows a failed unit: %v\n%s", name, err, out)
 			}

@@ -12,6 +12,9 @@ import (
 // own port needs privileges the test has not.
 const ntpPort = 12300
 
+// testNTP is the address of the test's NTP server, as a node's status names the server it follows.
+const testNTP = "10.0.2.2"
+
 // startNTP answers NTP requests with the host's clock, as a stratum 1 server, until the test ends.
 func startNTP(t *testing.T) {
 	t.Helper()

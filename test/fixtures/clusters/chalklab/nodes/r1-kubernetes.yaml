@@ -1,7 +1,7 @@
-# r1's address on the switch for k1's session, and the peer that accepts it: 05-fabric takes the
-# place of groups/router.yaml's 10-fabric, which networkd no longer picks for enp0s3. The peer has
-# no extendedNextHop, so neither side's FRR sends router advertisements on the switch, where r1's
-# unnumbered session with r2 finds its neighbour by them.
+# r1's address on the switch for k1's session and time server, the peer that accepts the session,
+# and the time server: 05-fabric takes the place of groups/router.yaml's 10-fabric, which networkd
+# no longer picks for enp0s3. The peer has no extendedNextHop, so neither side's FRR sends router
+# advertisements on the switch, where r1's unnumbered session with r2 finds its neighbour by them.
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network
 metadata: {name: 05-fabric}
@@ -19,3 +19,13 @@ spec:
   password: {secretRef: {name: bgp, key: fabric}}
   families:
     ipv6: {defaultOriginate: true}
+---
+# r1 answers NTP on its address on the switch, from k1's addresses there and on kube0, and serves
+# its own clock at stratum 10 should it lose the test's NTP server.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: TimeServer
+metadata: {name: ntp}
+spec:
+  listen: ["fd00:300::1"]
+  allow: ["fd00:300::/64", "fd00:301::/64"]
+  localStratum: 10

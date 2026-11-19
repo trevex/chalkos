@@ -35,18 +35,19 @@ func chalkctlWith(t *testing.T, n *node, inventory, config string, args ...strin
 	return runLogged(t, cmd)
 }
 
-// synchronised waits until chrony on the node follows the test's NTP server.
-func synchronised(t *testing.T, n *node, name string) {
+// synchronised waits until chrony on the node follows the NTP server at the address server, as its
+// status with the inventory shows it.
+func synchronised(t *testing.T, n *node, inventory, name, server string) {
 	t.Helper()
 	// A status that hangs ends with the wait rather than after it.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	waitFor(t, 5*time.Minute, name+"'s clock to follow the test's NTP server", func() error {
-		out, err := chalkctlContext(ctx, t, n, "base", "status", name)
+	waitFor(t, 5*time.Minute, name+"'s clock to follow "+server, func() error {
+		out, err := chalkctlContext(ctx, t, n, inventory, "status", name)
 		if err != nil {
 			return err
 		}
-		if !strings.Contains(out, "time: synchronised to 10.0.2.2") {
+		if !strings.Contains(out, "time: synchronised to "+server) {
 			return fmt.Errorf("status of %s:\n%s", name, out)
 		}
 		return nil
