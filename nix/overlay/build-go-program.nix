@@ -4,6 +4,8 @@
 # otherwise, and without its tests, which the go-unit check runs. Unless it runs or builds tests,
 # its source leaves out the _test.go files and testdata directories, so a change to a test alone
 # rebuilds no program and no image. The Go toolchain is go of the chalkos scope (default.nix).
+# Every program is of chalkos's version, from version.nix, which the linker sets in pkg/version;
+# the flake's packages of chalkctl and chalkbuild set the git revision there too.
 {
   buildGoModule,
   cacert,
@@ -17,9 +19,12 @@
   paths,
   # Whether the source keeps the tests, for a program that runs or builds them.
   withTests ? false,
+  # Flags of the linker besides the one that sets the version.
+  ldflags ? [ ],
   ...
 }@args:
 let
+  version = import ../../version.nix;
   # The testdata directories below a source path.
   testdata =
     dir:
@@ -48,7 +53,8 @@ let
 in
 (buildGoModule.override { inherit go; }) (
   {
-    version = "0.1.0";
+    inherit version;
+    ldflags = [ "-X github.com/trevex/chalkos/pkg/version.Version=${version}" ] ++ ldflags;
     src = lib.fileset.toSource {
       root = ../../.;
       fileset = if withTests then sources else lib.fileset.difference sources tests;
@@ -85,6 +91,7 @@ in
     passthru.goPaths = map (p: lib.path.removePrefix ../../. p) (lib.filter lib.isPath paths);
   }
   // removeAttrs args [
+    "ldflags"
     "paths"
     "withTests"
   ]

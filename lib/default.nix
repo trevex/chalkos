@@ -1,6 +1,6 @@
 # chalkos's library, the flake's lib output: the helpers the images' modules get as chalkosLib,
 # here built from chalkos's nixpkgs for code outside an image, the functions of images.nix, which
-# build a cluster's images, and the Kubernetes releases chalkos pins.
+# build a cluster's images, the Kubernetes releases chalkos pins and chalkos's version.
 { nixpkgs, overlay }:
 import ./chalkos.nix { inherit (nixpkgs) lib; }
 // import ./images.nix {
@@ -13,4 +13,6 @@ import ./chalkos.nix { inherit (nixpkgs) lib; }
   kubernetesReleases = builtins.mapAttrs (_: release: { publish = false; } // release) (
     import ../modules/node/kubernetes/releases.nix
   );
+  # chalkos's version, from version.nix, such as "0.1.0".
+  version = import ../version.nix;
 }

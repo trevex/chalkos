@@ -51,3 +51,4 @@ chalkctl kubeconfig --secrets secrets.age
 - [chalkctl storage](chalkctl_storage.md): Manage a node's volumes
 - [chalkctl upgrade](chalkctl_upgrade.md): Install new images on the cluster's nodes, or boot their previous ones again
 - [chalkctl validate](chalkctl_validate.md): Check nodes' config against the schemas of their images
+- [chalkctl version](chalkctl_version.md): Print the version and the git revision of the build

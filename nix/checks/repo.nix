@@ -242,7 +242,7 @@ in
     name = "lab";
     tools = [
       pkgs.chalkos.chalklab
-      pkgs.chalkos.chalkctl
+      chalkPkgs.chalkctl
       pkgs.kubectl
     ];
     command = validatePinned;
@@ -254,7 +254,7 @@ in
     name = "router-lab";
     tools = [
       pkgs.chalkos.chalklab
-      pkgs.chalkos.chalkctl
+      chalkPkgs.chalkctl
     ];
   };
 
@@ -264,8 +264,8 @@ in
   template-cluster-metal = templateCheck {
     name = "cluster-metal";
     tools = [
-      pkgs.chalkos.chalkctl
-      pkgs.chalkos.chalkbuild
+      chalkPkgs.chalkctl
+      chalkPkgs.chalkbuild
       pkgs.kubectl
     ];
     command = validatePinned;

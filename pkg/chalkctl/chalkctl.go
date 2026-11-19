@@ -14,6 +14,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/statusview"
+	"github.com/trevex/chalkos/pkg/version"
 )
 
 // app is chalkctl's environment, which every command shares. Its streams are those of the
@@ -81,6 +82,7 @@ func newCommand(a *app) *cobra.Command {
 		a.rotateCommand(),
 		a.upgradeCommand(),
 		a.validateCommand(),
+		version.Command("chalkctl"),
 	)
 	groups := map[string]*cobra.Command{"": root, "node": node}
 	for _, c := range compiled[layer.Commands]() {

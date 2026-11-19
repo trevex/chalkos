@@ -7,12 +7,20 @@
 }:
 let
   inherit (pkgs) lib;
+  # chalkctl and chalkbuild as the flake's packages, whose version commands name the git revision
+  # they were built from. Only these two take it: a revision in a program of the images, or in the
+  # chalkbuild their oci attributes run, would rebuild every image on every commit.
+  withRevision =
+    program:
+    program.overrideAttrs (old: {
+      ldflags = old.ldflags ++ [
+        "-X github.com/trevex/chalkos/pkg/version.Revision=${self.rev or self.dirtyRev or "unknown"}"
+      ];
+    });
 in
 {
   inherit (pkgs.chalkos)
-    chalkbuild
     chalkcfg
-    chalkctl
     chalkd
     chalklab
     chalklab-e2e
@@ -20,6 +28,8 @@ in
     chalkos-registry
     chalkos-storage
     ;
+  chalkbuild = withRevision pkgs.chalkos.chalkbuild;
+  chalkctl = withRevision pkgs.chalkos.chalkctl;
 
   test-secureboot = import ../testing/secureboot.nix { inherit pkgs; };
   test-secrets = testing.secrets;
