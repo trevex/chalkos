@@ -6,6 +6,8 @@
 # rebuilds no program and no image. The Go toolchain is go of the chalkos scope (default.nix).
 {
   buildGoModule,
+  cacert,
+  gitMinimal,
   go,
   lib,
 }:
@@ -55,6 +57,25 @@ in
     # After changing go.mod or go.sum, set this to lib.fakeHash, run `nix build .#chalkctl`, and
     # copy the hash it reports.
     vendorHash = "sha256-qv2tcw2lnnwkfZRZCLLSf+cAGR/KR9wDvZu+KAbpE+E=";
+    # Every program shares one module download: the same name, source and inputs make one
+    # derivation, which a build fetches once.
+    overrideModAttrs = _: _: {
+      name = "chalkos-go-modules";
+      src = lib.fileset.toSource {
+        root = ../../.;
+        fileset = lib.fileset.unions [
+          ../../go.mod
+          ../../go.sum
+        ];
+      };
+      nativeBuildInputs = [
+        go
+        gitMinimal
+        cacert
+      ];
+      preBuild = "";
+      env = { };
+    };
     env.CGO_ENABLED = "0";
     subPackages = [ "cmd/${pname}" ];
     doCheck = false;
