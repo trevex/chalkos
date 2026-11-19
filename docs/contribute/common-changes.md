@@ -1,6 +1,6 @@
 ---
 title: "Common changes"
-description: "Checklists for adding an API method, a chalkctl command, a built-in kind, a router feature or a layer"
+description: "Checklists for adding an API method, a chalkctl command, a built-in kind, a router feature or a layer, and for updating a Kubernetes release"
 ---
 
 # Common changes
@@ -166,3 +166,37 @@ A layer is a set of NixOS modules and a Go plugin in each program that serves it
 12. Build the checks `api-generated`, `docs-generated`, `docs`, `go-unit`, `go-lint`, `eval`,
     `eval-kinds` and `image-tests`. Extend an existing end-to-end test before you add one, as
     [Keep the VM tests few and small](testing.md#keep-the-vm-tests-few-and-small) asks.
+
+## Update a Kubernetes release
+
+`modules/node/kubernetes/releases.nix` pins each Kubernetes minor an image can run to a patch
+release and the hash of its source. An image builds its kubelet from that source and uses
+nixpkgs's `kubernetes` package only as the build recipe, so a change of nixpkgs leaves the
+kubelet as it is. The newest minor is the default of
+[`chalkos.kubernetes.version`](../reference/image-options.md#chalkoskubernetesversion), and the
+test images, the templates, the examples and the documentation name its control-plane images.
+
+1. Change the `version` of the minor in `releases.nix`. For a new minor, add its row, remove the
+   oldest, so that the table keeps the three minors Kubernetes supports, and move
+   `publish = true` to the minors whose images a release of chalkos builds. A minor becomes the
+   newest once it has a `.1` release, because the HA test starts from the patch release before
+   the newest.
+2. Run `nix run .#update-pins` in the root of the repository. It takes no arguments and needs
+   network access. It sets:
+    - the `hash` of every row, from the release's source on GitHub;
+    - the images in `nix/testing/kubernetes-images.json` that follow the newest release: the API
+      server, the controller-manager, the scheduler and kube-proxy of the newest release and of
+      the patch release before it, and the etcd, CoreDNS and pause releases that kubeadm of the
+      newest release names, each by the digest of its amd64 manifest with the hash of its OCI
+      layout;
+    - every reference to those images by digest in the templates, the examples, the test
+      fixtures, `modules/node/kubernetes/kinds.nix`, chalkctl's help and the documentation.
+
+    A second run changes nothing. A bot that updates the releases runs it the same way.
+3. Build every kubelet with `nix build .#kubelet-releases`. Each compiles from source, and its
+   build fails when the kubelet reports a version other than its release's.
+4. For a new minor, regenerate the pages with `nix run .#docgen`, and search the documentation
+   and the tests for the minor that left the table.
+5. Build the checks `eval`, `docs-generated`, `docs`, `fixtures`, `image-tests` and the
+   `template-*` checks. Label the pull request `e2e`, since the kubelet of every image with
+   Kubernetes changes.
