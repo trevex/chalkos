@@ -1,0 +1,43 @@
+# Collects the garbage of the Hestia binary cache in the GitHub Actions cache each day: paths no
+# branch's latest run used, once their grace period passed. It runs on main, whose cache scope
+# grows until it is collected; a pull request's scope goes with its branch. One collection runs
+# at a time.
+name: cache-gc
+
+on:
+  schedule:
+    - cron: "41 3 * * *"
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Plan only; delete nothing.
+        type: boolean
+        default: false
+
+concurrency:
+  group: cache-gc
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  gc:
+    if: github.repository == 'trevex/chalkos'
+    runs-on: ubuntu-latest
+    permissions:
+      # Deleting cache entries.
+      actions: write
+    steps:
+      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31.11.5
+      # Read-only: the daemon uploads nothing; the step exports the binary and the cache tokens.
+      - uses: Mic92/hestia@dfed9ced335d28978ba74e513939a10db1f71025 # v3.1.0
+        with:
+          version: v3.1.0
+          read-only: true
+      - name: Collect garbage
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry-run && '--dry-run' || '' }}
+        run: |
+          # shellcheck disable=SC2086
+          "$HESTIA_BIN" gc $DRY_RUN
