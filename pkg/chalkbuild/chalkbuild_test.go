@@ -3,6 +3,7 @@ package chalkbuild
 import (
 	"bytes"
 	"context"
+	"maps"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -76,6 +77,21 @@ func TestOCISignAndPush(t *testing.T) {
 	signedImg, err := ociimage.ReadLayout(signed)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// The manifest carries metadata.json's annotations, and signing keeps them.
+	want := map[string]string{"org.opencontainers.image.revision": "abc123", "org.opencontainers.image.version": "v1"}
+	for name, dir := range map[string]string{"oci": layout, "sign": signed} {
+		img, err := ociimage.ReadLayout(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m, err := img.Manifest()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !maps.Equal(m.Annotations, want) {
+			t.Errorf("the annotations of %s's manifest = %v, want %v", name, m.Annotations, want)
+		}
 	}
 	d, _ := signedImg.Digest()
 	host := ocitest.Registry(t)

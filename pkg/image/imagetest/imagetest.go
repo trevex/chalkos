@@ -153,10 +153,12 @@ func WriteDir(t testing.TB, dir string, img Image) []byte {
 
 // WriteContract writes the contract files of an image directory into dir: metadata.json of the
 // image's name and platform and the root hash, built from the revision abc123 and the tag v1,
-// one schema, one repart definition and the facts of a layer named test.
+// which its annotations name too, one schema, one repart definition and the facts of a layer
+// named test.
 func WriteContract(t testing.TB, dir string, img Image, root []byte) {
 	t.Helper()
-	md := fmt.Sprintf(`{"schemaVersion": 0, "id": "chalkos", "revision": "abc123", "tag": "v1", "name": %q, "platform": %q, "rootHash": %q, "kinds": []}`, img.Name, img.Platform, hex.EncodeToString(root))
+	md := fmt.Sprintf(`{"schemaVersion": 0, "id": "chalkos", "revision": "abc123", "tag": "v1", "name": %q, "platform": %q, "rootHash": %q, "kinds": [],
+		"annotations": {"org.opencontainers.image.revision": "abc123", "org.opencontainers.image.version": "v1"}}`, img.Name, img.Platform, hex.EncodeToString(root))
 	write(t, filepath.Join(dir, "metadata.json"), []byte(md))
 	write(t, filepath.Join(dir, "schemas", "test.example.org_v1alpha1_Test.json"), []byte(`{"x-chalkos-kind": {"group": "test.example.org", "version": "v1alpha1", "kind": "Test", "multiple": false}}`))
 	write(t, filepath.Join(dir, "repart.d", "00-esp.conf"), []byte("[Partition]\nType=esp\n"))

@@ -312,6 +312,25 @@ does. The tests change neither the image's content nor its root hash; without th
 
 The files a layer adds to its image's directory, which chalkctl reads with the schemas.
 
+### `chalkos.imageDirectory.annotations` { #chalkosimagedirectoryannotations }
+
+Type: map of string · Default: `{ }` · Declared in: [modules/node/base/image-directory.nix](https://github.com/trevex/chalkos/blob/main/modules/node/base/image-directory.nix)
+
+Annotations of the image's OCI manifest by key, which `metadata.json` records and
+`chalkbuild oci` writes into the manifest. The image sets
+`org.opencontainers.image.revision` and `org.opencontainers.image.version` from mkImage's
+[`revision`](mkimages.md#revision) and [`tag`](mkimages.md#tag) when it is given them, and
+a layer adds its own, such as the Kubernetes layer's `dev.chalkos.kubernetes.version`.
+Like the revision and tag, they change no root hash.
+
+Example:
+
+```nix
+{
+  "org.opencontainers.image.source" = "https://github.com/example/cluster";
+}
+```
+
 ### `chalkos.imageDirectory.facts` { #chalkosimagedirectoryfacts }
 
 Type: map of path · Default: `{ }` · Declared in: [modules/node/base/image-directory.nix](https://github.com/trevex/chalkos/blob/main/modules/node/base/image-directory.nix)

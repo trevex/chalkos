@@ -511,7 +511,8 @@ in
 
   # The test image's OCI layout: one manifest of the chalkos artifact type, whose header names the
   # image directory's root hash and platform, whose layers are the image's parts and contract in
-  # order, and whose contract holds the directory's metadata.json.
+  # order, whose annotations are those metadata.json names, and whose contract holds the
+  # directory's metadata.json.
   image-oci = pkgs.runCommand "chalkos-image-oci" { nativeBuildInputs = [ pkgs.jq ]; } ''
     l=${chalkPkgs.test-image-oci}
     dir=${chalkPkgs.test-image}
@@ -528,6 +529,10 @@ in
         "application/vnd.chalkos.image.boot-loader.v1",
         "application/vnd.chalkos.image.contract.v1.tar"
       ]' $m
+    jq -e --slurpfile md $dir/metadata.json '
+      .annotations == $md[0].annotations
+      and .annotations == {"org.opencontainers.image.source": "https://github.com/trevex/chalkos"}
+    ' $m
     jq -e --slurpfile md $dir/metadata.json '
       .imageId == "chalkos" and .architecture == "x86-64"
       and .rootHash == $md[0].rootHash and .platform == $md[0].platform

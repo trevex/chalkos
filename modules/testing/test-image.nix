@@ -29,6 +29,10 @@
     [ "dmi_sysfs" ]
   ];
 
+  # An annotation, which the image-oci check finds on the test image's manifest.
+  chalkos.imageDirectory.annotations."org.opencontainers.image.source" =
+    "https://github.com/trevex/chalkos";
+
   # The probe writes its facts to the first serial port itself, whichever console is last, and
   # chalkos-serial-log@ copies chalkd's lines there.
   boot.kernelParams = [ "quiet" ];

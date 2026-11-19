@@ -215,7 +215,7 @@ holds six entries:
 | `chalkos.raw` | The raw disk image: the ESP, with the UKI as `/EFI/Linux/chalkos_1.efi`, and slot A labelled with its root hash, with no slot B and no STATE. |
 | `repart-output.json` | systemd-repart's description of the raw image's partitions: type, label, UUID, offset, size and the store's root hash, with slot A's labels as the raw image carries them. `chalkbuild sign` and `chalkctl install` find the partitions with it. |
 | `repart.d` | The system region's definitions, `00-esp.conf` to `50-state.conf`, as the image carries them in `/etc/chalkos/repart.d`. |
-| `metadata.json` | What the image is: `schemaVersion` of this file (0), the image ID, the image's `name`, its `platform` and the store's root hash (`rootHash`), the `revision` and `tag` mkImages was given, null without them, and `kinds`, the config kinds the image accepts, each with its `apiVersion`, `kind` and whether a node may hold several documents of it (`multiple`). chalkctl reads the root hash and the platform from it, and sends the revision and tag with the image when the file names its root hash; chalkctl warns of a file it ignores. |
+| `metadata.json` | What the image is: `schemaVersion` of this file (0), the image ID, the image's `name`, its `platform` and the store's root hash (`rootHash`), the `revision` and `tag` mkImages was given, null without them, `kinds`, the config kinds the image accepts, each with its `apiVersion`, `kind` and whether a node may hold several documents of it (`multiple`), and `annotations`, those of the image's [OCI manifest](#oci-annotations), such as the Kubernetes version of an image with the Kubernetes layer. chalkctl reads the root hash and the platform from it, and sends the revision and tag with the image when the file names its root hash; chalkctl warns of a file it ignores. |
 | `schemas` | One JSON Schema (draft 2020-12, the schema dialect of OpenAPI 3.1) per kind, named `<group>_<version>_<kind>.json`, as the image carries them in `/etc/chalkos/schemas`. |
 | `facts` | The facts of the image's layers, one `<layer>.json` for each layer that sets [`chalkos.imageDirectory.facts`](extension-api.md#chalkosimagedirectoryfacts); empty on an image without such layers. On an image with Kubernetes, `facts/kubernetes.json` is what the image fixes about Kubernetes, the file the image carries as `/etc/chalkos/kubernetes/image.json`: the release of its kubelet and its pod network (`{"version": "1.37.2", "cni": "flannel"}`). An install from the installer sends the facts with `schemas`, or the installer reads both from the contract layer of an image it pulls, so the installer translates the node's config for the image it writes to lay out the target disk; an upgrade checks each node's config from the inventory against both before it drains a node, and chalkd checks the config it carries against those of the image it wrote. |
 
@@ -296,7 +296,37 @@ The contract layer is a tar of `metadata.json`, `schemas/*.json`, `repart.d/*.co
 `facts/*.json`, which an image without layer facts lacks. Its entries are in name order, with the
 modification time 0 and owner 0:0, so the same image directory always makes the same layer and
 the same manifest. [`chalkbuild sign`](cli/chalkbuild_sign.md) replaces the UKI and boot-loader
-layers and the manifest, and keeps the other layers.
+layers and the manifest, and keeps the other layers and the annotations.
+
+### Annotations { #oci-annotations }
+
+The manifest's annotations are the `annotations` of `metadata.json`, which the image's
+[`chalkos.imageDirectory.annotations`](extension-api.md#chalkosimagedirectoryannotations) sets.
+An annotation whose value the build does not know is left out, so an image built without a tag
+has no `org.opencontainers.image.version`.
+
+| Annotation | Set by | Value |
+| --- | --- | --- |
+| `org.opencontainers.image.revision` | mkImages's [`revision`](mkimages.md#revision) | The git revision the image was built from. |
+| `org.opencontainers.image.version` | mkImages's [`tag`](mkimages.md#tag) | The git tag the image was built from, such as `v0.1.0`. |
+| `org.opencontainers.image.source` | the image's modules | The URL of the image's source; chalkos's release images name `https://github.com/trevex/chalkos`. |
+| `org.opencontainers.image.created` | the image's modules | When the image was created, in RFC 3339; chalkos's release images name the time of their commit, so a rebuild makes the same manifest. |
+| `dev.chalkos.kubernetes.version` | the Kubernetes layer | The Kubernetes release of the image's kubelet, such as `1.37.2`. |
+
+The manifest of a release image reads, in part:
+
+```json
+{
+  "artifactType": "application/vnd.chalkos.image.v1",
+  "annotations": {
+    "dev.chalkos.kubernetes.version": "1.37.2",
+    "org.opencontainers.image.created": "2026-11-19T21:04:11Z",
+    "org.opencontainers.image.revision": "28aac64fc0de68df53a376208012ddc5631b2aeb",
+    "org.opencontainers.image.source": "https://github.com/trevex/chalkos",
+    "org.opencontainers.image.version": "v0.1.0"
+  }
+}
+```
 
 ## Device links
 

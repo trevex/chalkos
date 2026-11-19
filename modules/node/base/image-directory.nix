@@ -33,8 +33,8 @@ let
         touch $out
       '';
   # What chalkctl reads about an image before it validates config or installs it; the root hash
-  # is added from systemd-repart's output once the image is built. The revision and tag reach
-  # metadata.json alone, never the store, so they change no root hash.
+  # is added from systemd-repart's output once the image is built. The revision, tag and
+  # annotations reach metadata.json alone, never the store, so they change no root hash.
   metadataFields = pkgs.writeText "chalkos-metadata.json" (
     builtins.toJSON {
       schemaVersion = 0;
@@ -43,8 +43,10 @@ let
       name = config.chalkos.image.name;
       platform = config.chalkos.platform.name;
       kinds = config.system.build.chalkosKinds;
+      inherit (config.chalkos.imageDirectory) annotations;
     }
   );
+  provenance = config.chalkos.provenance;
   metadata =
     pkgs.runCommand "${config.image.repart.name}-metadata.json" { nativeBuildInputs = [ pkgs.jq ]; }
       ''
@@ -83,6 +85,22 @@ in
     '';
   };
 
+  options.chalkos.imageDirectory.annotations = lib.mkOption {
+    type = lib.types.attrsOf lib.types.str;
+    default = { };
+    example = {
+      "org.opencontainers.image.source" = "https://github.com/example/cluster";
+    };
+    description = ''
+      Annotations of the image's OCI manifest by key, which `metadata.json` records and
+      `chalkbuild oci` writes into the manifest. The image sets
+      `org.opencontainers.image.revision` and `org.opencontainers.image.version` from mkImage's
+      [`revision`](mkimages.md#revision) and [`tag`](mkimages.md#tag) when it is given them, and
+      a layer adds its own, such as the Kubernetes layer's `dev.chalkos.kubernetes.version`.
+      Like the revision and tag, they change no root hash.
+    '';
+  };
+
   options.chalkos.provenance = {
     revision = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
@@ -107,6 +125,14 @@ in
     assertion = builtins.match "[a-z0-9-]+" layer != null;
     message = "chalkos.imageDirectory.facts names the layer \"${layer}\"; a layer's name is lower-case letters, digits and dashes";
   }) (lib.attrNames config.chalkos.imageDirectory.facts);
+
+  config.chalkos.imageDirectory.annotations =
+    lib.optionalAttrs (provenance.revision != null) {
+      "org.opencontainers.image.revision" = provenance.revision;
+    }
+    // lib.optionalAttrs (provenance.tag != null) {
+      "org.opencontainers.image.version" = provenance.tag;
+    };
 
   config.system.build = {
     chalkosImageFits = fits;

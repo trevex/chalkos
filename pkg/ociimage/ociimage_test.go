@@ -300,7 +300,7 @@ func TestWriteLayoutStopsOnCtxCancellation(t *testing.T) {
 func TestWriteLayoutRefusesALayerWhoseContentDoesNotMatchItsDigest(t *testing.T) {
 	store, hashTree, uki, bootLoader, contract := smallBlobs(t)
 	store.Open = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader([]byte("STORE"))), nil }
-	img, err := ociimage.Build(ocitest.Header(), store, hashTree, uki, bootLoader, contract)
+	img, err := ociimage.Build(ocitest.Header(), nil, store, hashTree, uki, bootLoader, contract)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -402,7 +402,7 @@ func TestReadContractRefusesATamperedBlob(t *testing.T) {
 func TestReadContractRefusesAnOversizedLayer(t *testing.T) {
 	store, hashTree, uki, bootLoader, _ := smallBlobs(t)
 	big := ociimage.BytesBlob(ociimage.ContractType, bytes.Repeat([]byte("x"), 16<<20+1))
-	img, err := ociimage.Build(ocitest.Header(), store, hashTree, uki, bootLoader, big)
+	img, err := ociimage.Build(ocitest.Header(), nil, store, hashTree, uki, bootLoader, big)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -438,7 +438,7 @@ func TestReplaceRefusesExtraLayers(t *testing.T) {
 func TestBuildRefusesDuplicateLayerDigests(t *testing.T) {
 	store, _, uki, bootLoader, contract := smallBlobs(t)
 	dup := ociimage.BytesBlob(ociimage.HashTreeType, []byte("store"))
-	if _, err := ociimage.Build(ocitest.Header(), store, dup, uki, bootLoader, contract); err == nil || !strings.Contains(err.Error(), "digest") {
+	if _, err := ociimage.Build(ocitest.Header(), nil, store, dup, uki, bootLoader, contract); err == nil || !strings.Contains(err.Error(), "digest") {
 		t.Errorf("Build = %v", err)
 	}
 }
