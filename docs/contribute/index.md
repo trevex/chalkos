@@ -50,6 +50,15 @@ These pages take a first change from setup to commit.
 
     [:octicons-arrow-right-24: Read](testing.md)
 
+-   :material-source-pull: __Continuous integration__
+
+    ---
+
+    Pull requests, the tiers of checks CI runs, the e2e labels, the nightly run and the binary
+    cache.
+
+    [:octicons-arrow-right-24: Read](ci.md)
+
 </div>
 
 ## Code
@@ -171,4 +180,6 @@ A change needs:
   parts of the repository.
 - The generated files its sources produce, and a commit message of the form the
   [code conventions](conventions.md#commit-messages) give.
+- A pull request whose CI run passes, with the end-to-end labels the change needs, which
+  [Continuous integration](ci.md#end-to-end-labels) lists.
 
