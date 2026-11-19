@@ -49,8 +49,14 @@ router.
   [crane](https://github.com/google/go-containerregistry/tree/main/cmd/crane) and yq.
 - The workstation inside the air gap has chalkctl, mtools, kubectl and yq. Copy chalkctl's
   program as [Requirements](../get-started/requirements.md#workstation) describes.
+- The workstation inside the air gap holds the age identity or SSH key that `secrets.age` is
+  encrypted to, as [Requirements](../get-started/requirements.md#workstation) lists.
 - A time server answers NTP inside the air gap, such as a clock with a GPS receiver or a machine
-  that runs chrony as a server. chalkos nodes run no NTP server for other machines.
+  that runs chrony as a server. A chrony server without a reference clock answers as unsynchronised,
+  at stratum 16, and its clients refuse it, unless its config holds `local stratum 10`, which
+  serves its own clock. chalkos images run no NTP server for other machines by default; an image
+  module can add one, as the
+  [home lab's router](home-lab.md#run-the-lab-without-internet-access-optional) does.
 - A way to carry files into the air gap, such as a USB disk.
 
 ## Prepare on a connected machine
@@ -83,10 +89,13 @@ Copy the images of your workloads, and those that the objects of your `Addon` do
 same way, each into a directory of its own.
 
 Copy the repository to the disk you carry in, `<carry>`, with the builds as directories rather
-than the links `nix build` makes, and chalkctl's program beside it:
+than the links `nix build` makes, and chalkctl's program beside it. Leave out `keys/`, which holds
+the Secure Boot keys of [Sign the image and the installer](cluster-on-machines.md#sign-the-image-and-the-installer-optional):
+whoever holds the db key decides what the machines boot, and the air gap needs only the signed
+builds, so the keys stay offline with the connected machine:
 
 ```sh
-cp -rL . <carry>/cluster
+rsync -aL --exclude keys/ ./ <carry>/cluster/
 cp "$(nix build --no-link --print-out-paths github:trevex/chalkos/<rev>#chalkctl)/bin/.chalkctl-wrapped" \
   <carry>/chalkctl
 ```
@@ -166,10 +175,13 @@ pull their images from the cluster registry.
 
 ## Cut the connection
 
-A cluster prepared on a connected network may have reached the internet while you set it up. Cut
-that path now, on the network's router or firewall, and leave the workstation's path to the nodes.
-The cluster needs nothing from outside afterwards: its images are in the registry, and its time and
-names come from inside the air gap.
+A cluster prepared on a connected network may have reached the internet while you set it up. Until
+the cut, containerd falls back to an image's host when the cluster registry lacks the image, so a
+missing image goes unnoticed. `chalkctl registry list` showing `all` for every image before the
+bootstrap shows that the cluster does not depend on the registries outside. Cut that path now, on
+the network's router or firewall, and leave the workstation's path to the nodes. The cluster needs
+nothing from outside afterwards: its images are in the registry, and its time and names come from
+inside the air gap.
 
 ## Check that it worked
 
@@ -229,9 +241,10 @@ describes.
   directories instead.
 - The copies take more space than the nodes run: crane copies every platform of an index. The
   `cluster-metal` template's eight images take about 1.2 GiB.
-- A time server without a reference clock of its own keeps the nodes' clocks together, but they
-  drift from real time. Certificates that other systems issue, and those chalkos issues for them,
-  are checked against these clocks.
+- A time server without a reference clock serves only with chrony's `local stratum 10`, and
+  optionally `orphan` among several such servers. It keeps the nodes' clocks together, but they
+  drift from real time with its clock. Certificates that other systems issue, and those chalkos
+  issues for them, are checked against these clocks.
 - Names outside the cluster do not resolve. Anything that needs one, such as a webhook of an
   external service, needs that service and its name inside the air gap.
 

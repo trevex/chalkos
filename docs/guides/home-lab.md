@@ -884,14 +884,16 @@ chalkctl upgrade --nodes router --secrets=secrets.age
 This optional variant cuts the fabric off the internet. The router drops its NAT64, the control
 planes serve the container images from the cluster registry, and the router serves the nodes'
 time. The workstation keeps its tunnel and reaches every node as before. Follow it in place of
-[Bootstrap Kubernetes](#bootstrap-kubernetes) once the three nodes wait for their bootstrap, or on
-a running lab, where the bootstrap step drops out.
+[Bootstrap Kubernetes](#bootstrap-kubernetes) once the three nodes wait for their bootstrap, and
+run its `chalkctl bootstrap` and `chalkctl kubeconfig` commands; its NAT64 checks fail in the
+variant. On a running lab, the bootstrap step drops out.
 [Build an air-gapped cluster](air-gapped.md) explains the approach for any cluster.
 
 ### What connects the fabric to the internet
 
-The NAT64 is the fabric's only way out. The fabric holds unique local addresses alone, and the
-router takes no IPv6 route from the home network, so the router has no IPv6 route beyond the lab's
+The NAT64 is the fabric's only way out for connections; DNS queries still leave through the
+router's resolver, so the variant is no strict air gap. The fabric holds unique local addresses
+alone, and the router takes no IPv6 route from the home network, so the router has no IPv6 route beyond the lab's
 /48. Its firewall policies forward between the fabric and the tunnel alone. The NAT64's
 connections pass ahead of the policies, out of `wan` from the router's IPv4 address. The router
 sends the nodes no BGP routes: their default route from its advertisements leads to the router
@@ -902,7 +904,10 @@ The resolver stays: it answers names from the root servers over `wan`, as the ro
 connections still leave there, and DNS64 still answers with addresses in `64:ff9b::/96`, which
 lead nowhere now. CoreDNS keeps a server to forward to. The nodes reach the cluster registry, the
 router's time and each other by their addresses, and need no names. In a real air gap the router
-has no uplink either, and its resolver answers no name outside the lab.
+has no uplink either, and its resolver answers no name outside the lab. Its chrony then has no
+server to follow and answers the nodes as unsynchronised, at stratum 16, which they refuse. Give
+the router a reference clock, or add `local stratum 10` to the same `extraConfig`, which serves
+its own clock.
 
 Two things the nodes take from the internet stop with the NAT64:
 
@@ -924,7 +929,8 @@ and takes `air-gapped/router.yaml`, and its nodes take `air-gapped/nodes.yaml` a
 --8<-- "examples/homelab/chalkos-air-gapped.yaml"
 ```
 
-Keep its nodes' addresses the same as those of `chalkos.yaml`. `air-gapped/nodes.yaml` turns the
+Keep its nodes' addresses and its image sources the same as those of `chalkos.yaml`, such as the
+signed copies of [Sign the images](#sign-the-images-optional). `air-gapped/nodes.yaml` turns the
 cluster registry on, with the three control planes' addresses as its endpoints and the hosts of
 the lab's images as its mirrors, and names the router as the nodes' time server:
 
@@ -1047,7 +1053,7 @@ kubectl run airgap-check --rm -it --restart=Never --image=busybox:1.37.0 -- true
 ```
 
 Check that the fabric no longer reaches the internet. The `tcp-connect` diagnostic to
-`64:ff9b::101:101`, which connected in [Bootstrap Kubernetes](#bootstrap-kubernetes), fails now,
+`64:ff9b::101:101`, which connects on the connected lab, fails now,
 and `chalkctl status router` shows no `nat64:` table:
 
 ```sh
