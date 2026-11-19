@@ -267,7 +267,8 @@ in
   # The homelab example: its flake builds the router's metal image and the nodes', and chalkctl
   # validate accepts the router's and the nodes' YAML, BGPSpeaker and BGPPeer documents included,
   # with those images where their groups point, and validatePinned checks its Cluster document's
-  # images.
+  # images. chalkctl validate accepts the air-gapped variant's inventory too, without the NAT64 and
+  # with the cluster registry and the router's time.
   example-homelab =
     let
       packages = homelab.packages.${pkgs.stdenv.hostPlatform.system};
@@ -281,7 +282,10 @@ in
         "images/router-metal" = packages.router-metal;
         "images/node-metal" = packages.node-metal;
       };
-      command = validatePinned;
+      command = ''
+        ${validatePinned}
+        chalkctl validate --inventory chalkos-air-gapped.yaml
+      '';
     };
 
   # The extensions example: its flake builds a metal image with the Rack and Hardware extensions

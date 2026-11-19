@@ -15,11 +15,13 @@ adapt these files, install the machines and test a failover. Its source is
 | --- | --- |
 | `flake.nix` | Builds `router-metal`, `node-metal` and the installer. |
 | `chalkos.yaml` | The inventory: the four nodes, the address chalkctl reaches each at, their images and files. |
-| `router/router.yaml` | The router's ports, firewall, NAT64, resolver, BGP and WireGuard. |
+| `router/router.yaml` | The router's ports, firewall, resolver, BGP and WireGuard. |
+| `router/nat64.yaml` | The router's NAT64, the fabric's way to the IPv4 internet. |
 | `router/secrets.yaml` | The router's WireGuard key and BGP password, as example values. |
 | `cluster/cluster.yaml` | The Kubernetes cluster that all three nodes share. |
 | `bgp/fabric.yaml`, `bgp/secrets.yaml` | The nodes' ports, their BGP sessions with the router, and the password. |
 | `nodes/node1.yaml` to `nodes/node3.yaml` | Each node's disk, address and BGP speaker. |
+| `chalkos-air-gapped.yaml`, `air-gapped/` | The optional variant without internet access: the inventory without the NAT64, the cluster registry and the router as the nodes' time server. |
 
 The secrets in `router/secrets.yaml` and `bgp/secrets.yaml` are public example values. Replace them
 before you use the files, as the guide describes.

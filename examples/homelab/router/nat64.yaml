@@ -1,0 +1,7 @@
+# The NAT64, the fabric's one way to the internet: the nodes' connections to 64:ff9b::/96 leave
+# wan from the router's IPv4 address on the home network. It has a file of its own so that the
+# air-gapped lab, chalkos-air-gapped.yaml, leaves it out and the fabric reaches no internet.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: NAT64
+metadata: {name: nat64}
+spec: {prefix: "64:ff9b::/96"}

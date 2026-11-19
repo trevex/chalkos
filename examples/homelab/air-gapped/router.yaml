@@ -1,0 +1,11 @@
+# What the router of the air-gapped lab, chalkos-air-gapped.yaml, gets beside router/router.yaml
+# and router/secrets.yaml. It leaves out router/nat64.yaml, so the fabric reaches no internet,
+# and lets the nodes' NTP in: the router's chrony answers them, as flake.nix allows.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallPolicy
+metadata: {name: fabric-local}
+spec:
+  from: fabric
+  to: local
+  rules:
+    - {protocol: udp, destinationPorts: [123], action: accept}

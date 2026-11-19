@@ -1,0 +1,24 @@
+# The home lab without internet access, the optional variant of the guide: the inventory of
+# chalkos.yaml, whose router leaves out router/nat64.yaml and whose nodes take the cluster
+# registry and the router's time from air-gapped/. chalkctl reads it with
+# --inventory chalkos-air-gapped.yaml or CHALKOSINVENTORY=chalkos-air-gapped.yaml, and
+# chalkos.yaml's config connects the lab again. Keep the nodes' addresses the same as there.
+apiVersion: chalkctl.chalkos.dev/v1alpha1
+kind: Inventory
+metadata: {name: homelab}
+spec:
+  images:
+    router-metal: {source: {directory: images/router-metal}}
+    node-metal: {source: {directory: images/node-metal}}
+  groups:
+    router:
+      imageName: router-metal
+      files: [router/router.yaml, router/secrets.yaml, air-gapped/router.yaml]
+    nodes:
+      imageName: node-metal
+      files: [cluster/*.yaml, bgp/fabric.yaml, bgp/secrets.yaml, air-gapped/nodes.yaml]
+  nodes:
+    router: {address: 192.168.1.2, groups: [router]}
+    node1: {address: "fdc8:a1b2:c3d4:ff::11", groups: [nodes], files: [nodes/node1.yaml]}
+    node2: {address: "fdc8:a1b2:c3d4:ff::12", groups: [nodes], files: [nodes/node2.yaml]}
+    node3: {address: "fdc8:a1b2:c3d4:ff::13", groups: [nodes], files: [nodes/node3.yaml]}

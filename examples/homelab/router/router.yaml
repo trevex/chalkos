@@ -1,7 +1,7 @@
 # The router: its port wan on the home network, which gives it an IPv4 address by DHCP, and its
 # port fabric on the switch of the three nodes. The fabric is IPv6 alone. Router advertisements
-# give each node an address, the resolver and the NAT64 prefix, and the NAT64 carries the nodes'
-# connections to the IPv4 internet out of wan. Each node takes its default route from the
+# give each node an address, the resolver and the NAT64 prefix, and the NAT64 of nat64.yaml carries
+# the nodes' connections to the IPv4 internet out of wan. Each node takes its default route from the
 # advertisements and announces its address over BGP. The workstation reaches the fabric through
 # WireGuard.
 #
@@ -95,13 +95,6 @@ apiVersion: router.chalkos.dev/v1alpha1
 kind: FirewallPolicy
 metadata: {name: fabric-vpn}
 spec: {from: fabric, to: vpn, default: accept}
----
-# The nodes' connections to 64:ff9b::/96 leave wan from the router's IPv4 address on the home
-# network.
-apiVersion: router.chalkos.dev/v1alpha1
-kind: NAT64
-metadata: {name: nat64}
-spec: {prefix: "64:ff9b::/96"}
 ---
 # The resolver of the fabric and the tunnel, which answers for every name with AAAA records in the
 # NAT64's prefix, made from its A records. The fabric reaches the internet over NAT64 alone, so a

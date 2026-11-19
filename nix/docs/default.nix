@@ -14,10 +14,12 @@ let
     "examples/homelab" = [
       "flake.nix"
       "chalkos.yaml"
+      "chalkos-air-gapped.yaml"
       "nodes"
       "cluster"
       "router"
       "bgp"
+      "air-gapped"
     ];
     "examples/bgp-extension" = [
       "flake.nix"

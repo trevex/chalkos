@@ -16,7 +16,12 @@
           {
             name = "router-metal";
             platform = "metal";
-            modules = [ chalkos.nixosModules.router ];
+            modules = [
+              chalkos.nixosModules.router
+              # chrony answers NTP from the lab's addresses, the time server of the air-gapped
+              # lab's nodes. Its firewall lets the queries in only with air-gapped/router.yaml.
+              { services.chrony.extraConfig = "allow fdc8:a1b2:c3d4::/48"; }
+            ];
           }
           {
             name = "node-metal";
@@ -57,6 +62,9 @@
           pkgs.wireguard-tools
           pkgs.arp-scan
           pkgs.netcat
+          # The air-gapped lab copies the cluster's container images with these.
+          pkgs.crane
+          pkgs.yq-go
         ];
       };
     };

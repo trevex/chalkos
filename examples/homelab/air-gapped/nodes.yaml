@@ -1,0 +1,24 @@
+# What the nodes of the air-gapped lab, chalkos-air-gapped.yaml, get beside the files of
+# chalkos.yaml: the cluster registry, from which they pull every container image, and the router
+# as their time server.
+#
+# The control planes serve the cluster registry at their node addresses, and containerd on every
+# node looks there first for the images of the mirrored hosts: registry.k8s.io for the control
+# plane, CoreDNS and the pod sandbox, ghcr.io for flannel, and docker.io for the workloads, such as
+# the guide's busybox. chalkctl registry push puts the images there through the tunnel.
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: ClusterRegistry
+metadata: {name: cluster}
+spec:
+  mirrors: [docker.io, ghcr.io, registry.k8s.io]
+  endpoints: ["fdc8:a1b2:c3d4:ff::11", "fdc8:a1b2:c3d4:ff::12", "fdc8:a1b2:c3d4:ff::13"]
+---
+# The nodes' default time servers lie on the internet. The router keeps its own clock over wan and
+# answers NTP from the fabric, as flake.nix and air-gapped/router.yaml set it up. Plain NTP, as
+# the router's chrony serves no NTS.
+apiVersion: time.chalkos.dev/v1alpha1
+kind: TimeSync
+metadata: {name: default}
+spec:
+  servers:
+    - {host: "fdc8:a1b2:c3d4:1::1", nts: false}
