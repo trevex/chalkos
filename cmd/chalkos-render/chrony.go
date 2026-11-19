@@ -12,10 +12,10 @@ import (
 const chronyServerFile = "server.conf"
 
 // renderChronyServer writes the TimeServer's directives of chrony to out/server.conf: an allow
-// line per client range and, with localStratum, the local reference in orphan mode. chrony has a
-// bindaddress per family alone, so it answers NTP on every address and the firewall accepts it on
-// the addresses of listen alone. A node without a TimeServer gets no file, and chrony answers no
-// one.
+// line per client range, a rate limit per client and, with localStratum, the local reference in
+// orphan mode. chrony has a bindaddress per family alone, so it answers NTP on every address and
+// the firewall accepts it on the addresses of listen alone. A node without a TimeServer gets no
+// file, and chrony answers no one.
 func renderChronyServer(in map[string]any, out string) error {
 	d, err := derive.Build(documents(in))
 	if err != nil {
@@ -38,6 +38,9 @@ func renderChronyServer(in map[string]any, out string) error {
 	for _, p := range allow {
 		fmt.Fprintf(&b, "allow %s\n", p)
 	}
+	// chrony answers a client once every two seconds on average, in bursts of 16 responses such as
+	// iburst's, and drops the requests beyond, which ntp-clients shows as the client's drops.
+	b.WriteString("ratelimit interval 1 burst 16\n")
 	if l := s.Spec.LocalStratum; l != nil {
 		if *l < 1 || *l > 15 {
 			return derive.Within("TimeServer "+s.Name, derive.InternalErrorf("the local stratum %d is outside 1 to 15", *l))

@@ -371,6 +371,16 @@ in
           printf '%s\n' "$bad" >chrony/servers.sources
           refuses "chrony's check of $bad" "" env OUT=$PWD/chrony "$check" </dev/null
         done
+        # The check of the router's time server passes the lines its renderer writes, and refuses
+        # a subnet chronyd -p takes and any line of another form.
+        check=$(jq -r '."chrony-server".check' ${routerBuild.chalkosOutputs})
+        mkdir chrony-server
+        printf '# header\nallow 192.0.2.0/24\nallow 2001:db8:1::/64\nratelimit interval 1 burst 16\nlocal stratum 15 orphan\n' >chrony-server/server.conf
+        OUT=$PWD/chrony-server $check </dev/null
+        for bad in 'allow 10' 'allow all' 'local stratum 10' 'local stratum 16 orphan' 'port 0'; do
+          printf '%s\n' "$bad" >chrony-server/server.conf
+          refuses "chrony-server's check of $bad" "" env OUT=$PWD/chrony-server "$check" </dev/null
+        done
         # The check of the router's firewall passes the LAN example's ruleset and refuses one the
         # kernel would not load, with nft in a user and network namespace of its own.
         check=$(jq -r '."router-nftables".check' ${routerBuild.chalkosOutputs})

@@ -8,7 +8,7 @@ import (
 	"github.com/trevex/chalkos/pkg/router/derive/derivetest"
 )
 
-// A TimeServer renders an allow line per masked client range and, with localStratum, the local
+// A TimeServer renders an allow line per masked client range, a rate limit per client and, with localStratum, the local
 // reference in orphan mode; a node without one gets no file.
 func TestChronyServer(t *testing.T) {
 	timeServer := func(spec string) map[string][]any {
@@ -18,12 +18,13 @@ func TestChronyServer(t *testing.T) {
 	want := "# The node's TimeServer, rendered by chalkos-render chrony-server.\n" +
 		"allow 2001:db8:1::/64\n" +
 		"allow 192.0.2.0/24\n" +
+		"ratelimit interval 1 burst 16\n" +
 		"local stratum 10 orphan\n"
 	if got != want {
 		t.Errorf("server.conf =\n%s\nwant\n%s", got, want)
 	}
 	got = renderedFile(t, []string{"chrony-server"}, inputOf(t, timeServer(`{"listen": ["2001:db8:1::1"], "allow": ["2001:db8:1::/64"], "localStratum": null}`)), chronyServerFile)
-	if want := "# The node's TimeServer, rendered by chalkos-render chrony-server.\nallow 2001:db8:1::/64\n"; got != want {
+	if want := "# The node's TimeServer, rendered by chalkos-render chrony-server.\nallow 2001:db8:1::/64\nratelimit interval 1 burst 16\n"; got != want {
 		t.Errorf("server.conf without localStratum =\n%s\nwant\n%s", got, want)
 	}
 	if got := renderedFiles(t, []string{"chrony-server"}, inputOf(t, map[string][]any{"TimeServer": {}})); got != "" {
