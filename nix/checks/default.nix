@@ -44,6 +44,7 @@ let
         ./image.nix
         ./eval.nix
         ./repo.nix
+        ./release.nix
       ];
   tiers = import ./tiers.nix {
     inherit lib;

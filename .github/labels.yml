@@ -33,6 +33,9 @@
 - name: e2e:examples
   color: "d4c5f9"
   description: Run the example checks, which build the examples' images, on this pull request
+- name: e2e:release
+  color: "d4c5f9"
+  description: Run the checks that build the release images on this pull request
 - name: ci-failure
   color: "b60205"
   description: CI failed on main or in the nightly run

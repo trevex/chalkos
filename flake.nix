@@ -52,6 +52,11 @@
         description = "A Kubernetes cluster of three control planes on real machines, with its installer";
       };
       packages.${system} = import ./nix/outputs/packages.nix arguments;
+      # The images a release publishes, by repository name, each with its repository and tag.
+      releaseImages.${system} = import ./nix/release.nix {
+        inherit self;
+        inherit (pkgs) lib;
+      };
       checks.${system} = import ./nix/checks arguments;
       # The names of the checks by the tier CI runs them in, which its workflow reads.
       ciTiers.${system} = import ./nix/checks/tiers.nix {

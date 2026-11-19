@@ -19,6 +19,7 @@ and checks it.
 | Path | What it holds |
 | --- | --- |
 | `flake.nix` | The flake's inputs and outputs. Each output is built in a file the flake imports. |
+| `version.nix` | chalkos's version, the one place it is written: the flake's `lib.version`, the version of every Go program and the tag of the release images come from it. release-please changes it on a release, on the line its `x-release-please-version` comment marks. |
 | `lib/` | The flake's `lib`: chalkosLib plus `mkImage`, `mkInstaller`, `mkImages` and their helpers (`default.nix`), and the layers, which the flake exports as `nixosModules` (`layers.nix`). chalkosLib (`chalkos.nix`) is a function of nixpkgs's `lib` alone, with no `pkgs` and no store paths. `mkImage` (`images.nix`) evaluates one image and `mkImages` a cluster's; their arguments are declared in `images-arguments.nix`. |
 | `modules/` | The NixOS modules of the images: `node/` (every image, plus the modules of the Kubernetes and router layers, which `nixosModules.kubernetes` and `nixosModules.router` enable), `platforms/`, `installer/` and `testing/`. |
 | `test/nix/` | The evaluation tests, which the `eval` and `eval-kinds` checks run. |
@@ -31,6 +32,7 @@ and checks it.
 | `nix/overlay/` | `default.nix`, the overlay that adds `pkgs.chalkos`, the scope of chalkos's packages, and the scope's helpers: `build-go-program.nix` (`buildGoProgram`) and `go-paths.nix` (`treeGoPaths`). |
 | `nix/packages/` | The scope's packages, one file each, named as the package. The overlay finds them with `lib.packagesFromDirectoryRecursive`. |
 | `nix/outputs/` | The flake outputs that one file builds: `packages.nix`, `apps.nix` and `shell.nix`, the development shell. |
+| `nix/release.nix` | The images a release publishes, the flake output `releaseImages`. [Continuous integration](ci.md#release-images) describes them. |
 | `nix/docs/` | The docs output: `default.nix` builds the site and the generated reference pages, `nav.py` checks the site's navigation, and `templates/` holds the openings of the options pages and the end of the extension API's. |
 | `nix/checks/` | The flake's checks. |
 | `nix/testing/` | The test images, their fixtures and the test environment that the checks, the apps and the development shell share. |

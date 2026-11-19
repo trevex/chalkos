@@ -1,0 +1,126 @@
+# Evaluation tests of the images a release publishes, nix/release.nix, and of version.nix, which
+# release-please updates. Returns lib.runTests failures, empty on success.
+{
+  lib,
+  self,
+  images,
+}:
+let
+  inherit (self.lib) version kubernetesReleases;
+  tag = "v${version}";
+  published = lib.attrNames (lib.filterAttrs (_: release: release.publish) kubernetesReleases);
+  # Each published image by its repository's name: its image name, platform, layer and Kubernetes
+  # release.
+  expected = lib.listToAttrs (
+    lib.concatMap
+      (
+        kind:
+        map
+          (
+            platform:
+            lib.nameValuePair "${kind.repository}-${platform}" {
+              name = "${kind.name}-${platform}";
+              inherit platform;
+              inherit (kind) layer kubernetes;
+            }
+          )
+          [
+            "metal"
+            "kvm"
+          ]
+      )
+      (
+        map (minor: {
+          repository = "kubernetes-${minor}";
+          name = "kubernetes";
+          layer = "kubernetes";
+          kubernetes = kubernetesReleases.${minor}.version;
+        }) published
+        ++ [
+          {
+            repository = "router";
+            name = "router";
+            layer = "router";
+            kubernetes = null;
+          }
+        ]
+      )
+  );
+  config = i: i.nixos.config;
+in
+lib.runTests {
+  # One image of each published Kubernetes minor and of the router on each platform, named after
+  # its repository below ghcr.io/trevex/chalkos and tagged v<version>.
+  testImages = {
+    expr = lib.mapAttrs (_: i: {
+      inherit (i) name platform layer;
+      kubernetes =
+        if i.layer == "kubernetes" then (config i).chalkos.kubernetes.package.version else null;
+    }) images;
+    inherit expected;
+  };
+  testRepositories = {
+    expr = lib.mapAttrs (_: i: { inherit (i) repository tag; }) images;
+    expected = lib.mapAttrs (name: _: {
+      repository = "ghcr.io/trevex/chalkos/${name}";
+      inherit tag;
+    }) expected;
+  };
+  # Every image and its OCI image layout evaluate to a derivation.
+  testDerivations = {
+    expr = lib.all (i: lib.isString i.drvPath && lib.isString i.oci.drvPath) (lib.attrValues images);
+    expected = true;
+  };
+  # The images carry no OS CA and record the release's tag and the commit's revision.
+  testProvenance = {
+    expr = lib.mapAttrs (_: i: {
+      inherit ((config i).chalkos.maintenance) osCA;
+      inherit ((config i).chalkos) provenance;
+    }) images;
+    expected = lib.mapAttrs (_: _: {
+      osCA = null;
+      provenance = {
+        inherit tag;
+        revision = self.rev or self.dirtyRev or null;
+      };
+    }) expected;
+  };
+  # The manifests' annotations: the tag as the version, the revision, chalkos's source, the
+  # commit's time in RFC 3339, and a Kubernetes image's release.
+  testAnnotations = {
+    expr = lib.mapAttrs (
+      _: i:
+      let
+        a = (config i).chalkos.imageDirectory.annotations;
+        created = a."org.opencontainers.image.created";
+      in
+      removeAttrs a [ "org.opencontainers.image.created" ]
+      // {
+        created = builtins.match "[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z" created != null;
+      }
+    ) images;
+    expected = lib.mapAttrs (
+      _: image:
+      {
+        "org.opencontainers.image.version" = tag;
+        "org.opencontainers.image.source" = "https://github.com/trevex/chalkos";
+        created = true;
+      }
+      // lib.optionalAttrs (self ? rev || self ? dirtyRev) {
+        "org.opencontainers.image.revision" = self.rev or self.dirtyRev;
+      }
+      // lib.optionalAttrs (image.kubernetes != null) {
+        "dev.chalkos.kubernetes.version" = image.kubernetes;
+      }
+    ) expected;
+  };
+  # release-please's generic updater sets the version on the line its marker comment ends.
+  testVersionFile = {
+    expr = map (builtins.match ''"([0-9]+\.[0-9]+\.[0-9]+)" # x-release-please-version'') (
+      lib.filter (lib.hasInfix "x-release-please-version") (
+        lib.splitString "\n" (builtins.readFile ../../version.nix)
+      )
+    );
+    expected = [ [ version ] ];
+  };
+}
