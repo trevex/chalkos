@@ -2,7 +2,8 @@
 # chalkos.yaml, whose router leaves out router/nat64.yaml and whose nodes take the cluster
 # registry and the router's time from air-gapped/. chalkctl reads it with
 # --inventory chalkos-air-gapped.yaml or CHALKOSINVENTORY=chalkos-air-gapped.yaml, and
-# chalkos.yaml's config connects the lab again. Keep the nodes' addresses the same as there.
+# chalkos.yaml's config connects the lab again. Keep the nodes' addresses and the image sources the
+# same as there, such as the signed copies, and list every file of router/ but nat64.yaml here too.
 apiVersion: chalkctl.chalkos.dev/v1alpha1
 kind: Inventory
 metadata: {name: homelab}

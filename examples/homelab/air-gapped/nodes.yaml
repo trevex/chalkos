@@ -15,7 +15,8 @@ spec:
 ---
 # The nodes' default time servers lie on the internet. The router keeps its own clock over wan and
 # answers NTP from the fabric, as flake.nix and air-gapped/router.yaml set it up. Plain NTP, as
-# the router's chrony serves no NTS.
+# the router's chrony serves no NTS. A router without an uplink answers as unsynchronised, which
+# the nodes refuse, unless it has a reference clock or local stratum 10 in flake.nix.
 apiVersion: time.chalkos.dev/v1alpha1
 kind: TimeSync
 metadata: {name: default}
