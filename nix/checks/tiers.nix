@@ -3,8 +3,8 @@
 # fetch the test registry's images or boot a NixOS test VM, and run there too, one job each;
 # end-to-end checks boot the test images or build images of their own, one job each, on a push
 # to main, nightly, and on a pull request by its labels. e2eLabels maps each label that selects
-# end-to-end checks to its checks: e2e:<name> to e2e-<name>, and e2e:examples to the examples'
-# checks. Every check is in exactly one tier, and every name a tier lists is a check.
+# end-to-end checks to its checks: e2e:<name> to e2e-<name>, e2e:examples to the examples'
+# checks, and e2e:release to the checks that build the release images, one job each. Every check is in exactly one tier, and every name a tier lists is a check.
 { lib, names }:
 let
   examples = [
@@ -21,6 +21,7 @@ let
     )
     // {
       "e2e:examples" = examples;
+      "e2e:release" = lib.filter (lib.hasPrefix "release-image-") names;
     };
   tiers = {
     fast = [
@@ -39,6 +40,7 @@ let
       "kubernetes-bgp-nht"
       "nix-lint"
       "registry-mirrors"
+      "release-eval"
       "router-dhcp"
       "router-dhcp-relay"
       "router-dhcp6"
