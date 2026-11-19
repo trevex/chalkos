@@ -1,19 +1,14 @@
-# Test-only Secure Boot keys plus an OVMF variable store with them enrolled.
-# Never use these keys outside chalklab tests: the private keys are world-readable in the store.
+# Test-only Secure Boot keys, from test/fixtures/secrets/secureboot, plus an OVMF variable store
+# with them enrolled. Never use these keys outside chalklab tests: they are public.
 { pkgs }:
 pkgs.runCommand "chalkos-test-secureboot"
   {
-    nativeBuildInputs = [
-      pkgs.openssl
-      pkgs.python3Packages.virt-firmware
-    ];
+    nativeBuildInputs = [ pkgs.python3Packages.virt-firmware ];
+    keys = ../../test/fixtures/secrets/secureboot;
   }
   ''
     mkdir -p $out
-    for k in PK KEK db; do
-      openssl req -new -x509 -newkey rsa:2048 -nodes -sha256 -days 3650 \
-        -subj "/CN=chalkos test $k/" -keyout $out/$k.key -out $out/$k.crt
-    done
+    cp $keys/{PK,KEK,db}.{key,crt} $out/
 
     owner=5f0e5ea2-6c1b-4e8e-9d33-1c1f2b0d7a11
     # The owner of the entries chalkctl secureboot enroll writes, as secureboot new keeps it.
