@@ -1,0 +1,2071 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>chalkos: build your own API-driven, immutable Linux</title>
+
+<!-- ===========================================
+     FONTS
+     Big Shoulders Display for display type, Albert Sans for body text,
+     JetBrains Mono for commands, code and data.
+     =========================================== -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Albert+Sans:wght@400;500;600;700&family=Big+Shoulders+Display:wght@700;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+<style>
+/* ===========================================
+   CSS CUSTOM PROPERTIES (THEME)
+   Change these to change the whole look.
+   All sizes are authored for the fixed 1920x1080 stage.
+   =========================================== */
+:root {
+    /* Palette: warm paper, warm-brown ink, six accents */
+    --paper: #F1E6CB;
+    --paper-dk: #E5D6B0;
+    --ink: #3A2516;
+    --ink-60: rgba(58, 37, 22, 0.6);
+    --ink-22: rgba(58, 37, 22, 0.22);
+    --ink-10: rgba(58, 37, 22, 0.10);
+    --red: #E5392A;
+    --pink: #E54489;
+    --orange: #F09131;
+    --yellow: #F0BC2A;
+    --green: #3D9F47;
+    --blue: #3F8BC4;
+
+    /* Base stage colours used by viewport-base.css */
+    --stage-bg: #22160D;
+    --slide-bg: var(--paper);
+
+    /* Typography */
+    --font-display: 'Big Shoulders Display', 'Arial Narrow', sans-serif;
+    --font-body: 'Albert Sans', sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+    /* Frame inset of content slides */
+    --inset-x: 80px;
+    --inset-top: 60px;
+    --inset-bottom: 96px;
+
+    /* Animation */
+    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+    --duration-normal: 0.6s;
+}
+
+/* ===========================================
+   BASE STYLES
+   =========================================== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+/* ===========================================
+   FIXED 16:9 STAGE: MANDATORY BASE STYLES
+   Include this ENTIRE file in every presentation.
+   Slides are authored at 1920×1080 and scaled as a whole.
+   =========================================== */
+
+/* 1. Lock the browser viewport */
+html,
+body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background: var(--stage-bg, #000);
+}
+
+/* 2. Full-window deck viewport */
+.deck-viewport {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    background: var(--stage-bg, #000);
+}
+
+/* 3. Fixed 16:9 design canvas.
+   JavaScript sets transform: translate(...) scale(...). */
+.deck-stage {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    transform-origin: 0 0;
+    background: var(--slide-bg, #fff);
+}
+
+/* 4. Slides stack inside the fixed stage.
+   Content must be laid out at 1920×1080, not reflowed per device. */
+.slide {
+    position: absolute;
+    inset: 0;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    display: block;
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    background: var(--slide-bg, #fff);
+}
+
+.slide.active,
+.slide.visible {
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
+    z-index: 1;
+}
+
+/* 5. Keep media inside authored slide bounds */
+img,
+video,
+canvas,
+svg {
+    max-width: 100%;
+    max-height: 100%;
+}
+
+/* 6. Presentation chrome stays outside the slide design system */
+.deck-controls {
+    position: fixed;
+    left: 50%;
+    bottom: 22px;
+    transform: translateX(-50%);
+    z-index: 1000;
+}
+
+/* 7. Print one fixed-size slide per page */
+@media print {
+    html,
+    body {
+        width: 1920px;
+        height: auto;
+        overflow: visible;
+        background: #fff;
+    }
+
+    .deck-viewport {
+        position: static;
+        overflow: visible;
+        background: #fff;
+    }
+
+    .deck-stage {
+        position: static;
+        width: auto;
+        height: auto;
+        transform: none !important;
+        background: none;
+    }
+
+    .slide {
+        position: relative;
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
+        width: 1920px;
+        height: 1080px;
+        break-after: page;
+        page-break-after: always;
+    }
+
+    .slide:last-child {
+        break-after: auto;
+        page-break-after: auto;
+    }
+
+    .deck-controls {
+        display: none !important;
+    }
+}
+
+/* 8. Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.2s !important;
+    }
+}
+
+/* ===========================================
+   PRINT ADDITIONS
+   One 1920x1080 page per slide for Chromium's --print-to-pdf,
+   with every reveal in its final state.
+   =========================================== */
+@page { size: 1920px 1080px; margin: 0; }
+@media print {
+    .reveal { opacity: 1 !important; transform: none !important; }
+    .edit-hotzone, .edit-toggle, .nav-hint, .edit-banner { display: none !important; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+
+/* ===========================================
+   SLIDE SURFACE
+   Plain paper colour and the slide fade.
+   =========================================== */
+.slide {
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 22px;
+    line-height: 1.42;
+    transition: opacity 0.28s ease, visibility 0.28s;
+}
+
+/* ===========================================
+   ANIMATIONS
+   .reveal elements fade up when their slide becomes visible.
+   Set style="--i:N" to stagger them.
+   =========================================== */
+.reveal {
+    opacity: 0;
+    transform: translateY(24px);
+    transition: opacity var(--duration-normal) var(--ease-out-expo),
+                transform var(--duration-normal) var(--ease-out-expo);
+    transition-delay: calc(var(--i, 0) * 70ms + 60ms);
+}
+.slide.visible .reveal { opacity: 1; transform: none; }
+.no-anim .reveal, .no-anim .slide { transition: none !important; }
+
+/* Ribbons sweep in on the cover and the closing slide */
+.ribbons .rb { transform: translateX(-30%) rotate(var(--rot)); transition: transform 1.1s var(--ease-out-expo); }
+.slide.visible .ribbons .rb { transform: translateX(0) rotate(var(--rot)); }
+.no-anim .ribbons .rb { transition: none; }
+
+/* Petals pop in */
+.petals .pt { transform: scale(0.4); opacity: 0; transition: transform 0.7s var(--ease-out-expo), opacity 0.5s; }
+.slide.visible .petals .pt { transform: scale(1); opacity: 1; }
+.petals .pt:nth-child(2) { transition-delay: 0.08s; }
+.petals .pt:nth-child(3) { transition-delay: 0.16s; }
+.petals .pt:nth-child(4) { transition-delay: 0.24s; }
+.petals .pt:nth-child(5) { transition-delay: 0.32s; }
+
+@media (prefers-reduced-motion: reduce) {
+    .reveal { transform: none; transition-delay: 0s !important; }
+    .ribbons .rb, .slide.visible .ribbons .rb { transition: none; }
+    .petals .pt { transform: none; }
+}
+
+/* ===========================================
+   FRAME, TOPBAR AND PAGE CHROME
+   Content slides sit in a frame inset from the slide edges, opened by a
+   topbar: display title left, tracked-caps label right, 1.5px ink rule.
+   =========================================== */
+.frame {
+    position: absolute;
+    top: var(--inset-top);
+    left: var(--inset-x);
+    right: var(--inset-x);
+    bottom: var(--inset-bottom);
+    display: flex;
+    flex-direction: column;
+    z-index: 2;
+}
+.topbar {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 40px;
+    border-bottom: 1.5px solid var(--ink);
+    padding-bottom: 16px;
+    flex: none;
+}
+.topbar h2 {
+    font-family: var(--font-display);
+    font-weight: 900;
+    font-size: 88px;
+    line-height: 0.9;
+    letter-spacing: -0.018em;
+    text-transform: none;
+}
+em { font-style: normal; color: var(--red); }
+.topbar .meta { text-align: right; flex: none; }
+.body { flex: 1; min-height: 0; margin-top: 28px; position: relative; }
+
+.pagenum {
+    position: absolute;
+    right: 44px;
+    bottom: 34px;
+    font-family: var(--font-mono);
+    font-size: 15px;
+    letter-spacing: 0.06em;
+    z-index: 3;
+}
+.footmark {
+    position: absolute;
+    left: var(--inset-x);
+    bottom: 34px;
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    z-index: 3;
+}
+
+/* ===========================================
+   TYPE UTILITIES
+   =========================================== */
+.micro {
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: 16px;
+    line-height: 1.25;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+}
+.micro.lg { letter-spacing: 0.2em; }
+.micro.xl { letter-spacing: 0.32em; }
+.lead { font-size: 26px; line-height: 1.38; font-weight: 500; }
+.small { font-size: 21px; line-height: 1.4; }
+.mono { font-family: var(--font-mono); }
+code, .cmd {
+    font-family: var(--font-mono);
+    white-space: nowrap;
+    font-size: 0.86em;
+    letter-spacing: 0;
+    background: var(--ink-10);
+    padding: 0 5px;
+}
+.disp {
+    font-family: var(--font-display);
+    font-weight: 900;
+    letter-spacing: -0.015em;
+    line-height: 0.92;
+}
+
+/* ===========================================
+   CARDS
+   1.5px ink border, coloured top strip, display name, body, dashed rule
+   and mono spec rows. No radius, no soft shadow.
+   =========================================== */
+.card {
+    border: 1.5px solid var(--ink);
+    background: var(--paper);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+}
+.card .strip { height: 22px; flex: none; background: var(--red); }
+.strip.pink { background: var(--pink); }
+.strip.orange { background: var(--orange); }
+.strip.blue { background: var(--blue); }
+.strip.green { background: var(--green); }
+.strip.yellow { background: var(--yellow); }
+.strip.ink { background: var(--ink); }
+.card .cb { padding: 20px 24px 22px; display: flex; flex-direction: column; gap: 10px; min-height: 0; flex: 1; }
+.card .name {
+    font-family: var(--font-display);
+    font-weight: 900;
+    font-size: 46px;
+    line-height: 0.94;
+    letter-spacing: -0.012em;
+}
+.card .name small { font-size: 0.55em; letter-spacing: 0; font-weight: 700; color: var(--ink-60); }
+.card p { font-size: 22px; line-height: 1.4; }
+.dash { border-top: 1px dashed var(--ink); margin: 4px 0; }
+.spec { list-style: none; font-family: var(--font-mono); font-size: 19px; line-height: 1.34; display: flex; flex-direction: column; gap: 6px; }
+.spec li { position: relative; padding-left: 24px; }
+.spec li::before { content: "×"; position: absolute; left: 0; top: 0; font-family: var(--font-display); font-weight: 900; font-size: 20px; line-height: 1.25; }
+.spec.plain li { padding-left: 0; }
+.spec.plain li::before { content: none; }
+
+/* Inked card: paper text on ink for emphasis panels */
+.card.inked { background: var(--ink); color: var(--paper); }
+.card.inked code { background: rgba(241, 230, 203, 0.14); }
+
+/* Quote callout: the one hard offset shadow of the system */
+.qbox {
+    background: var(--paper);
+    border: 1.5px solid var(--ink);
+    box-shadow: 8px 8px 0 var(--ink);
+    padding: 30px 38px;
+    position: relative;
+    z-index: 2;
+}
+
+/* ===========================================
+   CHIPS, STAMPS, SEALS, CHECKBOXES
+   =========================================== */
+.chip {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 16.5px;
+    line-height: 1;
+    padding: 6px 10px;
+    color: var(--paper);
+    background: var(--red);
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+}
+.chip.pink { background: var(--pink); }
+.chip.orange { background: var(--orange); }
+.chip.blue { background: var(--blue); }
+.chip.green { background: var(--green); }
+.chip.ink { background: var(--ink); }
+.chip.yellow { background: var(--yellow); color: var(--ink); }
+.chip.ghost { background: transparent; color: var(--ink); border: 1.5px solid var(--ink); }
+
+.stamp {
+    display: inline-block;
+    background: var(--red);
+    color: var(--paper);
+    font-family: var(--font-display);
+    font-weight: 900;
+    font-size: 28px;
+    line-height: 1;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    padding: 12px 20px;
+    transform: rotate(-3deg);
+}
+.seal {
+    width: 150px;
+    aspect-ratio: 1 / 1;
+    background: var(--ink);
+    color: var(--paper);
+    display: grid;
+    place-items: center;
+    text-align: center;
+    font-family: var(--font-display);
+    font-weight: 900;
+    font-size: 40px;
+    line-height: 0.9;
+    letter-spacing: -0.01em;
+    clip-path: polygon(50.0% 0.0%, 54.2% 7.2%, 59.8% 1.0%, 62.5% 8.9%, 69.1% 3.8%, 70.3% 12.1%, 77.8% 8.4%, 77.3% 16.8%, 85.4% 14.6%, 83.2% 22.7%, 91.6% 22.2%, 87.9% 29.7%, 96.2% 30.9%, 91.1% 37.5%, 99.0% 40.2%, 92.8% 45.8%, 100.0% 50.0%, 92.8% 54.2%, 99.0% 59.8%, 91.1% 62.5%, 96.2% 69.1%, 87.9% 70.3%, 91.6% 77.8%, 83.2% 77.3%, 85.4% 85.4%, 77.3% 83.2%, 77.8% 91.6%, 70.3% 87.9%, 69.1% 96.2%, 62.5% 91.1%, 59.8% 99.0%, 54.2% 92.8%, 50.0% 100.0%, 45.8% 92.8%, 40.2% 99.0%, 37.5% 91.1%, 30.9% 96.2%, 29.7% 87.9%, 22.2% 91.6%, 22.7% 83.2%, 14.6% 85.4%, 16.8% 77.3%, 8.4% 77.8%, 12.1% 70.3%, 3.8% 69.1%, 8.9% 62.5%, 1.0% 59.8%, 7.2% 54.2%, 0.0% 50.0%, 7.2% 45.8%, 1.0% 40.2%, 8.9% 37.5%, 3.8% 30.9%, 12.1% 29.7%, 8.4% 22.2%, 16.8% 22.7%, 14.6% 14.6%, 22.7% 16.8%, 22.2% 8.4%, 29.7% 12.1%, 30.9% 3.8%, 37.5% 8.9%, 40.2% 1.0%, 45.8% 7.2%);
+}
+.seal span { display: block; }
+
+/* Spec checklist: ink-bordered boxes, filled ones carry a cream × */
+.checklist { list-style: none; display: flex; flex-direction: column; gap: 12px; }
+.checklist li {
+    display: flex; align-items: center; gap: 14px;
+    font-family: var(--font-body); font-weight: 700; font-size: 19px;
+    letter-spacing: 0.06em; text-transform: uppercase;
+}
+.checklist li::before {
+    content: ""; width: 22px; height: 22px; border: 2px solid var(--ink); flex: none;
+}
+.checklist li.on::before {
+    content: "×"; background: var(--ink); color: var(--paper);
+    font-family: var(--font-display); font-weight: 900; font-size: 20px; line-height: 17px; text-align: center;
+}
+.checklist li.off { opacity: 0.75; }
+.checklist li.off s { text-decoration-thickness: 2px; }
+
+/* ===========================================
+   PETALS AND RIBBONS
+   Petals: overlapping perfect circles. Ribbons: five bars at ±22 degrees.
+   =========================================== */
+.petals { position: absolute; z-index: 1; }
+.petals .pt { position: absolute; border-radius: 50%; aspect-ratio: 1 / 1; }
+.ribbons { position: absolute; overflow: hidden; z-index: 0; }
+.ribbons .rb { position: absolute; left: -30%; width: 160%; height: 64px; }
+
+/* ===========================================
+   CODE PANELS
+   Ink panels with paper text; tokens use the accent palette.
+   =========================================== */
+pre.code {
+    background: var(--ink);
+    color: var(--paper);
+    font-family: var(--font-mono);
+    font-size: 19px;
+    line-height: 1.42;
+    padding: 20px 24px;
+    white-space: pre;
+    overflow: hidden;
+    tab-size: 2;
+}
+pre.code .k { color: var(--orange); }
+pre.code .s { color: var(--yellow); }
+pre.code .c { color: rgba(241, 230, 203, 0.55); }
+pre.code .p { color: #F7A3C6; }
+pre.code .g { color: #8FD08F; }
+pre.code .r { color: #FF8A7E; }
+pre.code .b { color: #9CC7EA; }
+.codehead {
+    display: flex; justify-content: space-between; align-items: center;
+    background: var(--paper-dk); border: 1.5px solid var(--ink); border-bottom: none;
+    padding: 8px 16px; font-family: var(--font-mono); font-size: 16px; letter-spacing: 0.04em;
+}
+
+/* ===========================================
+   LEDGER TABLES
+   Header row with a 1.5px ink rule, body rows with hairline dividers.
+   =========================================== */
+table.ledger { width: 100%; border-collapse: collapse; }
+.ledger th {
+    text-align: left; vertical-align: bottom;
+    font-family: var(--font-body); font-weight: 700; font-size: 15px;
+    letter-spacing: 0.16em; text-transform: uppercase;
+    border-bottom: 1.5px solid var(--ink); padding: 0 14px 10px 0;
+}
+.ledger td {
+    vertical-align: top;
+    border-bottom: 1px solid var(--ink-22);
+    padding: 12px 16px 12px 0;
+    font-size: 21px; line-height: 1.35;
+}
+.ledger td.t {
+    font-family: var(--font-display); font-weight: 700; font-size: 28px;
+    line-height: 1.05; letter-spacing: -0.005em; white-space: nowrap;
+}
+.ledger td.m { font-family: var(--font-mono); font-size: 17.5px; }
+.ledger tr:last-child td { border-bottom: none; }
+
+/* ===========================================
+   LAYOUT HELPERS
+   =========================================== */
+.row { display: flex; gap: 28px; }
+.col { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.grid { display: grid; gap: 24px; }
+.fill { flex: 1; min-height: 0; }
+.arrow {
+    font-family: var(--font-display); font-weight: 900; font-size: 46px; line-height: 1;
+    display: grid; place-items: center; color: var(--ink);
+}
+
+/* Stat band: one label cell and five figures */
+.stats { display: grid; grid-template-columns: 1.3fr repeat(5, 1fr); border: 1.5px solid var(--ink); flex: none; }
+.stats > div { padding: 14px 18px; border-right: 1px solid var(--ink-22); display: flex; flex-direction: column; justify-content: center; gap: 4px; }
+.stats > div:last-child { border-right: none; }
+.stats .num { font-family: var(--font-display); font-weight: 900; font-size: 64px; line-height: 0.86; letter-spacing: -0.02em; }
+.stats .num small { font-size: 0.36em; color: var(--ink); margin-left: 4px; letter-spacing: 0; }
+.stats .small { font-size: 17px; line-height: 1.25; }
+
+/* Slide 7 and 8: fill the frame */
+.s7 pre.code { font-size: 20.5px; line-height: 1.45; }
+.s7 .ledger td { padding-top: 10px; padding-bottom: 10px; font-size: 20px; }
+.s8 .card .mono { font-size: 17px !important; }
+.s8 .spec { font-size: 18px !important; gap: 10px; }
+.s8 pre.code { font-size: 19px; }
+
+/* Slides 11 to 13: fill the frame */
+.s11 pre.code { font-size: 18px; }
+.s12 .ledger td { font-size: 21px !important; padding-top: 12px; padding-bottom: 12px; }
+.s12 .ledger td.t { font-size: 25px !important; }
+.s13 .ledger td { font-size: 24px; padding-top: 20px; padding-bottom: 20px; }
+.s13 .ledger td.m { font-size: 19px; }
+.s13 pre.code { font-size: 20px; }
+
+/* chalkos logo, placed from the inline symbol */
+.logo { width: 30px; height: 30px; flex: none; }
+.cover .brandlogo { position: absolute; left: 84px; top: 30px; width: 124px; height: 124px; z-index: 3; }
+.closing .brandlogo { position: absolute; left: 130px; top: 110px; width: 200px; height: 200px; z-index: 3; }
+
+/* Slide 3: three short cards and a prominent wish band */
+.s3 .card .name { font-size: 58px; }
+.s3 .card p { font-size: 26px; }
+.s3 .card .cb { padding: 24px 30px 28px; gap: 12px; }
+.wish { flex: 1; min-height: 0; }
+.wish .cb { padding: 34px 40px; gap: 22px; justify-content: center; }
+.wish-tiles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
+.wish-tiles > div {
+    color: var(--paper); font-family: var(--font-display); font-weight: 900; font-size: 36px;
+    line-height: 0.98; letter-spacing: -0.01em; padding: 20px 20px 22px; min-height: 130px; display: flex; align-items: flex-end;
+}
+
+/* Slide 5: three numbered callouts under the disk */
+.callout { border-top: 3px solid var(--ink); padding-top: 18px; display: flex; flex-direction: column; gap: 12px; }
+.callout .num { font-family: var(--font-display); font-weight: 900; font-size: 84px; line-height: 0.85; }
+.callout .ttl { font-family: var(--font-display); font-weight: 900; font-size: 44px; line-height: 0.95; letter-spacing: -0.012em; }
+.callout p { font-size: 24px; line-height: 1.4; }
+
+/* Slide 11: two config slots side by side */
+.slots { display: grid; grid-template-columns: 1fr 120px 1fr; align-items: stretch; }
+.slotcol { display: flex; flex-direction: column; gap: 12px; }
+.slothead { color: var(--paper); padding: 14px 18px 16px; display: flex; flex-direction: column; gap: 6px; }
+.slothead .disp { font-size: 56px; }
+.slothead .mono { font-size: 15px; }
+.kindbox, .cfgbox { border: 1.5px solid var(--ink); padding: 12px 16px; display: flex; flex-direction: column; gap: 5px; background: var(--paper); }
+.kindbox { border-width: 2.5px; }
+.cfgbox { background: var(--paper-dk); }
+.kindbox .mono, .cfgbox .mono { font-size: 18px; }
+.slotcol .note { font-size: 19px; line-height: 1.35; border-left: 4px solid var(--ink); padding-left: 12px; }
+.slotmid { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 8px; }
+.slotmid .disp { font-size: 80px; }
+.slotmid .micro { font-size: 13px; }
+.s11b .slots { flex: 1; }
+.s11b .slotcol { gap: 18px; }
+.s11b .slothead { padding: 18px 22px 20px; }
+.s11b .slothead .disp { font-size: 72px; }
+.s11b .kindbox, .s11b .cfgbox { padding: 16px 20px; gap: 8px; }
+.s11b .kindbox .mono, .s11b .cfgbox .mono { font-size: 21px; }
+.s11b .slotcol .note { font-size: 22px; }
+.s11b .steps li { padding: 18px 0; }
+.s11b .steps .h { font-size: 27px; }
+.s11b .steps .d { font-size: 22px; }
+.s11b .steps .n { font-size: 54px; }
+
+/* Editorial pass: larger type where cuts left room */
+.s4 .card .spec { font-size: 22px !important; gap: 14px !important; }
+.s4 .card p { font-size: 22px !important; }
+.s4 .card .name { font-size: 44px !important; }
+.s6 .card .name { font-size: 46px !important; }
+.s6 .card p { font-size: 28px !important; line-height: 1.38; }
+.s6 .card .spec { font-size: 23.5px !important; gap: 16px !important; }
+.s6 .chain .lk .small { font-size: 19px; }
+.s7 .ledger td { font-size: 22px !important; padding-top: 14px !important; padding-bottom: 14px !important; }
+.s8 .card .mono { font-size: 19px !important; }
+.s8 .spec { font-size: 22px !important; gap: 14px; }
+.s10 pre.code { font-size: 20.5px; }
+.trial > div:not(.ar) { font-size: 23px !important; }
+.s11 .card p { font-size: 27px !important; }
+.s11 .card .spec { font-size: 23px !important; gap: 16px !important; }
+.s11 .tl .small { font-size: 21px; }
+.s12 .card .spec { font-size: 24px !important; gap: 18px !important; }
+.s12 .card p { font-size: 26px !important; }
+.s12 .ledger td { font-size: 23px !important; padding-top: 14px !important; padding-bottom: 14px !important; }
+.s12 .ledger td.t { font-size: 28px !important; }
+.s13 pre.code { font-size: 21px; }
+.s15 .steps li { padding: 16px 0; }
+.s15 .steps .h { font-size: 27px; }
+.s15 .steps .d { font-size: 22px; }
+.s15 .steps code { font-size: 18px; }
+.s15 .steps .n { font-size: 50px; }
+
+/* Fill the room the cuts left */
+.s6 .chain .lk { padding: 22px 20px; gap: 10px; }
+.s6 .chain .lk .disp { font-size: 40px; }
+.s6 .chain .lk .small { font-size: 21px !important; }
+.s6 .card .cb { gap: 22px !important; padding: 28px 30px; }
+.s6 .card .spec { font-size: 26px !important; gap: 22px !important; }
+.s6 .chip { font-size: 21px; padding: 9px 14px; }
+.s10 .ledger td { font-size: 26px !important; padding-top: 22px !important; padding-bottom: 22px !important; }
+.s10 .ledger td.m { font-size: 21px !important; }
+.s10 pre.code { font-size: 22px !important; }
+.trial > div:not(.ar) { font-size: 25px !important; justify-content: center; padding: 28px 22px 32px !important; gap: 14px !important; }
+.trial .num { font-size: 84px !important; }
+.s10 .trial { flex: 1; }
+.s11 .card .cb { gap: 22px !important; padding: 28px 30px; }
+.s11 .card .spec { font-size: 26px !important; gap: 22px !important; }
+.s11 pre.code { font-size: 20px !important; }
+.s11 .chip { font-size: 19px; padding: 8px 12px; }
+.s12 .card .spec { font-size: 26px !important; gap: 24px !important; }
+.s8 .spec { font-size: 25px !important; gap: 18px !important; }
+.s8 .card .mono { font-size: 21px !important; }
+
+/* Speaker notes: one hidden <aside class="notes"> per slide, never shown */
+.notes { display: none !important; }
+
+/* Slide 10: the trial in three steps */
+.trial { display: grid; grid-template-columns: 1fr 36px 1fr 36px 1fr; border: 1.5px solid var(--ink); }
+.trial > div:not(.ar) { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 6px; font-size: 20px; line-height: 1.35; }
+.trial .ar { display: grid; place-items: center; font-family: var(--font-display); font-weight: 900; font-size: 32px; }
+.trial .num { font-family: var(--font-display); font-weight: 900; font-size: 46px; line-height: 0.85; }
+.s10 .ledger td { font-size: 23px; padding-top: 16px; padding-bottom: 16px; }
+.s10 .ledger td.m { font-size: 19px; }
+
+/* Slide 2: keyword rows */
+.kwlist { list-style: none; display: flex; flex-direction: column; gap: 18px; }
+.kwlist li { display: grid; grid-template-columns: 270px 1fr; align-items: center; gap: 20px; }
+.kwlist b { color: var(--paper); font-family: var(--font-display); font-weight: 900; font-size: 38px; line-height: 1; letter-spacing: -0.01em; padding: 9px 14px 11px; }
+.kwlist span { font-size: 22px; line-height: 1.3; }
+.s4 .ledger td b { font-weight: 700; color: var(--ink); background: rgba(240, 188, 42, 0.32); padding: 0 3px; }
+/* Key-message highlight, the slide-4 style as a deck-wide utility: one to three phrases per slide */
+.hl { font-weight: 700; color: var(--ink); background: rgba(240, 188, 42, 0.32); padding: 0 3px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.inked .hl, .dark .hl { background: #F0BC2A; color: var(--ink); }
+
+/* Slide 7: what blocks a bad config */
+.blk { color: var(--red); font-weight: 700; }
+
+/* Slide 9: render path */
+.flow { display: grid; grid-template-columns: 1fr 40px 1fr 40px 1fr 40px 1fr 40px 1fr; border: 1.5px solid var(--ink); align-items: stretch; flex: none; }
+.flow > div:not(.ar) { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 6px; }
+.flow .ar { display: grid; place-items: center; font-family: var(--font-display); font-weight: 900; font-size: 34px; }
+.flow .num { font-family: var(--font-display); font-weight: 900; font-size: 46px; line-height: 0.85; }
+.flow .ttl { font-family: var(--font-display); font-weight: 900; font-size: 32px; line-height: 0.95; }
+.flow .small { font-size: 18px; }
+.s9 pre.code { font-size: 18px; }
+
+
+/* ===========================================
+   SLIDE 1: COVER
+   =========================================== */
+.cover .ribbons { right: 0; top: 0; width: 820px; height: 1080px; }
+.cover .lockup {
+    position: absolute; left: 96px; top: 250px; z-index: 3;
+    background: var(--pink); color: var(--paper);
+    font-family: var(--font-display); font-weight: 900; font-size: 210px; line-height: 0.82;
+    letter-spacing: -0.025em; padding: 26px 40px 30px;
+}
+.cover .eyebrow { position: absolute; left: 100px; top: 178px; z-index: 3; }
+.cover h1 {
+    position: absolute; left: 100px; top: 540px; width: 920px; z-index: 3;
+    font-family: var(--font-display); font-weight: 900; font-size: 86px; line-height: 0.92; letter-spacing: -0.02em;
+}
+.cover .speaker { position: absolute; left: 100px; top: 822px; z-index: 3; display: flex; align-items: center; gap: 22px; }
+.cover .speaker .who { font-family: var(--font-display); font-weight: 900; font-size: 30px; letter-spacing: -0.01em; }
+.cover .panel {
+    position: absolute; right: 120px; top: 300px; width: 470px; z-index: 3;
+    background: var(--paper); border: 1.5px solid var(--ink); box-shadow: 8px 8px 0 var(--ink);
+    padding: 30px 34px 32px;
+}
+.cover .panel .micro { margin-bottom: 18px; }
+.cover .seal { position: absolute; right: 150px; top: 158px; z-index: 4; transform: rotate(-8deg); }
+.cover .stamp { position: absolute; right: 150px; top: 806px; z-index: 4; }
+.cover .foot {
+    position: absolute; left: 100px; right: 100px; bottom: 44px; z-index: 3;
+    border-top: 1.5px solid var(--ink); padding-top: 14px;
+    display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 16px; letter-spacing: 0.04em;
+}
+
+/* ===========================================
+   SLIDE 14: DEMO TOPOLOGY
+   =========================================== */
+.topo text { font-family: var(--font-mono); fill: var(--ink); }
+.topo .lbl { font-family: var(--font-display); font-weight: 900; font-size: 30px; letter-spacing: -0.01em; }
+.topo .sm { font-size: 14.5px; }
+.topo .xs { font-size: 13px; }
+.topo .pp { fill: var(--paper); }
+
+.steps { list-style: none; display: flex; flex-direction: column; }
+.steps li {
+    display: grid; grid-template-columns: 54px 1fr; gap: 14px; align-items: start;
+    border-bottom: 1px solid var(--ink-22); padding: 11px 0;
+}
+.steps li:last-child { border-bottom: none; }
+.steps .n {
+    font-family: var(--font-display); font-weight: 900; font-size: 40px; line-height: 0.9; color: var(--red);
+}
+.steps .h { font-weight: 700; font-size: 23px; line-height: 1.25; }
+.steps .d { font-size: 19.5px; line-height: 1.4; margin-top: 2px; }
+.steps code { font-size: 16.5px; }
+
+/* ===========================================
+   DISK DIAGRAM (SLIDE 5)
+   =========================================== */
+.disk { display: flex; height: 150px; border: 1.5px solid var(--ink); }
+.disk > div { border-right: 1.5px solid var(--ink); display: flex; flex-direction: column; justify-content: space-between; padding: 12px 14px; color: var(--paper); position: relative; }
+.disk > div:last-child { border-right: none; }
+.disk .seg-name { font-family: var(--font-display); font-weight: 900; font-size: 36px; line-height: 0.9; letter-spacing: -0.01em; }
+.disk .seg-sub { font-family: var(--font-mono); font-size: 14px; line-height: 1.25; }
+.disk .slot { display: flex; padding: 0; flex-direction: row; }
+.disk .slot > div { padding: 12px 14px; display: flex; flex-direction: column; justify-content: space-between; }
+.disk .slot > div + div { border-left: 1px dashed rgba(241, 230, 203, 0.7); }
+.disk .empty { background: repeating-linear-gradient(-45deg, var(--paper-dk) 0 10px, var(--paper) 10px 20px); color: var(--ink); }
+.disk .empty > div + div { border-left-color: var(--ink-60); }
+.bracket { display: flex; margin-top: 10px; }
+.bracket > div { border-top: 3px solid var(--ink); padding-top: 8px; margin-right: 8px; }
+
+/* ===========================================
+   CHAIN DIAGRAM (SLIDE 6)
+   =========================================== */
+.chain { display: flex; align-items: stretch; gap: 0; }
+.chain .lk { flex: 1; border: 1.5px solid var(--ink); padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; background: var(--paper); }
+.chain .lk .disp { font-size: 32px; }
+.chain .lk .small { font-size: 17px; }
+.chain .ar { width: 46px; flex: none; display: grid; place-items: center; font-family: var(--font-display); font-weight: 900; font-size: 38px; }
+
+/* ===========================================
+   PIPELINE (SLIDE 9)
+   =========================================== */
+.pipe { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0; border: 1.5px solid var(--ink); }
+.pipe > div { padding: 14px 16px 16px; border-right: 1.5px solid var(--ink); display: flex; flex-direction: column; gap: 6px; }
+.pipe > div:last-child { border-right: none; }
+.pipe .num { font-family: var(--font-display); font-weight: 900; font-size: 48px; line-height: 0.85; }
+.pipe .ttl { font-family: var(--font-display); font-weight: 900; font-size: 28px; line-height: 0.95; }
+.pipe .small { font-size: 16.5px; }
+.pipe .refuse { background: var(--paper-dk); }
+
+/* ===========================================
+   EQUALIZER-STYLE TIMELINE (SLIDE 11)
+   =========================================== */
+.tl { display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; }
+.tl .st { display: flex; flex-direction: column; gap: 8px; }
+.tl .bar { display: flex; flex-direction: column-reverse; gap: 4px; height: 92px; }
+.tl .bar i { flex: 1; background: var(--ink-10); border: 1px solid var(--ink-22); }
+.tl .bar i.on { border-color: transparent; }
+.tl .ttl { font-family: var(--font-display); font-weight: 900; font-size: 30px; line-height: 0.95; }
+.tl .small { font-size: 16.5px; }
+
+/* ===========================================
+   CLOSING SLIDE
+   =========================================== */
+.closing .ribbons { left: 0; top: 0; width: 760px; height: 1080px; }
+.closing h2 {
+    position: absolute; right: 110px; top: 150px; text-align: right; z-index: 3;
+    font-family: var(--font-display); font-weight: 900; font-size: 220px; line-height: 0.84; letter-spacing: -0.025em;
+}
+.closing .links { position: absolute; right: 110px; top: 560px; width: 860px; z-index: 3; }
+.closing .seal { position: absolute; left: 330px; top: 240px; z-index: 4; transform: rotate(6deg); width: 170px; font-size: 44px; }
+
+/* ===========================================
+   INLINE EDITING
+   Hover the top-left corner or press E. Ctrl+S downloads the edited file.
+   =========================================== */
+.edit-hotzone { position: fixed; top: 0; left: 0; width: 80px; height: 80px; z-index: 10000; cursor: pointer; }
+.edit-toggle {
+    position: fixed; top: 16px; left: 16px; z-index: 10001;
+    font: 700 13px/1 var(--font-body); letter-spacing: 0.16em; text-transform: uppercase;
+    background: var(--paper); color: var(--ink); border: 1.5px solid var(--ink);
+    padding: 10px 14px; cursor: pointer;
+    opacity: 0; pointer-events: none; transition: opacity 0.3s ease;
+}
+.edit-toggle.show, .edit-toggle.active { opacity: 1; pointer-events: auto; }
+.edit-toggle.active { background: var(--red); color: var(--paper); border-color: var(--red); }
+.editing [contenteditable="true"] { outline: 1.5px dashed rgba(229, 57, 42, 0.55); outline-offset: 2px; }
+.editing [contenteditable="true"]:focus { outline: 2px solid var(--red); }
+.edit-banner {
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 10001;
+    font: 500 13px/1.3 var(--font-mono); background: var(--ink); color: var(--paper);
+    padding: 8px 14px; display: none;
+}
+.editing .edit-banner { display: block; }
+
+/* Navigation hint: ambient chrome outside the stage */
+@media (max-width: 900px) { .nav-hint { display: none; } }
+.nav-hint {
+    position: fixed; left: 14px; bottom: 10px; z-index: 900;
+    font: 400 12px/1 var(--font-mono); color: var(--paper); opacity: 0.36; pointer-events: none;
+}
+</style>
+</head>
+<body>
+<!-- The chalkos logo (docs/assets/logo.svg), defined once and placed with <use href="#chalkos-logo"> -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="chalkos-logo" viewBox="2 2 36 36">
+    <g transform="rotate(-12 20 20)" fill="currentColor" stroke="currentColor" stroke-width=".7" stroke-linejoin="round">
+      <g transform="translate(7.8 22) rotate(1)" color="#dc4c77">
+        <path d="M-2.75 -8.5C-2.75 -10.2 2.75 -10.2 2.75 -8.5V10.5C2.75 12.3 -2.75 12.3 -2.75 10.5Z"/>
+        <ellipse cy="-8.5" rx="2.65" ry="1.1" fill="#fff4dc" fill-opacity=".55" stroke="none"/>
+      </g>
+      <g transform="translate(13.8 21)" color="#ed813c">
+        <path d="M-2.95 -14C-2.95 -15.7 2.95 -15.7 2.95 -14V9C2.95 10.8 -2.95 10.8 -2.95 9Z"/>
+        <ellipse cy="-14" rx="2.85" ry="1.1" fill="#fff4dc" fill-opacity=".55" stroke="none"/>
+      </g>
+      <g transform="translate(20 22)" color="#edb832">
+        <path d="M-3.05 -10C-3.05 -11.8 3.05 -11.8 3.05 -10V12.4C3.05 14.3 -3.05 14.3 -3.05 12.4Z"/>
+        <ellipse cy="-10" rx="2.95" ry="1.2" fill="#fff4dc" fill-opacity=".55" stroke="none"/>
+      </g>
+      <g transform="translate(26.2 21)" color="#53935b">
+        <path d="M-2.95 -15C-2.95 -16.8 2.95 -16.8 2.95 -15V11C2.95 12.8 -2.95 12.8 -2.95 11Z"/>
+        <ellipse cy="-15" rx="2.85" ry="1.2" fill="#fff4dc" fill-opacity=".55" stroke="none"/>
+      </g>
+      <g transform="translate(32.2 22) rotate(-1)" color="#4688af">
+        <path d="M-2.75 -6.5C-2.75 -8.2 2.75 -8.2 2.75 -6.5V9.7C2.75 11.5 -2.75 11.5 -2.75 9.7Z"/>
+        <ellipse cy="-6.5" rx="2.65" ry="1.1" fill="#fff4dc" fill-opacity=".55" stroke="none"/>
+      </g>
+    </g>
+  </symbol>
+</svg>
+<div class="edit-hotzone" aria-hidden="true"></div>
+<button class="edit-toggle" id="editToggle" title="Edit mode (E)" aria-label="Toggle edit mode">Edit</button>
+<div class="edit-banner" role="status">Edit mode: click text to change it · Ctrl+S saves a copy · E or Esc leaves</div>
+
+<div class="deck-viewport">
+<main class="deck-stage" id="deckStage" aria-live="polite">
+
+<!-- =====================================================================
+     SLIDE 1: TITLE
+     ===================================================================== -->
+<section class="slide cover active" aria-label="Title">
+    <div class="ribbons" aria-hidden="true">
+        <div class="rb" style="--rot:-22deg; top:300px; background:var(--pink)"></div>
+        <div class="rb" style="--rot:-22deg; top:364px; background:var(--orange)"></div>
+        <div class="rb" style="--rot:-22deg; top:428px; background:var(--yellow)"></div>
+        <div class="rb" style="--rot:-22deg; top:492px; background:var(--green)"></div>
+        <div class="rb" style="--rot:-22deg; top:556px; background:var(--blue)"></div>
+    </div>
+    <svg class="brandlogo" role="img" aria-label="chalkos logo"><use href="#chalkos-logo"/></svg>
+
+    <p class="eyebrow micro xl reveal" style="--i:0">A toolkit for immutable operating systems</p>
+    <div class="lockup reveal" style="--i:1">chalkos</div>
+    <h1 class="reveal" style="--i:2">Build your own API-driven, immutable Linux from <em>NixOS modules</em></h1>
+    <div class="speaker reveal" style="--i:3">
+        <span class="micro lg">Speaker</span>
+        <span class="who">Niklas Voss</span>
+    </div>
+
+    <div class="seal" aria-hidden="true"><span>NIX<br>OS</span></div>
+    <div class="panel reveal" style="--i:3">
+        <p class="micro lg">Every node</p>
+        <ul class="checklist">
+            <li class="on">Secure Boot, signed UKI</li>
+            <li class="on">dm-verity store</li>
+            <li class="on">TPM-sealed LUKS2</li>
+            <li class="on">A/B slots, fallback</li>
+            <li class="on">mTLS node API</li>
+            <li class="off"><s>SSH, shell, logins</s></li>
+        </ul>
+    </div>
+    <div class="stamp reveal" style="--i:4">Unreleased</div>
+    <div class="foot reveal" style="--i:5">
+        <span>github.com/trevex/chalkos</span>
+        <span>trevex.github.io/chalkos</span>
+    </div>
+</section>
+
+<!-- =====================================================================
+     SLIDE 2: MOTIVATION 1, THE LICENCE WORRY
+     ===================================================================== -->
+<section class="slide" aria-label="Motivation: the licence">
+    <div class="frame">
+        <div class="topbar">
+            <h2>I love <em>Talos</em></h2>
+            <div class="meta micro lg">Motivation · 1 of 2</div>
+        </div>
+        <div class="body col" style="gap:30px">
+            <div class="row fill" style="gap:44px">
+                <div class="card reveal" style="--i:0; width:760px; flex:none">
+                    <div class="strip blue"></div>
+                    <div class="cb" style="gap:14px">
+                        <div class="name" style="font-size:52px">What its model gets right</div>
+                        <p style="font-size:24px">Talos Linux showed how a Kubernetes node can work: a read-only image, no logins, and every change through an API.</p>
+                        <div class="dash"></div>
+                        <ul class="kwlist">
+                            <li><b style="background:var(--blue)">API-driven</b><span>every change through one API</span></li>
+                            <li><b style="background:var(--pink)">mTLS roles</b><span>client certificates of a role: reader, operator, admin</span></li>
+                            <li><b style="background:var(--orange)">Immutable</b><span>the node boots a read-only image</span></li>
+                            <li><b style="background:var(--red)">No SSH, no shell</b><span>nothing to log in to, nothing drifts</span></li>
+                            <li><b style="background:var(--green)">A/B upgrades</b><span>the whole image, with rollback</span></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="col fill" style="gap:34px">
+                    <div class="qbox reveal" style="--i:1">
+                        <p class="micro lg" style="margin-bottom:14px; color:var(--blue)">My worry</p>
+                        <p class="disp" style="font-size:68px; line-height:0.95">One vendor decides the <em style="color:var(--blue)">licence</em> of the base my machines run on.</p>
+                        <p style="margin-top:18px; font-size:23px">The worry is about <b class="hl">who holds that decision</b>. A fleet runs for years, and I would rather build its operating system from parts I can rebuild myself.</p>
+                    </div>
+                    <div class="reveal" style="--i:2">
+                        <p class="micro" style="margin-bottom:10px">Licence changes elsewhere in infrastructure software</p>
+                        <table class="ledger">
+                            <thead><tr><th style="width:100px">Year</th><th>Project</th><th>From</th><th>To</th></tr></thead>
+                            <tbody>
+                                <tr><td class="m">2021</td><td class="t">Elasticsearch</td><td class="m">Apache 2.0</td><td class="m">SSPL / Elastic Licence</td></tr>
+                                <tr><td class="m">2023</td><td class="t">Terraform</td><td class="m">MPL 2.0</td><td class="m">BUSL 1.1</td></tr>
+                                <tr><td class="m">2024</td><td class="t">Redis</td><td class="m">BSD 3-clause</td><td class="m">RSALv2 / SSPLv1</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="card inked reveal" style="--i:3; flex:none">
+                <div class="cb" style="flex-direction:row; align-items:center; gap:36px; padding:22px 30px">
+                    <span class="micro lg" style="color:var(--yellow); flex:none">The question</span>
+                    <span class="disp" style="font-size:46px; line-height:1">Can I get the same model from parts I already trust, such as NixOS modules and nixpkgs?</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="footmark"><svg class="logo" aria-hidden="true"><use href="#chalkos-logo"/></svg>chalkos · Niklas Voss</div>
+    <div class="pagenum">02 / 16</div>
+</section>
+
+<!-- =====================================================================
+     SLIDE 3: MOTIVATION 2, ONLY KUBERNETES
+     ===================================================================== -->
+<section class="slide s3" aria-label="Motivation: more than Kubernetes">
+    <div class="frame">
+        <div class="topbar">
+            <h2>I love Talos, but it runs <em>Kubernetes</em> only</h2>
+            <div class="meta micro lg">Motivation · 2 of 2</div>
+        </div>
+        <div class="body col" style="gap:34px">
+            <p class="lead reveal" style="--i:0">My other machines deserve <b class="hl">the same model</b>. Today each is installed and patched its own way.</p>
+            <div class="grid" style="grid-template-columns:repeat(3, 1fr); gap:28px">
+                <div class="card reveal" style="--i:1">
+                    <div class="strip orange"></div>
+                    <div class="cb"><div class="name">Routers</div><p>Firewall, BGP, DNS, DHCP and VPN <b class="hl">in front of the cluster</b>.</p></div>
+                </div>
+                <div class="card reveal" style="--i:2">
+                    <div class="strip pink"></div>
+                    <div class="cb"><div class="name">Appliances</div><p>One service on one machine, with <b class="hl">nobody at the console</b>.</p></div>
+                </div>
+                <div class="card reveal" style="--i:3">
+                    <div class="strip green"></div>
+                    <div class="cb"><div class="name">Edge boxes</div><p>Remote machines that must <b class="hl">survive a bad upgrade</b> alone.</p></div>
+                </div>
+            </div>
+            <div class="wish card inked reveal" style="--i:4">
+                <div class="cb">
+                    <span class="micro lg" style="color:var(--yellow)">The wish</span>
+                    <span class="disp" style="font-size:82px; line-height:0.92">One model for <em style="color:var(--yellow)">all of them</em></span>
+                    <div class="wish-tiles">
+                        <div style="background:var(--blue)">Read-only image</div>
+                        <div style="background:var(--pink)">Node API over mTLS</div>
+                        <div style="background:var(--orange)">A/B upgrade with fallback</div>
+                        <div style="background:var(--green)">Config checked before it lands</div>
+                        <div style="background:var(--red)">No logins</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="footmark"><svg class="logo" aria-hidden="true"><use href="#chalkos-logo"/></svg>chalkos · Niklas Voss</div>
+    <div class="pagenum">03 / 16</div>
+</section>
+
+
+<!-- =====================================================================
+     SLIDE 4: WHAT CHALKOS IS
+     ===================================================================== -->
+<section class="slide s4" aria-label="What chalkos is">
+    <aside class="notes" hidden>Nix builds the images and nothing else; chalkctl delivers images and YAML and never runs Nix, so the machine that operates the nodes needs no Nix. A NixOS machine changes in place with nixos-rebuild; a chalkos node has no Nix daemon and no switch-to-configuration, so only config changes without a reboot.</aside>
+    <div class="frame">
+        <div class="topbar">
+            <h2>So build the <em>distribution</em></h2>
+            <div class="meta micro lg">What chalkos is</div>
+        </div>
+        <div class="body row" style="gap:40px">
+            <div class="col" style="width:820px; flex:none; gap:24px">
+                <p class="lead reveal" style="--i:0; font-size:30px">A toolkit that builds API-driven, immutable Linux distributions <b class="hl">from NixOS modules</b>.</p>
+                <div class="reveal" style="--i:1; display:grid; grid-template-columns:1fr 40px 1fr 40px 1fr; align-items:stretch">
+                    <div class="card"><div class="strip ink" style="height:10px"></div><div class="cb" style="padding:12px 14px; gap:4px"><span class="micro">Nix builds</span><span class="mono" style="font-size:16px">mkImages + modules</span></div></div>
+                    <div class="arrow" style="font-size:34px">→</div>
+                    <div class="card"><div class="strip ink" style="height:10px"></div><div class="cb" style="padding:12px 14px; gap:4px"><span class="micro">Image dir</span><span class="mono" style="font-size:16px">disk + schemas</span></div></div>
+                    <div class="arrow" style="font-size:34px">→</div>
+                    <div class="card"><div class="strip ink" style="height:10px"></div><div class="cb" style="padding:12px 14px; gap:4px"><span class="micro">chalkctl delivers</span><span class="mono" style="font-size:16px">node API, mTLS</span></div></div>
+                </div>
+                <div class="grid fill" style="grid-template-columns:repeat(3, 1fr); gap:18px">
+                    <div class="card reveal" style="--i:2">
+                        <div class="strip blue"></div>
+                        <div class="cb" style="padding:18px 20px; gap:12px">
+                            <div class="name" style="font-size:40px">Kubernetes layer</div>
+                            <p style="font-size:23px"><b class="hl">Much like a Talos node.</b></p>
+                            <div class="dash"></div>
+                            <ul class="spec" style="font-size:19px; gap:10px"><li>kubelet, etcd, control plane</li><li>VIP, BGP speaker</li><li>cluster registry</li></ul>
+                            <span class="mono" style="font-size:16px; margin-top:auto">nixosModules.kubernetes</span>
+                        </div>
+                    </div>
+                    <div class="card reveal" style="--i:3">
+                        <div class="strip orange"></div>
+                        <div class="cb" style="padding:18px 20px; gap:12px">
+                            <div class="name" style="font-size:40px">Router layer</div>
+                            <p style="font-size:23px">Between <b class="hl">Talos and VyOS</b>.</p>
+                            <div class="dash"></div>
+                            <ul class="spec" style="font-size:19px; gap:10px"><li>firewall, NAT, BGP</li><li>VRFs, NAT64, DNS</li><li>DHCP, WireGuard, NTP</li></ul>
+                            <span class="mono" style="font-size:16px; margin-top:auto">nixosModules.router</span>
+                        </div>
+                    </div>
+                    <div class="card reveal" style="--i:4">
+                        <div class="strip pink"></div>
+                        <div class="cb" style="padding:18px 20px; gap:12px">
+                            <div class="name" style="font-size:40px">Your own</div>
+                            <p style="font-size:23px">No layer: a <b class="hl">minimal appliance</b>.</p>
+                            <div class="dash"></div>
+                            <ul class="spec" style="font-size:19px; gap:10px"><li>network, disks, time</li><li>node API</li><li>your modules</li></ul>
+                            <span class="mono" style="font-size:16px; margin-top:auto">your NixOS modules</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col fill reveal" style="--i:5">
+                <p class="micro" style="margin-bottom:-6px">Compared with Talos, from the docs</p>
+                <table class="ledger">
+                    <thead><tr><th style="width:150px">Topic</th><th>Talos</th><th>chalkos</th></tr></thead>
+                    <tbody>
+                        <tr><td class="t">Purpose</td><td>A distribution for <b>Kubernetes nodes</b></td><td><b>Builds distributions</b>: Kubernetes, <b>routers, other appliances</b></td></tr>
+                        <tr><td class="t">Config</td><td><b>One machine config</b> per node, Talos's own schema</td><td>Kubernetes-style YAML, <b>one kind per concern</b>; <b>kinds and schemas ship in the image</b></td></tr>
+                        <tr><td class="t">Upgrades</td><td>Node keeps <b>one config</b> across upgrades</td><td><b>One config slot per image</b>; a rollback boots <b>its own config</b></td></tr>
+                        <tr><td class="t">Images</td><td><b>One image</b>, signed system extensions</td><td><b>One image per kind of node</b>, from <b>NixOS modules</b></td></tr>
+                        <tr><td class="t">Node CA</td><td>Control planes hold <b>the root CA's key</b></td><td>Control planes hold <b>a node CA</b>; the OS CA key <b>stays offline</b></td></tr>
+                        <tr><td class="t">Maturity</td><td><b>Released</b>, many platforms</td><td><b>Unreleased</b>; x86-64 bare metal and KVM</td></tr>
+                    </tbody>
+                </table>
+                <div class="card inked" style="margin-top:auto"><div class="cb" style="padding:18px 24px; gap:8px">
+                    <span class="micro" style="color:var(--yellow)">Compared with NixOS</span>
+                    <span style="font-size:22px">No Nix daemon, no rebuild on the node: <b class="hl">a software change is a new image</b>.</span>
+                </div></div>
+            </div>
+        </div>
+    </div>
+    <div class="footmark"><svg class="logo" aria-hidden="true"><use href="#chalkos-logo"/></svg>chalkos · Niklas Voss</div>
+    <div class="pagenum">04 / 16</div>
+</section>
+
+<!-- =====================================================================
+     SLIDE 5: ANATOMY OF A NODE
+     ===================================================================== -->
+<section class="slide s5" aria-label="Anatomy of a node">
+    <div class="frame">
+        <div class="topbar">
+            <h2>Anatomy of a <em>node</em></h2>
+            <div class="meta micro lg">EFI · systemd-boot · UKI · A/B slots</div>
+        </div>
+        <div class="body col" style="gap:34px">
+            <div class="reveal" style="--i:0">
+                <div class="disk">
+                    <div style="width:210px; background:var(--red)">
+                        <span class="seg-name">ESP</span>
+                        <span class="seg-sub">vfat · 1 GiB<br>systemd-boot<br>chalkos_&lt;gen&gt;.efi</span>
+                    </div>
+                    <div class="slot" style="width:430px; background:var(--orange)">
+                        <div style="width:150px"><span class="seg-name" style="font-size:28px">verity</span><span class="seg-sub">128 MiB<br>hash tree</span></div>
+                        <div style="flex:1"><span class="seg-name">Slot A</span><span class="seg-sub">store_&lt;hash16&gt;<br>erofs, zstd · 3 GiB</span></div>
+                    </div>
+                    <div class="slot empty" style="width:380px">
+                        <div style="width:130px"><span class="seg-name" style="font-size:28px">verity</span><span class="seg-sub">_empty</span></div>
+                        <div style="flex:1"><span class="seg-name">Slot B</span><span class="seg-sub">_empty until<br>an upgrade</span></div>
+                    </div>
+                    <div style="width:210px; background:var(--blue)">
+                        <span class="seg-name">STATE</span>
+                        <span class="seg-sub">ext4 · 128 MiB<br>LUKS2, TPM</span>
+                    </div>
+                    <div style="flex:1; background:var(--green)">
+                        <span class="seg-name">VAR</span>
+                        <span class="seg-sub">/var · rest of disk<br>LUKS2, TPM</span>
+                    </div>
+                    <div style="width:150px; background:var(--pink)">
+                        <span class="seg-name" style="font-size:30px">Volumes</span>
+                        <span class="seg-sub">60-&lt;name&gt;<br>from config</span>
+                    </div>
+                </div>
+                <div class="bracket">
+                    <div style="width:1232px"><span class="micro">System region: fixed by the image, the same on each of its nodes</span></div>
+                    <div style="flex:1; margin-right:0"><span class="micro">From config: SystemDisk, Volume</span></div>
+                </div>
+            </div>
+            <div class="grid fill" style="grid-template-columns:repeat(3, 1fr); gap:28px">
+                <div class="callout reveal" style="--i:1">
+                    <span class="num" style="color:var(--red)">1</span>
+                    <span class="ttl">EFI boot of a signed UKI</span>
+                    <p>systemd-boot starts one UKI per slot. Kernel, initrd and command line sit under <b class="hl">one signature</b>.</p>
+                </div>
+                <div class="callout reveal" style="--i:2">
+                    <span class="num" style="color:var(--orange)">2</span>
+                    <span class="ttl">A/B slots, root hash as identity</span>
+                    <p><b class="hl">An upgrade writes the inactive slot.</b> The store's <b class="hl">dm-verity root hash names the image</b>; there is no version number.</p>
+                </div>
+                <div class="callout reveal" style="--i:3">
+                    <span class="num" style="color:var(--blue)">3</span>
+                    <span class="ttl">Encrypted STATE and VAR</span>
+                    <p>LUKS2 with <b class="hl">keys sealed by the TPM</b>. STATE holds config and certificates, VAR what services write; root is a tmpfs.</p>
+                </div>
+            </div>
+            <div class="stats reveal" style="--i:5">
+                <div><span class="micro">The build checks the fit · Kubernetes image, metal</span></div>
+                <div><span class="num" style="color:var(--red)">246<small>MiB</small></span><span class="small">store data, erofs</span></div>
+                <div><span class="num" style="color:var(--orange)">2<small>MiB</small></span><span class="small">dm-verity hash tree</span></div>
+                <div><span class="num" style="color:var(--blue)">44<small>MiB</small></span><span class="small">UKI, mostly initrd</span></div>
+                <div><span class="num" style="color:var(--green)">80<small>%</small></span><span class="small">most a part may fill of its partition</span></div>
+                <div><span class="num" style="color:var(--pink)">~300<small>MiB</small></span><span class="small">sent per node by an upgrade</span></div>
+            </div>
+        </div>
+    </div>
+    <div class="footmark"><svg class="logo" aria-hidden="true"><use href="#chalkos-logo"/></svg>chalkos · Niklas Voss</div>
+    <div class="pagenum">05 / 16</div>
+</section>
+
+
+<!-- =====================================================================
+     SLIDE 6: TRUST CHAIN
+     ===================================================================== -->
+<section class="slide s6" aria-label="Trust chain">
+    <aside class="notes" hidden>The db key never enters /nix/store; chalkbuild signs a copy on the machine that holds it. dm-verity checks 4 KiB blocks on read. Fallback keyslot is the recovery key by default, or a password, or none; the recovery key derives from the secrets file and the node name. Clients: the secrets file issues a one-hour admin certificate that is never written to disk; chalkctl client new --role issues client files; the node role may only renew. Control planes hold a node CA that issues node certificates only. An operator upgrade carries no config. In maintenance mode chalkctl pins the node's self-signed certificate by its SHA-256 fingerprint; the console uses a root-only socket and each method says whether the console may call it.</aside>
+    <div class="frame">
+        <div class="topbar">
+            <h2>Trust from firmware to <em>API call</em></h2>
+            <div class="meta micro lg">Secure Boot · dm-verity · TPM2 · mTLS</div>
+        </div>
+        <div class="body col" style="gap:30px">
+            <div class="chain reveal" style="--i:0">
+                <div class="lk"><span class="micro">Firmware</span><span class="disp">db certificate</span><span class="small">Enrolled by <code>chalkctl secureboot</code></span></div>
+                <div class="ar">→</div>
+                <div class="lk"><span class="micro">Verifies</span><span class="disp">systemd-boot + UKI</span><span class="small">Signed by <code>chalkbuild sign</code></span></div>
+                <div class="ar">→</div>
+                <div class="lk"><span class="micro">UKI cmdline</span><span class="disp">usrhash= root hash</span><span class="small">Under the same signature</span></div>
+                <div class="ar">→</div>
+                <div class="lk"><span class="micro">dm-verity</span><span class="disp">hash tree</span><span class="small">A changed block fails to read</span></div>
+                <div class="ar">→</div>
+                <div class="lk dark" style="background:var(--ink); color:var(--paper)"><span class="micro">Result</span><span class="disp">every store byte</span><span class="small"><b class="hl">One signature covers the whole OS</b></span></div>
+            </div>
+            <div class="grid fill" style="grid-template-columns:1fr 1fr 1fr; gap:24px">
+                <div class="card reveal" style="--i:1">
+                    <div class="strip blue"></div>
+                    <div class="cb" style="gap:14px">
+                        <div class="name" style="font-size:42px">Disks tied to the machine</div>
+                        <p style="font-size:24px">STATE, VAR and volumes are LUKS2, <b class="hl">keys sealed by the TPM</b> to the Secure Boot state.</p>
+                        <div class="dash"></div>
+                        <ul class="spec" style="font-size:20.5px; gap:10px">
+                            <li>Same db key: upgrades unlock unattended</li>
+                            <li>Disk moved or Secure Boot changed: no unseal</li>
+                            <li>Fallback: the node's recovery key</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="card reveal" style="--i:2">
+                    <div class="strip pink"></div>
+                    <div class="cb" style="gap:14px">
+                        <div class="name" style="font-size:42px">chalkd is the only way in</div>
+                        <p style="font-size:24px">Node API on TCP 50000, mutual TLS, client chain checked <b class="hl">on every request</b>.</p>
+                        <div class="dash"></div>
+                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+                            <span class="chip green">reader</span><span class="mono">&lt;</span><span class="chip orange">operator</span><span class="mono">&lt;</span><span class="chip red">admin</span>
+                        </div>
+                        <ul class="spec" style="font-size:20.5px; gap:10px">
+                            <li>No SSH, no login</li>
+                            <li>Client files of one role each</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="card reveal" style="--i:3">
+                    <div class="strip red"></div>
+                    <div class="cb" style="gap:14px">
+                        <div class="name" style="font-size:42px">Ending access</div>
+                        <p style="font-size:24px">No revocation list on nodes: <b class="hl">access ends with the certificate</b>, or a rotation.</p>
+                        <div class="dash"></div>
+                        <ul class="spec" style="font-size:20.5px; gap:10px">
+                            <li><b>chalkctl rotate os-ca</b> cuts old certificates off</li>
+                            <li><b>chalkctl node revoke</b> on Kubernetes</li>
+                            <li>The OS CA key stays in the secrets file</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="footmark"><svg class="logo" aria-hidden="true"><use href="#chalkos-logo"/></svg>chalkos · Niklas Voss</div>
+    <div class="pagenum">06 / 16</div>
+</section>
+
+<!-- =====================================================================
+     SLIDE 7: CUSTOMISE
+     ===================================================================== -->
+<section class="slide s7" aria-label="Customise with NixOS modules">
+    <aside class="notes" hidden>The flake follows the homelab example; the extensions line and the bgp.enable toggle are added for illustration. A platform adds the console, agents and drivers of a kind of machine, and mkImages also builds the installer. Rules that read facts run on the node only; chalkctl runs the others. The router layer's validator also runs in chalkctl. Turning a feature off also removes its effects and diagnostics, and the image then rejects its kinds.</aside>
+    <div class="frame">
+        <div class="topbar">
+            <h2>Customise with plain <em>NixOS modules</em></h2>
+            <div class="meta micro lg">mkImages · layers · extensions · toggles</div>
+        </div>
+        <div class="body row" style="gap:36px">
+            <div class="col" style="width:700px; flex:none; gap:18px">
+                <div class="reveal" style="--i:0">
+                    <div class="codehead"><span>flake.nix</span><span>after the homelab example</span></div>
+<pre class="code">images = chalkos.lib.<span class="k">mkImages</span> {
+  revision = self.rev or self.dirtyRev or null;
+  images = [
+    {
+      name = <span class="s">"router-metal"</span>;
+      platform = <span class="s">"metal"</span>;
+      modules = [ chalkos.nixosModules.<span class="p">router</span> ];
+    }
+    {
+      name = <span class="s">"node-metal"</span>;
+      platform = <span class="s">"metal"</span>;
+      modules = [
+        chalkos.nixosModules.<span class="p">kubernetes</span>
+        ./extensions      <span class="c"># your kinds</span>
+        { chalkos.kubernetes.<span class="g">bgp.enable</span> = false; }
+      ];
+    }
+  ];
+};</pre>
+                </div>
+                <p class="small reveal" style="--i:1; font-size:23px"><b class="hl">One layer per image</b>, plus a platform: <code>metal</code> or <code>kvm</code>.</p>
+            </div>
+            <div class="col fill" style="gap:18px">
+                <div class="reveal" style="--i:2">
+                    <p class="micro" style="margin-bottom:8px">An extension is a NixOS module that sets these options</p>
+                    <table class="ledger">
+                        <thead><tr><th style="width:240px">Option</th><th>What it does</th><th style="width:300px">Where it runs</th></tr></thead>
+                        <tbody>
+                            <tr><td class="m">chalkos.kinds</td><td>A typed config kind. <b class="blk">Rejects invalid documents.</b></td><td>chalkctl and the node</td></tr>
+                            <tr><td class="m">…kinds.&lt;Kind&gt;.rules</td><td>CEL against the running config. <b class="blk">Rejects forbidden changes.</b></td><td>chalkctl and the node</td></tr>
+                            <tr><td class="m">chalkos.validators</td><td>Checks all documents together. <b class="blk">Rejects what it reports.</b></td><td>The node</td></tr>
+                            <tr><td class="m">chalkos.outputs</td><td>Renders config files. <b class="blk">Rejects files that fail their check.</b></td><td>The node, at each change and boot</td></tr>
+                            <tr><td class="m">chalkos.effects</td><td><b class="hl">Reloads or restarts</b> units after a change</td><td>The node</td></tr>
+                            <tr><td class="m">chalkos.diagnostics</td><td><b class="hl">Read-only commands</b> for <code>chalkctl node diag</code></td><td>The node, on request</td></tr>
+                            <tr><td class="m">chalkos.tests</td><td><b class="hl">Expected files, rejections and effects</b></td><td>Build time, Nix sandbox</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="card inked reveal" style="--i:3; margin-top:auto">
+                    <div class="cb" style="padding:16px 22px; gap:10px">
+                        <span class="micro" style="color:var(--yellow)">Feature toggles: on by default, off per image</span>
+                        <div style="display:flex; flex-wrap:wrap; gap:8px">
+                            <span class="chip pink">kubernetes.bgp</span><span class="chip pink">kubernetes.registry</span>
+                            <span class="chip orange">router.bgp</span><span class="chip orange">router.nat64</span><span class="chip orange">router.resolver</span>
+                            <span class="chip orange">router.dhcp</span><span class="chip orange">router.dhcpRelay</span><span class="chip orange">router.wireguard</span><span class="chip orange">router.ntp</span>
+                        </div>
+                        <span style="font-size:20px"><b class="hl">Off removes the feature</b>: its packages, kinds and outputs.</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="footmark"><svg class="logo" aria-hidden="true"><use href="#chalkos-logo"/></svg>chalkos · Niklas Voss</div>
+    <div class="pagenum">07 / 16</div>
+</section>
+
+
+<!-- =====================================================================
+     SLIDE 8: KINDS SHIP IN THE IMAGE
+     ===================================================================== -->
+<section class="slide s8" aria-label="Kinds ship in the image">
+    <aside class="notes" hidden>A kind has fields as NixOS options with types and defaults, and CEL rules that compare a document with the one the node runs. The schema lands in the image directory and at /etc/chalkos/schemas on the node; rules compile at build time within a cost limit. chalkctl config apply fetches the running config first, so rules that read oldSelf also run before anything is sent. A node whose image lacks a kind refuses its documents. A fallback boots the old image with the config it understood.</aside>
+    <div class="frame">
+        <div class="topbar">
+            <h2>Config kinds ship <em>in the image</em></h2>
+            <div class="meta micro lg">The headline idea</div>
+        </div>
+        <div class="body col" style="gap:20px">
+            <p class="lead reveal" style="--i:0; max-width:1640px">A module declares a kind like a CRD: typed fields and CEL rules. The build ships it as JSON Schema, so <b class="hl">config is checked against the image that will run it</b>.</p>
+            <div style="display:grid; grid-template-columns:600px 46px 1fr 46px 560px; flex:1; min-height:0">
+                <div class="col reveal" style="--i:1; gap:0">
+                    <div class="codehead"><span>1 · Declare</span><span>bgp.nix of the BIRD example, shortened</span></div>
+<pre class="code" style="flex:1">chalkos.kinds.<span class="p">Peer</span> = {
+  group = <span class="s">"bgp.example.org"</span>;
+  version = <span class="s">"v1alpha1"</span>;
+  multiple = true;
+  spec.asn = chalkosLib.<span class="k">mkOption</span> {
+    type = lib.types.ints.between 1 4294967295;
+    description = <span class="s">"AS number of the neighbour."</span>;
+    rules = [{
+      rule = <span class="g">"self == oldSelf"</span>;
+      messageExpression = <span class="g">''"the AS number
+        stays " + string(oldSelf) + ...''</span>;
+    }];
+  };
+  <span class="c"># address, interfaces, password, bfd ...</span>
+};</pre>
+                </div>
+                <div class="arrow">→</div>
+                <div class="col reveal" style="--i:2; gap:0">
+                    <div class="codehead"><span>2 · Build</span><span>schemas/…_Peer.json</span></div>
+<pre class="code" style="flex:1">{
+  <span class="b">"type"</span>: <span class="s">"integer"</span>,
+  <span class="b">"minimum"</span>: 1,
+  <span class="b">"maximum"</span>: 4294967295,
+  <span class="b">"x-chalkos-rules"</span>: [{
+    <span class="b">"rule"</span>: <span class="g">"self == oldSelf"</span>,
+    <span class="b">"takes"</span>: <span class="s">"refuse"</span>
+  }]
+}
+
+<span class="c"># In the image directory and in
+# /etc/chalkos/schemas on the node.
+# Rules compile at build time,
+# within a cost limit.</span></pre>
+                </div>
+                <div class="arrow">→</div>
+                <div class="col reveal" style="--i:3; gap:12px">
+                    <div class="codehead" style="border-bottom:1.5px solid var(--ink)"><span>3 · Check, before and on the node</span><span></span></div>
+                    <div class="card"><div class="cb" style="padding:12px 16px; gap:6px">
+                        <span class="micro">chalkctl validate · no node needed</span>
+                        <span class="mono" style="font-size:14.5px; line-height:1.4">node node1: Peer "router": - at '/spec': additional properties 'asm' not allowed</span>
+                    </div></div>
+                    <div class="card"><div class="cb" style="padding:12px 16px; gap:6px">
+                        <span class="micro">config apply · asn 65000 → 65002</span>
+                        <span class="mono" style="font-size:14.5px; line-height:1.4">spec.asn: the AS number stays 65000; add a Peer of another name for 65002</span>
+                    </div></div>
+                    <ul class="spec" style="font-size:15.5px">
+                        <li>chalkctl runs the rules that read no facts</li>
+                        <li>The node <b class="hl">runs every rule again</b></li>
+                                            </ul>
+                </div>
+            </div>
+            <div class="card inked reveal" style="--i:4; flex:none">
+                <div class="cb" style="flex-direction:row; align-items:center; gap:30px; padding:18px 28px">
+                    <span class="micro lg" style="color:var(--yellow); flex:none">Why per image</span>
+                    <span style="font-size:25px">A new image may change a kind incompatibly: <b class="hl">its own schemas check the config it boots</b>.</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="footmark"><svg class="logo" aria-hidden="true"><use href="#chalkos-logo"/></svg>chalkos · Niklas Voss</div>
+    <div class="pagenum">08 / 16</div>
+</section>
+
+<!-- =====================================================================
+     SLIDE 9: OUTPUTS AND EFFECTS
+     ===================================================================== -->
+<section class="slide s9" aria-label="Outputs and effects">
+    <div class="frame">
+        <div class="topbar">
+            <h2>Documents in, <em>services</em> out</h2>
+            <div class="meta micro lg">The BIRD BGP extension example</div>
+        </div>
+        <div class="body col" style="gap:24px">
+            <div class="flow reveal" style="--i:0">
+                <div><span class="num" style="color:var(--blue)">1</span><span class="ttl">Documents</span><span class="small">The node's <b>Speaker</b> and <b>Peer</b> YAML</span></div>
+                <div class="ar">→</div>
+                <div><span class="num" style="color:var(--pink)">2</span><span class="ttl">Render</span><span class="small">A Go <code>text/template</code>: bird.conf.tmpl</span></div>
+                <div class="ar">→</div>
+                <div><span class="num" style="color:var(--orange)">3</span><span class="ttl">Output files</span><span class="small"><code>bird.conf</code> in the output's directory</span></div>
+                <div class="ar">→</div>
+                <div><span class="num" style="color:var(--green)">4</span><span class="ttl">Check</span><span class="small"><code>bird -p</code> parses it without running it</span></div>
+                <div class="ar">→</div>
+                <div><span class="num" style="color:var(--red)">5</span><span class="ttl">Effect</span><span class="small">Reload <code>bird.service</code> when bird.conf changed</span></div>
+            </div>
+            <div class="grid fill" style="grid-template-columns:1fr 1fr 1fr; gap:24px">
+                <div class="col reveal" style="--i:1; gap:0">
+                    <div class="codehead"><span>bird.conf.tmpl</span><span>excerpt, lines wrapped</span></div>
+<pre class="code" style="flex:1">{{- range $.documents.Peer }}
+{{- $peer := . }}
+{{- range .spec.interfaces }}
+
+protocol bgp <span class="s">'{{ $peer.metadata.name }}_{{ . }}'</span> {
+  local as {{ $asn }};
+  neighbor {{ $peer.spec.address }}
+    as {{ $peer.spec.asn }};
+  interface {{ quote . }};
+{{- if $peer.spec.bfd }}
+  bfd on;
+{{- end }}
+  ...</pre>
+                </div>
+                <div class="col reveal" style="--i:2; gap:0">
+                    <div class="codehead"><span>bird.conf, rendered</span><span>golden file, excerpt, wrapped</span></div>
+<pre class="code" style="flex:1">protocol bgp <span class="s">'router_enp1s0'</span> {
+  local as 65001;
+  neighbor fdc8:a1b2:c3d4:1::1
+    as 65000;
+  interface "enp1s0";
+  direct;
+  connect retry time 5;
+  bfd on;
+  authentication md5;
+  password <span class="s">'secret_bgp.password'</span>;
+  ...</pre>
+                </div>
+                <div class="col reveal" style="--i:3; gap:0">
+                    <div class="codehead"><span>bgp.nix</span><span>simplified</span></div>
+<pre class="code" style="flex:1">chalkos.outputs.<span class="p">bird-conf</span> = {
+  inputs = [ <span class="s">"Speaker"</span> <span class="s">"Peer"</span> ];
+  render = chalkosLib.render
+    .<span class="k">template</span> ./bird.conf.tmpl;
+  check = <span class="s">''
+    ... bird -p -c "$conf"
+  ''</span>;
+};
+
+chalkos.effects.<span class="p">bird</span> =
+  chalkosLib.<span class="k">reloadOn</span>
+    { outputs = [ <span class="s">"bird-conf"</span> ]; }
+    [ <span class="s">"bird.service"</span> ];</pre>
+                </div>
+            </div>
+            <div class="card inked reveal" style="--i:4; flex:none">
+                <div class="cb" style="flex-direction:row; align-items:center; gap:30px; padding:18px 28px">
+                    <span class="micro lg" style="color:var(--yellow); flex:none">If it fails</span>
+                    <span style="font-size:23px">A template that refuses, or a check that fails, <b class="hl">stops the delivery before anything changes</b>: the node keeps its old documents, its old bird.conf and a bird that was not reloaded.</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="footmark"><svg class="logo" aria-hidden="true"><use href="#chalkos-logo"/></svg>chalkos · Niklas Voss</div>
+    <div class="pagenum">09 / 16</div>
+</section>
+
+
+<!-- =====================================================================
+     SLIDE 10: CONFIG APPLY
+     ===================================================================== -->
+<section class="slide s10" aria-label="Applying config">
+    <aside class="notes" hidden>With an image staged, config apply checks the set with the staged image's own chalkd check in a sandbox and writes its slot too. --staged on a node without a staged image keeps pending config, unchecked until the next upgrade. A trial may not change storage, CAs or the node certificate. chalkctl confirms over a new connection because the delivering connection can survive a firewall that drops new ones. config rollback goes one level deep.</aside>
+    <div class="frame">
+        <div class="topbar">
+            <h2>Apply config with a <em>way back</em></h2>
+            <div class="meta micro lg">Dry run · trial · rollback</div>
+        </div>
+        <div class="body row" style="gap:36px">
+            <div class="col" style="width:820px; flex:none; gap:24px">
+                <div class="reveal" style="--i:0">
+                    <div class="codehead"><span>$ chalkctl config apply k1 --secrets=secrets.age --dry-run</span><span></span></div>
+<pre class="code">k1: config 2 added, 0 removed, 1 changed
+<span class="p">~</span> BGPSpeaker "bgp"
+    spec.export.interfaces[1]: (none) → <span class="s">"lb0"</span>
+<span class="g">+</span> NetDev "20-lb0"
+<span class="g">+</span> Network "20-lb0"
+k1: config dd1465db… → 9a461558…
+  outputs:  <span class="k">bgp, networkd</span>
+  effects:  <span class="k">bgp</span>: reload frr.service (output bgp)
+            <span class="k">kubernetes</span>: restart chalkos-kubernetes.service
+                        kubelet.service (rule)
+            <span class="k">networkd</span>: reload systemd-networkd.service
+  storage:  none</pre>
+                </div>
+                <div class="reveal" style="--i:1; flex:1; display:flex; flex-direction:column">
+                    <p class="micro" style="margin-bottom:10px">A trial: chalkctl config apply --try 5m</p>
+                    <div class="trial">
+                        <div><span class="num" style="color:var(--blue)">1</span><span>Node applies the config and starts a deadline</span></div>
+                        <div class="ar">→</div>
+                        <div><span class="num" style="color:var(--green)">2</span><span>chalkctl confirms over <b class="hl">a new connection</b></span></div>
+                        <div class="ar">→</div>
+                        <div style="background:var(--paper-dk)"><span class="num" style="color:var(--red)">3</span><span>No confirmation: <b class="hl">chalkd rolls back</b> by itself</span></div>
+                    </div>
+                </div>
+            </div>
+            <div class="col fill reveal" style="--i:2; gap:14px">
+                <table class="ledger">
+                    <thead><tr><th style="width:250px">chalkctl</th><th>What happens</th></tr></thead>
+                    <tbody>
+                        <tr><td class="m">config apply</td><td>Checks and applies; a staged image <b class="hl">checks it too</b></td></tr>
+                        <tr><td class="m">… --dry-run</td><td>Prints the diff, outputs and effects; <b class="hl">changes nothing</b></td></tr>
+                        <tr><td class="m">… --try 5m</td><td>A trial that <b class="hl">rolls back at the deadline</b> unless confirmed</td></tr>
+                        <tr><td class="m">config confirm</td><td><b class="hl">Ends a trial early</b>, after a health check</td></tr>
+                        <tr><td class="m">config rollback</td><td>Delivers the <b class="hl">previous config</b> again</td></tr>
+                        <tr><td class="m">… --staged</td><td>Writes only the <b class="hl">staged image's slot</b>, or pending config</td></tr>
+                        <tr><td class="m">config discard</td><td><b class="hl">Drops</b> the pending config</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="footmark"><svg class="logo" aria-hidden="true"><use href="#chalkos-logo"/></svg>chalkos · Niklas Voss</div>
+    <div class="pagenum">10 / 16</div>
+</section>
+<!-- =====================================================================
+     SLIDE 11: CONFIG SLOTS AND BREAKING CHANGES
+     ===================================================================== -->
+<section class="slide s11b" aria-label="Breaking config changes">
+    <div class="frame">
+        <div class="topbar">
+            <h2>Breaking config changes, <em>safely</em></h2>
+            <div class="meta micro lg">One config slot per image</div>
+        </div>
+        <div class="body row" style="gap:40px">
+            <div class="col reveal" style="--i:0; width:1060px; flex:none; gap:16px">
+                <div class="slots">
+                    <div class="slotcol">
+                        <div class="slothead" style="background:var(--orange)"><span class="micro">Slot A · running, known-good</span><span class="disp">Image A</span><span class="mono">root hash 3fa9c1e2b7d0…</span></div>
+                        <div class="kindbox"><span class="micro">Its kinds and schemas</span><span class="mono">Backend · v1alpha1</span></div>
+                        <div class="cfgbox"><span class="micro">Config slot</span><span class="mono">/state/config/&lt;hash A&gt;</span><span class="mono">kind: Backend · v1alpha1</span><span class="mono">address: …</span></div>
+                        <div class="note"><b class="hl">Stays as it ran</b>: a fallback or <code>upgrade --rollback</code> boots A with this config</div>
+                    </div>
+                    <div class="slotmid">
+                        <span class="disp">→</span>
+                        <span class="micro">upgrade carries the new config</span>
+                    </div>
+                    <div class="slotcol">
+                        <div class="slothead" style="background:var(--green)"><span class="micro">Slot B · staged, boots next</span><span class="disp">Image B</span><span class="mono">root hash 9d02a7c4e1f8…</span></div>
+                        <div class="kindbox" style="border-color:var(--red)"><span class="micro" style="color:var(--red)">Its kinds and schemas changed</span><span class="mono">Backend · v1, a new required field</span></div>
+                        <div class="cfgbox"><span class="micro">Config slot</span><span class="mono">/state/config/&lt;hash B&gt;</span><span class="mono">kind: Backend · v1</span><span class="mono">address: …  port: 8080</span></div>
+                        <div class="note">Checked by <b class="hl">image B's own</b> <code>chalkd check</code>, run from B's store in a sandbox, before anything is written</div>
+                    </div>
+                </div>
+                <p class="small" style="font-size:17px">Illustration: <code>Backend</code> is the example kind of the docs' “Declare a config kind”; the hashes are made up.</p>
+            </div>
+            <div class="col fill reveal" style="--i:1; gap:0">
+                <ol class="steps">
+                    <li><span class="n">1</span><div><div class="h">Change the kind in the image's module</div><div class="d">A <b class="hl">new required field</b> or API version is fine</div></div></li>
+                    <li><span class="n">2</span><div><div class="h">Write config of the new form</div><div class="d"><code>chalkctl validate</code> checks it <b class="hl">against the new image</b></div></div></li>
+                    <li><span class="n">3</span><div><div class="h">Upgrade with the secrets file</div><div class="d">The config <b class="hl">travels with the image</b>; B checks it</div></div></li>
+                    <li><span class="n">4</span><div><div class="h">B boots with its own slot</div><div class="d">Unhealthy: <b class="hl">back to A and A's config</b></div></div></li>
+                </ol>
+                <div class="card inked" style="margin-top:auto">
+                    <div class="cb" style="padding:16px 22px; gap:6px">
+                        <span class="micro" style="color:var(--yellow)">Also</span>
+                        <span style="font-size:19px">With an image staged, <code>config apply</code> checks with both images and writes both slots; <code>--staged</code> writes the staged image's slot alone. An upgrade drops slots no UKI boots any more.</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="footmark"><svg class="logo" aria-hidden="true"><use href="#chalkos-logo"/></svg>chalkos · Niklas Voss</div>
+    <div class="pagenum">11 / 16</div>
+</section>
+
+
+<!-- =====================================================================
+     SLIDE 11: UPGRADES
+     ===================================================================== -->
+<section class="slide s11" aria-label="Upgrades">
+    <aside class="notes" hidden>Sources: an image directory chalkctl streams, or an OCI artifact the node pulls by digest, through its Mirror if it has one. chalkctl checks usrhash=, os-release and the config against the image's schemas; the node checks the UKI against db and dbx. The health check: chalkd serves TLS, config applied, no failed units; on cluster nodes the Kubernetes parts. It runs only on counted boots, and nothing rolls a blessed image back by itself. Kubernetes clusters roll control planes one at a time with etcd quorum kept and drain each node; running the command again continues. The config travels only with the secrets file or an admin client file; an operator upgrade carries none. A downgrade is an upgrade to another root hash. No delta updates: about 300 MiB per node for a Kubernetes image.</aside>
+    <div class="frame">
+        <div class="topbar">
+            <h2>Upgrades replace the <em>whole image</em></h2>
+            <div class="meta micro lg">Inactive slot · boot counting · fallback</div>
+        </div>
+        <div class="body col" style="gap:26px">
+            <div class="tl reveal" style="--i:0">
+                <div class="st"><div class="bar"><i class="on" style="background:var(--red)"></i><i></i><i></i><i></i><i></i><i></i></div><span class="ttl">Source</span><span class="small">Image directory, or OCI pulled by digest</span></div>
+                <div class="st"><div class="bar"><i class="on" style="background:var(--pink)"></i><i class="on" style="background:var(--pink)"></i><i></i><i></i><i></i><i></i></div><span class="ttl">Check</span><span class="small">Hash, config, Secure Boot db</span></div>
+                <div class="st"><div class="bar"><i class="on" style="background:var(--orange)"></i><i class="on" style="background:var(--orange)"></i><i class="on" style="background:var(--orange)"></i><i></i><i></i><i></i></div><span class="ttl">Write</span><span class="small">Into the <b class="hl">inactive slot</b></span></div>
+                <div class="st"><div class="bar"><i class="on" style="background:var(--yellow)"></i><i class="on" style="background:var(--yellow)"></i><i class="on" style="background:var(--yellow)"></i><i class="on" style="background:var(--yellow)"></i><i></i><i></i></div><span class="ttl">Activate</span><span class="small">Next boot entry, 3 tries</span></div>
+                <div class="st"><div class="bar"><i class="on" style="background:var(--green)"></i><i class="on" style="background:var(--green)"></i><i class="on" style="background:var(--green)"></i><i class="on" style="background:var(--green)"></i><i class="on" style="background:var(--green)"></i><i></i></div><span class="ttl">Health</span><span class="small">Within 300 s by default</span></div>
+                <div class="st"><div class="bar"><i class="on" style="background:var(--blue)"></i><i class="on" style="background:var(--blue)"></i><i class="on" style="background:var(--blue)"></i><i class="on" style="background:var(--blue)"></i><i class="on" style="background:var(--blue)"></i><i class="on" style="background:var(--blue)"></i></div><span class="ttl">Bless or fall back</span><span class="small">Tries used up: <b class="hl">the previous slot boots</b></span></div>
+            </div>
+            <div class="row fill" style="gap:28px">
+                <div class="col reveal" style="--i:1; width:900px; flex:none; gap:0">
+                    <div class="codehead"><span>$ chalkctl upgrade</span><span>one node, shortened</span></div>
+<pre class="code" style="font-size:18px">cp1: installing <span class="s">3fa9c1e2b7d0</span> (v1.5.0, a1b2c3d4e5f6)
+cp1: installed 3fa9c1e2b7d0 (…), staged as .staged-chalkos_2.efi
+cp1: activated 3fa9c1e2b7d0 (…), which boots next as <span class="k">chalkos_2+3.efi</span>
+cp1: rebooting into 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)
+cp1: runs 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6), <span class="g">found healthy</span></pre>
+                    <p class="micro" style="margin-top:22px; margin-bottom:10px">The new entry counts its tries</p>
+                    <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center"><span class="chip orange">chalkos_2+3.efi</span><span class="mono">→</span><span class="chip orange">+2-1</span><span class="mono">→</span><span class="chip orange">+1-2</span><span class="mono">→</span><span class="chip red">+0-3 skipped</span><span class="mono" style="margin-left:12px">or</span><span class="chip green">chalkos_2.efi blessed</span></div>
+                    <p class="small" style="margin-top:18px">Kubernetes clusters roll control planes one at a time, workers in batches, and <b class="hl">stop at the first rollback</b>.</p>
+                </div>
+                <div class="card reveal" style="--i:2; flex:1">
+                    <div class="strip pink"></div>
+                    <div class="cb" style="gap:14px">
+                        <div class="name" style="font-size:42px">Config travels with the image</div>
+                        <p style="font-size:24px"><b class="hl">The upgrade carries each node's config</b>; the new image checks it before it is written.</p>
+                        <div class="dash"></div>
+                        <ul class="spec" style="font-size:20.5px; gap:10px">
+                            <li>The old image keeps its own config for a fallback</li>
+                            <li><b>chalkctl upgrade --rollback</b> on request</li>
+                            <li>No deltas: about 300 MiB per node</li>
+                            <li>A downgrade is an upgrade to another root hash</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="footmark"><svg class="logo" aria-hidden="true"><use href="#chalkos-logo"/></svg>chalkos · Niklas Voss</div>
+    <div class="pagenum">12 / 16</div>
+</section>
+
+<!-- =====================================================================
+     SLIDE 12: LAYERS
+     ===================================================================== -->
+<section class="slide s12" aria-label="Layers">
+    <aside class="notes" hidden>Kubernetes layer: the image fixes containerd and the kubelet, the Cluster document names the other images; flannel, kube-proxy and CoreDNS; certificates renew themselves; Registry and Mirror documents for containerd; chalkctl node revoke shuts a node out by name. Router layer: the router validator checks what the documents mean together, and chalkctl links the same code. Without a layer, the node OS takes its network, disks and time servers from config and serves the node API.</aside>
+    <div class="frame">
+        <div class="topbar">
+            <h2>Layers, and what you can <em>build</em></h2>
+            <div class="meta micro lg">One layer per image at most</div>
+        </div>
+        <div class="body grid" style="grid-template-columns:1fr 1.15fr 0.95fr; gap:24px">
+            <div class="card reveal" style="--i:0">
+                <div class="strip blue"></div>
+                <div class="cb" style="gap:14px">
+                    <div class="name">Kubernetes <small>nixosModules.kubernetes</small></div>
+                    <p style="font-size:24px"><b class="hl">Much like a Talos node.</b></p>
+                    <div class="dash"></div>
+                    <ul class="spec" style="font-size:21px; gap:14px">
+                        <li>One <b>chalkctl bootstrap</b>; other nodes join on their own</li>
+                        <li>VIP held through an etcd election</li>
+                        <li>FRR speaker announces node address and VIP</li>
+                        <li><b>ClusterRegistry</b> for air gaps</li>
+                        <li>A Kubernetes upgrade is an image upgrade</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="card reveal" style="--i:1">
+                <div class="strip orange"></div>
+                <div class="cb" style="gap:12px">
+                    <div class="name">Router <small>nixosModules.router</small></div>
+                    <p style="font-size:24px"><b class="hl">The same API</b>, between Talos and VyOS.</p>
+                    <div class="dash"></div>
+                    <table class="ledger" style="margin-top:-4px">
+                        <tbody>
+                            <tr><td class="t">Firewall</td><td>nftables zones, policies, NAT</td></tr>
+                            <tr><td class="t">Routing</td><td>FRR BGP with BFD, VRFs, policy routing</td></tr>
+                            <tr><td class="t">NAT64, DNS</td><td>Jool, Unbound with DNS64</td></tr>
+                            <tr><td class="t">DHCP</td><td>Kea DHCPv4 and v6, relays</td></tr>
+                            <tr><td class="t">VPN</td><td>WireGuard through networkd</td></tr>
+                            <tr><td class="t">Time</td><td>chrony with a <b>TimeServer</b></td></tr>
+                        </tbody>
+                    </table>
+                    <span class="micro" style="margin-top:auto">Diagnostics</span>
+                    <div style="display:flex; flex-wrap:wrap; gap:8px"><span class="chip orange">traceroute</span><span class="chip orange">bgp-summary</span><span class="chip orange">bfd-peers</span><span class="chip orange">nat64-sessions</span><span class="chip orange">dhcp-leases</span><span class="chip orange">ntp-clients</span></div>
+                </div>
+            </div>
+            <div class="card reveal" style="--i:2">
+                <div class="strip pink"></div>
+                <div class="cb" style="gap:14px">
+                    <div class="name">Your own</div>
+                    <p style="font-size:24px">The base OS and API, then <b class="hl">add the rest as modules</b>.</p>
+                    <div class="dash"></div>
+                    <ul class="spec" style="font-size:21px; gap:14px">
+                        <li>Any NixOS module or package</li>
+                        <li>Kinds, outputs, effects of your own</li>
+                        <li>Repo examples: <b>Hardware</b>, <b>Rack</b>, BIRD BGP</li>
+                    </ul>
+                    <pre class="code" style="font-size:18px; margin-top:auto">{
+  name = <span class="s">"appliance-kvm"</span>;
+  platform = <span class="s">"kvm"</span>;
+  modules = [ ./my-service.nix ];
+}</pre>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="footmark"><svg class="logo" aria-hidden="true"><use href="#chalkos-logo"/></svg>chalkos · Niklas Voss</div>
+    <div class="pagenum">13 / 16</div>
+</section>
+
+<!-- =====================================================================
+     SLIDE 13: TOOLKIT AND TESTING
+     ===================================================================== -->
+<section class="slide s13" aria-label="Testing an extension">
+    <aside class="notes" hidden>The schemas are a build output of their own, system.build.chalkosSchemas, and build in seconds. nix build -L .#nixosConfigurations.&lt;image&gt;.config.system.build.chalkosTestResults shows what each test rendered and refused, with the errors of renderers and checks. The image build fails when a rule does not compile or exceeds its cost limit, when an effect names a unit, output or kind the image lacks, or when the store leaves no room for the next image. chalkos's own end-to-end tests run QEMU VMs under nix flake check: Secure Boot refuses an unsigned image, dm-verity a tampered store, an upgrade that never gets healthy falls back, a three-node HA cluster fails over, two routers peer over BGP.</aside>
+    <div class="frame">
+        <div class="topbar">
+            <h2>Test it before a <em>node</em> sees it</h2>
+            <div class="meta micro lg">From seconds to VMs</div>
+        </div>
+        <div class="body row" style="gap:34px">
+            <div class="col fill reveal" style="--i:0">
+                <table class="ledger">
+                    <thead><tr><th style="width:56px">#</th><th style="width:200px">Step</th><th style="width:500px">Command</th><th>Catches</th></tr></thead>
+                    <tbody>
+                        <tr><td class="t" style="color:var(--red)">01</td><td class="t">Schemas</td><td class="m">nix build …chalkosSchemas</td><td>The kinds, <b class="hl">in seconds</b></td></tr>
+                        <tr><td class="t" style="color:var(--pink)">02</td><td class="t">Image tests</td><td class="m">nix flake check</td><td><b class="hl">Files, rejections, effects</b>; no node</td></tr>
+                        <tr><td class="t" style="color:var(--orange)">03</td><td class="t">Image build</td><td class="m">nix build .#&lt;image&gt;</td><td>Broken rules, <b class="hl">no room for the next image</b></td></tr>
+                        <tr><td class="t" style="color:var(--green)">04</td><td class="t">Validate</td><td class="m">chalkctl validate</td><td>Every node's files, <b class="hl">no node reached</b></td></tr>
+                        <tr><td class="t" style="color:var(--blue)">05</td><td class="t">Lab</td><td class="m">chalklab create</td><td><b class="hl">QEMU VMs</b> with Secure Boot and a TPM</td></tr>
+                        <tr><td class="t">06</td><td class="t">Roll out</td><td class="m">config apply --dry-run / --try</td><td>The plan, then <b class="hl">a trial that rolls back</b></td></tr>
+                        <tr><td class="t">07</td><td class="t">Diagnose</td><td class="m">chalkctl node diag</td><td><b class="hl">The image's diagnostics</b></td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="col reveal" style="--i:1; width:540px; flex:none; gap:16px">
+                <div class="codehead"><span>A test in the module</span><span>bgp.nix, shortened</span></div>
+<pre class="code" style="margin-top:-16px">chalkos.tests.<span class="p">bgp-new-asn</span> = {
+  before = ./bgp-examples/fabric.yaml;
+  config = ./tests/new-asn.yaml;
+  refusals = [{
+    kind = <span class="s">"Peer"</span>; name = <span class="s">"router"</span>;
+    path = <span class="s">"spec.asn"</span>;
+    message = <span class="s">"the AS number stays</span>
+<span class="s">      65000; add a Peer of …"</span>;
+  }];
+};</pre>
+                <div class="card inked" style="margin-top:auto">
+                    <div class="cb" style="padding:18px 22px; gap:8px">
+                        <span class="micro" style="color:var(--yellow)">chalkos's own end-to-end tests</span>
+                        <span style="font-size:21px">QEMU VMs under <code>nix flake check</code>: <b class="hl">unsigned and tampered images refused</b>, upgrades that fall back, HA failover, BGP between routers.</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="footmark"><svg class="logo" aria-hidden="true"><use href="#chalkos-logo"/></svg>chalkos · Niklas Voss</div>
+    <div class="pagenum">14 / 16</div>
+</section>
+
+<!-- =====================================================================
+     SLIDE 14: DEMO OVERVIEW
+     ===================================================================== -->
+<section class="slide s15" aria-label="Demo overview">
+    <aside class="notes" hidden>The router is already installed. Use CHALKOSINVENTORY=chalkos-air-gapped.yaml: the router leaves out router/nat64.yaml and adds air-gapped/router.yaml (TimeServer); the nodes get air-gapped/nodes.yaml (ClusterRegistry, TimeSync to fdc8:a1b2:c3d4:1::1). Install with chalkctl install nodeN --fingerprint from the console. Check: kubectl run airgap-check --image=busybox:1.37.0; chalkctl status node1 shows a time: line naming the router; chalkctl node diag node1 tcp-connect address=64:ff9b::101:101 port=443 fails. DNS still leaves through the router's resolver, so this is no strict air gap.</aside>
+    <div class="frame">
+        <div class="topbar">
+            <h2>Demo: a fresh <em>air-gapped</em> cluster</h2>
+            <div class="meta micro lg">Live · home lab · from scratch</div>
+        </div>
+        <div class="body row" style="gap:36px">
+            <div class="col reveal" style="--i:0; width:800px; flex:none; gap:12px">
+                <svg class="topo" viewBox="0 0 800 670" width="800" height="670" role="img" aria-label="Topology: workstation and router on the home network, router to a switch fabric with three nodes">
+                    <!-- internet and NAT64 path -->
+                    <rect x="300" y="6" width="200" height="56" fill="none" stroke="#3A2516" stroke-width="1.5" stroke-dasharray="6 5"/>
+                    <text x="400" y="41" text-anchor="middle" class="sm">IPv4 internet</text>
+                    <line x1="400" y1="62" x2="400" y2="142" stroke="#3A2516" stroke-width="2"/>
+                    <g transform="translate(414 82) rotate(-4)">
+                        <rect x="0" y="0" width="150" height="34" fill="#E5392A"/>
+                        <text x="75" y="23" text-anchor="middle" class="pp" style="font-family:'Big Shoulders Display';font-weight:900;font-size:20px">NO NAT64</text>
+                    </g>
+                    <!-- home network -->
+                    <rect x="10" y="142" width="780" height="40" fill="#E5D6B0" stroke="#3A2516" stroke-width="1.5"/>
+                    <text x="24" y="168" class="sm">home network · IPv4 by DHCP</text>
+                    <!-- workstation -->
+                    <rect x="20" y="226" width="226" height="92" fill="#F1E6CB" stroke="#3A2516" stroke-width="1.5"/>
+                    <rect x="20" y="226" width="226" height="12" fill="#3D9F47"/>
+                    <text x="34" y="272" class="lbl">workstation</text>
+                    <text x="34" y="300" class="xs">chalkctl · crane · kubectl</text>
+                    <line x1="120" y1="182" x2="120" y2="226" stroke="#3A2516" stroke-width="2"/>
+                    <!-- router -->
+                    <rect x="300" y="226" width="224" height="120" fill="#F1E6CB" stroke="#3A2516" stroke-width="1.5"/>
+                    <rect x="300" y="226" width="224" height="12" fill="#F09131"/>
+                    <text x="314" y="272" class="lbl">router</text>
+                    <text x="314" y="298" class="xs">AS 65000 · FRR · Unbound</text>
+                    <text x="314" y="318" class="xs">WireGuard · no NAT64</text>
+                    <text x="314" y="338" class="xs">TimeServer (chrony)</text>
+                    <line x1="400" y1="182" x2="400" y2="226" stroke="#3A2516" stroke-width="2"/>
+                    <text x="408" y="210" class="xs">wan</text>
+                    <!-- wireguard -->
+                    <path d="M246 252 L 300 252" fill="none" stroke="#E54489" stroke-width="3" stroke-dasharray="8 6"/>
+                    <text x="20" y="352" class="xs">WireGuard to the router</text>
+                    <text x="20" y="370" class="xs">fdc8:a1b2:c3d4:f0::/64</text>
+                                                            <!-- fabric -->
+                    <line x1="400" y1="346" x2="400" y2="404" stroke="#3A2516" stroke-width="2"/>
+                    <text x="408" y="372" class="xs">fabric · ::1 and ::2</text>
+                    <rect x="60" y="404" width="680" height="44" fill="#3A2516"/>
+                    <text x="80" y="432" class="pp sm">switch · fabric fdc8:a1b2:c3d4:1::/64 · router advertisements</text>
+                    <!-- nodes -->
+                    <g>
+                        <line x1="120" y1="448" x2="120" y2="508" stroke="#3A2516" stroke-width="2"/>
+                        <line x1="190" y1="448" x2="190" y2="508" stroke="#3A2516" stroke-width="2"/>
+                        <rect x="70" y="508" width="190" height="116" fill="#F1E6CB" stroke="#3A2516" stroke-width="1.5"/>
+                        <rect x="70" y="508" width="190" height="12" fill="#3F8BC4"/>
+                        <text x="84" y="554" class="lbl">node1</text>
+                        <text x="84" y="580" class="xs">ff::11 · AS 65001</text>
+                        <text x="84" y="602" class="xs">registry :5000</text>
+                    </g>
+                    <g>
+                        <line x1="350" y1="448" x2="350" y2="508" stroke="#3A2516" stroke-width="2"/>
+                        <line x1="420" y1="448" x2="420" y2="508" stroke="#3A2516" stroke-width="2"/>
+                        <rect x="300" y="508" width="190" height="116" fill="#F1E6CB" stroke="#3A2516" stroke-width="1.5"/>
+                        <rect x="300" y="508" width="190" height="12" fill="#3F8BC4"/>
+                        <text x="314" y="554" class="lbl">node2</text>
+                        <text x="314" y="580" class="xs">ff::12 · AS 65001</text>
+                        <text x="314" y="602" class="xs">registry :5000</text>
+                    </g>
+                    <g>
+                        <line x1="580" y1="448" x2="580" y2="508" stroke="#3A2516" stroke-width="2"/>
+                        <line x1="650" y1="448" x2="650" y2="508" stroke="#3A2516" stroke-width="2"/>
+                        <rect x="530" y="508" width="190" height="116" fill="#F1E6CB" stroke="#3A2516" stroke-width="1.5"/>
+                        <rect x="530" y="508" width="190" height="12" fill="#3F8BC4"/>
+                        <text x="544" y="554" class="lbl">node3</text>
+                        <text x="544" y="580" class="xs">ff::13 · AS 65001</text>
+                        <text x="544" y="602" class="xs">registry :5000</text>
+                    </g>
+                    <text x="395" y="656" text-anchor="middle" class="xs">each node: 2 ports, a BGP session with BFD on each</text>
+                </svg>
+                <p class="small" style="font-size:17px"><b class="hl">Three fresh control planes</b> on an IPv6-only fabric; node addresses <span class="mono">fdc8:a1b2:c3d4:ff::11</span> to <span class="mono">::13</span>, API VIP <span class="mono">ff::10</span>, both announced to the router over BGP.</p>
+            </div>
+            <div class="col fill reveal" style="--i:1; gap:8px">
+                <ol class="steps">
+                    <li><span class="n">1</span><div><div class="h">Prepare on a connected machine</div><div class="d">Images, installer and <b class="hl">container images</b>, copied with crane</div></div></li>
+                    <li><span class="n">2</span><div><div class="h">Cut the fabric off</div><div class="d">Router config <b class="hl">without NAT64</b>, with a TimeServer: <code>config apply router --try 5m</code></div></div></li>
+                    <li><span class="n">3</span><div><div class="h">Install three fresh nodes</div><div class="d"><code>chalkctl install</code>; their config brings the ClusterRegistry. <b class="hl">No bootstrap yet</b></div></div></li>
+                    <li><span class="n">4</span><div><div class="h">Push the images</div><div class="d"><code>chalkctl registry push</code> to <b class="hl">every control plane</b></div></div></li>
+                    <li><span class="n">5</span><div><div class="h">Check the registry</div><div class="d"><code>chalkctl registry list</code>: <b class="hl">all</b> on every line</div></div></li>
+                    <li><span class="n">6</span><div><div class="h">Bootstrap</div><div class="d"><code>chalkctl bootstrap node1</code>; control planes pull <b class="hl">from the registry</b></div></div></li>
+                    <li><span class="n">7</span><div><div class="h">Prove it</div><div class="d"><b class="hl">Pods pull</b>, clocks follow the router, and <b class="hl">tcp-connect to the internet fails</b></div></div></li>
+                </ol>
+                <p class="small" style="font-size:17px; border-top:1.5px solid var(--ink); padding-top:10px">Guides: <span class="mono">guides/air-gapped</span>, <span class="mono">guides/home-lab</span></p>
+            </div>
+        </div>
+    </div>
+    <div class="footmark"><svg class="logo" aria-hidden="true"><use href="#chalkos-logo"/></svg>chalkos · Niklas Voss</div>
+    <div class="pagenum">15 / 16</div>
+</section>
+
+<!-- =====================================================================
+     SLIDE 15: CLOSE
+     ===================================================================== -->
+<section class="slide closing" aria-label="Thank you">
+    <div class="ribbons" aria-hidden="true">
+        <div class="rb" style="--rot:-22deg; top:560px; background:var(--pink)"></div>
+        <div class="rb" style="--rot:-22deg; top:624px; background:var(--orange)"></div>
+        <div class="rb" style="--rot:-22deg; top:688px; background:var(--yellow)"></div>
+        <div class="rb" style="--rot:-22deg; top:752px; background:var(--green)"></div>
+        <div class="rb" style="--rot:-22deg; top:816px; background:var(--blue)"></div>
+    </div>
+    <svg class="brandlogo" role="img" aria-label="chalkos logo"><use href="#chalkos-logo"/></svg>
+    <div class="seal" aria-hidden="true"><span>Q&amp;A</span></div>
+    <h2 class="reveal" style="--i:0">Thank <em>you</em></h2>
+    <div class="links reveal" style="--i:1">
+        <table class="ledger">
+            <tbody>
+                <tr><td class="t" style="width:200px">Code</td><td class="m" style="font-size:22px">github.com/trevex/chalkos</td></tr>
+                <tr><td class="t">Docs</td><td class="m" style="font-size:22px">trevex.github.io/chalkos</td></tr>
+                <tr><td class="t">Try it</td><td class="m" style="font-size:19px">nix flake init -t github:trevex/chalkos#lab</td></tr>
+                <tr><td class="t">Home lab</td><td class="m" style="font-size:19px">trevex.github.io/chalkos/guides/home-lab/</td></tr>
+            </tbody>
+        </table>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:34px">
+            <span class="disp" style="font-size:46px">Niklas Voss</span>
+            <span class="stamp" style="font-size:24px">Unreleased · feedback welcome</span>
+        </div>
+    </div>
+    <div class="pagenum">16 / 16</div>
+</section>
+
+</main>
+</div>
+<div class="nav-hint" aria-hidden="true">← / → · space · E edit</div>
+
+<script>
+/* ===========================================
+   SLIDE PRESENTATION CONTROLLER
+   Fixed 1920x1080 stage scaled to the window; keyboard, wheel and swipe
+   navigation; the slide number lives in the URL hash (#3), and ?slide=3
+   works too. ?static turns transitions off, for screenshots.
+   =========================================== */
+class SlidePresentation {
+    constructor() {
+        this.slides = Array.from(document.querySelectorAll('.slide'));
+        this.stage = document.getElementById('deckStage');
+        this.current = 0;
+        const params = new URLSearchParams(location.search);
+        if (params.has('static')) document.documentElement.classList.add('no-anim');
+        this.setupStageScale();
+        this.setupKeyboardNav();
+        this.setupTouchNav();
+        this.setupWheelNav();
+        window.addEventListener('hashchange', () => this.showSlide(this.fromHash(), false));
+        const start = params.has('slide') ? parseInt(params.get('slide'), 10) - 1 : this.fromHash();
+        this.showSlide(Number.isFinite(start) ? start : 0, false);
+    }
+
+    fromHash() {
+        const n = parseInt(location.hash.replace('#', ''), 10);
+        return Number.isFinite(n) ? n - 1 : 0;
+    }
+
+    setupStageScale() {
+        const scale = () => {
+            const factor = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+            const x = (window.innerWidth - 1920 * factor) / 2;
+            const y = (window.innerHeight - 1080 * factor) / 2;
+            this.stage.style.transform = `translate(${x}px, ${y}px) scale(${factor})`;
+        };
+        scale();
+        window.addEventListener('resize', scale);
+    }
+
+    isEditingTarget(e) {
+        return document.body.classList.contains('editing') && e.target && e.target.isContentEditable;
+    }
+
+    setupKeyboardNav() {
+        document.addEventListener('keydown', (e) => {
+            if (this.isEditingTarget(e)) return;
+            switch (e.key) {
+                case 'ArrowRight': case 'ArrowDown': case 'PageDown': case ' ':
+                    e.preventDefault(); this.next(); break;
+                case 'ArrowLeft': case 'ArrowUp': case 'PageUp':
+                    e.preventDefault(); this.prev(); break;
+                case 'Home': e.preventDefault(); this.showSlide(0); break;
+                case 'End': e.preventDefault(); this.showSlide(this.slides.length - 1); break;
+            }
+        });
+    }
+
+    setupTouchNav() {
+        let sx = 0, sy = 0;
+        document.addEventListener('touchstart', (e) => { sx = e.touches[0].clientX; sy = e.touches[0].clientY; }, { passive: true });
+        document.addEventListener('touchend', (e) => {
+            const dx = e.changedTouches[0].clientX - sx;
+            const dy = e.changedTouches[0].clientY - sy;
+            if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) (dx < 0 ? this.next() : this.prev());
+        }, { passive: true });
+    }
+
+    setupWheelNav() {
+        let locked = false;
+        document.addEventListener('wheel', (e) => {
+            if (locked || Math.abs(e.deltaY) < 30) return;
+            locked = true;
+            e.deltaY > 0 ? this.next() : this.prev();
+            setTimeout(() => { locked = false; }, 700);
+        }, { passive: true });
+    }
+
+    next() { this.showSlide(this.current + 1); }
+    prev() { this.showSlide(this.current - 1); }
+
+    showSlide(index, updateHash = true) {
+        this.current = Math.max(0, Math.min(index, this.slides.length - 1));
+        this.slides.forEach((slide, i) => {
+            const on = i === this.current;
+            slide.classList.toggle('active', on);
+            slide.classList.toggle('visible', on);
+            slide.setAttribute('aria-hidden', on ? 'false' : 'true');
+        });
+        if (updateHash) history.replaceState(null, '', '#' + (this.current + 1));
+    }
+}
+
+/* ===========================================
+   INLINE EDITOR
+   E or the top-left corner toggles edit mode. Edits are kept in this
+   browser's localStorage; Ctrl+S (Cmd+S) downloads the edited file.
+   =========================================== */
+class InlineEditor {
+    constructor() {
+        this.isActive = false;
+        this.key = 'chalkos-intro-edits';
+        this.selector = '.slide h1, .slide h2, .slide p, .slide li, .slide td, .slide th, .slide pre, .slide .name, .slide .micro, .slide .chip, .slide .stamp, .slide .seg-name, .slide .seg-sub, .slide .disp, .slide .small, .slide .mono, .slide .ttl, .slide .lockup, .slide .who, .slide .codehead span, .slide .h, .slide .d, .slide svg text';
+        this.nodes = Array.from(document.querySelectorAll(this.selector)).filter((el) => !el.parentElement.closest('[data-ed]'));
+        this.nodes.forEach((el) => el.setAttribute('data-ed', ''));
+        this.signature = this.nodes.length + ':' + this.nodes.reduce((n, el) => n + el.textContent.length, 0);
+        this.restore();
+    }
+
+    restore() {
+        try {
+            const saved = JSON.parse(localStorage.getItem(this.key) || 'null');
+            if (!saved || saved.signature !== this.signature) return;
+            Object.entries(saved.edits).forEach(([i, html]) => { if (this.nodes[i]) this.nodes[i].innerHTML = html; });
+        } catch (err) { /* storage unavailable: nothing to restore */ }
+    }
+
+    persist() {
+        try {
+            const edits = {};
+            this.nodes.forEach((el, i) => { if (el.dataset.orig !== undefined && el.innerHTML !== el.dataset.orig) edits[i] = el.innerHTML; });
+            const prev = JSON.parse(localStorage.getItem(this.key) || 'null');
+            const merged = Object.assign({}, prev && prev.signature === this.signature ? prev.edits : {}, edits);
+            localStorage.setItem(this.key, JSON.stringify({ signature: this.signature, edits: merged }));
+        } catch (err) { /* storage unavailable */ }
+    }
+
+    toggleEditMode() {
+        this.isActive = !this.isActive;
+        document.body.classList.toggle('editing', this.isActive);
+        document.getElementById('editToggle').classList.toggle('active', this.isActive);
+        this.nodes.forEach((el) => {
+            if (this.isActive) {
+                // Edit only the innermost marked elements, so nested ones stay separate
+                if (el.querySelector('[data-ed]')) return;
+                if (el.dataset.orig === undefined) el.dataset.orig = el.innerHTML;
+                el.setAttribute('contenteditable', 'true');
+                el.addEventListener('input', this.onInput || (this.onInput = () => this.persist()));
+            } else {
+                el.removeAttribute('contenteditable');
+            }
+        });
+        if (!this.isActive) this.persist();
+    }
+
+    download() {
+        const wasActive = this.isActive;
+        if (wasActive) this.toggleEditMode();
+        const doc = document.documentElement.cloneNode(true);
+        doc.classList.remove('no-anim');
+        doc.querySelectorAll('[data-ed]').forEach((el) => { el.removeAttribute('data-ed'); el.removeAttribute('data-orig'); el.removeAttribute('contenteditable'); });
+        doc.querySelector('body').classList.remove('editing');
+        doc.querySelectorAll('.slide').forEach((s, i) => {
+            s.classList.toggle('active', i === 0);
+            s.classList.remove('visible');
+            s.removeAttribute('aria-hidden');
+        });
+        const stage = doc.querySelector('#deckStage');
+        if (stage) stage.removeAttribute('style');
+        const toggle = doc.querySelector('#editToggle');
+        if (toggle) toggle.classList.remove('show', 'active');
+        const html = '<!DOCTYPE html>\n' + doc.outerHTML;
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+        a.download = 'index.html';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+        if (wasActive) this.toggleEditMode();
+    }
+}
+
+const deck = new SlidePresentation();
+const editor = new InlineEditor();
+
+/* Edit toggle: button click, hotzone hover with a 400 ms grace period,
+   hotzone click, and the E key outside editable text. */
+const hotzone = document.querySelector('.edit-hotzone');
+const editToggle = document.getElementById('editToggle');
+let hideTimeout = null;
+editToggle.addEventListener('click', () => editor.toggleEditMode());
+hotzone.addEventListener('mouseenter', () => { clearTimeout(hideTimeout); editToggle.classList.add('show'); });
+hotzone.addEventListener('mouseleave', () => { hideTimeout = setTimeout(() => { if (!editor.isActive) editToggle.classList.remove('show'); }, 400); });
+editToggle.addEventListener('mouseenter', () => clearTimeout(hideTimeout));
+editToggle.addEventListener('mouseleave', () => { hideTimeout = setTimeout(() => { if (!editor.isActive) editToggle.classList.remove('show'); }, 400); });
+hotzone.addEventListener('click', () => editor.toggleEditMode());
+document.addEventListener('keydown', (e) => {
+    const inText = e.target && e.target.isContentEditable;
+    if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) { e.preventDefault(); editor.download(); return; }
+    if (e.key === 'Escape' && editor.isActive) { editor.toggleEditMode(); return; }
+    if ((e.key === 'e' || e.key === 'E') && !inText && !e.ctrlKey && !e.metaKey && !e.altKey) editor.toggleEditMode();
+});
+</script>
+</body>
+</html>

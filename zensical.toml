@@ -9,9 +9,11 @@ repo_name = "trevex/chalkos"
 docs_dir = "docs"
 site_dir = "site"
 extra_css = ["stylesheets/chalkos.css"]
-# Files the pages include, which the site does not publish as pages of their own.
+# Files the pages include, which the site does not publish as pages of their own, and the slide
+# decks, which are HTML files of their own.
 exclude_docs = """
 includes/
+slides/
 """
 nav = [
   { "Home" = "index.md" },
