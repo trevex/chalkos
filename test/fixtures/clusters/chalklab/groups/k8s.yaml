@@ -15,7 +15,7 @@ spec:
     kube-controller-manager: {}
     kube-scheduler: {}
   # The images the test's registry serves, by the digests of their amd64 manifests, which
-  # nix/testing/kubernetes-images.nix pins.
+  # nix/testing/kubernetes-images.json pins.
   images:
     apiServer: registry.k8s.io/kube-apiserver:v1.37.2@sha256:f3916d65eddfe52b6d21ff4a17abdf4c52589c8ef62ec7e0c17204f276cd8db6
     controllerManager: registry.k8s.io/kube-controller-manager:v1.37.2@sha256:07fccf8e84f4cdc72c8e59f1a50da68f15acf1299e455004a944610aecac60c4

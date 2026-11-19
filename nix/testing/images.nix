@@ -126,5 +126,8 @@ images
   };
   # The Kubernetes image the HA test's rolling upgrade installs.
   haUpgradeImage = imageAs "k8s" "upgrade" withoutBGP;
-  kubernetesImages = import ./kubernetes-images.nix { inherit pkgs; };
+  kubernetesImages = import ./kubernetes-images.nix {
+    inherit pkgs;
+    inherit (self.lib) kubernetesReleases;
+  };
 }

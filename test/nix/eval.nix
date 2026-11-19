@@ -8,6 +8,7 @@
 }:
 let
   inherit (flakeLib)
+    kubernetesReleases
     mkImage
     mkImages
     mkInstaller
@@ -26,6 +27,14 @@ let
     router
     routerWithout
     ;
+  # The newest Kubernetes minor chalkos pins, and the kubelet of a minor, as the Kubernetes layer
+  # builds it.
+  newestKubernetes = lib.last (lib.sort lib.versionOlder (lib.attrNames kubernetesReleases));
+  kubeletOf =
+    minor:
+    pkgs.callPackage ../../modules/node/kubernetes/kubelet.nix {
+      inherit (kubernetesReleases.${minor}) version hash;
+    };
   # An image of each set of layers on metal: node has the Kubernetes layer, plain none, edge the
   # router layer.
   layered = nixosOf (mkImages {
@@ -2459,11 +2468,12 @@ lib.runTests {
       flannel = true;
     };
   };
-  # chalkos.kubernetes.version picks the kubelet by its minor, nixpkgs's by default; image.json
-  # names the release's version. Compared by derivation, so no kubelet builds.
+  # chalkos.kubernetes.version picks the kubelet by its minor, the newest of releases.nix by
+  # default, built from the patch release and source that releases.nix pins for it, whatever
+  # nixpkgs's own release; image.json names the release's version. Compared by derivation, so no
+  # kubelet builds. Each minor of releases.nix names its release's minor.
   testKubeletRelease =
     let
-      releases = import ../../modules/node/kubernetes/releases.nix { inherit lib pkgs; };
       image =
         modules:
         let
@@ -2472,36 +2482,32 @@ lib.runTests {
         {
           inherit (c.chalkos.kubernetes) version;
           package = c.chalkos.kubernetes.package.drvPath;
+          source = c.chalkos.kubernetes.package.src.outputHash;
           imageVersion =
             (builtins.fromJSON (builtins.readFile c.chalkos.imageDirectory.facts.kubernetes)).version;
           kubelet = lib.hasInfix "-kubelet-${c.chalkos.kubernetes.package.version}/bin/kubelet " c.systemd.services.kubelet.serviceConfig.ExecStart;
         };
+      expect = minor: {
+        version = minor;
+        package = (kubeletOf minor).drvPath;
+        source = kubernetesReleases.${minor}.hash;
+        imageVersion = kubernetesReleases.${minor}.version;
+        kubelet = true;
+      };
     in
     {
       expr = {
         default = image [ ];
         older = image [ { chalkos.kubernetes.version = "1.36"; } ];
-        releases = lib.attrNames releases;
+        minors = lib.mapAttrsToList (
+          minor: release: lib.versions.majorMinor release.version == minor
+        ) kubernetesReleases;
         unknown = fails (worker [ { chalkos.kubernetes.version = "1.30"; } ]).chalkos.kubernetes.version;
       };
       expected = {
-        default = {
-          version = lib.versions.majorMinor pkgs.kubernetes.version;
-          package = pkgs.kubernetes.drvPath;
-          imageVersion = pkgs.kubernetes.version;
-          kubelet = true;
-        };
-        older = {
-          version = "1.36";
-          package = releases."1.36".drvPath;
-          imageVersion = "1.36.6";
-          kubelet = true;
-        };
-        releases = [
-          "1.35"
-          "1.36"
-          (lib.versions.majorMinor pkgs.kubernetes.version)
-        ];
+        default = expect newestKubernetes;
+        older = expect "1.36";
+        minors = map (_: true) (lib.attrNames kubernetesReleases);
         unknown = true;
       };
     };
@@ -2509,7 +2515,6 @@ lib.runTests {
   # version and the package names one minor in both.
   testKubeletPackageAndVersionAgree =
     let
-      releases = import ../../modules/node/kubernetes/releases.nix { inherit lib pkgs; };
       refused = modules: refuses "and chalkos.kubernetes.version is 1.36" (worker modules);
     in
     {
@@ -2517,18 +2522,18 @@ lib.runTests {
         disagree = refused [
           {
             chalkos.kubernetes.version = "1.36";
-            chalkos.kubernetes.package = pkgs.kubernetes;
+            chalkos.kubernetes.package = kubeletOf newestKubernetes;
           }
         ];
         packageAlone =
           lib.all (a: a.assertion)
-            (worker [ { chalkos.kubernetes.package = releases."1.36"; } ]).assertions;
+            (worker [ { chalkos.kubernetes.package = kubeletOf "1.36"; } ]).assertions;
         agree =
           lib.all (a: a.assertion)
             (worker [
               {
-                chalkos.kubernetes.version = lib.versions.majorMinor pkgs.kubernetes.version;
-                chalkos.kubernetes.package = pkgs.kubernetes;
+                chalkos.kubernetes.version = newestKubernetes;
+                chalkos.kubernetes.package = kubeletOf newestKubernetes;
               }
             ]).assertions;
       };
@@ -2884,11 +2889,11 @@ lib.runTests {
       expected = {
         sameFile = true;
         image = {
-          version = pkgs.kubernetes.version;
+          version = kubernetesReleases.${newestKubernetes}.version;
           cni = "flannel";
         };
         noFlannel = {
-          version = pkgs.kubernetes.version;
+          version = kubernetesReleases.${newestKubernetes}.version;
           cni = "none";
         };
       };
@@ -2914,7 +2919,8 @@ lib.runTests {
           lib.hasSuffix "$KUBELET_ARGS" ExecStart
           && lib.hasInfix "--config=/run/chalkos/kubernetes/kubelet/config.json" ExecStart
           && !(config.environment.etc ? "chalkos/kubernetes/kubelet.json");
-        noFullPackage = !lib.hasInfix "-kubernetes-${pkgs.kubernetes.version}/" ExecStart;
+        noFullPackage =
+          !lib.hasInfix "-kubernetes-${kubernetesReleases.${newestKubernetes}.version}/" ExecStart;
       };
     expected = {
       sysctl = {

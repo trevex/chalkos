@@ -15,6 +15,25 @@ let
   # checks, and whose units the router checks run.
   router = fixtures.edge-metal.nixos;
 
+  # Whether every image, of an attribute set holding mkImage's results, that runs Kubernetes runs
+  # the kubelet of the patch release modules/node/kubernetes/releases.nix pins for its minor; the
+  # evaluation fails otherwise, naming what checks them and the images that do not.
+  kubeletsPinned =
+    what: images:
+    let
+      unpinned = lib.attrNames (
+        lib.filterAttrs (
+          _: image:
+          let
+            k = image.nixos.config.chalkos.kubernetes or { enable = false; };
+          in
+          k.enable && k.package.version != self.lib.kubernetesReleases.${k.version}.version
+        ) (lib.filterAttrs (_: image: image ? nixos) images)
+      );
+    in
+    lib.assertMsg (unpinned == [ ])
+      "${what}: the images ${toString unpinned} run a kubelet other than the patch release modules/node/kubernetes/releases.nix pins for their minor";
+
   # The files the router image renders from its example <example>.yaml, as its test
   # router-<example> got them: a link to a directory of <output>/<file>, whose store paths have
   # their hashes written as e's. It fails to build when the test rendered nothing.
@@ -85,6 +104,7 @@ in
 {
   inherit
     chalkPkgs
+    kubeletsPinned
     prelude
     router
     routerRendered
@@ -217,7 +237,8 @@ in
   '';
 
   # A check that copies the directory, links the image directories given below it by their
-  # relative paths, and runs the command in it; the command is chalkctl validate unless given.
+  # relative paths, and runs the command in it; the command is chalkctl validate unless given. The
+  # images that run Kubernetes must run the kubelets chalkos pins.
   validateDirectory =
     {
       name,
@@ -225,6 +246,7 @@ in
       images,
       command ? "chalkctl validate",
     }:
+    assert kubeletsPinned "the ${name} check" images;
     pkgs.runCommand "chalkos-${name}" { nativeBuildInputs = [ pkgs.chalkos.chalkctl ]; } ''
       cp -r ${src} tree
       chmod -R u+w tree

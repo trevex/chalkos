@@ -30,9 +30,16 @@ let
     chalkos = self;
     self = { };
   };
+  # The newest Kubernetes release chalkos pins, whose kubelet the templates' and examples' images
+  # run.
+  kubernetes =
+    let
+      inherit (self.lib) kubernetesReleases;
+    in
+    kubernetesReleases.${lib.last (lib.sort lib.versionOlder (lib.attrNames kubernetesReleases))}.version;
   # chalkctl validate of a tree whose Cluster document pins every image: a reference with a tag
   # and no digest fails the check, and so does an API server that no longer follows the kubelet
-  # of nixpkgs's Kubernetes release.
+  # of that release.
   validatePinned = ''
     chalkctl validate 2>warnings || { cat warnings >&2; exit 1; }
     cat warnings >&2
@@ -40,8 +47,8 @@ let
       echo "error: the Cluster document names an image without a digest" >&2
       exit 1
     fi
-    grep -qF "kube-apiserver:v${pkgs.kubernetes.version}@sha256:" cluster/cluster.yaml || {
-      echo "error: cluster/cluster.yaml names no kube-apiserver:v${pkgs.kubernetes.version} by its digest, the kubelet's release" >&2
+    grep -qF "kube-apiserver:v${kubernetes}@sha256:" cluster/cluster.yaml || {
+      echo "error: cluster/cluster.yaml names no kube-apiserver:v${kubernetes} by its digest, the kubelet's release" >&2
       exit 1
     }
   '';
@@ -429,7 +436,7 @@ in
       # tests' registry serves.
       for ref in $(grep -rhoE '[^ "]+@sha256:[0-9a-f]{64}|(registry\.k8s\.io|ghcr\.io)/[^ "]+' . | sort -u); do
         ${pkgs.jq}/bin/jq -e --arg r "$ref" 'has($r)' ${chalkPkgs.test-kubernetes-images}/images.json >/dev/null || {
-          echo "error: the fixtures name $ref, which nix/testing/kubernetes-images.nix does not serve" >&2
+          echo "error: the fixtures name $ref, which nix/testing/kubernetes-images.json does not serve" >&2
           exit 1
         }
       done

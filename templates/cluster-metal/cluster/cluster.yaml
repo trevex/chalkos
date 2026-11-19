@@ -11,7 +11,7 @@ spec:
   vip: {addresses: [192.168.1.10], mode: l2}
   # The images of the cluster's components, which containerd pulls as written. The tags of the API
   # server, the controller-manager, the scheduler and kube-proxy follow the kubelet of the image the
-  # flake builds, the Kubernetes release of its nixpkgs; the image's checker holds them to
+  # flake builds, the newest Kubernetes release chalkos pins; the image's checker holds them to
   # Kubernetes's version skew policy. The digests pin what containerd pulls. Read the digest of
   # another reference with `crane digest <ref>` or
   # `skopeo inspect --format '{{.Digest}}' docker://<ref>`.
