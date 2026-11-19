@@ -538,6 +538,13 @@ lib.runTests {
         in
         lib.concatLists (lib.mapAttrsToList (k: v: lib.subtractLists all.${k} v) p);
       routerKinds = c: names (lib.filterAttrs (_: k: k.group == "router.chalkos.dev") c.chalkos.kinds);
+      # Whether chrony's config of an image holds the confdir and the commands of ntp-clients.
+      chronyServerLines =
+        c:
+        map (d: lib.hasInfix d c.services.chrony.extraConfig) [
+          "confdir "
+          "opencommands "
+        ];
     in
     {
       expr = {
@@ -550,6 +557,12 @@ lib.runTests {
         otherImages = map routerKinds [
           layered.node-metal.config
           layered.plain-metal.config
+        ];
+        # Only an image with the time server gives chrony its confdir and the commands of
+        # ntp-clients.
+        chronyServer = map chronyServerLines [
+          without.ntp
+          edge
         ];
       };
       expected = {
@@ -710,6 +723,16 @@ lib.runTests {
         otherImages = [
           [ ]
           [ ]
+        ];
+        chronyServer = [
+          [
+            false
+            false
+          ]
+          [
+            true
+            true
+          ]
         ];
       };
     };
