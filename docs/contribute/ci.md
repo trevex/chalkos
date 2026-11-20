@@ -66,6 +66,9 @@ people with triage access to the repository can add labels, so a pull request fr
 no end-to-end VM before a maintainer has read it. The release pull request always carries `e2e`,
 as [Release chalkos](releasing.md#the-release-pull-request) describes.
 
+Renovate's pull requests and the weekly update of `flake.lock` carry their labels from the
+start, as [Dependency updates](dependencies.md) describes.
+
 The workflow `.github/workflows/labels.yml` creates or updates the repository's labels from
 `.github/labels.yml` when that file changes on `main`.
 
