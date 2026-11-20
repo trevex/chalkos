@@ -34,9 +34,12 @@ Dashboard, an issue it keeps open.
 | `go-toolchain` | The `go` directive and the `toolchain` line of `go.mod` | `dependencies`, `e2e` | by hand |
 | `kubernetes-<minor>` | The patch release of one minor in `releases.nix`, a pull request per minor | `dependencies`, `e2e` | by hand |
 
-A major release of an action or a Go module gets a pull request of its own, outside its group,
-and never merges by itself. Indirect Go modules follow from `go mod tidy`, which Renovate runs
-after each change of `go.mod`.
+A major release of an action gets a pull request of its own, outside its group, and never merges
+by itself. A major release of a Go module waits on the Dependency Dashboard under "Pending
+Approval", since its API change usually needs the code ported. Tick its box to have Renovate open
+a pull request with the import paths rewritten to the new major, then port the code on that
+branch, or open your own pull request and close Renovate's. Indirect Go modules follow from
+`go mod tidy`, which Renovate runs after each change of `go.mod`.
 
 The label `e2e` runs every end-to-end check on the pull request. The Kubernetes modules and the
 Go release change chalkd and every program in the images, and a Kubernetes release changes every
