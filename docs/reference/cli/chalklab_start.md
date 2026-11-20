@@ -12,7 +12,10 @@ chalklab start [flags]
 Starts a lab again from its state, with its disks, firmware variables, TPM state and ports. When
 the supervisor runs, it starts the VMs that stopped (for example a VM whose node powered off).
 When no supervisor runs (for example after a reboot of this machine), chalklab starts the
-supervisor, which starts every VM. The command needs no secrets file or client file.
+supervisor, which starts every VM. Each node boots its disk as it is, so start pulls no image,
+even when the tag of an image from a registry has moved since create: a node runs the image
+create made its disk from, or the one chalkctl upgrade installed since. The command needs no
+secrets file or client file.
 
 ## Flags
 

@@ -23,6 +23,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/image"
+	"github.com/trevex/chalkos/pkg/imagepull"
 	"github.com/trevex/chalkos/pkg/imagesign"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/internal/poll"
@@ -77,7 +78,7 @@ func (a *app) create(ctx context.Context, f createFlags) (err error) {
 	if err != nil {
 		return err
 	}
-	l, inv, images, err := newLab(f.lab, code, guestForwards)
+	l, inv, images, err := newLab(ctx, f.lab, code, guestForwards)
 	if err != nil {
 		return err
 	}
@@ -152,8 +153,9 @@ func parseCreateFlags(f *createFlags) ([]lab.GuestForward, error) {
 }
 
 // newLab reads the lab file at path, or the default one, and its inventory, and returns the lab
-// they describe with each node's image directory. The lab's state directory must not exist yet.
-func newLab(path, code string, guestForwards []lab.GuestForward) (*lab.Lab, *inventory.Inventory, map[string]string, error) {
+// they describe with each node's image as the inventory names it. The lab's state directory must
+// not exist yet.
+func newLab(ctx context.Context, path, code string, guestForwards []lab.GuestForward) (*lab.Lab, *inventory.Inventory, map[string]string, error) {
 	if path == "" {
 		path = defaultLabFile
 	}
@@ -165,6 +167,7 @@ func newLab(path, code string, guestForwards []lab.GuestForward) (*lab.Lab, *inv
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	inv.SetContext(ctx)
 	// chalkctl, which installs the nodes, refuses an inventory whose nodes hold different Cluster
 	// or Flannel specs, or one holding two Cluster documents; such an inventory is refused before
 	// the lab is made.
@@ -196,16 +199,21 @@ func newLab(path, code string, guestForwards []lab.GuestForward) (*lab.Lab, *inv
 	return l, inv, images, nil
 }
 
-// prepareImages copies each node's image from its image directory into the lab and signs the
-// copy with the lab's db key.
+// prepareImages copies each node's image from its image directory, or from the lab's image cache
+// for an image in a registry, into the lab and signs the copy with the lab's db key. images are
+// the nodes' images as the inventory names them.
 func (a *app) prepareImages(ctx context.Context, l *lab.Lab, images map[string]string) error {
 	if err := os.Mkdir(filepath.Join(l.Dir, "images"), 0o700); err != nil {
 		return err
 	}
 	for _, n := range l.Nodes {
+		dir, err := a.imageDir(ctx, l, n, images[n.Name])
+		if err != nil {
+			return fmt.Errorf("the image of %s: %w", n.Name, err)
+		}
 		raw := filepath.Join(l.Dir, "images", n.Name+".raw")
-		fmt.Fprintf(a.stdout, "copying the image of %s from %s\n", n.Name, images[n.Name])
-		if err := copyImage(ctx, images[n.Name], raw); err != nil {
+		fmt.Fprintf(a.stdout, "copying the image of %s from %s\n", n.Name, dir)
+		if err := copyImage(ctx, dir, raw); err != nil {
 			return fmt.Errorf("the image of %s: %w", n.Name, err)
 		}
 		if err := signImage(ctx, raw, filepath.Join(l.Dir, "images", n.Name+".json"), filepath.Join(l.Dir, "keys")); err != nil {
@@ -213,6 +221,28 @@ func (a *app) prepareImages(ctx context.Context, l *lab.Lab, images map[string]s
 		}
 	}
 	return nil
+}
+
+// imageDir is the directory of a node's image: the directory the inventory names, or for an image
+// in a registry the lab's image cache, images/sha256-<hex> in its state directory, into which it
+// pulls the image by the digest labNodes resolved unless the cache holds it. named is the image as
+// the inventory names it, by tag or by digest.
+func (a *app) imageDir(ctx context.Context, l *lab.Lab, n lab.Node, named string) (string, error) {
+	if filepath.IsAbs(n.Image) {
+		return n.Image, nil
+	}
+	_, digest, _ := strings.Cut(n.Image, "@")
+	dir := filepath.Join(l.Dir, "images", strings.Replace(digest, ":", "-", 1))
+	p, err := imagepull.Directory(ctx, n.Image, dir)
+	if err != nil {
+		return "", err
+	}
+	if p.Present {
+		fmt.Fprintf(a.stdout, "using cached %s\n", p.Reference)
+	} else {
+		fmt.Fprintf(a.stdout, "pulled %s as %s\n", named, p.Reference)
+	}
+	return dir, nil
 }
 
 // prepareDisks creates each node's disks: the first an overlay on the node's image, the others
@@ -257,9 +287,11 @@ func assignPorts(l *lab.Lab) error {
 	return nil
 }
 
-// labNodes returns the VMs of the lab file's nodes in name order, each with its image directory
-// from the inventory, which must hold a kvm image. The lab file gives a VM its MAC address and
-// machine, else its type's defaults.
+// labNodes returns the VMs of the lab file's nodes in name order, each with its image from the
+// inventory, which must be a kvm image, and each node's image as the inventory names it. A VM's
+// image is the image's directory, or its reference in a registry pinned to the digest its tag
+// resolves to, once per reference. The lab file gives a VM its MAC address and machine, else its
+// type's defaults.
 func labNodes(inv *inventory.Inventory, lf *labFile) ([]lab.Node, map[string]string, error) {
 	images := map[string]string{}
 	macs := map[string]string{}
@@ -270,15 +302,20 @@ func labNodes(inv *inventory.Inventory, lf *labFile) ([]lab.Node, map[string]str
 		if err != nil {
 			return nil, nil, fmt.Errorf("%s: %w", lf.path, err)
 		}
-		if nc.ImageOCI != "" {
-			return nil, nil, fmt.Errorf("chalklab boots images from directories, but the image %s of %s comes from the registry, %s; name its directory in the inventory", nc.ImageName, name, nc.ImageOCI)
-		}
 		md, err := nc.Resolve()
 		if err != nil {
 			return nil, nil, err
 		}
 		if md.Platform != platform {
 			return nil, nil, fmt.Errorf("chalklab runs %s images, but the image %s of %s is built for %s", platform, nc.ImageName, name, md.Platform)
+		}
+		image, named := nc.ImageDir, nc.ImageDir
+		if nc.ImageOCI != "" {
+			a, err := nc.Artifact()
+			if err != nil {
+				return nil, nil, err
+			}
+			image, named = a.Reference, nc.ImageOCI
 		}
 		hw, err := net.ParseMAC(m.MAC)
 		if err != nil {
@@ -294,7 +331,7 @@ func labNodes(inv *inventory.Inventory, lf *labFile) ([]lab.Node, map[string]str
 		}
 		macs[mac] = name
 		kind := translate.NodeType(nc.Documents)
-		n := lab.Node{Name: name, Kind: kind, MAC: mac, MemoryMB: 2048, CPUs: 2, Disks: []lab.Disk{{Size: "16G"}}}
+		n := lab.Node{Name: name, Kind: kind, Image: image, MAC: mac, MemoryMB: 2048, CPUs: 2, Disks: []lab.Disk{{Size: "16G"}}}
 		if kind == kubernetes.KindControlPlane {
 			n.MemoryMB = 3072
 		}
@@ -320,21 +357,30 @@ func labNodes(inv *inventory.Inventory, lf *labFile) ([]lab.Node, map[string]str
 			n.Forwards = append(n.Forwards, lab.Forward{Guest: p})
 		}
 		nodes = append(nodes, n)
-		images[name] = nc.ImageDir
+		images[name] = named
 	}
 	return nodes, images, nil
 }
 
 // writeLabInventory writes the inventory chalkctl reaches the lab with: the lab file's inventory
-// with its paths absolute, so it reads the same from the lab's state directory, and its nodes those
-// the lab runs, at their forwarded ports.
+// with its paths absolute, so it reads the same from the lab's state directory, its images in a
+// registry pinned to the digests the lab's nodes booted, and its nodes those the lab runs, at
+// their forwarded ports.
 func writeLabInventory(path string, inv *inventory.Inventory, l *lab.Lab) error {
 	spec := inv.Spec
+	spec.Images = maps.Clone(inv.Spec.Images)
 	spec.Nodes = map[string]inventory.Node{}
 	for _, n := range l.Nodes {
 		node := inv.Spec.Nodes[n.Name]
 		node.Address = "127.0.0.1:" + strconv.Itoa(n.ChalkdPort)
 		spec.Nodes[n.Name] = node
+		name, source, err := inv.Image(n.Name)
+		if err != nil {
+			return err
+		}
+		if source.OCI != "" {
+			spec.Images[name] = inventory.Image{Source: inventory.ImageSource{OCI: n.Image}}
+		}
 	}
 	data, err := inventory.Encode(inv.Name, spec)
 	if err != nil {
