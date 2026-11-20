@@ -157,8 +157,8 @@ chalkctl version
 ```
 
 `chalkctl version` prints the release's version and the commit it was built from. chalkbuild
-downloads and checks the same way. `chalkbuild sign` still runs `sbsign` of sbsigntool, so
-install sbsigntool where it signs images.
+downloads and checks the same way. Like chalkctl, it is a static binary that runs no other
+program, `chalkbuild sign` included.
 
 The installer downloads and checks the same way, as `chalkos-installer.iso` or
 `chalkos-installer.raw.zst`. Decompress the raw image before writing it to a disk:

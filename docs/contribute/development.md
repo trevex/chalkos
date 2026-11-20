@@ -71,8 +71,9 @@ The shell, defined in `nix/outputs/shell.nix`, provides:
 
 - Go, gopls, staticcheck, buf with protoc-gen-go, protoc-gen-connect-go and protoc-gen-doc,
   openssl, jq, nixfmt and virt-firmware;
-- the tools the tests run: QEMU, swtpm, sbsigntool, mtools and dosfstools (which the FAT tests
-  check `pkg/fatfs` against), cryptsetup, util-linux, e2fsprogs, vde2, socat and iproute2;
+- the tools the tests run: QEMU, swtpm, sbsigntool (which the signing tests check signatures
+  against), mtools and dosfstools (which the FAT tests check `pkg/fatfs` against), cryptsetup,
+  util-linux, e2fsprogs, vde2, socat and iproute2;
 - the variables the tests read: `CHALKLAB_OVMF_CODE`, `CHALKLAB_OVMF_VARS` and
   `CHALKLAB_OVMF_VARS_ENROLLED` (OVMF firmware, blank and with test
   Secure Boot keys enrolled),
@@ -146,9 +147,9 @@ nix build .#chalkd
 ```
 
 `chalklab` is wrapped with QEMU, OVMF, swtpm and the other tools a lab runs, and with
-`chalkctl`, so its closure is larger than chalkctl's. `chalkbuild` is wrapped with sbsigntool,
-which it signs images with. Neither chalkctl nor chalkbuild runs a tool to read or write an ESP:
-`pkg/fatfs` does that in Go. During development, run the commands from the working tree instead:
+`chalkctl`, so its closure is larger than chalkctl's. chalkctl and chalkbuild run no other
+program: `pkg/fatfs` reads and writes an image's ESP, and `pkg/secureboot` signs its boot loader
+and UKIs. During development, run the commands from the working tree instead:
 
 ```sh
 go run ./cmd/chalkctl --help
