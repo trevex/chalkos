@@ -29,7 +29,7 @@ files, react to changes and add diagnostics; tests of what an image renders, ref
 run by `nix flake check`; chalklab, which runs a cluster as QEMU virtual machines; and chalkbuild,
 which signs images and publishes them to OCI registries.
 
-chalkos is unreleased; its options, commands and node API still change.
+chalkos is before 1.0; its options, commands and node API still change between releases.
 
 Documentation: https://trevex.github.io/chalkos/
 
@@ -39,9 +39,10 @@ chalklab runs a cluster of a control plane and a worker as QEMU virtual machines
 Secure Boot and a TPM. It needs an x86-64 Linux machine with Nix and flakes, access to
 `/dev/kvm` and about 5 GiB of free memory:
 
+<!-- x-release-please-start-version -->
 ```sh
 mkdir lab && cd lab
-nix flake init -t github:trevex/chalkos#lab
+nix flake init -t github:trevex/chalkos/v0.1.0#lab
 git init && git add .
 nix develop
 chalkctl gen secrets --plaintext
@@ -49,6 +50,7 @@ git add . && git commit -m "A chalkos lab"
 nix build .#node-kvm -o images/node-kvm
 chalklab create --secrets secrets.json
 ```
+<!-- x-release-please-end -->
 
 `nix build` builds the nodes' image. `chalklab create` starts the virtual machines, installs
 the nodes, bootstraps the cluster and prints how to reach it with kubectl and chalkctl.

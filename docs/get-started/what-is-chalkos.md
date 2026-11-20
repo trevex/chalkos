@@ -205,7 +205,7 @@ Kubernetes node is one. It differs where that and Nix change the trade-offs:
 | Images | One image for every node, extended with signed system extensions. | One image per kind of node and platform, built from NixOS modules, so a GPU image carries the GPU drivers and the others do not. The kernel is nixpkgs's, with its modules filtered per image, so the binary cache keeps working. |
 | Node certificates | Control planes hold the root CA's key. | Control planes hold a node CA, an intermediate that may issue only server and client certificates. The OS CA's key stays in the secrets file. |
 | Upgrades | The node pulls an installer image from a registry. | chalkctl streams an image Nix built to chalkd, or chalkd pulls it from a registry by the digest chalkctl names, and writes it into the inactive slot. |
-| Maturity | Released, with images for many clouds, hypervisors and boards. | Unreleased; bare metal and KVM on x86-64. |
+| Maturity | Released, with images for many clouds, hypervisors and boards. | Before 1.0; bare metal and KVM on x86-64. |
 
 ## Compared with NixOS
 

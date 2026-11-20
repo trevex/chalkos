@@ -147,8 +147,8 @@ nix flake lock
 nix develop
 ```
 
-Run every later command of this tutorial in that shell. chalkos is unreleased, so chalkctl and the
-images come from the same revision.
+Run every later command of this tutorial in that shell, so that chalkctl and the images come from
+the same chalkos release.
 
 The diagnostic `addresses`, which shows a machine's ports, prints JSON, as `ip -json address show`
 does. Keep a jq filter in the shell that turns it into a line per port, with the port's name, MAC
@@ -853,9 +853,9 @@ router rolls it back when chalkctl loses it. A delivery renames a router port at
 delivery, its `Network`, firewall zone and management interfaces, and deliver it with
 `chalkctl config apply router --try`, so that the router rolls it back when chalkctl loses it.
 
-A new chalkos revision or a change to the images' modules in `flake.nix` takes new images.
-Update the flake's lock with
-`nix flake update chalkos`, and enter the shell of [Get the tools](#get-the-tools) again, so that
+A new chalkos release or a change to the images' modules in `flake.nix` takes new images. For a
+new release, change the tag in the `chalkos` input's URL and update the flake's lock with
+`nix flake update chalkos`. Enter the shell of [Get the tools](#get-the-tools) again, so that
 chalkctl matches the images. Build the images again, as in
 [Build the images and the installer](#build-the-images-and-the-installer). With Secure Boot, remove
 the signed copies of the old builds, which `chalkbuild sign` does not overwrite, and sign the new

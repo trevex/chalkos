@@ -15,7 +15,7 @@ In short:
 chalkctl status <node>          # the certificates: section shows what expires when
 chalkctl client new --name=<name> --role=<role> --secrets secrets.age --force
 chalkctl rotate node-ca --secrets secrets.age
-nix flake update chalkos        # then rebuild, validate and upgrade
+nix flake update chalkos        # after changing the input's tag; then rebuild, validate and upgrade
 ```
 
 ## Before you begin
@@ -87,17 +87,22 @@ deleted. Back up what the workloads keep with a tool that works at the Kubernete
 
 ## Upgrade chalkos itself
 
-The image flake pins chalkos in `flake.lock`. A newer chalkos reaches the nodes as new images:
+The image flake names a chalkos release in its `chalkos` input, such as
+`github:trevex/chalkos/v0.1.0`, and `flake.lock` pins its commit. A newer chalkos reaches the
+nodes as new images:
 
-1. Update the pin in the image flake's directory:
+1. In `flake.nix`, change the input's tag to the new release, which
+   [Releases](../get-started/releases.md) lists, then update the pin in the image flake's
+   directory:
 
     ```sh
     nix flake update chalkos
     ```
 
-2. Read the commits of chalkos between the two revisions `flake.lock` records. chalkos has no
-   release yet, so a kind can change without a migration of its documents.
-3. Enter the flake's development shell again, so chalkctl comes from the new revision:
+2. Read the changelog of every release between the two, on the
+   [releases page](https://github.com/trevex/chalkos/releases). Before 1.0 a release can change a
+   kind without a migration of its documents.
+3. Enter the flake's development shell again, so chalkctl comes from the new release:
 
     ```sh
     nix develop

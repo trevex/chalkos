@@ -76,4 +76,13 @@ These pages prepare an install on real machines.
 
     [:octicons-arrow-right-24: Read](decisions.md)
 
+-   :material-tag-outline: __Releases__
+
+    ---
+
+    The images, the installer and chalkctl a release publishes, when to use its generic images,
+    and how to pin and verify them.
+
+    [:octicons-arrow-right-24: Read](releases.md)
+
 </div>

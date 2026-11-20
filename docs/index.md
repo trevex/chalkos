@@ -31,8 +31,9 @@ that was built and signed, and changes only through its API.
 ## Choose your path
 
 Start with the path that matches your work. Each one assumes the one before it, so an image
-author knows the quick start and a contributor knows both. chalkos publishes no prebuilt images
-yet, so every path needs Nix to build an image.
+author knows the quick start and a contributor knows both. Each release publishes generic images
+for clusters that need no image of their own, as [Releases](get-started/releases.md) describes;
+every other image is built with Nix.
 
 <div class="grid cards" markdown>
 
@@ -140,7 +141,7 @@ image does not boot healthy, the node returns to the image before.
     ---
 
     Install, upgrade, recover and troubleshoot nodes with chalkctl and YAML files. The machine
-    that runs chalkctl needs no Nix. chalkos publishes no prebuilt images yet, so build them from
+    that runs chalkctl needs no Nix. Take the generic images of a release, or build images from
     a template or an example with `nix build` first.
 
     [:octicons-arrow-right-24: Operate](operate/index.md)
@@ -202,7 +203,7 @@ image does not boot healthy, the node returns to the image before.
 
 !!! note "Status"
 
-    chalkos is unreleased. Until a first release, the config kinds, all at `v1alpha1`, the
-    `mkImages` arguments, the image options, the commands and the node API change without
+    chalkos is before 1.0. Until then, the config kinds, all at `v1alpha1`, the `mkImages`
+    arguments, the image options, the commands and the node API change between releases without
     migrations. A cluster may need its YAML or flake edited, or its nodes reinstalled, when it
     moves to a newer chalkos. Run it in labs and test clusters.
