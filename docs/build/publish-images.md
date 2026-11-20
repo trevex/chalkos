@@ -135,17 +135,14 @@ Two tags are involved, and nothing compares them:
 - The tag in the reference that `chalkbuild push` takes names the manifest in the registry.
   chalkctl resolves it to a digest once per command.
 
-Give both the same value, the release's git tag. Nix cannot read git tags, so the build passes it
-in. Here the flake reads it from the environment variable `RELEASE_TAG`:
+Give both the same value, the release's git tag. Nix cannot read git tags, so the flake reads the
+version from a file of the repository, `version.nix`, and the release's tag is `v` and that
+version:
 
 ```nix
 images = chalkos.lib.mkImages {
   revision = self.rev or self.dirtyRev or null;
-  tag =
-    let
-      release = builtins.getEnv "RELEASE_TAG";
-    in
-    if release == "" then null else release;
+  tag = "v${import ./version.nix}";
   images = [
     {
       name = "node-metal";
@@ -156,40 +153,19 @@ images = chalkos.lib.mkImages {
 };
 ```
 
-`builtins.getEnv` reads the variable only with `nix build --impure`. Without it, the build reads
-an empty string and records no tag. Either way the store, and so the root hash, stays the same.
-The header changes with the tag, so the manifest's digest does too: two builds that differ only in
-their tag have one root hash and two digests. A node identifies an image by its root hash, so both
-install the same image. Signing writes a new manifest too, so pin the digest that the push of the
-signed layout prints.
+The tag never reaches the store, so the root hash stays the same whatever the tag. The header
+changes with the tag, so the manifest's digest does too: two builds that differ only in their tag
+have one root hash and two digests. A node identifies an image by its root hash, so both install
+the same image. Signing writes a new manifest too, so pin the digest that the push of the signed
+layout prints.
 
 ## Publish from a CI job
 
-A release job runs the steps of this page in order: build the layout, sign it, push it and pin the
-pushed digest in the inventory. This script does it for one image, with the tag as its argument:
-
-```sh title="publish.sh"
-#!/usr/bin/env bash
-# Builds node-metal as an OCI layout, signs it, pushes it under the release's tag and pins the
-# pushed digest in chalkos.yaml. Run it in the flake's directory, on a checkout of the tag.
-set -euo pipefail
-tag=$1
-repository=ghcr.io/example/node-metal
-
-RELEASE_TAG=$tag nix build --impure .#node-metal-oci -o oci/node-metal
-rm -rf oci/node-metal-signed
-chalkbuild sign --key "$DB_KEY_FILE" --cert keys/db.crt oci/node-metal oci/node-metal-signed
-reference=$(chalkbuild push oci/node-metal-signed "$repository:$tag")
-sed -i "s|$repository@sha256:[0-9a-f]*|$reference|" chalkos.yaml
-chalkctl validate
-```
-
-The job takes the db key from its secrets, as the file `DB_KEY_FILE` names, and the
-registry's credentials, in docker's config as `docker login` writes them. Only chalkbuild
-reads the key, so it never enters the Nix store. `sed` replaces the digest the inventory
-names, so the inventory must name the image by digest already. `chalkctl validate` then checks
-every node's files against the pushed image. Commit the changed `chalkos.yaml`, or open it for
-review, and roll the image out with `chalkctl upgrade`.
+[Release your own images](../guides/release-your-images.md) runs the steps of this page on every
+pushed tag: a GitHub Actions workflow builds each layout, signs it for Secure Boot, pushes it,
+signs the pushed digest with cosign and lists the digests in the release notes. The guide shows
+the same steps as a shell script for other CI systems, and keeps `version.nix` and the tag in
+step.
 
 ## The artifact holds the image and its contract
 
@@ -272,6 +248,8 @@ the image that was checked even when the inventory names a tag.
 
 ## What next
 
+- [Release your own images](../guides/release-your-images.md) publishes the images from CI on
+  every tag, signed and listed by digest.
 - [Registries and mirrors](../operate/registries.md) gives the nodes the registry's credentials.
 - [Test and roll out an image](test-and-roll-out.md) upgrades the nodes to the pushed image.
 - [Upgrades](../how-it-works/node/upgrades.md) explains what each node checks before the image

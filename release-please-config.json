@@ -24,6 +24,7 @@
         "docs/get-started/quick-start-router.md",
         "docs/guides/cluster-on-machines.md",
         "docs/get-started/releases.md",
+        "docs/guides/release-your-images.md",
         "docs/contribute/ci.md"
       ]
     }

@@ -57,7 +57,7 @@ own. The `lab` and `router-lab` templates run the release's `kvm` images.
 
 A cluster that needs its own images builds them with `mkImages` from the chalkos of a release, and
 pushes them to a registry of its own, as
-[Publish images to a registry](../build/publish-images.md) describes.
+[Release your own images](../guides/release-your-images.md) describes.
 
 Run the chalkctl of the same release as the images, because before 1.0 the commands and the node
 API change between releases.

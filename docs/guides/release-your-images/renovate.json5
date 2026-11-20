@@ -1,0 +1,15 @@
+{
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  extends: ['config:recommended'],
+  customManagers: [
+    {
+      // The chalkos release in the URL of the flake's chalkos input.
+      customType: 'regex',
+      description: 'The chalkos release of the flake',
+      managerFilePatterns: ['/(^|/)flake\\.nix$/'],
+      matchStrings: ['"github:trevex/chalkos/(?<currentValue>v\\d+\\.\\d+\\.\\d+)"'],
+      depNameTemplate: 'trevex/chalkos',
+      datasourceTemplate: 'github-releases',
+    },
+  ],
+}

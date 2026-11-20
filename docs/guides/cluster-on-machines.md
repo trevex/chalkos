@@ -577,7 +577,7 @@ network uses the VIP's address, and that the address lies outside the DHCP serve
 - [Recurring tasks](../operate/recurring-tasks.md) lists what to back up and renew over the
   cluster's life.
 - [Your first image flake](../build/first-image.md) and
-  [Publish images to a registry](../build/publish-images.md) build your own images and push them
+  [Release your own images](release-your-images.md) build your own images and push them
   to a registry of your own, from which the nodes pull them as they pull the published one.
 
 These pages explain the steps of this tutorial in more depth:

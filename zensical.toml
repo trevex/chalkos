@@ -34,6 +34,7 @@ nav = [
     "guides/index.md",
     "guides/cluster-on-machines.md",
     "guides/air-gapped.md",
+    "guides/release-your-images.md",
     "guides/bgp-extension.md",
     "guides/home-lab.md",
   ] },
