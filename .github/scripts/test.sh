@@ -103,13 +103,14 @@ for title in \
   "refactor(chalkctl,chalkd)!: rename the flag" \
   "feat!: drop the old API" \
   "ci(release): rebuild the release pull request" \
+  "style(chalkd): wrap a doc comment" \
   "revert: feat: add a kind"; do
   expect pass "the title '$title'" bash "$scripts/pr-title.sh" "$title"
 done
 for title in \
   "Add a kind" \
   "feature: add a kind" \
-  "style: format the code" \
+  "wip: add a kind" \
   "feat:add a kind" \
   "feat: " \
   "feat(): add a kind" \

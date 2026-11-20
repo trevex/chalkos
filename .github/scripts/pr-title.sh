@@ -7,7 +7,7 @@
 set -euo pipefail
 
 title=$1
-types='feat|fix|docs|ci|build|test|refactor|perf|chore|revert'
+types='feat|fix|docs|style|ci|build|test|refactor|perf|chore|revert'
 if [[ $title =~ ^($types)(\([^()[:space:]]+\))?!?:\ [^[:space:]] ]]; then
   echo "the title is a Conventional Commit: $title"
   exit 0
