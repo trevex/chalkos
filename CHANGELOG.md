@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.0](https://github.com/trevex/chalkos/compare/v0.2.2...v0.3.0) (2026-11-20)
+
+
+### Features
+
+* **release:** publish SBOMs of the images and programs ([#37](https://github.com/trevex/chalkos/issues/37)) ([561aa04](https://github.com/trevex/chalkos/commit/561aa04f0baaef7d6b7cce191313df9843cf14b8))
+
+
+### Bug Fixes
+
+* **deps:** update the Go modules with vulnerabilities chalkos calls ([61f9ff5](https://github.com/trevex/chalkos/commit/61f9ff5644d4ad10af07c87a650c2e350ab94850))
+* **deps:** update the vendor hash for the merged module updates ([#39](https://github.com/trevex/chalkos/issues/39)) ([0afd247](https://github.com/trevex/chalkos/commit/0afd247a98b463dac0c8e53c21116a227324bd30))
+
 ## [0.2.2](https://github.com/trevex/chalkos/compare/v0.2.1...v0.2.2) (2026-11-20)
 
 
