@@ -103,7 +103,8 @@ The flake's `bin/chalkctl` is built without cgo, so it is a static binary that n
 program. To run chalkctl on a machine without Nix, an air-gapped one included, copy
 `bin/chalkctl` there. Each release publishes the same
 program as `chalkctl-linux-amd64`, as [Releases](releases.md#download-chalkctl-and-the-installer)
-shows. [Set up your workstation](../operate/workstation.md#get-chalkctl-from-the-chalkos-flake) shows how
+shows. The release's programs, chalkctl and chalkbuild, need no external tools: chalkbuild signs
+images for Secure Boot itself. [Set up your workstation](../operate/workstation.md#get-chalkctl-from-the-chalkos-flake) shows how
 to take chalkctl from the flake.
 
 ## Lab host
