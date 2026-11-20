@@ -12,10 +12,18 @@ Kubernetes. chalkos lets an image author build the distribution a set of machine
 modules and packages of the NixOS ecosystem, and ships two layers to start from: Kubernetes and a
 router.
 
+Each chalkos release publishes signed OCI images of both layers, for physical machines and for
+virtual machines, which a cluster can run as they are. A cluster that needs its own OS CA, Secure
+Boot keys, extensions, packages or options builds its own images with Nix and releases them the
+same way. [Releases](releases.md) lists the published images, and
+[Published images or your own](decisions.md#published-images-or-your-own) compares the two
+paths.
+
 A chalkos cluster's nodes boot read-only images that Nix builds, take every setting of the
 cluster from YAML documents, run a node agent instead of logins, and are upgraded by replacing the
-whole image. Nix builds the images and nothing else; chalkctl delivers the images and the
-documents to the nodes and never runs Nix. Most sections below link the How chalkos works page
+whole image. Nix builds the images and nothing else; chalkctl delivers the documents to the
+nodes, and the images too unless the nodes pull them from a registry. chalkctl never runs Nix.
+Most sections below link the How chalkos works page
 that explains their part, and the glossary defines the terms.
 
 The flowchart shows how the parts connect, from the flake and the YAML files to a running node.
