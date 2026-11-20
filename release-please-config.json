@@ -6,6 +6,7 @@
   "initial-version": "0.1.0",
   "bootstrap-sha": "211c556eb70198c6fe62f9c0525a8997b1afa57f",
   "label": "autorelease: pending,e2e",
+  "always-update": true,
   "packages": {
     ".": {
       "changelog-path": "CHANGELOG.md",

@@ -47,8 +47,11 @@ code owner's review then gate the merge as on any pull request.
 
 The release pull request must hold the changes of every pull request merged before it, or the
 release's versioned files and changelog miss them. release-please rebuilds it on each push to
-`main`, within about a minute, as one commit on `main`'s new tip. GitHub does not run a pull
-request's checks again when `main` moves, so its last green run can belong to an older `main`.
+`main`, within about a minute, as one commit on `main`'s new tip. `always-update` in
+`release-please-config.json` makes it rebuild even when the changelog stays the same, as after a
+`docs:` or `ci:` commit; without it the pull request would stay on the older `main`. GitHub
+does not run a pull request's checks again when `main` moves, so its last green run can belong to
+an older `main`.
 Two settings keep such a release pull request from being merged:
 
 - Branch protection on `main` requires the `result` check and "Require branches to be up to date
