@@ -696,7 +696,7 @@ or [install it in a VM](../operate/install-vm.md).
 To build and release your own images, start with
 [Your first image flake](../build/first-image.md), then
 [Write your first extension](../build/first-extension.md) on this lab.
-[Publish images to a registry](../build/publish-images.md) pushes your images to a registry of
+[Release your own images](../guides/release-your-images.md) pushes your images to a registry of
 your own, from which the nodes pull them as they pulled the published one.
 
 [Quick start: router](quick-start-router.md) runs a router lab.

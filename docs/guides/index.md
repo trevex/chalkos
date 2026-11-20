@@ -1,14 +1,15 @@
 ---
 title: "Guides"
-description: "Longer walks through a whole setup: a cluster on real machines, one without internet access, an extension and an IPv6 home lab"
+description: "Longer walks through a whole setup: a cluster on real machines, one without internet access, a release pipeline for your own images, an extension and an IPv6 home lab"
 ---
 
 # Guides
 
 These pages follow one project from start to end, across the roles of the other sections, and
 link to the how-to pages for the details of each step. Start with the cluster on real machines.
-The air-gapped cluster builds on it. The other two build on the homelab example, an advanced setup
-of a router and three Kubernetes nodes on an IPv6 fabric with BGP.
+The air-gapped cluster builds on it, and so does the release pipeline for a cluster's own images.
+The other two build on the homelab example, an advanced setup of a router and three Kubernetes
+nodes on an IPv6 fabric with BGP.
 [Decisions before you install](../get-started/decisions.md) lists the choices that each guide makes
 for you, with what each one costs.
 
@@ -31,6 +32,15 @@ for you, with what each one costs.
     images from a connected machine, serve them from the control planes and keep time locally.
 
     [:octicons-arrow-right-24: Build](air-gapped.md)
+
+-   :material-rocket-launch-outline: __Release your own images__
+
+    ---
+
+    Build, sign and push the cluster's own images from GitHub Actions on every tag, pin their
+    digests in the inventory and follow chalkos releases with Renovate.
+
+    [:octicons-arrow-right-24: Set up](release-your-images.md)
 
 -   :material-puzzle-outline: __Write a BGP extension__
 

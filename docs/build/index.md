@@ -18,8 +18,9 @@ A cluster that needs nothing of its own runs the images each chalkos release pub
 none of these pages; [Published images or your own](../get-started/decisions.md#published-images-or-your-own)
 draws the line. Most image authors release their own images the same way, as OCI images in
 a registry from which the nodes pull them.
-[Publish images to a registry](publish-images.md) builds them, signs them for Secure Boot and
-pushes them.
+[Release your own images](../guides/release-your-images.md) sets up a CI pipeline that does it on
+every tag, and [Publish images to a registry](publish-images.md) covers each step by hand: build,
+sign for Secure Boot and push.
 
 ## How an extension fits together
 
@@ -260,6 +261,15 @@ registry, testing and rolling out an upgrade, and changing a kind between images
     the inventory.
 
     [:octicons-arrow-right-24: Read](publish-images.md)
+
+-   :material-rocket-launch-outline: __Release your own images__
+
+    ---
+
+    Release the images from GitHub Actions on every tag: build, sign, push, sign with cosign and
+    list the digests in the release notes.
+
+    [:octicons-arrow-right-24: Read](../guides/release-your-images.md)
 
 -   :material-check-decagram: __Test and roll out an image__
 

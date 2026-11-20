@@ -43,7 +43,7 @@ refuses to boot it.
 
 Your own images take a Nix build for each change, and a registry or a directory that hands them to
 the nodes. [Your first image flake](../build/first-image.md) builds them, and
-[Publish images to a registry](../build/publish-images.md) pushes them to a registry of your own.
+[Release your own images](../guides/release-your-images.md) pushes them to a registry of your own.
 A node whose image in the inventory changes from one kind to the other gets the new image at its
 next upgrade, so the choice stays open after the install.
 
