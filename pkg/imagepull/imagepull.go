@@ -16,7 +16,6 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 
 	"github.com/trevex/chalkos/pkg/atomicfile"
-	"github.com/trevex/chalkos/pkg/image"
 	"github.com/trevex/chalkos/pkg/ociimage"
 )
 
@@ -36,13 +35,7 @@ type Pulled struct {
 // dir must not exist, be empty, or hold the same image already: a directory ociimage.FromDirectory
 // reads as the image of the same manifest digest, which the pull leaves as it is. dir appears only
 // once the whole image is written and checked.
-//
-// The image's ESP is written with mtools, whose absence Directory reports before it fetches
-// anything.
 func Directory(ctx context.Context, ref, dir string) (Pulled, error) {
-	if missing := image.MissingESPTools(); len(missing) > 0 {
-		return Pulled{}, fmt.Errorf("pull %s: an image directory's ESP is written and read with mtools, whose %s PATH lacks; install mtools, which the flake's chalkctl and chalklab bring, or pull the OCI layout instead", ref, strings.Join(missing, ", "))
-	}
 	return pull(ctx, ref, dir, directoryDigest, writeDirectory)
 }
 

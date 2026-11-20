@@ -60,7 +60,7 @@ func SignDirectory(ctx context.Context, in, out, key, cert string) ([]string, er
 			if err := SignImage(ctx, raw, esp.Offset, key, cert); err != nil {
 				return err
 			}
-			if err := verify(ctx, raw, esp.Offset, certs); err != nil {
+			if err := verify(raw, esp.Offset, certs); err != nil {
 				return fmt.Errorf("%s: %w", d.name, err)
 			}
 			names = append(names, d.name)
@@ -146,13 +146,13 @@ func copyTree(ctx context.Context, src, dst string) error {
 
 // verify checks the UKI and the boot loader on the image's ESP against the db certificates, as
 // firmware with them in db would.
-func verify(ctx context.Context, raw string, espOffset int64, certs []*x509.Certificate) error {
+func verify(raw string, espOffset int64, certs []*x509.Certificate) error {
 	dir, err := os.MkdirTemp("", "imagesign-")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(dir)
-	b, err := image.ExtractBinaries(ctx, raw, espOffset, dir, true)
+	b, err := image.ExtractBinaries(raw, espOffset, dir, true)
 	if err != nil {
 		return err
 	}

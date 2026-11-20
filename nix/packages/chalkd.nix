@@ -25,6 +25,7 @@ buildGoProgram {
     ../../pkg/effects
     ../../pkg/esp
     ../../pkg/facts
+    ../../pkg/fatfs
     ../../pkg/identity
     ../../pkg/image
     ../../pkg/imagepart

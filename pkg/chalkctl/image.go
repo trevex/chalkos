@@ -41,7 +41,7 @@ type diskImage struct {
 // openImage reads a raw image with repart-output.json beside it, or nix build's directory, with its
 // contract, for install (with bootLoader) or upgrade. Warnings go to stderr.
 func openImage(ctx context.Context, path string, bootLoader bool, stderr io.Writer) (_ *diskImage, err error) {
-	p, raw, definitions, err := openParts(ctx, path, bootLoader)
+	p, raw, definitions, err := openParts(path, bootLoader)
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +238,7 @@ const chunkSize = 1 << 20
 
 // openParts opens the parts of the raw image at path, or of an image directory's, as its
 // repart-output.json lays them out; definitions is the image's repart.d beside it.
-func openParts(ctx context.Context, path string, bootLoader bool) (p *image.Parts, raw, definitions string, err error) {
+func openParts(path string, bootLoader bool) (p *image.Parts, raw, definitions string, err error) {
 	if raw, err = image.FindRaw(path); err != nil {
 		return nil, "", "", err
 	}
@@ -246,7 +246,7 @@ func openParts(ctx context.Context, path string, bootLoader bool) (p *image.Part
 	if err != nil {
 		return nil, "", "", err
 	}
-	if p, err = image.OpenParts(ctx, raw, parts, bootLoader); err != nil {
+	if p, err = image.OpenParts(raw, parts, bootLoader); err != nil {
 		return nil, "", "", err
 	}
 	return p, raw, filepath.Join(filepath.Dir(raw), "repart.d"), nil

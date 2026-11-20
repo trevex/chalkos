@@ -81,7 +81,7 @@ func (a *app) nodeActivate(ctx context.Context, f nodeActivateFlags, name string
 // imageRoot reads the root hash, revision and tag of the image at path, as upgrade --image takes
 // it. Opening the image checks its hash tree against repart's root hash.
 func imageRoot(ctx context.Context, path string, stderr io.Writer) (root []byte, revision, tag string, err error) {
-	p, raw, _, err := openParts(ctx, path, false)
+	p, raw, _, err := openParts(path, false)
 	if err != nil {
 		return nil, "", "", err
 	}

@@ -30,7 +30,9 @@ func write(t *testing.T, path, content string) {
 func verified(t *testing.T, disk, file, cert string) error {
 	t.Helper()
 	copied := filepath.Join(t.TempDir(), filepath.Base(file))
-	mustRun(t, "mcopy", "-n", "-i", disk+"@@0", file, copied)
+	if err := os.WriteFile(copied, imagetest.ReadESP(t, disk, 0, file), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	return exec.Command("sbverify", "--cert", cert, copied).Run()
 }
 
@@ -83,7 +85,7 @@ func TestSignDirectory(t *testing.T) {
 		t.Errorf("signed %v", signed)
 	}
 	for _, disk := range signed {
-		for _, f := range []string{"::/EFI/Linux/chalkos_1.efi", "::/EFI/BOOT/BOOTX64.EFI"} {
+		for _, f := range []string{"/EFI/Linux/chalkos_1.efi", "/EFI/BOOT/BOOTX64.EFI"} {
 			if err := verified(t, filepath.Join(out, disk), f, cert); err != nil {
 				t.Errorf("%s of %s is not signed: %v", f, disk, err)
 			}

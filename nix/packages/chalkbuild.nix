@@ -16,6 +16,7 @@ buildGoProgram {
     ../../pkg/arch
     ../../pkg/atomicfile
     ../../pkg/chalkbuild
+    ../../pkg/fatfs
     ../../pkg/image
     ../../pkg/imagepart
     ../../pkg/imagesign

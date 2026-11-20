@@ -32,7 +32,7 @@ func FromDirectory(ctx context.Context, dir string) (_ v1.Image, closeImage func
 	if err != nil {
 		return nil, nil, err
 	}
-	p, err := image.OpenParts(ctx, raw, partitions, true)
+	p, err := image.OpenParts(raw, partitions, true)
 	if err != nil {
 		return nil, nil, err
 	}
