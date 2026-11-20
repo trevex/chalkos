@@ -148,10 +148,8 @@ done
 gh attestation verify chalkctl-linux-amd64 --repo trevex/chalkos
 ```
 
-Install the program as `chalkctl` on the `PATH`. `chalkctl install` and `chalkctl upgrade` run the
-mtools commands `mdir` and `mcopy`, and `chalkctl image pull` also `mformat` and `mmd` unless it
-pulls with `--layout`. The chalkctl of the flake brings mtools with it; for the downloaded binary,
-install the distribution's mtools package too. chalkctl names a missing command before it starts:
+Install the program as `chalkctl` on the `PATH`. It reads and writes the ESP of an image itself
+and runs no other program:
 
 ```sh
 install -m 0755 chalkctl-linux-amd64 ~/.local/bin/chalkctl
@@ -159,8 +157,8 @@ chalkctl version
 ```
 
 `chalkctl version` prints the release's version and the commit it was built from. chalkbuild
-downloads and checks the same way. `chalkbuild sign` runs `mcopy` of mtools and `sbsign` of
-sbsigntool, so install both where it signs images.
+downloads and checks the same way. `chalkbuild sign` still runs `sbsign` of sbsigntool, so
+install sbsigntool where it signs images.
 
 The installer downloads and checks the same way, as `chalkos-installer.iso` or
 `chalkos-installer.raw.zst`. Decompress the raw image before writing it to a disk:

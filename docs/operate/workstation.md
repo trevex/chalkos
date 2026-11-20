@@ -14,7 +14,8 @@ credential each command needs.
 ## Before you begin
 
 You need an x86-64 Linux machine. To get chalkctl from the chalkos flake, the machine needs Nix
-with flakes enabled. A machine without Nix can run a copy of the program with mtools installed.
+with flakes enabled. A machine without Nix can run a copy of the program, which needs no other
+program.
 
 [Manage secrets](secrets.md) covers the keys you need to encrypt and back up the cluster's secrets.
 
@@ -57,7 +58,7 @@ template does, so that `nix develop` gives the chalkctl of the pinned release.
 
 To run chalkctl on a machine without Nix, download the program from the release, as
 [Download chalkctl and the installer](../get-started/releases.md#download-chalkctl-and-the-installer)
-shows, and install mtools, as [Requirements](../get-started/requirements.md#workstation) describes.
+shows.
 
 ## Lay out the repository
 
