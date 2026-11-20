@@ -24,8 +24,8 @@ You need:
 
 You do not need root. [Requirements](requirements.md#lab-host) lists the details.
 
-chalkos publishes no prebuilt images yet. This tutorial builds its image from the `lab` template
-with `nix build`, which is why it needs Nix.
+This tutorial builds its image from the `lab` template with `nix build`, which is why it needs Nix.
+[Releases](releases.md) lists the generic images chalkos publishes.
 
 ## Terms you meet on this page
 
@@ -44,9 +44,10 @@ The [glossary](../reference/glossary.md) defines every other term.
 The `lab` template holds a cluster that chalklab can run. Create a directory for it and
 initialise it from the template:
 
+<!-- x-release-please-start-version -->
 ```console
 $ mkdir lab && cd lab
-$ nix flake init -t github:trevex/chalkos#lab
+$ nix flake init -t github:trevex/chalkos/v0.1.0#lab
 wrote: "/home/alice/lab/.gitignore"
 wrote: "/home/alice/lab/README.md"
 wrote: "/home/alice/lab/chalkos.yaml"
@@ -56,6 +57,7 @@ wrote: "/home/alice/lab/flake.nix"
 wrote: "/home/alice/lab/nodes/cp1.yaml"
 wrote: "/home/alice/lab/nodes/w1.yaml"
 ```
+<!-- x-release-please-end -->
 
 Nix builds the image; YAML files describe the cluster.
 `flake.nix` pins chalkos as an input, builds the image the nodes run with `mkImages`, and

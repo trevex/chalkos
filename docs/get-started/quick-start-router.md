@@ -23,8 +23,8 @@ You need:
   of free disk for `/nix/store` and the lab;
 - git.
 
-You do not need root. chalkos publishes no prebuilt images yet, so the tutorial builds both images
-from the `router-lab` template with `nix build`.
+You do not need root. The tutorial builds both images from the `router-lab` template with
+`nix build`.
 
 ## What the lab runs
 
@@ -52,9 +52,10 @@ connections alone, so the client reaches the internet only through the router.
 
 Create a directory and initialise it from the `router-lab` template:
 
+<!-- x-release-please-start-version -->
 ```console
 $ mkdir router-lab && cd router-lab
-$ nix flake init -t github:trevex/chalkos#router-lab
+$ nix flake init -t github:trevex/chalkos/v0.1.0#router-lab
 wrote: "/home/alice/router-lab/.gitignore"
 wrote: "/home/alice/router-lab/README.md"
 wrote: "/home/alice/router-lab/chalklab.yaml"
@@ -64,6 +65,7 @@ wrote: "/home/alice/router-lab/nodes/client.yaml"
 wrote: "/home/alice/router-lab/nodes/router.yaml"
 wrote: "/home/alice/router-lab/nodes"
 ```
+<!-- x-release-please-end -->
 
 The files:
 

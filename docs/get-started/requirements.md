@@ -94,7 +94,7 @@ Nix: it reads the image directories with the inventory and its YAML files.
 
 | Requirement | What chalkos needs |
 | --- | --- |
-| chalkctl and kubectl | From the chalkos flake's packages or the `lab` template's development shell. |
+| chalkctl and kubectl | From the chalkos flake's packages or the `lab` template's development shell. chalkctl also comes with each release. |
 | mtools | `mdir` and `mcopy`, which `install` and `upgrade` run to read the ESP of an image directory. The flake's chalkctl brings them. |
 | Files | The inventory, `chalkos.yaml`, the YAML files it names, and the image directories the inventory names for the nodes, for installs, upgrades and `chalkctl validate`. |
 | age identity | To decrypt `secrets.age`: an age key in `~/.config/chalkos/age.key`, or the SSH key `~/.ssh/id_ed25519` or `~/.ssh/id_rsa` the file was encrypted to, or a file named with `--identity`. A client file needs none. |
@@ -103,8 +103,9 @@ Nix: it reads the image directories with the inventory and its YAML files.
 The flake's `bin/chalkctl` is a wrapper script that puts mtools on the `PATH` and runs
 `bin/.chalkctl-wrapped`. That program is built without cgo, so it is a static binary. To run
 chalkctl on a machine without Nix, an air-gapped one included, copy `bin/.chalkctl-wrapped` there
-as `chalkctl` and install the distribution's mtools package.
-[Set up your workstation](../operate/workstation.md#get-chalkctl-from-the-chalkos-flake) shows how
+as `chalkctl` and install the distribution's mtools package. Each release publishes the same
+program as `chalkctl-linux-amd64`, as [Releases](releases.md#download-chalkctl-and-the-installer)
+shows. [Set up your workstation](../operate/workstation.md#get-chalkctl-from-the-chalkos-flake) shows how
 to take chalkctl from the flake.
 
 ## Lab host

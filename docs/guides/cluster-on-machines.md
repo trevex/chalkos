@@ -57,8 +57,9 @@ You need:
   [Nix](https://nixos.org/download/) and flakes enabled, and git;
 - an age key or an SSH key of type ed25519 or RSA to encrypt the cluster's secrets to.
 
-chalkos publishes no prebuilt images yet, so the tutorial builds the image and the installer from
-the template with `nix build`.
+The tutorial builds the image and the installer from the template with `nix build`, so that both
+carry the cluster's OS CA. The generic images of a [release](../get-started/releases.md) carry
+none.
 
 ### Secure Boot is optional
 
@@ -85,9 +86,10 @@ template makes for you.
 
 Create a directory for the cluster and initialise it from the template:
 
+<!-- x-release-please-start-version -->
 ```console
 $ mkdir cluster && cd cluster
-$ nix flake init -t github:trevex/chalkos#cluster-metal
+$ nix flake init -t github:trevex/chalkos/v0.1.0#cluster-metal
 wrote: "/home/alice/cluster/.gitignore"
 wrote: "/home/alice/cluster/README.md"
 wrote: "/home/alice/cluster/chalkos.yaml"
@@ -99,6 +101,7 @@ wrote: "/home/alice/cluster/nodes/cp2.yaml"
 wrote: "/home/alice/cluster/nodes/cp3.yaml"
 wrote: "/home/alice/cluster/nodes"
 ```
+<!-- x-release-please-end -->
 
 Nix reads a flake from the files git tracks, so put them under git:
 
@@ -124,8 +127,8 @@ with kubectl and jq. Enter it; the first run writes `flake.lock`:
 nix develop
 ```
 
-Run every later command of this tutorial in that shell. chalkos is unreleased, so chalkctl and the
-image come from the same revision.
+Run every later command of this tutorial in that shell, so that chalkctl and the image come from
+the same chalkos release.
 
 The diagnostic `addresses`, which shows a machine's ports, prints JSON, as `ip -json address show`
 does. Keep a jq filter in the shell that turns it into a line per port, with the port's name, MAC
@@ -433,8 +436,9 @@ chalkctl validate
 chalkctl apply cp1 cp2 cp3 --secrets=secrets.age
 ```
 
-A new chalkos revision or a change to `flake.nix` takes a new image. Update the flake's lock with
-`nix flake update chalkos`, and enter the shell again, so that chalkctl matches the image. Build
+A new chalkos release or a change to `flake.nix` takes a new image. For a new release, change the
+tag in the `chalkos` input's URL and update the flake's lock with `nix flake update chalkos`.
+Enter the shell again, so that chalkctl matches the image. Build
 the image again, sign it again with Secure Boot, and roll it out with `chalkctl upgrade`. chalkctl
 upgrades the control planes one at a time, so the Kubernetes API stays up:
 

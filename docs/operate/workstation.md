@@ -20,8 +20,9 @@ with flakes enabled. A machine without Nix can run a copy of the program with mt
 
 The images come from an image author, who builds them with Nix as
 [Your first image flake](../build/first-image.md) shows. chalkctl needs the image directories the
-builds write, and no Nix. chalkos publishes no prebuilt images yet, so without an image author you
-build them yourself from a template or an example with `nix build`.
+builds write, and no Nix. Without an image author, take the generic images each chalkos release
+publishes, as [Releases](../get-started/releases.md) describes, or build images yourself from a
+template or an example with `nix build`.
 
 !!! note "If you are both operator and image author"
 
@@ -42,20 +43,21 @@ build them yourself from a template or an example with `nix build`.
 ## Get chalkctl from the chalkos flake
 
 chalkctl is the package `chalkctl` of the chalkos flake, built for `x86_64-linux`. Take it from the
-chalkos revision your images are built from, because chalkos is unreleased and its commands and
-node API still change between revisions. Run it from a shell that has it on the `PATH`:
+chalkos release your images are built from, because before 1.0 its commands and node API change
+between releases. Run it from a shell that has it on the `PATH`:
 
 ```sh
-nix shell github:trevex/chalkos/<rev>#chalkctl
+nix shell github:trevex/chalkos/<tag>#chalkctl
 chalkctl --help
 ```
 
-`<rev>` is the commit that the image author's `flake.lock` pins for the `chalkos` input, its
-`locked.rev`. A cluster's flake can add chalkctl to its development shell instead, as the lab
-template does, so that `nix develop` gives the chalkctl of the pinned revision.
+`<tag>` is the release that the image author's `flake.nix` names in its `chalkos` input, such as
+`v0.1.0`. A cluster's flake can add chalkctl to its development shell instead, as the lab
+template does, so that `nix develop` gives the chalkctl of the pinned release.
 
-To run chalkctl on a machine without Nix, copy its program and install mtools, as
-[Requirements](../get-started/requirements.md#workstation) describes.
+To run chalkctl on a machine without Nix, download the program from the release, as
+[Download chalkctl and the installer](../get-started/releases.md#download-chalkctl-and-the-installer)
+shows, and install mtools, as [Requirements](../get-started/requirements.md#workstation) describes.
 
 ## Lay out the repository
 

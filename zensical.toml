@@ -27,6 +27,7 @@ nav = [
     { "Before you install" = [
       "get-started/requirements.md",
       "get-started/decisions.md",
+      "get-started/releases.md",
     ] },
   ] },
   { "Guides" = [
