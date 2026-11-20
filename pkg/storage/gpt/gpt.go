@@ -1,5 +1,5 @@
-// Package gpt reads and changes GUID partition tables with sfdisk, under the disk's lock, and
-// names the ESP's partition type.
+// Package gpt reads and changes GUID partition tables with sfdisk, under the disk's lock, writes
+// the GPT of a disk image, and names the ESP's partition type.
 package gpt
 
 import (
