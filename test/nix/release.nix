@@ -123,4 +123,38 @@ lib.runTests {
     );
     expected = [ [ version ] ];
   };
+  # Between its start and end markers the generic updater replaces every x.y.z, so a block in the
+  # files it updates names no other, such as an IPv4 address.
+  testVersionBlocks =
+    let
+      config = lib.importJSON ../../release-please-config.json;
+      blockLines =
+        file:
+        (lib.foldl'
+          (
+            state: line:
+            if lib.hasInfix "x-release-please-start" line then
+              state // { inBlock = true; }
+            else if lib.hasInfix "x-release-please-end" line then
+              state // { inBlock = false; }
+            else if state.inBlock then
+              state // { lines = state.lines ++ [ line ]; }
+            else
+              state
+          )
+          {
+            inBlock = false;
+            lines = [ ];
+          }
+          (lib.splitString "\n" (builtins.readFile (../.. + "/${file}")))
+        ).lines;
+      versions =
+        line: lib.concatLists (lib.filter lib.isList (builtins.split "([0-9]+\\.[0-9]+\\.[0-9]+)" line));
+    in
+    {
+      expr = lib.unique (
+        lib.concatMap (file: lib.concatMap versions (blockLines file)) config.packages.".".extra-files
+      );
+      expected = [ version ];
+    };
 }

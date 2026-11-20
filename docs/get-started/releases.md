@@ -79,20 +79,18 @@ images, because before 1.0 the commands and the node API change between releases
 The inventory names a release's image by its reference in `spec.images`. Copy the reference with
 its digest from the release notes:
 
-<!-- x-release-please-start-version -->
 ```yaml title="chalkos.yaml"
 apiVersion: chalkctl.chalkos.dev/v1alpha1
 kind: Inventory
 metadata: {name: cluster}
 spec:
   images:
-    kubernetes-metal: {source: {oci: "ghcr.io/trevex/chalkos/kubernetes-1.37-metal:v0.1.0@sha256:<digest>"}}
+    kubernetes-metal: {source: {oci: "ghcr.io/trevex/chalkos/kubernetes-1.37-metal:vX.Y.Z@sha256:<digest>"}}
   groups:
     nodes: {imageName: kubernetes-metal, files: [cluster/*.yaml]}
   nodes:
     cp1: {address: 192.168.1.11, groups: [nodes], files: [nodes/cp1.yaml]}
 ```
-<!-- x-release-please-end -->
 
 chalkctl reads and the nodes pull the image by the digest, so the inventory keeps naming the same
 image even when a tag moves. The tag in the reference only tells a reader which release it is.
