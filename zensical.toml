@@ -281,6 +281,7 @@ nav = [
       "contribute/conventions.md",
       "contribute/testing.md",
       "contribute/ci.md",
+      "contribute/releasing.md",
     ] },
     { "Code" = [
       "contribute/architecture.md",

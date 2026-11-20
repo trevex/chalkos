@@ -63,7 +63,8 @@ check covers the change, `e2e:examples` when it touches `examples/`, and `e2e:re
 touches `nix/release.nix` or what the release images record. Adding any label, an end-to-end one or another, runs the workflow again:
 the fast and image tiers, and the end-to-end checks the pull request's labels name. Only
 people with triage access to the repository can add labels, so a pull request from a fork boots
-no end-to-end VM before a maintainer has read it.
+no end-to-end VM before a maintainer has read it. The release pull request always carries `e2e`,
+as [Release chalkos](releasing.md#the-release-pull-request) describes.
 
 The workflow `.github/workflows/labels.yml` creates or updates the repository's labels from
 `.github/labels.yml` when that file changes on `main`.
@@ -95,7 +96,10 @@ once the repository names it in the Actions variable `CACHIX_NAME`, and runs on 
 it with the secret `CACHIX_AUTH_TOKEN`. Pull requests never push to it. A developer reads it
 with `cachix use <name>`.
 
-Release builds do not rely on the GitHub Actions cache.
+The jobs of the [release workflow](releasing.md) run on `main` and read both caches, which only
+runs on `main` write to, but write to neither. They rebuild whatever the caches miss, so a release
+needs neither cache. The composite action `.github/actions/nix` installs Nix and
+sets up the caches for the jobs of both workflows.
 
 ## Release images { #release-images }
 

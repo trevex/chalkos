@@ -59,6 +59,15 @@ These pages take a first change from setup to commit.
 
     [:octicons-arrow-right-24: Read](ci.md)
 
+-   :material-tag-outline: __Release chalkos__
+
+    ---
+
+    The release pull request, the release workflow that publishes and signs a release, its dry
+    run and the repository's settings for the first release.
+
+    [:octicons-arrow-right-24: Read](releasing.md)
+
 </div>
 
 ## Code
