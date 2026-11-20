@@ -1,6 +1,6 @@
 ---
 title: "Code conventions"
-description: "The rules chalkos's Go, Nix and proto code follow: compatibility, layout, layers, refusals, comments and generated files"
+description: "The rules chalkos's Go, Nix and proto code follow: compatibility, layout, layers, refusals, comments, generated files, commit messages and sign-off"
 ---
 
 # Code conventions
@@ -64,7 +64,8 @@ reports it the same way:
 
 - Keep comments short and in the present tense. Say what the code is and why, not what changed.
 - A comment explains a decision, not the next line.
-- Comments and commit messages name no plan, task, step or milestone, and carry no trailers.
+- Comments and commit messages name no plan, task, step or milestone. A comment carries no
+  trailer, and a commit message none but its [sign-off](#sign-off).
 - The doc comment of an exported Go name starts with that name, which staticcheck checks.
 
 ## Golden files
@@ -99,5 +100,38 @@ optional scope and a summary in the imperative, such as
 `fix(chalkctl): check every node of an image's name before skipping it` or
 `docs(chalklab): describe chalklab's commands`.
 The body, when there is one, says what changed and why. Commit messages and code comments stand
-on their own for a reviewer: they carry no trailers and no references to plans, tasks or
-milestones.
+on their own for a reviewer: they carry no references to plans, tasks or milestones, and the
+only trailer of a commit message is its sign-off.
+
+A squash merge puts a pull request on `main` as one commit, whose subject is the pull request's
+title, so the title follows the same form. The `pr-title` job checks it, and
+[Continuous integration](ci.md#pull-requests) shows how a pull request lists several changes for
+the changelog.
+
+## Sign-off { #sign-off }
+
+Every commit is signed off by its author:
+
+```sh
+git commit -s -m "fix(inventory): <summary>"
+```
+
+`-s` adds the trailer `Signed-off-by: Name <email>` with the `user.name` and `user.email`
+of git's configuration, which the commit's author has too. The `dco` job of CI fails on a commit
+whose sign-off does not name its author exactly. Sign off the commits of a branch that lack it,
+then force-push:
+
+```sh
+git rebase --signoff origin/main
+git push --force-with-lease
+```
+
+With the sign-off, the author certifies the
+[Developer Certificate of Origin](https://developercertificate.org/) 1.1: that they wrote the
+change or have the right to submit it under the project's licence, Apache-2.0, and that the
+change and the sign-off, with their name and email, stay in the project's public record.
+
+A change written with the help of an AI tool is signed off by the person who submits it. That
+person has read the change, answers for it in review, and certifies its origin as for any other
+change. A commit names no tool or agent as a co-author: it carries no `Co-Authored-By` or other
+trailer besides the sign-off.

@@ -43,6 +43,10 @@ run every end-to-end check on it, as [Continuous integration](ci.md#end-to-end-l
 release-please finds its pull request by both labels, so keep them on it. The `result` check and a
 code owner's review then gate the merge as on any pull request.
 
+release-please's commit is signed off by the release GitHub App's bot, the `signoff` of
+`release-please-config.json`. The `dco` job of [Continuous integration](ci.md#pull-requests)
+exempts the bot's commits anyway.
+
 ## Merge and publish
 
 The release pull request must hold the changes of every pull request merged before it, or the
@@ -54,9 +58,9 @@ does not run a pull request's checks again when `main` moves, so its last green 
 an older `main`.
 Two settings keep such a release pull request from being merged:
 
-- Branch protection on `main` requires the `result` check and "Require branches to be up to date
-  before merging". The merge stays blocked until release-please has pushed the rebuilt pull
-  request and its checks have passed.
+- Branch protection on `main`, a ruleset, requires the `result` check and "Require branches to be
+  up to date before merging". The merge stays blocked until release-please has pushed the
+  rebuilt pull request and its checks have passed.
 - The CI job `release-pr` runs on the release pull request alone. It fails unless the pull
   request's head is one commit that release-please made, whose parent is the current tip of
   `main`. A commit of anyone else, such as the merge that "Update branch" adds, fails it: that
@@ -66,11 +70,13 @@ Never use "Update branch" on the release pull request; wait until release-please
 merge queue does not replace this, because it tests the pull request on `main`'s tip but does not
 let release-please regenerate its contents.
 
-Merge the release pull request with "Rebase and merge", like any other. In the repository's
-settings, allow rebase merges alone: untick "Allow merge commits" and "Allow squash merging", so
-`main` stays linear. The push to `main` runs the
-release workflow again: release-please tags the merge commit `v<version>`, creates the GitHub
-release with the changelog as its notes, and relabels the pull request `autorelease: tagged`.
+Merge the release pull request with "Squash and merge", like any other. The ruleset on `main`
+allows squash merges alone and requires signed commits and a linear history. GitHub signs the
+squash commit it makes, so the commits of a pull request need no signature. The squash commit's
+subject is the pull request's title, `chore(main): release <version>`, which the `pr-title` job
+accepts. The push to `main` runs the release workflow again: release-please tags the squash
+commit `v<version>`, creates the GitHub release with the changelog as its notes, and relabels
+the pull request `autorelease: tagged`.
 The same run then publishes the release from the tagged commit:
 
 | Job | What it does |
@@ -123,7 +129,10 @@ These settings live in GitHub, not in the repository, so a maintainer makes them
 2. Add two repository secrets: `RELEASE_APP_ID`, the App's client ID, and
    `RELEASE_APP_PRIVATE_KEY`, a private key generated for it in PEM form. Without them the release
    workflow fails on every push to `main` with the error `No release App`.
-3. Merge the first release pull request, then make each package of the release public: the
+3. Protect `main` with a ruleset: allow squash merges alone, with the default commit message
+   "Pull request title and commit details", and require signed commits, a linear history, a code
+   owner's review and the status check `result` on a branch that is up to date.
+4. Merge the first release pull request, then make each package of the release public: the
    GitHub Container Registry creates a package, such as `chalkos/kubernetes-1.37-metal`, private on
    its first push. Set its visibility to public in the package's settings. A later release that
    adds a Kubernetes minor or a platform adds a package, which needs the same.
