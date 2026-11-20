@@ -1,0 +1,356 @@
+# Releases chalkos. On every push to main, release-please opens or updates the release pull
+# request from the Conventional Commits since the last release, and once that pull request is
+# merged it tags the release and creates its GitHub release. The same run then publishes the
+# release from the tagged commit: it pushes each image of the flake output releaseImages to its
+# repository, signs it with cosign and attests its provenance, uploads the installer, chalkctl and
+# chalkbuild with their checksums, signatures and attestations, and adds the images' digests to the
+# release notes.
+#
+# release-please acts with a GitHub App's token, from the secrets RELEASE_APP_ID and
+# RELEASE_APP_PRIVATE_KEY, because a pull request, a label or a tag that the workflow's own token
+# creates starts no workflow, and the release pull request must run ci with its e2e label. The
+# publishing jobs run in this workflow for the same reason rather than on the tag.
+#
+# Started by hand with dry-run, the default, the workflow builds the images and the assets of the
+# ref it runs on and lists them with their digests, but pushes, signs and uploads nothing; the
+# assets are the run's artifact. Started by hand on main without dry-run, it does what a push does.
+name: release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Build and list the release without publishing it
+        type: boolean
+        default: true
+
+# One release at a time, and a publish that runs is never cancelled. Dry runs queue by ref.
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.dry-run && github.ref || 'publish' }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  release-please:
+    if: github.repository == 'trevex/chalkos' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.dry-run))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions: {}
+    outputs:
+      created: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
+      sha: ${{ steps.release.outputs.sha }}
+    steps:
+      - name: Check the ref and the App's secrets
+        env:
+          REF: ${{ github.ref }}
+          APP_ID: ${{ secrets.RELEASE_APP_ID }}
+          APP_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+        run: |
+          if [ "$REF" != refs/heads/main ]; then
+            echo "::error title=Not main::a release is made from main, not from $REF; run a dry run instead"
+            exit 1
+          fi
+          if [ -z "$APP_ID" ] || [ -z "$APP_KEY" ]; then
+            echo "::error title=No release App::set the secrets RELEASE_APP_ID and RELEASE_APP_PRIVATE_KEY to the release GitHub App's client ID and private key; docs/contribute/releasing.md lists its permissions"
+            exit 1
+          fi
+      - uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        id: app
+        with:
+          client-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
+      # release-please-config.json and .release-please-manifest.json configure it.
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        id: release
+        with:
+          token: ${{ steps.app.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  # The commit to build, whether the run publishes, and the release images to build, from
+  # releaseImages, one job each.
+  plan:
+    needs: release-please
+    if: ${{ !cancelled() && (needs.release-please.outputs.created == 'true' || (needs.release-please.result == 'skipped' && github.event_name != 'push')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.plan.outputs.sha }}
+      tag: ${{ steps.plan.outputs.tag }}
+      publish: ${{ steps.plan.outputs.publish }}
+      images: ${{ steps.plan.outputs.images }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-please.outputs.sha || github.sha }}
+          persist-credentials: false
+      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31.11.5
+      - name: List the release images
+        id: plan
+        env:
+          CREATED: ${{ needs.release-please.outputs.created }}
+          RELEASE_TAG: ${{ needs.release-please.outputs.tag }}
+        run: |
+          images=$(nix eval --json .#releaseImages.x86_64-linux --apply \
+            'images: builtins.attrValues (builtins.mapAttrs (name: image: { inherit name; inherit (image) repository tag; }) images)')
+          jq . <<<"$images"
+          tag=$(jq -r '[.[].tag] | unique | if length == 1 then .[0] else error("the release images name different tags") end' <<<"$images")
+          if [ "$CREATED" = true ]; then
+            publish=true
+            if [ "$tag" != "$RELEASE_TAG" ]; then
+              echo "::error title=Wrong tag::the release images record $tag, but release-please tagged $RELEASE_TAG; version.nix must name the release's version"
+              exit 1
+            fi
+          else
+            publish=false
+          fi
+          {
+            echo "sha=$(git rev-parse HEAD)"
+            echo "tag=$tag"
+            echo "publish=$publish"
+            echo "images=$(jq -c . <<<"$images")"
+          } >>"$GITHUB_OUTPUT"
+
+  # Builds a release image's OCI layout and, when the run publishes, pushes it, signs its digest
+  # and attests its provenance in the registry.
+  image:
+    needs: plan
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
+    name: image ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      # Hestia checks which cached packs GitHub has evicted.
+      actions: read
+      packages: write
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.images) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      # The release builds substitute from the caches but write nothing to them.
+      - uses: ./.github/actions/nix
+        with:
+          cachix-name: ${{ vars.CACHIX_NAME }}
+          read-only: true
+      - name: Build the OCI layout
+        id: build
+        env:
+          NAME: ${{ matrix.name }}
+          REPOSITORY: ${{ matrix.repository }}
+          TAG: ${{ matrix.tag }}
+        run: |
+          installable=".#releaseImages.x86_64-linux.\"$NAME\".oci"
+          if ! nix build --print-build-logs -o oci "$installable"; then
+            echo "::warning title=Retried $NAME::the build of $NAME failed; building it once more"
+            nix build --print-build-logs -o oci "$installable"
+          fi
+          nix build -o chalkbuild .#chalkbuild
+          digest=$(jq -r '.manifests[0].digest' oci/index.json)
+          mkdir image
+          jq -n --arg name "$NAME" --arg repository "$REPOSITORY" --arg tag "$TAG" --arg digest "$digest" \
+            '{$name, $repository, $tag, $digest}' >"image/$NAME.json"
+          echo "digest=$digest" >>"$GITHUB_OUTPUT"
+          echo "- \`$REPOSITORY:$TAG@$digest\`" >>"$GITHUB_STEP_SUMMARY"
+      - name: Push the image
+        if: needs.plan.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+          REPOSITORY: ${{ matrix.repository }}
+          TAG: ${{ matrix.tag }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          docker login ghcr.io --username "$ACTOR" --password-stdin <<<"$GH_TOKEN"
+          pushed=$(chalkbuild/bin/chalkbuild push oci "$REPOSITORY:$TAG")
+          if [ "$pushed" != "$REPOSITORY@$DIGEST" ]; then
+            echo "::error title=Wrong digest::chalkbuild pushed $pushed, not $REPOSITORY@$DIGEST"
+            exit 1
+          fi
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        if: needs.plan.outputs.publish == 'true'
+      - name: Sign the image
+        if: needs.plan.outputs.publish == 'true'
+        env:
+          REPOSITORY: ${{ matrix.repository }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "$REPOSITORY@$DIGEST"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        if: needs.plan.outputs.publish == 'true'
+        with:
+          subject-name: ${{ matrix.repository }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+          # Storage records are for organisations' repositories.
+          create-storage-record: false
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-${{ matrix.name }}
+          path: image/
+          retention-days: 7
+
+  # Builds the installer, chalkctl and chalkbuild as the release's assets with their checksums
+  # and, when the run publishes, signs them, attests their provenance and uploads them to the
+  # release.
+  assets:
+    needs: plan
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      # gh release upload.
+      contents: write
+      actions: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/nix
+        with:
+          cachix-name: ${{ vars.CACHIX_NAME }}
+          read-only: true
+      # The generic installer, which has no OS CA, its raw image compressed, and the programs of
+      # chalkctl and chalkbuild without the flake's wrappers, which are static binaries.
+      - name: Build the assets
+        run: |
+          if ! nix build --print-build-logs -o installer .#installer; then
+            echo "::warning title=Retried the installer::the build of the installer failed; building it once more"
+            nix build --print-build-logs -o installer .#installer
+          fi
+          nix build --print-build-logs -o chalkctl .#chalkctl
+          nix build --print-build-logs -o chalkbuild .#chalkbuild
+          mkdir assets
+          cp installer/chalkos-installer.iso assets/
+          # The installer's files are links into the store, which zstd skips when it names them.
+          zstd -T0 -19 <installer/chalkos-installer.raw >assets/chalkos-installer.raw.zst
+          cp chalkctl/bin/.chalkctl-wrapped assets/chalkctl-linux-amd64
+          cp chalkbuild/bin/.chalkbuild-wrapped assets/chalkbuild-linux-amd64
+          chmod 0644 assets/*
+          chmod 0755 assets/*-linux-amd64
+          for program in assets/*-linux-amd64; do
+            file "$program"
+            file "$program" | grep -q 'statically linked' || {
+              echo "::error title=Not static::$program is not a static binary"
+              exit 1
+            }
+          done
+          (cd assets && sha256sum -- * >SHA256SUMS)
+          {
+            echo '| Asset | Size |'
+            echo '| --- | --- |'
+            for asset in assets/*; do
+              echo "| \`${asset#assets/}\` | $(du -h --apparent-size "$asset" | cut -f1) |"
+            done
+            echo
+            echo '```text'
+            cat assets/SHA256SUMS
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        if: needs.plan.outputs.publish == 'true'
+      - name: Sign the assets
+        if: needs.plan.outputs.publish == 'true'
+        run: |
+          for asset in assets/*; do
+            cosign sign-blob --yes --bundle "$asset.sigstore.json" "$asset"
+          done
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        if: needs.plan.outputs.publish == 'true'
+        with:
+          subject-checksums: assets/SHA256SUMS
+      - name: Upload the assets to the release
+        if: needs.plan.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: gh release upload "$TAG" assets/* --clobber
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: needs.plan.outputs.publish != 'true'
+        with:
+          name: release-assets
+          path: assets/
+          compression-level: 0
+          retention-days: 7
+
+  # Lists the images by digest with how to verify them, in the run's summary and, when the run
+  # publishes, at the end of the release's notes.
+  notes:
+    needs: [plan, image, assets]
+    if: ${{ !cancelled() && needs.image.result == 'success' && needs.assets.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: image-*
+          path: images
+          merge-multiple: true
+      - name: Write the section on the images
+        env:
+          TAG: ${{ needs.plan.outputs.tag }}
+          REPOSITORY: ${{ github.repository }}
+          SERVER: ${{ github.server_url }}
+        run: |
+          identity="$SERVER/$REPOSITORY/.github/workflows/release.yml@refs/heads/main"
+          first=$(jq -rs 'sort_by(.name) | .[0] | "\(.repository)@\(.digest)"' images/*.json)
+          {
+            echo '<!-- chalkos release images -->'
+            echo '## Images'
+            echo
+            echo "Name an image by its digest in the inventory's \`spec.images\`:"
+            echo
+            echo '```text'
+            jq -rs 'sort_by(.name) | .[] | "\(.repository):\(.tag)@\(.digest)"' images/*.json
+            echo '```'
+            echo
+            echo '## Verify'
+            echo
+            echo 'Each image and asset is signed with cosign by this workflow and has a provenance attestation:'
+            echo
+            echo '```sh'
+            echo "cosign verify $first \\"
+            echo "  --certificate-identity $identity \\"
+            echo '  --certificate-oidc-issuer https://token.actions.githubusercontent.com'
+            echo "cosign verify-blob chalkctl-linux-amd64 --bundle chalkctl-linux-amd64.sigstore.json \\"
+            echo "  --certificate-identity $identity \\"
+            echo '  --certificate-oidc-issuer https://token.actions.githubusercontent.com'
+            echo "gh attestation verify chalkctl-linux-amd64 --repo $REPOSITORY"
+            echo "sha256sum --check --ignore-missing SHA256SUMS"
+            echo '```'
+            echo
+            echo "[Releases](https://trevex.github.io/chalkos/get-started/releases/) describes each step."
+          } >section.md
+          cat section.md >>"$GITHUB_STEP_SUMMARY"
+      # A run that publishes again replaces the section it added before.
+      - name: Add the section to the release notes
+        if: needs.plan.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          gh release view "$TAG" --json body --jq .body | sed '/^<!-- chalkos release images -->$/,$d' >notes.md
+          { echo; cat section.md; } >>notes.md
+          gh release edit "$TAG" --notes-file notes.md

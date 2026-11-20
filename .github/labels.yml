@@ -45,3 +45,11 @@
 - name: release
   color: "0e8a16"
   description: Prepares a release
+# release-please finds its open release pull request by autorelease: pending and e2e, and marks
+# it autorelease: tagged once it has tagged the release.
+- name: "autorelease: pending"
+  color: "ededed"
+  description: The release pull request, which release-please tags once it is merged
+- name: "autorelease: tagged"
+  color: "ededed"
+  description: A merged release pull request whose release release-please has tagged
