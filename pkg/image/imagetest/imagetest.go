@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/trevex/chalkos/pkg/image"
+	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
 	"github.com/trevex/chalkos/pkg/verity"
 )
@@ -163,6 +164,28 @@ func WriteContract(t testing.TB, dir string, img Image, root []byte) {
 	write(t, filepath.Join(dir, "schemas", "test.example.org_v1alpha1_Test.json"), []byte(`{"x-chalkos-kind": {"group": "test.example.org", "version": "v1alpha1", "kind": "Test", "multiple": false}}`))
 	write(t, filepath.Join(dir, "repart.d", "00-esp.conf"), []byte("[Partition]\nType=esp\n"))
 	write(t, filepath.Join(dir, "facts", "test.json"), []byte(`{"answer": 42}`))
+}
+
+// WriteDefinitions writes the repart definitions of a whole system region into dir's repart.d, in
+// place of WriteContract's one, as an install and a pull read them: an ESP of 4 MiB, two store
+// slots of x86-64 whose hash tree partitions take 64 KiB and whose store partitions are sized to
+// their content, and STATE.
+func WriteDefinitions(t testing.TB, dir string) {
+	t.Helper()
+	defs := filepath.Join(dir, "repart.d")
+	if err := os.RemoveAll(defs); err != nil {
+		t.Fatal(err)
+	}
+	for name, text := range map[string]string{
+		"00-esp.conf":            "[Partition]\nType=esp\nFormat=vfat\nSizeMinBytes=4M\nSizeMaxBytes=4M\n",
+		"10-store-verity-a.conf": "[Partition]\nType=usr-x86-64-verity\nSizeMinBytes=64K\nSizeMaxBytes=64K\n",
+		"20-store-a.conf":        "[Partition]\nType=usr-x86-64\n",
+		"30-store-verity-b.conf": "[Partition]\nType=usr-x86-64-verity\nLabel=_empty\nSizeMinBytes=64K\nSizeMaxBytes=64K\n",
+		"40-store-b.conf":        "[Partition]\nType=usr-x86-64\nLabel=_empty\n",
+		"50-state.conf":          "[Partition]\nType=" + storage.PartitionType("state") + "\nLabel=state\nFormat=ext4\nEncrypt=tpm2\n",
+	} {
+		write(t, filepath.Join(defs, name), []byte(text))
+	}
 }
 
 // write writes a file, making its directory.

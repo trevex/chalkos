@@ -113,6 +113,18 @@ func Layout(t testing.TB, in, out string) v1.Hash {
 	return d
 }
 
+// PushDirectory pushes the image of the image directory dir to ref, as chalkbuild oci and push
+// do, and returns the reference of its manifest by digest.
+func PushDirectory(t testing.TB, dir, ref string) string {
+	t.Helper()
+	img, closeImage, err := ociimage.FromDirectory(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeImage()
+	return Push(t, img, ref)
+}
+
 // Push pushes img to ref and returns the reference of its manifest by digest.
 func Push(t testing.TB, img v1.Image, ref string) string {
 	t.Helper()
