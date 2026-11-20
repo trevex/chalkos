@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.0](https://github.com/trevex/chalkos/compare/v0.1.0...v0.2.0) (2026-11-20)
+
+
+### Features
+
+* **chalkctl:** add image pull, which writes an image from a registry into a directory ([261cde5](https://github.com/trevex/chalkos/commit/261cde5cd43fd952695aa6e6403a8a8333fd87d3))
+* **fatfs:** format, read and write a FAT file system at an offset in a file ([17a3331](https://github.com/trevex/chalkos/commit/17a3331c45ea223b3d9b5999db2412bda5404347))
+* **gpt:** write the GPT of a disk image ([cc96c7b](https://github.com/trevex/chalkos/commit/cc96c7bc31cf2677a328019fdafa3e3daedb9052))
+* **imagepull:** give a pulled disk image repart's identifiers and the same bytes on every pull, and name missing mtools before fetching ([57ccb42](https://github.com/trevex/chalkos/commit/57ccb425924567be7fcb94c052bef4182862898b))
+* **imagepull:** pull a chalkos image into an image directory or its OCI layout ([ea2acb6](https://github.com/trevex/chalkos/commit/ea2acb61f50213045dc6dd13d992533245073d96))
+* **secureboot:** sign boot loaders and UKIs in Go instead of with sbsign ([ea334c0](https://github.com/trevex/chalkos/commit/ea334c0408770bc1815e4cc2a2eb6e3d29572b8e))
+
 ## 0.1.0 (2026-11-20)
 
 

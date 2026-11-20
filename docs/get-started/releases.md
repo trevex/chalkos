@@ -65,7 +65,7 @@ flake's `chalkos` input to the release's tag:
 <!-- x-release-please-start-version -->
 ```nix title="flake.nix"
 {
-  inputs.chalkos.url = "github:trevex/chalkos/v0.1.0";
+  inputs.chalkos.url = "github:trevex/chalkos/v0.2.0";
   outputs = { chalkos, ... }: { };
 }
 ```
@@ -129,7 +129,7 @@ against `SHA256SUMS`:
 
 <!-- x-release-please-start-version -->
 ```sh
-release=https://github.com/trevex/chalkos/releases/download/v0.1.0
+release=https://github.com/trevex/chalkos/releases/download/v0.2.0
 curl -fL -O "$release/chalkctl-linux-amd64" -O "$release/chalkctl-linux-amd64.sigstore.json" \
   -O "$release/SHA256SUMS" -O "$release/SHA256SUMS.sigstore.json"
 sha256sum --check --ignore-missing SHA256SUMS
