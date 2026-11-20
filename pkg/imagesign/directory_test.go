@@ -25,22 +25,37 @@ func write(t *testing.T, path, content string) {
 	}
 }
 
-// verified is sbverify's verdict on a file of the disk image's ESP, which imagetest puts at offset
-// 0.
+// verified is signedBy's verdict on a file of the disk image's ESP, which imagetest puts at
+// offset 0.
 func verified(t *testing.T, disk, file, cert string) error {
 	t.Helper()
-	copied := filepath.Join(t.TempDir(), filepath.Base(file))
-	if err := os.WriteFile(copied, imagetest.ReadESP(t, disk, 0, file), 0o644); err != nil {
+	return signedBy(t, imagetest.ReadESP(t, disk, 0, file), cert)
+}
+
+// signedBy is the verdict on whether the key of the certificate file cert signed the EFI binary,
+// as firmware with the certificate in db would give it. When sbverify is on PATH, its verdict must
+// be the same.
+func signedBy(t *testing.T, binary []byte, cert string) error {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "binary.efi")
+	write(t, path, string(binary))
+	certs, err := readCerts(cert)
+	if err != nil {
 		t.Fatal(err)
 	}
-	return exec.Command("sbverify", "--cert", cert, copied).Run()
+	err = verifyFile(path, certs)
+	if _, lookErr := exec.LookPath("sbverify"); lookErr == nil {
+		if out, sbErr := exec.Command("sbverify", "--cert", cert, path).CombinedOutput(); (sbErr == nil) != (err == nil) {
+			t.Errorf("sbverify: %v: %s, where the firmware's check gives %v", sbErr, out, err)
+		}
+	}
+	return err
 }
 
 // TestSignDirectory signs a copy of an image directory whose entries link into another directory,
 // as a build's links into the Nix store, with the installer's ISO next to its raw image. The copy
 // holds no links, and the image directory stays as it is.
 func TestSignDirectory(t *testing.T) {
-	imagetest.NeedTools(t, "sbsign", "sbverify")
 	dir := t.TempDir()
 	key, cert, _ := imagetest.Signer(t, dir, "db")
 	in := filepath.Join(dir, "in")
@@ -107,7 +122,6 @@ func TestSignDirectory(t *testing.T) {
 // TestSignDirectoryRefuses leaves an output directory that exists as it is, and removes the copy
 // again when signing fails, here with the certificate of another key.
 func TestSignDirectoryRefuses(t *testing.T) {
-	imagetest.NeedTools(t, "sbsign", "sbverify")
 	dir := t.TempDir()
 	key, _, _ := imagetest.Signer(t, dir, "db")
 	_, other, _ := imagetest.Signer(t, dir, "other")
@@ -144,7 +158,6 @@ func TestSignDirectoryRefuses(t *testing.T) {
 // TestSignDirectoryBracketInPath signs an image directory whose path holds characters that are
 // wildcards to filepath.Glob, which diskImages must not use to find a directory's disk images.
 func TestSignDirectoryBracketInPath(t *testing.T) {
-	imagetest.NeedTools(t, "sbsign", "sbverify")
 	dir := t.TempDir()
 	key, cert, _ := imagetest.Signer(t, dir, "db")
 	in := filepath.Join(dir, "in[1]")

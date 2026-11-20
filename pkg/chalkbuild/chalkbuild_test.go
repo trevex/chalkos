@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"maps"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -34,9 +33,6 @@ func TestCommandsDescribed(t *testing.T) {
 // TestSign signs a copy of an image directory, also into a directory whose parent does not exist
 // yet, and names each disk image it signed.
 func TestSign(t *testing.T) {
-	if _, err := exec.LookPath("sbsign"); err != nil {
-		t.Skip("sbsign not in PATH")
-	}
 	dir := t.TempDir()
 	key, cert, _ := imagetest.Signer(t, dir, "db")
 	in := filepath.Join(dir, "in")
@@ -58,9 +54,6 @@ func TestSignNeedsCert(t *testing.T) {
 // TestOCISignAndPush writes an image directory's layout, signs it into a new layout and pushes
 // that, printing the pushed manifest by digest.
 func TestOCISignAndPush(t *testing.T) {
-	if _, err := exec.LookPath("sbsign"); err != nil {
-		t.Skip("sbsign not in PATH")
-	}
 	dir := t.TempDir()
 	key, cert, _ := imagetest.Signer(t, dir, "db")
 	in := filepath.Join(dir, "in")

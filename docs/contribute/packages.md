@@ -98,7 +98,7 @@ which have no logins, so it has no `completion` command.
 | `esp` | Lists the UKIs on an ESP with the image and generation each boots, writes a UKI under a temporary name, reads the UKI of an image staged in the inactive slot, and removes and names UKIs, for an install and an upgrade. |
 | `uki` | Reads a UKI's os-release and command line and an EFI binary's architecture, and refuses an image version systemd-boot would order its entry by. |
 | `verity` | Reads and checks dm-verity hash trees. |
-| `secureboot` | Checks an EFI binary's Authenticode signature as Secure Boot firmware does, against db and dbx read from the firmware or against given certificates. Its `microsoft/` directory holds Microsoft's KEK, UEFI and option ROM CA certificates, which `chalkctl secureboot enroll --microsoft` enrols. |
+| `secureboot` | Signs an EFI binary for Secure Boot with an Authenticode signature, and checks one as Secure Boot firmware does, against db and dbx read from the firmware or against given certificates. Its `microsoft/` directory holds Microsoft's KEK, UEFI and option ROM CA certificates, which `chalkctl secureboot enroll --microsoft` enrols. |
 | `atomicfile` | Replaces a file in one step through a synced temporary file, and syncs directories, so a crash leaves the old content or the new. Writes a new file that must not exist yet, and takes the file locks that keep two processes apart. |
 
 ## Storage
@@ -214,7 +214,7 @@ Test helpers live in packages of their own:
 | `chalkd/layers/kubernetes/kubernetestest` | A node's Kubernetes files, shares and CAs, and stand-ins for the preparation, the API server's Node and chalkd. |
 | `chalkd/renewal/renewaltest` | Runs a renewal in a synctest bubble and hands the test each check. |
 | `console/consoletest` | A fake client and test nodes for the console, and helpers that run it on a terminal of 80 columns and 25 lines and compare its screen. |
-| `image/imagetest` | Small disk images, db signers and `sbsign`. |
+| `image/imagetest` | Small disk images, db signers, signed EFI binaries and reads and writes of a test image's ESP. |
 | `internal/cli/clitest` | Checks of the programs' cobra command trees. |
 | `internal/golden` | Compares a test's output with a golden file, which `go test -update` rewrites. |
 | `internal/netnstest` | Runs a test in a user and network namespace of its own. |

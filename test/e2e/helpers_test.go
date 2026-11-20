@@ -276,7 +276,7 @@ func prepareDisk(t *testing.T, dir string, o diskOpts) lab.VMDisk {
 			t.Fatal(err)
 		}
 		keys := os.Getenv("CHALKLAB_SB_KEYS")
-		if err := imagesign.SignImage(ctx, raw, esp.Offset, filepath.Join(keys, "db.key"), filepath.Join(keys, "db.crt")); err != nil {
+		if err := imagesign.SignImage(raw, esp.Offset, filepath.Join(keys, "db.key"), filepath.Join(keys, "db.crt")); err != nil {
 			t.Fatal(err)
 		}
 	}

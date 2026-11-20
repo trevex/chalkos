@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -707,15 +706,12 @@ func withHeader(img image) image {
 
 // TestSecureBoot checks the UKI against the firmware's db when Secure Boot is on.
 func TestSecureBoot(t *testing.T) {
-	if _, err := exec.LookPath("sbsign"); err != nil {
-		t.Skip("sbsign not in PATH")
-	}
 	old, img := newImage(t, "a", 3), newImage(t, "b", 3)
 	dir := t.TempDir()
 	key, cert, certDER := imagetest.Signer(t, dir, "db")
 	_, _, otherDER := imagetest.Signer(t, dir, "other")
 	signed := img
-	signed.UKI = imagetest.SBSign(t, img.UKI, key, cert)
+	signed.UKI = imagetest.Sign(t, img.UKI, key, cert)
 	signed.header = signed.headerFor(signed.UKI)
 
 	for _, tc := range []struct {

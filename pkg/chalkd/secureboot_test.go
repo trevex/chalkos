@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -116,9 +115,6 @@ func enrolServer(t *testing.T, setupMode bool, other []byte) (*Server, *firmware
 // of db and KEK before and after, removes STATE, which the TPM seals to PCR 7, and
 // reboots.
 func TestEnrollSecureBoot(t *testing.T) {
-	if _, err := exec.LookPath("sbsign"); err != nil {
-		t.Skip("sbsign not in PATH")
-	}
 	k, dir := testEnrolKeys(t)
 	_, _, other := imagetest.Signer(t, t.TempDir(), "other")
 	s, fw := enrolServer(t, true, other)
@@ -128,7 +124,7 @@ func TestEnrollSecureBoot(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		write(t, path, string(imagetest.SBSign(t, data, filepath.Join(dir, "db.key"), filepath.Join(dir, "db.crt"))))
+		write(t, path, string(imagetest.Sign(t, data, filepath.Join(dir, "db.key"), filepath.Join(dir, "db.crt"))))
 	}
 
 	// db also gets the digest of an image, which the answer lists after the certificates.

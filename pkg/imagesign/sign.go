@@ -3,22 +3,30 @@
 package imagesign
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
-	"path/filepath"
 
+	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/fatfs"
 	"github.com/trevex/chalkos/pkg/image"
+	"github.com/trevex/chalkos/pkg/secureboot"
 )
 
 // SignImage signs the boot loader (/EFI/BOOT/BOOT*.EFI) and the UKIs (/EFI/Linux/*.efi) on the
-// image's ESP in place with sbsign. Other EFI binaries stay unsigned, so whatever else lands on the
-// ESP does not gain the db signature. The UKI's signature covers the store through the verity
-// root hash on its command line.
-func SignImage(ctx context.Context, raw string, espOffset int64, key, cert string) (err error) {
+// image's ESP in place with the db key in the PEM file key and its certificate in cert. Other EFI
+// binaries stay unsigned, so whatever else lands on the ESP does not gain the db signature. The
+// UKI's signature covers the store through the verity root hash on its command line.
+func SignImage(raw string, espOffset int64, key, cert string) error {
+	signer, err := secureboot.LoadSigner(key, cert)
+	if err != nil {
+		return err
+	}
+	return signImage(raw, espOffset, signer)
+}
+
+// signImage is SignImage with the signer read.
+func signImage(raw string, espOffset int64, signer secureboot.KeyPair) (err error) {
 	esp, err := fatfs.Open(raw, espOffset, true)
 	if err != nil {
 		return err
@@ -32,27 +40,13 @@ func SignImage(ctx context.Context, raw string, espOffset int64, key, cert strin
 	if len(files) == 0 {
 		return fmt.Errorf("no boot loader or UKI on the ESP of %s", raw)
 	}
-
-	tmp, err := os.MkdirTemp("", "imagesign")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(tmp)
-
-	for i, f := range files {
+	for _, f := range files {
 		data, err := esp.ReadFile(f)
 		if err != nil {
 			return err
 		}
-		local := filepath.Join(tmp, fmt.Sprintf("%d.efi", i))
-		if err := os.WriteFile(local, data, 0o600); err != nil {
-			return err
-		}
-		if err := signFile(ctx, local, key, cert); err != nil {
-			return fmt.Errorf("%s: %w", f, err)
-		}
-		if data, err = os.ReadFile(local); err != nil {
-			return err
+		if data, err = secureboot.Sign(data, signer); err != nil {
+			return fmt.Errorf("sign %s: %w", f, err)
 		}
 		if err := esp.WriteFile(f, data); err != nil {
 			return err
@@ -61,11 +55,14 @@ func SignImage(ctx context.Context, raw string, espOffset int64, key, cert strin
 	return nil
 }
 
-// signFile signs an EFI binary in place with sbsign.
-func signFile(ctx context.Context, file, key, cert string) error {
-	signed := file + ".signed"
-	if out, err := exec.CommandContext(ctx, "sbsign", "--key", key, "--cert", cert, "--output", signed, file).CombinedOutput(); err != nil {
-		return fmt.Errorf("sbsign %s: %w: %s", file, err, out)
+// signFile signs an EFI binary in place.
+func signFile(file string, signer secureboot.KeyPair) error {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return err
 	}
-	return os.Rename(signed, file)
+	if data, err = secureboot.Sign(data, signer); err != nil {
+		return fmt.Errorf("sign %s: %w", file, err)
+	}
+	return atomicfile.Replace(file, data, 0o644)
 }

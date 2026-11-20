@@ -35,7 +35,8 @@ func SignDirectory(ctx context.Context, in, out, key, cert string) ([]string, er
 	if err != nil {
 		return nil, err
 	}
-	if _, err := os.Stat(key); err != nil {
+	signer, err := secureboot.LoadSigner(key, cert)
+	if err != nil {
 		return nil, err
 	}
 	certs, err := readCerts(cert)
@@ -57,7 +58,7 @@ func SignDirectory(ctx context.Context, in, out, key, cert string) ([]string, er
 			if err != nil {
 				return fmt.Errorf("%s: %w", d.partitions, err)
 			}
-			if err := SignImage(ctx, raw, esp.Offset, key, cert); err != nil {
+			if err := signImage(raw, esp.Offset, signer); err != nil {
 				return err
 			}
 			if err := verify(raw, esp.Offset, certs); err != nil {

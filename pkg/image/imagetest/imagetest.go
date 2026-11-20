@@ -21,6 +21,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/fatfs"
 	"github.com/trevex/chalkos/pkg/image"
+	"github.com/trevex/chalkos/pkg/secureboot"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
 	"github.com/trevex/chalkos/pkg/verity"
@@ -145,17 +146,15 @@ func Signer(t testing.TB, dir, name string) (key, cert string, der []byte) {
 	return key, cert, der
 }
 
-// SBSign signs an EFI binary with sbsign and the key and certificate files, and returns the
-// signed binary.
-func SBSign(t testing.TB, binary []byte, key, cert string) []byte {
+// Sign signs an EFI binary for Secure Boot with the key and certificate files, as chalkbuild sign
+// does, and returns the signed binary.
+func Sign(t testing.TB, binary []byte, key, cert string) []byte {
 	t.Helper()
-	dir := t.TempDir()
-	in, out := filepath.Join(dir, "in.efi"), filepath.Join(dir, "out.efi")
-	write(t, in, binary)
-	if o, err := exec.Command("sbsign", "--key", key, "--cert", cert, "--output", out, in).CombinedOutput(); err != nil {
-		t.Fatalf("sbsign: %v: %s", err, o)
+	signer, err := secureboot.LoadSigner(key, cert)
+	if err != nil {
+		t.Fatal(err)
 	}
-	signed, err := os.ReadFile(out)
+	signed, err := secureboot.Sign(binary, signer)
 	if err != nil {
 		t.Fatal(err)
 	}
