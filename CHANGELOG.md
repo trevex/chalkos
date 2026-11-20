@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.1](https://github.com/trevex/chalkos/compare/v0.3.0...v0.3.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **installer:** leave the CD-ROM's loop device to systemd ([#42](https://github.com/trevex/chalkos/issues/42)) ([33c27e2](https://github.com/trevex/chalkos/commit/33c27e2f1fd9bcbece6c83cb802261b64591e166))
+* **release:** give the programs' SBOMs a serial number so they can be attested ([#40](https://github.com/trevex/chalkos/issues/40)) ([5ea5b21](https://github.com/trevex/chalkos/commit/5ea5b21cf653e8e89c293f20be561b7abe61a702))
+
 ## [0.3.0](https://github.com/trevex/chalkos/compare/v0.2.2...v0.3.0) (2026-11-20)
 
 

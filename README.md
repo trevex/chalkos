@@ -44,7 +44,7 @@ Secure Boot and a TPM. It needs an x86-64 Linux machine with Nix and flakes, acc
 <!-- x-release-please-start-version -->
 ```sh
 mkdir lab && cd lab
-nix flake init -t github:trevex/chalkos/v0.3.0#lab
+nix flake init -t github:trevex/chalkos/v0.3.1#lab
 git init && git add .
 nix develop
 chalkctl gen secrets --plaintext
