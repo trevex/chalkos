@@ -129,8 +129,8 @@ the registry:
 ```console
 $ git add . && git commit -m "A chalkos router lab"
 $ chalkctl validate
-client: valid for the image router-kvm at ghcr.io/trevex/chalkos/router-kvm@sha256:013d69829fea863fa2150b1493fa10d92993da2d5af60b4cf77b5f53f7f1c8f0 (router-kvm on kvm, root hash 0e4e9ce8b41d), config 94f1f34ad29ff7bc1f152158df4504bbf4576fc6d9c230a5ee9fd77bed47dc10
-router: valid for the image router-kvm at ghcr.io/trevex/chalkos/router-kvm@sha256:013d69829fea863fa2150b1493fa10d92993da2d5af60b4cf77b5f53f7f1c8f0 (router-kvm on kvm, root hash 0e4e9ce8b41d), config e3befdf104b789da4dd4f9c58b263905755e3428e7b9e9d560a75552e161b87e
+client: valid for the image router-kvm at ghcr.io/trevex/chalkos/router-kvm@sha256:150c8610ee376be69a88dbae719950253c82f67a701c76f265111e9b4e7edaeb (router-kvm on kvm, root hash b5558bdbabdd), config 94f1f34ad29ff7bc1f152158df4504bbf4576fc6d9c230a5ee9fd77bed47dc10
+router: valid for the image router-kvm at ghcr.io/trevex/chalkos/router-kvm@sha256:150c8610ee376be69a88dbae719950253c82f67a701c76f265111e9b4e7edaeb (router-kvm on kvm, root hash b5558bdbabdd), config e3befdf104b789da4dd4f9c58b263905755e3428e7b9e9d560a75552e161b87e
 ```
 
 ## Create the lab
@@ -143,10 +143,10 @@ bootstrap:
 ```console
 $ chalklab create --secrets secrets.json
 creating the lab's Secure Boot keys in /home/alice/.local/state/chalklab/router-lab/keys
-pulled ghcr.io/trevex/chalkos/router-kvm:v0.2.0 as ghcr.io/trevex/chalkos/router-kvm@sha256:013d69829fea863fa2150b1493fa10d92993da2d5af60b4cf77b5f53f7f1c8f0
-copying the image of client from /home/alice/.local/state/chalklab/router-lab/images/sha256-013d69829fea863fa2150b1493fa10d92993da2d5af60b4cf77b5f53f7f1c8f0
-using cached ghcr.io/trevex/chalkos/router-kvm@sha256:013d69829fea863fa2150b1493fa10d92993da2d5af60b4cf77b5f53f7f1c8f0
-copying the image of router from /home/alice/.local/state/chalklab/router-lab/images/sha256-013d69829fea863fa2150b1493fa10d92993da2d5af60b4cf77b5f53f7f1c8f0
+pulled ghcr.io/trevex/chalkos/router-kvm:v0.2.1 as ghcr.io/trevex/chalkos/router-kvm@sha256:150c8610ee376be69a88dbae719950253c82f67a701c76f265111e9b4e7edaeb
+copying the image of client from /home/alice/.local/state/chalklab/router-lab/images/sha256-150c8610ee376be69a88dbae719950253c82f67a701c76f265111e9b4e7edaeb
+using cached ghcr.io/trevex/chalkos/router-kvm@sha256:150c8610ee376be69a88dbae719950253c82f67a701c76f265111e9b4e7edaeb
+copying the image of router from /home/alice/.local/state/chalklab/router-lab/images/sha256-150c8610ee376be69a88dbae719950253c82f67a701c76f265111e9b4e7edaeb
 starting client, router
 wrote /home/alice/.local/state/chalklab/router-lab/chalkctl.json for chalklab with the admin role; its certificate expires on 2027-11-20
 waiting for client to come up in maintenance mode
@@ -191,7 +191,7 @@ of its router services last:
 $ chalkctl status router
 config e3befdf104b789da4dd4f9c58b263905755e3428e7b9e9d560a75552e161b87e (the inventory's)
 platform kvm (the inventory's)
-image 0e4e9ce8b41d, booted from chalkos_1.efi
+image b5558bdbabdd, booted from chalkos_1.efi
 VOLUME  DISK    MOUNT POINT  STATE
 var     system  /var         mounted
 OUTPUT           HASH          STATE
@@ -292,8 +292,8 @@ nothing. Delivering config needs the secrets file:
 
 ```console
 $ chalkctl validate
-client: valid for the image router-kvm at ghcr.io/trevex/chalkos/router-kvm@sha256:013d69829fea863fa2150b1493fa10d92993da2d5af60b4cf77b5f53f7f1c8f0 (router-kvm on kvm, root hash 0e4e9ce8b41d), config 94f1f34ad29ff7bc1f152158df4504bbf4576fc6d9c230a5ee9fd77bed47dc10
-router: valid for the image router-kvm at ghcr.io/trevex/chalkos/router-kvm@sha256:013d69829fea863fa2150b1493fa10d92993da2d5af60b4cf77b5f53f7f1c8f0 (router-kvm on kvm, root hash 0e4e9ce8b41d), config 891df0f1c1918a7506943eaa311ac4269b46821338424da6e4122fe2ea7cab26
+client: valid for the image router-kvm at ghcr.io/trevex/chalkos/router-kvm@sha256:150c8610ee376be69a88dbae719950253c82f67a701c76f265111e9b4e7edaeb (router-kvm on kvm, root hash b5558bdbabdd), config 94f1f34ad29ff7bc1f152158df4504bbf4576fc6d9c230a5ee9fd77bed47dc10
+router: valid for the image router-kvm at ghcr.io/trevex/chalkos/router-kvm@sha256:150c8610ee376be69a88dbae719950253c82f67a701c76f265111e9b4e7edaeb (router-kvm on kvm, root hash b5558bdbabdd), config 891df0f1c1918a7506943eaa311ac4269b46821338424da6e4122fe2ea7cab26
 $ chalkctl config apply router --secrets secrets.json --diff
 router: config 0 added, 0 removed, 1 changed
 ~ Router "router"

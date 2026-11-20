@@ -173,8 +173,8 @@ registry, and resolves the tag to the digest it names:
 
 ```console
 $ chalkctl validate
-cp1: valid for the image node-kvm at ghcr.io/trevex/chalkos/kubernetes-1.37-kvm@sha256:90c58bda817c3ae8b74f506c3b1f54687f129100225f458d3259107122f17134 (kubernetes-kvm on kvm, root hash 75fd067caed0), config cff86e2957830b9ec4a10a6f6966660695c5a332fca12103d59f79ab4c1ccc15
-w1: valid for the image node-kvm at ghcr.io/trevex/chalkos/kubernetes-1.37-kvm@sha256:90c58bda817c3ae8b74f506c3b1f54687f129100225f458d3259107122f17134 (kubernetes-kvm on kvm, root hash 75fd067caed0), config dfa2ce25b9a19fdf23ffc416645164a75f85b3ac27a36da984839ff9f307a84d
+cp1: valid for the image node-kvm at ghcr.io/trevex/chalkos/kubernetes-1.37-kvm@sha256:ea0dc23d410fb3f125b8c762cc7536c76ea7c1244384825ae976c4787e731830 (kubernetes-kvm on kvm, root hash c628af2ea405), config cff86e2957830b9ec4a10a6f6966660695c5a332fca12103d59f79ab4c1ccc15
+w1: valid for the image node-kvm at ghcr.io/trevex/chalkos/kubernetes-1.37-kvm@sha256:ea0dc23d410fb3f125b8c762cc7536c76ea7c1244384825ae976c4787e731830 (kubernetes-kvm on kvm, root hash c628af2ea405), config dfa2ce25b9a19fdf23ffc416645164a75f85b3ac27a36da984839ff9f307a84d
 ```
 
 `node-kvm` is the image's name in the inventory, and `kubernetes-kvm` the name the image records
@@ -191,10 +191,10 @@ image into the lab's state once, and copies it for each node:
 ```console
 $ chalklab create --secrets secrets.json
 creating the lab's Secure Boot keys in /home/alice/.local/state/chalklab/lab/keys
-pulled ghcr.io/trevex/chalkos/kubernetes-1.37-kvm:v0.2.0 as ghcr.io/trevex/chalkos/kubernetes-1.37-kvm@sha256:90c58bda817c3ae8b74f506c3b1f54687f129100225f458d3259107122f17134
-copying the image of cp1 from /home/alice/.local/state/chalklab/lab/images/sha256-90c58bda817c3ae8b74f506c3b1f54687f129100225f458d3259107122f17134
-using cached ghcr.io/trevex/chalkos/kubernetes-1.37-kvm@sha256:90c58bda817c3ae8b74f506c3b1f54687f129100225f458d3259107122f17134
-copying the image of w1 from /home/alice/.local/state/chalklab/lab/images/sha256-90c58bda817c3ae8b74f506c3b1f54687f129100225f458d3259107122f17134
+pulled ghcr.io/trevex/chalkos/kubernetes-1.37-kvm:v0.2.1 as ghcr.io/trevex/chalkos/kubernetes-1.37-kvm@sha256:ea0dc23d410fb3f125b8c762cc7536c76ea7c1244384825ae976c4787e731830
+copying the image of cp1 from /home/alice/.local/state/chalklab/lab/images/sha256-ea0dc23d410fb3f125b8c762cc7536c76ea7c1244384825ae976c4787e731830
+using cached ghcr.io/trevex/chalkos/kubernetes-1.37-kvm@sha256:ea0dc23d410fb3f125b8c762cc7536c76ea7c1244384825ae976c4787e731830
+copying the image of w1 from /home/alice/.local/state/chalklab/lab/images/sha256-ea0dc23d410fb3f125b8c762cc7536c76ea7c1244384825ae976c4787e731830
 ```
 <!-- x-release-please-end -->
 
@@ -355,7 +355,7 @@ shows what a node runs:
 $ chalkctl status cp1
 config cff86e2957830b9ec4a10a6f6966660695c5a332fca12103d59f79ab4c1ccc15 (the inventory's)
 platform kvm (the inventory's)
-image 75fd067caed0, booted from chalkos_1.efi
+image c628af2ea405, booted from chalkos_1.efi
 VOLUME  DISK    MOUNT POINT  STATE
 var     system  /var         mounted
 OUTPUT            HASH          STATE
@@ -388,8 +388,8 @@ time: synchronised to 192.53.103.108, offset +0.000005 s
 Three lines matter at first:
 
 - `config ... (the inventory's)`: the node runs the config the inventory gives it.
-- `image 75fd067caed0, booted from chalkos_1.efi`: the node runs the image whose root hash begins
-  with `75fd067caed0`, the published image, from its first boot entry.
+- `image c628af2ea405, booted from chalkos_1.efi`: the node runs the image whose root hash begins
+  with `c628af2ea405`, the published image, from its first boot entry.
 - `kubernetes controlplane: bootstrapped, node ready: True`: cp1 is bootstrapped, and its Node is
   Ready in Kubernetes.
 
@@ -457,8 +457,8 @@ the secrets file, which `--secrets` names; a client file does not suffice:
 
 ```console
 $ chalkctl validate
-cp1: valid for the image node-kvm at ghcr.io/trevex/chalkos/kubernetes-1.37-kvm@sha256:90c58bda817c3ae8b74f506c3b1f54687f129100225f458d3259107122f17134 (kubernetes-kvm on kvm, root hash 75fd067caed0), config e5abd9da9d767c5d2d79a158766cde278a333fdc6c4fbc8891e7692eff99868f
-w1: valid for the image node-kvm at ghcr.io/trevex/chalkos/kubernetes-1.37-kvm@sha256:90c58bda817c3ae8b74f506c3b1f54687f129100225f458d3259107122f17134 (kubernetes-kvm on kvm, root hash 75fd067caed0), config b8b41769a31866ce5c70011cfa1826b0668f39e9b2eac69d7fc0f847bae277fd
+cp1: valid for the image node-kvm at ghcr.io/trevex/chalkos/kubernetes-1.37-kvm@sha256:ea0dc23d410fb3f125b8c762cc7536c76ea7c1244384825ae976c4787e731830 (kubernetes-kvm on kvm, root hash c628af2ea405), config e5abd9da9d767c5d2d79a158766cde278a333fdc6c4fbc8891e7692eff99868f
+w1: valid for the image node-kvm at ghcr.io/trevex/chalkos/kubernetes-1.37-kvm@sha256:ea0dc23d410fb3f125b8c762cc7536c76ea7c1244384825ae976c4787e731830 (kubernetes-kvm on kvm, root hash c628af2ea405), config b8b41769a31866ce5c70011cfa1826b0668f39e9b2eac69d7fc0f847bae277fd
 $ chalkctl config apply cp1 --secrets secrets.json
 cp1: config 1 added, 0 removed, 0 changed
 restarted chalkos-chrony-dhcp.service
@@ -581,8 +581,8 @@ $ chalkctl status w1
 config b8b41769a31866ce5c70011cfa1826b0668f39e9b2eac69d7fc0f847bae277fd (the inventory's)
 platform kvm (the inventory's)
 image 7986f78938ed (186d48b7ef31), booted from chalkos_2.efi
-previous image 75fd067caed0 (upgrade --rollback boots it)
-its store's root hash is 7986f78938ed320bc54a75ad2ebd10329352f10e1fcb99c0fdeb25b034ad2f79, not that of the image node-kvm the inventory names, 75fd067caed052f15ca831b431b4671d0dda26cbfcefe0236aae5adc933f3435; chalkctl upgrade --nodes w1 installs that image
+previous image c628af2ea405 (upgrade --rollback boots it)
+its store's root hash is 7986f78938ed320bc54a75ad2ebd10329352f10e1fcb99c0fdeb25b034ad2f79, not that of the image node-kvm the inventory names, c628af2ea405dc1b9b319c555d15a3b3822953b0ae3cf8478927cb76bc074095; chalkctl upgrade --nodes w1 installs that image
 VOLUME  DISK    MOUNT POINT  STATE
 var     system  /var         mounted
 OUTPUT            HASH          STATE
