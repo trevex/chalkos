@@ -10,7 +10,7 @@ spec:
     # The Kubernetes image of this chalkos release for VMs, which chalklab pulls by the digest its
     # tag names. To run your own build of flake.nix instead, take the source
     # {directory: images/node-kvm} and run nix build .#node-kvm -o images/node-kvm.
-    node-kvm: {source: {oci: ghcr.io/trevex/chalkos/kubernetes-1.37-kvm:v0.1.0}} # x-release-please-version
+    node-kvm: {source: {oci: ghcr.io/trevex/chalkos/kubernetes-1.37-kvm:v0.2.0}} # x-release-please-version
   all: {imageName: node-kvm, files: [cluster/*.yaml]}
   nodes:
     cp1: {address: 192.168.123.11, files: [nodes/cp1.yaml]}
