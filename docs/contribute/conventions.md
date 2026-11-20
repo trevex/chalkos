@@ -11,7 +11,7 @@ rule says what to do and why. [Testing](testing.md) has the rules for tests, and
 
 ## Compatibility
 
-chalkos has no release yet. A change does not keep the old behaviour beside the new one:
+chalkos is before 1.0. A change does not keep the old behaviour beside the new one:
 
 - No compatibility shims or fallbacks for older chalkd, chalkctl or images. A change to the node
   API, a kind or a file format changes every side at once, and a cluster upgrades together.
