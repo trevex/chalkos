@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 
+	"github.com/trevex/chalkos/pkg/fatfs"
 	"github.com/trevex/chalkos/pkg/image"
 	"github.com/trevex/chalkos/pkg/image/imagetest"
 	"github.com/trevex/chalkos/pkg/imagepull"
@@ -133,11 +135,16 @@ func TestDirectoryRoundTrip(t *testing.T) {
 	if store := disk[2].UUID; store != h.RootHash[:8]+"-"+h.RootHash[8:12]+"-"+h.RootHash[12:16]+"-"+h.RootHash[16:20]+"-"+h.RootHash[20:32] {
 		t.Errorf("the store partition's UUID is %s, not the root hash's first 128 bits", store)
 	}
-	files, err := image.ListESP(context.Background(), image.FAT(filepath.Join(out, "chalkos.raw"), 1<<20), "::/EFI/*/*.EFI")
+	esp, err := fatfs.Open(filepath.Join(out, "chalkos.raw"), 1<<20, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"::/EFI/BOOT/BOOTX64.EFI", "::/EFI/Linux/chalkos_1.efi"}; !reflect.DeepEqual(files, want) {
+	defer esp.Close()
+	files, err := image.ListESP(esp, "/EFI/*/*.EFI")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"/EFI/BOOT/BOOTX64.EFI", "/EFI/Linux/chalkos_1.efi"}; !reflect.DeepEqual(files, want) {
 		t.Errorf("the ESP holds %q, want %q", files, want)
 	}
 }
@@ -176,26 +183,18 @@ func TestDirectoryIsReproducible(t *testing.T) {
 			t.Errorf("sfdisk --dump prints no %q:\n%s", want, dump)
 		}
 	}
-	info, err := image.Mtools(context.Background(), "mdir", "-i", image.FAT(raw, 1<<20), "::/")
+	// The test image's 4 MiB ESP is too small for FAT32, so its boot sector is FAT16's, which gives
+	// a 16-bit FAT size and the volume ID at 0x27.
+	data, err := os.ReadFile(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(info, "Volume Serial Number is 793A-442B") {
-		t.Errorf("the ESP's volume ID is not repart's:\n%s", info)
+	boot := data[1<<20 : 1<<20+512]
+	if binary.LittleEndian.Uint16(boot[0x16:]) == 0 {
+		t.Fatal("the test image's ESP is FAT32, whose volume ID the test does not read")
 	}
-}
-
-// TestDirectoryNeedsMtools refuses to pull into an image directory without mtools on PATH before
-// it asks the registry for anything.
-func TestDirectoryNeedsMtools(t *testing.T) {
-	host, manifests := ocitest.CountingRegistry(t)
-	t.Setenv("PATH", t.TempDir())
-	_, err := imagepull.Directory(context.Background(), host+"/lab/node-metal:v1", filepath.Join(t.TempDir(), "out"))
-	if err == nil || !strings.Contains(err.Error(), "mformat, mmd, mcopy, mdir PATH lacks; install mtools") {
-		t.Errorf("err = %v, want mtools named", err)
-	}
-	if n := manifests.Load(); n != 0 {
-		t.Errorf("the pull asked the registry for %d manifests before it found mtools missing", n)
+	if id := binary.LittleEndian.Uint32(boot[0x27:]); id != 0x793a442b {
+		t.Errorf("the ESP's volume ID is %08X, not repart's 793A442B", id)
 	}
 }
 

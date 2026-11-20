@@ -177,9 +177,9 @@ func writeRaw(ctx context.Context, path string, a *ociimage.Artifact, ar arch.Ar
 	if err := f.Sync(); err != nil {
 		return err
 	}
-	return image.WriteESP(ctx, path, d.esp.Start, d.esp.Size/512, espVolumeID(d.esp.UUID), []image.ESPFile{
-		{From: loaderPath, To: "::/EFI/BOOT/" + ar.BootLoader},
-		{From: ukiPath, To: "::/EFI/Linux/" + a.Header.ImageID + "_1.efi"},
+	return image.WriteESP(path, d.esp.Start, d.esp.Size, espVolumeID(d.esp.UUID), []image.ESPFile{
+		{From: loaderPath, To: "/EFI/BOOT/" + ar.BootLoader},
+		{From: ukiPath, To: "/EFI/Linux/" + a.Header.ImageID + "_1.efi"},
 	})
 }
 

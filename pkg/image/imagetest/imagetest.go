@@ -4,7 +4,6 @@ package imagetest
 
 import (
 	"bytes"
-	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -20,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trevex/chalkos/pkg/fatfs"
 	"github.com/trevex/chalkos/pkg/image"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
@@ -48,11 +48,9 @@ func NeedTools(t testing.TB, tools ...string) {
 }
 
 // Write writes the image's chalkos.raw and repart-output.json into dir, made when missing, and
-// returns the root hash of its store. The ESP starts the raw image, at offset 0. It skips the
-// test without mkfs.vfat and mtools.
+// returns the root hash of its store. The ESP starts the raw image, at offset 0.
 func Write(t testing.TB, dir string, img Image) []byte {
 	t.Helper()
-	NeedTools(t, "mkfs.vfat", "mmd", "mcopy", "mdir")
 	blockSize := img.BlockSize
 	if blockSize == 0 {
 		blockSize = 512
@@ -63,7 +61,6 @@ func Write(t testing.TB, dir string, img Image) []byte {
 		t.Fatal(err)
 	}
 	work := t.TempDir()
-	esp := filepath.Join(work, "esp.img")
 	ukiPath := filepath.Join(work, "uki.efi")
 	loader := filepath.Join(work, "systemd-boot.efi")
 	write(t, loader, ukitest.Build(map[string][]byte{".text": []byte("systemd-boot")}))
@@ -74,26 +71,17 @@ func Write(t testing.TB, dir string, img Image) []byte {
 		img.Edit(osRelease)
 	}
 	write(t, ukiPath, ukitest.UKI(osRelease, fmt.Sprintf("init=/x usrhash=%x", root)))
-	for _, args := range [][]string{
-		{"mkfs.vfat", "-C", esp, "4096"},
-		{"mmd", "-i", esp, "::/EFI", "::/EFI/BOOT", "::/EFI/Linux"},
-		{"mcopy", "-i", esp, ukiPath, "::/EFI/Linux/chalkos_1.efi"},
-		{"mcopy", "-i", esp, loader, "::/EFI/BOOT/BOOTX64.EFI"},
-	} {
-		if _, err := image.Mtools(context.Background(), args[0], args[1:]...); err != nil {
-			t.Fatal(err)
-		}
-	}
-	espData, err := os.ReadFile(esp)
-	if err != nil {
-		t.Fatal(err)
-	}
 	const espSize, treeSize, storeSize = 4 << 20, 64 << 10, 2 << 20
 	raw := make([]byte, espSize+treeSize+storeSize)
-	copy(raw, espData)
 	copy(raw[espSize:], tree)
 	copy(raw[espSize+treeSize:], store)
 	write(t, filepath.Join(dir, "chalkos.raw"), raw)
+	if err := image.WriteESP(filepath.Join(dir, "chalkos.raw"), 0, espSize, 0x1234abcd, []image.ESPFile{
+		{From: ukiPath, To: "/EFI/Linux/chalkos_1.efi"},
+		{From: loader, To: "/EFI/BOOT/BOOTX64.EFI"},
+	}); err != nil {
+		t.Fatal(err)
+	}
 	id := hex.EncodeToString(root)[:16]
 	parts, err := json.Marshal([]image.Partition{
 		{Type: "esp", Label: "esp", Offset: 0, RawSize: espSize},
@@ -105,6 +93,37 @@ func Write(t testing.TB, dir string, img Image) []byte {
 	}
 	write(t, filepath.Join(dir, "repart-output.json"), parts)
 	return root
+}
+
+// ReadESP returns the file name, such as /EFI/Linux/chalkos_1.efi, of the ESP at offset in the
+// raw disk image.
+func ReadESP(t testing.TB, raw string, offset int64, name string) []byte {
+	t.Helper()
+	esp, err := fatfs.Open(raw, offset, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer esp.Close()
+	data, err := esp.ReadFile(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+// WriteESP writes data to the file name of the ESP at offset in the raw disk image, replacing it.
+func WriteESP(t testing.TB, raw string, offset int64, name string, data []byte) {
+	t.Helper()
+	esp, err := fatfs.Open(raw, offset, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := esp.WriteFile(name, data); err != nil {
+		t.Fatal(err)
+	}
+	if err := esp.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // Signer writes a Secure Boot db key, name.key, and its self-signed certificate, name.crt, into

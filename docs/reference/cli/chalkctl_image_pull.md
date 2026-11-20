@@ -18,9 +18,7 @@ loopback or private address is reached over plain HTTP.
 Without --layout, the directory becomes an image directory as nix build makes it: the raw disk
 image, repart-output.json, metadata.json, schemas, repart.d and facts. The inventory's directory
 source, install, upgrade, chalklab and chalkbuild read it as a built image of the same digest,
-and two pulls of an image write the same bytes. It writes the image's ESP with mtools'
-mformat, mmd and mcopy, which must be on PATH: the chalkctl of the flake brings them, and the
-release's static binary needs the distribution's mtools package.
+and two pulls of an image write the same bytes.
 With --layout, the directory becomes the OCI image layout of the manifest the registry serves,
 byte for byte, which chalkbuild push or another OCI tool pushes to another registry under the
 same digest. The layout holds no cosign signatures.

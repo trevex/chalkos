@@ -2,7 +2,6 @@ package image
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -24,7 +23,7 @@ type Parts struct {
 // OpenParts opens the raw image whose partitions parts lists and copies its UKI and, with
 // bootLoader, its boot loader into a temporary directory, which Close removes. It refuses an image
 // whose hash tree has another root hash than repart reported, or whose UKI boots another store.
-func OpenParts(ctx context.Context, raw string, parts []Partition, bootLoader bool) (_ *Parts, err error) {
+func OpenParts(raw string, parts []Partition, bootLoader bool) (_ *Parts, err error) {
 	esp, err := FindPartition(parts, "esp")
 	if err != nil {
 		return nil, err
@@ -45,7 +44,7 @@ func OpenParts(ctx context.Context, raw string, parts []Partition, bootLoader bo
 	if p.dir, err = os.MkdirTemp("", "chalkos-image-"); err != nil {
 		return nil, err
 	}
-	if p.Binaries, err = ExtractBinaries(ctx, raw, esp.Offset, p.dir, bootLoader); err != nil {
+	if p.Binaries, err = ExtractBinaries(raw, esp.Offset, p.dir, bootLoader); err != nil {
 		return nil, err
 	}
 	if p.Store.Architecture != p.Architecture {

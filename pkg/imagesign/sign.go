@@ -4,11 +4,13 @@ package imagesign
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 
+	"github.com/trevex/chalkos/pkg/fatfs"
 	"github.com/trevex/chalkos/pkg/image"
 )
 
@@ -16,10 +18,14 @@ import (
 // image's ESP in place with sbsign. Other EFI binaries stay unsigned, so whatever else lands on the
 // ESP does not gain the db signature. The UKI's signature covers the store through the verity
 // root hash on its command line.
-func SignImage(ctx context.Context, raw string, espOffset int64, key, cert string) error {
-	fat := image.FAT(raw, espOffset)
+func SignImage(ctx context.Context, raw string, espOffset int64, key, cert string) (err error) {
+	esp, err := fatfs.Open(raw, espOffset, true)
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, esp.Close()) }()
 	// Only direct children match.
-	files, err := image.ListESP(ctx, fat, "::/EFI/BOOT/BOOT*.EFI", "::/EFI/LINUX/*.EFI")
+	files, err := image.ListESP(esp, "/EFI/BOOT/BOOT*.EFI", "/EFI/LINUX/*.EFI")
 	if err != nil {
 		return err
 	}
@@ -34,14 +40,21 @@ func SignImage(ctx context.Context, raw string, espOffset int64, key, cert strin
 	defer os.RemoveAll(tmp)
 
 	for i, f := range files {
+		data, err := esp.ReadFile(f)
+		if err != nil {
+			return err
+		}
 		local := filepath.Join(tmp, fmt.Sprintf("%d.efi", i))
-		if _, err := image.Mtools(ctx, "mcopy", "-n", "-i", fat, f, local); err != nil {
+		if err := os.WriteFile(local, data, 0o600); err != nil {
 			return err
 		}
 		if err := signFile(ctx, local, key, cert); err != nil {
 			return fmt.Errorf("%s: %w", f, err)
 		}
-		if _, err := image.Mtools(ctx, "mcopy", "-o", "-i", fat, local, f); err != nil {
+		if data, err = os.ReadFile(local); err != nil {
+			return err
+		}
+		if err := esp.WriteFile(f, data); err != nil {
 			return err
 		}
 	}
