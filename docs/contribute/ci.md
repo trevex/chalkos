@@ -129,10 +129,10 @@ nix eval --json .#releaseImages.x86_64-linux \
 <!-- x-release-please-start-version -->
 ```json
 {
-  "kubernetes-1.37-kvm": { "repository": "ghcr.io/trevex/chalkos/kubernetes-1.37-kvm", "tag": "v0.2.1" },
-  "kubernetes-1.37-metal": { "repository": "ghcr.io/trevex/chalkos/kubernetes-1.37-metal", "tag": "v0.2.1" },
-  "router-kvm": { "repository": "ghcr.io/trevex/chalkos/router-kvm", "tag": "v0.2.1" },
-  "router-metal": { "repository": "ghcr.io/trevex/chalkos/router-metal", "tag": "v0.2.1" }
+  "kubernetes-1.37-kvm": { "repository": "ghcr.io/trevex/chalkos/kubernetes-1.37-kvm", "tag": "v0.2.2" },
+  "kubernetes-1.37-metal": { "repository": "ghcr.io/trevex/chalkos/kubernetes-1.37-metal", "tag": "v0.2.2" },
+  "router-kvm": { "repository": "ghcr.io/trevex/chalkos/router-kvm", "tag": "v0.2.2" },
+  "router-metal": { "repository": "ghcr.io/trevex/chalkos/router-metal", "tag": "v0.2.2" }
 }
 ```
 <!-- x-release-please-end -->

@@ -78,7 +78,7 @@ Then build the images with `tag` and `revision`, and expose their layouts:
 {
   description = "The images of the example cluster";
 
-  inputs.chalkos.url = "github:trevex/chalkos/v0.2.1"; # x-release-please-version
+  inputs.chalkos.url = "github:trevex/chalkos/v0.2.2"; # x-release-please-version
 
   outputs =
     { self, chalkos, ... }:
