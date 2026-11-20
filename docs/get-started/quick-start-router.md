@@ -55,7 +55,7 @@ Create a directory and initialise it from the `router-lab` template:
 <!-- x-release-please-start-version -->
 ```console
 $ mkdir router-lab && cd router-lab
-$ nix flake init -t github:trevex/chalkos/v0.2.0#router-lab
+$ nix flake init -t github:trevex/chalkos/v0.2.1#router-lab
 wrote: "/home/alice/router-lab/.gitignore"
 wrote: "/home/alice/router-lab/README.md"
 wrote: "/home/alice/router-lab/chalklab.yaml"
