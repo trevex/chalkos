@@ -31,7 +31,7 @@ concurrency:
 permissions: {}
 
 env:
-  BRANCH: bot/update-flake-lock
+  BRANCH: bot/test-update-flake-lock
 
 jobs:
   update:
@@ -93,7 +93,7 @@ jobs:
           cat "$RUNNER_TEMP/body.md" >>"$GITHUB_STEP_SUMMARY"
           echo "changed=true" >>"$GITHUB_OUTPUT"
       - name: Open or update the pull request
-        if: steps.update.outputs.changed == 'true' && !inputs.dry-run && github.event_name != 'pull_request'
+        if: steps.update.outputs.changed == 'true' && !inputs.dry-run
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           GH_REPO: ${{ github.repository }}
