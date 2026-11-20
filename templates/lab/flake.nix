@@ -1,7 +1,7 @@
 {
   description = "A chalkos lab cluster that chalklab runs on this machine";
 
-  inputs.chalkos.url = "github:trevex/chalkos";
+  inputs.chalkos.url = "github:trevex/chalkos/v0.1.0"; # x-release-please-version
 
   outputs =
     { self, chalkos, ... }:
