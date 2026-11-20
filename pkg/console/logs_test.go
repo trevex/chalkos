@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"connectrpc.com/connect"
 	"github.com/charmbracelet/x/ansi"
 
@@ -50,6 +51,18 @@ func TestLogsSearch(t *testing.T) {
 	consoletest.Press(tm, "enter")
 	consoletest.WaitFor(t, tm, "1 match")
 	consoletest.Snapshot(t, tm)
+}
+
+// A paste types into the search.
+func TestLogsSearchPaste(t *testing.T) {
+	tm := consoletest.Start(t, console.New(consoletest.Normal(), consoletest.Options()))
+	consoletest.WaitFor(t, tm, "healthy")
+	consoletest.Press(tm, "4")
+	consoletest.WaitFor(t, tm, "delivered")
+	consoletest.Press(tm, "/")
+	tm.Send(tea.PasteMsg{Content: "apply"})
+	consoletest.Press(tm, "enter")
+	consoletest.WaitFor(t, tm, "1 match")
 }
 
 // w wraps the lines longer than the screen.

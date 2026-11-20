@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"connectrpc.com/connect"
-	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/trevex/chalkos/pkg/console"
 	"github.com/trevex/chalkos/pkg/console/consoletest"

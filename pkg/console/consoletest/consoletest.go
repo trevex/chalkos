@@ -14,12 +14,12 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"connectrpc.com/connect"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/colorprofile"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/exp/golden"
-	"github.com/charmbracelet/x/exp/teatest"
-	"github.com/muesli/termenv"
+	"github.com/charmbracelet/x/exp/teatest/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -306,70 +306,135 @@ func Options() console.Options {
 	}
 }
 
-// plain sets up lipgloss and the time zone once, before any console runs.
-var plain sync.Once
+// utc sets the time zone once, before any console runs.
+var utc sync.Once
 
-// Start runs the console m on a terminal of 80 columns and 25 lines, with lipgloss writing no
-// colours and times in UTC, so the screens compare as text on any machine. A model with a Close
-// method is closed when the test ends.
-func Start(t *testing.T, m tea.Model) *teatest.TestModel {
+// Console is a console that runs in a test, and the screens it drew since the last WaitFor.
+type Console struct {
+	*teatest.TestModel
+	drawn *drawn
+}
+
+// drawn are the screens a console drew, as text, and changed is closed when it draws the next.
+type drawn struct {
+	mu      sync.Mutex
+	screens strings.Builder
+	last    string
+	changed chan struct{}
+}
+
+func (d *drawn) add(screen string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.screens.WriteString(screen)
+	d.screens.WriteByte('\n')
+	d.last = screen
+	close(d.changed)
+	d.changed = make(chan struct{})
+}
+
+// recorder is the model a test runs: the console, with each screen it draws kept in drawn.
+// The renderer writes only the changes of a screen to the terminal, so the terminal's output does
+// not hold the screen's text.
+type recorder struct {
+	tea.Model
+	drawn *drawn
+}
+
+func (r recorder) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	r.Model, cmd = r.Model.Update(msg)
+	return r, cmd
+}
+
+func (r recorder) View() tea.View {
+	v := r.Model.View()
+	r.drawn.add(ansi.Strip(v.Content))
+	return v
+}
+
+// Start runs the console m on a terminal of 80 columns and 25 lines, which shows no colours or
+// other styles, with times in UTC, so the screens compare as text on any machine. A model with a
+// Close method is closed when the test ends.
+func Start(t *testing.T, m tea.Model) *Console {
 	t.Helper()
-	plain.Do(func() {
-		lipgloss.SetColorProfile(termenv.Ascii)
-		time.Local = time.UTC
-	})
+	utc.Do(func() { time.Local = time.UTC })
 	if c, ok := m.(interface{ Close() }); ok {
 		t.Cleanup(c.Close)
 	}
-	return teatest.NewTestModel(t, m, teatest.WithInitialTermSize(80, 25))
+	d := &drawn{changed: make(chan struct{})}
+	tm := teatest.NewTestModel(t, recorder{Model: m, drawn: d}, teatest.WithInitialTermSize(80, 25),
+		teatest.WithProgramOptions(tea.WithColorProfile(colorprofile.NoTTY)))
+	return &Console{TestModel: tm, drawn: d}
 }
 
-// WaitFor waits until the screen has shown each of texts since the last wait.
-func WaitFor(t *testing.T, tm *teatest.TestModel, texts ...string) {
+// WaitFor waits until the console has drawn each of texts since the last wait.
+func WaitFor(t *testing.T, c *Console, texts ...string) {
 	t.Helper()
-	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
+	timeout := time.After(20 * time.Second)
+	for {
+		c.drawn.mu.Lock()
+		screens := c.drawn.screens.String()
+		found := true
 		for _, text := range texts {
-			if !bytes.Contains(b, []byte(text)) {
-				return false
-			}
+			found = found && strings.Contains(screens, text)
 		}
-		return true
-	},
-		teatest.WithDuration(20*time.Second), teatest.WithCheckInterval(10*time.Millisecond))
+		if found {
+			c.drawn.screens.Reset()
+		}
+		last, changed := c.drawn.last, c.drawn.changed
+		c.drawn.mu.Unlock()
+		if found {
+			return
+		}
+		select {
+		case <-changed:
+		case <-timeout:
+			t.Fatalf("WaitFor: %q not drawn after 20s. Last screen:\n%s", texts, last)
+		}
+	}
 }
 
 // Press presses a key, such as "tab", "shift+tab", "f10", "enter", "esc", "pgdown", or runes.
-func Press(tm *teatest.TestModel, key string) { tm.Send(keyMsg(key)) }
+func Press(c *Console, key string) { c.Send(keyMsg(key)) }
 
 // keys are the keys Press names.
-var keys = map[string]tea.KeyType{
-	"tab": tea.KeyTab, "shift+tab": tea.KeyShiftTab, "f10": tea.KeyF10, "enter": tea.KeyEnter,
-	"esc": tea.KeyEsc, "up": tea.KeyUp, "down": tea.KeyDown, "pgup": tea.KeyPgUp,
-	"pgdown": tea.KeyPgDown, "home": tea.KeyHome, "end": tea.KeyEnd, "backspace": tea.KeyBackspace,
-	"ctrl+u": tea.KeyCtrlU,
+var keys = map[string]tea.KeyPressMsg{
+	"tab": {Code: tea.KeyTab}, "shift+tab": {Code: tea.KeyTab, Mod: tea.ModShift},
+	"f10": {Code: tea.KeyF10}, "enter": {Code: tea.KeyEnter}, "esc": {Code: tea.KeyEscape},
+	"up": {Code: tea.KeyUp}, "down": {Code: tea.KeyDown}, "left": {Code: tea.KeyLeft},
+	"right": {Code: tea.KeyRight}, "pgup": {Code: tea.KeyPgUp}, "pgdown": {Code: tea.KeyPgDown},
+	"home": {Code: tea.KeyHome}, "end": {Code: tea.KeyEnd}, "backspace": {Code: tea.KeyBackspace},
+	"ctrl+u": {Code: 'u', Mod: tea.ModCtrl},
 }
 
-func keyMsg(key string) tea.KeyMsg {
+// keyMsg is the key named key, or else a key that types key: a character, or several, such as
+// those of an input method.
+func keyMsg(key string) tea.KeyPressMsg {
 	if k, ok := keys[key]; ok {
-		return tea.KeyMsg{Type: k}
+		return k
 	}
-	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}
+	code := tea.KeyExtended
+	if r := []rune(key); len(r) == 1 {
+		code = r[0]
+	}
+	return tea.KeyPressMsg{Code: code, Text: key}
 }
 
-// Screen ends the console and returns its last screen.
-func Screen(t *testing.T, tm *teatest.TestModel) string {
+// Screen ends the console and returns its last screen, as text without styles.
+func Screen(t *testing.T, c *Console) string {
 	t.Helper()
-	if err := tm.Quit(); err != nil {
+	if err := c.Quit(); err != nil {
 		t.Fatal(err)
 	}
-	return tm.FinalModel(t, teatest.WithFinalTimeout(20*time.Second)).View()
+	return ansi.Strip(c.FinalModel(t, teatest.WithFinalTimeout(20*time.Second)).View().Content)
 }
 
 // Snapshot is Screen that compares the screen with testdata/<test name>.golden; go test -update
 // writes the file.
-func Snapshot(t *testing.T, tm *teatest.TestModel) string {
+func Snapshot(t *testing.T, c *Console) string {
 	t.Helper()
-	screen := Screen(t, tm)
+	screen := Screen(t, c)
 	golden.RequireEqual(t, []byte(screen+"\n"))
 	return screen
 }

@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/statusview"
@@ -77,7 +77,7 @@ func (n *network) Update(msg tea.Msg) (Tab, tea.Cmd) {
 			n.bgp.Set(msg.bgp, msg.bgpErr, msg.at)
 		}
 		n.reading, n.read = false, msg.at
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		n.pane.Key(msg)
 	}
 	return n, nil

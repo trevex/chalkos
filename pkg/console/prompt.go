@@ -7,7 +7,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/trevex/chalkos/pkg/askpassword"
@@ -48,6 +48,15 @@ func (p *prompt) add(r rune) {
 	}
 	p.input = append(p.input, r)
 	p.size += n
+}
+
+// typeText types the printable characters of text.
+func (p *prompt) typeText(text string) {
+	for _, r := range text {
+		if !isControl(r) {
+			p.add(r)
+		}
+	}
 }
 
 // back erases the last character typed.
@@ -161,11 +170,18 @@ func (m *Model) open() []askpassword.Request {
 }
 
 // promptKey handles a key while a request is on screen: Enter sends what was typed, Esc
-// cancels, Backspace erases a character, Ctrl+U the line, and every other printable key types.
-func (m *Model) promptKey(k tea.KeyMsg) tea.Cmd {
+// cancels, Backspace erases a character, Ctrl+U the line, and every other printable key types, as
+// does a paste.
+func (m *Model) promptKey(msg tea.Msg) tea.Cmd {
 	p := m.prompt
-	switch k.Type {
-	case tea.KeyEnter:
+	k, ok := msg.(tea.KeyPressMsg)
+	if !ok {
+		paste, _ := msg.(tea.PasteMsg)
+		p.typeText(paste.Content)
+		return nil
+	}
+	switch k.Keystroke() {
+	case "enter":
 		if m.o.Now().Sub(p.opened) < enterGuard {
 			return nil
 		}
@@ -177,20 +193,14 @@ func (m *Model) promptKey(k tea.KeyMsg) tea.Cmd {
 			defer clear(password)
 			return r.Answer(password)
 		})
-	case tea.KeyEsc:
+	case "esc":
 		return m.reply(askpassword.Request.Cancel)
-	case tea.KeyBackspace, tea.KeyCtrlH:
+	case "backspace", "ctrl+h":
 		p.back()
-	case tea.KeyCtrlU:
+	case "ctrl+u":
 		p.erase()
-	case tea.KeySpace:
-		p.add(' ')
-	case tea.KeyRunes:
-		for _, r := range k.Runes {
-			if !isControl(r) {
-				p.add(r)
-			}
-		}
+	default:
+		p.typeText(k.Text)
 	}
 	return nil
 }

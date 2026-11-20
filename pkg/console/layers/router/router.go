@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"connectrpc.com/connect"
-	tea "github.com/charmbracelet/bubbletea"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
@@ -110,7 +110,7 @@ func (t *Tab) Update(msg tea.Msg) (console.Tab, tea.Cmd) {
 		t.reading = false
 		t.status.Set(msg.status, msg.statusErr, msg.at)
 		t.parts = t.merge(msg.parts, msg.at)
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		t.pane.Key(msg)
 	}
 	return t, nil

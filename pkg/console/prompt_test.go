@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/x/exp/teatest"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/trevex/chalkos/pkg/askpassword"
 	"github.com/trevex/chalkos/pkg/askpassword/askpasswordtest"
@@ -27,14 +27,14 @@ func promptOptions(dir string) (console.Options, *consoletest.Clock) {
 }
 
 // startPrompt runs the console of a normal node with the requests of dir.
-func startPrompt(t *testing.T, dir string) (*teatest.TestModel, *consoletest.Clock) {
+func startPrompt(t *testing.T, dir string) (*consoletest.Console, *consoletest.Clock) {
 	t.Helper()
 	o, clock := promptOptions(dir)
 	return consoletest.Start(t, console.New(consoletest.Normal(), o)), clock
 }
 
 // enter presses Enter a second later, past the time a new prompt ignores it.
-func enter(tm *teatest.TestModel, clock *consoletest.Clock) {
+func enter(tm *consoletest.Console, clock *consoletest.Clock) {
 	clock.Advance(time.Second)
 	consoletest.Press(tm, "enter")
 }
@@ -47,7 +47,7 @@ func TestPrompt(t *testing.T) {
 	dir := t.TempDir()
 	askpasswordtest.Ask(t, dir, volume)
 	tm, _ := startPrompt(t, dir)
-	consoletest.WaitFor(t, tm, "Please enter passphrase for disk data:")
+	consoletest.WaitFor(t, tm, "Please enter passphrase for disk data:", "healthy")
 	consoletest.Press(tm, "abc")
 	consoletest.WaitFor(t, tm, "> ***_")
 	consoletest.Snapshot(t, tm)
@@ -93,6 +93,19 @@ func TestPromptIgnoresAnEarlyEnter(t *testing.T) {
 	}
 }
 
+// A paste types its printable characters.
+func TestPromptPaste(t *testing.T) {
+	dir := t.TempDir()
+	answers := askpasswordtest.Ask(t, dir, volume)
+	tm, clock := startPrompt(t, dir)
+	consoletest.WaitFor(t, tm, "Please enter passphrase for disk data:")
+	tm.Send(tea.PasteMsg{Content: "pass\nword"})
+	enter(tm, clock)
+	if got := askpasswordtest.Next(t, answers); got != "+password" {
+		t.Errorf("answer %q, want +password", got)
+	}
+}
+
 // Ctrl+U erases what was typed.
 func TestPromptErasesTheLine(t *testing.T) {
 	dir := t.TempDir()
@@ -101,10 +114,10 @@ func TestPromptErasesTheLine(t *testing.T) {
 	consoletest.WaitFor(t, tm, "Please enter passphrase for disk data:")
 	consoletest.Press(tm, "wrong")
 	consoletest.Press(tm, "ctrl+u")
-	consoletest.Press(tm, "right")
+	consoletest.Press(tm, "correct")
 	enter(tm, clock)
-	if got := askpasswordtest.Next(t, answers); got != "+right" {
-		t.Errorf("answer %q, want +right", got)
+	if got := askpasswordtest.Next(t, answers); got != "+correct" {
+		t.Errorf("answer %q, want +correct", got)
 	}
 }
 
@@ -141,7 +154,7 @@ func TestPromptEcho(t *testing.T) {
 	dir := t.TempDir()
 	askpasswordtest.Ask(t, dir, askpasswordtest.Request{Name: "user", Message: "User name:", Echo: true})
 	tm, _ := startPrompt(t, dir)
-	consoletest.WaitFor(t, tm, "User name:")
+	consoletest.WaitFor(t, tm, "User name:", "healthy")
 	consoletest.Press(tm, "admin")
 	consoletest.WaitFor(t, tm, "> admin_")
 	consoletest.Snapshot(t, tm)
@@ -154,7 +167,7 @@ func TestPromptSilent(t *testing.T) {
 	tm, _ := startPrompt(t, dir)
 	consoletest.WaitFor(t, tm, "PIN:")
 	consoletest.Press(tm, "1234")
-	if screen := finalScreen(t, tm); !slices.Contains(strings.Split(screen, "\n"), "> _") {
+	if screen := consoletest.Screen(t, tm); !slices.Contains(strings.Split(screen, "\n"), "> _") {
 		t.Errorf("the prompt shows what was typed:\n%s", screen)
 	}
 }
@@ -167,7 +180,7 @@ func TestPromptLongQuestion(t *testing.T) {
 	dir := t.TempDir()
 	askpasswordtest.Ask(t, dir, longQuestion)
 	tm, _ := startPrompt(t, dir)
-	consoletest.WaitFor(t, tm, "…")
+	consoletest.WaitFor(t, tm, "…", "healthy")
 	consoletest.Press(tm, "ab")
 	consoletest.WaitFor(t, tm, "> **_")
 	consoletest.Snapshot(t, tm)
@@ -179,7 +192,7 @@ func TestPromptLongQuestionMaintenance(t *testing.T) {
 	askpasswordtest.Ask(t, dir, longQuestion)
 	o, _ := promptOptions(dir)
 	tm := consoletest.Start(t, console.New(consoletest.Maintenance(), o))
-	consoletest.WaitFor(t, tm, "…")
+	consoletest.WaitFor(t, tm, "…", "maintenance mode")
 	consoletest.Press(tm, "ab")
 	consoletest.WaitFor(t, tm, "> **_")
 	consoletest.Snapshot(t, tm)
@@ -249,7 +262,7 @@ func TestPromptAnswerFails(t *testing.T) {
 	consoletest.Press(tm, "x")
 	enter(tm, clock)
 	consoletest.WaitFor(t, tm, "the answer did not reach the request")
-	if screen := finalScreen(t, tm); !strings.Contains(screen, "Lost question:") {
+	if screen := consoletest.Screen(t, tm); !strings.Contains(screen, "Lost question:") {
 		t.Errorf("the request is not on screen again:\n%s", screen)
 	}
 }
@@ -266,13 +279,4 @@ func TestPromptAfterTheDirectoryIsMade(t *testing.T) {
 	}
 	askpasswordtest.Ask(t, dir, volume)
 	consoletest.WaitFor(t, tm, "Please enter passphrase for disk data:")
-}
-
-// finalScreen ends the console and returns its last screen.
-func finalScreen(t *testing.T, tm *teatest.TestModel) string {
-	t.Helper()
-	if err := tm.Quit(); err != nil {
-		t.Fatal(err)
-	}
-	return tm.FinalModel(t, teatest.WithFinalTimeout(20*time.Second)).View()
 }
