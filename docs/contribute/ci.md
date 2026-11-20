@@ -16,8 +16,13 @@ run and the binary cache.
 A pull request targets `main`, and each of its commits is a
 [Conventional Commit](https://www.conventionalcommits.org/): a rebase merge puts the commits on
 `main` as they are, and the changelog comes from them. Branch protection requires the `result`
-check, which passes when every check of the run passed, and a review from the code owners of
-`.github/CODEOWNERS`. The pull request template asks for the end-to-end labels the change needs.
+check, which passes when every check of the run passed, a branch that is up to date with `main`,
+and a review from the code owners of `.github/CODEOWNERS`. The pull request template asks for the
+end-to-end labels the change needs.
+
+On the release pull request alone, the job `release-pr` checks that it holds one commit, made by
+release-please, on the tip of `main`.
+[Merge and publish](releasing.md#merge-and-publish) explains why.
 
 ## Tiers
 

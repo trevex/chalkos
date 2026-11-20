@@ -45,7 +45,27 @@ code owner's review then gate the merge as on any pull request.
 
 ## Merge and publish
 
-Merge the release pull request with a rebase merge, like any other. The push to `main` runs the
+The release pull request must hold the changes of every pull request merged before it, or the
+release's versioned files and changelog miss them. release-please rebuilds it on each push to
+`main`, within about a minute, as one commit on `main`'s new tip. GitHub does not run a pull
+request's checks again when `main` moves, so its last green run can belong to an older `main`.
+Two settings keep such a release pull request from being merged:
+
+- Branch protection on `main` requires the `result` check and "Require branches to be up to date
+  before merging". The merge stays blocked until release-please has pushed the rebuilt pull
+  request and its checks have passed.
+- The CI job `release-pr` runs on the release pull request alone. It fails unless the pull
+  request's head is one commit that release-please made, whose parent is the current tip of
+  `main`. A commit of anyone else, such as the merge that "Update branch" adds, fails it: that
+  merge brings `main`'s changes into the branch but not into the release's versioned files.
+
+Never use "Update branch" on the release pull request; wait until release-please rebuilds it. A
+merge queue does not replace this, because it tests the pull request on `main`'s tip but does not
+let release-please regenerate its contents.
+
+Merge the release pull request with "Rebase and merge", like any other. In the repository's
+settings, allow rebase merges alone: untick "Allow merge commits" and "Allow squash merging", so
+`main` stays linear. The push to `main` runs the
 release workflow again: release-please tags the merge commit `v<version>`, creates the GitHub
 release with the changelog as its notes, and relabels the pull request `autorelease: tagged`.
 The same run then publishes the release from the tagged commit:

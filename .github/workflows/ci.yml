@@ -93,8 +93,44 @@ jobs:
             nix build --print-build-logs --no-link --keep-going "${installables[@]}"
           fi
 
+  # The release pull request holds exactly one commit, release-please's, on the tip of its base.
+  # Its versioned files and changelog are then those of every pull request merged before it.
+  # GitHub runs no check again when main moves; release-please rebuilds the pull request then,
+  # and branch protection, which wants branches up to date, holds the merge until it has.
+  # "Update branch" adds a merge commit with main's changes but none of the release's, which this
+  # job refuses. Every other pull request skips it.
+  release-pr:
+    if: github.event_name == 'pull_request' && github.head_ref == 'release-please--branches--main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Check the release pull request's commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          BASE: ${{ github.base_ref }}
+          # The commits of release-please, which acts as the release GitHub App's bot.
+          RELEASE_BOT: 359050260+chalkreleaser[bot]@users.noreply.github.com
+        run: |
+          commit=$(gh api "repos/$GH_REPO/commits/$HEAD" --jq '{author: .commit.author.email, parents: [.parents[].sha]}')
+          author=$(jq -r .author <<<"$commit")
+          parents=$(jq -r '.parents | join(" ")' <<<"$commit")
+          tip=$(gh api "repos/$GH_REPO/git/ref/heads/$BASE" --jq .object.sha)
+          echo "head $HEAD by $author, parents $parents; $BASE is at $tip"
+          if [ "$author" != "$RELEASE_BOT" ] || [ "$(wc -w <<<"$parents")" != 1 ]; then
+            echo "::error title=Not release-please's commit::the release pull request has a commit release-please did not make, such as a merge from Update branch; keep the pull request open, and push to $BASE or run the release workflow again so that release-please rebuilds it"
+            exit 1
+          fi
+          if [ "$parents" != "$tip" ]; then
+            echo "::error title=Older $BASE::the release pull request was built on an older $BASE; release-please rebuilds it within a minute of a push to $BASE"
+            exit 1
+          fi
+
   result:
-    needs: [tiers, check]
+    needs: [tiers, check, release-pr]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -102,9 +138,11 @@ jobs:
         env:
           TIERS: ${{ needs.tiers.result }}
           CHECK: ${{ needs.check.result }}
+          RELEASE_PR: ${{ needs.release-pr.result }}
         run: |
-          echo "tiers: $TIERS, checks: $CHECK"
-          [ "$TIERS" = success ] && [ "$CHECK" = success ]
+          echo "tiers: $TIERS, checks: $CHECK, release pull request: $RELEASE_PR"
+          [ "$TIERS" = success ] && [ "$CHECK" = success ] &&
+            { [ "$RELEASE_PR" = success ] || [ "$RELEASE_PR" = skipped ]; }
 
   report:
     needs: [tiers, check]
