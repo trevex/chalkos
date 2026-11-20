@@ -14,7 +14,10 @@ cover upgrades, new images and the limits.
 The guide uses the cluster of [Build a cluster on real machines](cluster-on-machines.md): the
 `cluster-metal` template's three control planes `cp1`, `cp2` and `cp3` at `192.168.1.11` to
 `192.168.1.13`, with the network's router at `192.168.1.1`. Read that guide first; this one lists
-what changes. The [home lab](home-lab.md#run-the-lab-without-internet-access-optional) has a
+what changes. The guide builds the cluster's own image, so that the image and the installer carry
+the cluster's OS CA. The published images work too, and
+[Bring the images across](#bring-the-images-across) carries either kind.
+The [home lab](home-lab.md#run-the-lab-without-internet-access-optional) has a
 variant that cuts a running lab off the internet.
 
 ## What comes in from outside
@@ -24,14 +27,15 @@ somewhere else:
 
 | What | Default source | In the air gap |
 | --- | --- | --- |
-| OS images and the installer | built with Nix, which downloads the sources | built on a connected machine and carried in as image directories |
+| OS images and the installer | built with Nix, which downloads the sources, or pulled from a release | built or pulled on a connected machine, and carried in as image directories or OCI layouts |
 | chalkctl | the chalkos flake | its static program, copied from a connected machine |
 | Container images | the registries the `Cluster` document names | the cluster registry on the control planes, filled with `chalkctl registry push` |
 | Time | `ptbtime1.ptb.de` to `ptbtime3.ptb.de` over NTS | a time server inside the air gap, named in a `TimeSync` document |
 
 chalkctl needs no internet. It reaches the nodes at the addresses of the inventory, reads the image
 directories the inventory names, and generates and holds the cluster's secrets on the workstation.
-The installer holds no config and fetches nothing: `chalkctl install` sends the image to it.
+The installer holds no config and fetches nothing outside the air gap: `chalkctl install` sends it
+an image directory, or it pulls the image from a registry inside the air gap.
 
 The nodes need no DNS names either, as long as every address chalkos uses is an IP address: the
 inventory's, the `ClusterRegistry`'s endpoints and the `TimeSync`'s servers. Names outside the
@@ -45,7 +49,7 @@ router.
 - You followed [Build a cluster on real machines](cluster-on-machines.md) up to its install, or
   know its steps.
 - A connected machine with Nix builds the images, as the
-  [build host](../get-started/requirements.md#build-host) describes, and has
+  [build host](../get-started/requirements.md#build-host) describes, and has chalkctl,
   [crane](https://github.com/google/go-containerregistry/tree/main/cmd/crane) and yq.
 - The workstation inside the air gap has chalkctl, kubectl and yq. Copy chalkctl's
   program as [Requirements](../get-started/requirements.md#workstation) describes.
@@ -61,8 +65,8 @@ router.
 
 ## Prepare on a connected machine
 
-In the repository of the cluster, build the image and the installer as
-[Build the image and the installer](cluster-on-machines.md#build-the-image-and-the-installer)
+In the repository of the cluster, build the image and the installer as the tab "Your own image" of
+[Get the image and the installer](cluster-on-machines.md#get-the-image-and-the-installer)
 describes, with the cluster's OS CA in `osCA`:
 
 ```sh
@@ -103,6 +107,66 @@ cp "$(nix build --no-link --print-out-paths github:trevex/chalkos/<rev>#chalkctl
 `<rev>` is the chalkos revision that `flake.lock` pins, so chalkctl and the image match. The copy
 holds the inventory, the config files, `secrets.age`, `secrets.pub.json`, the image, the installer
 and the container images.
+
+## Bring the images across
+
+Your own build is an image directory already, and the copy above carries it. An image in a
+registry, published by a chalkos release or pushed from your own build, crosses the air gap in one
+of two forms. Check its signature before you pull it, on the connected machine, as
+[Verify an image](../get-started/releases.md#verify-an-image) shows for a published image. Inside
+the air gap, the digest that the inventory names is what you trust: every pull checks the image's
+parts against it.
+
+### As an image directory
+
+[`chalkctl image pull`](../reference/cli/chalkctl_image_pull.md) writes the image into an image
+directory, as `nix build` makes one, and checks every part as a node does. Pull it into the
+repository before the copy, with the reference and digest of the release notes:
+
+```sh
+chalkctl image pull ghcr.io/trevex/chalkos/kubernetes-1.37-metal:<tag>@sha256:<digest> images/node-metal
+```
+
+`images/node-metal` must not exist yet, so pull before you build there or after you remove the
+build's link. Name the directory as the image's source in `chalkos.yaml`,
+`node-metal: {source: {directory: images/node-metal}}`. chalkctl then reads the image without a
+network and sends it to the installer and, on an upgrade, to each node. The release's installer
+has no OS CA; download and check it as
+[Download chalkctl and the installer](../get-started/releases.md#download-chalkctl-and-the-installer)
+shows, or build your own.
+
+### As an OCI layout for a registry inside the air gap
+
+With a registry of its own inside the air gap, the site can serve the images to the nodes as the
+registry outside did. `--layout` writes the OCI layout that the registry serves, whose manifest
+keeps its digest:
+
+```sh
+chalkctl image pull --layout ghcr.io/trevex/chalkos/kubernetes-1.37-metal:<tag>@sha256:<digest> oci/node-metal
+```
+
+Carry `oci/node-metal` across, and push it to the site's registry with
+[`chalkbuild push`](../reference/cli/chalkbuild_push.md), or another tool that copies an OCI
+layout, such as crane. The image keeps its digest:
+
+```sh
+chalkbuild push oci/node-metal registry.site.example/chalkos/kubernetes-1.37-metal:<tag>
+```
+
+`chalkbuild push` prints the pushed reference by digest. Name it in `chalkos.yaml`,
+`node-metal: {source: {oci: "registry.site.example/chalkos/kubernetes-1.37-metal@sha256:<digest>"}}`.
+The workstation inside the air gap reads the image's contract from the site's registry, and each
+node pulls the image from it, so both need a route to it. A registry that asks for credentials
+needs them on each node, in a `Registry` document, as
+[Registries and mirrors](../operate/registries.md) describes.
+
+The cluster registry of the next sections serves container images alone. chalkd does not pull OS
+images from it, so `chalkctl registry push` is not a way to bring them across.
+
+The layout holds no cosign signatures. To keep them with the image, copy it with
+`cosign copy <source> <destination>` from a machine that reaches both registries, such as one in a
+network between the air gap and the internet. `cosign verify` then checks the image in the site's
+registry.
 
 ## Give the nodes a time server
 
@@ -147,7 +211,8 @@ chalkctl validate
 ## Install the nodes
 
 Install the three nodes as [Build a cluster on real machines](cluster-on-machines.md) describes.
-The inventory's image is a directory, `images/node-metal`, which chalkctl reads without a network.
+The inventory's image is a directory, `images/node-metal`, which chalkctl reads without a network,
+or a reference in the site's registry.
 Each control plane starts the cluster registry at its first boot, and every node follows the time
 server of the `TimeSync`. Do not bootstrap yet: the control plane's images are not in the registry.
 
@@ -203,10 +268,11 @@ Every change that brings something new starts on the connected machine.
 
 ### Upgrade the OS image
 
-Build the new image on the connected machine, copy its directory into the air gap, and point the
-inventory's image at it. Then roll it out with `chalkctl upgrade`, as
-[Upgrade nodes](../operate/upgrade.md) describes. chalkctl reads the image from the directory and
-sends it to each node.
+Build or pull the new image on the connected machine, bring it across as
+[Bring the images across](#bring-the-images-across) describes, and point the inventory's image at
+its directory or its reference in the site's registry. Then roll it out with `chalkctl upgrade`, as
+[Upgrade nodes](../operate/upgrade.md) describes. chalkctl sends an image directory to each node;
+from the site's registry, each node pulls the image itself.
 
 ### Move to a new Kubernetes release
 
@@ -237,8 +303,8 @@ describes.
 - Nothing outside the cluster registry's `mirrors` reaches the nodes. A pod that names an image of
   another host fails to pull it.
 - chalkd does not pull OS images from the cluster registry. An inventory image with an `oci`
-  source needs a registry that the workstation and the nodes reach; the air gap takes image
-  directories instead.
+  source needs a registry that the workstation and the nodes reach, such as a site registry
+  inside the air gap; without one, the air gap takes image directories.
 - The copies take more space than the nodes run: crane copies every platform of an index. The
   `cluster-metal` template's eight images take about 1.2 GiB.
 - A time server without a reference clock serves only its own clock, as a router's `TimeServer`
