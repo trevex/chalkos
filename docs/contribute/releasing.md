@@ -91,7 +91,8 @@ These settings live in GitHub, not in the repository, so a maintainer makes them
    permissions: Contents, Pull requests and Issues, each read and write. Install it on
    `trevex/chalkos` alone. release-please acts with the App's token, because a pull request, a
    label or a tag that a workflow's own token creates starts no workflow, and the release pull
-   request must run CI.
+   request must run CI. The workflows of [Dependency updates](dependencies.md) use the same App
+   for the same reason.
 2. Add two repository secrets: `RELEASE_APP_ID`, the App's client ID, and
    `RELEASE_APP_PRIVATE_KEY`, a private key generated for it in PEM form. Without them the release
    workflow fails on every push to `main` with the error `No release App`.
