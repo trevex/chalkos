@@ -68,6 +68,15 @@ These pages take a first change from setup to commit.
 
     [:octicons-arrow-right-24: Read](releasing.md)
 
+-   :material-update: __Dependency updates__
+
+    ---
+
+    Renovate's groups and automerge, the fixup workflow, the weekly flake update and the vendor
+    hash.
+
+    [:octicons-arrow-right-24: Read](dependencies.md)
+
 </div>
 
 ## Code
