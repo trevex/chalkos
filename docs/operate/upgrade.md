@@ -187,7 +187,9 @@ chalkctl upgrade --image=images/node-metal-signed --secrets secrets.age
 
 When the inventory names the image in a registry, by `source.oci`, the node pulls the image
 itself. [Publish images to a registry](../build/publish-images.md) covers the upgrade from a
-registry, and [Registries and mirrors](registries.md) the credentials and mirrors.
+registry, and [Registries and mirrors](registries.md) the credentials and mirrors. When the nodes
+cannot reach the registry, [`chalkctl image pull`](../reference/cli/chalkctl_image_pull.md) writes
+the image into an image directory, which the inventory's `source.directory` or `--image` names.
 
 !!! note "With the Kubernetes layer, chalkctl also drains each node and guards etcd's quorum"
 
