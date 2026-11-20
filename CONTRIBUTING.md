@@ -59,6 +59,19 @@ your sign-off are kept in the project's public record. The sign-off is the only 
 carries, so leave out `Co-Authored-By` and the like. To sign off the commits of a branch after
 the fact, run `git rebase --signoff origin/main` and force-push.
 
+Sign every commit too, with a GPG or SSH key that your GitHub account lists as a signing key:
+`main` takes a pull request only when GitHub shows each of its commits as verified. For an SSH
+key:
+
+```sh
+git config --global gpg.format ssh
+git config --global user.signingkey ~/.ssh/id_ed25519.pub
+git config --global commit.gpgsign true
+```
+
+[Signed commits](https://trevex.github.io/chalkos/contribute/conventions/#signed-commits) has
+the details, including the commits of bots and of GitHub's web editor.
+
 You may write a change with the help of an AI tool. The person who signs it off answers for it:
 they have read and understood it, and they certify its origin like that of any other change.
 

@@ -135,3 +135,28 @@ A change written with the help of an AI tool is signed off by the person who sub
 person has read the change, answers for it in review, and certifies its origin as for any other
 change. A commit names no tool or agent as a co-author: it carries no `Co-Authored-By` or other
 trailer besides the sign-off.
+
+## Signed commits { #signed-commits }
+
+The ruleset on `main` accepts a pull request only when GitHub verifies the signature of every
+one of its commits. Sign your commits with a GPG or SSH key that your GitHub account lists as a
+signing key, as GitHub's
+[commit signature verification](https://docs.github.com/en/authentication/managing-commit-signature-verification)
+describes. For an SSH key, configure git once:
+
+```sh
+git config --global gpg.format ssh
+git config --global user.signingkey ~/.ssh/id_ed25519.pub
+git config --global commit.gpgsign true
+```
+
+GitHub then shows each pushed commit as "Verified". `git rebase --signoff origin/main` signs the
+commits it rewrites again, so one rebase adds both the sign-off and the signature to a branch
+whose commits lack them.
+
+GitHub signs the commits it makes itself: those of its web editor, and those that the
+workflows, release-please and Renovate make through its API as a GitHub App. The workflows of
+[Dependency updates](dependencies.md) commit through the API for this reason, with
+`.github/scripts/push-signed.sh`. A commit made in GitHub's web editor carries a sign-off only
+when the repository setting "Require contributors to sign off on web-based commits" is on, which
+makes the editor add it.

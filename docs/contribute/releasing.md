@@ -71,12 +71,13 @@ merge queue does not replace this, because it tests the pull request on `main`'s
 let release-please regenerate its contents.
 
 Merge the release pull request with "Squash and merge", like any other. The ruleset on `main`
-allows squash merges alone and requires signed commits and a linear history. GitHub signs the
-squash commit it makes, so the commits of a pull request need no signature. The squash commit's
-subject is the pull request's title, `chore(main): release <version>`, which the `pr-title` job
-accepts. The push to `main` runs the release workflow again: release-please tags the squash
-commit `v<version>`, creates the GitHub release with the changelog as its notes, and relabels
-the pull request `autorelease: tagged`.
+allows squash merges alone and requires signed commits and a linear history. Every commit of a
+pull request needs a signature that GitHub verifies, and GitHub signs the squash commit it makes.
+release-please's commit passes, since release-please makes it through GitHub's API, which signs
+it as the App's bot. The squash commit's subject is the pull request's title,
+`chore(main): release <version>`, which the `pr-title` job accepts. The push to `main` runs the
+release workflow again: release-please tags the squash commit `v<version>`, creates the GitHub
+release with the changelog as its notes, and relabels the pull request `autorelease: tagged`.
 The same run then publishes the release from the tagged commit:
 
 | Job | What it does |

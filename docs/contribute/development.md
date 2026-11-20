@@ -49,7 +49,8 @@ each command.
     `nix flake check` for later: it runs every check, the end-to-end tests that boot VMs included.
 
 6. Commit in the form of [Conventional Commits](https://www.conventionalcommits.org/), with a type,
-   a scope and a summary in the imperative, and [sign it off](conventions.md#sign-off) with `-s`:
+   a scope and a summary in the imperative, [signed off](conventions.md#sign-off) with `-s` and
+   [signed](conventions.md#signed-commits) with your key:
 
     ```sh
     git commit -s -am "fix(inventory): <summary>"

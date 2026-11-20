@@ -18,7 +18,8 @@ signs. The pull request's title becomes the commit's subject and its commits' me
 release-please writes the changelog from the subjects on `main`, so the title is a
 [Conventional Commit](https://www.conventionalcommits.org/), such as
 `fix(chalkctl): check every node of an image's name before skipping it`. Branch protection on
-`main` allows squash merges alone, requires signed commits and a linear history, and requires
+`main` allows squash merges alone and requires a linear history, a
+[verified signature](conventions.md#signed-commits) on every commit of the pull request, and
 the `result` check, which passes when every check of the run passed, a branch that is up to date
 with `main`, and a review from the code owners of `.github/CODEOWNERS`. The pull request template
 asks for the end-to-end labels the change needs.
@@ -43,7 +44,7 @@ Two jobs check every pull request besides the flake checks:
 
 | Job | Passes when |
 | --- | --- |
-| `pr-title` | The title is a Conventional Commit: a type of `feat`, `fix`, `docs`, `ci`, `build`, `test`, `refactor`, `perf`, `chore` or `revert`, an optional scope in parentheses, an optional `!` for a breaking change, a colon and a summary. |
+| `pr-title` | The title is a Conventional Commit: a type of `feat`, `fix`, `docs`, `style`, `ci`, `build`, `test`, `refactor`, `perf`, `chore` or `revert`, an optional scope in parentheses, an optional `!` for a breaking change, a colon and a summary. |
 | `dco` | Every commit except a merge carries a `Signed-off-by` trailer that names its author, name and email, as [Sign-off](conventions.md#sign-off) describes. The commits of Renovate and of the release GitHub App's bot are exempt. |
 
 Both run `.github/scripts/pr-title.sh` and `.github/scripts/dco.sh`, which the `workflows`
