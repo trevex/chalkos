@@ -88,7 +88,7 @@ deleted. Back up what the workloads keep with a tool that works at the Kubernete
 ## Upgrade chalkos itself
 
 The image flake names a chalkos release in its `chalkos` input, such as
-`github:trevex/chalkos/v0.1.0`, and `flake.lock` pins its commit. A newer chalkos reaches the
+`github:trevex/chalkos/vX.Y.Z`, and `flake.lock` pins its commit. A newer chalkos reaches the
 nodes as new images:
 
 1. In `flake.nix`, change the input's tag to the new release, which

@@ -191,10 +191,10 @@ image into the lab's state once, and copies it for each node:
 ```console
 $ chalklab create --secrets secrets.json
 creating the lab's Secure Boot keys in /home/alice/.local/state/chalklab/lab/keys
-pulled ghcr.io/trevex/chalkos/kubernetes-1.37-kvm:v0.2.1 as ghcr.io/trevex/chalkos/kubernetes-1.37-kvm@sha256:ea0dc23d410fb3f125b8c762cc7536c76ea7c1244384825ae976c4787e731830
-copying the image of cp1 from /home/alice/.local/state/chalklab/lab/images/sha256-ea0dc23d410fb3f125b8c762cc7536c76ea7c1244384825ae976c4787e731830
-using cached ghcr.io/trevex/chalkos/kubernetes-1.37-kvm@sha256:ea0dc23d410fb3f125b8c762cc7536c76ea7c1244384825ae976c4787e731830
-copying the image of w1 from /home/alice/.local/state/chalklab/lab/images/sha256-ea0dc23d410fb3f125b8c762cc7536c76ea7c1244384825ae976c4787e731830
+pulled ghcr.io/trevex/chalkos/kubernetes-1.37-kvm:v0.2.1 as ghcr.io/trevex/chalkos/kubernetes-1.37-kvm@sha256:<digest>
+copying the image of cp1 from /home/alice/.local/state/chalklab/lab/images/sha256-<digest>
+using cached ghcr.io/trevex/chalkos/kubernetes-1.37-kvm@sha256:<digest>
+copying the image of w1 from /home/alice/.local/state/chalklab/lab/images/sha256-<digest>
 ```
 <!-- x-release-please-end -->
 

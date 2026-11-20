@@ -49,9 +49,48 @@ let
   config = i: i.nixos.config;
   # The lines of each file release-please updates, an entry of its extra-files: a path or a
   # {type, path}.
+  extraFiles =
+    map (file: file.path or file)
+      (lib.importJSON ../../release-please-config.json).packages.".".extra-files;
   extraFileLines = map (
-    file: lib.splitString "\n" (builtins.readFile (../.. + "/${file.path or file}"))
-  ) (lib.importJSON ../../release-please-config.json).packages.".".extra-files;
+    file: lib.splitString "\n" (builtins.readFile (../.. + "/${file}"))
+  ) extraFiles;
+  # The mentions of a release of chalkos a line holds: the chalkos input of a flake, a page or a
+  # download of a release, and a published image by its tag.
+  releaseMentions =
+    line:
+    map lib.head (
+      lib.filter lib.isList (
+        builtins.split "((github:)?trevex/chalkos/(releases/(download|tag)/)?v[0-9]+\\.[0-9]+\\.[0-9]+|ghcr\\.io/trevex/chalkos/[a-z0-9.-]+:v[0-9]+\\.[0-9]+\\.[0-9]+)" line
+      )
+    );
+  # The pages, the README, and the files of the templates and the examples, which name releases of
+  # chalkos.
+  mentionFiles =
+    let
+      root = toString ../..;
+      textual =
+        f:
+        lib.any (e: lib.hasSuffix e f) [
+          ".md"
+          ".nix"
+          ".yaml"
+          ".yml"
+          ".sh"
+          ".json5"
+          ".txt"
+        ];
+    in
+    [ "README.md" ]
+    ++ lib.filter textual (
+      map (f: lib.removePrefix "${root}/" (toString f)) (
+        lib.concatMap lib.filesystem.listFilesRecursive [
+          ../../docs
+          ../../templates
+          ../../examples
+        ]
+      )
+    );
   # The x.y.z versions a line names.
   versions =
     line: lib.concatLists (lib.filter lib.isList (builtins.split "([0-9]+\\.[0-9]+\\.[0-9]+)" line));
@@ -160,6 +199,47 @@ lib.runTests {
       expr = lib.unique (lib.concatMap (lines: lib.concatMap versions (blockLines lines)) extraFileLines);
       expected = [ version ];
     };
+  # Every mention of a chalkos release is one release-please updates: on a line with its marker,
+  # or between its start and end markers, in a file of its extra-files. A mention it does not
+  # update names an old release once the next is out. The result names each other mention by its
+  # file and line.
+  testReleaseMentions = {
+    expr = lib.concatMap (
+      file:
+      let
+        listed = lib.elem file extraFiles;
+      in
+      (lib.foldl'
+        (
+          state: line:
+          let
+            n = state.n + 1;
+            marked = listed && (state.inBlock || lib.hasInfix "x-release-please-version" line);
+            stale = releaseMentions line;
+          in
+          {
+            inherit n;
+            inBlock =
+              if lib.hasInfix "x-release-please-start" line then
+                true
+              else if lib.hasInfix "x-release-please-end" line then
+                false
+              else
+                state.inBlock;
+            found =
+              state.found ++ lib.optional (!marked && stale != [ ]) "${file}:${toString n}: ${toString stale}";
+          }
+        )
+        {
+          n = 0;
+          inBlock = false;
+          found = [ ];
+        }
+        (lib.splitString "\n" (builtins.readFile (../.. + "/${file}")))
+      ).found
+    ) mentionFiles;
+    expected = [ ];
+  };
   # The generic updater replaces every x.y.z of a line its marker comment ends, so such a line
   # names no other, such as the Kubernetes release 1.37.2.
   testVersionLines = {
