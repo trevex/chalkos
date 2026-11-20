@@ -9,12 +9,14 @@
 #     STORE_VERITY_SIZE, or UKIS copies of the UKI more than 80% of ESP_SIZE. Sizes are repart's,
 #     as 3G; a size of - skips that part.
 {
+  lib,
   writeShellApplication,
   coreutils,
   jq,
 }:
 writeShellApplication {
   name = "chalkos-image-size";
+  meta.license = lib.licenses.asl20;
   runtimeInputs = [
     coreutils
     jq

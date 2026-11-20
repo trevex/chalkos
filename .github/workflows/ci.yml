@@ -1,19 +1,23 @@
 # Builds the flake's checks by the tiers of nix/checks/tiers.nix: the fast checks in one job, and
 # each image and end-to-end check in a job of its own. A pull request runs the fast and image
 # tiers, and the end-to-end checks its labels name: e2e names them all, and each other label the
-# checks e2eLabels of the tiers maps it to; adding any label runs the workflow again. A push to main and the nightly run, which
+# checks e2eLabels of the tiers maps it to; adding any label runs the workflow again. A pull
+# request's title, which a squash merge makes the subject of its commit on main, must be a
+# Conventional Commit, and each of its commits must carry its author's DCO sign-off. Editing the
+# title or the description runs the workflow again. A push to main and the nightly run, which
 # calls this workflow, run every tier and open or update an issue labelled ci-failure when a
 # check fails. The job result is the one check that branch protection requires.
 name: ci
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
+    types: [opened, synchronize, reopened, labeled, edited]
   push:
     branches: [main]
   workflow_call:
 
-# A pull request's newer run cancels its older one; every commit on main runs to its end.
+# A pull request's newer run cancels its older one, also when an edit starts it; the newer run
+# substitutes from the cache what the older one built. Every commit on main runs to its end.
 concurrency:
   group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -129,20 +133,64 @@ jobs:
             exit 1
           fi
 
+  # A squash merge makes the pull request's title the subject of its commit on main, from which
+  # release-please writes the changelog.
+  pr-title:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - name: Check the title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: .github/scripts/pr-title.sh "$TITLE"
+
+  # Each commit of a pull request carries a Signed-off-by trailer of its author, which certifies
+  # the Developer Certificate of Origin; the commits of Renovate and the release App's bot need
+  # none.
+  dco:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Check the sign-offs
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: .github/scripts/dco.sh "$BASE" "$HEAD"
+
+  # The jobs that run on pull requests alone pass on a push or the nightly run when skipped.
   result:
-    needs: [tiers, check, release-pr]
+    needs: [tiers, check, release-pr, pr-title, dco]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Every check passed
         env:
+          EVENT: ${{ github.event_name }}
           TIERS: ${{ needs.tiers.result }}
           CHECK: ${{ needs.check.result }}
           RELEASE_PR: ${{ needs.release-pr.result }}
+          PR_TITLE: ${{ needs.pr-title.result }}
+          DCO: ${{ needs.dco.result }}
         run: |
-          echo "tiers: $TIERS, checks: $CHECK, release pull request: $RELEASE_PR"
+          echo "tiers: $TIERS, checks: $CHECK, release pull request: $RELEASE_PR, title: $PR_TITLE, sign-offs: $DCO"
+          passed() { [ "$1" = success ] || { [ "$EVENT" != pull_request ] && [ "$1" = skipped ]; }; }
           [ "$TIERS" = success ] && [ "$CHECK" = success ] &&
-            { [ "$RELEASE_PR" = success ] || [ "$RELEASE_PR" = skipped ]; }
+            { [ "$RELEASE_PR" = success ] || [ "$RELEASE_PR" = skipped ]; } &&
+            passed "$PR_TITLE" && passed "$DCO"
 
   report:
     needs: [tiers, check]

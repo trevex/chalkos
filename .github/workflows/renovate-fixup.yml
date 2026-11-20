@@ -2,9 +2,11 @@
 # and releases.nix, but not what Nix derives from them. Against main, a change of go.mod or go.sum
 # sets the Go programs' vendorHash again with update-vendor-hash, after updating the go-overlay
 # input when it lacks the Go release go.mod now names, and a change of releases.nix sets the
-# Kubernetes pins with update-pins. Each fix is a commit of its own, which the release GitHub
-# App's bot makes and pushes, so that ci runs on the pull request; the commits of the workflow's
-# own token start no workflow. A push of the bot's own, or of anyone but Renovate, runs nothing.
+# Kubernetes pins with update-pins. Each fix is a commit of its own, signed off by the release
+# GitHub App's bot. push-signed.sh makes each one again through GitHub's API with the App's token,
+# so that GitHub signs it as the bot's and ci runs on the pull request; the commits of the
+# workflow's own token start no workflow. A push of the bot's own, or of anyone but Renovate, runs
+# nothing.
 # Renovate still rebases a branch with the bot's commits, since its configuration ignores them.
 name: renovate-fixup
 
@@ -34,15 +36,16 @@ jobs:
           client-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
           permission-contents: write
-      # The App's token pushes the fixes, so it stays in the checkout's configuration.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          token: ${{ steps.app.outputs.token }}
+          persist-credentials: false
           fetch-depth: 0
       - uses: ./.github/actions/nix
         with:
           cachix-name: ${{ vars.CACHIX_NAME }}
           read-only: true
+      # The local commits name the bot as their author and in their sign-off, which the commits
+      # GitHub makes from them keep.
       - name: Commit as the App's bot
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
@@ -63,12 +66,12 @@ jobs:
             nix flake update go-overlay
             if ! git diff --quiet -- flake.lock; then
               go=$(sed -nE 's/^(go|toolchain) (go)?([0-9.a-z]+)$/\3/p' go.mod | tail -n 1)
-              git commit -m "build(deps): update go-overlay for Go $go" -- flake.lock
+              git commit -s -m "build(deps): update go-overlay for Go $go" -- flake.lock
             fi
           fi
           nix run .#update-vendor-hash
           if ! git diff --quiet; then
-            git commit -am 'build(deps): update the vendor hash'
+            git commit -s -am 'build(deps): update the vendor hash'
           fi
       - name: Set the Kubernetes pins
         run: |
@@ -79,15 +82,16 @@ jobs:
           nix run .#update-pins
           git add -A
           if ! git diff --cached --quiet; then
-            git commit -m 'build(deps): update the Kubernetes pins'
+            git commit -s -m 'build(deps): update the Kubernetes pins'
           fi
       - name: Push the fixes
         env:
-          REF: ${{ github.ref }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          BRANCH: ${{ github.ref_name }}
         run: |
           if [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]; then
             echo "nothing to fix"
             exit 0
           fi
           git log --format='%h %an: %s' "$GITHUB_SHA..HEAD"
-          git push origin "HEAD:$REF"
+          .github/scripts/push-signed.sh "$BRANCH" "$GITHUB_SHA"

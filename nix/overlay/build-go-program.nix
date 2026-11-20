@@ -5,7 +5,8 @@
 # its source leaves out the _test.go files and testdata directories, so a change to a test alone
 # rebuilds no program and no image. The Go toolchain is go of the chalkos scope (default.nix).
 # Every program is of chalkos's version, from version.nix, which the linker sets in pkg/version;
-# the flake's packages of chalkctl and chalkbuild set the git revision there too.
+# the flake's packages of chalkctl and chalkbuild set the git revision there too. Its meta names
+# chalkos's licence, Apache-2.0.
 {
   buildGoModule,
   cacert,
@@ -85,7 +86,10 @@ in
     env.CGO_ENABLED = "0";
     subPackages = [ "cmd/${pname}" ];
     doCheck = false;
-    meta.mainProgram = pname;
+    meta = {
+      mainProgram = pname;
+      license = lib.licenses.asl20;
+    };
     # The source paths, relative to the repository, which the go-lint check compares with the
     # packages the program imports.
     passthru.goPaths = map (p: lib.path.removePrefix ../../. p) (lib.filter lib.isPath paths);

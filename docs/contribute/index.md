@@ -196,8 +196,10 @@ A change needs:
   staticcheck lint the Go code.
 - The flake checks of what it touches, which [Testing](testing.md#flake-checks) maps to the
   parts of the repository.
-- The generated files its sources produce, and a commit message of the form the
-  [code conventions](conventions.md#commit-messages) give.
-- A pull request whose CI run passes, with the end-to-end labels the change needs, which
-  [Continuous integration](ci.md#end-to-end-labels) lists.
+- The generated files its sources produce, and commits of the form the
+  [code conventions](conventions.md#commit-messages) give, each with its author's
+  [sign-off](conventions.md#sign-off).
+- A pull request whose title is a Conventional Commit and whose CI run passes, with the
+  end-to-end labels the change needs, which [Continuous integration](ci.md#end-to-end-labels)
+  lists.
 

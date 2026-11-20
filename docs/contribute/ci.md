@@ -13,12 +13,45 @@ run and the binary cache.
 
 ## Pull requests
 
-A pull request targets `main`, and each of its commits is a
-[Conventional Commit](https://www.conventionalcommits.org/): a rebase merge puts the commits on
-`main` as they are, and the changelog comes from them. Branch protection requires the `result`
-check, which passes when every check of the run passed, a branch that is up to date with `main`,
-and a review from the code owners of `.github/CODEOWNERS`. The pull request template asks for the
-end-to-end labels the change needs.
+A pull request targets `main`, and a squash merge puts it on `main` as one commit, which GitHub
+signs. The pull request's title becomes the commit's subject and its commits' messages the body.
+release-please writes the changelog from the subjects on `main`, so the title is a
+[Conventional Commit](https://www.conventionalcommits.org/), such as
+`fix(chalkctl): check every node of an image's name before skipping it`. Branch protection on
+`main` allows squash merges alone and requires a linear history, a
+[verified signature](conventions.md#signed-commits) on every commit of the pull request, and
+the `result` check, which passes when every check of the run passed, a branch that is up to date
+with `main`, and a review from the code owners of `.github/CODEOWNERS`. The pull request template
+asks for the end-to-end labels the change needs.
+
+A pull request with several changes for the changelog lists them in its description, between
+`BEGIN_COMMIT_OVERRIDE` and `END_COMMIT_OVERRIDE`, one Conventional Commit each:
+
+```text
+BEGIN_COMMIT_OVERRIDE
+feat(chalkctl): add the flag --wait to chalkctl upgrade
+
+fix(chalkd): keep the staged image after a failed download
+END_COMMIT_OVERRIDE
+```
+
+release-please then takes these lines in place of the merged commit's message, as its
+[README](https://github.com/googleapis/release-please#how-can-i-fix-release-notes) describes. The
+block also corrects the changelog entry of a pull request that is already merged, as long as no
+release has taken it yet.
+
+Two jobs check every pull request besides the flake checks:
+
+| Job | Passes when |
+| --- | --- |
+| `pr-title` | The title is a Conventional Commit: a type of `feat`, `fix`, `docs`, `style`, `ci`, `build`, `test`, `refactor`, `perf`, `chore` or `revert`, an optional scope in parentheses, an optional `!` for a breaking change, a colon and a summary. |
+| `dco` | Every commit except a merge carries a `Signed-off-by` trailer that names its author, name and email, as [Sign-off](conventions.md#sign-off) describes. The commits of Renovate and of the release GitHub App's bot are exempt. |
+
+Both run `.github/scripts/pr-title.sh` and `.github/scripts/dco.sh`, which the `workflows`
+check tests. A failed job prints how to fix it: retitle the pull request, or sign off its
+commits with `git rebase --signoff origin/main` and force-push. Editing the pull request's title
+or description runs the workflow again; the new run cancels the older one and substitutes from
+the cache what that run built.
 
 On the release pull request alone, the job `release-pr` checks that it holds one commit, made by
 release-please, on the tip of `main`.

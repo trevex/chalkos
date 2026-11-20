@@ -311,6 +311,7 @@ has no `org.opencontainers.image.version`.
 | `org.opencontainers.image.version` | mkImages's [`tag`](mkimages.md#tag) | The git tag the image was built from, such as `v0.1.0`. |
 | `org.opencontainers.image.source` | the image's modules | The URL of the image's source; chalkos's release images name `https://github.com/trevex/chalkos`. |
 | `org.opencontainers.image.created` | the image's modules | When the image was created, in RFC 3339; chalkos's release images name the time of their commit, so a rebuild makes the same manifest. |
+| `org.opencontainers.image.licenses` | the image's modules | The licence of the image's own code as an SPDX expression; chalkos's release images name `Apache-2.0`. The third-party software in the image keeps its own licences. |
 | `dev.chalkos.kubernetes.version` | the Kubernetes layer | The Kubernetes release of the image's kubelet, such as `1.37.2`. |
 
 The manifest of a release image reads, in part:
@@ -321,6 +322,7 @@ The manifest of a release image reads, in part:
   "annotations": {
     "dev.chalkos.kubernetes.version": "1.37.2",
     "org.opencontainers.image.created": "2026-11-19T21:04:11Z",
+    "org.opencontainers.image.licenses": "Apache-2.0",
     "org.opencontainers.image.revision": "28aac64fc0de68df53a376208012ddc5631b2aeb",
     "org.opencontainers.image.source": "https://github.com/trevex/chalkos",
     "org.opencontainers.image.version": "v0.1.0"

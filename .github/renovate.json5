@@ -28,7 +28,7 @@
   // passed, never without checks.
   automergeType: 'pr',
   platformAutomerge: true,
-  automergeStrategy: 'rebase',
+  automergeStrategy: 'squash',
   ignoreTests: false,
   customManagers: [
     {

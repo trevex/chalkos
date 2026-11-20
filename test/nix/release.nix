@@ -132,8 +132,8 @@ lib.runTests {
       };
     }) expected;
   };
-  # The manifests' annotations: the tag as the version, the revision, chalkos's source, the
-  # commit's time in RFC 3339, and a Kubernetes image's release.
+  # The manifests' annotations: the tag as the version, the revision, chalkos's source and
+  # licence, the commit's time in RFC 3339, and a Kubernetes image's release.
   testAnnotations = {
     expr = lib.mapAttrs (
       _: i:
@@ -151,6 +151,7 @@ lib.runTests {
       {
         "org.opencontainers.image.version" = tag;
         "org.opencontainers.image.source" = "https://github.com/trevex/chalkos";
+        "org.opencontainers.image.licenses" = "Apache-2.0";
         created = true;
       }
       // lib.optionalAttrs (self ? rev || self ? dirtyRev) {

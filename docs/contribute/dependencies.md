@@ -45,7 +45,7 @@ kubelet, so their pull requests carry it from the start.
 ## Automerge
 
 Only the `github-actions` group merges by itself, and only with every check green. Renovate
-enables GitHub's auto-merge on the pull request, with a rebase merge, so GitHub merges it once
+enables GitHub's auto-merge on the pull request, with a squash merge, so GitHub merges it once
 the checks that branch protection requires pass. Where GitHub's auto-merge is unavailable, as
 while the repository setting "Allow auto-merge" is off, Renovate merges the pull request itself
 on a later run, once every check of the branch has passed. A pull request with a failed or
@@ -90,12 +90,18 @@ with `main`, and fixes what the change needs:
 | `releases.nix` | `nix run .#update-pins` | `build(deps): update the Kubernetes pins` |
 
 go-overlay adds a Go release within hours of its publication, so its update in a Go pull request
-holds the release Renovate proposes. The workflow commits each fix as the release GitHub App's bot
-and pushes it with the App's token, so CI runs on the new commit; a commit pushed with a
-workflow's own token starts no workflow. A push of the bot's own commits, or of a person's, runs
-nothing, so the workflow does not loop. Renovate's configuration ignores the bot's commits in
-`gitIgnoredAuthors`, so Renovate still rebases the branch. A rebase replaces the branch with a new
-commit of Renovate's, and the workflow fixes it again.
+holds the release Renovate proposes. The workflow commits each fix as the release GitHub App's
+bot, signed off by the bot. `.github/scripts/push-signed.sh` then makes each commit again on the
+branch through GitHub's GraphQL API, `createCommitOnBranch`, with the App's token. GitHub
+authors such a commit as the bot and signs it, so it passes the ruleset's
+[signature check](conventions.md#signed-commits), and CI runs on it; a commit pushed with a
+workflow's own token starts no workflow. A push of the bot's own commits, or
+of a person's, runs nothing, so the workflow does not loop. Renovate's configuration ignores the
+bot's commits in `gitIgnoredAuthors`, so Renovate still rebases the branch. A rebase replaces the
+branch with a new commit of Renovate's, and the workflow fixes it again.
+
+Renovate's commits carry no sign-off. The `dco` job of
+[Continuous integration](ci.md#pull-requests) exempts them, and the bot's.
 
 ## The weekly flake update
 
@@ -106,10 +112,12 @@ releases current for the next Go update, and makes one pull request a week. A ch
 can change how Nix fetches and builds the Kubernetes sources and the Go modules, so the workflow
 runs `update-pins` and `update-vendor-hash` after it.
 
-When anything changed, the workflow commits it as `build(deps): update the flake inputs`, pushes
-the commit to `bot/update-flake-lock`, replacing what the branch held, and opens a pull request
-labelled `dependencies` and `e2e`, or updates the open one. Its description lists each input's old
-and new revision. A week with no change leaves the branch and the pull request alone.
+When anything changed, the workflow commits it as `build(deps): update the flake inputs`, signed
+off by the App's bot, and makes the commit through GitHub's API like the fixup workflow, on a
+branch of the run that starts at `main`. It then moves `bot/update-flake-lock` to that commit,
+replacing what the branch held, deletes the run's branch, and opens a pull request labelled
+`dependencies` and `e2e`, or updates the open one. Its description lists each input's old and new
+revision. A week with no change leaves the branch and the pull request alone.
 
 A newer nixpkgs can make an image outgrow its size ceiling, and the `image-size` check then fails
 the pull request. The workflow never raises a ceiling: a person decides whether to raise it in a

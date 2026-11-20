@@ -4,12 +4,14 @@
 #     reads lines "<value>\t<label>[\t<uuid>]" and gives the partition whose sfdisk FIELD, uuid or
 #     type, equals value, compared without case, the label and, when the line has one, the UUID.
 {
+  lib,
   writeShellApplication,
   jq,
   util-linux,
 }:
 writeShellApplication {
   name = "chalkos-relabel-partitions";
+  meta.license = lib.licenses.asl20;
   runtimeInputs = [
     jq
     util-linux

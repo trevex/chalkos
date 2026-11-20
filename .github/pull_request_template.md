@@ -1,6 +1,7 @@
 <!--
-Each commit is a Conventional Commit, such as "fix(chalkctl): check every node of an image's
-name": a rebase merge puts the commits on main as they are, and the changelog comes from them.
+The title is a Conventional Commit, such as "fix(chalkctl): check every node of an image's name":
+a squash merge makes it the subject of the commit on main, and the changelog comes from it. Sign
+off every commit with git commit -s.
 
 Add the label e2e when the change touches boot, install, upgrade or a layer, or e2e:<name> to run
 one end-to-end check, such as e2e:upgrade, and e2e:examples when the change touches examples/. A
