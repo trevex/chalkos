@@ -6,7 +6,7 @@ require (
 	cel.dev/cel-go v0.32.0
 	charm.land/bubbletea/v2 v2.1.2
 	charm.land/lipgloss/v2 v2.1.1
-	connectrpc.com/connect v1.21.0
+	connectrpc.com/connect/v2 v2.0.2
 	filippo.io/age v1.3.2
 	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/charmbracelet/x/ansi v0.11.9

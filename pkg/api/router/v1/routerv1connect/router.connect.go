@@ -7,38 +7,46 @@
 package routerv1connect
 
 import (
-	connect "connectrpc.com/connect"
+	connect "connectrpc.com/connect/v2"
 	context "context"
-	errors "errors"
 	v1 "github.com/trevex/chalkos/pkg/api/router/v1"
-	http "net/http"
-	strings "strings"
+	sync "sync"
 )
-
-// This is a compile-time assertion to ensure that this generated file and the connect package are
-// compatible. If you get a compiler error that this constant is not defined, this code was
-// generated with a version of connect newer than the one compiled into your binary. You can fix the
-// problem by either regenerating this code with an older version of connect or updating the connect
-// version compiled into your binary.
-const _ = connect.IsAtLeastVersion1_13_0
 
 const (
 	// RouterServiceName is the fully-qualified name of the RouterService service.
 	RouterServiceName = "chalkos.router.v1.RouterService"
 )
 
-// These constants are the fully-qualified names of the RPCs defined in this package. They're
-// exposed at runtime as Spec.Procedure and as the final two segments of the HTTP route.
+// These constants are the procedure names of the RPCs defined in this package. They're exposed at
+// runtime as Spec.Procedure and as the final two segments of the HTTP route.
 //
 // Note that these are different from the fully-qualified method names used by
 // google.golang.org/protobuf/reflect/protoreflect. To convert from these constants to
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// RouterServiceStatusProcedure is the fully-qualified name of the RouterService's Status RPC.
+	// RouterServiceStatusProcedure is the procedure name of the RouterService's Status RPC.
 	RouterServiceStatusProcedure = "/chalkos.router.v1.RouterService/Status"
-	// RouterServiceRoutesProcedure is the fully-qualified name of the RouterService's Routes RPC.
+	// RouterServiceRoutesProcedure is the procedure name of the RouterService's Routes RPC.
 	RouterServiceRoutesProcedure = "/chalkos.router.v1.RouterService/Routes"
+)
+
+var (
+	routerServiceStatusSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_chalkos_router_v1_router_proto.Services().ByName("RouterService").Methods().ByName("Status"),
+			Procedure:  RouterServiceStatusProcedure,
+		}
+	})
+	routerServiceRoutesSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_chalkos_router_v1_router_proto.Services().ByName("RouterService").Methods().ByName("Routes"),
+			Procedure:  RouterServiceRoutesProcedure,
+		}
+	})
 )
 
 // RouterServiceClient is a client for the chalkos.router.v1.RouterService service.
@@ -46,54 +54,18 @@ type RouterServiceClient interface {
 	// Status reports the state of the router's routing daemons, its NAT64 instances, its resolvers
 	// and its DHCP servers and relays. Available in normal mode to readers, on images with the
 	// router layer. The console may call it.
-	Status(context.Context, *connect.Request[v1.StatusRequest]) (*connect.Response[v1.StatusResponse], error)
+	Status(context.Context, *v1.StatusRequest) (*v1.StatusResponse, error)
 	// Routes lists the routes in the node's kernel, of the main table unless a VRF or another table
 	// is asked for, and the paths the BGP instance of that VRF selected, each within an address
 	// range when one is given. Available in normal mode to readers, on images with the router
 	// layer.
-	Routes(context.Context, *connect.Request[v1.RoutesRequest]) (*connect.Response[v1.RoutesResponse], error)
+	Routes(context.Context, *v1.RoutesRequest) (*v1.RoutesResponse, error)
 }
 
-// NewRouterServiceClient constructs a client for the chalkos.router.v1.RouterService service. By
-// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
-// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
-// connect.WithGRPC() or connect.WithGRPCWeb() options.
-//
-// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
-// http://api.acme.com or https://acme.com/grpc).
-func NewRouterServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) RouterServiceClient {
-	baseURL = strings.TrimRight(baseURL, "/")
-	routerServiceMethods := v1.File_chalkos_router_v1_router_proto.Services().ByName("RouterService").Methods()
-	return &routerServiceClient{
-		status: connect.NewClient[v1.StatusRequest, v1.StatusResponse](
-			httpClient,
-			baseURL+RouterServiceStatusProcedure,
-			connect.WithSchema(routerServiceMethods.ByName("Status")),
-			connect.WithClientOptions(opts...),
-		),
-		routes: connect.NewClient[v1.RoutesRequest, v1.RoutesResponse](
-			httpClient,
-			baseURL+RouterServiceRoutesProcedure,
-			connect.WithSchema(routerServiceMethods.ByName("Routes")),
-			connect.WithClientOptions(opts...),
-		),
-	}
-}
-
-// routerServiceClient implements RouterServiceClient.
-type routerServiceClient struct {
-	status *connect.Client[v1.StatusRequest, v1.StatusResponse]
-	routes *connect.Client[v1.RoutesRequest, v1.RoutesResponse]
-}
-
-// Status calls chalkos.router.v1.RouterService.Status.
-func (c *routerServiceClient) Status(ctx context.Context, req *connect.Request[v1.StatusRequest]) (*connect.Response[v1.StatusResponse], error) {
-	return c.status.CallUnary(ctx, req)
-}
-
-// Routes calls chalkos.router.v1.RouterService.Routes.
-func (c *routerServiceClient) Routes(ctx context.Context, req *connect.Request[v1.RoutesRequest]) (*connect.Response[v1.RoutesResponse], error) {
-	return c.routes.CallUnary(ctx, req)
+// NewRouterServiceClient constructs a client for the chalkos.router.v1.RouterService service.
+// Multiple service clients may share a single connect.Client.
+func NewRouterServiceClient(client *connect.Client) RouterServiceClient {
+	return &routerServiceClient{client: client}
 }
 
 // RouterServiceHandler is an implementation of the chalkos.router.v1.RouterService service.
@@ -101,52 +73,77 @@ type RouterServiceHandler interface {
 	// Status reports the state of the router's routing daemons, its NAT64 instances, its resolvers
 	// and its DHCP servers and relays. Available in normal mode to readers, on images with the
 	// router layer. The console may call it.
-	Status(context.Context, *connect.Request[v1.StatusRequest]) (*connect.Response[v1.StatusResponse], error)
+	Status(context.Context, *v1.StatusRequest) (*v1.StatusResponse, error)
 	// Routes lists the routes in the node's kernel, of the main table unless a VRF or another table
 	// is asked for, and the paths the BGP instance of that VRF selected, each within an address
 	// range when one is given. Available in normal mode to readers, on images with the router
 	// layer.
-	Routes(context.Context, *connect.Request[v1.RoutesRequest]) (*connect.Response[v1.RoutesResponse], error)
+	Routes(context.Context, *v1.RoutesRequest) (*v1.RoutesResponse, error)
 }
 
-// NewRouterServiceHandler builds an HTTP handler from the service implementation. It returns the
-// path on which to mount the handler and the handler itself.
-//
-// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
-// and JSON codecs. They also support gzip compression.
-func NewRouterServiceHandler(svc RouterServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
-	routerServiceMethods := v1.File_chalkos_router_v1_router_proto.Services().ByName("RouterService").Methods()
-	routerServiceStatusHandler := connect.NewUnaryHandler(
-		RouterServiceStatusProcedure,
-		svc.Status,
-		connect.WithSchema(routerServiceMethods.ByName("Status")),
-		connect.WithHandlerOptions(opts...),
+// RegisterRouterServiceHandler registers svc as the chalkos.router.v1.RouterService implementation
+// on server.
+func RegisterRouterServiceHandler(server *connect.Server, svc RouterServiceHandler) {
+	adapter := routerServiceHandler{svc: svc}
+	server.Register(
+		connect.Method{Spec: routerServiceStatusSpec(), Handler: adapter.status},
+		connect.Method{Spec: routerServiceRoutesSpec(), Handler: adapter.routes},
 	)
-	routerServiceRoutesHandler := connect.NewUnaryHandler(
-		RouterServiceRoutesProcedure,
-		svc.Routes,
-		connect.WithSchema(routerServiceMethods.ByName("Routes")),
-		connect.WithHandlerOptions(opts...),
-	)
-	return "/chalkos.router.v1.RouterService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case RouterServiceStatusProcedure:
-			routerServiceStatusHandler.ServeHTTP(w, r)
-		case RouterServiceRoutesProcedure:
-			routerServiceRoutesHandler.ServeHTTP(w, r)
-		default:
-			http.NotFound(w, r)
-		}
-	})
 }
 
 // UnimplementedRouterServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedRouterServiceHandler struct{}
 
-func (UnimplementedRouterServiceHandler) Status(context.Context, *connect.Request[v1.StatusRequest]) (*connect.Response[v1.StatusResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.router.v1.RouterService.Status is not implemented"))
+func (UnimplementedRouterServiceHandler) Status(context.Context, *v1.StatusRequest) (*v1.StatusResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "chalkos.router.v1.RouterService.Status is not implemented")
 }
 
-func (UnimplementedRouterServiceHandler) Routes(context.Context, *connect.Request[v1.RoutesRequest]) (*connect.Response[v1.RoutesResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.router.v1.RouterService.Routes is not implemented"))
+func (UnimplementedRouterServiceHandler) Routes(context.Context, *v1.RoutesRequest) (*v1.RoutesResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "chalkos.router.v1.RouterService.Routes is not implemented")
+}
+
+type routerServiceClient struct {
+	client *connect.Client
+}
+
+func (c *routerServiceClient) Status(ctx context.Context, req *v1.StatusRequest) (*v1.StatusResponse, error) {
+	var res v1.StatusResponse
+	if err := c.client.CallUnary(ctx, routerServiceStatusSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *routerServiceClient) Routes(ctx context.Context, req *v1.RoutesRequest) (*v1.RoutesResponse, error) {
+	var res v1.RoutesResponse
+	if err := c.client.CallUnary(ctx, routerServiceRoutesSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+type routerServiceHandler struct{ svc RouterServiceHandler }
+
+func (h routerServiceHandler) status(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.StatusRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Status(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h routerServiceHandler) routes(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RoutesRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Routes(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
 }
