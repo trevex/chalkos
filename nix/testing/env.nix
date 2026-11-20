@@ -10,8 +10,10 @@ rec {
     # emulator commands.
     pkgs.qemu_test
     pkgs.swtpm
-    pkgs.mtools
     pkgs.sbsigntool
+    # mtools and fsck.vfat, which the FAT tests check the file systems they write against, and
+    # mkfs.vfat, which systemd-repart runs when the install tests lay out a disk.
+    pkgs.mtools
     pkgs.dosfstools
     # veritysetup, which the verity tests check their trees against.
     pkgs.cryptsetup

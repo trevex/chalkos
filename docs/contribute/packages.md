@@ -94,6 +94,7 @@ which have no logins, so it has no `completion` command.
 | `install` | Installs a node in place or from the installer, step by step and repeatable: STATE, the ESP, the UEFI boot entries, wiping the target and the system region's definitions each have a file, and `parts.go` holds the steps of an install from the installer. |
 | `upgrade` | Writes an image into the inactive slot and stages it there (`Install`), makes the staged image the next boot (`Activate`), or both (`Upgrade`); the image header and the checks of its UKI and boot loader an install shares; the booted entry and the provenance record. |
 | `storeslot` | The store slots of a disk and the writer an upgrade and an install share: retire a slot, write and verify the store, activate the slot. |
+| `fatfs` | Formats a FAT file system at an offset in a file, such as the ESP of a raw disk image, and reads, lists and writes its files there, without mounting it or running a tool. `image`, `imagesign` and `imagepull` read and write an image's ESP with it. |
 | `esp` | Lists the UKIs on an ESP with the image and generation each boots, writes a UKI under a temporary name, reads the UKI of an image staged in the inactive slot, and removes and names UKIs, for an install and an upgrade. |
 | `uki` | Reads a UKI's os-release and command line and an EFI binary's architecture, and refuses an image version systemd-boot would order its entry by. |
 | `verity` | Reads and checks dm-verity hash trees. |
