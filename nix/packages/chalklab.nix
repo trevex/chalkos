@@ -1,17 +1,15 @@
 # chalklab, with the tools a lab runs: QEMU, OVMF with Secure Boot, swtpm, the switch, socat for
-# guest forwards, the tools that sign images and enroll the lab's keys, and chalkctl. A package of
+# guest forwards, virt-fw-vars, which enrols the lab's keys, and chalkctl. A package of
 # its own, so chalkctl's closure stays free of them. QEMU is the headless one of the binary cache;
 # chalklab denies it io_uring, whose main loop loses TPM emulator commands.
 {
   OVMFFull,
   buildGoProgram,
   chalkctl,
-  coreutils,
   lib,
   makeWrapper,
   python3Packages,
   qemu_test,
-  sbsigntool,
   socat,
   swtpm,
   treeGoPaths,
@@ -28,8 +26,6 @@ buildGoProgram {
         swtpm
         vde2
         socat
-        sbsigntool
-        coreutils
         python3Packages.virt-firmware
         chalkctl
       ]
