@@ -1,7 +1,7 @@
 {
   description = "A ChalkOS Kubernetes image with the BIRD BGP extension";
 
-  inputs.chalkos.url = "github:trevex/chalkos/v0.2.0"; # x-release-please-version
+  inputs.chalkos.url = "github:trevex/chalkos/v0.2.1"; # x-release-please-version
 
   outputs =
     { self, chalkos, ... }:

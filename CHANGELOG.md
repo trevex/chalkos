@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/trevex/chalkos/compare/v0.2.0...v0.2.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **templates:** name the v0.2.0 images in the lab templates ([c5ed227](https://github.com/trevex/chalkos/commit/c5ed227f57ab7cedaad7cc7c3cd58b375e0e5738))
+
 ## [0.2.0](https://github.com/trevex/chalkos/compare/v0.1.0...v0.2.0) (2026-11-20)
 
 

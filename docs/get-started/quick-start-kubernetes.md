@@ -52,7 +52,7 @@ initialise it from the template:
 <!-- x-release-please-start-version -->
 ```console
 $ mkdir lab && cd lab
-$ nix flake init -t github:trevex/chalkos/v0.2.0#lab
+$ nix flake init -t github:trevex/chalkos/v0.2.1#lab
 wrote: "/home/alice/lab/.gitignore"
 wrote: "/home/alice/lab/README.md"
 wrote: "/home/alice/lab/chalkos.yaml"
