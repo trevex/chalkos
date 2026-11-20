@@ -176,8 +176,8 @@ kubelet as it is. The newest minor is the default of
 [`chalkos.kubernetes.version`](../reference/image-options.md#chalkoskubernetesversion), and the
 test images, the templates, the examples and the documentation name its control-plane images.
 
-1. Change the `version` of the minor in `releases.nix`. For a new minor, add its row, remove the
-   oldest, so that the table keeps the three minors Kubernetes supports, and move
+1. Change the `version` of the minor in `releases.nix`. For a new minor, add its row first in the
+   table, since Renovate takes the first row for the newest minor, remove the oldest, so that the table keeps the three minors Kubernetes supports, and move
    `publish = true` to the minors whose images a release of chalkos builds. A minor becomes the
    newest once it has a `.1` release, because the HA test starts from the patch release before
    the newest.
@@ -192,7 +192,9 @@ test images, the templates, the examples and the documentation name its control-
     - every reference to those images by digest in the templates, the examples, the test
       fixtures, `modules/node/kubernetes/kinds.nix`, chalkctl's help and the documentation.
 
-    A second run changes nothing. A bot that updates the releases runs it the same way.
+    A second run changes nothing. Renovate proposes each patch release in a pull request, and
+    its fixup workflow runs `update-pins` on it, as
+    [Dependency updates](dependencies.md#how-a-kubernetes-minor-is-tracked) describes.
 3. Build every kubelet with `nix build .#kubelet-releases`. Each compiles from source, and its
    build fails when the kubelet reports a version other than its release's.
 4. For a new minor, regenerate the pages with `nix run .#docgen`, and search the documentation
