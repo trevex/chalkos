@@ -4,7 +4,8 @@ go 1.27.4
 
 require (
 	cel.dev/cel-go v0.32.0
-	connectrpc.com/connect v1.21.0
+	connectrpc.com/connect v1.21.1
+	connectrpc.com/connect/v2 v2.0.2
 	filippo.io/age v1.3.2
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
