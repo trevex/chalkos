@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -89,19 +89,19 @@ func (l *revokeLab) list(t *testing.T) revoked.List {
 }
 
 func (l *revokeLab) revoke(name string) (*kubernetesv1.RevokeNodeResponse, error) {
-	resp, err := l.s.RevokeNode(context.Background(), connect.NewRequest(&kubernetesv1.RevokeNodeRequest{Node: name}))
+	resp, err := l.s.RevokeNode(context.Background(), &kubernetesv1.RevokeNodeRequest{Node: name})
 	if err != nil {
 		return nil, err
 	}
-	return resp.Msg, nil
+	return resp, nil
 }
 
 func (l *revokeLab) unrevoke(name string, force bool) (*kubernetesv1.UnrevokeNodeResponse, error) {
-	resp, err := l.s.UnrevokeNode(context.Background(), connect.NewRequest(&kubernetesv1.UnrevokeNodeRequest{Node: name, Force: force}))
+	resp, err := l.s.UnrevokeNode(context.Background(), &kubernetesv1.UnrevokeNodeRequest{Node: name, Force: force})
 	if err != nil {
 		return nil, err
 	}
-	return resp.Msg, nil
+	return resp, nil
 }
 
 // TestRevokeNode lists w1 and deletes its Node; revoking it again keeps the first time.
@@ -150,11 +150,11 @@ func TestRevokeNodeOnControlPlanesOnly(t *testing.T) {
 		"a worker":                  {worker, "ask a control-plane node"},
 		"an unbootstrapped control": {unbootstrapped, "not an etcd member"},
 	} {
-		_, err := tc.s.RevokeNode(context.Background(), connect.NewRequest(&kubernetesv1.RevokeNodeRequest{Node: "w1"}))
+		_, err := tc.s.RevokeNode(context.Background(), &kubernetesv1.RevokeNodeRequest{Node: "w1"})
 		if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("revoke on %s: %v, want a refusal naming %q", name, err, tc.want)
 		}
-		_, err = tc.s.UnrevokeNode(context.Background(), connect.NewRequest(&kubernetesv1.UnrevokeNodeRequest{Node: "w1"}))
+		_, err = tc.s.UnrevokeNode(context.Background(), &kubernetesv1.UnrevokeNodeRequest{Node: "w1"})
 		if layer.CodeOf(err) != connect.CodeFailedPrecondition {
 			t.Errorf("unrevoke on %s: %v, want FailedPrecondition", name, err)
 		}

@@ -7,7 +7,6 @@ import (
 	"io"
 	"path/filepath"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -66,8 +65,8 @@ func (a *app) nodeActivate(ctx context.Context, f nodeActivateFlags, name string
 	}
 	image := statusview.ImageName(root, revision, tag)
 	var resp *nodev1.ActivateImageResponse
-	if err := callNode(t, layer.Fetch(&resp, func(conn *client.Conn) (*connect.Response[nodev1.ActivateImageResponse], error) {
-		return conn.ActivateImage(ctx, connect.NewRequest(&nodev1.ActivateImageRequest{RootHash: root}))
+	if err := callNode(t, layer.Fetch(&resp, func(conn *client.Conn) (*nodev1.ActivateImageResponse, error) {
+		return conn.ActivateImage(ctx, &nodev1.ActivateImageRequest{RootHash: root})
 	})); err != nil {
 		return err
 	}

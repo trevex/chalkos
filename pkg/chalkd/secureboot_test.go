@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"golang.org/x/sys/unix"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -133,14 +133,14 @@ func TestEnrollSecureBoot(t *testing.T) {
 	rom := sha256.Sum256([]byte("rom"))
 	r := enrolRequest(t, k)
 	r.Db = dbUpdate(t, k, rom)
-	resp, err := s.EnrollSecureBoot(context.Background(), connect.NewRequest(r))
+	resp, err := s.EnrollSecureBoot(context.Background(), r)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if want := []string{"db-" + secureboot.SecurityVendor + " 67", "KEK-" + secureboot.GlobalVendor + " 67", "PK-" + secureboot.GlobalVendor + " 27"}; !slices.Equal(fw.writes, want) {
 		t.Errorf("writes %v, want %v", fw.writes, want)
 	}
-	got := resp.Msg
+	got := resp
 	if !slices.Equal(got.DbBefore, []string{"CN=other"}) || !slices.Equal(got.DbAfter, []string{"CN=other", "CN=test Secure Boot db", "sha256:" + hex.EncodeToString(rom[:])}) ||
 		len(got.KekBefore) != 0 || !slices.Equal(got.KekAfter, []string{"CN=test Secure Boot KEK"}) {
 		t.Errorf("answer %+v", got)
@@ -205,7 +205,7 @@ func TestEnrollSecureBootRefuses(t *testing.T) {
 			s, fw := enrolServer(t, tc.setupMode, other)
 			r := &nodev1.EnrollSecureBootRequest{Db: good.Db, Kek: good.Kek, Pk: good.Pk}
 			tc.change(r)
-			_, err := s.EnrollSecureBoot(context.Background(), connect.NewRequest(r))
+			_, err := s.EnrollSecureBoot(context.Background(), r)
 			if layer.CodeOf(err) != tc.code || err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("EnrollSecureBoot = %v, want %v naming %q", err, tc.code, tc.want)
 			}
@@ -218,7 +218,7 @@ func TestEnrollSecureBootRefuses(t *testing.T) {
 	// Forced, the unsigned image does not stop the keys; the installer has no STATE to remove.
 	s, fw := enrolServer(t, true, other)
 	s.Installer = true
-	if _, err := s.EnrollSecureBoot(context.Background(), connect.NewRequest(&nodev1.EnrollSecureBootRequest{Db: good.Db, Kek: good.Kek, Pk: good.Pk, Force: true})); err != nil {
+	if _, err := s.EnrollSecureBoot(context.Background(), &nodev1.EnrollSecureBootRequest{Db: good.Db, Kek: good.Kek, Pk: good.Pk, Force: true}); err != nil {
 		t.Fatal(err)
 	}
 	if len(fw.writes) != 3 || fw.stateRemoved {
@@ -241,7 +241,7 @@ func TestEnrollSecureBootStopsBeforePK(t *testing.T) {
 	}
 	r := enrolRequest(t, k)
 	r.Force = true
-	_, err := s.EnrollSecureBoot(context.Background(), connect.NewRequest(r))
+	_, err := s.EnrollSecureBoot(context.Background(), r)
 	if err == nil || !strings.Contains(err.Error(), "write KEK: write error") || !strings.Contains(err.Error(), "stays in Setup Mode") {
 		t.Errorf("EnrollSecureBoot = %v", err)
 	}
@@ -270,11 +270,11 @@ func TestEnrollSecureBootRebootsAfterTheWrites(t *testing.T) {
 	}
 	r := enrolRequest(t, k)
 	r.Force = true
-	resp, err := s.EnrollSecureBoot(context.Background(), connect.NewRequest(r))
+	resp, err := s.EnrollSecureBoot(context.Background(), r)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := resp.Msg; !slices.Equal(got.DbBefore, []string{"CN=other"}) || len(got.DbAfter) != 0 || len(got.KekAfter) != 0 {
+	if got := resp; !slices.Equal(got.DbBefore, []string{"CN=other"}) || len(got.DbAfter) != 0 || len(got.KekAfter) != 0 {
 		t.Errorf("answer %+v", got)
 	}
 	if want := []string{"KEK-" + secureboot.GlobalVendor + " 67", "PK-" + secureboot.GlobalVendor + " 27"}; !slices.Equal(fw.writes, want) {
@@ -296,7 +296,7 @@ func TestEnrollSecureBootWithoutESP(t *testing.T) {
 	if err := os.Remove(filepath.Join(s.Host.DevRoot, "disk", "chalk-boot", "esp")); err != nil {
 		t.Fatal(err)
 	}
-	_, err := s.EnrollSecureBoot(context.Background(), connect.NewRequest(enrolRequest(t, k)))
+	_, err := s.EnrollSecureBoot(context.Background(), enrolRequest(t, k))
 	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "udev found no ESP on the disk the machine booted from") || !strings.Contains(err.Error(), "--force") {
 		t.Errorf("EnrollSecureBoot = %v", err)
 	}
@@ -351,29 +351,29 @@ func dbUpdate(t *testing.T, k secureboot.Keys, digests ...[32]byte) []byte {
 // reason, without an event log.
 func TestSecureBootDrivers(t *testing.T) {
 	s, _ := newTestServer(t, maintenance, vda)
-	resp, err := s.SecureBootDrivers(context.Background(), connect.NewRequest(&nodev1.SecureBootDriversRequest{}))
-	if err != nil || len(resp.Msg.Drivers) != 0 || !strings.Contains(resp.Msg.NoEventLog, "has no TPM") {
+	resp, err := s.SecureBootDrivers(context.Background(), &nodev1.SecureBootDriversRequest{})
+	if err != nil || len(resp.Drivers) != 0 || !strings.Contains(resp.NoEventLog, "has no TPM") {
 		t.Errorf("SecureBootDrivers without a log = %+v, %v", resp, err)
 	}
 
 	// A TPM without an event log, and a log of SHA-1 digests alone, list nothing, and say why.
 	write(t, filepath.Join(s.Paths.TPM, "tpm0", "dev"), "10:224\n")
-	if resp, err := s.SecureBootDrivers(context.Background(), connect.NewRequest(&nodev1.SecureBootDriversRequest{})); err != nil || !strings.Contains(resp.Msg.NoEventLog, "has a TPM, but no event log") {
+	if resp, err := s.SecureBootDrivers(context.Background(), &nodev1.SecureBootDriversRequest{}); err != nil || !strings.Contains(resp.NoEventLog, "has a TPM, but no event log") {
 		t.Errorf("SecureBootDrivers with a TPM and no log = %+v, %v", resp, err)
 	}
 	sha1Only := secureboottest.NewLog(2, secureboottest.AlgSHA1)
 	write(t, s.Paths.EventLog, string(sha1Only.Bytes))
-	if resp, err := s.SecureBootDrivers(context.Background(), connect.NewRequest(&nodev1.SecureBootDriversRequest{})); err != nil || len(resp.Msg.Drivers) != 0 || !strings.Contains(resp.Msg.NoEventLog, "no SHA-256") {
+	if resp, err := s.SecureBootDrivers(context.Background(), &nodev1.SecureBootDriversRequest{}); err != nil || len(resp.Drivers) != 0 || !strings.Contains(resp.NoEventLog, "no SHA-256") {
 		t.Errorf("SecureBootDrivers of a SHA-1 log = %+v, %v", resp, err)
 	}
 
 	rom, nic := sha256.Sum256([]byte("rom")), sha256.Sum256([]byte("nic"))
 	writeEventLog(t, s, rom, nic)
-	resp, err = s.SecureBootDrivers(context.Background(), connect.NewRequest(&nodev1.SecureBootDriversRequest{}))
+	resp, err = s.SecureBootDrivers(context.Background(), &nodev1.SecureBootDriversRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := resp.Msg
+	got := resp
 	if len(got.Drivers) != 2 || !bytes.Equal(got.Drivers[0].Sha256, rom[:]) || got.Drivers[0].DevicePath != "PciRoot(0x0)/Pci(0x3,0x0)/Offset(0x10a00,0x2f9ff)" ||
 		!bytes.Equal(got.Drivers[1].Sha256, nic[:]) || got.NoEventLog != "" {
 		t.Errorf("SecureBootDrivers = %+v", got)
@@ -381,7 +381,7 @@ func TestSecureBootDrivers(t *testing.T) {
 
 	// A log cut short is refused.
 	write(t, s.Paths.EventLog, "garbage")
-	if _, err := s.SecureBootDrivers(context.Background(), connect.NewRequest(&nodev1.SecureBootDriversRequest{})); err == nil || !strings.Contains(err.Error(), "event log") {
+	if _, err := s.SecureBootDrivers(context.Background(), &nodev1.SecureBootDriversRequest{}); err == nil || !strings.Contains(err.Error(), "event log") {
 		t.Errorf("SecureBootDrivers of a garbled log = %v", err)
 	}
 }
@@ -473,7 +473,7 @@ func TestEnrollSecureBootChecksDrivers(t *testing.T) {
 				r.Db = tc.db
 			}
 			r.Force = tc.force
-			_, err := s.EnrollSecureBoot(context.Background(), connect.NewRequest(r))
+			_, err := s.EnrollSecureBoot(context.Background(), r)
 			if tc.code == 0 {
 				if err != nil || len(fw.writes) != 3 {
 					t.Errorf("EnrollSecureBoot = %v, wrote %v", err, fw.writes)

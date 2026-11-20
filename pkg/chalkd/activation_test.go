@@ -7,8 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
-
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/internal/testwait"
@@ -54,15 +52,15 @@ func TestApplyReportsStoredAndActivatedVersionsAndResumes(t *testing.T) {
 				if !slices.Contains(r.Calls, "systemctl try-restart network.service") {
 					t.Fatalf("first attempt: %v", r.Calls)
 				}
-				resp, err := s.Status(t.Context(), connect.NewRequest(&nodev1.StatusRequest{}))
+				resp, err := s.Status(t.Context(), &nodev1.StatusRequest{})
 				if err != nil {
 					t.Fatal(err)
 				}
-				a := resp.Msg.ConfigActivation
+				a := resp.ConfigActivation
 				target, completed := hashOf(t, next), hashOf(t, baseConfig)
-				if resp.Msg.ConfigVersion != target || a.GetCompletedVersion() != completed ||
+				if resp.ConfigVersion != target || a.GetCompletedVersion() != completed ||
 					a.GetTargetVersion() != target || a.GetState() != nodev1.ActivationState_ACTIVATION_STATE_FAILED || a.GetFailedStep() != "effect batch 2 (demo)" {
-					t.Fatalf("stored = %q, activation = %v", resp.Msg.ConfigVersion, a)
+					t.Fatalf("stored = %q, activation = %v", resp.ConfigVersion, a)
 				}
 				record, err := s.readActivation()
 				if err != nil || record.CompletedBatches != 1 {

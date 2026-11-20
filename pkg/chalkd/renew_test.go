@@ -25,7 +25,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 
@@ -95,12 +95,12 @@ func TestRenewNodeCertificate(t *testing.T) {
 	}
 	// The request asks for other names; the certificate carries the caller's.
 	request, key := certificateRequest(t, "cp1", "cp1", "kubernetes")
-	resp, err := kubernetesClient(dial(t, addr, pair(t, w1))).RenewNodeCertificate(context.Background(), connect.NewRequest(&kubernetesv1.RenewNodeCertificateRequest{CertificateRequest: request}))
+	resp, err := kubernetesClient(dial(t, addr, pair(t, w1))).RenewNodeCertificate(context.Background(), &kubernetesv1.RenewNodeCertificateRequest{CertificateRequest: request})
 	if err != nil {
 		t.Fatal(err)
 	}
 	keyPEM, _ := pki.EncodeKey(key)
-	renewed, err := pki.VerifyNode(string(resp.Msg.CertificateChain), keyPEM, c.ca.Certificate, time.Now())
+	renewed, err := pki.VerifyNode(string(resp.CertificateChain), keyPEM, c.ca.Certificate, time.Now())
 	if err != nil {
 		t.Fatalf("the renewed certificate: %v", err)
 	}
@@ -141,7 +141,7 @@ func TestRenewNodeCertificate(t *testing.T) {
 		"a request for a P-384 key":    {pair(t, w1), notP256[0], connect.CodeInvalidArgument},
 		"a request for an Ed25519 key": {pair(t, w1), notP256[1], connect.CodeInvalidArgument},
 	} {
-		_, err := kubernetesClient(dial(t, addr, tc.cert)).RenewNodeCertificate(context.Background(), connect.NewRequest(&kubernetesv1.RenewNodeCertificateRequest{CertificateRequest: tc.request}))
+		_, err := kubernetesClient(dial(t, addr, tc.cert)).RenewNodeCertificate(context.Background(), &kubernetesv1.RenewNodeCertificateRequest{CertificateRequest: tc.request})
 		if connect.CodeOf(err) != tc.code {
 			t.Errorf("%s: %v, want %v", name, err, tc.code)
 		}
@@ -162,7 +162,7 @@ func TestRenewNodeCertificateOnControlPlanesOnly(t *testing.T) {
 		"a node without Kubernetes": {plain, connect.CodeUnimplemented, "the kubernetes layer is not in this image"},
 	} {
 		addr := serve(t, tc.s, c, c.pool)
-		_, err := kubernetesClient(dial(t, addr, c.clients[pki.RoleNode])).RenewNodeCertificate(context.Background(), connect.NewRequest(&kubernetesv1.RenewNodeCertificateRequest{CertificateRequest: request}))
+		_, err := kubernetesClient(dial(t, addr, c.clients[pki.RoleNode])).RenewNodeCertificate(context.Background(), &kubernetesv1.RenewNodeCertificateRequest{CertificateRequest: request})
 		if connect.CodeOf(err) != tc.code || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: %v, want %v %q", name, err, tc.code, tc.want)
 		}
@@ -177,7 +177,7 @@ func renewAs(t *testing.T, c creds, addr, name string) error {
 		t.Fatal(err)
 	}
 	request, _ := certificateRequest(t, name)
-	_, err = kubernetesClient(dial(t, addr, pair(t, cert))).RenewNodeCertificate(context.Background(), connect.NewRequest(&kubernetesv1.RenewNodeCertificateRequest{CertificateRequest: request}))
+	_, err = kubernetesClient(dial(t, addr, pair(t, cert))).RenewNodeCertificate(context.Background(), &kubernetesv1.RenewNodeCertificateRequest{CertificateRequest: request})
 	return err
 }
 
@@ -220,7 +220,7 @@ func TestRenewNodeCertificateReadsRevokedNodes(t *testing.T) {
 		o.Hooks.APIClient = func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) { return cs, nil }
 	})
 	write(t, kubernetesState(s).BootstrappedMarker(), "")
-	if _, err := kubernetesOf(s).RevokeNode(context.Background(), connect.NewRequest(&kubernetesv1.RevokeNodeRequest{Node: "w1"})); err != nil {
+	if _, err := kubernetesOf(s).RevokeNode(context.Background(), &kubernetesv1.RevokeNodeRequest{Node: "w1"}); err != nil {
 		t.Fatal(err)
 	}
 	addr := serve(t, s, c, c.pool)
@@ -440,7 +440,7 @@ func TestRenewOnApplyConfig(t *testing.T) {
 			done := make(chan struct{})
 			go func() { s.Renewal.Run(ctx); close(done) }()
 			// OS CAs alone, as a rotation delivers them, renew nothing.
-			if _, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(s.Certificate.OSCA())})); err != nil {
+			if _, err := s.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{Trust: []byte(s.Certificate.OSCA())}); err != nil {
 				t.Fatal(err)
 			}
 			synctest.Wait()
@@ -611,7 +611,7 @@ func TestRenewNodeCertificateRefusedOnceLeft(t *testing.T) {
 	}
 	addr := serve(t, s, c, c.pool)
 	request, _ := certificateRequest(t, "n2")
-	_, err := kubernetesClient(dial(t, addr, c.clients[pki.RoleNode])).RenewNodeCertificate(context.Background(), connect.NewRequest(&kubernetesv1.RenewNodeCertificateRequest{CertificateRequest: request}))
+	_, err := kubernetesClient(dial(t, addr, c.clients[pki.RoleNode])).RenewNodeCertificate(context.Background(), &kubernetesv1.RenewNodeCertificateRequest{CertificateRequest: request})
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "left etcd") {
 		t.Errorf("%v, want a refusal naming that the node left etcd", err)
 	}

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -62,14 +61,14 @@ func (a *app) nodeRenew(ctx context.Context, f nodeRenewFlags, pos []string) err
 	if err != nil {
 		return err
 	}
-	resp, err := conn.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{
+	resp, err := conn.ApplyConfig(ctx, &nodev1.ApplyConfigRequest{
 		NodeCertificate: []byte(cert.Certificate),
 		NodeKey:         []byte(cert.Key),
-	}))
+	})
 	if err != nil {
 		return &layer.NodeError{Node: t.name, Err: fmt.Errorf("deliver the node certificate of %s: %w", t.name, err), Named: true}
 	}
-	a.warnDelivery(t.name, resp.Msg)
+	a.warnDelivery(t.name, resp)
 	leaf, err := pki.ParseCertificate([]byte(cert.Certificate))
 	if err != nil {
 		return err

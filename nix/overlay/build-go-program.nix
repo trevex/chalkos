@@ -63,7 +63,7 @@ in
     proxyVendor = true;
     # After a change of go.mod or go.sum, `nix run .#update-vendor-hash` sets it again: it builds
     # the module download with lib.fakeHash and writes back the hash the build reports.
-    vendorHash = "sha256-gBmlgXP5ADpgrg/3RqKZQqxapfDt8AAiGoe+6R9Xsdc=";
+    vendorHash = "sha256-M5h76KQvWG2H5Ji9uLODtKtxPZb1uoAHQmoSk/8kw6o=";
     # Every program shares one module download: the same name, source and inputs make one
     # derivation, which a build fetches once.
     overrideModAttrs = _: _: {

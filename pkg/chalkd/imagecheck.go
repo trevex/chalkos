@@ -7,7 +7,7 @@ import (
 	"io/fs"
 	"path/filepath"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	checkv1 "github.com/trevex/chalkos/pkg/api/check/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"

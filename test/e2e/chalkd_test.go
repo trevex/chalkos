@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
-
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
@@ -99,11 +97,11 @@ func chalkdInfo(n *node, timeout time.Duration) (*nodev1.InfoResponse, error) {
 	err = poll(timeout, 2*time.Second, func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		resp, err := c.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
+		resp, err := c.Info(ctx, &nodev1.InfoRequest{})
 		if err != nil {
 			return err
 		}
-		info = resp.Msg
+		info = resp
 		return nil
 	})
 	if err != nil {
@@ -193,7 +191,7 @@ func dialInstalled(n *node, name string, cert *tls.Certificate) (*client.Conn, e
 func info(c *client.Conn) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	_, err := c.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
+	_, err := c.Info(ctx, &nodev1.InfoRequest{})
 	return err
 }
 

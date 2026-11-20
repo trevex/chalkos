@@ -3,7 +3,7 @@ package layer
 import (
 	"fmt"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 )
 
 // Errorf is an error that answers an RPC with code: the handlers of chalkd and of its plugins
@@ -92,21 +92,32 @@ type Detailed interface {
 	Details() []*connect.ErrorDetail
 }
 
-// Error is err as connect sends it: a *connect.Error as it is, and any other error with the code
-// Of finds, its whole text and the details of the first error in its tree with that code.
+// Error is err as connect sends it: a *connect.Error of the handler as it is, one of a peer, such
+// as another node, with its code, message and details, and any other error with the code Of finds,
+// its whole text and the details of the first error in its tree with that code. connect sends no
+// other error's text, and answers with a peer's error as CodeInternal without its message.
 func (c Codes) Error(err error) *connect.Error {
 	if ce, ok := err.(*connect.Error); ok {
-		return ce
+		if !ce.IsRemote() {
+			return ce
+		}
+		return withDetails(connect.NewError(ce.Code(), ce.Message()).WithCause(ce), ce.Details())
 	}
 	code := c.Of(err)
-	ce := connect.NewError(code, err)
+	ce := connect.NewError(code, err.Error()).WithCause(err)
 	if d, ok := firstIn(err, func(e error) bool {
 		d, ok := e.(Detailed)
 		return ok && d.Code() == code
 	}).(Detailed); ok {
-		for _, detail := range d.Details() {
-			ce.AddDetail(detail)
-		}
+		ce = withDetails(ce, d.Details())
+	}
+	return ce
+}
+
+// withDetails is ce with details added.
+func withDetails(ce *connect.Error, details []*connect.ErrorDetail) *connect.Error {
+	for _, d := range details {
+		ce = ce.WithDetail(d)
 	}
 	return ce
 }

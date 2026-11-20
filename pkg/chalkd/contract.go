@@ -3,7 +3,7 @@ package chalkd
 import (
 	"context"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
@@ -11,7 +11,7 @@ import (
 
 // Contract returns what the running image was built for, its layers, its schemas as files and its
 // layers' facts, so a client checks config against exactly what chalkd translates it for.
-func (s *Server) Contract(_ context.Context, _ *connect.Request[nodev1.ContractRequest]) (*connect.Response[nodev1.ContractResponse], error) {
+func (s *Server) Contract(_ context.Context, _ *nodev1.ContractRequest) (*nodev1.ContractResponse, error) {
 	// The installer runs an image of its own: config is for the image it installs, which comes
 	// with its contract.
 	if s.Installer {
@@ -28,5 +28,5 @@ func (s *Server) Contract(_ context.Context, _ *connect.Request[nodev1.ContractR
 	if resp.LayerFacts, err = imageFacts(layer.Active[layer.ImageFacts](s.Plugins), layer.ImageFacts.RunningFacts); err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(resp), nil
+	return resp, nil
 }

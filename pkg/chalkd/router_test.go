@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
 	"github.com/trevex/chalkos/pkg/api/router/v1/routerv1connect"
@@ -60,11 +60,11 @@ func TestRoutes(t *testing.T) {
 	c := newCreds(t)
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleReader])
 	routes := func(prefix, protocol, table string) (*routerv1.RoutesResponse, error) {
-		resp, err := routerv1connect.NewRouterServiceClient(conn.HTTPClient(), conn.BaseURL()).Routes(context.Background(), connect.NewRequest(&routerv1.RoutesRequest{Prefix: prefix, Protocol: protocol, Table: table}))
+		resp, err := routerv1connect.NewRouterServiceClient(conn.RPC()).Routes(context.Background(), &routerv1.RoutesRequest{Prefix: prefix, Protocol: protocol, Table: table})
 		if err != nil {
 			return nil, err
 		}
-		return resp.Msg, nil
+		return resp, nil
 	}
 	resp, err := routes("", "", "")
 	if err != nil {

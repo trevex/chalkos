@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	checkv1 "github.com/trevex/chalkos/pkg/api/check/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -149,11 +149,11 @@ func configServer(t *testing.T) (*Server, *tooltest.Runner) {
 }
 
 func sendConfig(s *Server, text string) (*nodev1.ApplyConfigResponse, error) {
-	resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: text}))
+	resp, err := s.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{Config: text})
 	if err != nil {
 		return nil, err
 	}
-	return resp.Msg, nil
+	return resp, nil
 }
 
 func TestApplyConfig(t *testing.T) {
@@ -463,12 +463,12 @@ func TestApplyConfigComparesKindsWithTheBaselineOnAKeptDelivery(t *testing.T) {
 		t.Fatalf("baseline: %v, want one left by the failed reload", err)
 	}
 	r.Rules, r.Calls = nil, nil
-	resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(s.Certificate.OSCA())}))
+	resp, err := s.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{Trust: []byte(s.Certificate.OSCA())})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if slices.Contains(resp.Msg.RestartedUnits, "kind.service") {
-		t.Errorf("restarted %v, want kind.service left alone: Demo's kind did not change", resp.Msg.RestartedUnits)
+	if slices.Contains(resp.RestartedUnits, "kind.service") {
+		t.Errorf("restarted %v, want kind.service left alone: Demo's kind did not change", resp.RestartedUnits)
 	}
 }
 
@@ -802,7 +802,7 @@ func TestApplyConfigTakesEffectsAfterTheClientCancels(t *testing.T) {
 				cancel()
 			}
 		}
-		if _, err := s.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{Config: baseConfig})); err != nil {
+		if _, err := s.ApplyConfig(ctx, &nodev1.ApplyConfigRequest{Config: baseConfig}); err != nil {
 			t.Fatal(err)
 		}
 		if !slices.Equal(acted, []string{"kubernetes:reload"}) {
@@ -1030,7 +1030,7 @@ func TestStatusReportsConfigVersion(t *testing.T) {
 func TestResetVolumeTakesConfig(t *testing.T) {
 	s, _ := configServer(t)
 	reset := func(text string) error {
-		_, err := s.ResetVolume(context.Background(), connect.NewRequest(&nodev1.ResetVolumeRequest{Volume: "data", Config: text, FallbackSecret: "x"}))
+		_, err := s.ResetVolume(context.Background(), &nodev1.ResetVolumeRequest{Volume: "data", Config: text, FallbackSecret: "x"})
 		return err
 	}
 	if err := reset(baseConfig); codeOf(err) != connect.CodeNotFound || !strings.Contains(err.Error(), "the node has no volume data") {
@@ -1081,7 +1081,7 @@ func TestResetVolumeThroughConfig(t *testing.T) {
 		{Prefix: "cryptsetup luksDump --dump-json-metadata", Out: luksDump},
 	}
 
-	if _, err := s.ResetVolume(context.Background(), connect.NewRequest(&nodev1.ResetVolumeRequest{Volume: "extra", Config: extraConfig("xfs"), FallbackSecret: secret})); err != nil {
+	if _, err := s.ResetVolume(context.Background(), &nodev1.ResetVolumeRequest{Volume: "extra", Config: extraConfig("xfs"), FallbackSecret: secret}); err != nil {
 		t.Fatal(err)
 	}
 	if !contains(r.Calls, "wipefs --all /dev/vdb1") || !contains(r.Calls, "systemctl start systemd-cryptsetup@extra.service srv-extra.mount") {
@@ -1098,11 +1098,11 @@ func TestResetVolumeThroughConfig(t *testing.T) {
 // staged image does not have.
 func TestGetConfig(t *testing.T) {
 	s, _ := configServer(t)
-	resp, err := s.GetConfig(context.Background(), connect.NewRequest(&nodev1.GetConfigRequest{}))
+	resp, err := s.GetConfig(context.Background(), &nodev1.GetConfigRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	docs, err := config.ParseRedacted(strings.NewReader(resp.Msg.Documents))
+	docs, err := config.ParseRedacted(strings.NewReader(resp.Documents))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1113,13 +1113,13 @@ func TestGetConfig(t *testing.T) {
 	got, redacted := docs.Documents(), config.Redact(want).Documents()
 	config.SortDocuments(got)
 	config.SortDocuments(redacted)
-	if resp.Msg.Version != hashOf(t, baseConfig) || !reflect.DeepEqual(got, redacted) {
-		t.Errorf("config %q of version %s, want baseConfig as delivered", resp.Msg.Documents, resp.Msg.Version)
+	if resp.Version != hashOf(t, baseConfig) || !reflect.DeepEqual(got, redacted) {
+		t.Errorf("config %q of version %s, want baseConfig as delivered", resp.Documents, resp.Version)
 	}
-	if strings.Contains(resp.Msg.Documents, "s3cret") || strings.Contains(resp.Msg.Documents, `"replicas"`) {
-		t.Errorf("config = %s, want the secret hidden and no defaults", resp.Msg.Documents)
+	if strings.Contains(resp.Documents, "s3cret") || strings.Contains(resp.Documents, `"replicas"`) {
+		t.Errorf("config = %s, want the secret hidden and no defaults", resp.Documents)
 	}
-	if _, err := s.GetConfig(context.Background(), connect.NewRequest(&nodev1.GetConfigRequest{Staged: true})); codeOf(err) != connect.CodeNotFound {
+	if _, err := s.GetConfig(context.Background(), &nodev1.GetConfigRequest{Staged: true}); codeOf(err) != connect.CodeNotFound {
 		t.Errorf("staged: %v, want not found", err)
 	}
 }
@@ -1428,7 +1428,7 @@ func TestApplyConfigWithoutConfigKeepsAFailingOutput(t *testing.T) {
 	log.SetOutput(&logged)
 	t.Cleanup(func() { log.SetOutput(os.Stderr) })
 	before := readFile(t, filepath.Join(s.Loader.Render.Root, "demo", "demo.json"))
-	if _, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(s.Certificate.OSCA())})); err != nil {
+	if _, err := s.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{Trust: []byte(s.Certificate.OSCA())}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(logged.String(), "output demo: its renderer failed (exit 4)") {
@@ -1594,16 +1594,16 @@ func TestApplyConfigKeepsThePreviousConfig(t *testing.T) {
 	s, _ := configServer(t)
 	status := func() *nodev1.StatusResponse {
 		t.Helper()
-		resp, err := s.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{}))
+		resp, err := s.Status(context.Background(), &nodev1.StatusRequest{})
 		if err != nil {
 			t.Fatal(err)
 		}
-		return resp.Msg
+		return resp
 	}
 	if v := status().PreviousConfigVersion; v != "" {
 		t.Errorf("previous version before any delivery = %q", v)
 	}
-	if _, err := s.GetConfig(context.Background(), connect.NewRequest(&nodev1.GetConfigRequest{Previous: true})); codeOf(err) != connect.CodeNotFound {
+	if _, err := s.GetConfig(context.Background(), &nodev1.GetConfigRequest{Previous: true}); codeOf(err) != connect.CodeNotFound {
 		t.Errorf("previous config before any delivery: %v, want not found", err)
 	}
 	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
@@ -1615,11 +1615,11 @@ func TestApplyConfigKeepsThePreviousConfig(t *testing.T) {
 			t.Errorf("status names config %s and previous %s, want next and baseConfig", st.ConfigVersion, st.PreviousConfigVersion)
 		}
 	}
-	resp, err := s.GetConfig(context.Background(), connect.NewRequest(&nodev1.GetConfigRequest{Previous: true}))
-	if err != nil || resp.Msg.Version != hashOf(t, baseConfig) || !strings.Contains(resp.Msg.Documents, `"name":"first"`) || strings.Contains(resp.Msg.Documents, "s3cret") {
+	resp, err := s.GetConfig(context.Background(), &nodev1.GetConfigRequest{Previous: true})
+	if err != nil || resp.Version != hashOf(t, baseConfig) || !strings.Contains(resp.Documents, `"name":"first"`) || strings.Contains(resp.Documents, "s3cret") {
 		t.Errorf("previous config = %+v, %v; want baseConfig with its secret hidden", resp, err)
 	}
-	if _, err := s.GetConfig(context.Background(), connect.NewRequest(&nodev1.GetConfigRequest{Previous: true, Staged: true})); codeOf(err) != connect.CodeInvalidArgument {
+	if _, err := s.GetConfig(context.Background(), &nodev1.GetConfigRequest{Previous: true, Staged: true}); codeOf(err) != connect.CodeInvalidArgument {
 		t.Errorf("staged and previous: %v, want invalid argument", err)
 	}
 }

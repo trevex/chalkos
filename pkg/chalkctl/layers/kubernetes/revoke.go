@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
@@ -50,17 +49,17 @@ func nodeRevoke(h layer.Host, ctx context.Context, f viaFlags, pos []string) err
 	// A control plane is not asked to revoke itself.
 	err := throughControlPlane(h, ctx, f, name, func(conn *client.Conn) error {
 		if !f.force {
-			m, err := Client(conn).EtcdMembers(ctx, connect.NewRequest(&kubernetesv1.EtcdMembersRequest{}))
+			m, err := Client(conn).EtcdMembers(ctx, &kubernetesv1.EtcdMembersRequest{})
 			if err != nil {
 				return err
 			}
-			if err := etcdMemberRefusal(name, m.Msg.Members); err != nil {
+			if err := etcdMemberRefusal(name, m.Members); err != nil {
 				return err
 			}
 		}
-		r, err := Client(conn).RevokeNode(ctx, connect.NewRequest(&kubernetesv1.RevokeNodeRequest{Node: name}))
+		r, err := Client(conn).RevokeNode(ctx, &kubernetesv1.RevokeNodeRequest{Node: name})
 		if err == nil {
-			resp = r.Msg
+			resp = r
 		}
 		return err
 	})
@@ -183,8 +182,8 @@ func nodeUnrevoke(h layer.Host, ctx context.Context, f viaFlags, pos []string) e
 		return err
 	}
 	var resp *kubernetesv1.UnrevokeNodeResponse
-	err := throughControlPlane(h, ctx, f, "", layer.Fetch(&resp, func(conn *client.Conn) (*connect.Response[kubernetesv1.UnrevokeNodeResponse], error) {
-		return Client(conn).UnrevokeNode(ctx, connect.NewRequest(&kubernetesv1.UnrevokeNodeRequest{Node: pos[0], Force: f.force}))
+	err := throughControlPlane(h, ctx, f, "", layer.Fetch(&resp, func(conn *client.Conn) (*kubernetesv1.UnrevokeNodeResponse, error) {
+		return Client(conn).UnrevokeNode(ctx, &kubernetesv1.UnrevokeNodeRequest{Node: pos[0], Force: f.force})
 	}))
 	if err != nil {
 		return err

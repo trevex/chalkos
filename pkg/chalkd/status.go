@@ -16,7 +16,6 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
 	"golang.org/x/sys/unix"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -29,7 +28,7 @@ import (
 	"github.com/trevex/chalkos/pkg/tool/systemctl"
 )
 
-func (s *Server) Status(ctx context.Context, req *connect.Request[nodev1.StatusRequest]) (*connect.Response[nodev1.StatusResponse], error) {
+func (s *Server) Status(ctx context.Context, req *nodev1.StatusRequest) (*nodev1.StatusResponse, error) {
 	resp := &nodev1.StatusResponse{Platform: readOSRelease(s.Paths.OSRelease)["CHALKOS_PLATFORM"]}
 	dir, version, err := s.runningVersion()
 	if err != nil {
@@ -100,7 +99,7 @@ func (s *Server) Status(ctx context.Context, req *connect.Request[nodev1.StatusR
 	}
 	resp.Time = s.timeStatus(ctx)
 	resp.Boot = s.bootStatus()
-	if req.Msg.GetCheckHealth() {
+	if req.GetCheckHealth() {
 		resp.Boot.Health = s.bootHealth(ctx)
 	}
 	if resp.StagedConfigVersion, err = s.stagedVersion(resp.Boot); err != nil {
@@ -109,7 +108,7 @@ func (s *Server) Status(ctx context.Context, req *connect.Request[nodev1.StatusR
 	if resp.PendingConfig, err = s.pendingConfig(); err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(resp), nil
+	return resp, nil
 }
 
 // outputStatus is each output of the running image with the hash of the files the node serves

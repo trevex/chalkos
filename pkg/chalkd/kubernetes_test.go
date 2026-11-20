@@ -7,7 +7,6 @@ import (
 	"os"
 	"testing"
 
-	"connectrpc.com/connect"
 	corev1 "k8s.io/api/core/v1"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
@@ -98,7 +97,7 @@ func imageFileOf(s *Server) string { return kubernetestest.ImageFile(kubernetesS
 
 // kubernetesClient is the client of the Kubernetes layer over c.
 func kubernetesClient(c *client.Conn) kubernetesv1connect.KubernetesServiceClient {
-	return kubernetesv1connect.NewKubernetesServiceClient(c.HTTPClient(), c.BaseURL())
+	return kubernetesv1connect.NewKubernetesServiceClient(c.RPC())
 }
 
 // kubernetesStatus is the state of s's Kubernetes as its layer serves it; nil on an image without
@@ -169,7 +168,7 @@ func TestStatusKubernetes(t *testing.T) {
 			State: "joined: the Node has no ipv6 pod range; the control plane allocates ranges of the families the cluster was created with"}},
 		"no Kubernetes": {plain, nil},
 	} {
-		if _, err := tc.s.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{})); err != nil {
+		if _, err := tc.s.Status(context.Background(), &nodev1.StatusRequest{}); err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
 		got := kubernetesStatus(t, tc.s)

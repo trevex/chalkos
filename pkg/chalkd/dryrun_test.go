@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/proto"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -23,11 +23,11 @@ import (
 
 // dryRun sends text as a dry run.
 func dryRun(s *Server, text string) (*nodev1.ApplyConfigResponse, error) {
-	resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: text, DryRun: true}))
+	resp, err := s.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{Config: text, DryRun: true})
 	if err != nil {
 		return nil, err
 	}
-	return resp.Msg, nil
+	return resp, nil
 }
 
 // A dry run plans the delivery, the outputs it renders and the effects they fire, and changes
@@ -182,11 +182,11 @@ func TestDryRunAddsNoVolume(t *testing.T) {
 	r.Rules = volumeRules(s)
 	recorded := filepath.Join(s.Paths.StateDir, "storage", "storage.json")
 	before := readFile(t, recorded)
-	resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: extraConfig("ext4"), FallbackSecret: secret, DryRun: true}))
+	resp, err := s.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{Config: extraConfig("ext4"), FallbackSecret: secret, DryRun: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c := resp.Msg.Changes; len(c) != 1 || c[0].Volume != "extra" {
+	if c := resp.Changes; len(c) != 1 || c[0].Volume != "extra" {
 		t.Errorf("changes = %v, want the new volume", c)
 	}
 	for _, c := range r.Calls {
@@ -228,7 +228,7 @@ func TestDryRunKeepsTheCertificateAndTrust(t *testing.T) {
 		"a node certificate": {NodeCertificate: []byte(renewed.Certificate), NodeKey: []byte(renewed.Key), DryRun: true},
 		"OS CAs":             {Trust: []byte(pki.Bundle(osCA.Certificate, next.Certificate)), DryRun: true},
 	} {
-		if _, err := s.ApplyConfig(asCaller(admin), connect.NewRequest(req)); err != nil {
+		if _, err := s.ApplyConfig(asCaller(admin), req); err != nil {
 			t.Errorf("%s: %v", name, err)
 		}
 		if s.Certificate.Fingerprint() != fingerprint || s.Certificate.OSCA() != trusted {

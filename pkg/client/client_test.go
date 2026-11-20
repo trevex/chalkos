@@ -17,7 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
@@ -30,16 +31,19 @@ type infoHandler struct {
 	client atomic.Value
 }
 
-func (h *infoHandler) Info(ctx context.Context, _ *connect.Request[nodev1.InfoRequest]) (*connect.Response[nodev1.InfoResponse], error) {
+func (h *infoHandler) Info(ctx context.Context, _ *nodev1.InfoRequest) (*nodev1.InfoResponse, error) {
 	h.calls.Add(1)
-	return connect.NewResponse(&nodev1.InfoResponse{Hostname: "n1"}), nil
+	return &nodev1.InfoResponse{Hostname: "n1"}, nil
 }
 
 // serve runs a TLS server with the node certificate that records the client's certificate.
 func serve(t *testing.T, cert pki.CertKey) (*infoHandler, string) {
 	t.Helper()
 	h := &infoHandler{}
-	_, handler := nodev1connect.NewNodeServiceHandler(h)
+	server := connect.NewServer()
+	nodev1connect.RegisterNodeServiceHandler(server, h)
+	handler := http.NewServeMux()
+	connecthttp.Mount(handler, server)
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if len(r.TLS.PeerCertificates) > 0 {
 			h.client.Store(r.TLS.PeerCertificates[0].Subject.CommonName)
@@ -58,7 +62,7 @@ func serve(t *testing.T, cert pki.CertKey) (*infoHandler, string) {
 }
 
 func info(c *Conn) error {
-	_, err := c.Info(context.Background(), connect.NewRequest(&nodev1.InfoRequest{}))
+	_, err := c.Info(context.Background(), &nodev1.InfoRequest{})
 	return err
 }
 

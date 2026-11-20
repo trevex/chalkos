@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
@@ -18,7 +17,7 @@ import (
 
 // Client is the client of the node's router layer over conn.
 func Client(conn *client.Conn) routerv1connect.RouterServiceClient {
-	return routerv1connect.NewRouterServiceClient(conn.HTTPClient(), conn.BaseURL())
+	return routerv1connect.NewRouterServiceClient(conn.RPC())
 }
 
 type routesFlags struct {
@@ -56,11 +55,10 @@ func nodeRoutes(h layer.Host, ctx context.Context, f routesFlags, pos []string) 
 		return err
 	}
 	defer conn.Close()
-	resp, err := Client(conn).Routes(ctx, connect.NewRequest(req))
+	r, err := Client(conn).Routes(ctx, req)
 	if err != nil {
 		return err
 	}
-	r := resp.Msg
 	// A node whose image does not know VRFs ignores vrf and answers with the main table.
 	if f.vrf != "" && r.Vrf != f.vrf {
 		return fmt.Errorf("the node's image does not know VRFs, so it cannot list the routes of VRF %s", f.vrf)

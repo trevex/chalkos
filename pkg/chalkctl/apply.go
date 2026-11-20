@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -219,7 +219,7 @@ func refusesConfig(err error) bool {
 func refusedByNode(err error) bool {
 	switch connect.CodeOf(err) {
 	case connect.CodeInvalidArgument, connect.CodeFailedPrecondition:
-		return connect.IsWireError(err)
+		return client.FromNode(err)
 	}
 	return false
 }
@@ -255,29 +255,29 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 		return err
 	}
 	a.warnUnpinned(t.name, d)
-	st, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+	st, err := conn.Status(ctx, &nodev1.StatusRequest{})
 	if err != nil {
 		return err
 	}
 	// The node refuses every delivery while a config is on trial; --diff changes nothing.
 	if !f.diff {
-		if err := trialOpen(t.name, st.Msg); err != nil {
+		if err := trialOpen(t.name, st); err != nil {
 			return err
 		}
 	}
-	if f.try > 0 && st.Msg.ConfigVersion == d.Version {
+	if f.try > 0 && st.ConfigVersion == d.Version {
 		return &layer.NodeError{Node: t.name, Err: fmt.Errorf("%s runs config %s already; --try needs a config that changes it", t.name, d.Version), Named: true}
 	}
 	// A unit that failed before the trial keeps its confirmation from passing, also later with
 	// config confirm, unless it recovers or is left out.
 	if f.try > 0 {
-		if w := failedUnitsWarning(st.Msg.FailedUnits, f.ignoreUnits); w != "" {
+		if w := failedUnitsWarning(st.FailedUnits, f.ignoreUnits); w != "" {
 			fmt.Fprintf(a.stderr, "chalkctl: warning: %s: %s\n", t.name, w)
 		}
 	}
 	// Without a staged image, --staged holds the config pending for the next upgrade, so the diff
 	// compares with the pending config, or else the running one.
-	pending := f.staged && st.Msg.Boot.GetStaged() == nil
+	pending := f.staged && st.Boot.GetStaged() == nil
 	nodeDocs, err := slotConfig(ctx, conn, f.staged)
 	if err == nil && pending && nodeDocs.Len() == 0 {
 		nodeDocs, err = slotConfig(ctx, conn, false)
@@ -309,7 +309,7 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 	// secret; a rerun succeeds.
 	var fallback string
 	if !pending {
-		if fallback, err = a.fallbackOf(ctx, st.Msg, t, d.identity.Storage, f.passwordFile, ""); err != nil {
+		if fallback, err = a.fallbackOf(ctx, st, t, d.identity.Storage, f.passwordFile, ""); err != nil {
 			return err
 		}
 	}
@@ -342,10 +342,10 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 		defer cancel()
 		fmt.Fprintf(a.stdout, "%s: delivering config %s on trial until %s\n", t.name, d.Version, deadline.UTC().Format(time.RFC3339))
 	}
-	resp, err := conn.ApplyConfig(applyCtx, connect.NewRequest(req))
+	resp, err := conn.ApplyConfig(applyCtx, req)
 	if err != nil {
 		if f.try > 0 {
-			return a.failedTrial(ctx, conn, t, d.Version, st.Msg.ConfigVersion, deadline, err)
+			return a.failedTrial(ctx, conn, t, d.Version, st.ConfigVersion, deadline, err)
 		}
 		if f.dryRun && refusedByNode(err) {
 			return &layer.NodeError{Node: t.name, Err: err, Refused: true}
@@ -354,7 +354,7 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 	}
 	// The node answers by what it found: an image staged in between takes the config as any
 	// --staged delivery, and a pending config is named whatever chalkctl expected.
-	if p := resp.Msg.Pending; p != nil && f.staged {
+	if p := resp.Pending; p != nil && f.staged {
 		if f.dryRun {
 			fmt.Fprintf(a.stdout, "%s: no image is staged; config %s would be held pending, unchecked, for the next upgrade, which checks it against its image\n", t.name, p.Version)
 		} else {
@@ -363,23 +363,23 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 		return nil
 	}
 	if f.dryRun {
-		writePlan(a.stdout, t.name, resp.Msg, f.staged)
-		a.warnDelivery(t.name, resp.Msg)
+		writePlan(a.stdout, t.name, resp, f.staged)
+		a.warnDelivery(t.name, resp)
 		return nil
 	}
-	printApplied(a.stdout, resp.Msg.Changes, resp.Msg.RestartedUnits)
-	a.warnDelivery(t.name, resp.Msg)
+	printApplied(a.stdout, resp.Changes, resp.RestartedUnits)
+	a.warnDelivery(t.name, resp)
 	switch {
 	case f.staged:
 		fmt.Fprintf(a.stdout, "%s boots config %s with its staged image\n", t.name, d.Version)
 		return nil
 	case f.try == 0:
 		fmt.Fprintf(a.stdout, "%s runs config %s\n", t.name, d.Version)
-		writeSecond(a.stdout, t.name, resp.Msg, "")
+		writeSecond(a.stdout, t.name, resp, "")
 		return nil
 	}
-	fmt.Fprintf(a.stdout, "%s runs config %s on trial; it rolls back to config %s by itself unless confirmed within %v\n", t.name, d.Version, st.Msg.ConfigVersion, f.try)
-	writeSecond(a.stdout, t.name, resp.Msg, " once the trial is confirmed")
+	fmt.Fprintf(a.stdout, "%s runs config %s on trial; it rolls back to config %s by itself unless confirmed within %v\n", t.name, d.Version, st.ConfigVersion, f.try)
+	writeSecond(a.stdout, t.name, resp, " once the trial is confirmed")
 	if f.noConfirm {
 		fmt.Fprintln(a.stdout, endTrialHint(t.name))
 		return nil
@@ -387,7 +387,7 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 	// The delivery's connection survives what the config changes, as established connections do
 	// through a firewall; only a new one proves the node reachable.
 	conn.Close()
-	return a.confirmTrial(ctx, t, d.Version, st.Msg.ConfigVersion, deadline, false)
+	return a.confirmTrial(ctx, t, d.Version, st.ConfigVersion, deadline, false)
 }
 
 // failedTrial explains a failed delivery of config version on trial, which replaces previous until
@@ -399,19 +399,19 @@ func (a *app) failedTrial(ctx context.Context, conn *client.Conn, t *target, ver
 	switch {
 	case ctx.Err() != nil:
 		return fmt.Errorf("%w; %s may run config %s on trial until %s; %s", err, t.name, version, deadline.UTC().Format(time.RFC3339), endTrialHint(t.name))
-	case !connect.IsWireError(err):
+	case !client.FromNode(err):
 		conn.Close()
 		return a.trialRolledBack(ctx, t, version, previous, deadline, fmt.Errorf("%s: config %s was not confirmed within its trial: the answer to its delivery did not come: %w", t.name, version, err))
 	}
 	err = layer.Named(t.name, err)
-	st, serr := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+	st, serr := conn.Status(ctx, &nodev1.StatusRequest{})
 	if serr != nil {
 		if c, derr := dialInstalled(t); derr == nil {
-			st, serr = c.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+			st, serr = c.Status(ctx, &nodev1.StatusRequest{})
 			c.Close()
 		}
 	}
-	if serr == nil && st.Msg.Trial.GetVersion() == version {
+	if serr == nil && st.Trial.GetVersion() == version {
 		return fmt.Errorf("%w; %s", err, endTrialHint(t.name))
 	}
 	return err
@@ -511,15 +511,15 @@ func (a *app) rollbackConfig(ctx context.Context, f rollbackConfigFlags, name st
 		return err
 	}
 	defer conn.Close()
-	st, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+	st, err := conn.Status(ctx, &nodev1.StatusRequest{})
 	if err != nil {
 		return layer.Named(t.name, err)
 	}
-	version, replaced := st.Msg.PreviousConfigVersion, st.Msg.ConfigVersion
+	version, replaced := st.PreviousConfigVersion, st.ConfigVersion
 	// During a trial, roll back to the config from before it; a node that runs it already, after
 	// a failed rollback at the deadline, gets it again to finish that rollback, and the config on
 	// trial stays its previous.
-	tr := st.Msg.Trial
+	tr := st.Trial
 	if tr != nil {
 		version = tr.PreviousVersion
 		if replaced == version {
@@ -529,10 +529,10 @@ func (a *app) rollbackConfig(ctx context.Context, f rollbackConfigFlags, name st
 	// An unreadable trial record names no earlier config: fall back to the previous config, which a
 	// rollback at the deadline may have made the config on trial, so a second rollback undoes it;
 	// without one, redeliver the running config, which removes the record.
-	if e := st.Msg.TrialError; e != "" {
+	if e := st.TrialError; e != "" {
 		if version != "" {
 			fmt.Fprintf(a.stderr, "chalkctl: warning: %s: the record of a config's trial cannot be read: %s; the rollback delivers config %s, the node's previous config, which is the config on trial if a rollback at the trial's deadline replaced it already; if it is, a second config rollback undoes it\n", t.name, e, version)
-		} else if version = st.Msg.ConfigVersion; version != "" {
+		} else if version = st.ConfigVersion; version != "" {
 			fmt.Fprintf(a.stderr, "chalkctl: warning: %s: the record of a config's trial cannot be read: %s; the node keeps no previous config, so the rollback delivers config %s, the config it runs, again\n", t.name, e, version)
 		}
 	}
@@ -544,7 +544,7 @@ func (a *app) rollbackConfig(ctx context.Context, f rollbackConfigFlags, name st
 		return layer.Named(t.name, err)
 	}
 	previous := running
-	if version != st.Msg.ConfigVersion {
+	if version != st.ConfigVersion {
 		if previous, err = getConfig(ctx, conn, &nodev1.GetConfigRequest{Previous: true}); err != nil {
 			return layer.Named(t.name, err)
 		}
@@ -555,12 +555,12 @@ func (a *app) rollbackConfig(ctx context.Context, f rollbackConfigFlags, name st
 		changes.writeRemoved(a.stdout, "in the running config, not in the previous one")
 		return nil
 	}
-	resp, err := conn.RollbackConfig(ctx, connect.NewRequest(&nodev1.RollbackConfigRequest{Version: version}))
+	resp, err := conn.RollbackConfig(ctx, &nodev1.RollbackConfigRequest{Version: version})
 	if err != nil {
 		return layer.Named(t.name, err)
 	}
-	printApplied(a.stdout, resp.Msg.Changes, resp.Msg.RestartedUnits)
-	a.warnDelivery(t.name, &nodev1.ApplyConfigResponse{Warnings: resp.Msg.Warnings})
+	printApplied(a.stdout, resp.Changes, resp.RestartedUnits)
+	a.warnDelivery(t.name, &nodev1.ApplyConfigResponse{Warnings: resp.Warnings})
 	if version == replaced {
 		fmt.Fprintf(a.stdout, "%s runs config %s, delivered again\n", t.name, version)
 	} else {
@@ -629,15 +629,15 @@ func (a *app) resetVolume(ctx context.Context, f resetVolumeFlags, pos []string)
 	// Without a fallback the node is not asked for its volumes.
 	var fallback string
 	if d.identity.Storage.Fallback != storage.FallbackNone {
-		st, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+		st, err := conn.Status(ctx, &nodev1.StatusRequest{})
 		if err != nil {
 			return fmt.Errorf("ask %s for its volumes: %w", t.name, err)
 		}
-		if fallback, err = a.fallbackOf(ctx, st.Msg, t, d.identity.Storage, f.passwordFile, pos[1]); err != nil {
+		if fallback, err = a.fallbackOf(ctx, st, t, d.identity.Storage, f.passwordFile, pos[1]); err != nil {
 			return err
 		}
 	}
-	if _, err := conn.ResetVolume(ctx, connect.NewRequest(&nodev1.ResetVolumeRequest{Volume: pos[1], Config: d.Text, FallbackSecret: fallback})); err != nil {
+	if _, err := conn.ResetVolume(ctx, &nodev1.ResetVolumeRequest{Volume: pos[1], Config: d.Text, FallbackSecret: fallback}); err != nil {
 		return layer.Named(t.name, err)
 	}
 	fmt.Fprintf(a.stdout, "volume %s of %s was wiped and created again\n", pos[1], t.name)
@@ -669,11 +669,11 @@ func (a *app) discardPending(ctx context.Context, n nodeFlags, name string) erro
 		return err
 	}
 	defer conn.Close()
-	resp, err := conn.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{Staged: true, DiscardPending: true}))
+	resp, err := conn.ApplyConfig(ctx, &nodev1.ApplyConfigRequest{Staged: true, DiscardPending: true})
 	if err != nil {
 		return layer.Named(t.name, err)
 	}
-	if p := resp.Msg.Pending; p != nil {
+	if p := resp.Pending; p != nil {
 		fmt.Fprintf(a.stdout, "%s dropped its pending config %s\n", t.name, p.Version)
 		return nil
 	}

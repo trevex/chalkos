@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
@@ -14,7 +14,7 @@ import (
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 )
 
-func (p *Plugin) Bootstrap(ctx context.Context, _ *connect.Request[kubernetesv1.BootstrapRequest]) (*connect.Response[kubernetesv1.BootstrapResponse], error) {
+func (p *Plugin) Bootstrap(ctx context.Context, _ *kubernetesv1.BootstrapRequest) (*kubernetesv1.BootstrapResponse, error) {
 	k := p.k
 	c, err := k8s.ReadCluster(k.state.Cluster)
 	if err != nil {
@@ -37,7 +37,7 @@ func (p *Plugin) Bootstrap(ctx context.Context, _ *connect.Request[kubernetesv1.
 	k.mu.Lock()
 	n := k.count
 	k.mu.Unlock()
-	return connect.NewResponse(&kubernetesv1.BootstrapResponse{Applied: uint32(n)}), nil
+	return &kubernetesv1.BootstrapResponse{Applied: uint32(n)}, nil
 }
 
 // bootstrap commits the node to initialising etcd: the marker comes first, so a failure after

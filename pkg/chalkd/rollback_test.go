@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config/slot"
@@ -22,11 +22,11 @@ import (
 
 // sendRollback calls RollbackConfig for the version.
 func sendRollback(s *Server, version string) (*nodev1.RollbackConfigResponse, error) {
-	resp, err := s.RollbackConfig(context.Background(), connect.NewRequest(&nodev1.RollbackConfigRequest{Version: version}))
+	resp, err := s.RollbackConfig(context.Background(), &nodev1.RollbackConfigRequest{Version: version})
 	if err != nil {
 		return nil, err
 	}
-	return resp.Msg, nil
+	return resp, nil
 }
 
 // TestRollbackConfig delivers the previous config again through the pipeline: the units that read
@@ -100,7 +100,7 @@ func TestRollbackConfigRefuses(t *testing.T) {
 func TestRollbackConfigMeetsTheRules(t *testing.T) {
 	s, r := configServer(t)
 	r.Rules = volumeRules(s)
-	if _, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: extraConfig("ext4"), FallbackSecret: secret})); err != nil {
+	if _, err := s.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{Config: extraConfig("ext4"), FallbackSecret: secret}); err != nil {
 		t.Fatal(err)
 	}
 	r.Calls = nil
@@ -132,14 +132,14 @@ func TestRollbackConfigAfterAnInterruptedWrite(t *testing.T) {
 	if err := os.Symlink(held, slot.Previous(dir)); err != nil {
 		t.Fatal(err)
 	}
-	resp, err := s.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{}))
+	resp, err := s.Status(context.Background(), &nodev1.StatusRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.Msg.ConfigVersion != hashOf(t, baseConfig) || resp.Msg.PreviousConfigVersion != "" {
-		t.Errorf("status names config %q and previous %q, want baseConfig and none", resp.Msg.ConfigVersion, resp.Msg.PreviousConfigVersion)
+	if resp.ConfigVersion != hashOf(t, baseConfig) || resp.PreviousConfigVersion != "" {
+		t.Errorf("status names config %q and previous %q, want baseConfig and none", resp.ConfigVersion, resp.PreviousConfigVersion)
 	}
-	if _, err := s.GetConfig(context.Background(), connect.NewRequest(&nodev1.GetConfigRequest{Previous: true})); codeOf(err) != connect.CodeNotFound || !strings.Contains(err.Error(), "the node keeps no previous config of the running image") {
+	if _, err := s.GetConfig(context.Background(), &nodev1.GetConfigRequest{Previous: true}); codeOf(err) != connect.CodeNotFound || !strings.Contains(err.Error(), "the node keeps no previous config of the running image") {
 		t.Errorf("previous config = %v, want not found", err)
 	}
 	r.Calls = nil
@@ -199,7 +199,7 @@ func TestRollbackImage(t *testing.T) {
 				return tc.result, tc.err
 			}
 			conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator])
-			resp, err := conn.RollbackImage(context.Background(), connect.NewRequest(&nodev1.RollbackImageRequest{RootHash: previous, Reboot: tc.reboot}))
+			resp, err := conn.RollbackImage(context.Background(), &nodev1.RollbackImageRequest{RootHash: previous, Reboot: tc.reboot})
 			switch {
 			case tc.wantCode != 0:
 				if connect.CodeOf(err) != tc.wantCode || !strings.Contains(err.Error(), "roll back: the node keeps no image it ran before") {
@@ -207,8 +207,8 @@ func TestRollbackImage(t *testing.T) {
 				}
 			case err != nil:
 				t.Fatal(err)
-			case resp.Msg.Entry != tc.result.Entry || resp.Msg.AlreadyInstalled != tc.result.AlreadyInstalled || resp.Msg.AlreadyStaged != tc.result.AlreadyStaged || resp.Msg.Rebooting != tc.wantReboot:
-				t.Errorf("response %+v", resp.Msg)
+			case resp.Entry != tc.result.Entry || resp.AlreadyInstalled != tc.result.AlreadyInstalled || resp.AlreadyStaged != tc.result.AlreadyStaged || resp.Rebooting != tc.wantReboot:
+				t.Errorf("response %+v", resp)
 			}
 			want := hex.EncodeToString(previous) + "\n"
 			if tc.err != nil || tc.result.AlreadyInstalled {
@@ -233,7 +233,7 @@ func TestRollbackImage(t *testing.T) {
 		s, _ := newTestServer(t, normal, vda)
 		fakeImageSlots(t, s).forbidChanges()
 		conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator])
-		_, err := conn.RollbackImage(context.Background(), connect.NewRequest(&nodev1.RollbackImageRequest{RootHash: previous}))
+		_, err := conn.RollbackImage(context.Background(), &nodev1.RollbackImageRequest{RootHash: previous})
 		if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "STATE holds no config for the image") {
 			t.Errorf("rollback = %v", err)
 		}

@@ -4,9 +4,10 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
+	"io"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -62,14 +63,14 @@ func (a *app) disks(ctx context.Context, f nodePinFlags, pos []string) error {
 		return cli.Usagef("disks needs a node or --address ADDR")
 	}
 	defer conn.Close()
-	resp, err := conn.Disks(ctx, connect.NewRequest(&nodev1.DisksRequest{}))
+	resp, err := conn.Disks(ctx, &nodev1.DisksRequest{})
 	if err != nil {
 		return err
 	}
 	if p.insecure {
 		fmt.Fprintf(a.stderr, "chalkctl: the node's certificate fingerprint is %s\n", conn.Fingerprint())
 	}
-	return statusview.WriteDisks(a.stdout, resp.Msg.Disks)
+	return statusview.WriteDisks(a.stdout, resp.Disks)
 }
 
 type logsFlags struct {
@@ -105,20 +106,23 @@ func (a *app) logs(ctx context.Context, f logsFlags, pos []string) error {
 		return err
 	}
 	defer conn.Close()
-	stream, err := conn.Logs(ctx, connect.NewRequest(&nodev1.LogsRequest{Unit: f.unit, Follow: f.follow}))
+	stream, err := conn.Logs(ctx, &nodev1.LogsRequest{Unit: f.unit, Follow: f.follow})
 	if err != nil {
 		return err
 	}
 	out := bufio.NewWriter(a.stdout)
 	defer out.Flush()
-	for stream.Receive() {
-		fmt.Fprintln(out, stream.Msg().Line)
+	for {
+		msg, err := stream.Receive()
+		if errors.Is(err, io.EOF) || err != nil && ctx.Err() != nil {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(out, msg.Line)
 		if f.follow {
 			out.Flush()
 		}
 	}
-	if err := stream.Err(); err != nil && ctx.Err() == nil {
-		return err
-	}
-	return nil
 }

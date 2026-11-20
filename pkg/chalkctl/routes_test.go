@@ -2,14 +2,13 @@ package chalkctl
 
 import (
 	"context"
-	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
 	"github.com/trevex/chalkos/pkg/api/router/v1/routerv1connect"
@@ -114,15 +113,15 @@ func (n runsWith) Runner() tool.Runner { return n.r }
 // request's VRF, lists the main table and the default instance's paths, and names no VRF.
 type withoutVRFs struct{ *routerplugin.Plugin }
 
-func (p withoutVRFs) Handler(opts ...connect.HandlerOption) (string, http.Handler) {
-	return routerv1connect.NewRouterServiceHandler(p, opts...)
+func (p withoutVRFs) Register(server *connect.Server) {
+	routerv1connect.RegisterRouterServiceHandler(server, p)
 }
 
-func (p withoutVRFs) Routes(ctx context.Context, req *connect.Request[routerv1.RoutesRequest]) (*connect.Response[routerv1.RoutesResponse], error) {
-	req.Msg.Vrf = ""
+func (p withoutVRFs) Routes(ctx context.Context, req *routerv1.RoutesRequest) (*routerv1.RoutesResponse, error) {
+	req.Vrf = ""
 	resp, err := p.Plugin.Routes(ctx, req)
 	if err == nil {
-		resp.Msg.Vrf = ""
+		resp.Vrf = ""
 	}
 	return resp, err
 }

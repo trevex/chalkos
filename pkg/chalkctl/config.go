@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"slices"
 
-	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -108,15 +107,15 @@ func schemaContract(schemas map[string][]byte, facts []*anypb.Any) (contract, er
 
 // nodeContract asks a node for the contract of the image it runs.
 func nodeContract(ctx context.Context, conn *client.Conn, name string) (contract, error) {
-	resp, err := conn.Contract(ctx, connect.NewRequest(&nodev1.ContractRequest{}))
+	resp, err := conn.Contract(ctx, &nodev1.ContractRequest{})
 	if err != nil {
 		return contract{}, fmt.Errorf("ask %s for the schemas of its image: %w", name, err)
 	}
-	c, err := schemaContract(resp.Msg.Schemas, resp.Msg.LayerFacts)
+	c, err := schemaContract(resp.Schemas, resp.LayerFacts)
 	if err != nil {
 		return contract{}, fmt.Errorf("the schemas of the image %s runs: %w", name, err)
 	}
-	c.platform = resp.Msg.Platform
+	c.platform = resp.Platform
 	return c, nil
 }
 

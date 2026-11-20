@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/check"
@@ -96,7 +96,7 @@ func TestApplyConfigPassesAValidator(t *testing.T) {
 		t.Fatalf("the delivery: %v, %v", resp, err)
 	}
 	writeValidators(t, s, map[string]string{"veto": `exit 2`})
-	if _, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(s.Certificate.OSCA())})); err != nil {
+	if _, err := s.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{Trust: []byte(s.Certificate.OSCA())}); err != nil {
 		t.Errorf("a delivery without config ran the validators: %v", err)
 	}
 }

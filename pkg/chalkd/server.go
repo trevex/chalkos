@@ -17,7 +17,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
@@ -330,18 +331,18 @@ func (s *Server) ConsoleHandler() http.Handler {
 
 // mux serves the node API and every compiled plugin's API behind the authorizer.
 func (s *Server) mux() *http.ServeMux {
-	opts := []connect.HandlerOption{
-		connect.WithInterceptors(authorizer{s: s, gates: s.gates()}, errorCodes{}),
-		connect.WithReadMaxBytes(maxMessageBytes),
-		// An oversized compressed request would otherwise be decompressed in full before being
-		// discarded; refusing compression up front keeps that cost off chalkd.
-		connect.WithCompression("gzip", nil, nil),
+	server := connect.NewServer(authorizer{s: s, gates: s.gates()}.intercept, errorCodes)
+	nodev1connect.RegisterNodeServiceHandler(server, s)
+	for _, p := range s.Plugins.Compiled() {
+		p.Register(server)
 	}
 	mux := http.NewServeMux()
-	mux.Handle(nodev1connect.NewNodeServiceHandler(s, opts...))
-	for _, p := range s.Plugins.Compiled() {
-		mux.Handle(p.Handler(opts...))
-	}
+	connecthttp.Mount(mux, server,
+		connecthttp.WithReadMaxBytes(maxMessageBytes),
+		// chalkd's clients compress no request; refusing compression keeps the cost of
+		// decompressing one up to the limit off chalkd.
+		connecthttp.WithCompressors(),
+	)
 	return mux
 }
 
@@ -375,26 +376,26 @@ type authorizer struct {
 func (a authorizer) check(ctx context.Context, procedure string) error {
 	r, ok := a.gates[procedure]
 	if !ok {
-		return connect.NewError(connect.CodeUnimplemented, fmt.Errorf("%s is not served", procedure))
+		return connect.Errorf(connect.CodeUnimplemented, "%s is not served", procedure)
 	}
 	if !a.s.Plugins.Layers().Has(r.layer) {
-		return connect.NewError(connect.CodeUnimplemented, fmt.Errorf("the %s layer is not in this image", r.layer))
+		return connect.Errorf(connect.CodeUnimplemented, "the %s layer is not in this image", r.layer)
 	}
 	if !slices.Contains(r.Modes, a.s.Mode) {
 		if a.s.Mode == maintenance {
-			return connect.NewError(connect.CodeFailedPrecondition, errors.New("the node is in maintenance mode; install it first"))
+			return connect.NewError(connect.CodeFailedPrecondition, "the node is in maintenance mode; install it first")
 		}
-		return connect.NewError(connect.CodeFailedPrecondition, errors.New("the node is installed"))
+		return connect.NewError(connect.CodeFailedPrecondition, "the node is installed")
 	}
 	if onConsole(ctx) {
 		return a.checkConsole(procedure, r.Console)
 	}
 	if err, ok := ctx.Value(unverifiedKey{}).(error); ok {
-		return connect.NewError(connect.CodeUnauthenticated, fmt.Errorf("the client certificate does not verify against the OS CAs the node trusts: %w", err))
+		return connect.Errorf(connect.CodeUnauthenticated, "the client certificate does not verify against the OS CAs the node trusts: %v", err).WithCause(err)
 	}
 	role, _ := ctx.Value(roleKey{}).(pki.Role)
 	if !role.Allows(r.Role) {
-		return connect.NewError(connect.CodePermissionDenied, fmt.Errorf("%s needs the %s role", procedure, r.Role))
+		return connect.Errorf(connect.CodePermissionDenied, "%s needs the %s role", procedure, r.Role)
 	}
 	return nil
 }
@@ -406,30 +407,18 @@ func (a authorizer) checkConsole(procedure string, c layer.Console) error {
 	case c == layer.ConsoleAllowed, c == layer.ConsoleAction && a.s.ConsoleActions:
 		return nil
 	case c == layer.ConsoleAction:
-		return connect.NewError(connect.CodePermissionDenied, errors.New("the image turns the console's actions off"))
+		return connect.NewError(connect.CodePermissionDenied, "the image turns the console's actions off")
 	}
-	return connect.NewError(connect.CodePermissionDenied, fmt.Errorf("the console may not call %s", procedure))
+	return connect.Errorf(connect.CodePermissionDenied, "the console may not call %s", procedure)
 }
 
-func (a authorizer) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
-	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-		if err := a.check(ctx, req.Spec().Procedure); err != nil {
-			return nil, err
-		}
-		return next(ctx, req)
-	}
-}
-
-func (a authorizer) WrapStreamingClient(next connect.StreamingClientFunc) connect.StreamingClientFunc {
-	return next
-}
-
-func (a authorizer) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
-	return func(ctx context.Context, conn connect.StreamingHandlerConn) error {
-		if err := a.check(ctx, conn.Spec().Procedure); err != nil {
+// intercept checks a call before it reads the request.
+func (a authorizer) intercept(next connect.ServerFunc) connect.ServerFunc {
+	return func(ctx context.Context, spec connect.Spec, stream connect.ServerStream) error {
+		if err := a.check(ctx, spec.Procedure); err != nil {
 			return err
 		}
-		return next(ctx, conn)
+		return next(ctx, spec, stream)
 	}
 }
 
@@ -448,25 +437,9 @@ var domainCodes = layer.Codes{
 // answers with: its whole text, with the code it carries or the code of a domain error it wraps,
 // or else CodeInternal. Handlers decide a code with layer.Errorf and wrap everything else with
 // fmt.Errorf, which keeps the error chain.
-type errorCodes struct{}
-
-func (errorCodes) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
-	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-		resp, err := next(ctx, req)
-		if err != nil {
-			return nil, domainCodes.Error(err)
-		}
-		return resp, nil
-	}
-}
-
-func (errorCodes) WrapStreamingClient(next connect.StreamingClientFunc) connect.StreamingClientFunc {
-	return next
-}
-
-func (errorCodes) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
-	return func(ctx context.Context, conn connect.StreamingHandlerConn) error {
-		if err := next(ctx, conn); err != nil {
+func errorCodes(next connect.ServerFunc) connect.ServerFunc {
+	return func(ctx context.Context, spec connect.Spec, stream connect.ServerStream) error {
+		if err := next(ctx, spec, stream); err != nil {
 			return domainCodes.Error(err)
 		}
 		return nil
@@ -531,14 +504,14 @@ func (s *Server) recorded() (storage.Section, storage.Pins, error) {
 	return section, pins, nil
 }
 
-func (s *Server) Reboot(ctx context.Context, _ *connect.Request[nodev1.RebootRequest]) (*connect.Response[nodev1.RebootResponse], error) {
+func (s *Server) Reboot(ctx context.Context, _ *nodev1.RebootRequest) (*nodev1.RebootResponse, error) {
 	s.rebootSoon()
-	return connect.NewResponse(&nodev1.RebootResponse{}), nil
+	return &nodev1.RebootResponse{}, nil
 }
 
-func (s *Server) Shutdown(ctx context.Context, _ *connect.Request[nodev1.ShutdownRequest]) (*connect.Response[nodev1.ShutdownResponse], error) {
+func (s *Server) Shutdown(ctx context.Context, _ *nodev1.ShutdownRequest) (*nodev1.ShutdownResponse, error) {
 	s.afterResponse(s.PowerOffNode)
-	return connect.NewResponse(&nodev1.ShutdownResponse{}), nil
+	return &nodev1.ShutdownResponse{}, nil
 }
 
 // rebootSoon reboots once the response has had time to reach the client.

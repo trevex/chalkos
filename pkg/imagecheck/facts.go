@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net"
 	"net/http"
 	"sync"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 
 	checkv1 "github.com/trevex/chalkos/pkg/api/check/v1"
 	"github.com/trevex/chalkos/pkg/api/check/v1/checkv1connect"
@@ -28,11 +28,11 @@ const maxFactRequest = 32 << 20
 // reports any fact it cannot load. It asks f for one fact at a time.
 func ServeFacts(l net.Listener, f Facts) (stop func()) {
 	mux := http.NewServeMux()
-	mux.Handle(checkv1connect.NewFactsServiceHandler(&factsHandler{f: f},
-		connect.WithReadMaxBytes(maxFactRequest),
-		// An oversized compressed request would be decompressed in full before being refused.
-		connect.WithCompression("gzip", nil, nil),
-	))
+	server := connect.NewServer()
+	checkv1connect.RegisterFactsServiceHandler(server, &factsHandler{f: f})
+	// The checker compresses no request; refusing compression keeps the cost of decompressing one
+	// up to the limit off chalkd.
+	connecthttp.Mount(mux, server, connecthttp.WithReadMaxBytes(maxFactRequest), connecthttp.WithCompressors())
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	done := make(chan struct{})
 	go func() {
@@ -52,26 +52,26 @@ type factsHandler struct {
 	f  Facts
 }
 
-func (h *factsHandler) Fact(_ context.Context, req *connect.Request[checkv1.FactRequest]) (*connect.Response[checkv1.FactResponse], error) {
+func (h *factsHandler) Fact(_ context.Context, req *checkv1.FactRequest) (*checkv1.FactResponse, error) {
 	var input any
-	if err := jsonfile.DecodeExact([]byte(req.Msg.GetInput()), &input); err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("the fact's input: %w", err))
+	if err := jsonfile.DecodeExact([]byte(req.GetInput()), &input); err != nil {
+		return nil, connect.Errorf(connect.CodeInvalidArgument, "the fact's input: %v", err).WithCause(err)
 	}
 	obj, ok := input.(map[string]any)
 	if !ok {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("the fact's input is no JSON object"))
+		return nil, connect.NewError(connect.CodeInvalidArgument, "the fact's input is no JSON object")
 	}
 	h.mu.Lock()
-	v, err := h.f.Fact(req.Msg.GetName(), obj)
+	v, err := h.f.Fact(req.GetName(), obj)
 	h.mu.Unlock()
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnavailable, err)
+		return nil, connect.NewError(connect.CodeUnavailable, err.Error()).WithCause(err)
 	}
 	data, err := json.Marshal(v)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, err.Error()).WithCause(err)
 	}
-	return connect.NewResponse(&checkv1.FactResponse{Value: string(data)}), nil
+	return &checkv1.FactResponse{Value: string(data)}, nil
 }
 
 // RemoteFacts asks the facts of a check over the socket chalkd serves them on.
@@ -88,7 +88,9 @@ func DialFacts(ctx context.Context, path string) *RemoteFacts {
 			return d.DialContext(ctx, "unix", path)
 		},
 	}}
-	return &RemoteFacts{ctx: ctx, client: checkv1connect.NewFactsServiceClient(hc, "http://facts")}
+	// A fact may be as large as chalkd makes it: connect would otherwise refuse one over 4 MiB.
+	transport := connecthttp.NewTransport(hc, "http://facts", connecthttp.WithReadMaxBytes(0))
+	return &RemoteFacts{ctx: ctx, client: checkv1connect.NewFactsServiceClient(connect.NewClient(transport))}
 }
 
 // For is the facts of a check of next against old, both with their defaults, which command facts
@@ -124,7 +126,7 @@ func (ri *remoteInput) ask(name string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	resp, err := ri.r.client.Fact(ri.r.ctx, connect.NewRequest(&checkv1.FactRequest{Name: name, Input: string(input)}))
+	resp, err := ri.r.client.Fact(ri.r.ctx, &checkv1.FactRequest{Name: name, Input: string(input)})
 	if err != nil {
 		if ce, ok := errors.AsType[*connect.Error](err); ok {
 			return nil, errors.New(ce.Message())
@@ -132,7 +134,7 @@ func (ri *remoteInput) ask(name string) (any, error) {
 		return nil, err
 	}
 	var v any
-	if err := jsonfile.DecodeExact([]byte(resp.Msg.GetValue()), &v); err != nil {
+	if err := jsonfile.DecodeExact([]byte(resp.GetValue()), &v); err != nil {
 		return nil, err
 	}
 	return v, nil

@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
-
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -248,6 +246,6 @@ func nodeAccepts(ctx context.Context, addr, clientFile string) error {
 	defer conn.Close()
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
-	_, err = conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
+	_, err = conn.Info(ctx, &nodev1.InfoRequest{})
 	return err
 }

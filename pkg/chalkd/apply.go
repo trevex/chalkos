@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
@@ -30,38 +30,38 @@ type applyRequest struct {
 	try time.Duration
 }
 
-func (s *Server) ApplyConfig(ctx context.Context, req *connect.Request[nodev1.ApplyConfigRequest]) (*connect.Response[nodev1.ApplyConfigResponse], error) {
+func (s *Server) ApplyConfig(ctx context.Context, req *nodev1.ApplyConfigRequest) (*nodev1.ApplyConfigResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if m := req.Msg; m.IgnoreReadiness && (m.Config == "" || m.Staged || m.DiscardPending ||
-		len(m.Layers) != 0 || len(m.Trust) != 0 || len(m.NodeCertificate) != 0 || len(m.NodeKey) != 0) {
+	if req.IgnoreReadiness && (req.Config == "" || req.Staged || req.DiscardPending ||
+		len(req.Layers) != 0 || len(req.Trust) != 0 || len(req.NodeCertificate) != 0 || len(req.NodeKey) != 0) {
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "ignore_readiness requires a config-only delivery to the running image")
 	}
 	// A config on trial is confirmed or rolled back before the node takes another delivery.
 	if err := s.refuseOnTrial("another delivery", false); err != nil {
 		return nil, err
 	}
-	try, err := trialOf(req.Msg)
+	try, err := trialOf(req)
 	if err != nil {
 		return nil, err
 	}
 	// Upgrades write slots and the pending config; TryLock so a running upgrade, image rollback or
 	// trial deadline, which takes s.mu while it holds s.upgrading, refuses us instead of
 	// deadlocking.
-	if req.Msg.Config != "" || req.Msg.DiscardPending {
+	if req.Config != "" || req.DiscardPending {
 		if !s.upgrading.TryLock() {
 			return nil, layer.Errorf(connect.CodeAborted, "an upgrade, an image rollback or the rollback at a trial's deadline is running; apply the config once it ended")
 		}
 		defer s.upgrading.Unlock()
 	}
-	if req.Msg.DiscardPending {
-		return s.discardPending(req.Msg)
+	if req.DiscardPending {
+		return s.discardPending(req)
 	}
-	if req.Msg.Staged {
-		return s.applyStaged(ctx, req.Msg)
+	if req.Staged {
+		return s.applyStaged(ctx, req)
 	}
-	r := applyRequest{msg: req.Msg, try: try}
-	if req.Msg.Config != "" {
+	r := applyRequest{msg: req, try: try}
+	if req.Config != "" {
 		name, err := s.name()
 		if err != nil {
 			return nil, err
@@ -70,13 +70,13 @@ func (s *Server) ApplyConfig(ctx context.Context, req *connect.Request[nodev1.Ap
 		if err != nil {
 			return nil, err
 		}
-		c, err := configure(name, req.Msg.Config, schemas, t)
+		c, err := configure(name, req.Config, schemas, t)
 		if err != nil {
 			return nil, err
 		}
 		r.identity, r.next = string(c.Identity), c
 	}
-	if req.Msg.DryRun {
+	if req.DryRun {
 		return s.dryRun(ctx, r)
 	}
 	if try > 0 {
@@ -88,7 +88,7 @@ func (s *Server) ApplyConfig(ctx context.Context, req *connect.Request[nodev1.Ap
 // dryRun checks an ApplyConfig request as apply does, the trial's conditions with try, and
 // answers with what the delivery would do in place of doing it, the staged image's slot or the
 // pending config among it; the caller holds s.mu and, for a request with config, s.upgrading.
-func (s *Server) dryRun(ctx context.Context, r applyRequest) (*connect.Response[nodev1.ApplyConfigResponse], error) {
+func (s *Server) dryRun(ctx context.Context, r applyRequest) (*nodev1.ApplyConfigResponse, error) {
 	d, err := s.planDelivery(ctx, r)
 	if err != nil {
 		return nil, err
@@ -124,13 +124,13 @@ func (s *Server) dryRun(ctx context.Context, r applyRequest) (*connect.Response[
 		}
 	}
 	second.plan(resp)
-	return connect.NewResponse(resp), nil
+	return resp, nil
 }
 
 // apply delivers an ApplyConfig request whose config is translated: to the running image, then
 // to the staged image's slot or the pending config, as planSecond plans it before anything
 // changes. The caller holds s.mu and, for a request with config, s.upgrading.
-func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[nodev1.ApplyConfigResponse], error) {
+func (s *Server) apply(ctx context.Context, r applyRequest) (*nodev1.ApplyConfigResponse, error) {
 	d, err := s.planDelivery(ctx, r)
 	if err != nil {
 		return nil, err
@@ -146,7 +146,7 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[n
 	if err != nil {
 		return nil, err
 	}
-	if err := second.write(ctx, s, d.stored.Version, d.msg.FallbackSecret, resp.Msg); err != nil {
+	if err := second.write(ctx, s, d.stored.Version, d.msg.FallbackSecret, resp); err != nil {
 		return nil, err
 	}
 	return resp, nil
@@ -307,7 +307,7 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 // a retry, or any later delivery, takes the effects of what a failed or interrupted attempt
 // changed. storage.json is the machine's, not an image's: applyStorage records the section once
 // its additive changes are made, so a retry makes none twice.
-func (d *delivery) commit(ctx context.Context) (_ *connect.Response[nodev1.ApplyConfigResponse], err error) {
+func (d *delivery) commit(ctx context.Context) (_ *nodev1.ApplyConfigResponse, err error) {
 	s, m := d.s, d.msg
 	activation := d.beginActivation()
 	defer func() { activation.finish(err) }()
@@ -396,5 +396,5 @@ func (d *delivery) commit(ctx context.Context) (_ *connect.Response[nodev1.Apply
 	}
 	resp := &nodev1.ApplyConfigResponse{RestartedUnits: restarted, Warnings: warnings}
 	resp.Changes = append(resp.Changes, storageChanges(d.machine.changes)...)
-	return connect.NewResponse(resp), nil
+	return resp, nil
 }

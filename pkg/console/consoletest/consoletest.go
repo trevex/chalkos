@@ -15,7 +15,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/exp/golden"
@@ -107,7 +107,7 @@ func (c *Client) Diagnostic(_ context.Context, name string, args map[string]stri
 	}
 	out, ok := c.Diagnostics[k]
 	if !ok {
-		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("the image declares no diagnostic %q", name))
+		return nil, connect.Errorf(connect.CodeNotFound, "the image declares no diagnostic %q", name)
 	}
 	return []byte(out), nil
 }
@@ -271,7 +271,7 @@ func Maintenance() *Client {
 			Mode: nodev1.Mode_MODE_MAINTENANCE, Hostname: "nixos", RootHash: hash(0x81, 0xbd),
 			Fingerprint: "3b1f" + strings.Repeat("9e2d", 15),
 		},
-		StatusErr:   connect.NewError(connect.CodeFailedPrecondition, errors.New("the node is in maintenance mode; install it first")),
+		StatusErr:   connect.NewError(connect.CodeFailedPrecondition, "the node is in maintenance mode; install it first"),
 		DisksResp:   disks(false),
 		Diagnostics: map[string]string{"addresses": addresses},
 		Lines:       slices.Clone(Lines),

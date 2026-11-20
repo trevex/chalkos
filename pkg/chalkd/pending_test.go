@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
 
@@ -26,14 +26,14 @@ import (
 // config the node answers with.
 func sendPending(t *testing.T, s *Server, text string) *nodev1.PendingConfig {
 	t.Helper()
-	resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: text, Staged: true}))
+	resp, err := s.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{Config: text, Staged: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.Msg.Pending == nil {
+	if resp.Pending == nil {
 		t.Fatal("the answer names no pending config")
 	}
-	return resp.Msg.Pending
+	return resp.Pending
 }
 
 // parseConfig is the documents of text.
@@ -79,8 +79,8 @@ func TestApplyConfigStagedHoldsPending(t *testing.T) {
 	if got := status(t, s).PendingConfig; got.GetVersion() != p.Version || !got.Since.AsTime().Equal(p.Since.AsTime()) {
 		t.Errorf("status names the pending config %v, want %v", got, p)
 	}
-	resp, err := s.GetConfig(context.Background(), connect.NewRequest(&nodev1.GetConfigRequest{Staged: true}))
-	if err != nil || resp.Msg.Version != p.Version || !strings.Contains(resp.Msg.Documents, `"name":"second"`) || strings.Contains(resp.Msg.Documents, "s3cret") {
+	resp, err := s.GetConfig(context.Background(), &nodev1.GetConfigRequest{Staged: true})
+	if err != nil || resp.Version != p.Version || !strings.Contains(resp.Documents, `"name":"second"`) || strings.Contains(resp.Documents, "s3cret") {
 		t.Errorf("staged config = %+v, %v; want the pending config, its Secret hashed", resp, err)
 	}
 	// Config no image accepts is held all the same: nothing checks it before an upgrade.
@@ -103,7 +103,7 @@ func TestApplyConfigStagedPendingRefuses(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, _ := configServer(t)
-			_, err := s.ApplyConfig(context.Background(), connect.NewRequest(tc.req))
+			_, err := s.ApplyConfig(context.Background(), tc.req)
 			if codeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("err = %v, want one naming %q", err, tc.want)
 			}
@@ -113,8 +113,8 @@ func TestApplyConfigStagedPendingRefuses(t *testing.T) {
 		})
 	}
 	s, _ := configServer(t)
-	resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: baseConfig, Staged: true, DryRun: true}))
-	if err != nil || resp.Msg.Pending.GetVersion() != hashOf(t, baseConfig) || resp.Msg.Pending.GetSince() != nil || resp.Msg.Plan != nil {
+	resp, err := s.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{Config: baseConfig, Staged: true, DryRun: true})
+	if err != nil || resp.Pending.GetVersion() != hashOf(t, baseConfig) || resp.Pending.GetSince() != nil || resp.Plan != nil {
 		t.Errorf("dry run = %v, %v; want the config it would hold, unstored", resp, err)
 	}
 	if v := pendingVersion(t, s); v != "" {
@@ -128,11 +128,11 @@ func TestApplyConfigDiscardsPending(t *testing.T) {
 	s, _ := configServer(t)
 	p := sendPending(t, s, baseConfig)
 	discard := func(req *nodev1.ApplyConfigRequest) (*nodev1.PendingConfig, error) {
-		resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(req))
+		resp, err := s.ApplyConfig(context.Background(), req)
 		if err != nil {
 			return nil, err
 		}
-		return resp.Msg.Pending, nil
+		return resp.Pending, nil
 	}
 	if _, err := discard(&nodev1.ApplyConfigRequest{Staged: true, DiscardPending: true, Config: baseConfig}); codeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "discard_pending goes with staged alone") {
 		t.Errorf("discard with config = %v", err)
@@ -159,7 +159,7 @@ func TestPendingWaitsForAnUpgrade(t *testing.T) {
 	s.upgrading.Lock()
 	defer s.upgrading.Unlock()
 	for _, req := range []*nodev1.ApplyConfigRequest{{Config: strings.Replace(baseConfig, "name: first", "name: second", 1), Staged: true}, {Staged: true, DiscardPending: true}} {
-		if _, err := s.ApplyConfig(context.Background(), connect.NewRequest(req)); codeOf(err) != connect.CodeAborted {
+		if _, err := s.ApplyConfig(context.Background(), req); codeOf(err) != connect.CodeAborted {
 			t.Errorf("%v = %v, want aborted", req, err)
 		}
 	}
@@ -187,14 +187,14 @@ func TestApplyConfigReplacesPending(t *testing.T) {
 		t.Errorf("a dry run planned %v and left %q pending", resp.Pending, pendingVersion(t, s))
 	}
 	third := strings.Replace(baseConfig, "name: first", "name: third", 1)
-	m, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: third, FallbackSecret: secret}))
+	m, err := s.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{Config: third, FallbackSecret: secret})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if v, _ := slot.Version(slotOf(t, s)); v != hashOf(t, third) {
 		t.Errorf("running version = %q, want the delivered config's", v)
 	}
-	if got := m.Msg.Pending; got.GetVersion() != hashOf(t, third) || got.GetSince() == nil || pendingVersion(t, s) != hashOf(t, third) {
+	if got := m.Pending; got.GetVersion() != hashOf(t, third) || got.GetSince() == nil || pendingVersion(t, s) != hashOf(t, third) {
 		t.Errorf("the answer names the pending config %v; the node holds %q", got, pendingVersion(t, s))
 	}
 	held, _, err := slot.Read(slot.Pending(s.Loader.Slots))
@@ -223,7 +223,7 @@ func TestTrialReplacesPendingOnceConfirmed(t *testing.T) {
 					t.Fatal(err)
 				}
 				want = hashOf(t, nextConfig)
-			} else if _, err := s.RollbackConfig(context.Background(), connect.NewRequest(&nodev1.RollbackConfigRequest{Version: hashOf(t, baseConfig)})); err != nil {
+			} else if _, err := s.RollbackConfig(context.Background(), &nodev1.RollbackConfigRequest{Version: hashOf(t, baseConfig)}); err != nil {
 				t.Fatal(err)
 			}
 			if v := pendingVersion(t, s); v != want {
@@ -359,13 +359,13 @@ func upgradePending(t *testing.T, s *Server, role pki.Role, cfg string, fail err
 		return upgrade.Result{Entry: "chalkos_2+3.efi"}, wrote, fail
 	}
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[role])
-	stream := conn.Upgrade(context.Background())
+	stream := openUpgrade(t, conn)
 	header := &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{ImageId: "chalkos", RootHash: newImage}, Config: cfg}
 	res, err := sendAll(t, stream, &nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}})
 	if err != nil {
 		return version, nil, err
 	}
-	return version, res.Msg.Pending, nil
+	return version, res.Pending, nil
 }
 
 // TestUpgradeDropsThePendingConfig has an upgrade without config, as an operator's, boot the image
@@ -488,7 +488,7 @@ func TestApplyConfigDiscardPendingTakesStagedAlone(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			req.DiscardPending, req.Staged = true, name != "without staged"
-			_, err := s.ApplyConfig(context.Background(), connect.NewRequest(req))
+			_, err := s.ApplyConfig(context.Background(), req)
 			if codeOf(err) != connect.CodeInvalidArgument {
 				t.Errorf("err = %v, want invalid argument", err)
 			}
@@ -506,13 +506,13 @@ func TestUpgradeAnswersAPendingConfigKept(t *testing.T) {
 	p := sendPending(t, s, baseConfig)
 	fakeImageSlots(t, s).installs(upgrade.Result{AlreadyInstalled: true}, nil)
 	c := newCreds(t)
-	stream := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator]).Upgrade(context.Background())
+	stream := openUpgrade(t, dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator]))
 	header := &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{ImageId: "chalkos", RootHash: newImage}}
 	res, err := sendAll(t, stream, &nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := res.Msg.Pending; got.GetVersion() != p.Version || got.GetFate() != nodev1.PendingFate_PENDING_FATE_KEPT {
+	if got := res.Pending; got.GetVersion() != p.Version || got.GetFate() != nodev1.PendingFate_PENDING_FATE_KEPT {
 		t.Errorf("pending outcome = %v, want %s kept", got, p.Version)
 	}
 	if v := pendingVersion(t, s); v != p.Version {

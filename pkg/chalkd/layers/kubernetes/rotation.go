@@ -11,7 +11,7 @@ import (
 	"slices"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -35,11 +35,11 @@ import (
 // rotation sets, as kubectl rollout restart sets its own.
 const restartedAnnotation = "chalkos.dev/restarted-at"
 
-func (p *Plugin) RotationStep(ctx context.Context, req *connect.Request[kubernetesv1.RotationStepRequest]) (*connect.Response[kubernetesv1.RotationStepResponse], error) {
+func (p *Plugin) RotationStep(ctx context.Context, req *kubernetesv1.RotationStepRequest) (*kubernetesv1.RotationStepResponse, error) {
 	k := p.k
 	// An unknown step is refused before it gets a credential for the API server.
 	var step func(context.Context, *kubernetesv1.RotationStepResponse) error
-	switch req.Msg.Step {
+	switch req.Step {
 	case kubernetesv1.RotationStep_ROTATION_STEP_RENEW_KUBELET_SERVING:
 		step = p.renewKubeletServing
 	case kubernetesv1.RotationStep_ROTATION_STEP_COUNT_ENCRYPTED:
@@ -51,13 +51,13 @@ func (p *Plugin) RotationStep(ctx context.Context, req *connect.Request[kubernet
 	case kubernetesv1.RotationStep_ROTATION_STEP_REWRITE_ENCRYPTED:
 		step = k.rewriteEncryptedStep
 	default:
-		return nil, layer.Errorf(connect.CodeInvalidArgument, "unknown rotation step %v", req.Msg.Step)
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "unknown rotation step %v", req.Step)
 	}
 	resp := &kubernetesv1.RotationStepResponse{}
 	if err := step(ctx, resp); err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(resp), nil
+	return resp, nil
 }
 
 // stepFailed refuses a rotation step that failed, unless err already says how.

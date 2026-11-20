@@ -16,7 +16,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -113,8 +113,8 @@ func TestApplyConfigDeliversShare(t *testing.T) {
 	if !slices.Contains(r.Calls, "systemctl restart chalkos-kubernetes.service kubelet.service") {
 		t.Errorf("commands %v", r.Calls)
 	}
-	if !slices.Contains(resp.Msg.RestartedUnits, "kubelet.service") {
-		t.Errorf("restarted %v", resp.Msg.RestartedUnits)
+	if !slices.Contains(resp.RestartedUnits, "kubelet.service") {
+		t.Errorf("restarted %v", resp.RestartedUnits)
 	}
 }
 
@@ -396,7 +396,7 @@ func TestApplyConfigRecordsNodeCAWithoutRestarts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Layers: shareLayers(t, data)})); err != nil {
+	if _, err := s.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{Layers: shareLayers(t, data)}); err != nil {
 		t.Fatal(err)
 	}
 	if got, err := p.ReadShare(); err != nil || *got.NodeCA != nodeCA {
@@ -408,7 +408,7 @@ func TestApplyConfigRecordsNodeCAWithoutRestarts(t *testing.T) {
 
 	// Any other change prepares the node's files again.
 	other := kubernetestest.Share(t, k8s.KindControlPlane, "n1")
-	if _, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Layers: shareLayers(t, other)})); err != nil {
+	if _, err := s.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{Layers: shareLayers(t, other)}); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Contains(r.Calls, "systemctl restart chalkos-kubernetes.service kubelet.service") {
@@ -426,12 +426,12 @@ func TestApplyConfigTheSameShareAgainDoesNothing(t *testing.T) {
 	share := []byte(readFile(t, filepath.Join(s.Paths.StateDir, "kubernetes", "share.json")))
 	acted := loops(s)
 	r.Calls = nil
-	resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Layers: shareLayers(t, share)}))
+	resp, err := s.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{Layers: shareLayers(t, share)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(resp.Msg.RestartedUnits) != 0 || len(r.Calls) != 0 || len(*acted) != 0 {
-		t.Errorf("restarted %v, ran %v, acted on the loops %v", resp.Msg.RestartedUnits, r.Calls, *acted)
+	if len(resp.RestartedUnits) != 0 || len(r.Calls) != 0 || len(*acted) != 0 {
+		t.Errorf("restarted %v, ran %v, acted on the loops %v", resp.RestartedUnits, r.Calls, *acted)
 	}
 }
 
@@ -465,12 +465,12 @@ func TestApplyConfigNodeCAWithConfig(t *testing.T) {
 		{"a Demo", strings.NewReplacer("nodeIP: {addresses: [192.168.100.21]}}", "nodeIP: {addresses: [192.168.100.21], validSubnets: [192.168.100.0/24]}}", "name: first", "name: second").Replace(controlPlane), []string{"demo.service"}},
 	} {
 		r.Calls, *acted = nil, nil
-		resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: step.config, Layers: shareLayers(t, withNodeCA())}))
+		resp, err := s.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{Config: step.config, Layers: shareLayers(t, withNodeCA())})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !slices.Equal(resp.Msg.RestartedUnits, step.want) || len(*acted) != 0 {
-			t.Errorf("%s: restarted %v, acted on the loops %v; want %v", step.name, resp.Msg.RestartedUnits, *acted, step.want)
+		if !slices.Equal(resp.RestartedUnits, step.want) || len(*acted) != 0 {
+			t.Errorf("%s: restarted %v, acted on the loops %v; want %v", step.name, resp.RestartedUnits, *acted, step.want)
 		}
 	}
 }
@@ -554,11 +554,11 @@ func TestApplyConfigRetriesAShareWhoseSlotFailed(t *testing.T) {
 	acted := loops(s)
 	share := kubernetestest.Share(t, k8s.KindWorker, "n1")
 	send := func() (*nodev1.ApplyConfigResponse, error) {
-		resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: workerConfig, Layers: shareLayers(t, share)}))
+		resp, err := s.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{Config: workerConfig, Layers: shareLayers(t, share)})
 		if err != nil {
 			return nil, err
 		}
-		return resp.Msg, nil
+		return resp, nil
 	}
 	slots := filepath.Dir(slotOf(t, s))
 	if err := os.Chmod(slots, 0o555); err != nil {
@@ -598,11 +598,11 @@ func TestApplyConfigRetriesAShareWhoseRestartFailed(t *testing.T) {
 	}
 	share := kubernetestest.Share(t, k8s.KindWorker, "n1")
 	send := func() (*nodev1.ApplyConfigResponse, error) {
-		resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Layers: shareLayers(t, share)}))
+		resp, err := s.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{Layers: shareLayers(t, share)})
 		if err != nil {
 			return nil, err
 		}
-		return resp.Msg, nil
+		return resp, nil
 	}
 	r.Rules = []tooltest.Rule{{Prefix: "systemctl restart chalkos-kubernetes.service kubelet.service", Err: errors.New("exit status 1")}}
 	if _, err := send(); err == nil || !strings.Contains(err.Error(), "restart chalkos-kubernetes.service kubelet.service by hand") {
@@ -673,13 +673,13 @@ func TestApplyConfigActsOnTheLoopsWhenTheNodeCertificateFails(t *testing.T) {
 	}
 	acted := loops(s)
 	send := func() (*nodev1.ApplyConfigResponse, error) {
-		resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{
+		resp, err := s.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{
 			Config: withClusterSpec("{domain: lab.local}"), NodeCertificate: []byte(cert.Certificate), NodeKey: []byte(cert.Key),
-		}))
+		})
 		if err != nil {
 			return nil, err
 		}
-		return resp.Msg, nil
+		return resp, nil
 	}
 	dir := filepath.Join(s.Paths.StateDir, "chalkd")
 	if err := os.Chmod(dir, 0o555); err != nil {
@@ -728,11 +728,11 @@ func TestApplyConfigWritesTheGrantedConfigForAShareAfterAFailure(t *testing.T) {
 	}
 	share := kubernetestest.Share(t, k8s.KindWorker, "n1")
 	send := func() (*nodev1.ApplyConfigResponse, error) {
-		resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Layers: shareLayers(t, share)}))
+		resp, err := s.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{Layers: shareLayers(t, share)})
 		if err != nil {
 			return nil, err
 		}
-		return resp.Msg, nil
+		return resp, nil
 	}
 	r.Calls = nil
 	if _, err := send(); err == nil || !strings.Contains(err.Error(), "write the config for the granted units") {
@@ -849,7 +849,7 @@ func TestApplyConfigRefusesAnotherNodeType(t *testing.T) {
 				}
 			}
 			r.Calls = nil
-			_, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: controlPlane, Layers: shareLayers(t, tc.delivered)}))
+			_, err := s.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{Config: controlPlane, Layers: shareLayers(t, tc.delivered)})
 			if tc.want == "" {
 				if err != nil {
 					t.Fatal(err)

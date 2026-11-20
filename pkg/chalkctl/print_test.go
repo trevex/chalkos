@@ -9,7 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
@@ -30,26 +31,26 @@ type cannedNode struct {
 	s *chalkd.Server
 }
 
-func (n cannedNode) Info(ctx context.Context, req *connect.Request[nodev1.InfoRequest]) (*connect.Response[nodev1.InfoResponse], error) {
+func (n cannedNode) Info(ctx context.Context, req *nodev1.InfoRequest) (*nodev1.InfoResponse, error) {
 	resp, err := n.s.Info(ctx, req)
 	if err == nil {
-		resp.Msg.Layers = []string{layers.Kubernetes, layers.Router}
+		resp.Layers = []string{layers.Kubernetes, layers.Router}
 	}
 	return resp, err
 }
 
-func (cannedNode) Status(context.Context, *connect.Request[nodev1.StatusRequest]) (*connect.Response[nodev1.StatusResponse], error) {
-	return connect.NewResponse(cannedStatus()), nil
+func (cannedNode) Status(context.Context, *nodev1.StatusRequest) (*nodev1.StatusResponse, error) {
+	return cannedStatus(), nil
 }
 
-func (cannedNode) Disks(context.Context, *connect.Request[nodev1.DisksRequest]) (*connect.Response[nodev1.DisksResponse], error) {
-	return connect.NewResponse(&nodev1.DisksResponse{Disks: []*nodev1.Disk{
+func (cannedNode) Disks(context.Context, *nodev1.DisksRequest) (*nodev1.DisksResponse, error) {
+	return &nodev1.DisksResponse{Disks: []*nodev1.Disk{
 		{Device: "/dev/vda", Size: 16 << 30, Type: "hdd", Model: "QEMU HARDDISK", Serial: "chalk-sys", Usage: "boot", Partitions: []*nodev1.Partition{
 			{Device: "/dev/vda1", Size: 512 << 20, Label: "esp", Content: "vfat"},
 			{Device: "/dev/vda2", Size: 1536 << 20, Label: "chalkos-a", Content: "erofs"},
 		}},
 		{Device: "/dev/nvme0n1", Size: 1000204886016, Type: "ssd", Model: "Samsung SSD 980", Serial: "S64DNF0R", Wwn: "eui.002538b1", Usage: "volume data"},
-	}}), nil
+	}}, nil
 }
 
 // kubernetesStatus is the canned KubernetesService.Status.
@@ -57,15 +58,15 @@ type kubernetesStatus struct {
 	kubernetesv1connect.UnimplementedKubernetesServiceHandler
 }
 
-func (kubernetesStatus) Status(context.Context, *connect.Request[kubernetesv1.StatusRequest]) (*connect.Response[kubernetesv1.StatusResponse], error) {
-	return connect.NewResponse(&kubernetesv1.StatusResponse{
+func (kubernetesStatus) Status(context.Context, *kubernetesv1.StatusRequest) (*kubernetesv1.StatusResponse, error) {
+	return &kubernetesv1.StatusResponse{
 		Kind: "controlplane", State: "bootstrapped", NodeReady: "True", Vip: "holder", ControlPlane: "current",
 		ApiServerVersion: "1.37.2", KubeletVersion: "1.37.1", ControlPlanePods: "kube-apiserver is not Ready",
 		RevokedNodes: []*kubernetesv1.RevokedNode{
 			{Name: "n7", RevokedAt: timestamppb.New(time.Date(2026, 11, 2, 9, 30, 0, 0, time.UTC))},
 			{Name: "old-worker"},
 		},
-	}), nil
+	}, nil
 }
 
 // routerStatus is the canned RouterService.Status.
@@ -73,8 +74,8 @@ type routerStatus struct {
 	routerv1connect.UnimplementedRouterServiceHandler
 }
 
-func (routerStatus) Status(context.Context, *connect.Request[routerv1.StatusRequest]) (*connect.Response[routerv1.StatusResponse], error) {
-	return connect.NewResponse(&routerv1.StatusResponse{
+func (routerStatus) Status(context.Context, *routerv1.StatusRequest) (*routerv1.StatusResponse, error) {
+	return &routerv1.StatusResponse{
 		Peers: []*nodev1.BGPPeerStatus{
 			{Name: "fabric", Neighbor: "eth1", State: "Established", UptimeSeconds: 3723, PrefixesReceived: 1, PrefixesSent: 2, Bfd: "up"},
 			{Vrf: "tenant", Name: "transit", Neighbor: "203.0.113.254", State: "Active"},
@@ -90,7 +91,7 @@ func (routerStatus) Status(context.Context, *connect.Request[routerv1.StatusRequ
 			{Vrf: "guest", Family: "ipv4", Error: "dial unix /run/kea/dhcp4-guest.sock: connect: no such file or directory"},
 		},
 		DhcpRelays: []*routerv1.DHCPRelayStatus{{Vrf: "default", Running: true}, {Vrf: "guest", Error: "dhcrelay@guest.service is failed"}},
-	}), nil
+	}, nil
 }
 
 // cannedStatus is a node's status that reaches each line chalkctl status prints.
@@ -146,9 +147,12 @@ func cannedNodeAt(t *testing.T, ta *testApp) string {
 	addr := ta.startNode(t, s)
 	mux := http.NewServeMux()
 	n := cannedNode{s: s}
-	mux.Handle(nodev1connect.NewNodeServiceHandler(n))
-	mux.Handle(kubernetesv1connect.NewKubernetesServiceHandler(kubernetesStatus{}))
-	mux.Handle(routerv1connect.NewRouterServiceHandler(routerStatus{}))
+	server := connect.NewServer()
+	nodev1connect.RegisterNodeServiceHandler(server, n)
+	kubernetesv1connect.RegisterKubernetesServiceHandler(server, kubernetesStatus{})
+	routerv1connect.RegisterRouterServiceHandler(server, routerStatus{})
+	connecthttp.Mount(mux, server)
+
 	canned := map[string]bool{
 		nodev1connect.NodeServiceInfoProcedure:               true,
 		nodev1connect.NodeServiceStatusProcedure:             true,

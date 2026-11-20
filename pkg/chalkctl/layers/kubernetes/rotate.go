@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -186,11 +186,11 @@ func (p *Plugin) ApplyRotation(ctx context.Context, r layer.Rotating, kind clust
 // its manifests define.
 func restartAddons(ctx context.Context, r layer.Rotating) error {
 	return rotationThroughControlPlane(ctx, r, func(ctx context.Context, conn *client.Conn) error {
-		resp, err := Client(conn).RotationStep(ctx, connect.NewRequest(&kubernetesv1.RotationStepRequest{Step: kubernetesv1.RotationStep_ROTATION_STEP_RESTART_ADDONS}))
+		resp, err := Client(conn).RotationStep(ctx, &kubernetesv1.RotationStepRequest{Step: kubernetesv1.RotationStep_ROTATION_STEP_RESTART_ADDONS})
 		if err == nil {
-			r.Say("  restarted %s", strings.Join(resp.Msg.Restarted, ", "))
-			if len(resp.Msg.NotWaited) > 0 {
-				r.Say("  their rollout does not complete by itself (OnDelete, a partition, paused), so it was not waited for: %s", strings.Join(resp.Msg.NotWaited, ", "))
+			r.Say("  restarted %s", strings.Join(resp.Restarted, ", "))
+			if len(resp.NotWaited) > 0 {
+				r.Say("  their rollout does not complete by itself (OnDelete, a partition, paused), so it was not waited for: %s", strings.Join(resp.NotWaited, ", "))
 			}
 		}
 		return err
@@ -246,17 +246,17 @@ func waitQuorum(ctx context.Context, r layer.Rotating, name string) error {
 		var members []*kubernetesv1.EtcdMember
 		var answer error
 		err := r.Call(name, func(conn *client.Conn) error {
-			resp, err := Client(conn).EtcdMembers(ctx, connect.NewRequest(&kubernetesv1.EtcdMembersRequest{}))
+			resp, err := Client(conn).EtcdMembers(ctx, &kubernetesv1.EtcdMembersRequest{})
 			if err == nil {
-				members = resp.Msg.Members
+				members = resp.Members
 			}
 			answer = err
 			return err
 		})
 		switch {
-		case connect.IsWireError(answer) && notEtcdMember(answer):
+		case client.FromNode(answer) && notEtcdMember(answer):
 			return nil
-		case err != nil && (answer == nil || !connect.IsWireError(answer)):
+		case err != nil && (answer == nil || !client.FromNode(answer)):
 			if silent.Holds() {
 				// The sentence names the node, so the error goes without its name.
 				return poll.Permanent{Err: fmt.Errorf("%s does not answer: %w", name, layer.Unnamed(name, err))}
@@ -314,7 +314,7 @@ func refreshKubernetesCA(ctx context.Context, r layer.Rotating, workers []string
 			return r.Call(name, func(conn *client.Conn) error {
 				ctx, cancel := context.WithTimeout(ctx, r.Timeout())
 				defer cancel()
-				_, err := Client(conn).RotationStep(ctx, connect.NewRequest(&kubernetesv1.RotationStepRequest{Step: kubernetesv1.RotationStep_ROTATION_STEP_RENEW_KUBELET_SERVING}))
+				_, err := Client(conn).RotationStep(ctx, &kubernetesv1.RotationStepRequest{Step: kubernetesv1.RotationStep_ROTATION_STEP_RENEW_KUBELET_SERVING})
 				return err
 			})
 		}
@@ -397,9 +397,9 @@ func (p *Plugin) Paused(ctx context.Context, r layer.Rotating, rot clustersecret
 		r.Say("The API server signs tokens with the new service-account key, and chalkos's addons and the workloads of the Addon documents, StatefulSets included, restarted with new tokens. Kubelets renew the tokens of other pods within the hour after every control plane applied the switch; finish from %s with chalkctl rotate %s --finish.", at.Local().Format(time.RFC3339), kind)
 		var secrets []string
 		err := rotationThroughControlPlane(ctx, r, func(ctx context.Context, conn *client.Conn) error {
-			resp, err := Client(conn).RotationStep(ctx, connect.NewRequest(&kubernetesv1.RotationStepRequest{Step: kubernetesv1.RotationStep_ROTATION_STEP_LIST_TOKEN_SECRETS}))
+			resp, err := Client(conn).RotationStep(ctx, &kubernetesv1.RotationStepRequest{Step: kubernetesv1.RotationStep_ROTATION_STEP_LIST_TOKEN_SECRETS})
 			if err == nil {
-				secrets = resp.Msg.TokenSecrets
+				secrets = resp.TokenSecrets
 			}
 			return err
 		})
@@ -436,14 +436,14 @@ func rotationThroughControlPlane(ctx context.Context, r layer.Rotating, fn func(
 func encryptedCounts(ctx context.Context, r layer.Rotating, step kubernetesv1.RotationStep) (map[string]uint64, error) {
 	counts := map[string]uint64{}
 	err := rotationThroughControlPlane(ctx, r, func(ctx context.Context, conn *client.Conn) error {
-		resp, err := Client(conn).RotationStep(ctx, connect.NewRequest(&kubernetesv1.RotationStepRequest{Step: step}))
+		resp, err := Client(conn).RotationStep(ctx, &kubernetesv1.RotationStepRequest{Step: step})
 		if err != nil {
 			return err
 		}
-		if resp.Msg.Rewritten > 0 {
-			r.Say("  rewrote %s unchanged", strs.Count(resp.Msg.Rewritten, "encrypted object"))
+		if resp.Rewritten > 0 {
+			r.Say("  rewrote %s unchanged", strs.Count(resp.Rewritten, "encrypted object"))
 		}
-		for _, e := range resp.Msg.Encrypted {
+		for _, e := range resp.Encrypted {
 			counts[e.Key] += e.Objects
 			key := e.Key
 			if key == "" {

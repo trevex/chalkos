@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -100,19 +100,19 @@ func (l *drainLab) onEviction(evict func(ev *policyv1.Eviction) (handled bool, e
 }
 
 func (l *drainLab) drain(timeout uint32) (*kubernetesv1.DrainNodeResponse, error) {
-	resp, err := l.s.DrainNode(context.Background(), connect.NewRequest(&kubernetesv1.DrainNodeRequest{Node: "w1", TimeoutSeconds: timeout}))
+	resp, err := l.s.DrainNode(context.Background(), &kubernetesv1.DrainNodeRequest{Node: "w1", TimeoutSeconds: timeout})
 	if err != nil {
 		return nil, err
 	}
-	return resp.Msg, nil
+	return resp, nil
 }
 
 func (l *drainLab) uncordon() bool {
-	resp, err := l.s.UncordonNode(context.Background(), connect.NewRequest(&kubernetesv1.UncordonNodeRequest{Node: "w1"}))
+	resp, err := l.s.UncordonNode(context.Background(), &kubernetesv1.UncordonNodeRequest{Node: "w1"})
 	if err != nil {
 		panic(err)
 	}
-	return resp.Msg.Uncordoned
+	return resp.Uncordoned
 }
 
 func (l *drainLab) node(t *testing.T) *corev1.Node {
@@ -215,7 +215,7 @@ func TestDrainRefusals(t *testing.T) {
 		t.Errorf("draining an unknown node: %v", err)
 	}
 	s, _ := kubernetesNode(t, k8s.KindWorker, true)
-	if _, err := s.DrainNode(context.Background(), connect.NewRequest(&kubernetesv1.DrainNodeRequest{Node: "w1"})); layer.CodeOf(err) != connect.CodeFailedPrecondition {
+	if _, err := s.DrainNode(context.Background(), &kubernetesv1.DrainNodeRequest{Node: "w1"}); layer.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Errorf("draining through a worker: %v", err)
 	}
 }
@@ -329,8 +329,8 @@ func TestDrainEmptyDir(t *testing.T) {
 	if len(l.evicted) != 0 || !l.node(t).Spec.Unschedulable {
 		t.Errorf("evicted %v, cordoned %v", l.evicted, l.node(t).Spec.Unschedulable)
 	}
-	resp, err := l.s.DrainNode(context.Background(), connect.NewRequest(&kubernetesv1.DrainNodeRequest{Node: "w1", DeleteEmptydirData: true}))
-	if err != nil || !slices.Contains(resp.Msg.Evicted, "default/cache") {
+	resp, err := l.s.DrainNode(context.Background(), &kubernetesv1.DrainNodeRequest{Node: "w1", DeleteEmptydirData: true})
+	if err != nil || !slices.Contains(resp.Evicted, "default/cache") {
 		t.Errorf("drain deleting emptyDir data = %v, %v", resp, err)
 	}
 }

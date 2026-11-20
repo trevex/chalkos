@@ -3,10 +3,10 @@ package console
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"strings"
-
-	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
@@ -38,43 +38,34 @@ type nodeClient struct {
 	node nodev1connect.NodeServiceClient
 }
 
-// unary calls a unary method of the node with req and returns its response's message.
-func unary[Req, Resp any](ctx context.Context, call func(context.Context, *connect.Request[Req]) (*connect.Response[Resp], error), req *Req) (*Resp, error) {
-	resp, err := call(ctx, connect.NewRequest(req))
-	if err != nil {
-		return nil, err
-	}
-	return resp.Msg, nil
-}
-
 func (c nodeClient) Info(ctx context.Context) (*nodev1.InfoResponse, error) {
-	return unary(ctx, c.node.Info, &nodev1.InfoRequest{})
+	return c.node.Info(ctx, &nodev1.InfoRequest{})
 }
 
 func (c nodeClient) Status(ctx context.Context) (*nodev1.StatusResponse, error) {
-	return unary(ctx, c.node.Status, &nodev1.StatusRequest{})
+	return c.node.Status(ctx, &nodev1.StatusRequest{})
 }
 
 func (c nodeClient) Disks(ctx context.Context) (*nodev1.DisksResponse, error) {
-	return unary(ctx, c.node.Disks, &nodev1.DisksRequest{})
+	return c.node.Disks(ctx, &nodev1.DisksRequest{})
 }
 
 func (c nodeClient) Reboot(ctx context.Context) error {
-	_, err := unary(ctx, c.node.Reboot, &nodev1.RebootRequest{})
+	_, err := c.node.Reboot(ctx, &nodev1.RebootRequest{})
 	return err
 }
 
 func (c nodeClient) Shutdown(ctx context.Context) error {
-	_, err := unary(ctx, c.node.Shutdown, &nodev1.ShutdownRequest{})
+	_, err := c.node.Shutdown(ctx, &nodev1.ShutdownRequest{})
 	return err
 }
 
 func (c nodeClient) RollbackImage(ctx context.Context, rootHash []byte) (*nodev1.RollbackImageResponse, error) {
-	return unary(ctx, c.node.RollbackImage, &nodev1.RollbackImageRequest{RootHash: rootHash, Reboot: true})
+	return c.node.RollbackImage(ctx, &nodev1.RollbackImageRequest{RootHash: rootHash, Reboot: true})
 }
 
 func (c nodeClient) RollbackConfig(ctx context.Context, version string) (*nodev1.RollbackConfigResponse, error) {
-	return unary(ctx, c.node.RollbackConfig, &nodev1.RollbackConfigRequest{Version: version})
+	return c.node.RollbackConfig(ctx, &nodev1.RollbackConfigRequest{Version: version})
 }
 
 func (c nodeClient) Diagnostic(ctx context.Context, name string, args map[string]string) ([]byte, error) {
@@ -95,13 +86,19 @@ func (c nodeClient) Diagnostic(ctx context.Context, name string, args map[string
 }
 
 func (c nodeClient) Logs(ctx context.Context, unit string, line func(string)) error {
-	stream, err := c.node.Logs(ctx, connect.NewRequest(&nodev1.LogsRequest{Unit: unit, Follow: true, Lines: replayLines}))
+	stream, err := c.node.Logs(ctx, &nodev1.LogsRequest{Unit: unit, Follow: true, Lines: replayLines})
 	if err != nil {
 		return err
 	}
 	defer stream.Close()
-	for stream.Receive() {
-		line(stream.Msg().Line)
+	for {
+		msg, err := stream.Receive()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		line(msg.Line)
 	}
-	return stream.Err()
 }

@@ -8,7 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
@@ -19,9 +20,9 @@ type stub struct {
 	nodev1connect.UnimplementedNodeServiceHandler
 }
 
-func (stub) RunDiagnostic(_ context.Context, req *connect.Request[nodev1.RunDiagnosticRequest], stream *connect.ServerStream[nodev1.RunDiagnosticResponse]) error {
+func (stub) RunDiagnostic(_ context.Context, req *nodev1.RunDiagnosticRequest, stream nodev1connect.NodeServiceRunDiagnosticServerStream) error {
 	var msgs []*nodev1.RunDiagnosticResponse
-	switch req.Msg.Name {
+	switch req.Name {
 	case "ok":
 		msgs = []*nodev1.RunDiagnosticResponse{
 			{Output: &nodev1.RunDiagnosticResponse_Stdout{Stdout: []byte("a")}},
@@ -42,7 +43,7 @@ func (stub) RunDiagnostic(_ context.Context, req *connect.Request[nodev1.RunDiag
 	return nil
 }
 
-func (stub) Logs(_ context.Context, _ *connect.Request[nodev1.LogsRequest], stream *connect.ServerStream[nodev1.LogsResponse]) error {
+func (stub) Logs(_ context.Context, _ *nodev1.LogsRequest, stream nodev1connect.NodeServiceLogsServerStream) error {
 	for _, l := range []string{"l1", "l2"} {
 		if err := stream.Send(&nodev1.LogsResponse{Line: l}); err != nil {
 			return err
@@ -54,7 +55,9 @@ func (stub) Logs(_ context.Context, _ *connect.Request[nodev1.LogsRequest], stre
 // mux serves h's node API.
 func mux(h nodev1connect.NodeServiceHandler) *http.ServeMux {
 	m := http.NewServeMux()
-	m.Handle(nodev1connect.NewNodeServiceHandler(h))
+	server := connect.NewServer()
+	nodev1connect.RegisterNodeServiceHandler(server, h)
+	connecthttp.Mount(m, server)
 	return m
 }
 
@@ -63,7 +66,7 @@ func mux(h nodev1connect.NodeServiceHandler) *http.ServeMux {
 func TestNodeClient(t *testing.T) {
 	srv := httptest.NewServer(mux(stub{}))
 	defer srv.Close()
-	c := nodeClient{node: nodev1connect.NewNodeServiceClient(srv.Client(), srv.URL)}
+	c := nodeClient{node: nodev1connect.NewNodeServiceClient(connect.NewClient(connecthttp.NewTransport(srv.Client(), srv.URL)))}
 	ctx := context.Background()
 	if out, err := c.Diagnostic(ctx, "ok", nil); err != nil || string(out) != "ab" {
 		t.Errorf("ok: %q, %v", out, err)

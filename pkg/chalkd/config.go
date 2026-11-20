@@ -7,7 +7,7 @@ import (
 	"log"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -280,7 +280,7 @@ func (s *Server) runningSlot() (dir string, stored slot.Stored, found bool, err 
 // secret value replaced by its hash, so chalkctl can show what a delivery changes. It needs the
 // role ApplyConfig needs: names, addresses and the shape of the config tell an attacker as much as
 // the values would.
-func (s *Server) GetConfig(ctx context.Context, req *connect.Request[nodev1.GetConfigRequest]) (*connect.Response[nodev1.GetConfigResponse], error) {
+func (s *Server) GetConfig(ctx context.Context, req *nodev1.GetConfigRequest) (*nodev1.GetConfigResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	dir, err := s.Loader.Slot()
@@ -289,9 +289,9 @@ func (s *Server) GetConfig(ctx context.Context, req *connect.Request[nodev1.GetC
 	}
 	read, pending := slot.Read, false
 	switch {
-	case req.Msg.Staged && req.Msg.Previous:
+	case req.Staged && req.Previous:
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "ask for the staged image's config or the running image's previous one, not both")
-	case req.Msg.Staged:
+	case req.Staged:
 		staged, err := s.stagedImage()
 		if err != nil {
 			return nil, fmt.Errorf("find the staged image: %w", err)
@@ -302,7 +302,7 @@ func (s *Server) GetConfig(ctx context.Context, req *connect.Request[nodev1.GetC
 		if staged != nil {
 			dir = slot.Dir(s.Loader.Slots, staged)
 		}
-	case req.Msg.Previous:
+	case req.Previous:
 		read = slot.ReadPrevious
 	}
 	stored, found, err := read(dir)
@@ -310,7 +310,7 @@ func (s *Server) GetConfig(ctx context.Context, req *connect.Request[nodev1.GetC
 		return nil, fmt.Errorf("read the config slot: %w", err)
 	}
 	switch {
-	case !found && req.Msg.Previous:
+	case !found && req.Previous:
 		return nil, layer.Errorf(connect.CodeNotFound, "the node keeps no previous config of the running image")
 	case !found && pending:
 		return nil, layer.Errorf(connect.CodeNotFound, "no image is staged, and the node holds no pending config")
@@ -321,5 +321,5 @@ func (s *Server) GetConfig(ctx context.Context, req *connect.Request[nodev1.GetC
 	if err != nil {
 		return nil, fmt.Errorf("encode the config: %w", err)
 	}
-	return connect.NewResponse(&nodev1.GetConfigResponse{Documents: e.Text, Version: stored.Version}), nil
+	return &nodev1.GetConfigResponse{Documents: e.Text, Version: stored.Version}, nil
 }

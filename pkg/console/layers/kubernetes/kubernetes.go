@@ -12,7 +12,6 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"connectrpc.com/connect"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -24,7 +23,7 @@ import (
 // StatusClient reads the Kubernetes layer's status, as the generated client of KubernetesService
 // does.
 type StatusClient interface {
-	Status(context.Context, *connect.Request[kubernetesv1.StatusRequest]) (*connect.Response[kubernetesv1.StatusResponse], error)
+	Status(context.Context, *kubernetesv1.StatusRequest) (*kubernetesv1.StatusResponse, error)
 }
 
 // Tab is the Kubernetes tab.
@@ -109,11 +108,11 @@ func (t *Tab) readAt(now time.Time) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
 		defer cancel()
-		resp, err := client.Status(ctx, connect.NewRequest(&kubernetesv1.StatusRequest{}))
+		resp, err := client.Status(ctx, &kubernetesv1.StatusRequest{})
 		if err != nil {
 			return statusMsg{err: err, at: now}
 		}
-		return statusMsg{status: resp.Msg, at: now}
+		return statusMsg{status: resp, at: now}
 	}
 }
 

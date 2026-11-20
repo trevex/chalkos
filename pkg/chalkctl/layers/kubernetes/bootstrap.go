@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
@@ -57,10 +56,10 @@ func bootstrap(h layer.Host, ctx context.Context, f bootstrapFlags, pos []string
 	ctx, cancel := context.WithTimeout(ctx, f.timeout)
 	defer cancel()
 	fmt.Fprintf(h.Stdout(), "bootstrapping %s; the control plane pulls its images and starts\n", t.Name())
-	resp, err := Client(conn).Bootstrap(ctx, connect.NewRequest(&kubernetesv1.BootstrapRequest{}))
+	resp, err := Client(conn).Bootstrap(ctx, &kubernetesv1.BootstrapRequest{})
 	if err != nil {
 		return fmt.Errorf("bootstrap %s: %w", t.Name(), err)
 	}
-	fmt.Fprintf(h.Stdout(), "%s is bootstrapped; applied %s\n", t.Name(), strs.Count(resp.Msg.Applied, "object"))
+	fmt.Fprintf(h.Stdout(), "%s is bootstrapped; applied %s\n", t.Name(), strs.Count(resp.Applied, "object"))
 	return nil
 }

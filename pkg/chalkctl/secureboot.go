@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -119,7 +118,7 @@ func (a *app) securebootEnroll(ctx context.Context, f securebootEnrollFlags) err
 		return err
 	}
 	defer conn.Close()
-	info, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
+	info, err := conn.Info(ctx, &nodev1.InfoRequest{})
 	if err != nil {
 		if client.RefusesCertificate(ctx, err, f.address, cert) {
 			return fmt.Errorf("reach %s: the node trusts another OS CA than the secrets file or client file, so it refuses chalkctl's certificate", f.address)
@@ -130,23 +129,23 @@ func (a *app) securebootEnroll(ctx context.Context, f securebootEnrollFlags) err
 	if f.pin.insecure {
 		fmt.Fprintf(a.stderr, "chalkctl: the node's certificate fingerprint is %s\n", before)
 	}
-	if info.Msg.Mode != nodev1.Mode_MODE_MAINTENANCE {
+	if info.Mode != nodev1.Mode_MODE_MAINTENANCE {
 		return fmt.Errorf("the node at %s is installed; Secure Boot keys are enrolled in maintenance mode, before the install", f.address)
 	}
 	if f.optionROMs {
-		drivers, err := conn.SecureBootDrivers(ctx, connect.NewRequest(&nodev1.SecureBootDriversRequest{}))
+		drivers, err := conn.SecureBootDrivers(ctx, &nodev1.SecureBootDriversRequest{})
 		if err != nil {
 			return fmt.Errorf("list the option ROMs: %w", err)
 		}
 		switch {
-		case drivers.Msg.NoEventLog != "":
-			fmt.Fprintf(a.stderr, "chalkctl: the node lists no option ROMs: %s\n", drivers.Msg.NoEventLog)
-		case len(drivers.Msg.Drivers) == 0:
+		case drivers.NoEventLog != "":
+			fmt.Fprintf(a.stderr, "chalkctl: the node lists no option ROMs: %s\n", drivers.NoEventLog)
+		case len(drivers.Drivers) == 0:
 			fmt.Fprintln(a.stdout, "option ROMs the firmware measured: none")
 		default:
 			fmt.Fprintln(a.stdout, "option ROMs the firmware measured:")
 		}
-		for _, d := range drivers.Msg.Drivers {
+		for _, d := range drivers.Drivers {
 			fmt.Fprintf(a.stdout, "  sha256:%x %s\n", d.Sha256, d.DevicePath)
 			hashes = addHash(hashes, d.Sha256)
 		}
@@ -155,17 +154,17 @@ func (a *app) securebootEnroll(ctx context.Context, f securebootEnrollFlags) err
 	if err != nil {
 		return err
 	}
-	resp, err := conn.EnrollSecureBoot(ctx, connect.NewRequest(req))
+	resp, err := conn.EnrollSecureBoot(ctx, req)
 	if err != nil {
 		return fmt.Errorf("enroll the keys: %w", err)
 	}
-	if resp.Msg.DriversUnchecked != "" {
-		fmt.Fprintf(a.stderr, "chalkctl: the node did not check its option ROMs against the new db: %s\n", resp.Msg.DriversUnchecked)
+	if resp.DriversUnchecked != "" {
+		fmt.Fprintf(a.stderr, "chalkctl: the node did not check its option ROMs against the new db: %s\n", resp.DriversUnchecked)
 	}
 	for _, db := range []struct {
 		name string
 		list []string
-	}{{"db before", resp.Msg.DbBefore}, {"db after", resp.Msg.DbAfter}, {"KEK before", resp.Msg.KekBefore}, {"KEK after", resp.Msg.KekAfter}} {
+	}{{"db before", resp.DbBefore}, {"db after", resp.DbAfter}, {"KEK before", resp.KekBefore}, {"KEK after", resp.KekAfter}} {
 		if len(db.list) == 0 {
 			fmt.Fprintf(a.stdout, "%s: empty\n", db.name)
 			continue
@@ -234,12 +233,12 @@ func (a *app) waitSecureBoot(ctx context.Context, addr string, cert *tls.Certifi
 		defer conn.Close()
 		callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
-		info, err := conn.Info(callCtx, connect.NewRequest(&nodev1.InfoRequest{}))
+		info, err := conn.Info(callCtx, &nodev1.InfoRequest{})
 		if err != nil {
 			return err
 		}
 		fingerprint = conn.Fingerprint()
-		switch state := info.Msg.SecureBoot; {
+		switch state := info.SecureBoot; {
 		case fingerprint == before:
 			return fmt.Errorf("the node has not rebooted yet; it reports %s", state)
 		case state != nodev1.SecureBoot_SECURE_BOOT_ENABLED:

@@ -12,7 +12,6 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -247,11 +246,11 @@ type Nodes interface {
 
 // Fetch returns a callback for Call and its kin that runs rpc and keeps its response's message in
 // *msg.
-func Fetch[T any](msg **T, rpc func(conn *client.Conn) (*connect.Response[T], error)) func(conn *client.Conn) error {
+func Fetch[T any](msg **T, rpc func(conn *client.Conn) (*T, error)) func(conn *client.Conn) error {
 	return func(conn *client.Conn) error {
 		res, err := rpc(conn)
 		if err == nil {
-			*msg = res.Msg
+			*msg = res
 		}
 		return err
 	}

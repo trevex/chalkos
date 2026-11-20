@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"strings"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/pflag"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -246,8 +245,8 @@ func (s nodeSet) status(ctx context.Context, name string) (*nodev1.StatusRespons
 // nodeStatus reads an installed node's status.
 func nodeStatus(ctx context.Context, t *target) (*nodev1.StatusResponse, error) {
 	var st *nodev1.StatusResponse
-	err := callNode(t, layer.Fetch(&st, func(conn *client.Conn) (*connect.Response[nodev1.StatusResponse], error) {
-		return conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+	err := callNode(t, layer.Fetch(&st, func(conn *client.Conn) (*nodev1.StatusResponse, error) {
+		return conn.Status(ctx, &nodev1.StatusRequest{})
 	}))
 	return st, err
 }

@@ -19,7 +19,8 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -287,33 +288,33 @@ func (n *upgradeFake) down() error {
 		rebooting = true
 	}
 	if rebooting {
-		return connect.NewError(connect.CodeUnavailable, errors.New("the node reboots"))
+		return connect.NewError(connect.CodeUnavailable, "the node reboots")
 	}
 	n.lab.mu.Lock()
 	defer n.lab.mu.Unlock()
 	if n.lab.unreachable[n.name] > 0 {
 		n.lab.unreachable[n.name]--
-		return connect.NewError(connect.CodeUnavailable, errors.New("the node restarts its network"))
+		return connect.NewError(connect.CodeUnavailable, "the node restarts its network")
 	}
 	return nil
 }
 
-func (n *upgradeFake) Info(context.Context, *connect.Request[nodev1.InfoRequest]) (*connect.Response[nodev1.InfoResponse], error) {
+func (n *upgradeFake) Info(context.Context, *nodev1.InfoRequest) (*nodev1.InfoResponse, error) {
 	if err := n.down(); err != nil {
 		return nil, err
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	return connect.NewResponse(&nodev1.InfoResponse{RootHash: n.root, ImageId: "chalkos", Image: n.imageName, Platform: n.platform, Layers: n.layers}), nil
+	return &nodev1.InfoResponse{RootHash: n.root, ImageId: "chalkos", Image: n.imageName, Platform: n.platform, Layers: n.layers}, nil
 }
 
-func (n *upgradeFake) Status(_ context.Context, req *connect.Request[nodev1.StatusRequest]) (*connect.Response[nodev1.StatusResponse], error) {
+func (n *upgradeFake) Status(_ context.Context, req *nodev1.StatusRequest) (*nodev1.StatusResponse, error) {
 	if err := n.down(); err != nil {
 		return nil, err
 	}
 	n.lab.mu.Lock()
 	sick, settling, noBootID := maps.Clone(n.lab.sick), n.lab.settling, n.lab.noBootID
-	flaky := req.Msg.GetCheckHealth() && n.lab.flaky > 0
+	flaky := req.GetCheckHealth() && n.lab.flaky > 0
 	if flaky {
 		n.lab.flaky--
 	}
@@ -321,7 +322,7 @@ func (n *upgradeFake) Status(_ context.Context, req *connect.Request[nodev1.Stat
 	// The boot IDs of the looks that checked health are recorded once the node is unlocked.
 	var checked string
 	defer func() {
-		if req.Msg.GetCheckHealth() {
+		if req.GetCheckHealth() {
 			n.lab.mu.Lock()
 			n.lab.healthChecked[n.name] = append(n.lab.healthChecked[n.name], checked)
 			n.lab.mu.Unlock()
@@ -337,7 +338,7 @@ func (n *upgradeFake) Status(_ context.Context, req *connect.Request[nodev1.Stat
 	if noBootID {
 		st.Boot.BootId = ""
 	}
-	if req.Msg.GetCheckHealth() {
+	if req.GetCheckHealth() {
 		st.Boot.Health = &nodev1.BootHealth{Healthy: sick[n.image] == "", Error: sick[n.image], Settled: !settling}
 		if flaky {
 			st.Boot.Health = &nodev1.BootHealth{Error: "etcd: context deadline exceeded", Settled: true}
@@ -371,7 +372,7 @@ func (n *upgradeFake) Status(_ context.Context, req *connect.Request[nodev1.Stat
 	if n.failed != "" {
 		st.Boot.Journal = []string{"chalkd: not healthy yet: units failed: broken.service"}
 	}
-	return connect.NewResponse(st), nil
+	return st, nil
 }
 
 // upgradeKubernetes is an upgradeFake's Kubernetes layer.
@@ -380,7 +381,7 @@ type upgradeKubernetes struct {
 	kubernetesv1connect.UnimplementedKubernetesServiceHandler
 }
 
-func (n upgradeKubernetes) Status(ctx context.Context, _ *connect.Request[kubernetesv1.StatusRequest]) (*connect.Response[kubernetesv1.StatusResponse], error) {
+func (n upgradeKubernetes) Status(ctx context.Context, _ *kubernetesv1.StatusRequest) (*kubernetesv1.StatusResponse, error) {
 	if err := n.down(); err != nil {
 		return nil, err
 	}
@@ -392,7 +393,7 @@ func (n upgradeKubernetes) Status(ctx context.Context, _ *connect.Request[kubern
 	}
 	if n.lab.kubernetesFails[n.name] {
 		n.lab.mu.Unlock()
-		return nil, connect.NewError(connect.CodeUnavailable, errors.New("the API server does not answer"))
+		return nil, connect.NewError(connect.CodeUnavailable, "the API server does not answer")
 	}
 	ready := "True"
 	if n.lab.notReady[n.name] {
@@ -402,21 +403,24 @@ func (n upgradeKubernetes) Status(ctx context.Context, _ *connect.Request[kubern
 	switch n.kind {
 	case kubernetes.KindControlPlane:
 		pods := n.controlPlanePods()
-		return connect.NewResponse(&kubernetesv1.StatusResponse{Kind: n.kind, State: "bootstrapped", Phase: kubernetesv1.Phase_PHASE_BOOTSTRAPPED, NodeReady: ready, ApiServerVersion: n.apiServerVersion(), KubeletVersion: n.kubeletVersion(), ControlPlanePods: pods, ControlPlanePodsCurrent: pods == "current"}), nil
+		return &kubernetesv1.StatusResponse{Kind: n.kind, State: "bootstrapped", Phase: kubernetesv1.Phase_PHASE_BOOTSTRAPPED, NodeReady: ready, ApiServerVersion: n.apiServerVersion(), KubeletVersion: n.kubeletVersion(), ControlPlanePods: pods, ControlPlanePodsCurrent: pods == "current"}, nil
 	case kubernetes.KindWorker:
-		return connect.NewResponse(&kubernetesv1.StatusResponse{Kind: n.kind, State: "joined", Phase: kubernetesv1.Phase_PHASE_JOINED, NodeReady: ready, ApiServerVersion: n.apiServerVersion(), KubeletVersion: n.kubeletVersion()}), nil
+		return &kubernetesv1.StatusResponse{Kind: n.kind, State: "joined", Phase: kubernetesv1.Phase_PHASE_JOINED, NodeReady: ready, ApiServerVersion: n.apiServerVersion(), KubeletVersion: n.kubeletVersion()}, nil
 	}
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("the kubernetes layer is not in this image"))
+	return nil, connect.NewError(connect.CodeUnimplemented, "the kubernetes layer is not in this image")
 }
 
-func (n *upgradeFake) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev1.UpgradeRequest]) (*connect.Response[nodev1.UpgradeResponse], error) {
+func (n *upgradeFake) Upgrade(ctx context.Context, stream nodev1connect.NodeServiceUpgradeServerStream) (*nodev1.UpgradeResponse, error) {
 	if err := n.down(); err != nil {
 		return nil, err
 	}
-	if !stream.Receive() {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("no header"))
+	first, err := stream.Receive()
+	if errors.Is(err, io.EOF) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, "no header")
+	} else if err != nil {
+		return nil, err
 	}
-	header := stream.Msg().GetHeader()
+	header := first.GetHeader()
 	if header.GetConfig() != "" || header.GetFallbackSecret() != "" {
 		if err := needsAdmin(ctx, "Upgrade with config or a fallback secret"); err != nil {
 			return nil, err
@@ -424,12 +428,19 @@ func (n *upgradeFake) Upgrade(ctx context.Context, stream *connect.ClientStream[
 	}
 	h := header.GetImage()
 	var received uint64
-	for stream.Receive() {
-		received += uint64(len(stream.Msg().GetChunk().GetData()))
+	for {
+		msg, err := stream.Receive()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return nil, err
+		}
+		received += uint64(len(msg.GetChunk().GetData()))
 	}
 	if ref := header.GetSource().GetOci().GetReference(); ref != "" {
 		if received != 0 {
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("an upgrade that pulls its image carries no chunks"))
+			return nil, connect.NewError(connect.CodeInvalidArgument, "an upgrade that pulls its image carries no chunks")
 		}
 		n.lab.record("%s pull %s", n.name, ref)
 		received = h.Store.Size + h.HashTree.Size + h.Uki.Size
@@ -442,18 +453,18 @@ func (n *upgradeFake) Upgrade(ctx context.Context, stream *connect.ClientStream[
 	}
 	n.lab.mu.Unlock()
 	if refuse {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("upgrade: receive the store: unexpected EOF"))
+		return nil, connect.NewError(connect.CodeFailedPrecondition, "upgrade: receive the store: unexpected EOF")
 	}
 	if h.BootLoader != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("an upgrade leaves the boot loader as it is"))
+		return nil, connect.NewError(connect.CodeInvalidArgument, "an upgrade leaves the boot loader as it is")
 	}
 	if want := h.Store.Size + h.HashTree.Size + h.Uki.Size; received != want || h.Platform != n.platform {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("received %d bytes of %d for %s", received, want, h.Platform))
+		return nil, connect.Errorf(connect.CodeFailedPrecondition, "received %d bytes of %d for %s", received, want, h.Platform)
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if bytes.Equal(h.RootHash, n.root) {
-		return connect.NewResponse(&nodev1.UpgradeResponse{AlreadyInstalled: true, Pending: n.pendingOutcome(nodev1.PendingFate_PENDING_FATE_KEPT)}), nil
+		return &nodev1.UpgradeResponse{AlreadyInstalled: true, Pending: n.pendingOutcome(nodev1.PendingFate_PENDING_FATE_KEPT)}, nil
 	}
 	name, _ := testImageNames.Load(string(h.RootHash))
 	// An image staged again stays active; another one is staged anew, and activated unless the
@@ -478,7 +489,7 @@ func (n *upgradeFake) Upgrade(ctx context.Context, stream *connect.ClientStream[
 	n.stagedStoreSize, n.stagedVeritySize = h.Store.Size, h.HashTree.Size
 	n.header = header
 	resp := &nodev1.UpgradeResponse{AlreadyStaged: n.alreadyStaged, Entry: n.entry(), Active: n.active, Pending: pending}
-	return connect.NewResponse(resp), nil
+	return resp, nil
 }
 
 // entry is the file name of the staged image's UKI: its staged name, or its entry's while it is
@@ -491,7 +502,7 @@ func (n *upgradeFake) entry() string {
 }
 
 // ActivateImage makes the staged image boot next, as chalkd renames its UKI.
-func (n *upgradeFake) ActivateImage(_ context.Context, req *connect.Request[nodev1.ActivateImageRequest]) (*connect.Response[nodev1.ActivateImageResponse], error) {
+func (n *upgradeFake) ActivateImage(_ context.Context, req *nodev1.ActivateImageRequest) (*nodev1.ActivateImageResponse, error) {
 	if err := n.down(); err != nil {
 		return nil, err
 	}
@@ -510,21 +521,21 @@ func (n *upgradeFake) ActivateImage(_ context.Context, req *connect.Request[node
 	defer n.mu.Unlock()
 	switch {
 	case refuse:
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("activate: Secure Boot would refuse the UKI"))
-	case bytes.Equal(req.Msg.RootHash, n.root):
-		return connect.NewResponse(&nodev1.ActivateImageResponse{AlreadyInstalled: true}), nil
+		return nil, connect.NewError(connect.CodeFailedPrecondition, "activate: Secure Boot would refuse the UKI")
+	case bytes.Equal(req.RootHash, n.root):
+		return &nodev1.ActivateImageResponse{AlreadyInstalled: true}, nil
 	case n.staged == "":
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("activate: no image is staged in the inactive slot"))
-	case !bytes.Equal(req.Msg.RootHash, n.stagedRoot):
-		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("activate: the image staged in the inactive slot is %x, not %x", n.stagedRoot, req.Msg.RootHash))
+		return nil, connect.NewError(connect.CodeFailedPrecondition, "activate: no image is staged in the inactive slot")
+	case !bytes.Equal(req.RootHash, n.stagedRoot):
+		return nil, connect.Errorf(connect.CodeFailedPrecondition, "activate: the image staged in the inactive slot is %x, not %x", n.stagedRoot, req.RootHash)
 	case n.active:
-		return connect.NewResponse(&nodev1.ActivateImageResponse{AlreadyActive: true, Entry: n.entry()}), nil
+		return &nodev1.ActivateImageResponse{AlreadyActive: true, Entry: n.entry()}, nil
 	}
 	n.active = true
 	if lost {
-		return nil, connect.NewError(connect.CodeInternal, errors.New("activate: sync the ESP: input/output error"))
+		return nil, connect.NewError(connect.CodeInternal, "activate: sync the ESP: input/output error")
 	}
-	return connect.NewResponse(&nodev1.ActivateImageResponse{Entry: n.entry()}), nil
+	return &nodev1.ActivateImageResponse{Entry: n.entry()}, nil
 }
 
 // pendingOutcome is the answer of an upgrade that left the pending config to fate; nil without one.
@@ -536,7 +547,7 @@ func (n *upgradeFake) pendingOutcome(fate nodev1.PendingFate) *nodev1.PendingOut
 }
 
 // Reboot has the node boot again as it fails its second request after this one; see rebootIn.
-func (n *upgradeFake) Reboot(context.Context, *connect.Request[nodev1.RebootRequest]) (*connect.Response[nodev1.RebootResponse], error) {
+func (n *upgradeFake) Reboot(context.Context, *nodev1.RebootRequest) (*nodev1.RebootResponse, error) {
 	if err := n.down(); err != nil {
 		return nil, err
 	}
@@ -544,7 +555,7 @@ func (n *upgradeFake) Reboot(context.Context, *connect.Request[nodev1.RebootRequ
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.rebootIn = 2
-	return connect.NewResponse(&nodev1.RebootResponse{}), nil
+	return &nodev1.RebootResponse{}, nil
 }
 
 // boot boots the staged image while it is active, which falls back after its tries when the lab
@@ -572,7 +583,7 @@ func (n *upgradeFake) boot() {
 }
 
 // RollbackImage stages the image an upgrade replaced and records it, as chalkd re-activates it.
-func (n *upgradeFake) RollbackImage(_ context.Context, req *connect.Request[nodev1.RollbackImageRequest]) (*connect.Response[nodev1.RollbackImageResponse], error) {
+func (n *upgradeFake) RollbackImage(_ context.Context, req *nodev1.RollbackImageRequest) (*nodev1.RollbackImageResponse, error) {
 	if err := n.down(); err != nil {
 		return nil, err
 	}
@@ -588,28 +599,28 @@ func (n *upgradeFake) RollbackImage(_ context.Context, req *connect.Request[node
 	}
 	n.lab.mu.Unlock()
 	if refuse {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("roll back: name the UKI chalkos_3+3.efi: input/output error"))
+		return nil, connect.NewError(connect.CodeFailedPrecondition, "roll back: name the UKI chalkos_3+3.efi: input/output error")
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	switch {
-	case bytes.Equal(req.Msg.RootHash, n.root):
-		return connect.NewResponse(&nodev1.RollbackImageResponse{AlreadyInstalled: true}), nil
-	case n.previous == "" || !bytes.Equal(req.Msg.RootHash, n.previousRoot):
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("roll back: the node keeps no image it ran before to roll back to"))
+	case bytes.Equal(req.RootHash, n.root):
+		return &nodev1.RollbackImageResponse{AlreadyInstalled: true}, nil
+	case n.previous == "" || !bytes.Equal(req.RootHash, n.previousRoot):
+		return nil, connect.NewError(connect.CodeFailedPrecondition, "roll back: the node keeps no image it ran before to roll back to")
 	}
 	n.staged, n.stagedRoot, n.stagedConfig, n.active = n.previous, n.previousRoot, n.previousConfig, true
 	n.previous, n.previousRoot, n.previousConfig = "", nil, ""
-	n.rolledBackTo = req.Msg.RootHash
-	return connect.NewResponse(&nodev1.RollbackImageResponse{Entry: fmt.Sprintf(entry, n.generation+1)}), nil
+	n.rolledBackTo = req.RootHash
+	return &nodev1.RollbackImageResponse{Entry: fmt.Sprintf(entry, n.generation+1)}, nil
 }
 
-func (n upgradeKubernetes) EtcdMembers(context.Context, *connect.Request[kubernetesv1.EtcdMembersRequest]) (*connect.Response[kubernetesv1.EtcdMembersResponse], error) {
+func (n upgradeKubernetes) EtcdMembers(context.Context, *kubernetesv1.EtcdMembersRequest) (*kubernetesv1.EtcdMembersResponse, error) {
 	if err := n.down(); err != nil {
 		return nil, err
 	}
 	if n.kind != kubernetes.KindControlPlane {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("the node is a worker; ask a control-plane node"))
+		return nil, connect.NewError(connect.CodeFailedPrecondition, "the node is a worker; ask a control-plane node")
 	}
 	n.lab.record("%s members", n.name)
 	resp := &kubernetesv1.EtcdMembersResponse{}
@@ -624,43 +635,43 @@ func (n upgradeKubernetes) EtcdMembers(context.Context, *connect.Request[kuberne
 			resp.Members = append(resp.Members, m)
 		}
 	}
-	return connect.NewResponse(resp), nil
+	return resp, nil
 }
 
-func (n upgradeKubernetes) DrainNode(_ context.Context, req *connect.Request[kubernetesv1.DrainNodeRequest]) (*connect.Response[kubernetesv1.DrainNodeResponse], error) {
+func (n upgradeKubernetes) DrainNode(_ context.Context, req *kubernetesv1.DrainNodeRequest) (*kubernetesv1.DrainNodeResponse, error) {
 	if err := n.down(); err != nil {
 		return nil, err
 	}
-	n.lab.record("%s drain", req.Msg.Node)
+	n.lab.record("%s drain", req.Node)
 	n.lab.mu.Lock()
 	defer n.lab.mu.Unlock()
-	if n.lab.stopping[req.Msg.Node] {
-		n.lab.cordoned[req.Msg.Node] = true
-		return nil, connect.NewError(connect.CodeDeadlineExceeded, fmt.Errorf("drain %s: pods default/web still run: they did not stop; it stays cordoned", req.Msg.Node))
+	if n.lab.stopping[req.Node] {
+		n.lab.cordoned[req.Node] = true
+		return nil, connect.Errorf(connect.CodeDeadlineExceeded, "drain %s: pods default/web still run: they did not stop; it stays cordoned", req.Node)
 	}
-	if req.Msg.DeleteEmptydirData {
-		n.lab.emptyDir[req.Msg.Node] = true
+	if req.DeleteEmptydirData {
+		n.lab.emptyDir[req.Node] = true
 	}
-	marked, cordoned := n.lab.cordoned[req.Msg.Node]
+	marked, cordoned := n.lab.cordoned[req.Node]
 	if !cordoned {
-		n.lab.cordoned[req.Msg.Node], marked = true, true
+		n.lab.cordoned[req.Node], marked = true, true
 	}
-	return connect.NewResponse(&kubernetesv1.DrainNodeResponse{Marked: marked, Evicted: []string{"default/web"}, Unmanaged: []string{"default/bare"}}), nil
+	return &kubernetesv1.DrainNodeResponse{Marked: marked, Evicted: []string{"default/web"}, Unmanaged: []string{"default/bare"}}, nil
 }
 
-func (n upgradeKubernetes) UncordonNode(_ context.Context, req *connect.Request[kubernetesv1.UncordonNodeRequest]) (*connect.Response[kubernetesv1.UncordonNodeResponse], error) {
+func (n upgradeKubernetes) UncordonNode(_ context.Context, req *kubernetesv1.UncordonNodeRequest) (*kubernetesv1.UncordonNodeResponse, error) {
 	if err := n.down(); err != nil {
 		return nil, err
 	}
-	n.lab.awaitDrained(req.Msg.Node)
+	n.lab.awaitDrained(req.Node)
 	n.lab.mu.Lock()
 	defer n.lab.mu.Unlock()
-	if !n.lab.cordoned[req.Msg.Node] {
-		return connect.NewResponse(&kubernetesv1.UncordonNodeResponse{}), nil
+	if !n.lab.cordoned[req.Node] {
+		return &kubernetesv1.UncordonNodeResponse{}, nil
 	}
-	delete(n.lab.cordoned, req.Msg.Node)
-	n.lab.events = append(n.lab.events, req.Msg.Node+" uncordon")
-	return connect.NewResponse(&kubernetesv1.UncordonNodeResponse{Uncordoned: true}), nil
+	delete(n.lab.cordoned, req.Node)
+	n.lab.events = append(n.lab.events, req.Node+" uncordon")
+	return &kubernetesv1.UncordonNodeResponse{Uncordoned: true}, nil
 }
 
 // fakeRoleKey holds the role a fake node's client certificate grants.
@@ -681,7 +692,7 @@ func withRoles(h http.Handler) http.Handler {
 // needsAdmin refuses what only an admin may do, as chalkd does.
 func needsAdmin(ctx context.Context, what string) error {
 	if role, _ := ctx.Value(fakeRoleKey{}).(pki.Role); !role.Allows(pki.RoleAdmin) {
-		return connect.NewError(connect.CodePermissionDenied, fmt.Errorf("%s needs the admin role", what))
+		return connect.Errorf(connect.CodePermissionDenied, "%s needs the admin role", what)
 	}
 	return nil
 }
@@ -725,8 +736,11 @@ func newUpgradeLabOf(t *testing.T, controlPlanes int, workers []string, cpImage,
 			t.Fatal(err)
 		}
 		mux := http.NewServeMux()
-		mux.Handle(nodev1connect.NewNodeServiceHandler(n))
-		mux.Handle(kubernetesv1connect.NewKubernetesServiceHandler(upgradeKubernetes{upgradeFake: n}))
+		server := connect.NewServer()
+		nodev1connect.RegisterNodeServiceHandler(server, n)
+		kubernetesv1connect.RegisterKubernetesServiceHandler(server, upgradeKubernetes{upgradeFake: n})
+		connecthttp.Mount(mux, server)
+
 		l.addrs[name] = serveTLS(t, withRoles(mux), chalkd.TLSConfig(nc.GetCertificate, nc.ClientCAs))
 		l.nodes[name] = n
 	}
@@ -1460,7 +1474,7 @@ func TestUpgradeAsksTheFirstNodeItInstallsForItsConfig(t *testing.T) {
 	withPasswordVolume(t, l, "w1", "w2")
 	prompts := recordPrompts(l)
 	l.nodes["w1"].image, l.nodes["w1"].root = "0.2.0", rootOf(t, img)
-	l.configErrs = map[string]error{"w2": connect.NewError(connect.CodePermissionDenied, errors.New("GetConfig needs the admin role"))}
+	l.configErrs = map[string]error{"w2": connect.NewError(connect.CodePermissionDenied, "GetConfig needs the admin role")}
 	if err := l.upgrade(img, "--nodes", "w1,w2", "--until", "activate"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
@@ -1485,7 +1499,7 @@ func TestUpgradeStopsWhenTheFirstNodeCannotShowItsConfig(t *testing.T) {
 	img := testUpgradeImage(t, "w-metal", "0.2.0")
 	withPasswordVolume(t, l, "w1")
 	prompts := recordPrompts(l)
-	l.configErrs = map[string]error{"w1": connect.NewError(connect.CodeUnavailable, errors.New("the node is busy"))}
+	l.configErrs = map[string]error{"w1": connect.NewError(connect.CodeUnavailable, "the node is busy")}
 	err := l.upgrade(img, "--nodes", "w1")
 	if connect.CodeOf(err) != connect.CodeUnavailable {
 		t.Fatalf("upgrade = %v, want w1's error", err)
@@ -1990,58 +2004,58 @@ func TestUpgradeSendsAStagedImageAgainForItsConfig(t *testing.T) {
 // ApplyConfig keeps the config for the running image, or with staged for the staged one, which
 // a node without one holds pending. Config for the running image goes to the staged image too, or
 // replaces the pending config; a dry run of it plans both.
-func (n *upgradeFake) ApplyConfig(ctx context.Context, req *connect.Request[nodev1.ApplyConfigRequest]) (*connect.Response[nodev1.ApplyConfigResponse], error) {
+func (n *upgradeFake) ApplyConfig(ctx context.Context, req *nodev1.ApplyConfigRequest) (*nodev1.ApplyConfigResponse, error) {
 	if err := needsAdmin(ctx, "ApplyConfig"); err != nil {
 		return nil, err
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	switch {
-	case req.Msg.DiscardPending:
+	case req.DiscardPending:
 		var p *nodev1.PendingConfig
 		if n.pending != "" {
 			p = &nodev1.PendingConfig{Version: versionOf(n.pending), Since: timestamppb.New(pendingSince)}
 		}
 		n.pending = ""
 		n.lab.record("%s discard pending", n.name)
-		return connect.NewResponse(&nodev1.ApplyConfigResponse{Pending: p}), nil
-	case req.Msg.Staged && n.staged == "" && req.Msg.FallbackSecret != "":
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("a pending config is stored without the fallback secret"))
-	case req.Msg.Staged && n.staged == "" && req.Msg.DryRun:
-		return connect.NewResponse(&nodev1.ApplyConfigResponse{Pending: &nodev1.PendingConfig{Version: versionOf(req.Msg.Config)}}), nil
-	case req.Msg.Staged && n.staged == "":
-		n.pending = req.Msg.Config
+		return &nodev1.ApplyConfigResponse{Pending: p}, nil
+	case req.Staged && n.staged == "" && req.FallbackSecret != "":
+		return nil, connect.NewError(connect.CodeInvalidArgument, "a pending config is stored without the fallback secret")
+	case req.Staged && n.staged == "" && req.DryRun:
+		return &nodev1.ApplyConfigResponse{Pending: &nodev1.PendingConfig{Version: versionOf(req.Config)}}, nil
+	case req.Staged && n.staged == "":
+		n.pending = req.Config
 		n.lab.record("%s config apply pending", n.name)
-		return connect.NewResponse(&nodev1.ApplyConfigResponse{Pending: &nodev1.PendingConfig{Version: versionOf(n.pending), Since: timestamppb.New(pendingSince)}}), nil
-	case req.Msg.Staged && req.Msg.DryRun:
+		return &nodev1.ApplyConfigResponse{Pending: &nodev1.PendingConfig{Version: versionOf(n.pending), Since: timestamppb.New(pendingSince)}}, nil
+	case req.Staged && req.DryRun:
 		// The staged image checks the config and plans its version; nothing is kept.
-		plan := &nodev1.Plan{Version: versionOf(req.Msg.Config), Replaces: versionOf(n.stagedConfig)}
-		return connect.NewResponse(&nodev1.ApplyConfigResponse{Plan: plan, Changes: []*nodev1.StorageChange{{Volume: "extra", Reason: "new"}}}), nil
-	case req.Msg.DryRun:
-		resp := &nodev1.ApplyConfigResponse{Plan: &nodev1.Plan{Version: versionOf(req.Msg.Config), Replaces: versionOf(n.config)}}
+		plan := &nodev1.Plan{Version: versionOf(req.Config), Replaces: versionOf(n.stagedConfig)}
+		return &nodev1.ApplyConfigResponse{Plan: plan, Changes: []*nodev1.StorageChange{{Volume: "extra", Reason: "new"}}}, nil
+	case req.DryRun:
+		resp := &nodev1.ApplyConfigResponse{Plan: &nodev1.Plan{Version: versionOf(req.Config), Replaces: versionOf(n.config)}}
 		switch {
 		case n.staged != "":
-			resp.Staged = &nodev1.StagedSlot{Version: versionOf(req.Msg.Config), Replaces: versionOf(n.stagedConfig)}
+			resp.Staged = &nodev1.StagedSlot{Version: versionOf(req.Config), Replaces: versionOf(n.stagedConfig)}
 		case n.pending != "":
-			resp.Pending = &nodev1.PendingConfig{Version: versionOf(req.Msg.Config)}
+			resp.Pending = &nodev1.PendingConfig{Version: versionOf(req.Config)}
 		}
-		return connect.NewResponse(resp), nil
-	case !req.Msg.Staged:
+		return resp, nil
+	case !req.Staged:
 		if err := n.lab.refusedConfig(n.name); err != nil {
 			return nil, err
 		}
-		if req.Msg.Try != nil {
-			n.trial = &nodev1.ConfigTrial{Version: versionOf(req.Msg.Config), PreviousVersion: versionOf(n.config), Deadline: timestamppb.New(time.Now().Add(req.Msg.Try.AsDuration()))}
+		if req.Try != nil {
+			n.trial = &nodev1.ConfigTrial{Version: versionOf(req.Config), PreviousVersion: versionOf(n.config), Deadline: timestamppb.New(time.Now().Add(req.Try.AsDuration()))}
 			n.trialPrevious = n.config
 		}
-		n.config = req.Msg.Config
+		n.config = req.Config
 		resp := &nodev1.ApplyConfigResponse{}
 		switch {
 		case n.staged != "":
-			resp.Staged = &nodev1.StagedSlot{Version: versionOf(req.Msg.Config), Replaces: versionOf(n.stagedConfig)}
-			n.stagedConfig = req.Msg.Config
+			resp.Staged = &nodev1.StagedSlot{Version: versionOf(req.Config), Replaces: versionOf(n.stagedConfig)}
+			n.stagedConfig = req.Config
 		case n.pending != "":
-			n.pending = req.Msg.Config
+			n.pending = req.Config
 			resp.Pending = &nodev1.PendingConfig{Version: versionOf(n.pending), Since: timestamppb.New(pendingSince)}
 		}
 		n.lab.record("%s config apply staged=false", n.name)
@@ -2056,17 +2070,17 @@ func (n *upgradeFake) ApplyConfig(ctx context.Context, req *connect.Request[node
 			n.lab.hanging = n.name
 		}
 		n.lab.mu.Unlock()
-		return connect.NewResponse(resp), nil
+		return resp, nil
 	default:
-		n.stagedConfig = req.Msg.Config
+		n.stagedConfig = req.Config
 	}
-	n.lab.record("%s config apply staged=%v", n.name, req.Msg.Staged)
-	return connect.NewResponse(&nodev1.ApplyConfigResponse{}), nil
+	n.lab.record("%s config apply staged=%v", n.name, req.Staged)
+	return &nodev1.ApplyConfigResponse{}, nil
 }
 
 // Contract is the contract of the image the node runs: the fixture schemas and, on the lab's
 // Kubernetes images, image.json.
-func (n *upgradeFake) Contract(context.Context, *connect.Request[nodev1.ContractRequest]) (*connect.Response[nodev1.ContractResponse], error) {
+func (n *upgradeFake) Contract(context.Context, *nodev1.ContractRequest) (*nodev1.ContractResponse, error) {
 	resp := &nodev1.ContractResponse{Platform: n.platform, Schemas: n.lab.schemas}
 	if runsKubernetes(n.imageName) {
 		facts, err := kubernetes.FactsPayload([]byte(testImageJSON))
@@ -2075,7 +2089,7 @@ func (n *upgradeFake) Contract(context.Context, *connect.Request[nodev1.Contract
 		}
 		resp.LayerFacts = append(resp.LayerFacts, facts)
 	}
-	return connect.NewResponse(resp), nil
+	return resp, nil
 }
 
 // applyConfig runs chalkctl config apply on the lab's node with the args given.
@@ -2185,7 +2199,7 @@ func TestApplyConfigStagedChecksRulesAgainstTheRunningConfig(t *testing.T) {
 
 // GetConfig returns the config the node runs, or with staged the staged image's, redacted as
 // chalkd redacts it.
-func (n *upgradeFake) GetConfig(ctx context.Context, req *connect.Request[nodev1.GetConfigRequest]) (*connect.Response[nodev1.GetConfigResponse], error) {
+func (n *upgradeFake) GetConfig(ctx context.Context, req *nodev1.GetConfigRequest) (*nodev1.GetConfigResponse, error) {
 	n.lab.mu.Lock()
 	denied, failure := n.lab.configDenied, n.lab.configErrs[n.name]
 	if n.lab.configAsked == nil {
@@ -2194,7 +2208,7 @@ func (n *upgradeFake) GetConfig(ctx context.Context, req *connect.Request[nodev1
 	n.lab.configAsked[n.name]++
 	n.lab.mu.Unlock()
 	if denied {
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("GetConfig needs the admin role"))
+		return nil, connect.NewError(connect.CodePermissionDenied, "GetConfig needs the admin role")
 	}
 	if failure != nil {
 		return nil, failure
@@ -2206,12 +2220,12 @@ func (n *upgradeFake) GetConfig(ctx context.Context, req *connect.Request[nodev1
 	defer n.mu.Unlock()
 	text := n.config
 	switch {
-	case req.Msg.Staged && n.staged != "":
+	case req.Staged && n.staged != "":
 		text = n.stagedConfig
-	case req.Msg.Staged && n.pending != "":
+	case req.Staged && n.pending != "":
 		text = n.pending
-	case req.Msg.Staged:
-		return nil, connect.NewError(connect.CodeNotFound, errors.New("no image is staged, and the node holds no pending config"))
+	case req.Staged:
+		return nil, connect.NewError(connect.CodeNotFound, "no image is staged, and the node holds no pending config")
 	}
 	docs, err := config.Parse(strings.NewReader(text))
 	if err != nil {
@@ -2224,7 +2238,7 @@ func (n *upgradeFake) GetConfig(ctx context.Context, req *connect.Request[nodev1
 	if len(docs) == 0 {
 		e.Text = ""
 	}
-	return connect.NewResponse(&nodev1.GetConfigResponse{Documents: e.Text, Version: versionOf(text)}), nil
+	return &nodev1.GetConfigResponse{Documents: e.Text, Version: versionOf(text)}, nil
 }
 
 // TestApplyConfigPrintsWhatItChanges prints a line of what the config changes before it is

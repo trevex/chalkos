@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	checkv1 "github.com/trevex/chalkos/pkg/api/check/v1"
@@ -154,7 +154,7 @@ func TestFactsRefuseABadInput(t *testing.T) {
 		"{} {}": connect.CodeInvalidArgument,
 		`"` + strings.Repeat("x", maxFactRequest) + `"`: connect.CodeResourceExhausted,
 	} {
-		_, err := r.client.Fact(context.Background(), connect.NewRequest(&checkv1.FactRequest{Name: "disks", Input: input}))
+		_, err := r.client.Fact(context.Background(), &checkv1.FactRequest{Name: "disks", Input: input})
 		if connect.CodeOf(err) != want {
 			t.Errorf("%.10s: err = %v, want %v", input, err, want)
 		}
@@ -181,8 +181,8 @@ func (f *lockedFacts) Fact(string, map[string]any) (any, error) {
 func TestFactsOneAtATime(t *testing.T) {
 	f := &lockedFacts{}
 	f.h = &factsHandler{f: f}
-	res, err := f.h.Fact(context.Background(), connect.NewRequest(&checkv1.FactRequest{Name: "disks", Input: "{}"}))
-	if err != nil || res.Msg.GetValue() != `"ok"` {
+	res, err := f.h.Fact(context.Background(), &checkv1.FactRequest{Name: "disks", Input: "{}"})
+	if err != nil || res.GetValue() != `"ok"` {
 		t.Errorf("Fact = %v, %v", res, err)
 	}
 }

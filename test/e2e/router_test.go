@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -36,7 +35,7 @@ type routerLab struct {
 
 // routerOf is the client of the router layer of c.
 func routerOf(c *client.Conn) routerv1connect.RouterServiceClient {
-	return routerv1connect.NewRouterServiceClient(c.HTTPClient(), c.BaseURL())
+	return routerv1connect.NewRouterServiceClient(c.RPC())
 }
 
 // session is the router's session of the BGPPeer on enp0s3, as its status reports it.
@@ -49,11 +48,11 @@ func (rl *routerLab) session(name, peer string) (*nodev1.BGPPeerStatus, error) {
 func (rl *routerLab) sessionWith(name, peer, neighbor string) (*nodev1.BGPPeerStatus, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	resp, err := routerOf(rl.conns[name]).Status(ctx, connect.NewRequest(&routerv1.StatusRequest{}))
+	resp, err := routerOf(rl.conns[name]).Status(ctx, &routerv1.StatusRequest{})
 	if err != nil {
 		return nil, err
 	}
-	r := resp.Msg
+	r := resp
 	if r.BgpError != "" {
 		return nil, fmt.Errorf("its BGP state is unknown: %s", r.BgpError)
 	}
@@ -204,11 +203,11 @@ func (rl *routerLab) noFailedUnits(inventory string, names ...string) {
 func (rl *routerLab) routes(name string, req *routerv1.RoutesRequest) (*routerv1.RoutesResponse, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	resp, err := routerOf(rl.conns[name]).Routes(ctx, connect.NewRequest(req))
+	resp, err := routerOf(rl.conns[name]).Routes(ctx, req)
 	if err != nil {
 		return nil, err
 	}
-	return resp.Msg, nil
+	return resp, nil
 }
 
 // routerLabName is the metadata.name of chalklab/lab-router.yaml, by which chalklab keys the
@@ -299,23 +298,23 @@ func (rl *routerLab) bgp(t *testing.T) {
 			t.Errorf("status of %s shows a failed unit: %v\n%s", name, err, out)
 		}
 		// A reader sees the sessions, and the password nowhere.
-		resp, err := routerOf(rl.readers[name]).Status(ctx, connect.NewRequest(&routerv1.StatusRequest{}))
+		resp, err := routerOf(rl.readers[name]).Status(ctx, &routerv1.StatusRequest{})
 		if err != nil {
 			t.Errorf("router status of %s for a reader: %v", name, err)
 			continue
 		}
-		if len(resp.Msg.GetPeers()) == 0 {
-			t.Errorf("router status of %s for a reader shows no BGP session: %v", name, resp.Msg)
+		if len(resp.GetPeers()) == 0 {
+			t.Errorf("router status of %s for a reader shows no BGP session: %v", name, resp)
 		}
-		if b, err := protojson.Marshal(resp.Msg); err != nil || strings.Contains(string(b), bgpPassword) {
+		if b, err := protojson.Marshal(resp); err != nil || strings.Contains(string(b), bgpPassword) {
 			t.Errorf("router status of %s for a reader holds the BGP password: %v\n%s", name, err, b)
 		}
-		node, err := rl.readers[name].Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+		node, err := rl.readers[name].Status(ctx, &nodev1.StatusRequest{})
 		if err != nil {
 			t.Errorf("status of %s for a reader: %v", name, err)
 			continue
 		}
-		if b, err := protojson.Marshal(node.Msg); err != nil || strings.Contains(string(b), bgpPassword) {
+		if b, err := protojson.Marshal(node); err != nil || strings.Contains(string(b), bgpPassword) {
 			t.Errorf("status of %s for a reader holds the BGP password: %v\n%s", name, err, b)
 		}
 	}
@@ -402,12 +401,12 @@ func (rl *routerLab) nat64(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	for role, c := range map[string]*client.Conn{"an admin": rl.conns["r1"], "a reader": rl.readers["r1"]} {
-		resp, err := routerOf(c).Status(ctx, connect.NewRequest(&routerv1.StatusRequest{}))
+		resp, err := routerOf(c).Status(ctx, &routerv1.StatusRequest{})
 		if err != nil {
 			t.Errorf("router status of r1 for %s: %v", role, err)
 			continue
 		}
-		r := resp.Msg
+		r := resp
 		edge := slices.ContainsFunc(r.GetNat64(), func(n *routerv1.NAT64Status) bool {
 			return n.Name == "edge" && n.Sessions > 0 && n.Bindings > 0 && slices.EqualFunc(n.Pools, derive.PoolProtocols, func(p *routerv1.NAT64PoolStatus, protocol string) bool {
 				return p.Protocol == protocol && p.Size == 4535
@@ -439,11 +438,11 @@ func (rl *routerLab) trial(t *testing.T) {
 		defer c.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		st, err := c.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+		st, err := c.Status(ctx, &nodev1.StatusRequest{})
 		if err != nil {
 			return nil, err
 		}
-		return st.Msg, nil
+		return st, nil
 	}
 	before, err := fresh()
 	if err != nil {

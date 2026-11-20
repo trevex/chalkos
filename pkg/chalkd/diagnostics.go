@@ -9,21 +9,22 @@ import (
 	"slices"
 	"sync"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/diagnostics"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
-func (s *Server) Diagnostics(ctx context.Context, _ *connect.Request[nodev1.DiagnosticsRequest]) (*connect.Response[nodev1.DiagnosticsResponse], error) {
+func (s *Server) Diagnostics(ctx context.Context, _ *nodev1.DiagnosticsRequest) (*nodev1.DiagnosticsResponse, error) {
 	defs := s.Loader.Contract.Diagnostics
 	resp := &nodev1.DiagnosticsResponse{}
 	for _, name := range slices.Sorted(maps.Keys(defs)) {
 		resp.Diagnostics = append(resp.Diagnostics, diagnosticOf(name, defs[name]))
 	}
-	return connect.NewResponse(resp), nil
+	return resp, nil
 }
 
 // diagnosticOf is a diagnostic as Diagnostics lists it.
@@ -46,8 +47,8 @@ func diagnosticOf(name string, d diagnostics.Definition) *nodev1.Diagnostic {
 	return pb
 }
 
-func (s *Server) RunDiagnostic(ctx context.Context, req *connect.Request[nodev1.RunDiagnosticRequest], stream *connect.ServerStream[nodev1.RunDiagnosticResponse]) error {
-	name := req.Msg.Name
+func (s *Server) RunDiagnostic(ctx context.Context, req *nodev1.RunDiagnosticRequest, stream nodev1connect.NodeServiceRunDiagnosticServerStream) error {
+	name := req.Name
 	d, ok := s.Loader.Contract.Diagnostics[name]
 	if !ok {
 		return layer.Errorf(connect.CodeNotFound, "the image declares no diagnostic %q; chalkctl node diag lists those it does", name)
@@ -55,7 +56,7 @@ func (s *Server) RunDiagnostic(ctx context.Context, req *connect.Request[nodev1.
 	if !diagnosticAllowed(ctx, pki.Role(d.Role)) {
 		return layer.Errorf(connect.CodePermissionDenied, "the diagnostic %s needs the %s role", name, d.Role)
 	}
-	argv, ns, err := d.Call(req.Msg.Arguments)
+	argv, ns, err := d.Call(req.Arguments)
 	if err != nil {
 		return layer.Errorf(connect.CodeInvalidArgument, "diagnostic %s: %w", name, err)
 	}
@@ -96,7 +97,7 @@ func (s *Server) diagnose() diagnostics.Runner {
 // so that its pipes never fill. A run may return while its output is still being copied, so the
 // stream's last message is sent under the same lock, and what is written after it is discarded.
 type diagnosticOutput struct {
-	stream *connect.ServerStream[nodev1.RunDiagnosticResponse]
+	stream nodev1connect.NodeServiceRunDiagnosticServerStream
 	stop   context.CancelFunc
 
 	mu      sync.Mutex

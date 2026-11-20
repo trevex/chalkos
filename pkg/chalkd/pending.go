@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -24,7 +24,7 @@ import (
 // secret is refused rather than kept on STATE for an unknown time: the upgrade that adds an
 // encrypted volume carries it. The caller holds s.mu and s.upgrading, so no upgrade reads the
 // pending config while it is replaced.
-func (s *Server) holdPending(m *nodev1.ApplyConfigRequest, docs []config.Document) (*connect.Response[nodev1.ApplyConfigResponse], error) {
+func (s *Server) holdPending(m *nodev1.ApplyConfigRequest, docs []config.Document) (*nodev1.ApplyConfigResponse, error) {
 	if m.FallbackSecret != "" {
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "no image is staged, so the config is held pending for the next upgrade, which is stored without the fallback secret; the upgrade that adds an encrypted volume carries it")
 	}
@@ -39,13 +39,13 @@ func (s *Server) holdPending(m *nodev1.ApplyConfigRequest, docs []config.Documen
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "hash the config: %w", err)
 	}
 	if m.DryRun {
-		return connect.NewResponse(&nodev1.ApplyConfigResponse{Pending: &nodev1.PendingConfig{Version: version}}), nil
+		return &nodev1.ApplyConfigResponse{Pending: &nodev1.PendingConfig{Version: version}}, nil
 	}
 	p, err := s.storePending(slot.Stored{Delivered: docs, Version: version})
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&nodev1.ApplyConfigResponse{Pending: p}), nil
+	return &nodev1.ApplyConfigResponse{Pending: p}, nil
 }
 
 // secretValues refuses a Secret whose spec.data is no object of strings. No schema checks a
@@ -85,7 +85,7 @@ func (s *Server) storePending(next slot.Stored) (*nodev1.PendingConfig, error) {
 
 // discardPending drops the node's pending config and answers with the one it dropped; a node
 // without one answers with none. The caller holds s.mu and s.upgrading.
-func (s *Server) discardPending(m *nodev1.ApplyConfigRequest) (*connect.Response[nodev1.ApplyConfigResponse], error) {
+func (s *Server) discardPending(m *nodev1.ApplyConfigRequest) (*nodev1.ApplyConfigResponse, error) {
 	if !m.Staged || m.Config != "" || m.DryRun || m.FallbackSecret != "" || len(m.Layers) > 0 || len(m.NodeCertificate) > 0 || len(m.NodeKey) > 0 || len(m.Trust) > 0 || m.Try != nil || len(m.IgnoreUnits) > 0 {
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "discard_pending goes with staged alone")
 	}
@@ -99,7 +99,7 @@ func (s *Server) discardPending(m *nodev1.ApplyConfigRequest) (*connect.Response
 	if p != nil {
 		log.Printf("the pending config %s is dropped", p.Version)
 	}
-	return connect.NewResponse(&nodev1.ApplyConfigResponse{Pending: p}), nil
+	return &nodev1.ApplyConfigResponse{Pending: p}, nil
 }
 
 // pendingConfig is the node's pending config, its version and when it was stored; nil without

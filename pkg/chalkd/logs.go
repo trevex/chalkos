@@ -8,19 +8,20 @@ import (
 	"os/exec"
 	"strconv"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 )
 
-func (s *Server) Logs(ctx context.Context, req *connect.Request[nodev1.LogsRequest], stream *connect.ServerStream[nodev1.LogsResponse]) error {
+func (s *Server) Logs(ctx context.Context, req *nodev1.LogsRequest, stream nodev1connect.NodeServiceLogsServerStream) error {
 	if s.logStreams.Add(1) > maxLogStreams {
 		s.logStreams.Add(-1)
 		return layer.Errorf(connect.CodeResourceExhausted, "%d log streams are open already; close one first", maxLogStreams)
 	}
 	defer s.logStreams.Add(-1)
-	r, err := s.Journal(ctx, req.Msg.Unit, req.Msg.Follow, req.Msg.Lines)
+	r, err := s.Journal(ctx, req.Unit, req.Follow, req.Lines)
 	if err != nil {
 		return fmt.Errorf("read the journal: %w", err)
 	}

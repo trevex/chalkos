@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/spf13/cobra"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -254,11 +254,11 @@ func (r *upgradeRun) showsConfig(ctx context.Context) error {
 		}
 		var asked, denied bool
 		if err := r.reach.Call(name, func(conn *client.Conn) error {
-			st, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+			st, err := conn.Status(ctx, &nodev1.StatusRequest{})
 			if err != nil {
 				return err
 			}
-			if !r.installs(n, st.Msg) {
+			if !r.installs(n, st) {
 				return nil
 			}
 			asked = true
@@ -496,8 +496,8 @@ func (r *upgradeRun) activate(ctx context.Context, n *upgradeNode, st *nodev1.St
 	}
 	if !r.rollback {
 		var resp *nodev1.ActivateImageResponse
-		if err := r.reach.Call(n.name, layer.Fetch(&resp, func(conn *client.Conn) (*connect.Response[nodev1.ActivateImageResponse], error) {
-			return conn.ActivateImage(ctx, connect.NewRequest(&nodev1.ActivateImageRequest{RootHash: target}))
+		if err := r.reach.Call(n.name, layer.Fetch(&resp, func(conn *client.Conn) (*nodev1.ActivateImageResponse, error) {
+			return conn.ActivateImage(ctx, &nodev1.ActivateImageRequest{RootHash: target})
 		})); err != nil {
 			return err
 		}
@@ -558,18 +558,18 @@ func (r *upgradeRun) fallbacks(ctx context.Context) error {
 			continue
 		}
 		if err := r.reach.Call(name, func(conn *client.Conn) error {
-			st, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+			st, err := conn.Status(ctx, &nodev1.StatusRequest{})
 			if err != nil {
 				return err
 			}
-			if !r.installs(n, st.Msg) {
+			if !r.installs(n, st) {
 				return nil
 			}
 			t, err := r.reach.target(name)
 			if err != nil {
 				return err
 			}
-			n.secret, err = r.a.fallbackOf(ctx, st.Msg, t, d.identity.Storage, r.passwordFile, "")
+			n.secret, err = r.a.fallbackOf(ctx, st, t, d.identity.Storage, r.passwordFile, "")
 			return err
 		}); err != nil {
 			return err
@@ -604,7 +604,10 @@ func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 		if d := r.deliveryOf(n); d != nil {
 			header.Config, header.FallbackSecret = d.Text, n.secret
 		}
-		stream := conn.Upgrade(ctx)
+		stream, err := conn.Upgrade(ctx)
+		if err != nil {
+			return err
+		}
 		if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}}); err != nil && !errors.Is(err, io.EOF) {
 			return err
 		}
@@ -617,7 +620,7 @@ func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 		if err != nil {
 			return err
 		}
-		resp = res.Msg
+		resp = res
 		return nil
 	})
 	if err != nil {
@@ -659,8 +662,8 @@ func (r *upgradeRun) reactivate(ctx context.Context, n *upgradeNode) error {
 	image, root := r.target(n)
 	r.Say("%s: rolling back to %s", n.name, image)
 	var resp *nodev1.RollbackImageResponse
-	if err := r.reach.Call(n.name, layer.Fetch(&resp, func(conn *client.Conn) (*connect.Response[nodev1.RollbackImageResponse], error) {
-		return conn.RollbackImage(ctx, connect.NewRequest(&nodev1.RollbackImageRequest{RootHash: root}))
+	if err := r.reach.Call(n.name, layer.Fetch(&resp, func(conn *client.Conn) (*nodev1.RollbackImageResponse, error) {
+		return conn.RollbackImage(ctx, &nodev1.RollbackImageRequest{RootHash: root})
 	})); err != nil {
 		return err
 	}

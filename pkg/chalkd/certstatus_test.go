@@ -3,14 +3,13 @@ package chalkd
 import (
 	"context"
 	"errors"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
@@ -27,11 +26,11 @@ import (
 
 func status(t *testing.T, s *Server) *nodev1.StatusResponse {
 	t.Helper()
-	resp, err := s.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{}))
+	resp, err := s.Status(context.Background(), &nodev1.StatusRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return resp.Msg
+	return resp
 }
 
 func certificateNames(list []*nodev1.CertificateStatus) []string {
@@ -271,10 +270,8 @@ func TestParseTrackingReadsTheLeapStatusField(t *testing.T) {
 // certificatesLayer is a layer that reports a certificate and a CA of its own.
 type certificatesLayer struct{}
 
-func (certificatesLayer) Name() string { return "example" }
-func (certificatesLayer) Handler(...connect.HandlerOption) (string, http.Handler) {
-	return "/example/", http.NotFoundHandler()
-}
+func (certificatesLayer) Name() string                             { return "example" }
+func (certificatesLayer) Register(*connect.Server)                 {}
 func (certificatesLayer) Permissions() map[string]layer.Permission { return nil }
 func (certificatesLayer) Start(context.Context) error              { return nil }
 func (certificatesLayer) Certificates(context.Context, time.Time) ([]*nodev1.CertificateStatus, []*nodev1.TrustStatus) {
