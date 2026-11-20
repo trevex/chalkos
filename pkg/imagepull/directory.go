@@ -109,7 +109,7 @@ func layOut(c ociimage.Contract, ar arch.Arch, root []byte, parts []ociimage.Par
 	id := storeslot.LabelID(root)
 	dataUUID, verityUUID := storeslot.PartitionUUIDs(root)
 	var d disk
-	d.esp = gpt.Entry{Start: firstOffset, Size: espSize, Type: gpt.TypeESP, UUID: gpt.NewUUID(), Name: "esp"}
+	d.esp = gpt.Entry{Start: firstOffset, Size: espSize, Type: gpt.TypeESP, UUID: espUUID(), Name: "esp"}
 	d.tree = gpt.Entry{Start: d.esp.Start + d.esp.Size, Size: treeSize, Type: ar.UsrVerity, UUID: verityUUID, Name: "store-verity_" + id, Attributes: gpt.AttrReadOnly}
 	d.store = gpt.Entry{Start: d.tree.Start + d.tree.Size, Size: storeSize, Type: ar.Usr, UUID: dataUUID, Name: "store_" + id, Attributes: gpt.AttrReadOnly}
 	return d, nil
@@ -137,7 +137,7 @@ func writeRaw(ctx context.Context, path string, a *ociimage.Artifact, ar arch.Ar
 	if err := f.Truncate(size); err != nil {
 		return err
 	}
-	if err := gpt.WriteTable(f, size, gpt.NewUUID(), []gpt.Entry{d.esp, d.tree, d.store}); err != nil {
+	if err := gpt.WriteTable(f, size, diskUUID(), []gpt.Entry{d.esp, d.tree, d.store}); err != nil {
 		return err
 	}
 	sources, err := sourcesOf(a.Reference)
@@ -177,7 +177,10 @@ func writeRaw(ctx context.Context, path string, a *ociimage.Artifact, ar arch.Ar
 	if err := f.Sync(); err != nil {
 		return err
 	}
-	return writeESP(ctx, path, d.esp, ukiPath, "::/EFI/Linux/"+a.Header.ImageID+"_1.efi", loaderPath, "::/EFI/BOOT/"+ar.BootLoader)
+	return image.WriteESP(ctx, path, d.esp.Start, d.esp.Size/512, espVolumeID(d.esp.UUID), []image.ESPFile{
+		{From: loaderPath, To: "::/EFI/BOOT/" + ar.BootLoader},
+		{From: ukiPath, To: "::/EFI/Linux/" + a.Header.ImageID + "_1.efi"},
+	})
 }
 
 // sourcesOf is the registry of ref, with the credentials the default keychain holds for it, which
@@ -246,23 +249,6 @@ func checkBinaries(ukiPath, loaderPath string, h ociimage.Header, root []byte) e
 		}
 		return nil
 	})
-}
-
-// writeESP formats the ESP of the raw disk image as FAT32, labelled ESP, and copies the UKI and
-// the boot loader onto it.
-func writeESP(ctx context.Context, raw string, esp gpt.Entry, ukiPath, ukiName, loaderPath, loaderName string) error {
-	fat := image.FAT(raw, esp.Start)
-	for _, args := range [][]string{
-		{"mformat", "-i", fat, "-F", "-T", fmt.Sprint(esp.Size / 512), "-v", "ESP", "::"},
-		{"mmd", "-i", fat, "::/EFI", "::/EFI/BOOT", "::/EFI/Linux"},
-		{"mcopy", "-i", fat, ukiPath, ukiName},
-		{"mcopy", "-i", fat, loaderPath, loaderName},
-	} {
-		if _, err := image.Mtools(ctx, args[0], args[1:]...); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // partition is an entry of repart-output.json, as systemd-repart writes it for an image.

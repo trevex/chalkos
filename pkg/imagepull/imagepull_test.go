@@ -3,6 +3,7 @@ package imagepull_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -138,6 +139,63 @@ func TestDirectoryRoundTrip(t *testing.T) {
 	}
 	if want := []string{"::/EFI/BOOT/BOOTX64.EFI", "::/EFI/Linux/chalkos_1.efi"}; !reflect.DeepEqual(files, want) {
 		t.Errorf("the ESP holds %q, want %q", files, want)
+	}
+}
+
+// TestDirectoryIsReproducible pulls the same image twice into the same raw disk image, byte for
+// byte, whose disk GUID, ESP partition UUID and ESP volume ID are those systemd-repart gives an
+// image's build.
+func TestDirectoryIsReproducible(t *testing.T) {
+	ref := ocitest.Registry(t) + "/lab/node-metal:v1"
+	ocitest.PushDirectory(t, buildImage(t, "a"), ref)
+	var sums [2][32]byte
+	var raw string
+	for i := range sums {
+		out := filepath.Join(t.TempDir(), "node-metal")
+		if _, err := imagepull.Directory(context.Background(), ref, out); err != nil {
+			t.Fatal(err)
+		}
+		raw = filepath.Join(out, "chalkos.raw")
+		data, err := os.ReadFile(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sums[i] = sha256.Sum256(data)
+	}
+	if sums[0] != sums[1] {
+		t.Errorf("two pulls of the same image wrote chalkos.raw of SHA-256 %x and %x", sums[0], sums[1])
+	}
+
+	imagetest.NeedTools(t, "sfdisk")
+	dump, err := exec.Command("sfdisk", "--dump", raw).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"label-id: B581FEF7-24ED-4F31-990B-099EC86BBA03", "uuid=DAC4058A-2FC0-4808-A7EF-B8B4501C00CE, name=\"esp\""} {
+		if !strings.Contains(string(dump), want) {
+			t.Errorf("sfdisk --dump prints no %q:\n%s", want, dump)
+		}
+	}
+	info, err := image.Mtools(context.Background(), "mdir", "-i", image.FAT(raw, 1<<20), "::/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(info, "Volume Serial Number is 793A-442B") {
+		t.Errorf("the ESP's volume ID is not repart's:\n%s", info)
+	}
+}
+
+// TestDirectoryNeedsMtools refuses to pull into an image directory without mtools on PATH before
+// it asks the registry for anything.
+func TestDirectoryNeedsMtools(t *testing.T) {
+	host, manifests := ocitest.CountingRegistry(t)
+	t.Setenv("PATH", t.TempDir())
+	_, err := imagepull.Directory(context.Background(), host+"/lab/node-metal:v1", filepath.Join(t.TempDir(), "out"))
+	if err == nil || !strings.Contains(err.Error(), "mformat, mmd, mcopy, mdir PATH lacks; install mtools") {
+		t.Errorf("err = %v, want mtools named", err)
+	}
+	if n := manifests.Load(); n != 0 {
+		t.Errorf("the pull asked the registry for %d manifests before it found mtools missing", n)
 	}
 }
 

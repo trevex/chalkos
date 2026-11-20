@@ -11,6 +11,18 @@ import (
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
 )
 
+// TestMtoolsNamesAMissingTool names the mtools command that is not on PATH and how to get it,
+// and MissingESPTools lists every one.
+func TestMtoolsNamesAMissingTool(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	if _, err := Mtools(context.Background(), "mdir", "::/"); err == nil || !strings.HasPrefix(err.Error(), "mdir is not on PATH") || !strings.Contains(err.Error(), "install mtools") {
+		t.Errorf("err = %v", err)
+	}
+	if got := MissingESPTools(); strings.Join(got, " ") != "mformat mmd mcopy mdir" {
+		t.Errorf("missing = %q", got)
+	}
+}
+
 // newESP makes an empty ESP with /EFI/BOOT and /EFI/Linux in dir, and an EFI binary to copy onto
 // it, and returns the ESP's image and the binary's path.
 func newESP(t *testing.T, dir string) (raw, efi string) {
