@@ -14,6 +14,13 @@ Start here: [Your first image flake](first-image.md), then
 flake from these three. [Write your first extension](first-extension.md) then adds a config kind
 and a unit that reads it, on the lab of the quick start.
 
+A cluster that needs nothing of its own runs the images each chalkos release publishes, and needs
+none of these pages; [Published images or your own](../get-started/decisions.md#published-images-or-your-own)
+draws the line. Most image authors release their own images the same way, as OCI images in
+a registry from which the nodes pull them.
+[Publish images to a registry](publish-images.md) builds them, signs them for Secure Boot and
+pushes them.
+
 ## How an extension fits together
 
 An extension is a NixOS module that adds config kinds and the parts that act on their documents.

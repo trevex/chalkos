@@ -47,32 +47,20 @@ The release's assets are these files:
 The release notes end with the reference of each image by its digest, such as
 `ghcr.io/trevex/chalkos/router-metal:v0.1.0@sha256:<digest>`.
 
-## Choose the release's images or your own
+## Use the release's images or your own
 
-The release's images are generic. They suit a cluster whose images need nothing of their own:
+The release's images are generic. They carry no OS CA and no Secure Boot signature, and they hold
+the layers as chalkos ships them, with no extension, package or option of a cluster's own. The
+release's installer has no OS CA either. They suit a lab, and a cluster that needs nothing of its
+own. The `lab` and `router-lab` templates run the release's `kvm` images.
+[Published images or your own](decisions.md#published-images-or-your-own) weighs the two paths.
 
-- They carry no OS CA. In maintenance mode an image without one accepts any client until the
-  node is installed, as
-  [Tie the images to one cluster](../build/images-and-platforms.md#tie-the-images-to-one-cluster)
-  explains. The installer of the release has none either.
-- They carry no Secure Boot signature. Firmware that enforces Secure Boot does not boot them.
-- They hold the layers as chalkos ships them, with no extension, package or option of your own.
+A cluster that needs its own images builds them with `mkImages` from the chalkos of a release, and
+pushes them to a registry of its own, as
+[Publish images to a registry](../build/publish-images.md) describes.
 
-When the cluster needs any of these, build its images with `mkImages`, as
-[Your first image flake](../build/first-image.md) shows, from the chalkos of a release. Pin the
-flake's `chalkos` input to the release's tag:
-
-<!-- x-release-please-start-version -->
-```nix title="flake.nix"
-{
-  inputs.chalkos.url = "github:trevex/chalkos/v0.2.1";
-  outputs = { chalkos, ... }: { };
-}
-```
-<!-- x-release-please-end -->
-
-The templates of a release name its tag already. Run the chalkctl of the same release as the
-images, because before 1.0 the commands and the node API change between releases.
+Run the chalkctl of the same release as the images, because before 1.0 the commands and the node
+API change between releases.
 
 ## Name an image by its digest
 
@@ -96,6 +84,22 @@ chalkctl reads and the nodes pull the image by the digest, so the inventory keep
 image even when a tag moves. The tag in the reference only tells a reader which release it is.
 [Publish images to a registry](../build/publish-images.md#name-the-digest-in-the-inventory)
 describes the `oci` source.
+
+## Pull an image into a directory
+
+Nodes that reach no registry take the image from a directory on the workstation instead.
+[`chalkctl image pull`](../reference/cli/chalkctl_image_pull.md) writes an image directory, as
+`nix build` makes one, and checks every part of the image as a node would:
+
+```sh
+chalkctl image pull ghcr.io/trevex/chalkos/kubernetes-1.37-metal:vX.Y.Z@sha256:<digest> images/kubernetes-metal
+```
+
+The inventory's `directory` source then names it, such as
+`kubernetes-metal: {source: {directory: images/kubernetes-metal}}`, and chalkctl sends the image
+to the nodes on an install or an upgrade. `--layout` writes the OCI layout as the registry serves
+it instead, for a registry of your own, as
+[Bring the images across](../guides/air-gapped.md#bring-the-images-across) shows.
 
 ## Verify an image
 
