@@ -22,16 +22,23 @@ chalkctl install cp1 --secrets=secrets.age --address=<address> --fingerprint=<fi
 chalkctl status cp1 --secrets=secrets.age
 ```
 
+With the published images of a chalkos release, the release's installer takes the place of the
+first two commands.
+
 ## Before you begin
 
 You need a workstation set up as [Set up your workstation](workstation.md) describes: chalkctl,
-the repository with the inventory, the nodes' config files, the image directory and the secrets
+the repository with the inventory, the nodes' config files, the node's image as
+[Choose where the image comes from](#choose-where-the-image-comes-from) describes, and the secrets
 file `secrets.age`. `chalkctl validate` accepts every node's config.
 
-The image and the installer carry the cluster's OS CA, as
+Images and an installer of your own carry the cluster's OS CA, as
 [Build the images with the cluster's OS CA](workstation.md#build-the-images-with-the-clusters-os-ca)
 describes. A machine in maintenance mode then accepts only a chalkctl that holds the secrets file
-or a client file of this cluster.
+or a client file of this cluster. The published images of a chalkos release and its installer
+carry none, so until the install the machine accepts any client, as
+[Published images or your own](../get-started/decisions.md#published-images-or-your-own)
+explains.
 
 [Decisions before you install](../get-started/decisions.md) lists the choices to make before the
 first install, such as whether the machines enforce Secure Boot.
@@ -63,10 +70,35 @@ A machine passes through maintenance mode once: it boots the installer, which ha
 mode. [A node passes through stages](../how-it-works/node/overview.md#a-node-passes-through-stages)
 shows the whole life of a node.
 
+## Choose where the image comes from
+
+The inventory's `spec.images` names the node's image in one of two forms, and `chalkctl install`
+takes either:
+
+- A reference in a registry, `source.oci`, pinned by its digest: an image a chalkos release
+  publishes, as [Releases](../get-started/releases.md#name-an-image-by-its-digest) shows, or your
+  own, pushed as [Publish images to a registry](../build/publish-images.md) describes. chalkctl
+  sends the installer the reference, and the installer pulls the image itself, so the machine
+  needs a route and DNS to the registry.
+- An image directory, `source.directory`: your own build or its signed copy. chalkctl reads the
+  image on the workstation and sends it to the installer, so the machine needs no registry.
+
+A site whose machines reach no registry takes an image from a registry as a directory.
+[`chalkctl image pull`](../reference/cli/chalkctl_image_pull.md) writes one on the workstation, and
+checks every part of the image as a node would:
+
+```sh
+chalkctl image pull ghcr.io/trevex/chalkos/kubernetes-1.37-metal:<tag>@sha256:<digest> images/node-metal
+```
+
+The inventory then names `images/node-metal` as the image's `directory` source.
+
 ## Sign the image for machines that enforce Secure Boot
 
 Skip this step on a machine that does not enforce Secure Boot: it takes the unsigned
-`images/node-metal` as it is. The firmware of a machine that enforces Secure Boot boots only a
+`images/node-metal` as it is. The published images carry no signature, so a machine that enforces
+Secure Boot runs your own images, signed with your db key. The firmware of a machine that
+enforces Secure Boot boots only a
 boot loader and a UKI signed by a certificate in its db. Sign a copy of the build with
 [`chalkbuild sign`](../reference/cli/chalkbuild_sign.md), which also checks the copy against
 `db.crt`:
@@ -84,7 +116,13 @@ shows, and sign every new build again before you install or upgrade with it.
 
 ## Boot the machine into maintenance mode
 
-A physical machine boots the installer. Build the installer from the repository's directory:
+A physical machine boots the installer. With the published images, download the installer of the
+same release, as
+[Download chalkctl and the installer](../get-started/releases.md#download-chalkctl-and-the-installer)
+shows, and write its ISO to the USB stick as below. It has no OS CA, and it is not signed for
+Secure Boot.
+
+With images of your own, build the installer from the repository's directory:
 
 ```console
 $ nix build .#installer -o installer
@@ -95,8 +133,9 @@ chalkos-installer.iso  chalkos-installer.iso.json  chalkos-installer.raw  metada
 The `.iso` boots from a CD, from virtual media and written to a USB stick. The `.raw` is the same
 system as a plain disk image, for machines that boot better from one. The installer takes its
 addresses by DHCP and SLAAC; [Customise the installer](../build/customise-installer.md) gives it
-static addresses, VLANs, bonds or extra drivers. Use the cluster's installer: the generic one of
-the chalkos flake, `github:trevex/chalkos#installer`, has no OS CA and accepts any client.
+static addresses, VLANs, bonds or extra drivers. With images of your own, use the cluster's
+installer: the generic one of the chalkos flake, `github:trevex/chalkos#installer`, has no OS CA
+and accepts any client, as the release's does.
 
 Sign a copy of the installer's directory, its raw image and its ISO, with the same key as the
 images:
@@ -224,8 +263,9 @@ too. It refuses a node that is installed already, with
     others wait. `--force` installs without asking.
     [Reuse a removed node's name](add-remove-nodes.md#reuse-a-removed-nodes-name) frees the name.
 
-The installer gets the image as well, from the directory of the node's image in the inventory or
-the one `--image` names. chalkctl refuses a directory whose raw image is not the build its
+The installer gets the image as well. For an image in a registry it pulls the image itself, as the
+end of this section describes. Otherwise chalkctl sends it the image, from the directory of the
+node's image in the inventory or the one `--image` names. chalkctl refuses a directory whose raw image is not the build its
 `metadata.json` names, and sends the store, hash tree, UKI and boot loader. The output below is
 illustrative: its lines are chalkctl's, and the disk, the image hash and the size are an
 example's.
