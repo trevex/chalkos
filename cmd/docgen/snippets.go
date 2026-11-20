@@ -2,16 +2,16 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/schema"
@@ -70,25 +70,27 @@ type blockDocument struct {
 	doc  config.Document
 }
 
-// yamlLine finds the line a YAML error names.
-var yamlLine = regexp.MustCompile(`line ([0-9]+)`)
-
 // blockDocuments reads the documents of a YAML block with config.Parse, each with the line of the
 // block it starts on. A document that is not an object, such as a fragment of a list, is left out.
 // On an error, it returns the line of the block the error is at.
 func blockDocuments(lines []string) ([]blockDocument, int, error) {
-	dec := yaml.NewDecoder(strings.NewReader(strings.Join(lines, "\n")))
+	loader, err := yaml.NewLoader(strings.NewReader(strings.Join(lines, "\n")))
+	if err != nil {
+		return nil, 1, err
+	}
 	var docs []blockDocument
 	for i := 1; ; i++ {
 		var n yaml.Node
-		err := dec.Decode(&n)
+		err := loader.Load(&n)
 		if errors.Is(err, io.EOF) {
 			return docs, 0, nil
 		}
 		if err != nil {
 			line := 1
-			if m := yamlLine.FindStringSubmatch(err.Error()); m != nil {
-				line, _ = strconv.Atoi(m[1])
+			if loadErr, ok := errors.AsType[*yaml.LoadError](err); ok {
+				// The start of the construct the error is in, such as a flow sequence's [, or
+				// else the error's own position, which at the end of the block is a line past it.
+				line = max(1, min(cmp.Or(loadErr.ContextMark.Line, loadErr.Mark.Line), len(lines)))
 			}
 			return nil, line, fmt.Errorf("document %d: %w", i, err)
 		}
@@ -100,7 +102,7 @@ func blockDocuments(lines []string) ([]blockDocument, int, error) {
 			continue
 		}
 		// config.Parse reads the document as chalkctl does, from its own text.
-		data, err := yaml.Marshal(root)
+		data, err := yaml.Dump(root)
 		if err == nil {
 			var parsed []config.Document
 			if parsed, err = config.Parse(bytes.NewReader(data)); err == nil {
