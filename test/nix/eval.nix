@@ -2047,6 +2047,26 @@ lib.runTests {
       image = true;
     };
   };
+  # Booted from a CD-ROM, the installer's partitions come from the one loop device systemd's udev
+  # rules attach to it, systemd-loop@.service of systemd 261 and later: a loop device of the
+  # installer's own rules would be a second one, and the ESP would not mount when dm-verity took
+  # the store from one and its hash tree from the other.
+  testInstallerAttachesNoLoopDevice = {
+    expr =
+      let
+        config = installer [ ];
+      in
+      {
+        initrdRules = lib.hasInfix "losetup" config.boot.initrd.services.udev.rules;
+        rules = lib.hasInfix "losetup" config.services.udev.extraRules;
+        systemdLoop = lib.versionAtLeast config.boot.initrd.systemd.package.version "261";
+      };
+    expected = {
+      initrdRules = false;
+      rules = false;
+      systemdLoop = true;
+    };
+  };
   # Only the kvm image runs the guest agent, and only under KVM.
   testPlatformImages = {
     expr =

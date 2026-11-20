@@ -13,7 +13,6 @@
 }:
 let
   image = config.system.build.image;
-  losetup = "${config.boot.initrd.systemd.package.util-linux}/bin/losetup";
   raw = "${image}/${config.image.fileName}";
   # GPT partition types of the image's partitions, by the names repart reports, in upper case as
   # sfdisk prints them. pkg/arch tests the file against its table of architectures.
@@ -123,12 +122,12 @@ in
     "virtio_scsi"
     "xhci_pci"
   ];
-  # A CD-ROM has no partitions in Linux; a partitioned loop device over it exposes the store
-  # partitions the GPT of the ISO describes.
-  boot.initrd.systemd.storePaths = [ losetup ];
-  boot.initrd.services.udev.rules = ''
-    SUBSYSTEM=="block", KERNEL=="sr[0-9]*", ACTION=="add", RUN+="${losetup} --find --partscan --read-only $devnode"
-  '';
+  # A CD-ROM has no partitions in Linux. systemd's udev rules attach one partitioned loop device,
+  # systemd-loop@.service, to the CD-ROM holding the ESP the machine booted from, which exposes
+  # the partitions the GPT of the ISO describes. No second loop device may be attached: dm-verity
+  # could then take the store from one and its hash tree from the other, and after the initrd
+  # udev would find no boot disk, so the ESP's link never appears to systemd and /efi never
+  # mounts.
 
   system.build.chalkosInstaller =
     pkgs.runCommand "chalkos-installer"
