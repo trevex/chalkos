@@ -1,0 +1,114 @@
+# Updates the flake's inputs each Monday, which Renovate leaves alone: nix flake update moves every
+# input of flake.lock, nixpkgs and go-overlay and those go-overlay brings, to its newest revision.
+# update-pins and update-vendor-hash then set what follows from them, as a change of nixpkgs can
+# change how the Kubernetes sources and the Go modules' download hash. The workflow pushes the
+# change to the branch bot/update-flake-lock, replacing what the branch held, and opens a pull
+# request from it, or updates the open one, labelled dependencies and e2e, with the inputs'
+# revisions in its description. A run that changes nothing does nothing. The release GitHub App's
+# token pushes and opens the pull request, so that ci runs on it.
+#
+# Started by hand with dry-run, the workflow lists what it would change in the run's summary and
+# pushes nothing.
+name: update-nixpkgs
+
+on:
+  schedule:
+    # Monday, 04:00 UTC.
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: List the changes without pushing them or opening a pull request
+        type: boolean
+        default: false
+
+concurrency:
+  group: update-nixpkgs
+  cancel-in-progress: false
+
+permissions: {}
+
+env:
+  BRANCH: bot/update-flake-lock
+
+jobs:
+  update:
+    if: github.repository == 'trevex/chalkos'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      # Hestia checks which cached packs GitHub has evicted. The App's token does the rest.
+      actions: read
+    steps:
+      - uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        id: app
+        with:
+          client-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      # The App's token pushes the branch, so it stays in the checkout's configuration.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ steps.app.outputs.token }}
+      - uses: ./.github/actions/nix
+        with:
+          cachix-name: ${{ vars.CACHIX_NAME }}
+          read-only: true
+      - name: Update the inputs
+        id: update
+        run: |
+          cp flake.lock "$RUNNER_TEMP/flake.lock"
+          nix flake update
+          if git diff --quiet -- flake.lock; then
+            echo "The flake's inputs are up to date." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "changed=false" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          nix run .#update-pins
+          nix run .#update-vendor-hash
+          # The description's backticks and jq's variables stay as they are.
+          # shellcheck disable=SC2016
+          {
+            echo 'Updates the inputs of `flake.lock` with `nix flake update`, and what follows from them with `nix run .#update-pins` and `nix run .#update-vendor-hash`.'
+            echo
+            echo '| Input | Old | New |'
+            echo '| --- | --- | --- |'
+            # Each input whose revision changed, from both lock files.
+            jq -rn --slurpfile old "$RUNNER_TEMP/flake.lock" --slurpfile new flake.lock '
+              def revisions: .nodes | with_entries(select(.value.locked.rev != null) | .value = .value.locked);
+              def link: "[\(.rev[:12])](https://github.com/\(.owner)/\(.repo)/commit/\(.rev)) (\(.lastModified | strftime("%Y-%m-%d")))";
+              ($old[0] | revisions) as $o | ($new[0] | revisions) as $n
+              | $n | keys[] | select($o[.].rev != $n[.].rev)
+              | "| \(.) | \($o[.] | if . then link else "none" end) | \($n[.] | link) |"'
+            echo
+            echo 'Files changed:'
+            echo
+            git status --short | sed 's/^/    /'
+            echo
+            echo 'A size check that fails because an image outgrew its ceiling needs a person: raise the ceiling in a commit of its own on this branch, or hold the update.'
+          } >"$RUNNER_TEMP/body.md"
+          cat "$RUNNER_TEMP/body.md" >>"$GITHUB_STEP_SUMMARY"
+          echo "changed=true" >>"$GITHUB_OUTPUT"
+      - name: Open or update the pull request
+        if: steps.update.outputs.changed == 'true' && !inputs.dry-run
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          SLUG: ${{ steps.app.outputs.app-slug }}
+          TITLE: "build(deps): update the flake inputs"
+        run: |
+          id=$(gh api "/users/$SLUG%5Bbot%5D" --jq .id)
+          git config user.name "${SLUG}[bot]"
+          git config user.email "$id+${SLUG}[bot]@users.noreply.github.com"
+          git switch -C "$BRANCH"
+          git add -A
+          git commit -m "$TITLE"
+          git push --force origin "$BRANCH"
+          number=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh pr edit "$number" --title "$TITLE" --body-file "$RUNNER_TEMP/body.md"
+          else
+            gh pr create --base main --head "$BRANCH" --title "$TITLE" --body-file "$RUNNER_TEMP/body.md" \
+              --label dependencies --label e2e
+          fi
