@@ -243,7 +243,7 @@ func checkEnrolment(vars []*enrolment) error {
 func (s *Server) checkBootedUnder(db, dbx secureboot.Database) error {
 	binaries, err := s.bootedBinaries()
 	if err != nil {
-		return layer.Errorf(connect.CodeFailedPrecondition, "find the boot loader and UKI this machine booted, which must verify against the new db: %w; pass --force to enrol the keys without the check", err)
+		return bootedBinariesError(s.Paths.ESP, err)
 	}
 	for _, path := range binaries {
 		if err := verifyFile(path, db, dbx); err != nil {
@@ -251,6 +251,16 @@ func (s *Server) checkBootedUnder(db, dbx secureboot.Database) error {
 		}
 	}
 	return nil
+}
+
+// bootedBinariesError is the error of a check that found no boot loader and UKI the node booted.
+// The ESP's automount answers ENODEV when the ESP's mount failed, as when systemd gave up waiting
+// for its device: the ESP may mount on another try, and the check is not to be skipped for it.
+func bootedBinariesError(espDir string, err error) error {
+	if errors.Is(err, unix.ENODEV) {
+		return layer.Errorf(connect.CodeUnavailable, "the ESP did not mount at %s, so the boot loader and UKI this machine booted cannot be checked against the new db: %w; see why in the journal of efi.mount (chalkctl logs <node> --unit efi.mount) and run enroll again", espDir, err)
+	}
+	return layer.Errorf(connect.CodeFailedPrecondition, "find the boot loader and UKI this machine booted, which must verify against the new db: %w; pass --force to enrol the keys without the check", err)
 }
 
 // bootedBinaries are the files of the boot loader and the UKI the node booted on the ESP.
