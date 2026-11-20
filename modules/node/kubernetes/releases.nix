@@ -3,7 +3,9 @@
 # kubelet.nix builds the kubelet. publish marks the minors whose images a release of chalkos
 # builds. nixpkgs's own release has no part in it, so a change of nixpkgs leaves the kubelet as it
 # is. After a change of a version, `nix run .#update-pins` sets the hashes and the pins that follow
-# the newest release, and `nix build .#kubelet-releases` builds every kubelet.
+# the newest release, and `nix build .#kubelet-releases` builds every kubelet. The newest minor
+# comes first: Renovate's configuration takes the first for the newest, and the renovate check
+# holds it to that.
 {
   "1.37" = {
     version = "1.37.2";
