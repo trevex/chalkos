@@ -156,7 +156,14 @@ cp1 gets no `Hardware` document, so its unit finds no file.
 
 ## Check the config against the image
 
-Build the image where the inventory points, and check each node's config against it with
+The template's inventory names the published image, which lacks the extension. Point it at your
+build instead, in `chalkos.yaml`:
+
+```yaml title="chalkos.yaml"
+    node-kvm: {source: {directory: images/node-kvm}}
+```
+
+Build the image where the inventory now points, and check each node's config against it with
 [`chalkctl validate`](../reference/cli/chalkctl_validate.md):
 
 ```console
