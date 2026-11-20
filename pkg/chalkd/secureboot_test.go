@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"golang.org/x/sys/unix"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
@@ -300,6 +302,22 @@ func TestEnrollSecureBootWithoutESP(t *testing.T) {
 	}
 	if len(fw.writes) > 0 {
 		t.Errorf("wrote %v", fw.writes)
+	}
+}
+
+// TestBootedBinariesErrorWhenTheESPDidNotMount asks to enrol again, not to force the enrolment,
+// when the ESP's automount answers ENODEV because the ESP's mount failed, and to force it for any
+// other error.
+func TestBootedBinariesErrorWhenTheESPDidNotMount(t *testing.T) {
+	notMounted := fmt.Errorf("list the UKIs on the ESP: %w", &fs.PathError{Op: "open", Path: "/efi/EFI/Linux", Err: unix.ENODEV})
+	err := bootedBinariesError("/efi", notMounted)
+	if layer.CodeOf(err) != connect.CodeUnavailable || !strings.Contains(err.Error(), "the ESP did not mount at /efi") || !strings.Contains(err.Error(), "efi.mount") || strings.Contains(err.Error(), "--force") {
+		t.Errorf("bootedBinariesError(ENODEV) = %v", err)
+	}
+	other := fmt.Errorf("list the UKIs on the ESP: %w", &fs.PathError{Op: "open", Path: "/efi/EFI/Linux", Err: unix.EIO})
+	err = bootedBinariesError("/efi", other)
+	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "--force") {
+		t.Errorf("bootedBinariesError(EIO) = %v", err)
 	}
 }
 
