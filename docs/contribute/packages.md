@@ -90,6 +90,7 @@ which have no logins, so it has no `completion` command.
 | `imagepart` | Describes the parts an image is sent in, its store, hash tree, UKI and boot loader, by size and SHA-256, and receives them from a stream. |
 | `imagesign` | Signs an image's boot loader and UKIs, in place or in a signed copy of an image directory. |
 | `ociimage` | Reads, writes, pulls and pushes chalkos images as OCI artifacts: one manifest whose config is the image header and whose layers are the store, hash tree, UKI, boot loader and contract. |
+| `imagepull` | Pulls a chalkos image from a registry, checked as a node checks it, into an image directory with a raw disk image as nix build lays it out, or into the OCI layout the registry serves; `chalkctl image pull` runs it. |
 | `install` | Installs a node in place or from the installer, step by step and repeatable: STATE, the ESP, the UEFI boot entries, wiping the target and the system region's definitions each have a file, and `parts.go` holds the steps of an install from the installer. |
 | `upgrade` | Writes an image into the inactive slot and stages it there (`Install`), makes the staged image the next boot (`Activate`), or both (`Upgrade`); the image header and the checks of its UKI and boot loader an install shares; the booted entry and the provenance record. |
 | `storeslot` | The store slots of a disk and the writer an upgrade and an install share: retire a slot, write and verify the store, activate the slot. |
@@ -108,7 +109,7 @@ which have no logins, so it has no `completion` command.
 | Package | What it does |
 | --- | --- |
 | `storage` | Storage sections, disk references and pins, repart definitions, and the changes a delivered section makes to the recorded one. |
-| `storage/gpt` | Reads and changes partition tables with sfdisk under the disk's lock, waiting a bounded time for it, and names the partition types of the system region. |
+| `storage/gpt` | Reads and changes partition tables with sfdisk under the disk's lock, waiting a bounded time for it, writes the GPT of a disk image, and names the partition types of the system region. |
 | `storage/hostops` | The host operations the installer, an upgrade and the storage code share: mounts, LUKS and dm-verity volumes, the mount table, and the blkid probe. `Ops` is the interface the installer, an upgrade and the storage setup call, and that tests replace with a fake. `Tools` implements it and runs mount, umount, systemd-cryptsetup and veritysetup; it is the one place their command lines are written. `Probe`, `Content` and `Type` run blkid on a `tool.Runner`. |
 | `storage/node` | Storage on the node: STATE, volumes, VAR and the generator's units; the storage changes chalkd makes and the volumes an install creates and enrols. |
 

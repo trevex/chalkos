@@ -31,13 +31,15 @@ func IsLayout(dir string) bool {
 func WriteLayout(ctx context.Context, img v1.Image, out string) (v1.Hash, error) {
 	var digest v1.Hash
 	err := atomicfile.NewDir(out, func(tmp string) (err error) {
-		digest, err = writeLayout(ctx, img, tmp)
+		digest, err = FillLayout(ctx, img, tmp)
 		return err
 	})
 	return digest, err
 }
 
-func writeLayout(ctx context.Context, img v1.Image, tmp string) (v1.Hash, error) {
+// FillLayout writes the layout WriteLayout writes into the empty directory tmp, in place, for a
+// caller that checks the layout before it renames it, within an atomicfile.NewDir of its own.
+func FillLayout(ctx context.Context, img v1.Image, tmp string) (v1.Hash, error) {
 	p, err := layout.Write(tmp, empty.Index)
 	if err != nil {
 		return v1.Hash{}, err

@@ -71,6 +71,32 @@ func parseLayout(defs map[string]string, archName string) (layout, error) {
 	return l, nil
 }
 
+// SlotASizes reads the image's definitions of the system region, by file name, as an install
+// checks them, and returns the sizes they fix for the ESP and for slot A's hash tree and store
+// partitions: 0 for a size they leave to the partition's content.
+func SlotASizes(defs map[string][]byte, archName string) (esp, hashTree, store int64, err error) {
+	texts := map[string]string{}
+	for name, data := range defs {
+		texts[name] = string(data)
+	}
+	l, err := parseLayout(texts, archName)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	// parseLayout checked that the ESP and both slots are there; slot A's partitions come first.
+	for i := len(l) - 1; i >= 0; i-- {
+		switch _, verity, ok := arch.ByStoreType(l[i].typ); {
+		case l[i].typ == gpt.TypeESP:
+			esp = l[i].size
+		case ok && verity:
+			hashTree = l[i].size
+		case ok:
+			store = l[i].size
+		}
+	}
+	return esp, hashTree, store, nil
+}
+
 // repartType is the GPT partition type of a name repart's Type= takes that the system region
 // uses, the ESP's or a store slot's partition's, and typ itself for any other.
 func repartType(typ string) string {

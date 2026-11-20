@@ -62,6 +62,24 @@ func TestParseLayoutRounds(t *testing.T) {
 	}
 }
 
+// TestSlotASizes gives the sizes slot A's definitions fix, not slot B's, and 0 for one left to
+// the partition's content.
+func TestSlotASizes(t *testing.T) {
+	defs := map[string][]byte{}
+	for name, text := range labDefinitions {
+		defs[name] = []byte(text)
+	}
+	defs["40-store-b.conf"] = []byte("[Partition]\nType=usr-x86-64\nLabel=_empty\nSizeMinBytes=4M\nSizeMaxBytes=4M\n")
+	defs["10-store-verity-a.conf"] = []byte("[Partition]\nType=usr-x86-64-verity\n")
+	esp, tree, store, err := SlotASizes(defs, "x86-64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if esp != 260<<20 || tree != 0 || store != 2<<20 {
+		t.Errorf("sizes = %d, %d, %d; want %d, 0, %d", esp, tree, store, 260<<20, 2<<20)
+	}
+}
+
 // x86 is the architecture of the lab's images.
 var x86, _ = arch.ByName("x86-64")
 

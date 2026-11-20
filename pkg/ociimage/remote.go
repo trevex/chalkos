@@ -96,6 +96,17 @@ func Read(ctx context.Context, ref string) (*Artifact, error) {
 	return a, nil
 }
 
+// Image is the image a reference by digest names, as the registry serves it, read with the
+// credentials of the default keychain. go-containerregistry checks its manifest against the
+// digest once it fetches it.
+func Image(ctx context.Context, ref string) (v1.Image, error) {
+	d, err := name.NewDigest(ref, name.StrictValidation)
+	if err != nil {
+		return nil, fmt.Errorf("%q is no image reference by digest, repository@sha256:…: %w", ref, err)
+	}
+	return remote.Image(d, options(ctx)...)
+}
+
 // imageOf is the image a descriptor names, refusing an index.
 func imageOf(desc *remote.Descriptor) (v1.Image, error) {
 	if !desc.MediaType.IsImage() {
