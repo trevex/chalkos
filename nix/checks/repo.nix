@@ -393,12 +393,14 @@ in
 
   # The GitHub workflows pass actionlint, with shellcheck for their scripts, which reads the inputs
   # of the repository's own actions. So do the workflow and the script of the guide that releases
-  # a cluster's own images, which the page includes.
+  # a cluster's own images, which the page includes. The scripts of .github/scripts pass
+  # shellcheck, and their test passes.
   workflows =
     pkgs.runCommand "chalkos-workflows"
       {
         nativeBuildInputs = [
           pkgs.actionlint
+          pkgs.gitMinimal
           pkgs.shellcheck
         ];
         src = lib.fileset.toSource {
@@ -406,6 +408,7 @@ in
           fileset = lib.fileset.unions [
             ../../.github/workflows
             ../../.github/actions
+            ../../.github/scripts
             ../../docs/guides/release-your-images/release-images.yml
             ../../docs/guides/release-your-images/release-images.sh
           ];
@@ -414,7 +417,8 @@ in
       ''
         cd $src
         actionlint -shellcheck shellcheck .github/workflows/*.yml docs/guides/release-your-images/release-images.yml
-        shellcheck docs/guides/release-your-images/release-images.sh
+        shellcheck docs/guides/release-your-images/release-images.sh .github/scripts/*.sh
+        bash .github/scripts/test.sh
         touch $out
       '';
 
