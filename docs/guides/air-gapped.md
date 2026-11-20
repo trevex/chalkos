@@ -47,7 +47,7 @@ router.
 - A connected machine with Nix builds the images, as the
   [build host](../get-started/requirements.md#build-host) describes, and has
   [crane](https://github.com/google/go-containerregistry/tree/main/cmd/crane) and yq.
-- The workstation inside the air gap has chalkctl, mtools, kubectl and yq. Copy chalkctl's
+- The workstation inside the air gap has chalkctl, kubectl and yq. Copy chalkctl's
   program as [Requirements](../get-started/requirements.md#workstation) describes.
 - The workstation inside the air gap holds the age identity or SSH key that `secrets.age` is
   encrypted to, as [Requirements](../get-started/requirements.md#workstation) lists.
@@ -96,7 +96,7 @@ builds, so the keys stay offline with the connected machine:
 
 ```sh
 rsync -aL --exclude keys/ ./ <carry>/cluster/
-cp "$(nix build --no-link --print-out-paths github:trevex/chalkos/<rev>#chalkctl)/bin/.chalkctl-wrapped" \
+cp "$(nix build --no-link --print-out-paths github:trevex/chalkos/<rev>#chalkctl)/bin/chalkctl" \
   <carry>/chalkctl
 ```
 
