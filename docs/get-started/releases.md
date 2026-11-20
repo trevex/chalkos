@@ -45,7 +45,7 @@ The release's assets are these files:
 | `<asset>.sigstore.json` | The cosign signature bundle of each file above and of `SHA256SUMS`. |
 
 The release notes end with the reference of each image by its digest, such as
-`ghcr.io/trevex/chalkos/router-metal:v0.1.0@sha256:<digest>`.
+`ghcr.io/trevex/chalkos/router-metal:vX.Y.Z@sha256:<digest>`.
 
 ## Use the release's images or your own
 

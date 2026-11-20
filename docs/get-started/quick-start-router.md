@@ -143,10 +143,10 @@ bootstrap:
 ```console
 $ chalklab create --secrets secrets.json
 creating the lab's Secure Boot keys in /home/alice/.local/state/chalklab/router-lab/keys
-pulled ghcr.io/trevex/chalkos/router-kvm:v0.2.1 as ghcr.io/trevex/chalkos/router-kvm@sha256:150c8610ee376be69a88dbae719950253c82f67a701c76f265111e9b4e7edaeb
-copying the image of client from /home/alice/.local/state/chalklab/router-lab/images/sha256-150c8610ee376be69a88dbae719950253c82f67a701c76f265111e9b4e7edaeb
-using cached ghcr.io/trevex/chalkos/router-kvm@sha256:150c8610ee376be69a88dbae719950253c82f67a701c76f265111e9b4e7edaeb
-copying the image of router from /home/alice/.local/state/chalklab/router-lab/images/sha256-150c8610ee376be69a88dbae719950253c82f67a701c76f265111e9b4e7edaeb
+pulled ghcr.io/trevex/chalkos/router-kvm:v0.2.1 as ghcr.io/trevex/chalkos/router-kvm@sha256:<digest>
+copying the image of client from /home/alice/.local/state/chalklab/router-lab/images/sha256-<digest>
+using cached ghcr.io/trevex/chalkos/router-kvm@sha256:<digest>
+copying the image of router from /home/alice/.local/state/chalklab/router-lab/images/sha256-<digest>
 starting client, router
 wrote /home/alice/.local/state/chalklab/router-lab/chalkctl.json for chalklab with the admin role; its certificate expires on 2027-11-20
 waiting for client to come up in maintenance mode
