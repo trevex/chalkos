@@ -1,11 +1,12 @@
 # Updates the flake's inputs each Monday, which Renovate leaves alone: nix flake update moves every
 # input of flake.lock, nixpkgs and go-overlay and those go-overlay brings, to its newest revision.
 # update-pins and update-vendor-hash then set what follows from them, as a change of nixpkgs can
-# change how the Kubernetes sources and the Go modules' download hash. The workflow pushes the
-# change to the branch bot/update-flake-lock, replacing what the branch held, and opens a pull
-# request from it, or updates the open one, labelled dependencies and e2e, with the inputs'
-# revisions in its description. A run that changes nothing does nothing. The release GitHub App's
-# token pushes and opens the pull request, so that ci runs on it.
+# change how the Kubernetes sources and the Go modules' download hash. The workflow resets the
+# branch bot/update-flake-lock to main, replacing what it held, commits the change there through
+# GitHub's API, which signs the commit as the release GitHub App's bot, and opens a pull request
+# from it, or updates the open one, labelled dependencies and e2e, with the inputs' revisions in
+# its description. A run that changes nothing does nothing. The App's token makes the commit and
+# opens the pull request, so that ci runs on it.
 #
 # Started by hand with dry-run, the workflow lists what it would change in the run's summary and
 # pushes nothing.
@@ -47,10 +48,9 @@ jobs:
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
           permission-contents: write
           permission-pull-requests: write
-      # The App's token pushes the branch, so it stays in the checkout's configuration.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          token: ${{ steps.app.outputs.token }}
+          persist-credentials: false
       - uses: ./.github/actions/nix
         with:
           cachix-name: ${{ vars.CACHIX_NAME }}
@@ -101,10 +101,21 @@ jobs:
           id=$(gh api "/users/$SLUG%5Bbot%5D" --jq .id)
           git config user.name "${SLUG}[bot]"
           git config user.email "$id+${SLUG}[bot]@users.noreply.github.com"
-          git switch -C "$BRANCH"
           git add -A
           git commit -s -m "$TITLE"
-          git push --force origin "$BRANCH"
+          # push-signed.sh commits the change on a branch of the run that starts at main's commit,
+          # and the branch then takes that commit. Resetting the branch itself to main first would
+          # leave an open pull request without changes, which GitHub may take for merged.
+          run="$BRANCH-$GITHUB_RUN_ID"
+          gh api -X POST "repos/$GH_REPO/git/refs" -f ref="refs/heads/$run" -f sha="$GITHUB_SHA" --silent
+          trap 'gh api -X DELETE "repos/$GH_REPO/git/refs/heads/$run" --silent' EXIT
+          GITHUB_REPOSITORY=$GH_REPO .github/scripts/push-signed.sh "$run" "$GITHUB_SHA"
+          head=$(gh api "repos/$GH_REPO/git/ref/heads/$run" --jq .object.sha)
+          if gh api "repos/$GH_REPO/git/ref/heads/$BRANCH" --silent 2>/dev/null; then
+            gh api -X PATCH "repos/$GH_REPO/git/refs/heads/$BRANCH" -f sha="$head" -F force=true --silent
+          else
+            gh api -X POST "repos/$GH_REPO/git/refs" -f ref="refs/heads/$BRANCH" -f sha="$head" --silent
+          fi
           number=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
           if [ -n "$number" ]; then
             gh pr edit "$number" --title "$TITLE" --body-file "$RUNNER_TEMP/body.md"
