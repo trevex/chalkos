@@ -149,7 +149,9 @@ gh attestation verify chalkctl-linux-amd64 --repo trevex/chalkos
 ```
 
 Install the program as `chalkctl` on the `PATH`. `chalkctl install` and `chalkctl upgrade` run the
-mtools commands `mdir` and `mcopy`, so install the distribution's mtools package too:
+mtools commands `mdir` and `mcopy`, and `chalkctl image pull` also `mformat` and `mmd` unless it
+pulls with `--layout`. The chalkctl of the flake brings mtools with it; for the downloaded binary,
+install the distribution's mtools package too. chalkctl names a missing command before it starts:
 
 ```sh
 install -m 0755 chalkctl-linux-amd64 ~/.local/bin/chalkctl
