@@ -92,9 +92,9 @@ These settings live in GitHub, not in the repository, so a maintainer makes them
    `trevex/chalkos` alone. release-please acts with the App's token, because a pull request, a
    label or a tag that a workflow's own token creates starts no workflow, and the release pull
    request must run CI.
-2. Add two repository secrets: `RELEASE_APP_ID`, the App's client ID, and
-   `RELEASE_APP_PRIVATE_KEY`, a private key generated for it in PEM form. Without them the release
-   workflow fails on every push to `main` with the error `No release App`.
+2. Add the repository variable `RELEASE_APP_ID`, the App's client ID or App ID, and the
+   repository secret `RELEASE_APP_PRIVATE_KEY`, a private key generated for it in PEM form. Without
+   them the release workflow fails on every push to `main` with the error `No release App`.
 3. Merge the first release pull request, then make each package of the release public: the
    GitHub Container Registry creates a package, such as `chalkos/kubernetes-1.37-metal`, private on
    its first push. Set its visibility to public in the package's settings. A later release that

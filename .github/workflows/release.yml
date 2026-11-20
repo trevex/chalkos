@@ -6,7 +6,7 @@
 # chalkbuild with their checksums, signatures and attestations, and adds the images' digests to the
 # release notes.
 #
-# release-please acts with a GitHub App's token, from the secrets RELEASE_APP_ID and
+# release-please acts with a GitHub App's token, from the variable RELEASE_APP_ID and the secret
 # RELEASE_APP_PRIVATE_KEY, because a pull request, a label or a tag that the workflow's own token
 # creates starts no workflow, and the release pull request must run ci with its e2e label. The
 # publishing jobs run in this workflow for the same reason rather than on the tag.
@@ -47,7 +47,7 @@ jobs:
       - name: Check the ref and the App's secrets
         env:
           REF: ${{ github.ref }}
-          APP_ID: ${{ secrets.RELEASE_APP_ID }}
+          APP_ID: ${{ vars.RELEASE_APP_ID }}
           APP_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
         run: |
           if [ "$REF" != refs/heads/main ]; then
@@ -55,13 +55,13 @@ jobs:
             exit 1
           fi
           if [ -z "$APP_ID" ] || [ -z "$APP_KEY" ]; then
-            echo "::error title=No release App::set the secrets RELEASE_APP_ID and RELEASE_APP_PRIVATE_KEY to the release GitHub App's client ID and private key; docs/contribute/releasing.md lists its permissions"
+            echo "::error title=No release App::set the variable RELEASE_APP_ID and the secret RELEASE_APP_PRIVATE_KEY to the release GitHub App's client ID and private key; docs/contribute/releasing.md lists its permissions"
             exit 1
           fi
       - uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         id: app
         with:
-          client-id: ${{ secrets.RELEASE_APP_ID }}
+          client-id: ${{ vars.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
           permission-contents: write
           permission-issues: write
