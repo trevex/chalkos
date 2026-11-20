@@ -12,11 +12,6 @@ on:
   push:
     branches: ["renovate/**"]
 
-# A newer commit on the branch cancels the run of the older one.
-concurrency:
-  group: renovate-fixup-${{ github.ref }}
-  cancel-in-progress: true
-
 permissions: {}
 
 jobs:
@@ -24,6 +19,11 @@ jobs:
     if: github.repository == 'trevex/chalkos' && !github.event.deleted && github.event.head_commit.author.email == '29139614+renovate[bot]@users.noreply.github.com'
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    # A newer commit of Renovate's on the branch cancels the run of the older one. The group is
+    # the job's, so that the skipped run of the bot's own push cancels nothing.
+    concurrency:
+      group: renovate-fixup-${{ github.ref }}
+      cancel-in-progress: true
     permissions:
       # Hestia checks which cached packs GitHub has evicted. The App's token does the rest.
       actions: read
