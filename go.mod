@@ -6,7 +6,7 @@ require (
 	cel.dev/cel-go v0.32.0
 	connectrpc.com/connect v1.21.0
 	filippo.io/age v1.3.2
-	github.com/charmbracelet/bubbletea v1.3.10
+	github.com/charmbracelet/bubbletea/v2 v2.1.2
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/x/ansi v0.11.5
 	github.com/charmbracelet/x/exp/golden v0.1.0
