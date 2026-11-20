@@ -392,7 +392,8 @@ in
       '';
 
   # The GitHub workflows pass actionlint, with shellcheck for their scripts, which reads the inputs
-  # of the repository's own actions.
+  # of the repository's own actions. So do the workflow and the script of the guide that releases
+  # a cluster's own images, which the page includes.
   workflows =
     pkgs.runCommand "chalkos-workflows"
       {
@@ -405,17 +406,21 @@ in
           fileset = lib.fileset.unions [
             ../../.github/workflows
             ../../.github/actions
+            ../../docs/guides/release-your-images/release-images.yml
+            ../../docs/guides/release-your-images/release-images.sh
           ];
         };
       }
       ''
         cd $src
-        actionlint -shellcheck shellcheck .github/workflows/*.yml
+        actionlint -shellcheck shellcheck .github/workflows/*.yml docs/guides/release-your-images/release-images.yml
+        shellcheck docs/guides/release-your-images/release-images.sh
         touch $out
       '';
 
-  # Renovate's configuration passes its validator, and releases.nix lists the newest Kubernetes
-  # minor first, which the configuration takes for the newest.
+  # Renovate's configuration and that of the guide that releases a cluster's own images pass its
+  # validator, and releases.nix lists the newest Kubernetes minor first, which the configuration
+  # takes for the newest.
   renovate =
     pkgs.runCommand "chalkos-renovate"
       {
@@ -424,6 +429,7 @@ in
           root = ../../.;
           fileset = lib.fileset.unions [
             ../../.github/renovate.json5
+            ../../docs/guides/release-your-images/renovate.json5
             ../../modules/node/kubernetes/releases.nix
           ];
         };
@@ -432,6 +438,7 @@ in
       ''
         cd $src
         HOME=$(mktemp -d) renovate-config-validator --strict
+        HOME=$(mktemp -d) renovate-config-validator --strict --no-global docs/guides/release-your-images/renovate.json5
         first=$(grep -m 1 -oP '^  "\K[0-9]+\.[0-9]+(?=" = \{)' modules/node/kubernetes/releases.nix)
         if [ "$first" != "$newest" ]; then
           echo "error: modules/node/kubernetes/releases.nix lists $first first, not the newest minor $newest" >&2
