@@ -354,7 +354,8 @@ in
         touch $out
       '';
 
-  # The GitHub workflows pass actionlint, with shellcheck for their scripts.
+  # The GitHub workflows pass actionlint, with shellcheck for their scripts, which reads the inputs
+  # of the repository's own actions.
   workflows =
     pkgs.runCommand "chalkos-workflows"
       {
@@ -364,7 +365,10 @@ in
         ];
         src = lib.fileset.toSource {
           root = ../../.;
-          fileset = ../../.github/workflows;
+          fileset = lib.fileset.unions [
+            ../../.github/workflows
+            ../../.github/actions
+          ];
         };
       }
       ''
