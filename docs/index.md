@@ -11,7 +11,8 @@ description: "A toolkit that builds API-driven, immutable Linux distributions fr
 
 <p class="chalkos-hero__tagline" markdown>
 chalkos builds API-driven, immutable Linux distributions from NixOS modules. It ships layers for
-Kubernetes nodes and routers, and its images carry the schemas of the config they accept.
+Kubernetes nodes and routers, and its images carry the schemas of the config they accept. Each
+release publishes signed OCI images of both layers that you can run as they are.
 </p>
 
 [Get started :material-arrow-right:](get-started/quick-start-kubernetes.md){ .md-button .md-button--primary }
@@ -31,9 +32,10 @@ that was built and signed, and changes only through its API.
 ## Choose your path
 
 Start with the path that matches your work. Each one assumes the one before it, so an image
-author knows the quick start and a contributor knows both. Each release publishes generic images
-for clusters that need no image of their own, as [Releases](get-started/releases.md) describes;
-every other image is built with Nix.
+author knows the quick start and a contributor knows both. Each release publishes signed OCI
+images for clusters that need no image of their own, as [Releases](get-started/releases.md)
+describes, and the quick starts run them. A cluster that needs its own OS CA, Secure Boot keys,
+extensions or packages builds its images with Nix.
 
 <div class="grid cards" markdown>
 
