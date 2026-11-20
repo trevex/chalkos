@@ -9,8 +9,9 @@ This tutorial runs a chalkos router and a client machine behind it on your machi
 takes its WAN address by DHCP, leases an address to the client, answers its DNS queries and
 masquerades its traffic to the internet. You check each of these from the client, then change the
 router's firewall on trial and remove the lab again. chalklab runs both machines as QEMU virtual
-machines with UEFI firmware, Secure Boot and a TPM. It takes about 15 minutes, most of it Nix
-building the two images the first time.
+machines with UEFI firmware, Secure Boot and a TPM. Both machines run the router image that each
+chalkos release publishes for virtual machines, which chalklab pulls from the registry. It takes
+about 15 minutes.
 
 ## Before you begin
 
@@ -23,8 +24,8 @@ You need:
   of free disk for `/nix/store` and the lab;
 - git.
 
-You do not need root. The tutorial builds both images from the `router-lab` template with
-`nix build`.
+You do not need root. Nix gives you chalklab and chalkctl from the `router-lab` template's
+development shell; the tutorial builds no image.
 
 ## What the lab runs
 
@@ -71,11 +72,19 @@ The files:
 
 | File | Holds |
 | --- | --- |
-| `flake.nix` | The two images: `router-kvm`, with the router layer, and `client-kvm`, without a layer. |
 | `chalkos.yaml` | The inventory: the nodes `router` and `client`, the image each runs and its file. |
+| `flake.nix` | The development shell with the tools, and images of your own: `router-kvm`, with the router layer, and `client-kvm`, without a layer. |
 | `nodes/router.yaml` | The router's interfaces, firewall, NAT, DHCP server and resolver. |
 | `nodes/client.yaml` | The client's interfaces. |
 | `chalklab.yaml` | The lab file: the nodes chalklab runs, with their memory and MAC addresses. |
+
+Both nodes run the published router image, `ghcr.io/trevex/chalkos/router-kvm`, named by the tag
+of the template's release. The client gets no router documents, so it runs none of the router's
+services:
+
+```yaml title="chalkos.yaml"
+--8<-- "templates/router-lab/chalkos.yaml"
+```
 
 The router's file holds every document of its role. The firewall accepts the node API on the WAN
 alone, where chalklab forwards its port:
@@ -90,7 +99,7 @@ Nix evaluates a flake from the files git tracks, so put the files under git:
 git init && git add .
 ```
 
-## Generate the secrets and build the images
+## Generate the secrets and check the config
 
 Enter the flake's development shell, which has chalklab and chalkctl of the chalkos version the
 flake pins. Run every later command of this tutorial in it:
@@ -100,8 +109,7 @@ nix develop
 ```
 
 Generate the cluster's secrets with
-[`chalkctl gen secrets`](../reference/cli/chalkctl_gen_secrets.md). `flake.nix` names their public
-part, `secrets.pub.json`, so both images trust the cluster's OS CA:
+[`chalkctl gen secrets`](../reference/cli/chalkctl_gen_secrets.md):
 
 ```console
 $ chalkctl gen secrets --plaintext
@@ -109,38 +117,45 @@ wrote secrets.json and secrets.pub.json
 warning: secrets.json holds the cluster's secrets unencrypted; protect it by other means, for example keep it out of version control with a .gitignore entry
 ```
 
+The published image carries no OS CA, so until chalklab installs a node, the node accepts any
+client in maintenance mode. That is fine on the lab's private network. The images `flake.nix`
+builds name `secrets.pub.json`, the secrets' public part, so they trust the cluster's OS CA.
+
 The template's `.gitignore` keeps `secrets.json` out of git. Commit the files with `flake.lock`,
-then build both images where the inventory points and check the nodes' config against them with
-[`chalkctl validate`](../reference/cli/chalkctl_validate.md):
+then check the nodes' config against the image with
+[`chalkctl validate`](../reference/cli/chalkctl_validate.md). It reads the image's contract from
+the registry:
 
 ```console
 $ git add . && git commit -m "A chalkos router lab"
-$ nix build .#router-kvm -o images/router-kvm
-$ nix build .#client-kvm -o images/client-kvm
 $ chalkctl validate
-client: valid for the image client-kvm (client-kvm on kvm, root hash 5444e09efc9f), config 94f1f34ad29ff7bc1f152158df4504bbf4576fc6d9c230a5ee9fd77bed47dc10
-router: valid for the image router-kvm (router-kvm on kvm, root hash 340bc1fd1ce4), config e3befdf104b789da4dd4f9c58b263905755e3428e7b9e9d560a75552e161b87e
+client: valid for the image router-kvm at ghcr.io/trevex/chalkos/router-kvm@sha256:013d69829fea863fa2150b1493fa10d92993da2d5af60b4cf77b5f53f7f1c8f0 (router-kvm on kvm, root hash 0e4e9ce8b41d), config 94f1f34ad29ff7bc1f152158df4504bbf4576fc6d9c230a5ee9fd77bed47dc10
+router: valid for the image router-kvm at ghcr.io/trevex/chalkos/router-kvm@sha256:013d69829fea863fa2150b1493fa10d92993da2d5af60b4cf77b5f53f7f1c8f0 (router-kvm on kvm, root hash 0e4e9ce8b41d), config e3befdf104b789da4dd4f9c58b263905755e3428e7b9e9d560a75552e161b87e
 ```
 
 ## Create the lab
 
-[`chalklab create`](../reference/cli/chalklab_create.md) starts both virtual machines and
-installs each node. Neither runs Kubernetes, so there is no bootstrap:
+[`chalklab create`](../reference/cli/chalklab_create.md) pulls the image once for both nodes,
+starts both virtual machines and installs each node. Neither runs Kubernetes, so there is no
+bootstrap:
 
+<!-- x-release-please-start-version -->
 ```console
 $ chalklab create --secrets secrets.json
 creating the lab's Secure Boot keys in /home/alice/.local/state/chalklab/router-lab/keys
-copying the image of client from /home/alice/router-lab/images/client-kvm
-copying the image of router from /home/alice/router-lab/images/router-kvm
+pulled ghcr.io/trevex/chalkos/router-kvm:v0.2.0 as ghcr.io/trevex/chalkos/router-kvm@sha256:013d69829fea863fa2150b1493fa10d92993da2d5af60b4cf77b5f53f7f1c8f0
+copying the image of client from /home/alice/.local/state/chalklab/router-lab/images/sha256-013d69829fea863fa2150b1493fa10d92993da2d5af60b4cf77b5f53f7f1c8f0
+using cached ghcr.io/trevex/chalkos/router-kvm@sha256:013d69829fea863fa2150b1493fa10d92993da2d5af60b4cf77b5f53f7f1c8f0
+copying the image of router from /home/alice/.local/state/chalklab/router-lab/images/sha256-013d69829fea863fa2150b1493fa10d92993da2d5af60b4cf77b5f53f7f1c8f0
 starting client, router
-wrote /home/alice/.local/state/chalklab/router-lab/chalkctl.json for chalklab with the admin role; its certificate expires on 2027-11-16
+wrote /home/alice/.local/state/chalklab/router-lab/chalkctl.json for chalklab with the admin role; its certificate expires on 2027-11-20
 waiting for client to come up in maintenance mode
-client runs in maintenance mode with the certificate fingerprint f15e62a87b9f26521cf976582974196dcee913f5182612ad437e50b7d8e26918
+client runs in maintenance mode with the certificate fingerprint c54072ed12d5de6cbc33426e7d6e0bc38692b815048e2cee58debae55a424ec7
 installing client in place
 client is installed and reboots
 chalkctl recovery-key client prints the key that unlocks it when its TPM fails
 waiting for router to come up in maintenance mode
-router runs in maintenance mode with the certificate fingerprint e64303af2431eb6588fd5b2d17110d179a8b8b6b7260934aa7b7d424fca6a5bb
+router runs in maintenance mode with the certificate fingerprint 23d801060185d696ce9d05a3207fea362df93c72e48d032fc046835db822c09a
 installing router in place
 router is installed and reboots
 chalkctl recovery-key router prints the key that unlocks it when its TPM fails
@@ -156,6 +171,7 @@ signed by the lab's db key:
   chalklab sign <image dir> --out <signed dir>
   chalkctl upgrade --image <signed dir>
 ```
+<!-- x-release-please-end -->
 
 chalklab installs the nodes in the order of their names, so the client comes first. It takes its
 LAN address once the router runs. Export the client file and the lab's inventory, as the output
@@ -175,13 +191,14 @@ of its router services last:
 $ chalkctl status router
 config e3befdf104b789da4dd4f9c58b263905755e3428e7b9e9d560a75552e161b87e (the inventory's)
 platform kvm (the inventory's)
-image 340bc1fd1ce4, booted from chalkos_1.efi
+image 0e4e9ce8b41d, booted from chalkos_1.efi
 VOLUME  DISK    MOUNT POINT  STATE
 var     system  /var         mounted
 OUTPUT           HASH          STATE
 chrony           0af9b0bd41ca  rendered
+chrony-server    e3b0c44298fc  rendered
 dhcp-relay       e3b0c44298fc  rendered
-frr              1a231e4f19d4  rendered
+frr              956667f45766  rendered
 jool             e3b0c44298fc  rendered
 kea              4a4da68c9a2f  rendered
 networkd         8b35eed0386f  rendered
@@ -194,11 +211,11 @@ dhcp4 default: running
   SUBNET  RANGE            LEASED  POOL
   lan     192.168.50.0/24  1       100
 certificates:
-  node   expires 2027-11-16
-  OS CA  expires 2036-11-13
+  node   expires 2027-11-20
+  OS CA  expires 2036-11-17
 trust:
-  OS CA  d30b96c517164302
-time: synchronised to 192.53.103.104, offset -0.000838 s
+  OS CA  d48aae5be11ac0a7
+time: synchronised to 192.53.103.108, offset -0.000000 s
 ```
 
 Each output is a file the router renders from its config, such as `router-nftables` for the
@@ -275,8 +292,8 @@ nothing. Delivering config needs the secrets file:
 
 ```console
 $ chalkctl validate
-client: valid for the image client-kvm (client-kvm on kvm, root hash 5444e09efc9f), config 94f1f34ad29ff7bc1f152158df4504bbf4576fc6d9c230a5ee9fd77bed47dc10
-router: valid for the image router-kvm (router-kvm on kvm, root hash 340bc1fd1ce4), config 891df0f1c1918a7506943eaa311ac4269b46821338424da6e4122fe2ea7cab26
+client: valid for the image router-kvm at ghcr.io/trevex/chalkos/router-kvm@sha256:013d69829fea863fa2150b1493fa10d92993da2d5af60b4cf77b5f53f7f1c8f0 (router-kvm on kvm, root hash 0e4e9ce8b41d), config 94f1f34ad29ff7bc1f152158df4504bbf4576fc6d9c230a5ee9fd77bed47dc10
+router: valid for the image router-kvm at ghcr.io/trevex/chalkos/router-kvm@sha256:013d69829fea863fa2150b1493fa10d92993da2d5af60b4cf77b5f53f7f1c8f0 (router-kvm on kvm, root hash 0e4e9ce8b41d), config 891df0f1c1918a7506943eaa311ac4269b46821338424da6e4122fe2ea7cab26
 $ chalkctl config apply router --secrets secrets.json --diff
 router: config 0 added, 0 removed, 1 changed
 ~ Router "router"
@@ -309,7 +326,7 @@ the one `chalkctl config rollback` restores.
 ## Remove the lab
 
 [`chalklab destroy`](../reference/cli/chalklab_destroy.md) stops the virtual machines and removes
-the lab's state, its disks and keys included:
+the lab's state, its disks, keys and the pulled image included:
 
 ```console
 $ chalklab destroy
@@ -322,10 +339,17 @@ Clear the variables, which name the removed lab's files:
 unset CHALKOSCONFIG CHALKOSINVENTORY
 ```
 
-The files and the images stay, so `chalklab create --secrets secrets.json` makes the same lab
-again.
+The files stay, so `chalklab create --secrets secrets.json` makes the same lab again, and pulls
+the image once more.
 
 ## What next
+
+The lab ran on the published router image. To run a router of your own on real machines with it,
+name `router-metal` from [Releases](releases.md) in the inventory. To add anything to the image,
+such as a package, an extension or an option, build your own: the template's `README.md` shows
+how to point the inventory at the `router-kvm` and `client-kvm` that `flake.nix` builds, and
+[Your first image flake](../build/first-image.md) starts the image author's pages.
+[Published images or your own](decisions.md#published-images-or-your-own) compares the two paths.
 
 - [Set up a router](../router/set-up.md) covers the `Router` document and the node API's
   interfaces on a router of real machines.

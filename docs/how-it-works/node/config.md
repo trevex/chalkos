@@ -117,21 +117,7 @@ else `chalkos.yaml` in the current directory. It stays on the operator's machine
 reads:
 
 ```yaml title="chalkos.yaml"
-# The lab's nodes, the address chalkctl reaches each at on the lab network, the image they run
-# and their config files: every node gets cluster/, each its own file in nodes/. chalklab reaches
-# the nodes at ports it forwards instead, through the inventory it writes into the lab's state
-# directory.
-apiVersion: chalkctl.chalkos.dev/v1alpha1
-kind: Inventory
-metadata: {name: lab}
-spec:
-  images:
-    # nix build .#node-kvm -o images/node-kvm puts the image here.
-    node-kvm: {source: {directory: images/node-kvm}}
-  all: {imageName: node-kvm, files: [cluster/*.yaml]}
-  nodes:
-    cp1: {address: 192.168.123.11, files: [nodes/cp1.yaml]}
-    w1: {address: 192.168.123.12, files: [nodes/w1.yaml]}
+--8<-- "templates/lab/chalkos.yaml"
 ```
 
 Its `spec.all` is what every node gets, `spec.groups` what the nodes of each group get, and
@@ -220,13 +206,14 @@ does not fit its disk, an extra flag that would override one chalkos sets.
 
 The inventory's `spec.images` names each image the nodes run and the image directory of its build
 in `source.directory`, relative to the inventory's directory. The directory is what `nix build`
-writes for one image, such as `images/node-kvm` in the lab template. Where nodes
+writes for one image, or what `chalkctl image pull` writes, such as `images/node-kvm`. Where nodes
 enforce Secure Boot, it is the copy of the build that
 [`chalkbuild sign`](../../reference/cli/chalkbuild_sign.md) signed. Its `metadata.json` names the
 image's name, platform and root hash, and its `schemas/` holds the schemas of the kinds the
 image accepts.
 
-An image published to a registry is named by its reference in `source.oci` instead, as
+An image published to a registry, such as the published image the lab template names, is named
+by its reference in `source.oci` instead, as
 [`chalkbuild push`](../../reference/cli/chalkbuild_push.md) prints it. Each image sets exactly one of
 `directory` and `oci`. A reference by tag is resolved to a digest once per command, so one command
 reads one image. `chalkctl validate`, `config apply` and `status` read the image's header and

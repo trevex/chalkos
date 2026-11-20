@@ -32,8 +32,14 @@ let
       "hardware-examples"
       "tests"
     ];
-    "templates/lab" = [ "cluster" ];
-    "templates/router-lab" = [ "nodes" ];
+    "templates/lab" = [
+      "chalkos.yaml"
+      "cluster"
+    ];
+    "templates/router-lab" = [
+      "chalkos.yaml"
+      "nodes"
+    ];
     "templates/cluster-metal" = [
       "chalkos.yaml"
       "nodes"
