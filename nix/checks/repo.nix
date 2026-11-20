@@ -451,6 +451,36 @@ in
         touch $out
       '';
 
+  # security-insights.yml is valid against the CUE schema of the OpenSSF Security Insights version
+  # it names, which a new version of the specification brings here with its hash.
+  security-insights =
+    let
+      version = "2.2.0";
+      schema = pkgs.fetchurl {
+        url = "https://raw.githubusercontent.com/ossf/security-insights-spec/v${version}/spec/schema.cue";
+        sha256 = "1caqrla6q94g31wj0347i9y2lwg0zdzsga7jd64zr12l1d3n2jsf";
+      };
+    in
+    pkgs.runCommand "chalkos-security-insights"
+      {
+        nativeBuildInputs = [
+          pkgs.cue
+          pkgs.yq-go
+        ];
+        insights = ../../security-insights.yml;
+      }
+      ''
+        named=$(yq '.header.schema-version' "$insights")
+        if [ "$named" != ${version} ]; then
+          echo "error: security-insights.yml names the schema version $named, and the check has ${version}" >&2
+          exit 1
+        fi
+        cp ${schema} schema.cue
+        cp "$insights" security-insights.yml
+        cue vet -c -d '#SecurityInsights' schema.cue security-insights.yml
+        touch $out
+      '';
+
   # The Nix files are formatted as nix fmt formats them, hold no unused binding or argument
   # (deadnix) and pass statix, except for the lints statix.toml leaves out.
   nix-lint =

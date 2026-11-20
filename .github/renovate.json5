@@ -23,6 +23,14 @@
   // own, so Renovate still rebases it.
   gitIgnoredAuthors: ['359050260+chalkreleaser[bot]@users.noreply.github.com'],
   postUpdateOptions: ['gomodTidy'],
+  // An update that fixes a known vulnerability, from the repository's Dependabot alerts or the
+  // OSV database, comes at any time in a pull request of its own, outside the groups below,
+  // labelled security.
+  vulnerabilityAlerts: {
+    addLabels: ['security'],
+    schedule: ['at any time'],
+  },
+  osvVulnerabilityAlerts: true,
   // Automerge enables GitHub's auto-merge, which waits for the checks branch protection requires.
   // Where GitHub's auto-merge is unavailable, Renovate merges once every check of the branch has
   // passed, never without checks.

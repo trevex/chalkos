@@ -1,0 +1,132 @@
+# chalkos's security practices in the OpenSSF Security Insights format, version 2.2.0
+# (https://github.com/ossf/security-insights-spec). The security-insights check validates the file
+# against the specification's schema. Update last-updated with each change, and last-reviewed
+# when the file has been checked against the repository.
+header:
+  schema-version: 2.2.0
+  last-updated: "2026-11-20"
+  last-reviewed: "2026-11-20"
+  url: https://raw.githubusercontent.com/trevex/chalkos/main/security-insights.yml
+
+project:
+  name: chalkos
+  homepage: https://trevex.github.io/chalkos/
+  roadmap: https://trevex.github.io/chalkos/contribute/roadmap/
+  administrators:
+    - name: Niklas Voss
+      social: https://github.com/trevex
+      primary: true
+  repositories:
+    - name: chalkos
+      url: https://github.com/trevex/chalkos
+      comment: The code, the NixOS modules, the documentation and the release workflow of chalkos.
+  vulnerability-reporting:
+    reports-accepted: true
+    bug-bounty-available: false
+    policy: https://github.com/trevex/chalkos/blob/main/SECURITY.md
+    comment: >-
+      Report a vulnerability through GitHub's private vulnerability reporting at
+      https://github.com/trevex/chalkos/security/advisories/new, never in a public issue.
+    in-scope:
+      - The code of the repository
+      - The images, installer and binaries a release publishes
+      - The configuration chalkos generates for the components it runs
+    out-of-scope:
+      - Vulnerabilities of upstream components, which belong to their projects
+  documentation:
+    quickstart-guide: https://trevex.github.io/chalkos/get-started/quick-start-kubernetes/
+    detailed-guide: https://trevex.github.io/chalkos/
+    design: https://trevex.github.io/chalkos/how-it-works/
+    release-process: https://trevex.github.io/chalkos/contribute/releasing/
+    support-policy: https://github.com/trevex/chalkos/blob/main/SECURITY.md#supported-versions
+    signature-verification: https://trevex.github.io/chalkos/get-started/releases/#verify-an-image
+
+repository:
+  url: https://github.com/trevex/chalkos
+  status: active
+  accepts-change-request: true
+  accepts-automated-change-request: true
+  core-team:
+    - name: Niklas Voss
+      social: https://github.com/trevex
+      primary: true
+  license:
+    url: https://github.com/trevex/chalkos/blob/main/LICENSE
+    expression: Apache-2.0
+  documentation:
+    contributing-guide: https://github.com/trevex/chalkos/blob/main/CONTRIBUTING.md
+    security-policy: https://github.com/trevex/chalkos/blob/main/SECURITY.md
+    dependency-management-policy: https://trevex.github.io/chalkos/contribute/dependencies/
+    review-policy: https://trevex.github.io/chalkos/contribute/ci/#pull-requests
+  release:
+    automated-pipeline: true
+    changelog: https://github.com/trevex/chalkos/releases/tag/v{version}
+    distribution-points:
+      - uri: https://github.com/trevex/chalkos/releases
+        comment: >-
+          The installer, chalkctl and chalkbuild, with SHA256SUMS and a cosign signature bundle
+          per file.
+      - uri: https://github.com/trevex?tab=packages&repo_name=chalkos
+        comment: >-
+          The images at ghcr.io/trevex/chalkos, per Kubernetes minor and platform and for the
+          router.
+    attestations:
+      - name: Build provenance
+        location: https://github.com/trevex/chalkos/attestations
+        predicate-uri: https://slsa.dev/provenance/v1
+        comment: >-
+          GitHub's build provenance attestation of each image and download, which
+          gh attestation verify checks. The release workflow also signs each of them with cosign,
+          keyless, as the identity
+          https://github.com/trevex/chalkos/.github/workflows/release.yml@refs/heads/main of the
+          issuer https://token.actions.githubusercontent.com.
+  security:
+    assessments:
+      self:
+        comment: No security assessment of chalkos has been made yet.
+    tools:
+      - name: OpenSSF Scorecard
+        type: other
+        rulesets: [default]
+        integration:
+          adhoc: true
+          ci: false
+          release: false
+        results: {}
+        comment: >-
+          Runs each week and on each push to main, in .github/workflows/scorecard.yml, and
+          publishes its results at https://scorecard.dev/viewer/?uri=github.com/trevex/chalkos.
+      - name: govulncheck
+        type: SCA
+        rulesets: [default]
+        integration:
+          adhoc: true
+          ci: true
+          release: false
+        results: {}
+        comment: >-
+          Checks the Go code for known vulnerabilities that it calls, on every pull request, every
+          push to main and every night, in the govulncheck job of .github/workflows/ci.yml.
+      - name: vulnix
+        type: SCA
+        rulesets: [default]
+        integration:
+          adhoc: true
+          ci: false
+          release: false
+        results: {}
+        comment: >-
+          Matches the packages of each release image's NixOS system against the CVEs of the
+          National Vulnerability Database every night, in the vulnix job of
+          .github/workflows/nightly.yml, and reports them in the run's summary.
+      - name: Renovate
+        type: SCA
+        rulesets: [default]
+        integration:
+          adhoc: true
+          ci: false
+          release: false
+        results: {}
+        comment: >-
+          Updates the Go modules and the GitHub Actions each week, and opens a pull request for
+          a fixed version of a vulnerable dependency at any time.

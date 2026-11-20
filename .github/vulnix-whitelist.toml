@@ -1,0 +1,9 @@
+# The vulnix matches that do not apply to chalkos's release images, which the nightly run's vulnix
+# job leaves out of its report. Each section names a package, as <pname> or <pname>-<version>,
+# with the CVEs that do not apply to it, the reason, and an issue that tracks it where one exists:
+#
+#   ["brotli-1.2.1"]
+#   cve = ["CVE-2026-111497"]
+#   comment = "The NVD's entry names 1.0.3 to 1.2.0; nixpkgs ships the fixed 1.2.1"
+#
+# See https://github.com/nix-community/vulnix#whitelisting for the format.

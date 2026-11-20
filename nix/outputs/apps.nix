@@ -58,6 +58,28 @@ let
     ];
     text = builtins.readFile ./update-vendor-hash.sh;
   };
+
+  # govulncheck of the Go code, built with the Go release go.mod names, which also types the
+  # standard library it checks. It reads the Go vulnerability database at vuln.go.dev and the
+  # modules from the module proxy, so it runs on the host rather than as a check, and fails only
+  # on a vulnerability that chalkos's code calls. Arguments replace ./..., the packages it checks.
+  govulncheck = pkgs.writeShellApplication {
+    name = "chalkos-govulncheck";
+    runtimeInputs = [
+      pkgs.chalkos.go
+      pkgs.chalkos.go.tools.govulncheck.latest
+    ];
+    text = ''
+      if [ ! -f go.mod ]; then
+        echo "chalkos-govulncheck: run it in the repository's root, where go.mod is" >&2
+        exit 1
+      fi
+      if [ "$#" -eq 0 ]; then
+        set -- ./...
+      fi
+      exec govulncheck "$@"
+    '';
+  };
 in
 {
   chalklab = {
@@ -79,6 +101,11 @@ in
     type = "app";
     program = lib.getExe kubernetesOnline;
     meta.description = "Run the Kubernetes e2e test with images pulled from the upstream registries";
+  };
+  govulncheck = {
+    type = "app";
+    program = lib.getExe govulncheck;
+    meta.description = "Check the Go code for known vulnerabilities that it calls";
   };
   update-pins = {
     type = "app";

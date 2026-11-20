@@ -1,7 +1,9 @@
 # Builds the flake's checks by the tiers of nix/checks/tiers.nix: the fast checks in one job, and
 # each image and end-to-end check in a job of its own. A pull request runs the fast and image
 # tiers, and the end-to-end checks its labels name: e2e names them all, and each other label the
-# checks e2eLabels of the tiers maps it to; adding any label runs the workflow again. A pull
+# checks e2eLabels of the tiers maps it to; adding any label runs the workflow again. Every run
+# also runs govulncheck, which reads the Go vulnerability database from the network and so runs
+# outside the flake's checks. A pull
 # request's title, which a squash merge makes the subject of its commit on main, must be a
 # Conventional Commit, and each of its commits must carry its author's DCO sign-off. Editing the
 # title or the description runs the workflow again. A push to main and the nightly run, which
@@ -97,6 +99,28 @@ jobs:
             nix build --print-build-logs --no-link --keep-going "${installables[@]}"
           fi
 
+  # govulncheck checks the Go code against the Go vulnerability database, which it reads from
+  # vuln.go.dev, and fails when the code calls a function with a known vulnerability; one in a
+  # module the code requires but does not call passes. The database changes every day, so the
+  # nightly run also finds a new advisory against main.
+  govulncheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      # Hestia checks which cached packs GitHub has evicted.
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/nix
+        with:
+          cachix-name: ${{ vars.CACHIX_NAME }}
+          cachix-auth-token: ${{ github.ref == 'refs/heads/main' && secrets.CACHIX_AUTH_TOKEN || '' }}
+      - name: Check for vulnerabilities the Go code calls
+        run: nix run .#govulncheck
+
   # The release pull request holds exactly one commit, release-please's, on the tip of its base.
   # Its versioned files and changelog are then those of every pull request merged before it.
   # GitHub runs no check again when main moves; release-please rebuilds the pull request then,
@@ -173,7 +197,7 @@ jobs:
 
   # The jobs that run on pull requests alone pass on a push or the nightly run when skipped.
   result:
-    needs: [tiers, check, release-pr, pr-title, dco]
+    needs: [tiers, check, govulncheck, release-pr, pr-title, dco]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -182,18 +206,19 @@ jobs:
           EVENT: ${{ github.event_name }}
           TIERS: ${{ needs.tiers.result }}
           CHECK: ${{ needs.check.result }}
+          GOVULNCHECK: ${{ needs.govulncheck.result }}
           RELEASE_PR: ${{ needs.release-pr.result }}
           PR_TITLE: ${{ needs.pr-title.result }}
           DCO: ${{ needs.dco.result }}
         run: |
-          echo "tiers: $TIERS, checks: $CHECK, release pull request: $RELEASE_PR, title: $PR_TITLE, sign-offs: $DCO"
+          echo "tiers: $TIERS, checks: $CHECK, govulncheck: $GOVULNCHECK, release pull request: $RELEASE_PR, title: $PR_TITLE, sign-offs: $DCO"
           passed() { [ "$1" = success ] || { [ "$EVENT" != pull_request ] && [ "$1" = skipped ]; }; }
-          [ "$TIERS" = success ] && [ "$CHECK" = success ] &&
+          [ "$TIERS" = success ] && [ "$CHECK" = success ] && [ "$GOVULNCHECK" = success ] &&
             { [ "$RELEASE_PR" = success ] || [ "$RELEASE_PR" = skipped ]; } &&
             passed "$PR_TITLE" && passed "$DCO"
 
   report:
-    needs: [tiers, check]
+    needs: [tiers, check, govulncheck]
     if: failure() && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:

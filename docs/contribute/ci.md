@@ -1,6 +1,6 @@
 ---
 title: "Continuous integration"
-description: "How pull requests reach main, which checks CI runs when, the e2e labels, the nightly run and the binary cache"
+description: "How pull requests reach main, which checks and scans CI runs when, the e2e labels, the nightly run and the binary cache"
 ---
 
 # Continuous integration
@@ -110,11 +110,61 @@ start, as [Dependency updates](dependencies.md) describes.
 The workflow `.github/workflows/labels.yml` creates or updates the repository's labels from
 `.github/labels.yml` when that file changes on `main`.
 
+## govulncheck
+
+The job `govulncheck` runs on every pull request, every push to `main` and in the nightly run,
+beside the tiers, and feeds `result`. It runs `nix run .#govulncheck`, which checks the Go code
+with govulncheck, built with the Go release of `go.mod`. The job fails when the code calls a
+function with a known vulnerability. A vulnerability in a module that chalkos requires but never
+calls is listed and passes.
+
+govulncheck reads the Go vulnerability database from `vuln.go.dev` and the modules from the module
+proxy, so it runs outside the flake's checks, whose builds have no network. The database changes
+every day, so the nightly run finds an advisory published after a commit reached `main`.
+Run the same check in a working tree:
+
+```sh
+nix run .#govulncheck
+```
+
+[Security updates](dependencies.md#security-updates) describes the fix.
+
 ## Nightly run and failures
 
 The workflow `.github/workflows/nightly.yml` runs every tier on `main` each night, unless a run
 of a push already passed on `main`'s latest commit. A run started by hand always builds. When a check fails on a push to `main` or in the nightly run, CI opens an issue
 labelled `ci-failure`, or comments on the open one, with a link to the run.
+
+The nightly run's job `vulnix` runs every night, whether or not the tiers run. It builds the NixOS
+system of each release image, which the caches usually hold from the `release-image-*` checks,
+and matches the packages of its runtime closure against the CVEs of the National Vulnerability
+Database with [vulnix](https://github.com/nix-community/vulnix). The run's summary lists the
+number of matches per image and each matched package with its CVEs and highest CVSS v3 score,
+and the artifact `vulnix` holds vulnix's JSON report per image. The job fails only when vulnix
+cannot scan, and opens no issue for a match: a CVE in a nixpkgs package is fixed by
+the weekly update of nixpkgs, as [The weekly flake update](dependencies.md#the-weekly-flake-update)
+describes.
+
+vulnix matches packages by name and version, so a match may not apply, for example when nixpkgs
+patches the fix into a package without changing its version. Add such a match to
+`.github/vulnix-whitelist.toml`, with the CVE and the reason, and the next report leaves it out.
+Scan one image on a workstation as the job does:
+
+```sh
+nix build -o system .#releaseImages.x86_64-linux.router-kvm.nixos.config.system.build.toplevel
+nix run --inputs-from . nixpkgs#vulnix -- --closure --whitelist .github/vulnix-whitelist.toml system
+```
+
+## OpenSSF Scorecard
+
+The workflow `.github/workflows/scorecard.yml` runs the
+[OpenSSF Scorecard](https://github.com/ossf/scorecard) checks each Monday, on each push to `main`
+and when a branch protection rule changes. It publishes the results to `api.scorecard.dev`, which
+the README's badge reads, and uploads them to the repository's code scanning alerts. The API
+accepts results only from a workflow within
+[its restrictions](https://github.com/ossf/scorecard-action#workflow-restrictions): no `env` or
+`defaults`, no write permission at the workflow's level, and in the job only the actions it
+approves, so keep any other step out of the workflow.
 
 ## Binary cache
 

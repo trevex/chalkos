@@ -49,3 +49,74 @@ jobs:
       contents: read
       issues: write
     secrets: inherit
+
+  # vulnix matches the packages of each release image's NixOS system, its runtime closure, against
+  # the National Vulnerability Database's CVEs, which it downloads, every night, whether or not CI
+  # ran. It reports what it finds in the run's summary and as the artifact vulnix, one JSON file
+  # per image, and fails only when it cannot scan: a CVE in nixpkgs's packages is fixed by an
+  # update of nixpkgs, not by holding the nightly run. .github/vulnix-whitelist.toml holds the
+  # matches judged not to apply, each with its reason.
+  vulnix:
+    if: github.repository == 'trevex/chalkos'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      # Hestia checks which cached packs GitHub has evicted.
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The images' systems come from the caches that CI's release-image checks fill on main.
+      - uses: ./.github/actions/nix
+        with:
+          cachix-name: ${{ vars.CACHIX_NAME }}
+          read-only: "true"
+      - name: Build the release images' systems
+        run: |
+          mkdir systems
+          for name in $(nix eval --json .#releaseImages.x86_64-linux --apply builtins.attrNames | jq -r '.[]'); do
+            nix build --print-build-logs -o "systems/$name" \
+              ".#releaseImages.x86_64-linux.\"$name\".nixos.config.system.build.toplevel"
+          done
+      # vulnix exits with 2 when it finds a CVE the whitelist does not hold, and with 1 when it
+      # fails.
+      - name: Scan the systems
+        run: |
+          mkdir reports
+          for system in systems/*; do
+            name=$(basename "$system")
+            status=0
+            nix run --inputs-from . nixpkgs#vulnix -- --closure --json \
+              --whitelist .github/vulnix-whitelist.toml "$system" >"reports/$name.json" || status=$?
+            if [ "$status" != 0 ] && [ "$status" != 2 ]; then
+              echo "::error title=vulnix failed::vulnix could not scan $name"
+              exit 1
+            fi
+          done
+      - name: Summarise the findings
+        run: |
+          {
+            echo "# vulnix"
+            echo
+            echo "| Image | Packages | CVEs |"
+            echo "| --- | ---: | ---: |"
+            for report in reports/*.json; do
+              jq -r --arg name "$(basename "$report" .json)" \
+                '"| \($name) | \(length) | \([.[].affected_by[]] | unique | length) |"' "$report"
+            done
+            echo
+            echo "The packages of every image, with the CVEs vulnix matches to each and the highest CVSS v3 score among them:"
+            echo
+            echo "| Package | CVEs | Highest CVSS v3 |"
+            echo "| --- | --- | ---: |"
+            jq -rs 'add // [] | unique_by(.name) | sort_by(-([.cvssv3_basescore[]] | max // 0))[]
+              | "| \(.name) | \(.affected_by | join(", ")) | \([.cvssv3_basescore[]] | max // "") |"' reports/*.json
+          } >>"$GITHUB_STEP_SUMMARY"
+          total=$(jq -s '[.[][].affected_by[]] | unique | length' reports/*.json)
+          echo "::notice title=vulnix::$total CVEs match the packages of the release images; see the run's summary"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: vulnix
+          path: reports
