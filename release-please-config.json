@@ -7,6 +7,7 @@
   "bootstrap-sha": "211c556eb70198c6fe62f9c0525a8997b1afa57f",
   "label": "autorelease: pending,e2e",
   "always-update": true,
+  "signoff": "chalkreleaser[bot] <359050260+chalkreleaser[bot]@users.noreply.github.com>",
   "packages": {
     ".": {
       "changelog-path": "CHANGELOG.md",
