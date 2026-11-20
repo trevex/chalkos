@@ -1,7 +1,7 @@
 # Updates the flake's inputs each Monday, which Renovate leaves alone: nix flake update moves every
-# input of flake.lock, nixpkgs and go-overlay and those go-overlay brings, to its newest revision.
-# update-pins and update-vendor-hash then set what follows from them, as a change of nixpkgs can
-# change how the Kubernetes sources and the Go modules' download hash. The workflow resets the
+# input of flake.lock, nixpkgs, go-overlay with the inputs it brings, and bombon, to its newest
+# revision. update-pins and update-vendor-hash then set what follows from them, as a change of
+# nixpkgs can change how the Kubernetes sources and the Go modules' download hash. The workflow resets the
 # branch bot/update-flake-lock to main, replacing what it held, commits the change there through
 # GitHub's API, which signs the commit as the release GitHub App's bot, and opens a pull request
 # from it, or updates the open one, labelled dependencies and e2e, with the inputs' revisions in

@@ -29,6 +29,16 @@ nixpkgs patches the fix into a package without changing its version.
 `.github/vulnix-whitelist.toml` records each such match with its reason. A real match in a nixpkgs
 package is fixed by updating nixpkgs, which the `update-nixpkgs` workflow does each week.
 
+## Software bills of materials
+
+Each release publishes a software bill of materials (SBOM) for every image, in SPDX 2.3 JSON, and
+for chalkctl and chalkbuild, in CycloneDX JSON. An image's SBOM lists the packages of its NixOS
+system and its kernel with their versions, licences and sources; a program's lists the Go modules
+in its binary. The SBOMs are release assets, signed like the others, and attestations on the
+images and the binaries, so a scanner can read what a release ships without building it.
+[Fetch and verify an SBOM](releases.md#fetch-and-verify-an-sbom) shows how to download and check
+one.
+
 ## OpenSSF Scorecard
 
 The [OpenSSF Scorecard](https://scorecard.dev/) checks the repository's supply-chain practices
@@ -42,7 +52,7 @@ README's badge shows the score.
 `security-insights.yml` in the repository's root describes the project's security practices in the
 [OpenSSF Security Insights](https://github.com/ossf/security-insights-spec) format, for tools that
 read them: how to report a vulnerability, the security tools CI runs, how releases are signed and
-attested, and the licence.
+attested, where their SBOMs are, and the licence.
 
 ## Limits
 

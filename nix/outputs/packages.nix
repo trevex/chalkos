@@ -3,20 +3,27 @@
   self,
   testing,
   docs,
+  sbom,
   ...
 }:
 let
   inherit (pkgs) lib;
   # chalkctl and chalkbuild as the flake's packages, whose version commands name the git revision
   # they were built from. Only these two take it: a revision in a program of the images, or in the
-  # chalkbuild their oci attributes run, would rebuild every image on every commit.
+  # chalkbuild their oci attributes run, would rebuild every image on every commit. Their sbom is
+  # the CycloneDX SBOM a release publishes beside the binary.
   withRevision =
     program:
-    program.overrideAttrs (old: {
-      ldflags = old.ldflags ++ [
-        "-X github.com/trevex/chalkos/pkg/version.Revision=${self.rev or self.dirtyRev or "unknown"}"
-      ];
-    });
+    program.overrideAttrs (
+      final: old: {
+        ldflags = old.ldflags ++ [
+          "-X github.com/trevex/chalkos/pkg/version.Revision=${self.rev or self.dirtyRev or "unknown"}"
+        ];
+        passthru = old.passthru // {
+          sbom = sbom.program final.finalPackage;
+        };
+      }
+    );
 in
 {
   inherit (pkgs.chalkos)

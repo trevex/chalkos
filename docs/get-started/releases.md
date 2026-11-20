@@ -9,7 +9,9 @@ This page is for operators and image authors who take chalkos from a release ins
 everything themselves. A release is a tag `vX.Y.Z` of the chalkos repository with a GitHub release
 of the same name. It publishes images to the GitHub Container Registry, and the installer,
 chalkctl and chalkbuild as downloads. Each of them is signed with cosign and has a provenance
-attestation, so you can check that the release workflow of chalkos built it.
+attestation, so you can check that the release workflow of chalkos built it. Each image and each
+program also has a software bill of materials (SBOM), which lists its components with their
+licences.
 
 The [releases page](https://github.com/trevex/chalkos/releases) lists every release with its
 changelog, which `CHANGELOG.md` in the repository collects. Before 1.0, a release with a new
@@ -41,6 +43,8 @@ The release's assets are these files:
 | `chalkos-installer.raw.zst` | The installer as a raw disk image, compressed with zstd. |
 | `chalkctl-linux-amd64` | chalkctl for x86-64 Linux, a static binary. |
 | `chalkbuild-linux-amd64` | chalkbuild for x86-64 Linux, a static binary. |
+| `<image>.spdx.json` | The SBOM of each image, such as `router-metal.spdx.json`, in SPDX 2.3 JSON. |
+| `chalkctl-linux-amd64.cdx.json`, `chalkbuild-linux-amd64.cdx.json` | The SBOM of each program, in CycloneDX JSON. |
 | `SHA256SUMS` | The SHA-256 checksum of each file above. |
 | `<asset>.sigstore.json` | The cosign signature bundle of each file above and of `SHA256SUMS`. |
 
@@ -175,12 +179,80 @@ zstd -d chalkos-installer.raw.zst
 has no OS CA, so it accepts any client until it installs a node; a cluster that needs one builds
 its own installer with `mkImages`.
 
+## Fetch and verify an SBOM
+
+A software bill of materials (SBOM) lists what an image or a program is made of. Each release image
+has an SBOM in [SPDX](https://spdx.dev/) 2.3 JSON. It lists each package of the image's NixOS
+system and the kernel that its UKI carries, with the package's version, its licence, the URL of its
+source and its package URL (purl), all taken from the package's metadata in nixpkgs. A package whose
+metadata names no licence has the licence `NOASSERTION`. Files that the system generates, such as
+configuration files and systemd units, belong to no package and are not listed. chalkctl and
+chalkbuild each have an SBOM in [CycloneDX](https://cyclonedx.org/) JSON, which lists the Go modules
+linked into the binary with their versions and licences.
+
+A release publishes each SBOM in two places:
+
+- As release assets: `<image>.spdx.json` for each image, and `chalkctl-linux-amd64.cdx.json` and
+  `chalkbuild-linux-amd64.cdx.json`. `SHA256SUMS` lists them, and each has a `.sigstore.json`
+  bundle, like the other assets.
+- As attestations. An image's SBOM is attached to its digest in the registry twice: as a cosign
+  attestation of the type `spdxjson`, and as a GitHub attestation with the predicate type
+  `https://spdx.dev/Document/v2.3`. A program's SBOM is a GitHub attestation of the binary with the
+  predicate type `https://cyclonedx.org/bom`.
+
+Fetch an image's SBOM from the registry with cosign, which checks the attestation's signature
+first:
+
+```sh
+cosign verify-attestation ghcr.io/trevex/chalkos/router-metal@sha256:<digest> --type spdxjson \
+  --certificate-identity https://github.com/trevex/chalkos/.github/workflows/release.yml@refs/heads/main \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com |
+  jq -r .payload | base64 -d | jq .predicate >router-metal.spdx.json
+```
+
+The GitHub CLI checks the GitHub attestation and can print the SBOM it holds:
+
+```sh
+gh attestation verify oci://ghcr.io/trevex/chalkos/router-metal@sha256:<digest> \
+  --repo trevex/chalkos --predicate-type https://spdx.dev/Document/v2.3 \
+  --format json --jq '.[0].verificationResult.statement.predicate' >router-metal.spdx.json
+```
+
+For a program, name the binary that you downloaded:
+
+```sh
+gh attestation verify chalkctl-linux-amd64 --repo trevex/chalkos \
+  --predicate-type https://cyclonedx.org/bom
+```
+
+To take an SBOM from the release's assets instead, download it with `SHA256SUMS` and the bundles,
+and check it as you would chalkctl:
+
+<!-- x-release-please-start-version -->
+```sh
+release=https://github.com/trevex/chalkos/releases/download/v0.2.2
+curl -fL -O "$release/router-metal.spdx.json" -O "$release/router-metal.spdx.json.sigstore.json" \
+  -O "$release/SHA256SUMS" -O "$release/SHA256SUMS.sigstore.json"
+sha256sum --check --ignore-missing SHA256SUMS
+cosign verify-blob router-metal.spdx.json --bundle router-metal.spdx.json.sigstore.json \
+  --certificate-identity https://github.com/trevex/chalkos/.github/workflows/release.yml@refs/heads/main \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+<!-- x-release-please-end -->
+
+List the packages of an image with their versions and licences:
+
+```sh
+jq -r '.packages[] | [.name, .versionInfo, .licenseDeclared] | @tsv' router-metal.spdx.json
+```
 ## Licences and source
 
 chalkos is licensed under the Apache License 2.0, and its release images carry the annotation
 `org.opencontainers.image.licenses` with the value `Apache-2.0`. The images and the installer also
 contain third-party free software, such as the Linux kernel, systemd and the GNU C Library, each
-under its own licence, among them the GNU GPL, the GNU LGPL and the MIT licence.
+under its own licence, among them the GNU GPL, the GNU LGPL and the MIT licence. Each image's SBOM
+lists its packages with their licences and the URLs of their source, as
+[Fetch and verify an SBOM](#fetch-and-verify-an-sbom) describes.
 
 The release's `flake.lock` fixes the corresponding source of every component, including the
 patches that nixpkgs applies, and Nix fetches it from the components' upstreams or from the
@@ -207,6 +279,8 @@ statement.
 ## Check that it worked
 
 `cosign verify` prints the signature's claims as JSON and ends with no error, `cosign verify-blob`
-prints `Verified OK`, and `gh attestation verify` prints that the verification succeeded. The
+prints `Verified OK`, and `gh attestation verify` prints that the verification succeeded. A
+fetched SBOM is JSON whose `spdxVersion` is `SPDX-2.3`, and the `jq` listing of its packages
+includes `linux` with `GPL-2.0-only`. The
 inventory names each image by a digest that `cosign verify` accepted, and `chalkctl validate`
 accepts every node's files against it.
