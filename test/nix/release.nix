@@ -47,6 +47,14 @@ let
       )
   );
   config = i: i.nixos.config;
+  # The lines of each file release-please updates, an entry of its extra-files: a path or a
+  # {type, path}.
+  extraFileLines = map (
+    file: lib.splitString "\n" (builtins.readFile (../.. + "/${file.path or file}"))
+  ) (lib.importJSON ../../release-please-config.json).packages.".".extra-files;
+  # The x.y.z versions a line names.
+  versions =
+    line: lib.concatLists (lib.filter lib.isList (builtins.split "([0-9]+\\.[0-9]+\\.[0-9]+)" line));
 in
 lib.runTests {
   # One image of each published Kubernetes minor and of the router on each platform, named after
@@ -127,9 +135,8 @@ lib.runTests {
   # files it updates names no other, such as an IPv4 address.
   testVersionBlocks =
     let
-      config = lib.importJSON ../../release-please-config.json;
       blockLines =
-        file:
+        lines:
         (lib.foldl'
           (
             state: line:
@@ -146,15 +153,21 @@ lib.runTests {
             inBlock = false;
             lines = [ ];
           }
-          (lib.splitString "\n" (builtins.readFile (../.. + "/${file}")))
+          lines
         ).lines;
-      versions =
-        line: lib.concatLists (lib.filter lib.isList (builtins.split "([0-9]+\\.[0-9]+\\.[0-9]+)" line));
     in
     {
-      expr = lib.unique (
-        lib.concatMap (file: lib.concatMap versions (blockLines file)) config.packages.".".extra-files
-      );
+      expr = lib.unique (lib.concatMap (lines: lib.concatMap versions (blockLines lines)) extraFileLines);
       expected = [ version ];
     };
+  # The generic updater replaces every x.y.z of a line its marker comment ends, so such a line
+  # names no other, such as the Kubernetes release 1.37.2.
+  testVersionLines = {
+    expr = lib.unique (
+      lib.concatMap versions (
+        lib.filter (lib.hasInfix "x-release-please-version") (lib.concatLists extraFileLines)
+      )
+    );
+    expected = [ version ];
+  };
 }

@@ -8,9 +8,10 @@
     let
       system = "x86_64-linux";
       pkgs = chalkos.inputs.nixpkgs.legacyPackages.${system};
-      # The image both nodes run; cp1's Node document makes it the control plane. It carries the
-      # OS CA of secrets.pub.json, the public part of the secrets chalkctl gen secrets writes, so
-      # in maintenance mode it accepts only the cluster's clients.
+      # An image of your own for both nodes, in place of the published one chalkos.yaml names;
+      # cp1's Node document makes it the control plane. It carries the OS CA of secrets.pub.json,
+      # the public part of the secrets chalkctl gen secrets writes, so in maintenance mode it
+      # accepts only the cluster's clients.
       images = chalkos.lib.mkImages {
         osCA = ./secrets.pub.json;
         # The commit the images are built from, which chalkctl shows beside an image's root hash.
@@ -26,7 +27,7 @@
     in
     {
       # nix build .#node-kvm -o images/node-kvm: the image where the inventory, chalkos.yaml,
-      # points.
+      # points once its source names the directory.
       packages.${system}.node-kvm = images.node-kvm;
 
       # The image's evaluated NixOS system, whose build outputs a guide builds on its own, such as
