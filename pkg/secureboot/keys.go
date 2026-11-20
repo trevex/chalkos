@@ -144,7 +144,11 @@ func loadKeys(dir string, dbKey bool) (Keys, error) {
 
 // loadKeyPair reads the certificate of the name in dir, and its key when withKey is set.
 func loadKeyPair(dir, name string, withKey bool) (KeyPair, error) {
-	certPath, keyPath := filepath.Join(dir, name+".crt"), filepath.Join(dir, name+".key")
+	return loadPair(filepath.Join(dir, name+".key"), filepath.Join(dir, name+".crt"), withKey)
+}
+
+// loadPair reads the certificate at certPath, and the key at keyPath when withKey is set.
+func loadPair(keyPath, certPath string, withKey bool) (KeyPair, error) {
 	data, err := os.ReadFile(certPath)
 	if err != nil {
 		return KeyPair{}, err

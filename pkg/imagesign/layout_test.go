@@ -31,7 +31,6 @@ func unsignedLayout(t *testing.T, dir string) (string, string) {
 // TestSignLayout signs the UKI and the boot loader of a layout's image into a new layout whose
 // header, store, hash tree and contract stay as they are, and leaves the input as it is.
 func TestSignLayout(t *testing.T) {
-	imagetest.NeedTools(t, "sbsign", "sbverify")
 	dir := t.TempDir()
 	key, cert, _ := imagetest.Signer(t, dir, "db")
 	in, before := unsignedLayout(t, dir)
@@ -127,7 +126,6 @@ func TestSignLayoutRefusesACorruptUKI(t *testing.T) {
 
 // TestSignLayoutNeedsANewDirectory refuses an output that exists before it signs anything.
 func TestSignLayoutNeedsANewDirectory(t *testing.T) {
-	imagetest.NeedTools(t, "sbsign", "sbverify")
 	dir := t.TempDir()
 	key, cert, _ := imagetest.Signer(t, dir, "db")
 	in, _ := unsignedLayout(t, dir)

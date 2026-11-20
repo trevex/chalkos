@@ -382,7 +382,7 @@ func signImage(ctx context.Context, raw, partitions, keys string) error {
 	if err != nil {
 		return err
 	}
-	return imagesign.SignImage(ctx, raw, esp.Offset, filepath.Join(keys, "db.key"), filepath.Join(keys, "db.crt"))
+	return imagesign.SignImage(raw, esp.Offset, filepath.Join(keys, "db.key"), filepath.Join(keys, "db.crt"))
 }
 
 // startSupervisor starts the lab's supervisor in a session of its own, so it outlives this

@@ -627,14 +627,11 @@ func (l *partsLab) enforceSecureBoot(db []byte, revoked ...[]byte) {
 // TestFromPartsRefuses checks what an install refuses, leaving a target that does not boot and
 // is not installed.
 func TestFromPartsRefuses(t *testing.T) {
-	if _, err := exec.LookPath("sbsign"); err != nil {
-		t.Skip("sbsign not in PATH")
-	}
 	img := newPartsImage(t, "a")
 	keys := t.TempDir()
 	key, cert, der := imagetest.Signer(t, keys, "db")
 	signed := img
-	signed.UKI, signed.BootLoader = imagetest.SBSign(t, img.UKI, key, cert), imagetest.SBSign(t, img.BootLoader, key, cert)
+	signed.UKI, signed.BootLoader = imagetest.Sign(t, img.UKI, key, cert), imagetest.Sign(t, img.BootLoader, key, cert)
 	signed.header = signed.headerFor()
 	unsignedLoader := signed
 	unsignedLoader.BootLoader = img.BootLoader
@@ -642,7 +639,7 @@ func TestFromPartsRefuses(t *testing.T) {
 	// The boot loader signed by another db certificate, which dbx lists.
 	revokedKey, revokedCert, revokedDER := imagetest.Signer(t, keys, "revoked")
 	revokedLoader := signed
-	revokedLoader.BootLoader = imagetest.SBSign(t, img.BootLoader, revokedKey, revokedCert)
+	revokedLoader.BootLoader = imagetest.Sign(t, img.BootLoader, revokedKey, revokedCert)
 	revokedLoader.header = revokedLoader.headerFor()
 	armLoader := img
 	armLoader.BootLoader = ukitest.WithMachine(img.BootLoader, 0xaa64)
@@ -819,12 +816,9 @@ func TestFromPartsWipesAForeignDisk(t *testing.T) {
 // TestFromPartsUnderSecureBoot installs an image whose UKI and boot loader a db certificate
 // signed.
 func TestFromPartsUnderSecureBoot(t *testing.T) {
-	if _, err := exec.LookPath("sbsign"); err != nil {
-		t.Skip("sbsign not in PATH")
-	}
 	img := newPartsImage(t, "a")
 	key, cert, der := imagetest.Signer(t, t.TempDir(), "db")
-	img.UKI, img.BootLoader = imagetest.SBSign(t, img.UKI, key, cert), imagetest.SBSign(t, img.BootLoader, key, cert)
+	img.UKI, img.BootLoader = imagetest.Sign(t, img.UKI, key, cert), imagetest.Sign(t, img.BootLoader, key, cert)
 	img.header = img.headerFor()
 	l := newPartsLab(t)
 	l.enforceSecureBoot(ukitest.SignatureList(der))

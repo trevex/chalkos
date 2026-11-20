@@ -12,6 +12,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/ociimage"
+	"github.com/trevex/chalkos/pkg/secureboot"
 )
 
 // SignLayout copies the OCI layout in, as chalkbuild oci writes it, to the new directory out with
@@ -26,7 +27,8 @@ func SignLayout(ctx context.Context, in, out, key, cert string) (v1.Hash, error)
 	if err != nil {
 		return v1.Hash{}, err
 	}
-	if _, err := os.Stat(key); err != nil {
+	signer, err := secureboot.LoadSigner(key, cert)
+	if err != nil {
 		return v1.Hash{}, err
 	}
 	certs, err := readCerts(cert)
@@ -50,7 +52,7 @@ func SignLayout(ctx context.Context, in, out, key, cert string) (v1.Hash, error)
 		if err := extractLayer(img, part.mediaType, path); err != nil {
 			return v1.Hash{}, fmt.Errorf("the %s of %s: %w", part.what, in, err)
 		}
-		if err := signFile(ctx, path, key, cert); err != nil {
+		if err := signFile(path, signer); err != nil {
 			return v1.Hash{}, err
 		}
 		if err := verifyFile(path, certs); err != nil {

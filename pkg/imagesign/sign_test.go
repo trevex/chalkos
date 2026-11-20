@@ -1,9 +1,7 @@
 package imagesign
 
 import (
-	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -13,7 +11,6 @@ import (
 )
 
 func TestSignImageSignsOnlyBootLoaderAndUKIs(t *testing.T) {
-	imagetest.NeedTools(t, "sbsign", "sbverify")
 	dir := t.TempDir()
 	efi := filepath.Join(dir, "binary.efi")
 	if err := os.WriteFile(efi, ukitest.Build(nil), 0o644); err != nil {
@@ -38,17 +35,11 @@ func TestSignImageSignsOnlyBootLoaderAndUKIs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := SignImage(context.Background(), disk, offset, key, cert); err != nil {
+	if err := SignImage(disk, offset, key, cert); err != nil {
 		t.Fatal(err)
 	}
 
-	verify := func(f string) error {
-		out := filepath.Join(dir, "check.efi")
-		if err := os.WriteFile(out, imagetest.ReadESP(t, disk, offset, f), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		return exec.Command("sbverify", "--cert", cert, out).Run()
-	}
+	verify := func(f string) error { return signedBy(t, imagetest.ReadESP(t, disk, offset, f), cert) }
 	for _, f := range []string{"/EFI/BOOT/BOOTX64.EFI", "/EFI/Linux/chalkos_1.efi"} {
 		if err := verify(f); err != nil {
 			t.Errorf("%s is not signed: %v", f, err)
