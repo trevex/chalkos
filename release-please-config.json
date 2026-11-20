@@ -1,0 +1,28 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/v17.11.2/schemas/config.json",
+  "release-type": "simple",
+  "include-component-in-tag": false,
+  "bump-minor-pre-major": true,
+  "initial-version": "0.1.0",
+  "bootstrap-sha": "211c556eb70198c6fe62f9c0525a8997b1afa57f",
+  "label": "autorelease: pending,e2e",
+  "packages": {
+    ".": {
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        "version.nix",
+        "templates/lab/flake.nix",
+        "templates/router-lab/flake.nix",
+        "templates/cluster-metal/flake.nix",
+        "examples/homelab/flake.nix",
+        "examples/extensions/flake.nix",
+        "examples/bgp-extension/flake.nix",
+        "README.md",
+        "docs/get-started/quick-start-kubernetes.md",
+        "docs/get-started/quick-start-router.md",
+        "docs/guides/cluster-on-machines.md",
+        "docs/get-started/releases.md"
+      ]
+    }
+  }
+}
