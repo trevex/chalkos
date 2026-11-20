@@ -56,7 +56,9 @@ let
   # validate, or command, accepts the template's nodes with the images it builds where their
   # inventory points, each image at images/<name>. The flake's mkImages gets the test secrets' OS
   # CA in place of the secrets.pub.json chalkctl gen secrets writes, which the repository does not
-  # hold.
+  # hold. An image the inventory takes from a registry, on a line of its own, must be a published
+  # image of this release and one the flake builds too: the check reads no registry, but takes the
+  # flake's build of the image's name in its place, which has the published image's layers.
   templateCheck =
     {
       name,
@@ -81,18 +83,53 @@ let
       };
       shell = template.devShells.${system}.default;
       packages = template.packages.${system};
+      # The inventory's images from a registry, by name: the reference of each.
+      published = lib.listToAttrs (
+        lib.concatMap (
+          line:
+          let
+            m = builtins.match " +([a-z0-9-]+): [{]source: [{]oci: ([^}]+)[}][}].*" line;
+          in
+          lib.optional (m != null) (lib.nameValuePair (lib.elemAt m 0) (lib.elemAt m 1))
+        ) (lib.splitString "\n" (builtins.readFile ../../templates/${name}/chalkos.yaml))
+      );
+      isPublished =
+        image: reference:
+        let
+          m = builtins.match "ghcr[.]io/trevex/chalkos/([^:@]+):v(.+)" reference;
+        in
+        lib.assertMsg
+          (
+            m != null && self.releaseImages.${system} ? ${lib.elemAt m 0} && lib.elemAt m 1 == self.lib.version
+          )
+          "the ${name} template takes the image ${image} from ${reference}, which chalkos v${self.lib.version} does not publish"
+        && lib.assertMsg (
+          packages ? ${image}
+        ) "the ${name} template's flake builds no ${image}, which its inventory takes from ${reference}";
     in
     assert lib.all (p: lib.elem p shell.nativeBuildInputs) tools;
     assert lib.isString shell.drvPath;
     # The installer, which a guide writes to a USB stick, evaluates.
     assert packages ? installer -> lib.isString packages.installer.drvPath;
+    assert lib.all lib.id (lib.mapAttrsToList isPublished published);
     checkLib.validateDirectory {
       name = "template-${name}";
       src = ../../templates/${name};
       images = lib.mapAttrs' (image: lib.nameValuePair "images/${image}") (
         removeAttrs packages [ "installer" ]
       );
-      inherit command;
+      command = ''
+        ${lib.concatStrings (
+          lib.mapAttrsToList (image: reference: ''
+            sed -i 's|{source: {oci: ${reference}}}|{source: {directory: images/${image}}}|' chalkos.yaml
+          '') published
+        )}
+        if grep -q '{source: {oci:' chalkos.yaml; then
+          echo "error: chalkos.yaml takes an image from a registry on a line the check does not read" >&2
+          exit 1
+        fi
+        ${command}
+      '';
     };
   # A check that builds the Go code of the whole tree, its tests included, in its buildPhase.
   goCheck =

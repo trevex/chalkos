@@ -37,3 +37,11 @@ file, and check the files with `chalkctl validate`. Install each node with `chal
 `--address` set to the installer's address and the `--fingerprint` its console shows. Then
 bootstrap one control plane with `chalkctl bootstrap cp1` and write a kubeconfig with
 `chalkctl kubeconfig`.
+
+The template builds its own image, which carries the cluster's OS CA, so in maintenance mode the
+nodes accept only the cluster's clients. A cluster that needs nothing of its own can run the
+Kubernetes image a chalkos release publishes for physical machines instead. Name it in
+`chalkos.yaml` by its digest from the release notes,
+`node-metal: {source: {oci: "ghcr.io/trevex/chalkos/kubernetes-1.37-metal:<tag>@sha256:<digest>"}}`,
+and boot the machines from the release's installer. The published image carries no OS CA and no
+Secure Boot signature, as the Releases page of the documentation describes.

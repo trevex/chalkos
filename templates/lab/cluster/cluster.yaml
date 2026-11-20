@@ -7,8 +7,8 @@ spec:
   # cp1 on the lab network: the API server of the only control plane.
   endpoint: https://192.168.123.11:6443
   # The images of the cluster's components, which containerd pulls as written. The tags of the API
-  # server, the controller-manager, the scheduler and kube-proxy follow the kubelet of the image the
-  # flake builds, the newest Kubernetes release chalkos pins; the image's checker holds them to
+  # server, the controller-manager, the scheduler and kube-proxy follow the kubelet of the nodes'
+  # image, the newest Kubernetes release chalkos pins; the image's checker holds them to
   # Kubernetes's version skew policy. The digests pin what containerd pulls. Read the digest of
   # another reference with `crane digest <ref>` or
   # `skopeo inspect --format '{{.Digest}}' docker://<ref>`.

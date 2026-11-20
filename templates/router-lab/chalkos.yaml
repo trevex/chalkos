@@ -6,10 +6,11 @@ kind: Inventory
 metadata: {name: router-lab}
 spec:
   images:
-    # nix build .#router-kvm -o images/router-kvm and nix build .#client-kvm -o images/client-kvm
-    # put the images here.
-    router-kvm: {source: {directory: images/router-kvm}}
-    client-kvm: {source: {directory: images/client-kvm}}
+    # The router image of this chalkos release for VMs, which chalklab pulls by the digest its tag
+    # names. To run your own builds of flake.nix instead, take the sources
+    # {directory: images/router-kvm} and {directory: images/client-kvm} and run
+    # nix build .#router-kvm -o images/router-kvm and nix build .#client-kvm -o images/client-kvm.
+    router-kvm: {source: {oci: ghcr.io/trevex/chalkos/router-kvm:v0.1.0}} # x-release-please-version
   nodes:
     router: {imageName: router-kvm, files: [nodes/router.yaml]}
-    client: {imageName: client-kvm, files: [nodes/client.yaml]}
+    client: {imageName: router-kvm, files: [nodes/client.yaml]}

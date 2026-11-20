@@ -8,10 +8,11 @@
     let
       system = "x86_64-linux";
       pkgs = chalkos.inputs.nixpkgs.legacyPackages.${system};
-      # Two images: the router's, with the router layer, and the client's, a node without a layer
-      # that stands for a machine on the LAN. Both carry the OS CA of secrets.pub.json, the public
-      # part of the secrets chalkctl gen secrets writes, so in maintenance mode they accept only
-      # the cluster's clients.
+      # Images of your own, in place of the published router image chalkos.yaml names: the
+      # router's, with the router layer, and the client's, a node without a layer that stands for a
+      # machine on the LAN. Both carry the OS CA of secrets.pub.json, the public part of the
+      # secrets chalkctl gen secrets writes, so in maintenance mode they accept only the cluster's
+      # clients.
       images = chalkos.lib.mkImages {
         osCA = ./secrets.pub.json;
         # The commit the images are built from, which chalkctl shows beside an image's root hash.
@@ -32,7 +33,7 @@
     in
     {
       # nix build .#<image> -o images/<image>: the images where the inventory, chalkos.yaml,
-      # points.
+      # points once its sources name the directories.
       packages.${system} = {
         inherit (images) router-kvm client-kvm;
       };

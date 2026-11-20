@@ -198,8 +198,8 @@ shell functions the check scripts call: `fail`, `retry` and `refuses`, and for t
 | `image-checker` | An image's `chalkd check` in its sandbox on a NixOS VM, with a second store: the image's renderer and command fact run from it, a renderer's refusal comes back, the sandbox hides `/run/chalkos`, and another user reaches neither the facts socket nor the result. |
 | `rules` | The images' rules compile, the outputs' checks pass the files they should and refuse broken ones, and a broken rule, effect, output or diagnostic fails its image. |
 | `image-tests` | The image tests of the test image, the router images and the examples' image pass: their outputs render the golden files, and their refusals and effects are those expected. |
-| `template-lab` | The lab template's image builds, and `chalkctl validate` accepts the template's YAML with it. |
-| `template-router-lab` | The router lab template's two images build, and `chalkctl validate` accepts the template's YAML with them. |
+| `template-lab` | The lab template's image builds, and `chalkctl validate` accepts the template's YAML with it in place of the published image its inventory names, which must be one of this release. |
+| `template-router-lab` | The router lab template's two images build, and `chalkctl validate` accepts the template's YAML with its router image in place of the published one its inventory names, which must be one of this release. |
 | `template-cluster-metal` | The metal cluster template's image and installer build, and `chalkctl validate` accepts the template's YAML with the image. |
 | `example-homelab` | The homelab images build, and `chalkctl validate` accepts their inventory with the built-in `BGPSpeaker` and `BGPPeer` documents. |
 | `example-bgp-extension` | The standalone BIRD image evaluates and its extension tests pass. |

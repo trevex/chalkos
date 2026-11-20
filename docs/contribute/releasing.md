@@ -23,12 +23,16 @@ section to `CHANGELOG.md`, and changes every line that `release-please-config.js
 | --- | --- |
 | `version.nix` | The version, which the programs and the release images record. |
 | The `flake.nix` of each template and example | The tag in the URL of the `chalkos` input, `github:trevex/chalkos/v<version>`. |
+| The `chalkos.yaml` of the `lab` and `router-lab` templates | The tag of the published image the inventory names. |
 | `README.md` and the pages of the quick starts, the cluster guide and [Releases](../get-started/releases.md) | The tag in the commands and files that name a release. |
 
 A line changes when it holds the marker `x-release-please-version`, or when it lies between the
 markers `x-release-please-start-version` and `x-release-please-end`. In Markdown the markers are
 HTML comments around a code block. A new file that names the release's tag needs the markers and
-a line in `extra-files` of `release-please-config.json`.
+a line in `extra-files` of `release-please-config.json`. A YAML file takes an entry of the type
+`generic`, `{"type": "generic", "path": "<file>"}`, so that release-please changes its marked
+lines alone. The check `release-eval` fails when a marked line or block names another x.y.z
+version than the release's, such as `1.37.2`.
 
 Before 1.0, a `feat` commit or a breaking change raises the minor version and a `fix` the patch
 version (`bump-minor-pre-major`). Only `feat`, `fix`, `perf` and `revert` commits and breaking
