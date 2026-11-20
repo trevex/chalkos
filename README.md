@@ -1,5 +1,7 @@
 # chalkos
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/trevex/chalkos/badge)](https://scorecard.dev/viewer/?uri=github.com/trevex/chalkos)
+
 chalkos builds API-driven, immutable Linux distributions from NixOS modules. It follows the
 operating model of [Talos Linux](https://www.talos.dev/): nodes boot a read-only image, have no
 logins, and are managed through an API over mutual TLS. Where Talos is one distribution, chalkos
@@ -65,6 +67,10 @@ in QEMU, which boot VMs and need `/dev/kvm`. Contributors usually build single c
 built with `nix build .#docs`, served while it is edited with `nix run .#docs-serve`, and its
 generated reference pages are written with `nix run .#docgen`. The
 [contributing guide](https://trevex.github.io/chalkos/contribute/) has the details.
+
+## Security
+
+Report a vulnerability privately, as [SECURITY.md](SECURITY.md) describes, never in a public issue.
 
 ## Licence
 

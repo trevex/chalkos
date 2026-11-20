@@ -49,6 +49,7 @@ let
       "router-nat64"
       "router-policy-routing"
       "router-vrf"
+      "security-insights"
       "vxlan-rule"
       "workflows"
     ];

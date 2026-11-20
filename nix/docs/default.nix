@@ -45,12 +45,14 @@ let
       "nodes"
     ];
   };
+  # The site's files, the snippets, and SECURITY.md, which the security page includes.
   src = lib.fileset.toSource {
     root = ../../.;
     fileset = lib.fileset.unions (
       [
         ../../zensical.toml
         ../../docs
+        ../../SECURITY.md
       ]
       ++ lib.concatLists (lib.mapAttrsToList (dir: map (path: ../../. + "/${dir}/${path}")) snippets)
     );
@@ -338,6 +340,7 @@ rec {
       copy() {
         rsync -a --delete --exclude /superpowers/ docs/ "$work/docs/"
         rsync -a zensical.toml "$work/zensical.toml"
+        rsync -a SECURITY.md "$work/SECURITY.md"
         ${lib.concatStrings (
           lib.mapAttrsToList (dir: paths: ''
             mkdir -p "$work/${dir}"

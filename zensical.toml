@@ -28,6 +28,7 @@ nav = [
       "get-started/requirements.md",
       "get-started/decisions.md",
       "get-started/releases.md",
+      "get-started/security.md",
     ] },
   ] },
   { "Guides" = [

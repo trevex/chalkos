@@ -213,6 +213,7 @@ shell functions the check scripts call: `fail`, `retry` and `refuses`, and for t
 | `registry-mirrors` | The `chalkos-registry-mirrors` unit writes the registry hosts containerd reads from `Mirror` and `Registry` documents, keeps them when a document cannot be read, and writes none without documents. |
 | `fixtures` | Every node of the end-to-end fixtures has config its image accepts, as `chalkctl validate` checks it, and the inventories the tests want refused are refused with their message. |
 | `nix-lint` | The Nix files are formatted as `nix fmt` formats them, hold no unused binding or argument (deadnix) and pass statix, except for the lints `statix.toml` leaves out. |
+| `security-insights` | `security-insights.yml` is valid against the schema of the OpenSSF Security Insights version it names. |
 | `ci-tiers` | Every check is in exactly one tier of `nix/checks/tiers.nix`, and `.github/labels.yml` has a label for each end-to-end check and the label `ci-failure`. See [Continuous integration](ci.md#tiers). |
 
 ## Image tests
@@ -365,6 +366,7 @@ Every check builds with `nix build`, and a change runs the checks of the parts i
 | `templates/router-lab` | `template-router-lab` |
 | `templates/cluster-metal` | `template-cluster-metal` |
 | `.github/workflows` | `workflows` |
+| `security-insights.yml` | `security-insights` |
 | `nix/checks/tiers.nix`, `.github/labels.yml`, a new check | `ci-tiers` |
 
 Run one check, with its log:

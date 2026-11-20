@@ -42,6 +42,26 @@ The label `e2e` runs every end-to-end check on the pull request. The Kubernetes 
 Go release change chalkd and every program in the images, and a Kubernetes release changes every
 kubelet, so their pull requests carry it from the start.
 
+## Security updates
+
+An update that fixes a known vulnerability does not wait for Monday. Renovate reads the
+vulnerabilities of the Go modules and the actions from the repository's Dependabot alerts and from
+the [OSV](https://osv.dev/) database, and opens a pull request for each fixed version at any time,
+outside its group, labelled `dependencies` and `security`. Its title ends with `[SECURITY]`. It
+merges like the group it leaves: an action's fix by itself once CI passes, a Go module's by hand.
+`vulnerabilityAlerts` in `.github/renovate.json5` sets this.
+
+govulncheck in CI fails when the code calls a vulnerable function, often before Renovate's pull
+request arrives. Fix it by updating the module to the fixed version the job prints, then setting
+the vendor hash:
+
+```sh
+go get golang.org/x/net@v0.60.0
+go mod tidy
+nix run .#update-vendor-hash
+nix run .#govulncheck
+```
+
 ## Automerge
 
 Only the `github-actions` group merges by itself, and only with every check green. Renovate

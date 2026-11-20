@@ -42,6 +42,9 @@
 - name: dependencies
   color: "0366d6"
   description: Updates a dependency
+- name: security
+  color: "d93f0b"
+  description: Fixes a known vulnerability
 - name: release
   color: "0e8a16"
   description: Prepares a release

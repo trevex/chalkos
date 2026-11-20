@@ -85,4 +85,13 @@ These pages prepare an install on real machines.
 
     [:octicons-arrow-right-24: Read](releases.md)
 
+-   :material-shield-check-outline: __Security__
+
+    ---
+
+    Which releases receive security fixes, how to report a vulnerability, and how chalkos scans
+    its code and images.
+
+    [:octicons-arrow-right-24: Read](security.md)
+
 </div>
