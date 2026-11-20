@@ -8,9 +8,10 @@ description: "Install three machines from the cluster-metal template as a Kubern
 This tutorial builds a Kubernetes cluster of three control planes on three real machines, from
 the `cluster-metal` template. Each machine has one Ethernet port on your network and a static IPv4
 address. The Kubernetes API answers at a VIP, a fourth address that one control plane holds at a
-time. You generate the cluster's secrets, build the image and the installer, find each machine's
-disk and port, install the three machines and bootstrap the cluster. Plan an afternoon; the first
-image build and the installs take most of it.
+time. You generate the cluster's secrets, take the image and the installer from a chalkos release
+or build your own, find each machine's disk and port, install the three machines and bootstrap the
+cluster. Plan an afternoon; the installs take most of it, and the first build of your own image
+adds an hour or so.
 
 ## What you build
 
@@ -57,20 +58,36 @@ You need:
   [Nix](https://nixos.org/download/) and flakes enabled, and git;
 - an age key or an SSH key of type ed25519 or RSA to encrypt the cluster's secrets to.
 
-The tutorial builds the image and the installer from the template with `nix build`, so that both
-carry the cluster's OS CA. The generic images of a [release](../get-started/releases.md) carry
-none.
+### The published image or your own
+
+The steps that differ between the two paths show a tab for each. Pick one before you start:
+
+- The published image is the Kubernetes image for physical machines that a chalkos
+  [release](../get-started/releases.md) publishes, `ghcr.io/trevex/chalkos/kubernetes-1.37-metal`,
+  with the release's installer. You build nothing, and each machine pulls the image from the
+  registry while it installs, so it needs a route and DNS to `ghcr.io`. The image and the
+  installer carry no OS CA and no Secure Boot signature.
+- Your own image is the template's `node-metal`, which you build with Nix, with your own
+  installer. Both carry the cluster's OS CA, and you can sign both for Secure Boot. Build your own
+  when the cluster needs Secure Boot, an extension, a package or an option of its own.
+
+Without an OS CA, a machine that waits in the installer accepts any client until you install it,
+so another machine on the network could install it first. On a network that only you use, that
+does not matter; on a shared network, build your own.
+[Published images or your own](../get-started/decisions.md#published-images-or-your-own) explains
+the choice.
 
 ### Secure Boot is optional
 
 The tutorial installs the machines without Secure Boot, with the unsigned image and installer.
-Turn Secure Boot off in each machine's firmware setup. The steps marked optional add Secure Boot
-with keys of your own: [Sign the image and the installer](#sign-the-image-and-the-installer-optional)
+Turn Secure Boot off in each machine's firmware setup. With your own image, the steps marked
+optional add Secure Boot with keys of your own:
+[Sign the image and the installer](#sign-the-image-and-the-installer-optional)
 and [Enrol the Secure Boot keys](#enrol-the-secure-boot-keys-optional). A machine whose firmware is
 in Setup Mode gets the keys from chalkctl. For any other machine, enrol the db certificate in its
 firmware as
 [Enrol the certificate without Setup Mode](../operate/secure-boot.md#enrol-the-certificate-without-setup-mode)
-describes before you install it.
+describes before you install it. The published image always runs without Secure Boot.
 
 Without Secure Boot, the TPM still unlocks the disks at every boot. It seals their keys to PCR 7,
 which then measures Secure Boot as off, so a machine that boots another system from a USB stick
@@ -113,7 +130,7 @@ Run every later command in `cluster`. The files explain themselves in comments:
 
 | File | Holds |
 | --- | --- |
-| `flake.nix` | The image `node-metal` with the Kubernetes layer, and the installer. |
+| `flake.nix` | Your own image `node-metal` with the Kubernetes layer, the installer, and the development shell. |
 | `chalkos.yaml` | The inventory: the three nodes, the address chalkctl reaches each at, their image and files. |
 | `cluster/cluster.yaml` | The Kubernetes cluster all three nodes share, with its VIP and its pinned images. |
 | `nodes/cp1.yaml` to `nodes/cp3.yaml` | Each node's disk, MAC address and static address. |
@@ -128,7 +145,8 @@ nix develop
 ```
 
 Run every later command of this tutorial in that shell, so that chalkctl and the image come from
-the same chalkos release.
+the same chalkos release: the release whose tag the flake's `chalkos` input names, which is the
+release of the published image you take too.
 
 The diagnostic `addresses`, which shows a machine's ports, prints JSON, as `ip -json address show`
 does. Keep a jq filter in the shell that turns it into a line per port, with the port's name, MAC
@@ -152,10 +170,19 @@ encrypted secrets.age to ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKMcR1DCFPGSdWXphQ3
 wrote secrets.age and secrets.pub.json
 ```
 
-The `age1` recipient here stands for your offline backup key's public key. `flake.nix` names
-`secrets.pub.json` in the `osCA` of `mkImages` already. The image and the installer therefore
-carry the cluster's OS CA, and a machine that waits in the installer accepts only a chalkctl that
-holds this cluster's secrets.
+The `age1` recipient here stands for your offline backup key's public key.
+
+=== "Published image"
+
+    The published image and the release's installer carry no OS CA, so a machine that waits in
+    the installer accepts any client. Each node gets the cluster's OS CA at its install, and
+    accepts only the cluster's clients from then on.
+
+=== "Your own image"
+
+    `flake.nix` names `secrets.pub.json` in the `osCA` of `mkImages` already. The image and the
+    installer therefore carry the cluster's OS CA, and a machine that waits in the installer
+    accepts only a chalkctl that holds this cluster's secrets.
 
 ### Choose the addresses
 
@@ -186,24 +213,59 @@ git add . && git commit -m "A chalkos cluster"
 
 The template's `.gitignore` keeps the builds, the Secure Boot keys and the kubeconfig out of git.
 
-## Build the image and the installer
+## Get the image and the installer
 
-Build the image where the inventory expects it, and the installer:
+=== "Published image"
 
-```console
-$ nix build .#node-metal -o images/node-metal
-$ nix build .#installer -o installer
-$ ls installer/
-chalkos-installer.iso  chalkos-installer.iso.json  chalkos-installer.raw  metadata.json  repart-output.json
-```
+    Copy the reference of `kubernetes-1.37-metal` with its digest from the notes of the release
+    whose tag `flake.nix` names, and name it as the source of `node-metal` in `chalkos.yaml`. The
+    digest pins the image, so the inventory keeps naming the same image even when a tag moves:
 
-The first build takes a while. The image carries the Kubernetes layer; the installer carries no
-config of any node.
+    ```yaml title="chalkos.yaml"
+    apiVersion: chalkctl.chalkos.dev/v1alpha1
+    kind: Inventory
+    metadata: {name: cluster}
+    spec:
+      images:
+        node-metal: {source: {oci: "ghcr.io/trevex/chalkos/kubernetes-1.37-metal:<tag>@sha256:<digest>"}}
+      all: {imageName: node-metal, files: [cluster/*.yaml]}
+      nodes:
+        cp1: {address: 192.168.1.11, files: [nodes/cp1.yaml]}
+        cp2: {address: 192.168.1.12, files: [nodes/cp2.yaml]}
+        cp3: {address: 192.168.1.13, files: [nodes/cp3.yaml]}
+    ```
+
+    `<tag>` is the release's tag, such as the one in `flake.nix`, and `<digest>` the image's
+    digest from the release notes. [Verify an image](../get-started/releases.md#verify-an-image)
+    checks the image's signature with cosign before you commit the change:
+
+    ```sh
+    git commit -am "Run the published image"
+    ```
+
+    Download the installer, `chalkos-installer.iso`, from the same release, and check it against
+    the release's `SHA256SUMS` and signature, as
+    [Download chalkctl and the installer](../get-started/releases.md#download-chalkctl-and-the-installer)
+    shows. The installer carries no config of any node.
+
+=== "Your own image"
+
+    Build the image where the inventory expects it, and the installer:
+
+    ```console
+    $ nix build .#node-metal -o images/node-metal
+    $ nix build .#installer -o installer
+    $ ls installer/
+    chalkos-installer.iso  chalkos-installer.iso.json  chalkos-installer.raw  metadata.json  repart-output.json
+    ```
+
+    The first build takes a while. The image carries the Kubernetes layer; the installer carries
+    no config of any node.
 
 ### Sign the image and the installer (optional)
 
-Skip this step without Secure Boot. With it, create your Secure Boot keys in `keys/`, and sign
-copies of both builds with the db key:
+Skip this step with the published image, or without Secure Boot. With your own image and Secure
+Boot, create your Secure Boot keys in `keys/`, and sign copies of both builds with the db key:
 
 ```sh
 chalkctl secureboot new keys --name cluster
@@ -234,12 +296,22 @@ spec:
 
 Write the installer's ISO to the USB stick:
 
-```sh
-sudo dd if=installer/chalkos-installer.iso of=/dev/<usb-disk> \
-  bs=4M conv=fsync status=progress
-```
+=== "Published image"
 
-With Secure Boot, write the signed copy, `installer-signed/chalkos-installer.iso`, instead.
+    ```sh
+    sudo dd if=chalkos-installer.iso of=/dev/<usb-disk> \
+      bs=4M conv=fsync status=progress
+    ```
+
+=== "Your own image"
+
+    ```sh
+    sudo dd if=installer/chalkos-installer.iso of=/dev/<usb-disk> \
+      bs=4M conv=fsync status=progress
+    ```
+
+    With Secure Boot, write the signed copy, `installer-signed/chalkos-installer.iso`, instead.
+
 `<usb-disk>` is the stick's device, such as `sdb`; `lsblk` lists the candidates. The command
 overwrites everything on the stick. The installer takes an address by DHCP on every Ethernet port
 and keeps the kernel's names for the ports.
@@ -278,9 +350,9 @@ you can.
 
 ### Enrol the Secure Boot keys (optional)
 
-Skip this step without Secure Boot, or when the machine's firmware holds your db certificate
-already. When its firmware is in Setup Mode, as after you clear its keys in the firmware setup, it
-boots the installer without checking it. Enrol your keys with
+Skip this step with the published image, without Secure Boot, or when the machine's firmware
+holds your db certificate already. When its firmware is in Setup Mode, as after you clear its keys
+in the firmware setup, it boots the installer without checking it. Enrol your keys with
 [`chalkctl secureboot enroll`](../reference/cli/chalkctl_secureboot_enroll.md), which names no
 node, so it takes the address with `--address`:
 
@@ -357,8 +429,10 @@ installer's address, which `chalkos.yaml` names for now:
 chalkctl install cp1 --secrets=secrets.age --fingerprint=<fingerprint>
 ```
 
-chalkctl prints the disk, the image directory and the image it installs. Then it prints that the
-node is installed and reboots, and how to read its recovery key. When the installer refuses the
+chalkctl prints the disk and the image it installs, with the image directory it sends or, for the
+published image, the reference the installer pulls the image from. The installer then needs its
+route and DNS to `ghcr.io`. Then chalkctl prints that the node is installed and reboots, and how
+to read its recovery key. When the installer refuses the
 disk because it holds data, check in `chalkctl disks` that the disk is the one you mean, and
 install again with `--wipe-disk`. The installer then clears the disk, and nothing on it can be
 recovered.
@@ -436,16 +510,35 @@ chalkctl validate
 chalkctl apply cp1 cp2 cp3 --secrets=secrets.age
 ```
 
-A new chalkos release or a change to `flake.nix` takes a new image. For a new release, change the
-tag in the `chalkos` input's URL and update the flake's lock with `nix flake update chalkos`.
-Enter the shell again, so that chalkctl matches the image. Build
-the image again, sign it again with Secure Boot, and roll it out with `chalkctl upgrade`. chalkctl
-upgrades the control planes one at a time, so the Kubernetes API stays up:
+A new chalkos release takes a new image. Change the tag in the `chalkos` input's URL of
+`flake.nix` and update the flake's lock with `nix flake update chalkos`. Enter the shell again, so
+that chalkctl matches the image. chalkctl upgrades the control planes one at a time, so the
+Kubernetes API stays up:
 
-```sh
-nix build .#node-metal -o images/node-metal
-chalkctl upgrade --secrets=secrets.age
-```
+=== "Published image"
+
+    Name the new release's image by its digest in `chalkos.yaml`, as in
+    [Get the image and the installer](#get-the-image-and-the-installer), and roll it out with
+    `chalkctl upgrade`. Each node pulls the image from the registry:
+
+    ```sh
+    chalkctl validate
+    chalkctl upgrade --secrets=secrets.age
+    ```
+
+=== "Your own image"
+
+    Build the image again, sign it again with Secure Boot, and roll it out with
+    `chalkctl upgrade`. A change to `flake.nix` takes the same steps:
+
+    ```sh
+    nix build .#node-metal -o images/node-metal
+    chalkctl upgrade --secrets=secrets.age
+    ```
+
+To move from the published image to your own, build it as the tab "Your own image" of
+[Get the image and the installer](#get-the-image-and-the-installer) shows, point `node-metal` in
+`chalkos.yaml` at the build, and upgrade. The nodes keep their config and their OS CA.
 
 ## Troubleshooting
 
@@ -483,6 +576,9 @@ network uses the VIP's address, and that the address lies outside the DHCP serve
   cover the cluster's next changes.
 - [Recurring tasks](../operate/recurring-tasks.md) lists what to back up and renew over the
   cluster's life.
+- [Your first image flake](../build/first-image.md) and
+  [Publish images to a registry](../build/publish-images.md) build your own images and push them
+  to a registry of your own, from which the nodes pull them as they pull the published one.
 
 These pages explain the steps of this tutorial in more depth:
 

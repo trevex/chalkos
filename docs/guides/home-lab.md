@@ -14,6 +14,12 @@ keeps its address when one of its cables is pulled, and the Kubernetes API stays
 control plane goes down. Plan an afternoon; most of it goes into the first image builds and the
 installs.
 
+The lab builds its own images with Nix rather than run the published ones, so that the images and
+the installer carry the cluster's OS CA and can be signed for Secure Boot. The router sits on your
+home network, where a machine waiting in the installer should accept only your chalkctl.
+[Published images or your own](../get-started/decisions.md#published-images-or-your-own) compares
+the two paths.
+
 !!! info "An advanced IPv6 and BGP setup"
 
     This lab is a maintainer's own home lab. Its BGP fabric, IPv6-only nodes, NAT64 and WireGuard
