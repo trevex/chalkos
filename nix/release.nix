@@ -4,9 +4,10 @@
 # Each is mkImage's image, with its repository and tag besides: the tag is v<version> of
 # version.nix, which the images record as their tag, with the commit's revision. They carry no OS
 # CA, so in maintenance mode they accept any client until they are installed, and are unsigned:
-# whoever enrols Secure Boot keys signs them. Their manifests name chalkos's source and, as the time
-# they were created, the commit's. A Kubernetes image is named kubernetes-<platform> whatever its
-# minor, so chalkctl upgrade --image finds the nodes of the previous minor by its name.
+# whoever enrols Secure Boot keys signs them. Their manifests name chalkos's source, its licence
+# Apache-2.0 and, as the time they were created, the commit's. A Kubernetes image is named
+# kubernetes-<platform> whatever its minor, so chalkctl upgrade --image finds the nodes of the
+# previous minor by its name.
 { self, lib }:
 let
   inherit (self.lib) version;
@@ -25,6 +26,7 @@ let
     "${d 0 4 date}-${d 4 2 date}-${d 6 2 date}T${d 8 2 date}:${d 10 2 date}:${d 12 2 date}Z";
   annotations = {
     "org.opencontainers.image.source" = "https://github.com/trevex/chalkos";
+    "org.opencontainers.image.licenses" = "Apache-2.0";
   }
   // lib.optionalAttrs (self ? lastModifiedDate) {
     "org.opencontainers.image.created" = created;

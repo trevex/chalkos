@@ -175,6 +175,35 @@ zstd -d chalkos-installer.raw.zst
 has no OS CA, so it accepts any client until it installs a node; a cluster that needs one builds
 its own installer with `mkImages`.
 
+## Licences and source
+
+chalkos is licensed under the Apache License 2.0, and its release images carry the annotation
+`org.opencontainers.image.licenses` with the value `Apache-2.0`. The images and the installer also
+contain third-party free software, such as the Linux kernel, systemd and the GNU C Library, each
+under its own licence, among them the GNU GPL, the GNU LGPL and the MIT licence.
+
+The release's `flake.lock` fixes the corresponding source of every component, including the
+patches that nixpkgs applies, and Nix fetches it from the components' upstreams or from the
+mirrors `cache.nixos.org` and `tarballs.nixos.org`. To copy chalkos's source and every flake
+input of a release, nixpkgs with its build instructions and patches included, to the Nix store:
+
+```sh
+nix flake archive github:trevex/chalkos/vX.Y.Z
+```
+
+To fetch the upstream source of one component, such as util-linux, from the nixpkgs the release
+locks:
+
+```sh
+nix build --inputs-from github:trevex/chalkos/vX.Y.Z nixpkgs#util-linux.src
+```
+
+For three years after each release, the project also provides the complete corresponding source
+of that release's third-party components to anyone who asks for it in an
+[issue](https://github.com/trevex/chalkos/issues). The repository's
+[`NOTICE`](https://github.com/trevex/chalkos/blob/main/NOTICE) file has the full
+statement.
+
 ## Check that it worked
 
 `cosign verify` prints the signature's claims as JSON and ends with no error, `cosign verify-blob`

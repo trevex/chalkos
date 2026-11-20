@@ -11,6 +11,7 @@
 #     fails unless every module the file NAMES lists is in TREE or built into the kernel, and every
 #     module of TREE finds the modules it depends on there.
 {
+  lib,
   writeShellApplication,
   coreutils,
   findutils,
@@ -20,6 +21,7 @@
 }:
 writeShellApplication {
   name = "chalkos-kernel-modules";
+  meta.license = lib.licenses.asl20;
   runtimeInputs = [
     coreutils
     findutils

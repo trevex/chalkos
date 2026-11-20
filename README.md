@@ -65,3 +65,9 @@ in QEMU, which boot VMs and need `/dev/kvm`. Contributors usually build single c
 built with `nix build .#docs`, served while it is edited with `nix run .#docs-serve`, and its
 generated reference pages are written with `nix run .#docgen`. The
 [contributing guide](https://trevex.github.io/chalkos/contribute/) has the details.
+
+## Licence
+
+chalkos is licensed under the [Apache License 2.0](LICENSE). The images and the installer of a
+release also contain third-party software, each component under its own licence; [NOTICE](NOTICE)
+says where to get their source.

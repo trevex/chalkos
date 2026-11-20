@@ -1,0 +1,26 @@
+chalkos
+Copyright 2026 Niklas Voss
+
+chalkos is licensed under the Apache License, Version 2.0, in the file LICENSE.
+
+The images and the installer of a chalkos release also contain third-party free software, such
+as the Linux kernel, systemd and the GNU C Library, each under its own licence: among others the
+GNU GPL, the GNU LGPL and the MIT licence. Where a release publishes a software bill of materials
+(SBOM), it lists every component with its licence.
+
+The release's flake.lock fixes the corresponding source of every component, including the
+patches that nixpkgs applies, and Nix fetches it; cache.nixos.org and tarballs.nixos.org mirror
+it. For the release vX.Y.Z:
+
+  nix flake archive github:trevex/chalkos/vX.Y.Z
+    copies chalkos's source and every flake input to the Nix store, with nixpkgs, whose
+    expressions hold the build instructions and patches of each component.
+
+  nix build --inputs-from github:trevex/chalkos/vX.Y.Z nixpkgs#util-linux.src
+    fetches the upstream source of one component, here util-linux, from the nixpkgs that the
+    release locks.
+
+For three years after each release, the project also gives anyone who asks the complete
+corresponding source of that release's third-party components, for no more than the cost of
+physically performing the distribution. Ask for it in an issue of
+https://github.com/trevex/chalkos/issues.

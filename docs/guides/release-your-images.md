@@ -190,6 +190,14 @@ the package's settings, or give the nodes credentials for it in a `Registry` doc
 [Registries and mirrors](../operate/registries.md) describes. The annotation
 `org.opencontainers.image.source` links the package to the repository.
 
+An image you publish, like a release image of chalkos, holds third-party free software under
+licences such as the GNU GPL, so publishing it brings the same obligations that chalkos meets for
+its own releases, as [Licences and source](../get-started/releases.md#licences-and-source)
+describes. The `flake.lock` of each tag fixes the corresponding source of every component, and
+`nix flake archive` of the tag fetches it. Keep the tags, and answer requests for the source for
+as long as the licences require: for a written offer under the GPL, three years after each
+release.
+
 ### Tag a release
 
 Push the tag of the version in `version.nix`:
