@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/trevex/chalkos/compare/v0.2.1...v0.2.2) (2026-11-20)
+
+
+### Bug Fixes
+
+* **docs:** name the v0.2.1 images in the quick starts' lab output ([08e520b](https://github.com/trevex/chalkos/commit/08e520b98a1db64d8316b7377c4a04bc25c53f6b))
+
 ## [0.2.1](https://github.com/trevex/chalkos/compare/v0.2.0...v0.2.1) (2026-11-20)
 
 
