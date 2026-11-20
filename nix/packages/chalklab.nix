@@ -9,7 +9,6 @@
   coreutils,
   lib,
   makeWrapper,
-  mtools,
   python3Packages,
   qemu_test,
   sbsigntool,
@@ -29,7 +28,6 @@ buildGoProgram {
         swtpm
         vde2
         socat
-        mtools
         sbsigntool
         coreutils
         python3Packages.virt-firmware

@@ -229,7 +229,7 @@ jobs:
           cachix-name: ${{ vars.CACHIX_NAME }}
           read-only: true
       # The generic installer, which has no OS CA, its raw image compressed, and the programs of
-      # chalkctl and chalkbuild without the flake's wrappers, which are static binaries.
+      # chalkctl and chalkbuild, chalkbuild's without the flake's wrapper, which are static binaries.
       - name: Build the assets
         run: |
           if ! nix build --print-build-logs -o installer .#installer; then
@@ -242,7 +242,7 @@ jobs:
           cp installer/chalkos-installer.iso assets/
           # The installer's files are links into the store, which zstd skips when it names them.
           zstd -T0 -19 <installer/chalkos-installer.raw >assets/chalkos-installer.raw.zst
-          cp chalkctl/bin/.chalkctl-wrapped assets/chalkctl-linux-amd64
+          cp chalkctl/bin/chalkctl assets/chalkctl-linux-amd64
           cp chalkbuild/bin/.chalkbuild-wrapped assets/chalkbuild-linux-amd64
           chmod 0644 assets/*
           chmod 0755 assets/*-linux-amd64
