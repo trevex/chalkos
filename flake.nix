@@ -7,12 +7,19 @@
     url = "github:purpleclay/go-overlay";
     inputs.nixpkgs.follows = "nixpkgs";
   };
+  # The software bills of materials of the release images: bombon lists the components of a
+  # closure with their nixpkgs metadata.
+  inputs.bombon = {
+    url = "github:nikstur/bombon";
+    inputs.nixpkgs.follows = "nixpkgs";
+  };
 
   outputs =
     {
       self,
       nixpkgs,
       go-overlay,
+      bombon,
     }:
     let
       system = "x86_64-linux";
@@ -24,6 +31,11 @@
       testing = import ./nix/testing/images.nix { inherit self pkgs; };
       fixtures = import ./nix/testing/fixtures.nix { inherit self; };
       docs = import ./nix/docs { inherit pkgs self fixtures; };
+      # The software bills of materials of the release images and programs.
+      sbom = import ./nix/sbom.nix {
+        inherit pkgs;
+        bombon = import bombon { inherit pkgs; };
+      };
       arguments = {
         inherit
           pkgs
@@ -31,6 +43,7 @@
           testing
           fixtures
           docs
+          sbom
           ;
       };
     in
@@ -54,7 +67,7 @@
       packages.${system} = import ./nix/outputs/packages.nix arguments;
       # The images a release publishes, by repository name, each with its repository and tag.
       releaseImages.${system} = import ./nix/release.nix {
-        inherit self;
+        inherit self sbom;
         inherit (pkgs) lib;
       };
       checks.${system} = import ./nix/checks arguments;

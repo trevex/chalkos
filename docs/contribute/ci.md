@@ -231,8 +231,30 @@ nix build '.#releaseImages.x86_64-linux."kubernetes-1.37-kvm".oci'
 The fast check `release-eval` evaluates every release image and holds it to its repository, tag,
 provenance and annotations without building it. Each `release-image-<name>` check, with the dots
 of the name as dashes, builds one image and its OCI image layout and compares the manifest's
-annotations with the image's. They run in the `e2e` tier, one job each, as four full images are
-too heavy for every pull request.
+annotations with the image's. It also builds the image's SBOM, `releaseImages.<name>.sbom`, and
+validates it as the `sbom` check does. They run in the `e2e` tier, one job each, as four full
+images are too heavy for every pull request.
+
+Each release image's `sbom` attribute builds its SPDX 2.3 SBOM, the release asset
+`<name>.spdx.json`, and `chalkctl.sbom` and `chalkbuild.sbom` build the CycloneDX SBOMs of the
+programs. `nix/sbom.nix` builds them all within Nix, so CI, a dry run and a local build write the
+same files:
+
+```sh
+nix build -o router-kvm.spdx.json .#releaseImages.x86_64-linux.router-kvm.sbom
+nix build -o chalkctl.cdx.json .#chalkctl.sbom
+```
+
+[bombon](https://github.com/nikstur/bombon) reads the components of the image's NixOS system and
+its kernel with their nixpkgs metadata, and `nix/sbom-spdx.jq` writes them as SPDX. bombon finds
+a package only through attributes that hold derivations, so `nix/sbom.nix` adds the packages that
+the system's units and files name in strings, by name from the image's nixpkgs.
+[cyclonedx-gomod](https://github.com/CycloneDX/cyclonedx-gomod) reads a program's modules from the
+build information in its binary, and their licences from the shared module download. The `sbom`
+check, in the images tier, builds the SBOMs of the router test image and of both programs and
+validates them: the image's against SPDX 2.3 with `pyspdxtools`, against the SPDX licence list,
+with a version for every package, a licence for at least three quarters of them and `linux` under
+`GPL-2.0-only`; the programs' with a licence for every module.
 
 ## Reproduce a job
 

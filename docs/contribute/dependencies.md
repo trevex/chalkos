@@ -127,8 +127,9 @@ Renovate's commits carry no sign-off. The `dco` job of
 
 The workflow `.github/workflows/update-nixpkgs.yml` runs each Monday at 04:00 UTC. It runs
 `nix flake update`, which moves every input of `flake.lock` to its newest revision: nixpkgs,
-go-overlay and the inputs go-overlay brings. Updating them together keeps go-overlay's list of Go
-releases current for the next Go update, and makes one pull request a week. A change of nixpkgs
+go-overlay with the inputs it brings, and bombon, which builds the SBOMs. Updating them together
+keeps go-overlay's list of Go releases current for the next Go update, and makes one pull request
+a week. A change of nixpkgs
 can change how Nix fetches and builds the Kubernetes sources and the Go modules, so the workflow
 runs `update-pins` and `update-vendor-hash` after it.
 

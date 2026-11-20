@@ -5,8 +5,9 @@ chalkos is licensed under the Apache License, Version 2.0, in the file LICENSE.
 
 The images and the installer of a chalkos release also contain third-party free software, such
 as the Linux kernel, systemd and the GNU C Library, each under its own licence: among others the
-GNU GPL, the GNU LGPL and the MIT licence. Where a release publishes a software bill of materials
-(SBOM), it lists every component with its licence.
+GNU GPL, the GNU LGPL and the MIT licence. Each release publishes a software bill of materials
+(SBOM) of each image, the release asset <image>.spdx.json, which lists the image's packages with
+their licences and the URLs of their source.
 
 The release's flake.lock fixes the corresponding source of every component, including the
 patches that nixpkgs applies, and Nix fetches it; cache.nixos.org and tarballs.nixos.org mirror

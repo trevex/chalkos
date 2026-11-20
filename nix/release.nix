@@ -8,7 +8,11 @@
 # Apache-2.0 and, as the time they were created, the commit's. A Kubernetes image is named
 # kubernetes-<platform> whatever its minor, so chalkctl upgrade --image finds the nodes of the
 # previous minor by its name.
-{ self, lib }:
+{
+  self,
+  lib,
+  sbom,
+}:
 let
   inherit (self.lib) version;
   tag = "v${version}";
@@ -67,12 +71,21 @@ let
       platform:
       let
         name = "${kind.repository}-${platform}";
+        image = images."${kind.name}-${platform}";
       in
       lib.nameValuePair name (
-        images."${kind.name}-${platform}"
+        image
         // {
           repository = "${registry}/${name}";
           inherit tag;
+          # Its SPDX SBOM, a release's <name>.spdx.json.
+          sbom = sbom.image (
+            {
+              inherit name tag;
+              inherit (image) nixos;
+            }
+            // lib.optionalAttrs (self ? lastModifiedDate) { inherit created; }
+          );
         }
       )
     ) platforms;

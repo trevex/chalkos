@@ -6,6 +6,7 @@
   testing,
   fixtures,
   docs,
+  sbom,
 }:
 let
   inherit (pkgs) lib;
@@ -16,6 +17,7 @@ let
       docs
       testing
       fixtures
+      sbom
       ;
     checkLib = import ./lib.nix {
       inherit

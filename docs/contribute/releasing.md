@@ -83,8 +83,8 @@ The same run then publishes the release from the tagged commit:
 | Job | What it does |
 | --- | --- |
 | `plan` | Lists the images of the flake output `releaseImages` and fails when their tag is not the release's. |
-| `image <name>` | One job per image: builds its OCI layout, pushes it with `chalkbuild push` to its repository and tag, signs the digest with `cosign sign` and attests its provenance in the registry. |
-| `assets` | Builds the generic installer, chalkctl and chalkbuild, compresses the installer's raw image, writes `SHA256SUMS`, signs every file with `cosign sign-blob`, attests their provenance and uploads them to the release. |
+| `image <name>` | One job per image: builds its OCI layout and its SBOM, `releaseImages.<name>.sbom`, pushes the image with `chalkbuild push` to its repository and tag, signs the digest with `cosign sign`, attests its provenance in the registry, and attaches the SBOM to the digest with `cosign attest --type spdxjson` and with a GitHub SBOM attestation. |
+| `assets` | Waits for the images. Builds the generic installer, chalkctl and chalkbuild with their SBOMs, `chalkctl.sbom` and `chalkbuild.sbom`, compresses the installer's raw image, adds the images' SBOMs as `<image>.spdx.json`, writes `SHA256SUMS`, signs every file with `cosign sign-blob`, attests their provenance and the programs' SBOMs and uploads them to the release. |
 | `notes` | Appends the images' references by digest and the commands that verify them to the release's notes. |
 
 Signing is keyless: cosign and the attestations use a certificate that Sigstore issues to the
@@ -110,8 +110,9 @@ gh workflow run release.yml --ref <branch> -f dry-run=true
 
 It runs the jobs of a release from `plan` on, at the ref's commit, without release-please and
 without any step that pushes, signs, attests or uploads. The run's summary lists each image's
-reference with the digest it would push, and each asset with its size and checksum. The assets
-are the run's artifact `release-assets`, kept for seven days. Run one after a change to
+reference with the digest it would push, each asset with its size and checksum, and each SBOM
+with its number of components and how many of them have a licence. The assets, the SBOMs among
+them, are the run's artifact `release-assets`, kept for seven days. Run one after a change to
 `nix/release.nix`, to the installer or to the workflow, before it reaches a release.
 
 A dispatched run with `dry-run=false` does what a push to `main` does, and fails on any other
@@ -145,8 +146,10 @@ release-please reads neither once a release exists, so both may be removed after
 
 ## Check that it worked
 
-The GitHub release lists the installer, the two programs, `SHA256SUMS` and a `.sigstore.json`
-bundle for each, and its notes end with the images' references. `cosign verify` and
-`gh attestation verify` accept each image and asset, as
-[Releases](../get-started/releases.md#verify-an-image) shows, and an anonymous
+The GitHub release lists the installer, the two programs, the SBOMs of the images and the
+programs, `SHA256SUMS` and a `.sigstore.json` bundle for each, and its notes end with the images'
+references. `cosign verify` and `gh attestation verify` accept each image and asset, as
+[Releases](../get-started/releases.md#verify-an-image) shows, `cosign verify-attestation --type
+spdxjson` finds each image's SBOM, as
+[Fetch and verify an SBOM](../get-started/releases.md#fetch-and-verify-an-sbom) shows, and an anonymous
 `docker manifest inspect` or `crane manifest` of each image succeeds once its package is public.

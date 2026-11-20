@@ -64,8 +64,8 @@ repository:
     distribution-points:
       - uri: https://github.com/trevex/chalkos/releases
         comment: >-
-          The installer, chalkctl and chalkbuild, with SHA256SUMS and a cosign signature bundle
-          per file.
+          The installer, chalkctl and chalkbuild and the SBOMs of the images and the programs, with
+          SHA256SUMS and a cosign signature bundle per file.
       - uri: https://github.com/trevex?tab=packages&repo_name=chalkos
         comment: >-
           The images at ghcr.io/trevex/chalkos, per Kubernetes minor and platform and for the
@@ -80,6 +80,23 @@ repository:
           keyless, as the identity
           https://github.com/trevex/chalkos/.github/workflows/release.yml@refs/heads/main of the
           issuer https://token.actions.githubusercontent.com.
+      - name: SBOM of each image
+        location: https://github.com/trevex/chalkos/attestations
+        predicate-uri: https://spdx.dev/Document/v2.3
+        comment: >-
+          An SPDX 2.3 SBOM of each release image, which lists the packages of its NixOS system and
+          its kernel with their versions, licences and sources. It is attached to the image's
+          digest in ghcr.io as a GitHub attestation, which gh attestation verify
+          --predicate-type https://spdx.dev/Document/v2.3 checks, and as a cosign attestation of
+          the type spdxjson, which cosign verify-attestation --type spdxjson checks. The release
+          also publishes it as the asset <image>.spdx.json, in SHA256SUMS and signed with cosign.
+      - name: SBOM of chalkctl and chalkbuild
+        location: https://github.com/trevex/chalkos/attestations
+        predicate-uri: https://cyclonedx.org/bom
+        comment: >-
+          A CycloneDX SBOM of each program, which lists the Go modules in its binary with their
+          licences, as a GitHub attestation of the binary and as the release asset
+          <program>-linux-amd64.cdx.json, in SHA256SUMS and signed with cosign.
   security:
     assessments:
       self:

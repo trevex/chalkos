@@ -64,6 +64,7 @@ let
       "image-tests"
       "kernel-modules"
       "rules"
+      "sbom"
       "template-cluster-metal"
       "template-lab"
       "template-router-lab"
