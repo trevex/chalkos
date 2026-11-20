@@ -26,17 +26,18 @@ on:
         type: boolean
         default: true
 
-# One release at a time, and a publish that runs is never cancelled. Dry runs queue by ref.
-concurrency:
-  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.dry-run && github.ref || 'publish' }}
-  cancel-in-progress: false
-
 permissions: {}
 
 jobs:
+  # Only the newest push to main matters for the release pull request, so a newer run cancels
+  # an older one. A merged release pull request whose run is cancelled is released by the next
+  # push to main or by starting this workflow by hand without dry-run.
   release-please:
     if: github.repository == 'trevex/chalkos' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.dry-run))
     runs-on: ubuntu-latest
+    concurrency:
+      group: release-please
+      cancel-in-progress: true
     timeout-minutes: 15
     permissions: {}
     outputs:
@@ -76,10 +77,15 @@ jobs:
 
   # The commit to build, whether the run publishes, and the release images to build, from
   # releaseImages, one job each.
+  # Publishes start one at a time and are never cancelled; dry runs queue by ref. The lock is on
+  # this job rather than the workflow, so a long publish or dry run never holds up release-please.
   plan:
     needs: release-please
     if: ${{ !cancelled() && (needs.release-please.outputs.created == 'true' || (needs.release-please.result == 'skipped' && github.event_name != 'push')) }}
     runs-on: ubuntu-latest
+    concurrency:
+      group: release-${{ github.event_name == 'workflow_dispatch' && inputs.dry-run && github.ref || 'publish' }}
+      cancel-in-progress: false
     timeout-minutes: 30
     permissions:
       contents: read
