@@ -46,6 +46,18 @@ let
     excludeShellChecks = [ "SC2016" ];
     text = builtins.readFile ./update-pins.sh;
   };
+
+  # The vendorHash of the Go programs, set again after a change of go.mod or go.sum; see
+  # update-vendor-hash.sh. It runs nix of the caller's PATH.
+  updateVendorHash = pkgs.writeShellApplication {
+    name = "update-vendor-hash";
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.gnugrep
+      pkgs.gnused
+    ];
+    text = builtins.readFile ./update-vendor-hash.sh;
+  };
 in
 {
   chalklab = {
@@ -72,5 +84,10 @@ in
     type = "app";
     program = lib.getExe updatePins;
     meta.description = "Set the hashes, image digests and references that follow the pinned Kubernetes releases";
+  };
+  update-vendor-hash = {
+    type = "app";
+    program = lib.getExe updateVendorHash;
+    meta.description = "Set the vendorHash of the Go programs after a change of go.mod or go.sum";
   };
 }

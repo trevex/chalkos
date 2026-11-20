@@ -60,8 +60,8 @@ in
       fileset = if withTests then sources else lib.fileset.difference sources tests;
     };
     proxyVendor = true;
-    # After changing go.mod or go.sum, set this to lib.fakeHash, run `nix build .#chalkctl`, and
-    # copy the hash it reports.
+    # After a change of go.mod or go.sum, `nix run .#update-vendor-hash` sets it again: it builds
+    # the module download with lib.fakeHash and writes back the hash the build reports.
     vendorHash = "sha256-qv2tcw2lnnwkfZRZCLLSf+cAGR/KR9wDvZu+KAbpE+E=";
     # Every program shares one module download: the same name, source and inputs make one
     # derivation, which a build fetches once.
