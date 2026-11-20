@@ -1,0 +1,93 @@
+# Finishes a branch of Renovate's after each of Renovate's commits: Renovate changes go.mod, go.sum
+# and releases.nix, but not what Nix derives from them. Against main, a change of go.mod or go.sum
+# sets the Go programs' vendorHash again with update-vendor-hash, after updating the go-overlay
+# input when it lacks the Go release go.mod now names, and a change of releases.nix sets the
+# Kubernetes pins with update-pins. Each fix is a commit of its own, which the release GitHub
+# App's bot makes and pushes, so that ci runs on the pull request; the commits of the workflow's
+# own token start no workflow. A push of the bot's own, or of anyone but Renovate, runs nothing.
+# Renovate still rebases a branch with the bot's commits, since its configuration ignores them.
+name: renovate-fixup
+
+on:
+  push:
+    branches: ["renovate/**"]
+
+permissions: {}
+
+jobs:
+  fixup:
+    if: github.repository == 'trevex/chalkos' && !github.event.deleted && github.event.head_commit.author.email == '29139614+renovate[bot]@users.noreply.github.com'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # A newer commit of Renovate's on the branch cancels the run of the older one. The group is
+    # the job's, so that the skipped run of the bot's own push cancels nothing.
+    concurrency:
+      group: renovate-fixup-${{ github.ref }}
+      cancel-in-progress: true
+    permissions:
+      # Hestia checks which cached packs GitHub has evicted. The App's token does the rest.
+      actions: read
+    steps:
+      - uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        id: app
+        with:
+          client-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+      # The App's token pushes the fixes, so it stays in the checkout's configuration.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ steps.app.outputs.token }}
+          fetch-depth: 0
+      - uses: ./.github/actions/nix
+        with:
+          cachix-name: ${{ vars.CACHIX_NAME }}
+          read-only: true
+      - name: Commit as the App's bot
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          SLUG: ${{ steps.app.outputs.app-slug }}
+        run: |
+          id=$(gh api "/users/$SLUG%5Bbot%5D" --jq .id)
+          git config user.name "${SLUG}[bot]"
+          git config user.email "$id+${SLUG}[bot]@users.noreply.github.com"
+      - name: Set the vendor hash
+        run: |
+          if git diff --quiet origin/main...HEAD -- go.mod go.sum; then
+            echo "go.mod and go.sum are main's"
+            exit 0
+          fi
+          # go-overlay builds exactly the Go release go.mod names; a release newer than its
+          # manifests fails the evaluation until the input is updated.
+          if ! nix eval --raw .#chalkctl.drvPath >/dev/null; then
+            nix flake update go-overlay
+            if ! git diff --quiet -- flake.lock; then
+              go=$(sed -nE 's/^(go|toolchain) (go)?([0-9.a-z]+)$/\3/p' go.mod | tail -n 1)
+              git commit -m "build(deps): update go-overlay for Go $go" -- flake.lock
+            fi
+          fi
+          nix run .#update-vendor-hash
+          if ! git diff --quiet; then
+            git commit -am 'build(deps): update the vendor hash'
+          fi
+      - name: Set the Kubernetes pins
+        run: |
+          if git diff --quiet origin/main...HEAD -- modules/node/kubernetes/releases.nix; then
+            echo "releases.nix is main's"
+            exit 0
+          fi
+          nix run .#update-pins
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m 'build(deps): update the Kubernetes pins'
+          fi
+      - name: Push the fixes
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]; then
+            echo "nothing to fix"
+            exit 0
+          fi
+          git log --format='%h %an: %s' "$GITHUB_SHA..HEAD"
+          git push origin "HEAD:$REF"

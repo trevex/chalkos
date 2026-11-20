@@ -282,6 +282,7 @@ nav = [
       "contribute/testing.md",
       "contribute/ci.md",
       "contribute/releasing.md",
+      "contribute/dependencies.md",
     ] },
     { "Code" = [
       "contribute/architecture.md",

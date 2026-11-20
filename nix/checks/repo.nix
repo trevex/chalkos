@@ -377,6 +377,32 @@ in
         touch $out
       '';
 
+  # Renovate's configuration passes its validator, and releases.nix lists the newest Kubernetes
+  # minor first, which the configuration takes for the newest.
+  renovate =
+    pkgs.runCommand "chalkos-renovate"
+      {
+        nativeBuildInputs = [ pkgs.renovate ];
+        src = lib.fileset.toSource {
+          root = ../../.;
+          fileset = lib.fileset.unions [
+            ../../.github/renovate.json5
+            ../../modules/node/kubernetes/releases.nix
+          ];
+        };
+        newest = lib.last (lib.sort lib.versionOlder (lib.attrNames self.lib.kubernetesReleases));
+      }
+      ''
+        cd $src
+        HOME=$(mktemp -d) renovate-config-validator --strict
+        first=$(grep -m 1 -oP '^  "\K[0-9]+\.[0-9]+(?=" = \{)' modules/node/kubernetes/releases.nix)
+        if [ "$first" != "$newest" ]; then
+          echo "error: modules/node/kubernetes/releases.nix lists $first first, not the newest minor $newest" >&2
+          exit 1
+        fi
+        touch $out
+      '';
+
   # The Nix files are formatted as nix fmt formats them, hold no unused binding or argument
   # (deadnix) and pass statix, except for the lints statix.toml leaves out.
   nix-lint =

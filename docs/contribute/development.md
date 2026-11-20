@@ -98,11 +98,13 @@ To move to another Go release:
 
 1. Update go-overlay if it predates the release: `nix flake update go-overlay`.
 2. Change the `go` directive in `go.mod`.
-3. Run `nix build .#chalkctl`. If it reports a hash mismatch for the Go modules, set
-   `vendorHash` in `nix/overlay/build-go-program.nix` to the hash it reports.
+3. Run `nix run .#update-vendor-hash`, which sets `vendorHash` in
+   `nix/overlay/build-go-program.nix` again if the Go modules' download changed.
 4. Run the `go-lint` and `go-unit` checks and fix their findings.
 
 `nix run github:purpleclay/go-overlay#goversions` lists the releases go-overlay provides.
+Renovate proposes each new Go release in a pull request of its own, and its fixup workflow does
+the first and third steps, as [Dependency updates](dependencies.md#the-fixup-workflow) describes.
 
 ## Repository layout
 
