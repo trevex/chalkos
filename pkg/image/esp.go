@@ -109,11 +109,72 @@ func copyOut(ctx context.Context, raw string, espOffset int64, file, dir string)
 	return dst, nil
 }
 
+// ESPFile is a file WriteESP copies onto an ESP: the local file From to the path To, such as
+// ::/EFI/BOOT/BOOTX64.EFI.
+type ESPFile struct{ From, To string }
+
+// espTools are the mtools commands WriteESP and the readers of an ESP run.
+var espTools = []string{"mformat", "mmd", "mcopy", "mdir"}
+
+// MissingESPTools are the mtools commands that write and read an ESP and are not on PATH; none
+// when mtools is installed.
+func MissingESPTools() []string {
+	var missing []string
+	for _, tool := range espTools {
+		if _, err := exec.LookPath(tool); err != nil {
+			missing = append(missing, tool)
+		}
+	}
+	return missing
+}
+
+// espEpoch is the time WriteESP gives the ESP's files and directories, 1980-01-01 in UTC, the
+// earliest a FAT time stamp holds, so that the same files always make the same ESP.
+const espEpoch = "315532800"
+
+// WriteESP formats the FAT file system at offset in the disk image raw as FAT32 of sectors
+// 512-byte sectors, with the label ESP and the volume ID, and copies the files onto it, making
+// their directories. It gives every file and directory the same time, so that the same
+// arguments always write the same bytes.
+func WriteESP(ctx context.Context, raw string, offset, sectors int64, volumeID uint32, files []ESPFile) error {
+	fat := FAT(raw, offset)
+	env := []string{"SOURCE_DATE_EPOCH=" + espEpoch, "TZ=UTC"}
+	if _, err := runMtools(ctx, env, "mformat", "-i", fat, "-F", "-T", fmt.Sprint(sectors), "-N", fmt.Sprintf("%08x", volumeID), "-v", "ESP", "::"); err != nil {
+		return err
+	}
+	made := map[string]bool{"::": true}
+	for _, f := range files {
+		var dirs []string
+		for dir := path.Dir(f.To); !made[dir]; dir = path.Dir(dir) {
+			made[dir] = true
+			dirs = append([]string{dir}, dirs...)
+		}
+		if len(dirs) > 0 {
+			if _, err := runMtools(ctx, env, "mmd", append([]string{"-i", fat}, dirs...)...); err != nil {
+				return err
+			}
+		}
+		if _, err := runMtools(ctx, env, "mcopy", "-i", fat, f.From, f.To); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Mtools runs an mtools command and returns its output. MTOOLS_SKIP_CHECK stops mtools from
 // rejecting FAT geometry that does not match a physical floppy or disk.
 func Mtools(ctx context.Context, name string, args ...string) (string, error) {
+	return runMtools(ctx, nil, name, args...)
+}
+
+// runMtools is Mtools with the variables env added to its environment. It names the tool and
+// mtools when the tool is not on PATH.
+func runMtools(ctx context.Context, env []string, name string, args ...string) (string, error) {
+	if _, err := exec.LookPath(name); err != nil {
+		return "", fmt.Errorf("%s is not on PATH: chalkos reads and writes an image's ESP with mtools; install mtools, which the flake's chalkctl and chalklab bring", name)
+	}
 	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Env = append(os.Environ(), "MTOOLS_SKIP_CHECK=1")
+	cmd.Env = append(append(os.Environ(), "MTOOLS_SKIP_CHECK=1"), env...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, out)
