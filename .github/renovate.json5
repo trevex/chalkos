@@ -1,0 +1,169 @@
+// Renovate's configuration: the Mend Renovate App opens a pull request per group each Monday
+// morning. docs/contribute/dependencies.md describes the groups, the automerge rules and the
+// workflows that finish Renovate's pull requests: renovate-fixup.yml sets the Go modules' vendor
+// hash and the Kubernetes pins after Renovate's commit, and update-nixpkgs.yml updates
+// flake.lock, which Renovate leaves alone.
+{
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  extends: ['config:recommended', 'helpers:pinGitHubActionDigests'],
+  // Go modules, the actions of the workflows, and the Kubernetes releases of releases.nix and the
+  // Hestia version beside its action, which the custom managers below find. Neither the nix
+  // manager nor any other runs.
+  enabledManagers: ['gomod', 'github-actions', 'custom.regex'],
+  timezone: 'Europe/Berlin',
+  schedule: ['before 6am on monday'],
+  prHourlyLimit: 0,
+  dependencyDashboard: true,
+  labels: ['dependencies'],
+  semanticCommits: 'enabled',
+  semanticCommitType: 'build',
+  semanticCommitScope: 'deps',
+  rebaseWhen: 'behind-base-branch',
+  // The commits of renovate-fixup.yml, made as the release App's bot, leave a branch Renovate's
+  // own, so Renovate still rebases it.
+  gitIgnoredAuthors: ['359050260+chalkreleaser[bot]@users.noreply.github.com'],
+  postUpdateOptions: ['gomodTidy'],
+  // Automerge enables GitHub's auto-merge, which waits for the checks branch protection requires.
+  // Where GitHub's auto-merge is unavailable, Renovate merges once every check of the branch has
+  // passed, never without checks.
+  automergeType: 'pr',
+  platformAutomerge: true,
+  automergeStrategy: 'rebase',
+  ignoreTests: false,
+  customManagers: [
+    {
+      // The patch release of each Kubernetes minor of releases.nix, a dependency per minor:
+      // kubernetes-1.37 and so on.
+      customType: 'regex',
+      description: 'The Kubernetes release of each minor',
+      managerFilePatterns: ['/^modules/node/kubernetes/releases\\.nix$/'],
+      matchStrings: [
+        '"(?<depType>\\d+\\.\\d+)" = \\{\\s*version = "(?<currentValue>\\d+\\.\\d+\\.\\d+)";',
+      ],
+      depNameTemplate: 'kubernetes-{{{depType}}}',
+      packageNameTemplate: 'kubernetes/kubernetes',
+      datasourceTemplate: 'github-releases',
+      extractVersionTemplate: '^v(?<version>\\d+\\.\\d+\\.\\d+)$',
+      versioningTemplate: 'semver',
+    },
+    {
+      // The newest Kubernetes minor, the first of releases.nix, which the renovate check holds
+      // to the newest, to show a new minor on the Dependency Dashboard. A minor's x.y.0 counts
+      // for nothing: update-pins needs a patch release before the newest one.
+      customType: 'regex',
+      description: 'The newest Kubernetes minor',
+      managerFilePatterns: ['/^modules/node/kubernetes/releases\\.nix$/'],
+      matchStrings: ['\\{\\s*"(?<currentValue>\\d+\\.\\d+)" = \\{\\s*version = '],
+      depNameTemplate: 'kubernetes-minor',
+      packageNameTemplate: 'kubernetes/kubernetes',
+      datasourceTemplate: 'github-releases',
+      extractVersionTemplate: '^v(?<version>\\d+\\.\\d+)\\.[1-9]\\d*$',
+      versioningTemplate: 'loose',
+    },
+    {
+      // Hestia's version input, which names the release of the action's own tag.
+      customType: 'regex',
+      description: "Hestia's version beside its action",
+      managerFilePatterns: ['/^\\.github/actions/nix/action\\.yml$/'],
+      matchStrings: [
+        'uses: Mic92/hestia@[0-9a-f]+ # v\\S+\\n\\s+with:\\n\\s+version: (?<currentValue>v\\S+)',
+      ],
+      depNameTemplate: 'Mic92/hestia',
+      datasourceTemplate: 'github-releases',
+    },
+  ],
+  packageRules: [
+    {
+      // build(deps), over config:recommended's fix and chore.
+      matchPackageNames: ['*'],
+      semanticCommitType: 'build',
+    },
+    {
+      // Actions' patch and minor releases and digests in one pull request, merged once CI
+      // passes; a major release gets a pull request of its own, merged by hand.
+      matchManagers: ['github-actions'],
+      semanticCommitType: 'ci',
+    },
+    {
+      matchDepNames: ['Mic92/hestia'],
+      semanticCommitType: 'ci',
+    },
+    {
+      matchManagers: ['github-actions', 'custom.regex'],
+      matchDepNames: ['!kubernetes-*'],
+      matchUpdateTypes: ['minor', 'patch', 'digest', 'pin', 'pinDigest'],
+      groupName: 'the GitHub Actions',
+      groupSlug: 'github-actions',
+      automerge: true,
+    },
+    {
+      // The Kubernetes modules, which follow the newest Kubernetes minor, with etcd's.
+      matchManagers: ['gomod'],
+      matchPackageNames: ['k8s.io/**', 'sigs.k8s.io/**', 'go.etcd.io/**'],
+      groupName: 'the Kubernetes Go modules',
+      groupSlug: 'go-kubernetes',
+      addLabels: ['e2e'],
+    },
+    {
+      matchManagers: ['gomod'],
+      matchPackageNames: ['golang.org/x/**'],
+      groupName: 'the golang.org/x modules',
+      groupSlug: 'go-x',
+    },
+    {
+      // Every other Go module's patch and minor releases and pseudo-versions together; a major
+      // release gets a pull request of its own.
+      matchManagers: ['gomod'],
+      matchDepTypes: ['require', 'indirect'],
+      matchPackageNames: ['!k8s.io/**', '!sigs.k8s.io/**', '!go.etcd.io/**', '!golang.org/x/**'],
+      matchUpdateTypes: ['minor', 'patch', 'digest'],
+      groupName: 'the Go modules',
+      groupSlug: 'go-deps',
+    },
+    {
+      // The go directive and the toolchain line: go-overlay builds the Go release go.mod names.
+      matchManagers: ['gomod'],
+      matchDepTypes: ['golang', 'toolchain'],
+      groupName: 'Go',
+      groupSlug: 'go-toolchain',
+      rangeStrategy: 'bump',
+      addLabels: ['e2e'],
+    },
+    {
+      // The newest patch release of each Kubernetes minor, a pull request per minor. A minor's
+      // dependency never leaves its minor: a new minor is the dashboard's, below.
+      matchManagers: ['custom.regex'],
+      matchDepNames: ['kubernetes-*', '!kubernetes-minor'],
+      separateMinorPatch: true,
+      commitMessageTopic: 'Kubernetes {{{depType}}}',
+      addLabels: ['e2e'],
+    },
+    {
+      matchManagers: ['custom.regex'],
+      matchDepNames: ['kubernetes-*', '!kubernetes-minor'],
+      matchUpdateTypes: ['major', 'minor'],
+      enabled: false,
+    },
+    {
+      // A new Kubernetes minor waits on the Dependency Dashboard: adding one is a change by hand,
+      // which docs/contribute/common-changes.md describes, and approving it opens a pull request
+      // that only shows the release.
+      matchDepNames: ['kubernetes-minor'],
+      groupName: 'a new Kubernetes minor',
+      groupSlug: 'kubernetes-minor',
+      commitMessageTopic: 'the newest Kubernetes minor',
+      dependencyDashboardApproval: true,
+      addLabels: ['e2e'],
+    },
+    {
+      // Nothing but actions merges by itself.
+      matchManagers: ['gomod', 'custom.regex'],
+      matchDepNames: ['!Mic92/hestia'],
+      automerge: false,
+    },
+    {
+      matchUpdateTypes: ['major'],
+      automerge: false,
+    },
+  ],
+}

@@ -40,6 +40,7 @@ let
       "kubernetes-bgp-nht"
       "nix-lint"
       "registry-mirrors"
+      "renovate"
       "release-eval"
       "router-dhcp"
       "router-dhcp-relay"
