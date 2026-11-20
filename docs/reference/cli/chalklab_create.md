@@ -11,10 +11,13 @@ chalklab create [flags]
 
 Creates the lab of a lab file and brings the cluster up. chalklab reads the lab file
 (chalklab.yaml, or --lab) and the inventory it names; each node the lab file names runs the kvm
-image the inventory names for it. chalklab creates the lab's Secure Boot keys and enrolls them in
-the VMs' firmware, copies each node's image and signs the copy with them, gives each node a disk
-backed by it and the empty disks the lab file adds, and starts the supervisor, which runs a TPM
-and a VM per node. Each VM's NIC on the lab network gets the MAC address the lab file gives it,
+image the inventory names for it, from an image directory or from a registry. An image from a
+registry is pulled by the digest its tag resolves to when create starts, once per image, into
+images/sha256-&lt;hex> in the lab's state directory; the lab's inventory names the image by that
+digest. Registry credentials come from the Docker config, as for chalkctl. chalklab creates the
+lab's Secure Boot keys and enrolls them in the VMs' firmware, copies each node's image and signs
+the copy with them, gives each node a disk backed by it and the empty disks the lab file adds,
+and starts the supervisor, which runs a TPM and a VM per node. Each VM's NIC on the lab network gets the MAC address the lab file gives it,
 which the node's Network document must match; chalklab does not read the Network documents.
 A node's memory, CPUs and disks default by the type of its Kubernetes Node: 3072 MiB for a control
 plane, 2048 MiB for another node, 2 CPUs and one disk of 16G.

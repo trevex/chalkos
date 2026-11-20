@@ -9,25 +9,28 @@ lab runs, each with the MAC address of its NIC on a private network between the 
 chalkd and each control plane's API server are forwarded to a port on 127.0.0.1. A supervisor
 process keeps the VMs running in the background.
 
-A lab's state (its disks, keys, console logs, kubeconfig, client file and the inventory that
-reaches the nodes at their forwarded ports) lives in $XDG_STATE_HOME/chalklab/<name>, by default
-~/.local/state/chalklab/<name>, after the lab file's metadata.name; two labs on one machine need
-two names, and --name chooses among them.
+A lab's state (its disks, keys, the images it pulled, console logs, kubeconfig, client file and
+the inventory that reaches the nodes at their forwarded ports) lives in
+$XDG_STATE_HOME/chalklab/<name>, by default ~/.local/state/chalklab/<name>, after the lab file's
+metadata.name; two labs on one machine need two names, and --name chooses among them.
 
 chalklab needs /dev/kvm, which most distributions grant to the kvm group. It never builds images.
 Only create needs the cluster's secrets file; the other commands work on the lab's state alone.`
 
-const rootExample = `  # In a directory made from the lab template, once its image is built.
+const rootExample = `  # In a directory made from the lab template.
   chalklab create --secrets secrets.json
   chalklab status
   chalklab destroy`
 
 const createLong = `Creates the lab of a lab file and brings the cluster up. chalklab reads the lab file
 (chalklab.yaml, or --lab) and the inventory it names; each node the lab file names runs the kvm
-image the inventory names for it. chalklab creates the lab's Secure Boot keys and enrolls them in
-the VMs' firmware, copies each node's image and signs the copy with them, gives each node a disk
-backed by it and the empty disks the lab file adds, and starts the supervisor, which runs a TPM
-and a VM per node. Each VM's NIC on the lab network gets the MAC address the lab file gives it,
+image the inventory names for it, from an image directory or from a registry. An image from a
+registry is pulled by the digest its tag resolves to when create starts, once per image, into
+images/sha256-<hex> in the lab's state directory; the lab's inventory names the image by that
+digest. Registry credentials come from the Docker config, as for chalkctl. chalklab creates the
+lab's Secure Boot keys and enrolls them in the VMs' firmware, copies each node's image and signs
+the copy with them, gives each node a disk backed by it and the empty disks the lab file adds,
+and starts the supervisor, which runs a TPM and a VM per node. Each VM's NIC on the lab network gets the MAC address the lab file gives it,
 which the node's Network document must match; chalklab does not read the Network documents.
 A node's memory, CPUs and disks default by the type of its Kubernetes Node: 3072 MiB for a control
 plane, 2048 MiB for another node, 2 CPUs and one disk of 16G.
@@ -61,7 +64,10 @@ const statusExample = `  chalklab status`
 const startLong = `Starts a lab again from its state, with its disks, firmware variables, TPM state and ports. When
 the supervisor runs, it starts the VMs that stopped (for example a VM whose node powered off).
 When no supervisor runs (for example after a reboot of this machine), chalklab starts the
-supervisor, which starts every VM. The command needs no secrets file or client file.`
+supervisor, which starts every VM. Each node boots its disk as it is, so start pulls no image,
+even when the tag of an image from a registry has moved since create: a node runs the image
+create made its disk from, or the one chalkctl upgrade installed since. The command needs no
+secrets file or client file.`
 
 const startExample = `  chalklab start`
 
@@ -77,17 +83,21 @@ const consoleExample = `  chalklab console cp1
 const signLong = `Signs the boot loader and UKIs of an image with the lab's Secure Boot db key, so the lab's VMs
 boot it; an upgrade with an image built elsewhere needs that. An image in the Nix store cannot be
 changed, so --out copies the image directory, with its schemas and metadata, into a new directory
-and signs the copy, which chalkctl upgrade --image takes. The command needs no secrets file or
-client file.`
+and signs the copy, which chalkctl upgrade --image takes. An image in a registry is signed in the
+directory chalkctl image pull writes. The command needs no secrets file or client file.`
 
 const signExample = `  # Sign a copy of an image in the Nix store and upgrade the lab's nodes of its name with it,
   # with $CHALKOSINVENTORY and $CHALKOSCONFIG exported as chalklab create prints them.
   chalklab sign images/node-kvm --out node-kvm-signed
-  chalkctl upgrade --image node-kvm-signed --allow-downtime`
+  chalkctl upgrade --image node-kvm-signed --allow-downtime
+
+  # Sign an image from a registry in the directory it is pulled into.
+  chalkctl image pull ghcr.io/example/node-kvm:v2 node-kvm-v2
+  chalklab sign node-kvm-v2`
 
 const destroyLong = `Stops the lab's supervisor, VMs, TPMs and network switch and removes its state: disks,
-firmware variables, TPM state, keys, console logs, kubeconfig, inventory and client file. The
-state is kept when anything of the lab is still running. The command needs no secrets file or
-client file.`
+firmware variables, TPM state, keys, the images it pulled, console logs, kubeconfig, inventory and
+client file. The state is kept when anything of the lab is still running. The command needs no
+secrets file or client file.`
 
 const destroyExample = `  chalklab destroy --name lab`

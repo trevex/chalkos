@@ -21,9 +21,12 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/trevex/chalkos/pkg/image/imagetest"
 	"github.com/trevex/chalkos/pkg/internal/cli/clitest"
 	"github.com/trevex/chalkos/pkg/inventory"
 	"github.com/trevex/chalkos/pkg/lab"
+	"github.com/trevex/chalkos/pkg/ociimage/ocitest"
+	"github.com/trevex/chalkos/pkg/schema"
 )
 
 func testApp() (*app, *bytes.Buffer) {
@@ -79,8 +82,7 @@ spec:
 // TestLabNodes runs the nodes of the lab file, each with its MAC address and the machine its type
 // gives it unless the lab file says otherwise, from the directory of its image in the inventory;
 // it refuses a node of a metal image, two nodes of one MAC address, a multicast MAC address, a
-// node the inventory lacks, an image from a registry, and a forward of chalkd's or a control
-// plane's API server's port.
+// node the inventory lacks, and a forward of chalkd's or a control plane's API server's port.
 func TestLabNodes(t *testing.T) {
 	dir := t.TempDir()
 	lf, inv := loadLab(t, writeLabFiles(t, dir, testLab))
@@ -88,44 +90,125 @@ func TestLabNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	image := filepath.Join(dir, "images", "node-kvm")
 	want := []lab.Node{
-		{Name: "cp1", Kind: "controlplane", MAC: "52:54:00:7b:00:11", MemoryMB: 3072, CPUs: 2, Disks: []lab.Disk{{Size: "16G"}}, Forwards: []lab.Forward{{Guest: 5000}}},
-		{Name: "w1", Kind: "worker", MAC: "52:54:00:7b:00:12", MemoryMB: 1024, CPUs: 1, Disks: []lab.Disk{{Size: "20G"}, {Size: "1G", Serial: "chalk-data"}}},
+		{Name: "cp1", Kind: "controlplane", Image: image, MAC: "52:54:00:7b:00:11", MemoryMB: 3072, CPUs: 2, Disks: []lab.Disk{{Size: "16G"}}, Forwards: []lab.Forward{{Guest: 5000}}},
+		{Name: "w1", Kind: "worker", Image: image, MAC: "52:54:00:7b:00:12", MemoryMB: 1024, CPUs: 1, Disks: []lab.Disk{{Size: "20G"}, {Size: "1G", Serial: "chalk-data"}}},
 	}
 	if !reflect.DeepEqual(nodes, want) {
 		t.Errorf("nodes = %+v, want %+v", nodes, want)
 	}
-	if images["cp1"] != filepath.Join(dir, "images", "node-kvm") {
+	if images["cp1"] != image {
 		t.Errorf("images = %v", images)
 	}
-	for name, tc := range map[string]struct{ lab, inventory, want string }{
-		"a metal image":            {strings.Replace(testLab, "    w1:", "    m1: {mac: \"52:54:00:7b:00:13\"}\n    w1:", 1), "", "chalklab runs kvm images, but the image node-metal of m1 is built for metal"},
-		"one MAC address":          {strings.Replace(testLab, "52:54:00:7b:00:12", "52:54:00:7b:00:11", 1), "", "the same MAC address 52:54:00:7b:00:11"},
-		"a multicast MAC":          {strings.Replace(testLab, "52:54:00:7b:00:12", "01:00:5e:00:00:12", 1), "", "the MAC address 01:00:5e:00:00:12 of w1 is a multicast address"},
-		"no inventory node":        {strings.Replace(testLab, "    w1:", "    x9: {mac: \"52:54:00:7b:00:19\"}\n    w1:", 1), "", "has no node x9"},
-		"an image from a registry": {testLab, "node-kvm: {source: {oci: registry.example/lab/node-kvm:v1}}", "chalklab boots images from directories, but the image node-kvm of cp1 comes from the registry, registry.example/lab/node-kvm:v1"},
-		"chalkd's port":            {strings.Replace(testLab, "forwards: [5000]", "forwards: [50000]", 1), "", "chalklab forwards port 50000 of cp1 to its chalkd already"},
-		"the API server's port":    {strings.Replace(testLab, "forwards: [5000]", "forwards: [6443]", 1), "", "chalklab forwards port 6443 of cp1 to its API server already"},
+	for name, tc := range map[string]struct{ lab, want string }{
+		"a metal image":         {strings.Replace(testLab, "    w1:", "    m1: {mac: \"52:54:00:7b:00:13\"}\n    w1:", 1), "chalklab runs kvm images, but the image node-metal of m1 is built for metal"},
+		"one MAC address":       {strings.Replace(testLab, "52:54:00:7b:00:12", "52:54:00:7b:00:11", 1), "the same MAC address 52:54:00:7b:00:11"},
+		"a multicast MAC":       {strings.Replace(testLab, "52:54:00:7b:00:12", "01:00:5e:00:00:12", 1), "the MAC address 01:00:5e:00:00:12 of w1 is a multicast address"},
+		"no inventory node":     {strings.Replace(testLab, "    w1:", "    x9: {mac: \"52:54:00:7b:00:19\"}\n    w1:", 1), "has no node x9"},
+		"chalkd's port":         {strings.Replace(testLab, "forwards: [5000]", "forwards: [50000]", 1), "chalklab forwards port 50000 of cp1 to its chalkd already"},
+		"the API server's port": {strings.Replace(testLab, "forwards: [5000]", "forwards: [6443]", 1), "chalklab forwards port 6443 of cp1 to its API server already"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			dir := t.TempDir()
-			path := writeLabFiles(t, dir, tc.lab)
-			if tc.inventory != "" {
-				inv := filepath.Join(dir, "chalkos.yaml")
-				data, err := os.ReadFile(inv)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(inv, []byte(strings.Replace(string(data), "node-kvm: {source: {directory: images/node-kvm}}", tc.inventory, 1)), 0o644); err != nil {
-					t.Fatal(err)
-				}
-			}
-			lf, inv := loadLab(t, path)
+			lf, inv := loadLab(t, writeLabFiles(t, t.TempDir(), tc.lab))
 			if _, _, err := labNodes(inv, lf); err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("labNodes = %v, want %q", err, tc.want)
 			}
 		})
 	}
+}
+
+// fromRegistry pushes a test image of the platform to ref and makes the inventory below dir, as
+// writeLabFiles writes it, take the image from ref; it returns the reference of the image by
+// digest.
+func fromRegistry(t *testing.T, dir, image, platform, ref string) string {
+	t.Helper()
+	built := filepath.Join(t.TempDir(), image)
+	imagetest.WriteDir(t, built, imagetest.Image{Name: image, Platform: platform, Seed: "a"})
+	imagetest.WriteDefinitions(t, built)
+	pinned := ocitest.PushDirectory(t, built, ref)
+	path := filepath.Join(dir, "chalkos.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := image + ": {source: {directory: images/" + image + "}}"
+	if !strings.Contains(string(data), old) {
+		t.Fatalf("the inventory has no %q", old)
+	}
+	if err := os.WriteFile(path, []byte(strings.Replace(string(data), old, image+": {source: {oci: "+ref+"}}", 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return pinned
+}
+
+// TestImagesFromARegistry runs the nodes of an image in a registry from the digest its tag
+// resolves to, which the lab records as each VM's image and pins in the lab's inventory. The lab
+// pulls the image once into its cache, images/sha256-<hex> in its state directory, and the
+// second node and a second pull find it there. It refuses a metal image from a registry before it
+// pulls the image.
+func TestImagesFromARegistry(t *testing.T) {
+	reg := ocitest.Registry(t)
+	dir := t.TempDir()
+	path := writeLabFiles(t, dir, testLab)
+	ref := reg + "/lab/node-kvm:v1"
+	pinned := fromRegistry(t, dir, "node-kvm", "kvm", ref)
+	lf, inv := loadLab(t, path)
+	nodes, images, err := labNodes(inv, lf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range nodes {
+		if n.Image != pinned || images[n.Name] != ref {
+			t.Errorf("%s runs %s, named %s; want %s, named %s", n.Name, n.Image, images[n.Name], pinned, ref)
+		}
+	}
+
+	l := &lab.Lab{Dir: t.TempDir(), Nodes: nodes}
+	if err := os.Mkdir(filepath.Join(l.Dir, "images"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	a, out := testApp()
+	_, digest, _ := strings.Cut(pinned, "@")
+	cache := filepath.Join(l.Dir, "images", strings.Replace(digest, ":", "-", 1))
+	for _, n := range append(nodes, nodes[0]) {
+		got, err := a.imageDir(context.Background(), l, n, images[n.Name])
+		if err != nil || got != cache {
+			t.Errorf("the image directory of %s = %s, %v; want %s", n.Name, got, err, cache)
+		}
+	}
+	if want := "pulled " + ref + " as " + pinned + "\nusing cached " + pinned + "\nusing cached " + pinned + "\n"; out.String() != want {
+		t.Errorf("printed %q, want %q", out, want)
+	}
+	if md, err := schema.ReadMetadata(cache); err != nil || md.Platform != "kvm" {
+		t.Errorf("the cached image's metadata = %+v, %v", md, err)
+	}
+
+	labInventory := filepath.Join(t.TempDir(), "chalkos.yaml")
+	if err := writeLabInventory(labInventory, inv, l); err != nil {
+		t.Fatal(err)
+	}
+	got, err := inventory.Load(labInventory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if src := got.Spec.Images["node-kvm"].Source; src.OCI != pinned {
+		t.Errorf("the lab's inventory takes node-kvm from %+v, want %s", src, pinned)
+	}
+	if src := inv.Spec.Images["node-kvm"].Source; src.OCI != ref {
+		t.Errorf("writing the lab's inventory changed the inventory's image to %+v", src)
+	}
+
+	t.Run("a metal image", func(t *testing.T) {
+		dir := t.TempDir()
+		path := writeLabFiles(t, dir, strings.Replace(testLab, "    w1:", "    m1: {mac: \"52:54:00:7b:00:13\"}\n    w1:", 1))
+		fromRegistry(t, dir, "node-metal", "metal", reg+"/lab/node-metal:v1")
+		lf, inv := loadLab(t, path)
+		want := "chalklab runs kvm images, but the image node-metal of m1 is built for metal"
+		if _, _, err := labNodes(inv, lf); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("labNodes = %v, want %q", err, want)
+		}
+	})
 }
 
 // TestLabSchemaDefaults gives the defaults that labNodes gives a node whose lab file leaves its
@@ -208,8 +291,8 @@ func TestTheLabFiles(t *testing.T) {
 }
 
 // checkLabFile reads the lab file at labFile below a copy of src, with a kvm image where each of
-// its nodes' image in the inventory points, and checks that each node's MAC address is the one its
-// Network documents match.
+// its nodes' image in the inventory points, or at images/<image> for an image the inventory takes
+// from a registry, and checks that each node's MAC address is the one its Network documents match.
 func checkLabFile(t *testing.T, src, labFile string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -217,6 +300,11 @@ func checkLabFile(t *testing.T, src, labFile string) {
 		t.Fatal(err)
 	}
 	lf, inv := loadLab(t, filepath.Join(dir, labFile))
+	for name, image := range inv.Spec.Images {
+		if image.Source.OCI != "" {
+			inv.Spec.Images[name] = inventory.Image{Source: inventory.ImageSource{Directory: filepath.Join(dir, "images", name)}}
+		}
+	}
 	for name := range lf.nodes {
 		nc, err := inv.Node(name)
 		if err != nil {
@@ -459,9 +547,17 @@ func TestNameChoosesTheLab(t *testing.T) {
 	}
 }
 
-// TestDestroyTwice removes a lab, and has nothing to destroy the second time.
+// TestDestroyTwice removes a lab, with the images it pulled, and has nothing to destroy the second
+// time.
 func TestDestroyTwice(t *testing.T) {
 	dir := writeLab(t)
+	cached := filepath.Join(dir, "images", "sha256-"+strings.Repeat("ab", 32), "metadata.json")
+	if err := os.MkdirAll(filepath.Dir(cached), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cached, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	a, out := testApp()
 	if err := a.run(context.Background(), []string{"destroy"}); err != nil {
 		t.Fatal(err)

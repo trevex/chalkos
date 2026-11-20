@@ -11,10 +11,10 @@ lab runs, each with the MAC address of its NIC on a private network between the 
 chalkd and each control plane's API server are forwarded to a port on 127.0.0.1. A supervisor
 process keeps the VMs running in the background.
 
-A lab's state (its disks, keys, console logs, kubeconfig, client file and the inventory that
-reaches the nodes at their forwarded ports) lives in $XDG_STATE_HOME/chalklab/&lt;name>, by default
-~/.local/state/chalklab/&lt;name>, after the lab file's metadata.name; two labs on one machine need
-two names, and --name chooses among them.
+A lab's state (its disks, keys, the images it pulled, console logs, kubeconfig, client file and
+the inventory that reaches the nodes at their forwarded ports) lives in
+$XDG_STATE_HOME/chalklab/&lt;name>, by default ~/.local/state/chalklab/&lt;name>, after the lab file's
+metadata.name; two labs on one machine need two names, and --name chooses among them.
 
 chalklab needs /dev/kvm, which most distributions grant to the kvm group. It never builds images.
 Only create needs the cluster's secrets file; the other commands work on the lab's state alone.
@@ -22,7 +22,7 @@ Only create needs the cluster's secrets file; the other commands work on the lab
 ## Examples
 
 ```sh
-# In a directory made from the lab template, once its image is built.
+# In a directory made from the lab template.
 chalklab create --secrets secrets.json
 chalklab status
 chalklab destroy

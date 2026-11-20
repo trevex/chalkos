@@ -33,6 +33,9 @@ type Node struct {
 	Name string `json:"name"`
 	// Kind is the node's Kubernetes kind: controlplane, worker, or empty.
 	Kind string `json:"kind,omitempty"`
+	// Image is the image the node's first disk was made from: its directory, absolute, or its
+	// reference in a registry by digest, repository@sha256:….
+	Image string `json:"image"`
 	// MAC is the address of the VM's NIC on the lab network.
 	MAC      string `json:"mac"`
 	MemoryMB int    `json:"memoryMB"`
