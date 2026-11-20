@@ -22,8 +22,10 @@ chalkctl upgrade --secrets secrets.age
 chalkctl status cp3 --secrets secrets.age
 ```
 
-A new chalkos release arrives through the image author, who updates the `chalkos` input in the
-flake's `flake.lock` and builds the images again. Take chalkctl from the same revision, as
+A new chalkos release arrives in one of two ways. With the published images, the release publishes
+new ones, and the inventory names the new image's digest. With images of your own, the image author
+updates the `chalkos` input in the flake's `flake.lock` and builds the images again. Either way,
+take chalkctl from the same release, as
 [Set up your workstation](workstation.md#get-chalkctl-from-the-chalkos-flake) describes.
 
 ## Before you begin
@@ -36,9 +38,10 @@ needs one of these credentials:
 - an operator client file, which upgrades too but delivers no config. Each node then carries its
   own config over.
 
-You also need the new image. The image author builds it into an image directory, such as
-`images/node-metal`. For nodes that enforce Secure Boot, you need the db key and certificate,
-`db.key` and `db.crt`, and chalkbuild, as [Install a node](install.md#before-you-begin) describes.
+You also need the new image, in a registry or in an image directory, as
+[Name the new image in the inventory](#name-the-new-image-in-the-inventory) describes. For your
+own images on nodes that enforce Secure Boot, you need the db key and certificate, `db.key` and
+`db.crt`, and chalkbuild, as [Install a node](install.md#before-you-begin) describes.
 
 No node of the run may run a config on trial. An upgrade and `upgrade --rollback` stop before
 they change any node while one does. Confirm the config with
@@ -74,12 +77,41 @@ previous image first.
 or `--until activate` to stop before rebooting. Repeat `upgrade --nodes cp1 --force` to continue
 from the staged or activated image.
 
+## Name the new image in the inventory
+
+Without `--image`, `chalkctl upgrade` gives each node its image in the inventory, in one of two
+forms:
+
+- A reference in a registry, `source.oci`, such as a published image of a chalkos release or your
+  own image pushed as [Publish images to a registry](../build/publish-images.md) describes.
+  Replace the digest with the new image's, from the release notes or from `chalkbuild push`:
+
+    ```yaml title="chalkos.yaml"
+        node-metal: {source: {oci: "ghcr.io/trevex/chalkos/kubernetes-1.37-metal:<tag>@sha256:<digest>"}}
+    ```
+
+    Each node pulls the image itself, so it needs a route to the registry, and a private
+    registry's credentials in a `Registry` document, as [Registries and mirrors](registries.md)
+    describes. The published images are not signed for Secure Boot, so skip the next section.
+
+- An image directory, `source.directory`, such as the build `images/node-metal` or its signed
+  copy. chalkctl sends the image to each node. A site whose nodes reach no registry pulls a new
+  image of a registry into a directory on the workstation with
+  [`chalkctl image pull`](../reference/cli/chalkctl_image_pull.md):
+
+    ```sh
+    chalkctl image pull ghcr.io/trevex/chalkos/kubernetes-1.37-metal:<tag>@sha256:<digest> images/node-metal-new
+    ```
+
+    The directory must not exist yet, so give each new image a directory of its own and point
+    the image's `directory` source at it.
+
 ## Sign the new image and validate it
 
-Without `--image`, `chalkctl upgrade` gives each node its image in the inventory. The template's
-inventory names the image directory `images/node-metal` for every node. For machines that enforce
-Secure Boot it names the signed copies, such as
-`images/node-metal-signed`. Sign each new build again into its copy. The output directory must not
+Your own builds for nodes that enforce Secure Boot need signing. The template's inventory names
+the image directory `images/node-metal` for every node. For machines that enforce Secure Boot it
+names the signed copies, such as `images/node-metal-signed`. Sign each new build again into its
+copy. The output directory must not
 exist, so remove the copy of the previous build first:
 
 ```console
@@ -88,7 +120,8 @@ $ chalkbuild sign --key keys/db.key --cert keys/db.crt images/node-metal images/
 signed images/node-metal-signed/chalkos.raw
 ```
 
-Then check each node's config against the new image, offline:
+Then check each node's config against the new image, without a node. For an image in a registry,
+chalkctl reads the image's header and contract from the registry:
 
 ```sh
 chalkctl validate

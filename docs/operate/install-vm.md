@@ -40,6 +40,19 @@ image as a package, such as `node-kvm`, as
 [Images and platforms](../build/images-and-platforms.md#build-an-image-per-kind-of-machine)
 describes.
 
+The VM boots its image from a disk, so the image comes as a directory on the workstation. To run
+the `kvm` image a chalkos release publishes in place of your own build, pull it into the
+directory the steps below build into, with its reference and digest from the release notes:
+
+```sh
+chalkctl image pull ghcr.io/trevex/chalkos/kubernetes-1.37-kvm:<tag>@sha256:<digest> images/node-kvm
+```
+
+Then skip the `nix build` below and sign the pulled directory as you would a build. The published
+image carries no OS CA, so the VM accepts any client in maintenance mode until you install it, as
+[Published images or your own](../get-started/decisions.md#published-images-or-your-own)
+explains.
+
 Name the signed copy of the `kvm` image in the inventory's `spec.images`. `spec.all.imageName`
 gives it to every node that names no image of its own or through a group:
 
