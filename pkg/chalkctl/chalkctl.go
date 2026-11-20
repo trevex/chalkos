@@ -71,8 +71,10 @@ func newCommand(a *app) *cobra.Command {
 	storage.AddCommand(a.resetVolumeCommand())
 	secureboot := cli.Group(&cobra.Command{Use: "secureboot", Short: "Create Secure Boot keys and enrol them in a node's firmware", Long: securebootLong, Example: securebootExample})
 	secureboot.AddCommand(a.securebootNewCommand(), a.securebootEnrollCommand())
+	image := cli.Group(&cobra.Command{Use: "image", Short: "Pull chalkos images from a registry", Long: imageLong, Example: imageExample})
+	image.AddCommand(a.imagePullCommand())
 	root.AddCommand(
-		gen, node, config, client, storage, secureboot,
+		gen, node, config, client, storage, secureboot, image,
 		a.recoveryKeyCommand(),
 		a.installCommand(),
 		a.disksCommand(),

@@ -69,6 +69,8 @@ the inventory.
 | Upgrade every node to its image in the inventory | `chalkctl upgrade` | operator; admin to deliver config with it |
 | Recover selected nodes while their cluster is unavailable | `chalkctl upgrade --nodes=<node> --force` | operator; admin to deliver config with it |
 | Print what each node's config changes with the new image | `chalkctl upgrade --diff` | admin |
+| Pull an image from a registry into an image directory | `chalkctl image pull <reference> <dir>` | nothing |
+| Pull an image's OCI layout, keeping its digest, to push it elsewhere | `chalkctl image pull --layout <reference> <dir>` | nothing |
 | Install an image and leave it staged | `chalkctl upgrade --nodes <node> --until stage` | operator |
 | Make a staged image boot next | `chalkctl node activate <node>` | operator |
 | Reboot a node, drained first | `chalkctl node reboot <node>` | operator |

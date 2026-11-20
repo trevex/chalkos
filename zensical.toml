@@ -191,6 +191,10 @@ nav = [
           { "Overview" = "reference/cli/chalkctl_gen.md" },
           { "secrets" = "reference/cli/chalkctl_gen_secrets.md" },
         ] },
+        { "image" = [
+          { "Overview" = "reference/cli/chalkctl_image.md" },
+          { "pull" = "reference/cli/chalkctl_image_pull.md" },
+        ] },
         { "install" = "reference/cli/chalkctl_install.md" },
         { "kubeconfig" = "reference/cli/chalkctl_kubeconfig.md" },
         { "logs" = "reference/cli/chalkctl_logs.md" },

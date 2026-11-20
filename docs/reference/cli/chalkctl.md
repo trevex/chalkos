@@ -39,6 +39,7 @@ chalkctl kubeconfig --secrets secrets.age
 - [chalkctl disks](chalkctl_disks.md): List a node's disks
 - [chalkctl etcd](chalkctl_etcd.md): Manage the cluster's etcd members
 - [chalkctl gen](chalkctl_gen.md): Generate files of a cluster
+- [chalkctl image](chalkctl_image.md): Pull chalkos images from a registry
 - [chalkctl install](chalkctl_install.md): Install a node that waits in maintenance mode
 - [chalkctl kubeconfig](chalkctl_kubeconfig.md): Write an admin kubeconfig
 - [chalkctl logs](chalkctl_logs.md): Show a node's journal
