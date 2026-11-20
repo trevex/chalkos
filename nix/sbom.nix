@@ -184,6 +184,8 @@ in
       local file=$1
       jq -e '
         .bomFormat == "CycloneDX"
+        and (.serialNumber // "" | test("^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"))
+        and (.specVersion // "") != ""
         and (.components | length > 0)
         and all(.components[], .metadata.component; (.name // "") != "" and (.version // "") != "" and (.licenses | length > 0))
       ' "$file" >/dev/null || { echo "error: $file is no SBOM of a program" >&2; return 1; }
@@ -205,14 +207,18 @@ in
       ];
       # The module download is the module proxy that buildGoModule's configurePhase sets, so
       # licence detection downloads the modules from it, offline. The binary's own module, which
-      # it does not download, takes the package's licence.
+      # it does not download, takes the package's licence. The serial number, which consumers such
+      # as actions/attest require, is a UUID derived from the binary's hash, so the SBOM stays
+      # reproducible.
       buildPhase = ''
         runHook preBuild
         cyclonedx-gomod bin -json -licenses -assert-licenses -noserial -notimestamp \
           -version v${old.version} \
           -output sbom.json ${package}/bin/${old.pname}
-        jq --arg licence ${package.meta.license.spdxId} \
-          '.metadata.component.licenses = [{license: {id: $licence}}]' sbom.json >"$out"
+        h=$(sha256sum ${package}/bin/${old.pname} | cut -c1-32)
+        serial="urn:uuid:''${h:0:8}-''${h:8:4}-5''${h:13:3}-$(printf %x $(( (0x''${h:16:1} & 3) | 8 )))''${h:17:3}-''${h:20:12}"
+        jq --arg licence ${package.meta.license.spdxId} --arg serial "$serial" \
+          '.serialNumber = $serial | .metadata.component.licenses = [{license: {id: $licence}}]' sbom.json >"$out"
         runHook postBuild
       '';
       installPhase = "true";
