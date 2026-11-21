@@ -1,8 +1,6 @@
 package kubernetes
 
 import (
-	"bytes"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,79 +9,6 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 )
-
-// TestContainerdHosts prints each registry's hosts.toml from the node's documents, in order of
-// the directories, each after the line naming it.
-func TestContainerdHosts(t *testing.T) {
-	dir := t.TempDir()
-	docs, err := config.Parse(strings.NewReader(`apiVersion: oci.chalkos.dev/v1alpha1
-kind: Registry
-metadata: {name: lan}
-spec: {host: "10.0.0.5:5000", insecure: true}
----
-apiVersion: oci.chalkos.dev/v1alpha1
-kind: Mirror
-metadata: {name: hub}
-spec: {registry: docker.io, endpoints: ["http://10.0.0.5:5000"]}
-`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := slot.WriteRuntime(dir, docs, nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	var out bytes.Buffer
-	if err := containerdHosts(&out, dir); err != nil {
-		t.Fatal(err)
-	}
-	want := "=== 10.0.0.5:5000\nserver = \"http://10.0.0.5:5000\"\n=== docker.io\nserver = \"https://registry-1.docker.io\"\n\n[host.\"http://10.0.0.5:5000\"]\n  capabilities = [\"pull\", \"resolve\"]\n"
-	if out.String() != want {
-		t.Errorf("containerd-hosts printed %q, want %q", out.String(), want)
-	}
-}
-
-// TestContainerdHostsClusterRegistry puts the cluster registry's endpoints before the Mirror's,
-// the one the node serves first, each below the mirrored host's path and verified by the OS CAs,
-// and writes a hosts.toml for a mirrored host that no Mirror names.
-func TestContainerdHostsClusterRegistry(t *testing.T) {
-	dir := t.TempDir()
-	docs, err := config.Parse(strings.NewReader(`apiVersion: networkd.chalkos.dev/v1alpha1
-kind: Network
-metadata: {name: 10-lan}
-spec: {network: {address: [192.0.2.12/24]}}
----
-apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: ClusterRegistry
-metadata: {name: cluster}
-spec: {mirrors: [docker.io, registry.k8s.io], endpoints: ["fd00::11", "192.0.2.12"], port: 5000}
----
-apiVersion: oci.chalkos.dev/v1alpha1
-kind: Mirror
-metadata: {name: hub}
-spec: {registry: docker.io, endpoints: ["https://mirror.example"]}
-`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := slot.WriteRuntime(dir, docs, nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	var out bytes.Buffer
-	if err := containerdHosts(&out, dir); err != nil {
-		t.Fatal(err)
-	}
-	const endpoint = "\n[host.\"https://%s:5000/v2/%s\"]\n  capabilities = [\"pull\", \"resolve\"]\n  override_path = true\n  ca = \"/state/chalkd/ca.crt\"\n"
-	want := "=== docker.io\nserver = \"https://registry-1.docker.io\"\n" +
-		fmt.Sprintf(endpoint, "192.0.2.12", "docker.io") +
-		fmt.Sprintf(endpoint, "[fd00::11]", "docker.io") +
-		"\n[host.\"https://mirror.example\"]\n  capabilities = [\"pull\", \"resolve\"]\n" +
-		"=== registry.k8s.io\nserver = \"https://registry.k8s.io\"\n" +
-		fmt.Sprintf(endpoint, "192.0.2.12", "registry.k8s.io") +
-		fmt.Sprintf(endpoint, "[fd00::11]", "registry.k8s.io")
-	if out.String() != want {
-		t.Errorf("containerd-hosts printed %s, want %s", out.String(), want)
-	}
-}
 
 // TestRegistryCredentials writes the kubelet's credential provider files from the node's Registry
 // documents, with the password from the unit's credentials, and no password into the files

@@ -8,14 +8,13 @@
 }:
 let
   inherit (pkgs.chalkos) chalkd;
-  # chalkd renders each registry's hosts.toml from the Mirror and Registry documents, so
-  # containerd also reaches a registry over plain HTTP when its Registry allows it.
-  registryMirrors = pkgs.callPackage ./registry-mirrors.nix {
-    mirrorsCommand = "${lib.getExe chalkd} kubernetes containerd-hosts";
-  };
 in
 {
   config = lib.mkIf config.chalkos.kubernetes.enable {
+    # chalkd renders each registry's hosts.toml from the Mirror and Registry documents, so
+    # containerd also reaches a registry over plain HTTP when its Registry allows it. It swaps the
+    # files in for /run/containerd/certs.d in one rename, so containerd never reads a mix of two
+    # configs nor finds none; a document chalkd cannot read leaves them as they were.
     systemd.services.chalkos-registry-mirrors = {
       description = "Write containerd's registry hosts from the config";
       # With the cluster registry, its endpoints and the node's static addresses, so the node
@@ -34,7 +33,7 @@ in
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
-        ExecStart = lib.getExe registryMirrors;
+        ExecStart = "${lib.getExe chalkd} kubernetes registry-mirrors";
       };
     };
 
