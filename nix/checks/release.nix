@@ -26,11 +26,7 @@ in
     pkgs.runCommand "chalkos-sbom"
       {
         nativeBuildInputs = sbom.validateInputs;
-        image = sbom.image {
-          name = "router-kvm";
-          tag = "test";
-          inherit (testing.router-kvm) nixos;
-        };
+        image = testing.router-kvm.sbom;
         chalkctl = self.packages.${system}.chalkctl.sbom;
         chalkbuild = self.packages.${system}.chalkbuild.sbom;
       }

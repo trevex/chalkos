@@ -100,7 +100,7 @@ lib.runTests {
     ];
   };
   # mkImages builds each image of its list by its name, each the image directory with its name,
-  # platform, layer, OCI layout, NixOS system and tests, and the installer.
+  # platform, layer, OCI layout, SBOM, NixOS system and tests, and the installer.
   testMkImagesNames = {
     expr =
       let
@@ -133,6 +133,7 @@ lib.runTests {
         oci = lib.isDerivation r.a.oci && lib.hasSuffix "-oci" r.a.oci.name;
         nixos = r.b.nixos.config.chalkos.image.name;
         tests = r.a.tests.drvPath == r.a.nixos.config.system.build.chalkosTests.drvPath;
+        sbom = lib.isDerivation r.a.sbom && lib.hasSuffix "-a.spdx.json.drv" r.a.sbom.drvPath;
       };
     expected = {
       names = [
@@ -151,6 +152,7 @@ lib.runTests {
       oci = true;
       nixos = "b";
       tests = true;
+      sbom = true;
     };
   };
   # mkImages refuses two images of one name and an image named installer.

@@ -2,7 +2,11 @@
 # installer, which installs images of every platform, and mkImages both from a list of images.
 # Their arguments are the options of images-arguments.nix. The images' modules get chalkosLib as a
 # module argument. The helpers select and map over mkImages's result, skipping the installer.
-{ defaultNixpkgs, overlay }:
+{
+  defaultNixpkgs,
+  overlay,
+  bombon,
+}:
 let
   inherit (defaultNixpkgs) lib;
   inherit (import ./refuse.nix { inherit lib; }) refuse;
@@ -93,6 +97,21 @@ let
       oci = pkgs.runCommand "chalkos-${cfg.name}-oci" {
         nativeBuildInputs = [ pkgs.chalkos.chalkbuild ];
       } "chalkbuild oci ${image} $out";
+      # The image's SPDX 2.3 SBOM, which the image's own nixpkgs builds: the packages of its system
+      # and its kernel. Its version is the image's tag, or untagged, and its time the Unix epoch,
+      # so a rebuild writes the same file; sbom.override { name; tag; created; } sets them, as a
+      # release does.
+      sbom =
+        pkgs.lib.makeOverridable
+          (import ../nix/sbom.nix {
+            inherit pkgs;
+            bombon = import bombon { inherit pkgs; };
+          }).image
+          {
+            inherit (cfg) name;
+            tag = if cfg.tag != null then cfg.tag else "untagged";
+            nixos = system;
+          };
       # The image's chalkos.tests, which a flake exports as its checks so nix flake check runs them.
       tests = system.config.system.build.chalkosTests;
     };

@@ -7,8 +7,8 @@
     url = "github:purpleclay/go-overlay";
     inputs.nixpkgs.follows = "nixpkgs";
   };
-  # The software bills of materials of the release images: bombon lists the components of a
-  # closure with their nixpkgs metadata.
+  # The software bills of materials of the images: bombon lists the components of a closure with
+  # their nixpkgs metadata.
   inputs.bombon = {
     url = "github:nikstur/bombon";
     inputs.nixpkgs.follows = "nixpkgs";
@@ -25,13 +25,13 @@
       system = "x86_64-linux";
       overlay = import ./nix/overlay { inherit go-overlay; };
       pkgs = nixpkgs.legacyPackages.${system}.extend overlay;
-      chalkos = import ./lib { inherit nixpkgs overlay; };
+      chalkos = import ./lib { inherit nixpkgs overlay bombon; };
       # The images the e2e tests boot, those the checks and the documentation evaluate, and the
       # documentation, which the packages, checks and apps share.
       testing = import ./nix/testing/images.nix { inherit self pkgs; };
       fixtures = import ./nix/testing/fixtures.nix { inherit self; };
       docs = import ./nix/docs { inherit pkgs self fixtures; };
-      # The software bills of materials of the release images and programs.
+      # The SBOMs of chalkos's programs and the validation of SBOMs; an image's is its sbom.
       sbom = import ./nix/sbom.nix {
         inherit pkgs;
         bombon = import bombon { inherit pkgs; };
@@ -67,7 +67,7 @@
       packages.${system} = import ./nix/outputs/packages.nix arguments;
       # The images a release publishes, by repository name, each with its repository and tag.
       releaseImages.${system} = import ./nix/release.nix {
-        inherit self sbom;
+        inherit self;
         inherit (pkgs) lib;
       };
       checks.${system} = import ./nix/checks arguments;
