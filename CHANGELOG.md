@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.4.0](https://github.com/trevex/chalkos/compare/v0.3.2...v0.4.0) (2026-11-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* **outputs:** chalkos.outputs.<name>.check takes a program, not shell lines. Replace a check such as   check = "${bird}/bin/bird -p -c $OUT/bird.conf"; with   check = chalkosLib.check.run [ "${bird}/bin/bird" "-p" "-c" "$OUT/bird.conf" ]; a loop over files with chalkosLib.check.each "*.conf" [ ... "$FILE" ], and anything else with a program of your own, such as a pkgs.writeShellScript that sets PATH itself, since the check's PATH holds no coreutils, grep or sed any more.
+
+### Features
+
+* **frr:** run FRR's daemons as chalkos units, without watchfrr or a shell ([#65](https://github.com/trevex/chalkos/issues/65)) ([1da8b00](https://github.com/trevex/chalkos/commit/1da8b00c32038a0700c952aa8d33ea7dd9376f72))
+* **kubernetes:** run the layer's unit scripts as chalkd subcommands ([#66](https://github.com/trevex/chalkos/issues/66)) ([41eff81](https://github.com/trevex/chalkos/commit/41eff81e9960fff0554cbc5ee5db451b01c61b2b))
+* **lib:** give every image its SBOM ([#59](https://github.com/trevex/chalkos/issues/59)) ([111a9a8](https://github.com/trevex/chalkos/commit/111a9a8b454b583fed90f2d70ac98f91eb422d48))
+* **node:** activate images without a shell ([#62](https://github.com/trevex/chalkos/issues/62)) ([b200bf2](https://github.com/trevex/chalkos/commit/b200bf2830aed512d04bbae6ddb14323375bb14c))
+* **node:** run the common unit scripts as chalkd subcommands ([#64](https://github.com/trevex/chalkos/issues/64)) ([bbabaa0](https://github.com/trevex/chalkos/commit/bbabaa08379de5b8b5e844eb0ac62f617b5a59a9))
+* **outputs:** run an output's check as a program ([#63](https://github.com/trevex/chalkos/issues/63)) ([2361a2e](https://github.com/trevex/chalkos/commit/2361a2ed08022af4b87329eaf9f26c4b6925c6b5))
+
+
+### Bug Fixes
+
+* **kubernetes:** let CNI DaemonSets install their plugins ([#61](https://github.com/trevex/chalkos/issues/61)) ([2a7048b](https://github.com/trevex/chalkos/commit/2a7048b48fc4d552ad2f4de92f47fccb499a88f6))
+
 ## [0.3.2](https://github.com/trevex/chalkos/compare/v0.3.1...v0.3.2) (2026-11-21)
 
 
