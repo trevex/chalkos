@@ -1,6 +1,7 @@
 # The worker's containerd settings from the Cluster document: containerd's merged config, as
 # containerd config dump prints it, takes the sandbox image from the file chalkos-containerd-config
-# writes, and keeps its own without the file or without a sandbox image in the document.
+# writes, and keeps its own without the file or without a sandbox image in the document. It
+# searches /opt/cni/bin, where CNI DaemonSets install their plugins, before the image's plugins.
 {
   worker,
   unitCheck,
@@ -8,6 +9,7 @@
 }:
 let
   script = worker.config.systemd.services.chalkos-containerd-config.serviceConfig.ExecStart;
+  plugins = "${worker.config.system.build.chalkosCNIPlugins}/bin";
   dump = "${worker.pkgs.containerd}/bin/containerd --config ${worker.config.virtualisation.containerd.args.config} config dump";
 in
 unitCheck "containerd-config" [ ] ''
@@ -19,6 +21,10 @@ unitCheck "containerd-config" [ ] ''
   own=$(sandbox)
   [ -n "$own" ] || fail "containerd names no sandbox image of its own"
   [ "$own" != "'$pause'" ] || fail "containerd's own sandbox image is the document's"
+  bins=$(sed -n 's/^ *bin_dirs = //p' dump.toml)
+  [ "$bins" = "['/opt/cni/bin', '${plugins}']" ] || fail "containerd's CNI plugin directories are $bins"
+  conf=$(sed -n 's/^ *conf_dir = //p' dump.toml)
+  [ "$conf" = "'/var/lib/cni/net.d'" ] || fail "containerd's CNI configuration directory is $conf"
   document kubernetes.chalkos.dev Cluster default '{"images":{"pause":"'"$pause"'"}}'
   ${script}
   [ "$(sandbox)" = "'$pause'" ] || fail "the sandbox image is $(sandbox), not the document's"

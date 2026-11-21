@@ -2467,6 +2467,26 @@ lib.runTests {
     expr = lib.any (p: (p.pname or "") == "nftables") w.systemd.services.containerd.path;
     expected = true;
   };
+  # CNI DaemonSets install their plugins in /opt/cni/bin, a tmpfs of its own whose plugins can
+  # run, and write their configuration to /etc/cni/net.d, which links to containerd's conf_dir on
+  # VAR.
+  testCNIDaemonSetPaths = {
+    expr = {
+      inherit (w.fileSystems."/opt/cni/bin") fsType options;
+      confDir = w.virtualisation.containerd.settings.plugins."io.containerd.cri.v1.runtime".cni.conf_dir;
+      etc = w.environment.etc."cni/net.d".source;
+    };
+    expected = {
+      fsType = "tmpfs";
+      options = [
+        "mode=0755"
+        "nosuid"
+        "nodev"
+      ];
+      confDir = "/var/lib/cni/net.d";
+      etc = "/var/lib/cni/net.d";
+    };
+  };
   # The image fixes its Kubernetes release, whose kubelet it runs, and its pod network, as options
   # of its own; the Cluster document names the other images, which no option sets.
   testImageKubernetesOptions = {
@@ -2638,7 +2658,8 @@ lib.runTests {
   };
   # One directory with the plugins the image names, copied out of nixpkgs's packages: those
   # flannel's network runs, plus flannel's own plugin, or with no network every reference plugin;
-  # an image adds to them or narrows them.
+  # an image adds to them or narrows them. containerd searches /opt/cni/bin, where DaemonSets
+  # install theirs, before it.
   testCNIPluginsFollowProvider = {
     expr =
       let
@@ -2688,8 +2709,14 @@ lib.runTests {
             provider: "${(worker [ { chalkos.cni.provider = provider; } ]).system.build.chalkosCNIPlugins}/bin";
         in
         [
-          [ (dir "flannel") ]
-          [ (dir "none") ]
+          [
+            "/opt/cni/bin"
+            (dir "flannel")
+          ]
+          [
+            "/opt/cni/bin"
+            (dir "none")
+          ]
         ];
       added = [
         "bridge"

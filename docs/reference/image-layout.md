@@ -375,6 +375,9 @@ another disk carrying the same image or the same labels for its own.
 | `/run/chalkos/kubernetes/credential-provider` | The kubelet's image credential provider, from the node's `Registry` documents: its `config.json`, the credentials in `credentials.json`, readable by root alone, and the `flags` that point the kubelet at the configuration and at `chalkd kubernetes credential-provider`. |
 | `/run/chalkos/kubernetes/node-ip` | The addresses the node picked this boot, the primary family's first. |
 | `/run/chalkos/kubernetes/vxlan` | The addresses and source ranges the firewall's VXLAN rule accepts. |
+| `/opt/cni/bin` | The CNI plugins that DaemonSets install, on images with Kubernetes: a tmpfs of its own, `nosuid,nodev` with execution allowed, empty at each boot. containerd searches it before the image's own plugins. |
+| `/etc/cni/net.d` | A link to `/var/lib/cni/net.d`, on images with Kubernetes. |
+| `/var/lib/cni/net.d` | containerd's CNI configuration directory, where flannel and CNI DaemonSets write their configuration. |
 | `/var/lib/etcd` | etcd's data on a control plane, whose directory `chalkos-controlplane.service` makes when the node's `Node.spec.type` is `controlplane`. |
 | `/var/lib/kubelet/pki` | The kubelet's client and serving certificates. |
 | `/var/lib/chalkd/failed-boot` | The log lines of the last boot that was not found healthy. |

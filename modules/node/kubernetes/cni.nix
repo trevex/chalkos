@@ -42,7 +42,8 @@ in
         `flannel` they are bridge, host-local, loopback and portmap, which its network runs,
         besides flannel's own plugin; with `none` every reference plugin nixpkgs builds, since
         the cluster's own network may use any. Definitions add to these; `lib.mkForce`
-        replaces them.
+        replaces them. containerd searches `/opt/cni/bin`, where CNI DaemonSets install their
+        plugins, before this directory, so a DaemonSet's plugin of the same name wins.
       '';
     };
   };
