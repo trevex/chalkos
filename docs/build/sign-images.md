@@ -110,6 +110,12 @@ copy's boot loader, `/EFI/BOOT/BOOT*.EFI`, and UKIs, `/EFI/Linux/*.efi`, on the 
 image. No other file on the ESP gains the signature. The copy holds no link into `/nix/store`,
 and the build stays as it is.
 
+`chalkbuild sign` also signs the image's module policy, which the UKI carries, with the same
+key. A node whose db holds the certificate loads the policy at boot, so its kernel loads modules
+from the image alone, as
+[Security model](../how-it-works/node/security.md#kernel-modules-load-from-the-image-alone)
+describes.
+
 The output directory must not exist, so the `rm -rf` removes the copy of the previous build.
 When signing fails, or Ctrl+C stops it, chalkbuild removes the output directory again, so a
 partly signed copy never stays behind.
