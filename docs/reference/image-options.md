@@ -141,6 +141,12 @@ Type: boolean · Default: `true` · Declared in: [modules/node/kubernetes/bgp/de
 
 Whether Kubernetes images carry FRR, which runs BGP and BFD, and accept the kinds `BGPPeer` and `BGPSpeaker`. Only with the Kubernetes layer; set it false in an image's modules to leave the feature out of it.
 
+### `chalkos.kubernetes.ceph.enable` { #chalkoskubernetescephenable }
+
+Type: boolean · Default: `true` · Declared in: [modules/node/kubernetes/ceph.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/ceph.nix)
+
+Whether Kubernetes images carry the `rbd`, `ceph` and `nbd` kernel modules, loaded at boot, and LVM for Rook's OSDs. Only with the Kubernetes layer; set it false in an image's modules to leave the feature out of it.
+
 ### `chalkos.kubernetes.containerd.allowMacAdmin` { #chalkoskubernetescontainerdallowmacadmin }
 
 Type: boolean · Default: `false` · Declared in: [modules/node/kubernetes/containerd.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/containerd.nix)
@@ -191,6 +197,21 @@ Example:
 ```nix
 { fstrim = "${pkgs.util-linux}/bin/fstrim"; }
 ```
+
+### `chalkos.kubernetes.kubevirt.enable` { #chalkoskuberneteskubevirtenable }
+
+Type: boolean · Default: `true` · Declared in: [modules/node/kubernetes/kubevirt.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/kubevirt.nix)
+
+Whether Kubernetes images carry the kernel modules of KubeVirt's virtual machines, KVM, vhost, VFIO and UIO, loaded on demand. Only with the Kubernetes layer; set it false in an image's modules to leave the feature out of it.
+
+### `chalkos.kubernetes.kubevirt.iommu` { #chalkoskuberneteskubevirtiommu }
+
+Type: boolean · Default: `false` · Declared in: [modules/node/kubernetes/kubevirt.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/kubevirt.nix)
+
+Whether the kernel turns the IOMMU on in passthrough mode and loads `vfio_pci` at
+boot, as KubeVirt needs to pass PCI devices through to virtual machines. AMD's IOMMU
+is on unless the kernel's command line turns it off; this adds
+`intel_iommu=on iommu=pt`. Only with `chalkos.kubernetes.kubevirt.enable`.
 
 ### `chalkos.kubernetes.package` { #chalkoskubernetespackage }
 

@@ -74,6 +74,7 @@ nav = [
       "kubernetes/ha-control-plane.md",
       "kubernetes/cluster-registry.md",
       "kubernetes/bgp.md",
+      "kubernetes/storage-and-gpu.md",
     ] },
     { "Maintain" = [
       "kubernetes/upgrade-kubernetes.md",
