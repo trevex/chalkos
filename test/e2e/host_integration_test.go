@@ -70,7 +70,8 @@ func hostPod(t *testing.T, ctx context.Context, cs kubernetes.Interface, name, s
 
 // policyScript runs in a privileged pod: it holds neither CAP_SYS_MODULE nor CAP_MAC_ADMIN, so it
 // can load no module, not even one of the image's store, and cannot switch IPE to permissive.
-// It then hands the module from outside the image to the host.
+// It checks the modules the ceph and kubevirt features give the host, and then hands the module
+// from outside the image to the host.
 const policyScript = `
 set -u
 fail() { echo "$*"; exit 1; }
@@ -84,6 +85,18 @@ l=$(find /lib/modules/ -type l)
 [ -s /lib/modules/$(uname -r)/modules.dep ] || fail "the host's /lib/modules has no modules.dep: $(ls -la /lib/modules/ 2>&1)"
 m=$(find /lib/modules/$(uname -r)/ -name '*.ko*' | head -n 1)
 [ -n "$m" ] || fail "the image's module tree has no module: $(ls -la /lib/modules/ 2>&1)"
+# ceph loads rbd, ceph and nbd at boot; kubevirt carries KVM's, vhost's and VFIO's modules, which
+# the kernel loads on demand. /dev/kvm exists when the CPU offers virtualisation, which a VM on a
+# host without nested virtualisation does not.
+for k in rbd ceph nbd; do [ -d /sys/module/$k ] || fail "$k is not loaded"; done
+for k in kvm kvm[-_]intel kvm[-_]amd vhost[-_]net vhost[-_]vsock vfio vfio[-_]pci uio; do
+  [ -n "$(find /lib/modules/$(uname -r)/ -name "$k.ko*" | head -n 1)" ] || fail "the image's module tree has no $k"
+done
+if grep -qwE 'vmx|svm' /proc/cpuinfo; then
+  [ -c /dev/kvm ] || fail "the CPU offers virtualisation, but there is no /dev/kvm"
+else
+  echo "the CPU offers no virtualisation: /dev/kvm is not checked"
+fi
 if out=$(insmod "$m" 2>&1); then fail "the pod loaded $m"; fi
 case "$out" in *"not permitted"*) ;; *) fail "insmod of $m failed otherwise: $out" ;; esac
 if out=$( (echo 0 > /securityfs/ipe/enforce) 2>&1 ); then fail "the pod switched IPE to permissive"; fi
