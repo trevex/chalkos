@@ -112,7 +112,9 @@ but the validators run before the renderers, so the operator sees the validator'
 
 `program` also takes a package or a command line of the store, to which chalkd appends `validate`
 and the validator's name. A script made by `pkgs.writeShellScript` reads the input from standard
-input and prints the report with `echo` or `jq`:
+input and prints the report with `echo` or `jq`. The script brings bash into the image, which then
+needs [`chalkos.shell.allow`](../reference/image-options.md#chalkosshellallow);
+[Keep an image shell-free](shell-free.md) shows programs that need no shell.
 
 ```nix
 chalkos.validators.hardware-rack.program = pkgs.writeShellScript "hardware-rack" ''

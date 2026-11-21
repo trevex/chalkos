@@ -172,8 +172,11 @@ the same documents below `/run/chalkos/config` without an output.
 
 `render` also takes a command: a program of the image's store, with its arguments, or a package
 that is such a program. chalkd splits the command on spaces and runs it without a shell, so the
-command cannot redirect output or expand `$OUT`. A script from `pkgs.writeShellScript` does both.
-This one writes the servers as YAML with yq:
+command cannot redirect output or expand `$OUT`. A script from `pkgs.writeShellScript` does both,
+but brings bash into the image, which then needs
+[`chalkos.shell.allow`](../reference/image-options.md#chalkosshellallow);
+[Keep an image shell-free](shell-free.md) shows programs that need no shell. This one writes the
+servers as YAML with yq:
 
 ```nix
 chalkos.outputs.hardware-yaml = {
@@ -255,7 +258,8 @@ by the file's path, for a renderer that writes a file per document. A config tha
 node alone holds, such as credentials, needs the check to stand in for them first. That takes a
 program of your own: the check of `bird-conf` in
 [Render bird.conf](../guides/bgp-extension.md#render-birdconf) is a script that defines each
-password constant before it runs `bird -p`.
+password constant before it runs `bird -p`. A compiled program does the same without a shell, as
+[Keep an image shell-free](shell-free.md#write-small-programs-without-a-shell) shows.
 
 ## Test the output
 

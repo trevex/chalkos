@@ -113,6 +113,14 @@ software it carries.
 
     [:octicons-arrow-right-24: Read](add-software.md)
 
+-   :material-console-line: __Keep an image shell-free__
+
+    ---
+
+    Find what brings a shell into an image, and run units, checks and small programs without one.
+
+    [:octicons-arrow-right-24: Read](shell-free.md)
+
 </div>
 
 ## Configure services
