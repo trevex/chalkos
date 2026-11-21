@@ -32,6 +32,10 @@ func newEnv(variables ...string) (*cel.Env, error) {
 		cel.CustomTypeAdapter(adapter{}),
 		cel.CustomTypeProvider(provider),
 		cel.CrossTypeNumericComparisons(true),
+		// cel-go 0.33 made cost model 1 the default, which estimates nested bindings and
+		// comprehensions over config far higher; model 0 keeps the estimates the rules were
+		// written against.
+		cel.CostModelVersion(0),
 		cel.Variable("node", nodeType),
 	}
 	for _, v := range variables {

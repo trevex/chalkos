@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"cel.dev/cel-go/cel"
-	"cel.dev/cel-go/checker"
 	celast "cel.dev/cel-go/common/ast"
+	"cel.dev/cel-go/common/cost"
 	"cel.dev/cel-go/common/types"
 
 	"github.com/trevex/chalkos/pkg/schema"
@@ -223,14 +223,28 @@ func program(e *cel.Env, parsed *cel.Ast, want *cel.Type) (cel.Program, []string
 	return prg, fields, err
 }
 
-// estimator assumes sizeHint elements wherever CEL cannot tell a size.
+// estimator assumes sizeHint elements wherever CEL cannot tell a size, and the same for the keys
+// and elements of a list or map down to sizeDepth levels, the deepest nesting the kinds' documents
+// reach; CEL counts a container whose element size it cannot tell as unbounded.
 type estimator struct{}
 
-func (estimator) EstimateSize(checker.AstNode) *checker.SizeEstimate {
-	return &checker.SizeEstimate{Min: 0, Max: sizeHint}
+const sizeDepth = 8
+
+func nestedSize(depth int) *cost.SizeEstimate {
+	s := &cost.SizeEstimate{Min: 0, Max: sizeHint}
+	if depth > 0 {
+		s.Key = nestedSize(depth - 1)
+		s.Elem = nestedSize(depth - 1)
+	}
+	return s
 }
 
-func (estimator) EstimateCallCost(string, string, *checker.AstNode, []checker.AstNode) *checker.CallEstimate {
+func (estimator) EstimateSize(cost.AstNode) *cost.SizeEstimate {
+	// A new estimate each time: the checker keeps and merges the estimates it is given.
+	return nestedSize(sizeDepth)
+}
+
+func (estimator) EstimateCallCost(string, string, *cost.AstNode, []cost.AstNode) *cost.CallEstimate {
 	return nil
 }
 

@@ -9,11 +9,9 @@ import (
 	"strconv"
 
 	"cel.dev/cel-go/cel"
-	"cel.dev/cel-go/checker"
-	"cel.dev/cel-go/common"
+	"cel.dev/cel-go/common/cost"
 	"cel.dev/cel-go/common/types"
 	"cel.dev/cel-go/common/types/ref"
-	"cel.dev/cel-go/interpreter"
 
 	"github.com/trevex/chalkos/pkg/dns"
 	"github.com/trevex/chalkos/pkg/schema"
@@ -157,18 +155,18 @@ func (celLib) CompileOptions() []cel.EnvOption {
 // character of the string they scan, as CEL estimates contains() and the other string functions
 // that read a string whole.
 func stringScanCosts() cel.EnvOption {
-	var opts []checker.CostOption
+	var opts []cost.Option
 	for id, arg := range stringScans {
-		opts = append(opts, checker.OverloadCostEstimate(id, func(e checker.CostEstimator, _ *checker.AstNode, args []checker.AstNode) *checker.CallEstimate {
+		opts = append(opts, cost.OverloadCostEstimate(id, func(e cost.Estimator, _ *cost.AstNode, args []cost.AstNode) *cost.CallEstimate {
 			sz := args[arg].ComputedSize()
 			if sz == nil {
 				sz = e.EstimateSize(args[arg])
 			}
 			if sz == nil {
-				sz = &checker.SizeEstimate{Min: 0, Max: math.MaxUint64}
+				sz = &cost.SizeEstimate{Min: 0, Max: math.MaxUint64}
 			}
-			scan := sz.MultiplyByCostFactor(common.StringTraversalCostFactor)
-			return &checker.CallEstimate{CostEstimate: scan.Add(checker.FixedCostEstimate(1))}
+			scan := sz.MultiplyByCostFactor(cost.StringTraversalCostFactor)
+			return &cost.CallEstimate{CostEstimate: scan.Add(cost.FixedCostEstimate(1))}
 		}))
 	}
 	return cel.CostEstimatorOptions(opts...)
@@ -195,12 +193,12 @@ func size(s string) (int64, bool) {
 // ProgramOptions count the overloads of stringScans at runtime as their estimate does, on the
 // string they meet.
 func (celLib) ProgramOptions() []cel.ProgramOption {
-	var opts []interpreter.CostTrackerOption
+	var opts []cost.TrackerOption
 	for id, arg := range stringScans {
-		opts = append(opts, interpreter.OverloadCostTracker(id, func(args []ref.Val, _ ref.Val) *uint64 {
+		opts = append(opts, cost.OverloadTracker(id, func(args []ref.Val, _ ref.Val) *uint64 {
 			n := uint64(1)
 			if s, ok := args[arg].(types.String); ok {
-				n += uint64(math.Ceil(float64(len(s)) * common.StringTraversalCostFactor))
+				n += uint64(math.Ceil(float64(len(s)) * cost.StringTraversalCostFactor))
 			}
 			return &n
 		}))
