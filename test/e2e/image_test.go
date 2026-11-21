@@ -16,10 +16,10 @@ import (
 
 // TestImageBootsWithoutSecureBoot boots the unsigned image with Secure Boot off and installs it
 // in place, then checks the store comes from dm-verity, the root is tmpfs, /etc is read-only,
-// first boot added an empty slot B and a TPM-sealed STATE, and the install a TPM-sealed VAR. It
-// then boots the node without its serial port and its TPM: STATE asks for the recovery key on
-// the screen, which the keyboard answers, and the console on tty1 answers a password request of
-// the booted system.
+// first boot added an empty slot B and a TPM-sealed STATE, the install a TPM-sealed VAR, and
+// systemd-vconsole-setup loaded the keymap and the font without warnings. It then boots the node
+// without its serial port and its TPM: STATE asks for the recovery key on the screen, which the
+// keyboard answers, and the console on tty1 answers a password request of the booted system.
 func TestImageBootsWithoutSecureBoot(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS", "CHALKLAB_IMAGE_DIR", "CHALKLAB_CONSOLE_FONT"}, chalkdEnv...)...)
 	dir := vmDir(t)
@@ -47,6 +47,9 @@ func TestImageBootsWithoutSecureBoot(t *testing.T) {
 		"var_tpm2":     "1",
 		"state_boots":  "2",
 		"var_boots":    "1",
+		// The keymap and the font load without a shell, in the initrd and in the system.
+		"vconsole_active":   "active",
+		"vconsole_warnings": "0",
 	})
 
 	// Without its serial port and its TPM, as a machine with a new TPM, the node boots with the

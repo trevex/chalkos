@@ -123,6 +123,10 @@ let
       fact console_active "$(systemctl is-active chalkos-console.service || true)"
       fact getty_tty1 "$(systemctl is-active getty@tty1.service || true)"
       fact console_restarts "$(systemctl show -p NRestarts --value chalkos-console.service || true)"
+      # systemd-vconsole-setup loads the keymap and the font in the initrd and again in the system,
+      # without a shell; the journal holds what both runs logged.
+      fact vconsole_active "$(systemctl is-active systemd-vconsole-setup.service || true)"
+      fact vconsole_warnings "$(journalctl -b -q -p warning -u systemd-vconsole-setup.service | wc -l)"
       # Tests may hard-reset the VM right after "done", which would drop unflushed counters.
       sync
       fact "done" 1
