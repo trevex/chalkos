@@ -315,6 +315,38 @@ Leave out what the image does not need first. Raising `chalkos.disk.storeSize` h
 installed afterwards: a node's partitions are laid out at install, and a node refuses an upgrade
 whose store does not fit its slot.
 
+## Inspect what an image contains
+
+Each image has a software bill of materials (SBOM) as its `sbom` attribute. It is an SPDX 2.3
+JSON document that lists each package of the image's NixOS system and its kernel, with the
+package's version, licence, source URL and package URL (purl). A chalkos release publishes the
+same document for its own images, as
+[Fetch and verify an SBOM](../get-started/releases.md#fetch-and-verify-an-sbom) describes. Build
+it and list the packages with their versions; the first entry is the image itself:
+
+```sh
+nix build .#node-metal.sbom -o node-metal.spdx.json
+jq -r '.packages[1:][] | "\(.name) \(.versionInfo)"' node-metal.spdx.json | sort
+```
+
+The SBOM shows no store paths or sizes. To see them, list the closure of the image's system with
+plain Nix. This lists each path of the closure by its own size in bytes, the largest last:
+
+```sh
+nix path-info -rs .#node-metal.nixos.config.system.build.toplevel | sort -k2 -n
+```
+
+Use `-S` in place of `-s` to sort by each path's closure size, the path together with everything
+it references. To find a package, filter the list, such as `| grep curl`. `nix why-depends` then
+shows the chain of references from the system to a path that the filter printed:
+
+```sh
+nix why-depends .#node-metal.nixos.config.system.build.toplevel /nix/store/<hash>-curl-<version>
+```
+
+The UKI carries the kernel, so the kernel is not in the system's closure. `nix path-info` shows
+only its modules, and only the SBOM lists the kernel package.
+
 ## Check that it worked
 
 Build the image and check the nodes' config against it, as in

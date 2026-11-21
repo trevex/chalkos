@@ -200,6 +200,9 @@ installer. The image directory is what the inventory names; the OCI layout goes 
   `images.node-metal.nixos.config.chalkos.kubernetes.package.version`, and its
   `config.system.build` holds parts of the image that build on their own, such as its schemas,
   `chalkosSchemas`.
+- `images.node-metal.sbom` is the image's SBOM, which lists its packages with their versions and
+  licences. [Inspect what an image contains](add-software.md#inspect-what-an-image-contains)
+  reads it.
 - `images.node-metal.tests` builds the image's tests, its `chalkos.tests`.
 - `images.installer` is one directory with a raw image and a hybrid ISO, which installs images of
   every platform. [Customise the installer](customise-installer.md) adds to it.
