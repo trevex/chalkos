@@ -237,6 +237,15 @@ func TestCommandsRefuseArguments(t *testing.T) {
 		{"chrony-reload-sources", "now"},
 		{"tcp-connect", "192.0.2.1"},
 		{"frr-credentials", "/run/chalkos/outputs/frr/frr.conf"},
+		{"router", "nat64", "start"},
+		{"router", "prune-devices", "guest"},
+		{"router", "record-device", "kea-dhcp4"},
+		{"router", "resolver-vrfs-ready", "guest"},
+		{"router", "load-firewall", "/run/ruleset.nft"},
+		{"router", "dhcp6-pd"},
+		{"router", "ntp-clients", "now"},
+		{"router", "nat64-sessions"},
+		{"router", "dhcp-leases", "office"},
 	} {
 		root, err := newCommand()
 		if err != nil {
@@ -279,6 +288,17 @@ func TestCallSites(t *testing.T) {
 		{"router", "services", "kea", "stop"},
 		{"router", "services", "unbound"},
 		{"router", "services", "relay", "stop"},
+		{"router", "nat64"},
+		{"router", "nat64", "stop"},
+		{"router", "prune-devices"},
+		{"router", "record-device", "kea-dhcp4", "access"},
+		{"router", "resolver-vrfs-ready"},
+		{"router", "load-firewall", "/run/chalkos/outputs/router-nftables/ruleset.nft", "/nix/store/x-fallback.nft"},
+		{"router", "dhcp6-pd", "leases6_committed"},
+		{"router", "ntp-clients", "--chronyc", "/nix/store/x-chrony/bin/chronyc"},
+		{"router", "nat64-sessions", "--jool", "/nix/store/x-jool/bin/jool", "edge"},
+		{"router", "dhcp-leases", "--subnet=", "--mac="},
+		{"router", "dhcp-leases", "--subnet=office", "--mac=52:54:00:12:34:56"},
 	} {
 		root, err := newCommand()
 		if err != nil {
@@ -287,6 +307,27 @@ func TestCallSites(t *testing.T) {
 		cmd, rest, err := root.Find(args)
 		if err != nil || cmd.HasSubCommands() || layertest.Refused(cmd, rest) {
 			t.Errorf("chalkd %q is refused as %s, %v", args, cmd.CommandPath(), err)
+		}
+	}
+}
+
+// A link chalkd-<layer>-<command> runs chalkd <layer> <command> with the link's arguments, as Kea's
+// run_script hook runs chalkd-router-dhcp6-pd; chalkd and other names run chalkd's own command line.
+func TestLinkedCommand(t *testing.T) {
+	args, ok := linkedCommand([]string{"/nix/store/x-chalkos-dhcp6-pd/bin/chalkd-router-dhcp6-pd", "leases6_committed"})
+	if want := []string{"router", "dhcp6-pd", "leases6_committed"}; !ok || !slices.Equal(args, want) {
+		t.Errorf("linked command = %q, %v, want %q", args, ok, want)
+	}
+	root, err := newCommand()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cmd, rest, err := root.Find(args); err != nil || cmd.CommandPath() != "chalkd router dhcp6-pd" || layertest.Refused(cmd, rest) {
+		t.Errorf("chalkd %q is refused as %s, %v", args, cmd.CommandPath(), err)
+	}
+	for _, argv0 := range []string{"/nix/store/x-chalkd/bin/chalkd", "chalkd", "chalkd-router"} {
+		if args, ok := linkedCommand([]string{argv0, "serve"}); ok {
+			t.Errorf("%s runs %q", argv0, args)
 		}
 	}
 }

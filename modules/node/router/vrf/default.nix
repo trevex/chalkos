@@ -13,73 +13,10 @@
 }:
 let
   kinds = routerLib.kinds ./kinds.nix;
-  networkd = config.chalkos.outputs.networkd.dir;
   # Removes each kernel VRF no .netdev declares with its table, after flushing the unreachable
-  # defaults networkd put in the table, and each WireGuard device no .netdev declares.
-  apply = pkgs.writeShellApplication {
-    name = "chalkos-vrf";
-    runtimeInputs = [
-      pkgs.iproute2
-      pkgs.jq
-      pkgs.gawk
-    ];
-    text = ''
-      declare -A want=() wireguards=() seen=()
-      shopt -s nullglob
-      # networkd takes a unit of a name from the first of these directories that holds one; an
-      # empty unit or a link to /dev/null masks those of the later ones.
-      for file in /etc/systemd/network/*.netdev ${networkd}/*.netdev \
-        /usr/local/lib/systemd/network/*.netdev /usr/lib/systemd/network/*.netdev; do
-        base=''${file##*/}
-        if [[ -n ''${seen[$base]-} ]]; then
-          continue
-        fi
-        seen[$base]=1
-        while IFS=$'\t' read -r kind name table; do
-          if [[ $kind == vrf ]]; then
-            want[$name]=$table
-          else
-            wireguards[$name]=1
-          fi
-        done < <(awk -F= '
-          function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
-          /^[ \t]*[#;]/ { next }
-          /^[ \t]*\[/ { section = trim($0); next }
-          { key = trim($1); value = trim(substr($0, index($0, "=") + 1)) }
-          section == "[NetDev]" && key == "Kind" { kind = value }
-          section == "[NetDev]" && key == "Name" { name = value }
-          section == "[VRF]" && key == "Table" { table = value }
-          END { if ((kind == "vrf" || kind == "wireguard") && name != "") printf "%s\t%s\t%s\n", kind, name, table }' "$file")
-      done
-      # ip link show type vrf lists every link without a kind, as empty objects, while the
-      # kernel's vrf module is not loaded, so jq picks the VRFs from all links.
-      vrfs=$(ip -d -j link show | jq -r '.[] | select(.linkinfo.info_kind == "vrf") | "\(.ifname) \(.linkinfo.info_data.table)"')
-      failed=()
-      while read -r name table; do
-        if [[ -n $name && ''${want[$name]-} != "$table" ]]; then
-          # The unreachable defaults that networkd installed, of protocol static, would stay in the
-          # old table, which a VRF may take later. They go first, and the VRF only once they went,
-          # so that a retry finds the VRF and flushes them again.
-          if ! ip -4 route flush table "$table" exact 0.0.0.0/0 type unreachable proto static ||
-            ! ip -6 route flush table "$table" exact ::/0 type unreachable proto static ||
-            ! ip link delete "$name"; then
-            failed+=("$name")
-          fi
-        fi
-      done <<<"$vrfs"
-      # A WireGuard device of no unit holds its keys and peers, and would keep the tunnel up.
-      stale=$(ip -d -j link show | jq -r '.[] | select(.linkinfo.info_kind == "wireguard") | .ifname')
-      while read -r name; do
-        if [[ -n $name && -z ''${wireguards[$name]-} ]] && ! ip link delete "$name"; then
-          failed+=("$name")
-        fi
-      done <<<"$stale"
-      if ((''${#failed[@]} > 0)); then
-        printf 'chalkos-vrf: failed to remove the device %s\n' "''${failed[@]}" >&2
-        exit 1
-      fi
-    '';
-  };
+  # defaults networkd put in the table, and each WireGuard device no .netdev declares; the
+  # .netdev units are those of networkd's directories, the output networkd's among them.
+  prune = "${lib.getExe pkgs.chalkos.chalkd} router prune-devices";
 in
 {
   config = lib.mkIf config.chalkos.router.enable {
@@ -107,11 +44,12 @@ in
       before = [ "systemd-networkd.service" ];
       wantedBy = [ "multi-user.target" ];
       unitConfig.DefaultDependencies = false;
+      path = [ pkgs.chalkos.iproute2-ip ];
       serviceConfig = routerLib.hardened // {
         Type = "oneshot";
         RemainAfterExit = true;
-        ExecStart = lib.getExe apply;
-        ExecReload = lib.getExe apply;
+        ExecStart = prune;
+        ExecReload = prune;
         CapabilityBoundingSet = [ "CAP_NET_ADMIN" ];
         RestrictAddressFamilies = [
           "AF_NETLINK"

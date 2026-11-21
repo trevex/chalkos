@@ -37,10 +37,10 @@ let
   # example as the unit's start does.
   routerFirewall =
     let
-      inherit (checkLib.router.config.systemd.services.chalkos-firewall.serviceConfig)
-        ExecStart
-        ExecReload
-        ;
+      unit = checkLib.router.config.systemd.services.chalkos-firewall;
+      # The start runs chalkd, which runs nft from the unit's path.
+      ExecStart = "PATH=${lib.makeBinPath unit.path}:$PATH ${unit.serviceConfig.ExecStart}";
+      inherit (unit.serviceConfig) ExecReload;
       dir = checkLib.router.config.chalkos.outputs.router-nftables.dir;
     in
     {

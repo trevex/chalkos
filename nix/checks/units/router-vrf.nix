@@ -1,12 +1,15 @@
 # chalkos-vrf in a network namespace: which VRFs it removes and keeps and the unreachable
 # defaults it flushes.
 {
+  lib,
   checkLib,
   unitCheck,
   ...
 }:
 let
-  script = checkLib.router.config.systemd.services.chalkos-vrf.serviceConfig.ExecReload;
+  unit = checkLib.router.config.systemd.services.chalkos-vrf;
+  # chalkd runs ip from the unit's path.
+  script = "PATH=${lib.makeBinPath unit.path}:$PATH ${unit.serviceConfig.ExecReload}";
   dir = checkLib.router.config.chalkos.outputs.networkd.dir;
 in
 unitCheck "router-vrf" checkLib.networkTools ''
