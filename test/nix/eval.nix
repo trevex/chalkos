@@ -4718,4 +4718,39 @@ lib.runTests {
         stored = true;
       };
     };
+  # containerd's runtime handlers: runc, and those an image adds, in the read-only config; CDI
+  # specifications, which containerd 2.4 always reads, from the image (/etc/cdi) and from units
+  # at boot (/var/run/cdi).
+  testContainerdRuntimes =
+    let
+      c = worker [
+        {
+          chalkos.kubernetes.containerd.runtimes.kata.options.ConfigPath = "/etc/kata/configuration.toml";
+        }
+      ];
+      runtime = x: x.virtualisation.containerd.settings.plugins."io.containerd.cri.v1.runtime";
+    in
+    {
+      expr = {
+        runtimes = (runtime c).containerd.runtimes;
+        cdi = (runtime w).cdi_spec_dirs;
+        runcRefused = refuses "names runc, which is containerd's own handler" (worker [
+          { chalkos.kubernetes.containerd.runtimes.runc = { }; }
+        ]);
+      };
+      expected = {
+        runtimes = {
+          runc.options.SystemdCgroup = true;
+          kata = {
+            runtime_type = "io.containerd.runc.v2";
+            options.ConfigPath = "/etc/kata/configuration.toml";
+          };
+        };
+        cdi = [
+          "/etc/cdi"
+          "/var/run/cdi"
+        ];
+        runcRefused = true;
+      };
+    };
 }

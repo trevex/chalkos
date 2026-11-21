@@ -2,6 +2,8 @@
 # containerd config dump prints it, takes the sandbox image from the file chalkos-containerd-config
 # writes, and keeps its own without the file or without a sandbox image in the document. It
 # searches /opt/cni/bin, where CNI DaemonSets install their plugins, before the image's plugins.
+# It reads CDI specifications from the image's /etc/cdi and from /var/run/cdi, where units write
+# them at boot.
 {
   worker,
   unitCheck,
@@ -25,6 +27,9 @@ unitCheck "containerd-config" [ ] ''
   [ "$bins" = "['/opt/cni/bin', '${plugins}']" ] || fail "containerd's CNI plugin directories are $bins"
   conf=$(sed -n 's/^ *conf_dir = //p' dump.toml)
   [ "$conf" = "'/var/lib/cni/net.d'" ] || fail "containerd's CNI configuration directory is $conf"
+  dirs=$(sed -n 's/^ *cdi_spec_dirs = //p' dump.toml)
+  [ "$dirs" = "['/etc/cdi', '/var/run/cdi']" ] || fail "containerd's CDI directories are $dirs"
+  ! grep -q '^ *enable_cdi' dump.toml || fail "containerd's config switches CDI, which containerd 2.4 always reads"
   document kubernetes.chalkos.dev Cluster default '{"images":{"pause":"'"$pause"'"}}'
   ${script}
   [ "$(sandbox)" = "'$pause'" ] || fail "the sandbox image is $(sandbox), not the document's"

@@ -58,7 +58,42 @@ in
     '';
   };
 
+  options.chalkos.kubernetes.containerd.runtimes = lib.mkOption {
+    type = lib.types.attrsOf (
+      lib.types.submodule {
+        options = {
+          runtimeType = lib.mkOption {
+            type = lib.types.str;
+            default = "io.containerd.runc.v2";
+            description = "containerd's runtime type of the handler.";
+          };
+          options = lib.mkOption {
+            inherit (pkgs.formats.toml { }) type;
+            default = { };
+            example = {
+              BinaryName = "/nix/store/…/bin/nvidia-container-runtime";
+            };
+            description = "The handler's options, as containerd's CRI plugin takes them.";
+          };
+        };
+      }
+    );
+    default = { };
+    example = lib.literalExpression ''{ kata.options.ConfigPath = "/etc/kata/configuration.toml"; }'';
+    description = ''
+      containerd's runtime handlers besides `runc`, by name, which a RuntimeClass's `handler`
+      names. They are part of containerd's read-only config, built with the image.
+    '';
+  };
+
   config = lib.mkIf config.chalkos.kubernetes.enable {
+    assertions = [
+      {
+        assertion = !(config.chalkos.kubernetes.containerd.runtimes ? runc);
+        message = "chalkos.kubernetes.containerd.runtimes names runc, which is containerd's own handler; give yours another name";
+      }
+    ];
+
     # containerd and its runc shim alone: ctr and containerd-stress are half of the package. A copy,
     # so the store holds these two alone.
     nixpkgs.overlays = [
@@ -126,7 +161,19 @@ in
             ];
             conf_dir = confDir;
           };
-          containerd.runtimes.runc.options.SystemdCgroup = true;
+          containerd.runtimes = {
+            runc.options.SystemdCgroup = true;
+          }
+          // lib.mapAttrs (_: r: {
+            runtime_type = r.runtimeType;
+            inherit (r) options;
+          }) config.chalkos.kubernetes.containerd.runtimes;
+          # CDI specifications, which containerd 2.4 always reads: the image's in /etc/cdi, and
+          # those units write at boot, such as NVIDIA's, in /var/run/cdi.
+          cdi_spec_dirs = [
+            "/etc/cdi"
+            "/var/run/cdi"
+          ];
         };
       };
     };
