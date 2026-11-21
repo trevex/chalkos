@@ -30,18 +30,24 @@ A draft pull request runs three jobs: `dco`, `pr-title` and `lint`. The `lint` j
 checks that `lint` of `nix/checks/tiers.nix` names, `nix-lint`, `workflows`, `renovate`,
 `ci-tiers` and `go-lint`, in one `nix build`. These checks belong to the `fast` tier too, and
 `tiers.nix` fails its evaluation when `lint` names a check outside that tier. No tier, no
-end-to-end check, `govulncheck`, `release-pr` or `result` runs on a draft, so a branch can take
-many pushes while it changes without booting a VM. Open a pull request as a draft while the
-change is in progress.
+end-to-end check, `govulncheck` or `release-pr` runs on a draft, so a branch can take many pushes
+while it changes without booting a VM. Open a pull request as a draft while the change is in
+progress.
+
+On a draft, `result` fails at once with the error `Draft`, so the draft's checks show as failed
+even when `dco`, `pr-title` and `lint` pass. A skipped `result` would be unsafe: branch
+protection counts a skipped job as passed, and GitHub keeps the checks of a commit's earlier
+runs. The skipped `result` of the draft's run would then satisfy the required check while the
+run that "Ready for review" starts was still building.
 
 "Ready for review" runs the workflow again with every job of a pull request: the tiers, the
 end-to-end checks of its labels, `govulncheck` and `result`. That run cancels the draft's run if
-it is still going. A draft's run reports no `result`.
+it is still going. Until its `result` passes, the failed `result` of the draft's run holds the
+merge.
 
-"Convert to draft" runs the workflow again with the three draft jobs, which cancels the run in
-progress. GitHub keeps the checks of earlier runs on the same commit, so a `result` that passed
-before the conversion still shows as passed. Merging stays blocked, because GitHub merges no
-draft, and the next "Ready for review" runs `result` again.
+"Convert to draft" runs the workflow again with the three draft jobs and the failing `result`,
+which cancels the run in progress. GitHub merges no draft in any case, and the next "Ready for
+review" runs every check again.
 
 A pull request with several changes for the changelog lists them in its description, between
 `BEGIN_COMMIT_OVERRIDE` and `END_COMMIT_OVERRIDE`, one Conventional Commit each:

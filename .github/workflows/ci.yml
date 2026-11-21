@@ -7,7 +7,7 @@
 # makes the subject of its commit on main, must be a Conventional Commit, and each of its commits
 # must carry its author's DCO sign-off. Editing the title or the description runs the workflow
 # again. A draft pull request runs only those two jobs and lint, which builds the tiers' lint
-# checks; marking it ready for review runs the workflow again with everything. A push to main runs
+# checks, and fails result; marking it ready for review runs the workflow again with everything. A push to main runs
 # the fast and image tiers, and the nightly run, which calls this workflow, runs every tier; both
 # open or update an issue labelled ci-failure when a check fails. The job result is the one check
 # that branch protection requires.
@@ -229,16 +229,19 @@ jobs:
           HEAD: ${{ github.event.pull_request.head.sha }}
         run: .github/scripts/dco.sh "$BASE" "$HEAD"
 
-  # The jobs that run on pull requests alone pass on a push or the nightly run when skipped. A
-  # draft pull request skips this job, so its run reports no result; GitHub merges no draft, and
-  # marking it ready runs the workflow again.
+  # The jobs that run on pull requests alone pass on a push or the nightly run when skipped. On a
+  # draft pull request this job fails at once. Branch protection counts a skipped job as passed,
+  # and GitHub keeps a commit's older checks, so a skipped result of the draft's run would pass
+  # the required check while the run that "Ready for review" starts has yet to report its own,
+  # and a passed result of a ready run would still show after "Convert to draft".
   result:
     needs: [tiers, check, govulncheck, release-pr, pr-title, dco]
-    if: ${{ always() && !github.event.pull_request.draft }}
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Every check passed
         env:
+          DRAFT: ${{ github.event.pull_request.draft }}
           EVENT: ${{ github.event_name }}
           TIERS: ${{ needs.tiers.result }}
           CHECK: ${{ needs.check.result }}
@@ -247,6 +250,10 @@ jobs:
           PR_TITLE: ${{ needs.pr-title.result }}
           DCO: ${{ needs.dco.result }}
         run: |
+          if [ "$DRAFT" = true ]; then
+            echo "::error title=Draft::a draft pull request runs only dco, pr-title and lint; mark it ready for review to run every check"
+            exit 1
+          fi
           echo "tiers: $TIERS, checks: $CHECK, govulncheck: $GOVULNCHECK, release pull request: $RELEASE_PR, title: $PR_TITLE, sign-offs: $DCO"
           passed() { [ "$1" = success ] || { [ "$EVENT" != pull_request ] && [ "$1" = skipped ]; }; }
           [ "$TIERS" = success ] && [ "$CHECK" = success ] && [ "$GOVULNCHECK" = success ] &&

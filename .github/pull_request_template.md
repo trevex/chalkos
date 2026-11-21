@@ -4,7 +4,7 @@ a squash merge makes it the subject of the commit on main, and the changelog com
 off every commit with git commit -s.
 
 Open the pull request as a draft while the change is in progress: a draft runs only the DCO, title
-and lint checks. Mark it ready for review to run the full CI.
+and lint checks, and its result check fails. Mark it ready for review to run the full CI.
 
 Add the label e2e when the change touches boot, install, upgrade or a layer, or e2e:<name> to run
 one end-to-end check, such as e2e:upgrade, and e2e:examples when the change touches examples/. A
