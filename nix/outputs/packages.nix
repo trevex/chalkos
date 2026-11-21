@@ -58,6 +58,8 @@ in
   test-unhealthy-image = testing.unhealthyImage;
   test-kubernetes-ha-upgrade-image = testing.haUpgradeImage;
   test-kubernetes-images = testing.kubernetesImages;
+  # The module from outside the image that e2e-kubernetes hands to a worker.
+  test-outside-module = testing.outsideModule;
   # The router test's routers run the router image on KVM.
   test-router-image = testing.router-kvm;
 

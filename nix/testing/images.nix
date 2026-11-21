@@ -13,7 +13,10 @@ let
   };
   modules = {
     test = [ ../../modules/testing/greeting.nix ];
-    k8s = [ self.nixosModules.kubernetes ];
+    k8s = [
+      self.nixosModules.kubernetes
+      ../../modules/testing/module-load.nix
+    ];
     router = [
       self.nixosModules.router
       {
@@ -140,5 +143,10 @@ images
   kubernetesImages = import ./kubernetes-images.nix {
     inherit pkgs;
     inherit (self.lib) kubernetesReleases;
+  };
+  # A kernel module for the Kubernetes test image's kernel, from outside the image.
+  outsideModule = import ./outside-module.nix {
+    inherit pkgs;
+    inherit (images.k8s-kvm.nixos.config.boot.kernelPackages) kernel;
   };
 }

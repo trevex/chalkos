@@ -65,6 +65,7 @@ in
   e2e-kubernetes = e2e "kubernetes" "^TestKubernetesCluster$" [ "CHALKLAB_K8S_IMAGE_DIR" ] {
     CHALKLAB_CHALKLAB = lib.getExe pkgs.chalkos.chalklab;
     CHALKLAB_K8S_IMAGES = kubernetesImages;
+    CHALKLAB_OUTSIDE_MODULE = "${chalkPkgs.test-outside-module}/chalkos_e2e_outside.ko";
   };
   e2e-router =
     e2e "router" "^TestRouterLab$"
