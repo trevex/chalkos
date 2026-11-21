@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"connectrpc.com/connect"
-	tea "github.com/charmbracelet/bubbletea"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -93,7 +93,7 @@ func (t *Tab) Update(msg tea.Msg) (console.Tab, tea.Cmd) {
 	case statusMsg:
 		t.reading = false
 		t.status.Set(msg.status, msg.err, msg.at)
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		t.pane.Key(msg)
 	}
 	return t, nil

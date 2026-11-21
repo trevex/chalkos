@@ -4,7 +4,7 @@ import (
 	"io"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/statusview"
@@ -30,7 +30,7 @@ func (o *overview) Update(msg tea.Msg) (Tab, tea.Cmd) {
 	switch msg := msg.(type) {
 	case NodeMsg:
 		o.info, o.status, o.normal = msg.Info, msg.Status, msg.Normal()
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		o.pane.Key(msg)
 	}
 	return o, nil

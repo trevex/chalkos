@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/charmbracelet/x/exp/teatest"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
@@ -69,7 +68,7 @@ func routerNode() *consoletest.Client {
 }
 
 // start runs the console of c with the Router tab of st and shows the tab.
-func start(t *testing.T, c *consoletest.Client, st *routerv1.StatusResponse) *teatest.TestModel {
+func start(t *testing.T, c *consoletest.Client, st *routerv1.StatusResponse) *consoletest.Console {
 	t.Helper()
 	o := consoletest.Options()
 	o.Tabs = []console.Tab{router.New(statusOf{st})}

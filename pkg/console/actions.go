@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -154,7 +154,7 @@ func (m *Model) find(key string) action {
 // menuKey handles a key while the menu is open: the arrows choose, Enter or an action's letter
 // picks it, y confirms it, and Enter, Esc or n step back. A confirmed action acts on the node as
 // last read, which may have changed since it was picked.
-func (m *Model) menuKey(k tea.KeyMsg) tea.Cmd {
+func (m *Model) menuKey(k tea.KeyPressMsg) tea.Cmd {
 	if m.menu.chosen != "" {
 		switch k.String() {
 		case "y":

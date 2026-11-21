@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/askpassword"
@@ -291,7 +291,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		return m, nil
-	case tea.KeyMsg:
+	case tea.KeyPressMsg, tea.PasteMsg:
 		return m, m.key(msg)
 	case tickMsg:
 		if msg.gen != m.tickGen {
@@ -394,10 +394,11 @@ func (m *Model) show(n int) tea.Cmd {
 	return cmd
 }
 
-// key handles a key: it ends the idle time, then a password request on screen takes it, the
-// actions menu while open, a capturing tab while it captures, then the console's own keys, and
-// the tab on screen the rest.
-func (m *Model) key(k tea.KeyMsg) tea.Cmd {
+// key handles a key, a tea.KeyPressMsg, or a paste, a tea.PasteMsg: it ends the idle time, then a
+// password request on screen takes it, the actions menu while open, a capturing tab while it
+// captures, then the console's own keys, and the tab on screen the rest. Only a password request
+// and a capturing tab take a paste.
+func (m *Model) key(msg tea.Msg) tea.Cmd {
 	m.lastKey = m.o.Now()
 	var resume tea.Cmd
 	if m.idle {
@@ -405,21 +406,28 @@ func (m *Model) key(k tea.KeyMsg) tea.Cmd {
 		m.tickGen++
 		resume = tea.Batch(m.read(), m.tick(), m.ticks())
 	}
-	return tea.Batch(resume, m.handle(k))
+	return tea.Batch(resume, m.handle(msg))
 }
 
-func (m *Model) handle(k tea.KeyMsg) tea.Cmd {
+func (m *Model) handle(msg tea.Msg) tea.Cmd {
 	if m.prompt != nil {
-		return m.promptKey(k)
+		return m.promptKey(msg)
 	}
+	k, isKey := msg.(tea.KeyPressMsg)
 	if m.menu != nil {
+		if !isKey {
+			return nil
+		}
 		return m.menuKey(k)
 	}
 	i := m.current()
 	if c, ok := m.tabs[i].(Capturer); ok && c.Capturing() {
 		var cmd tea.Cmd
-		m.tabs[i], cmd = m.tabs[i].Update(k)
+		m.tabs[i], cmd = m.tabs[i].Update(msg)
 		return cmd
+	}
+	if !isKey {
+		return nil
 	}
 	switch s := k.String(); {
 	case s == "tab" || s == "right":
@@ -437,7 +445,14 @@ func (m *Model) handle(k tea.KeyMsg) tea.Cmd {
 	return cmd
 }
 
-func (m *Model) View() string {
+// View is the screen on the alternate screen, without a cursor.
+func (m *Model) View() tea.View {
+	v := tea.NewView(m.screen())
+	v.AltScreen = true
+	return v
+}
+
+func (m *Model) screen() string {
 	if m.width == 0 {
 		return ""
 	}

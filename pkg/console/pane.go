@@ -3,7 +3,7 @@ package console
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // Pane shows text a screen at a time, scrolled with the arrows, PgUp, PgDn, Home and End.
@@ -14,7 +14,7 @@ type Pane struct {
 }
 
 // Key scrolls by k and reports whether it was a scrolling key.
-func (p *Pane) Key(k tea.KeyMsg) bool {
+func (p *Pane) Key(k tea.KeyPressMsg) bool {
 	offset, ok := scroll(k.String(), p.offset, p.height, p.lines)
 	p.offset = offset
 	return ok

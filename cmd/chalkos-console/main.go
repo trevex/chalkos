@@ -8,7 +8,7 @@ import (
 	"log"
 	"os"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/console"
@@ -30,7 +30,7 @@ func main() {
 		NetworkBGP: networkBGP(conn),
 		Actions:    os.Getenv("CHALKOS_CONSOLE_ACTIONS") == "1",
 	})
-	if _, err := tea.NewProgram(m, tea.WithAltScreen()).Run(); err != nil {
+	if _, err := tea.NewProgram(m).Run(); err != nil {
 		log.Fatal(err)
 	}
 }

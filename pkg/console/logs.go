@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"connectrpc.com/connect"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -273,8 +273,12 @@ func (l *logs) Update(msg tea.Msg) (Tab, tea.Cmd) {
 			l.picker.units = append([]string{allUnits}, units...)
 			l.picker.err, l.picker.loaded = msg.err, true
 		}
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		return l, l.key(msg)
+	case tea.PasteMsg:
+		if l.searching {
+			l.search += OneLine(msg.Content)
+		}
 	}
 	return l, nil
 }
@@ -334,7 +338,7 @@ func (l *logs) end(msg logEndMsg) tea.Cmd {
 // key handles a key: the picker and the search take every key while open; u opens the picker,
 // / the search, n and N go to the next and previous match, w turns wrapping on and off, and the
 // rest scroll.
-func (l *logs) key(k tea.KeyMsg) tea.Cmd {
+func (l *logs) key(k tea.KeyPressMsg) tea.Cmd {
 	switch {
 	case l.picker != nil:
 		return l.pickerKey(k)
@@ -369,7 +373,7 @@ func (l *logs) key(k tea.KeyMsg) tea.Cmd {
 
 // scroll moves the lines on screen by k, and follows the journal again once the last line is on
 // screen.
-func (l *logs) scroll(k tea.KeyMsg) {
+func (l *logs) scroll(k tea.KeyPressMsg) {
 	last := l.lastStart(l.width, l.height)
 	if l.follow {
 		l.offset = last
@@ -382,7 +386,7 @@ func (l *logs) scroll(k tea.KeyMsg) {
 	l.follow = l.offset >= last
 }
 
-func (l *logs) pickerKey(k tea.KeyMsg) tea.Cmd {
+func (l *logs) pickerKey(k tea.KeyPressMsg) tea.Cmd {
 	p := l.picker
 	switch k.String() {
 	case "up":
@@ -409,7 +413,7 @@ func (l *logs) pickerKey(k tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-func (l *logs) searchKey(k tea.KeyMsg) {
+func (l *logs) searchKey(k tea.KeyPressMsg) {
 	switch k.String() {
 	case "enter":
 		l.searching = false
@@ -423,14 +427,14 @@ func (l *logs) searchKey(k tea.KeyMsg) {
 		l.query, l.matches = "", nil
 		return
 	}
-	switch {
-	case k.Type == tea.KeyBackspace:
+	if k.Code == tea.KeyBackspace {
 		if r := []rune(l.search); len(r) > 0 {
 			l.search = string(r[:len(r)-1])
 		}
-	case k.Type == tea.KeyRunes, k.Type == tea.KeySpace:
-		l.search += OneLine(string(k.Runes))
+		return
 	}
+	// A key that types nothing, such as Tab or Ctrl+A, has no text.
+	l.search += OneLine(k.Text)
 }
 
 // findMatches finds the lines that hold the query, ignoring case.
