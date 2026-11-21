@@ -1,6 +1,7 @@
 node1  node n1  normal  up 3h 12m
 image 81bd81bd81bd generation 7  worker-metal on metal
 healthy
+module policy: enforced (version 0.5.0)
  1 Overview   2 Network   3 Storage   4 Logs 
 this boot, all units, following, wrap on   u unit  / search  n N match  w wrap
 2026-11-13T11:52:01+00:00 node1 systemd[1]: Started chalkd.service.
@@ -14,7 +15,6 @@ er networkd: exit status 1: unknown link enp9s0 in 10-uplink.network
 2026-11-13T11:54:30+00:00 node1 chronyd[580]: System clock wrong by 0.000123 sec
 onds
 2026-11-13T11:55:00+00:00 node1 chalkd[612]: config 3fa9c1e2b7d0 delivered
-
 
 
 

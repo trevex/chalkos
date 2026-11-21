@@ -24,6 +24,8 @@ func (s *Server) Info(ctx context.Context, _ *nodev1.InfoRequest) (*nodev1.InfoR
 		Image:       release["CHALKOS_IMAGE"],
 		Platform:    release["CHALKOS_PLATFORM"],
 		Layers:      s.Plugins.Layers().Names(),
+		// In every mode: the installer and maintenance mode load the policy too.
+		ModulePolicy: s.modulePolicyStatus(ctx),
 	}
 	// An image is its store's root hash; the record of installed images gives its provenance.
 	if root, err := uki.RunningHash(s.Paths.Cmdline); err == nil {

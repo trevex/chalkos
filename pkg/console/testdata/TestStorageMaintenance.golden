@@ -1,6 +1,7 @@
 nixos  maintenance  up 3h 12m
 image 81bd81bd81bd
 maintenance mode: chalkctl install installs this node
+module policy: not enforced (no Secure Boot): the image is not signed
 fingerprint 3b1f9e2d9e2d9e2d9e2d9e2d9e2d9e2d9e2d9e2d9e2d9e2d9e2d9e2d9e2d9e2d
 addresses 192.168.1.50 2001:db8::50
  1 Overview   2 Network   3 Storage   4 Logs 
@@ -13,7 +14,6 @@ DEVICE       SIZE  TYPE     MODEL          SERIAL      WWN  USE
   /dev/vda4  256M  state    crypto_LUKS                     
   /dev/vda5  10G   var      crypto_LUKS                     
 /dev/vdb     8G    hdd      QEMU HARDDISK  chalk-data       
-
 
 
 

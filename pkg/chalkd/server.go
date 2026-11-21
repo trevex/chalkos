@@ -29,6 +29,7 @@ import (
 	"github.com/trevex/chalkos/pkg/imagecheck"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/layers"
+	"github.com/trevex/chalkos/pkg/modulepolicy"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/secureboot"
@@ -73,6 +74,10 @@ type Paths struct {
 	EventLog      string
 	StorageStatus string
 	MountInfo     string
+	// SecurityFS is where securityfs is mounted, and ModulePolicy the initrd's record of the
+	// module policy's load.
+	SecurityFS   string
+	ModulePolicy string
 	// ESP is where the ESP is mounted, Cmdline the kernel's command line, and BootID the ID the
 	// kernel gives the boot.
 	ESP     string
@@ -108,6 +113,8 @@ func PathsUnder(root string) Paths {
 		EventLog:        at(secureboot.EventLog),
 		StorageStatus:   at("/run/chalkos/storage-status.json"),
 		MountInfo:       at("/proc/self/mountinfo"),
+		SecurityFS:      at("/sys/kernel/security"),
+		ModulePolicy:    at(filepath.Join("/run", modulepolicy.RecordFile)),
 		ESP:             at("/efi"),
 		Cmdline:         at("/proc/cmdline"),
 		BootID:          at("/proc/sys/kernel/random/boot_id"),

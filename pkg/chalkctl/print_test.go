@@ -35,6 +35,7 @@ func (n cannedNode) Info(ctx context.Context, req *nodev1.InfoRequest) (*nodev1.
 	resp, err := n.s.Info(ctx, req)
 	if err == nil {
 		resp.Layers = []string{layers.Kubernetes, layers.Router}
+		resp.ModulePolicy = &nodev1.ModulePolicyStatus{State: nodev1.ModulePolicyState_MODULE_POLICY_STATE_ENFORCED, Version: "0.5.0"}
 	}
 	return resp, err
 }

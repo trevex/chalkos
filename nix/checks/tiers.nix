@@ -66,6 +66,7 @@ let
       "image-size"
       "image-tests"
       "kernel-modules"
+      "module-policy"
       "no-shell"
       "no-shell-calls"
       "rules"

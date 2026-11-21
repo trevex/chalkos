@@ -39,6 +39,9 @@ type Options struct {
 	Inventory Inventory
 	// Layers writes the sections of the image's layers, after the outputs; nil writes none.
 	Layers func(w io.Writer) error
+	// ModulePolicy is the module policy's state, which Info reports; nil writes no line, as on
+	// the console, whose header shows it.
+	ModulePolicy *nodev1.ModulePolicyStatus
 }
 
 // Table writes aligned columns, separated by tabs, to w once flushed, as chalkctl's tables do.
@@ -88,6 +91,9 @@ func Write(w io.Writer, s *nodev1.StatusResponse, o Options) error {
 		if line := o.Inventory.ImageLine(s.Boot); line != "" {
 			fmt.Fprintln(w, line)
 		}
+	}
+	if o.ModulePolicy != nil {
+		fmt.Fprintln(w, ModulePolicyLine(o.ModulePolicy))
 	}
 	t := Table(w)
 	fmt.Fprintln(t, "VOLUME\tDISK\tMOUNT POINT\tSTATE")
@@ -278,6 +284,24 @@ func TrustLine(t *nodev1.TrustStatus) string {
 		fps = append(fps, short)
 	}
 	return fmt.Sprintf("  %s\t%s", t.Name, strings.Join(fps, ", "))
+}
+
+// ModulePolicyLine is the status line of the module policy: whether the kernel loads modules
+// from the running image alone.
+func ModulePolicyLine(m *nodev1.ModulePolicyStatus) string {
+	switch m.GetState() {
+	case nodev1.ModulePolicyState_MODULE_POLICY_STATE_ENFORCED:
+		return "module policy: enforced (version " + m.GetVersion() + ")"
+	case nodev1.ModulePolicyState_MODULE_POLICY_STATE_NOT_ENFORCED:
+		return "module policy: not enforced (no Secure Boot): " + m.GetDetail()
+	case nodev1.ModulePolicyState_MODULE_POLICY_STATE_FAILED:
+		return "module policy: failed: " + m.GetDetail()
+	case nodev1.ModulePolicyState_MODULE_POLICY_STATE_TAMPERED:
+		return "module policy: tampered: " + m.GetDetail() + "; the node's journal holds the audit records"
+	case nodev1.ModulePolicyState_MODULE_POLICY_STATE_OFF:
+		return "module policy: off (the image leaves it out)"
+	}
+	return "module policy: unknown"
 }
 
 // TimeLine is the status line of the node's clock.

@@ -70,8 +70,9 @@ The response of Info.
 | `tag` | string | The git tag the running image was built from, as the node's record of the images it installed names it; empty when it does not know it. |
 | `layers` | list of string | The layers the running image carries beside the base every image has, such as "kubernetes", in name order; empty on the installer and on an image of the base alone. |
 | `node_name` | string | The node's name, as its node certificate names it; empty in maintenance mode and on the installer. |
+| `module_policy` | ModulePolicyStatus | Whether the kernel loads modules from the running image alone. |
 
-Field types: [Mode](#enum-mode), [SecureBoot](#enum-secureboot).
+Field types: [Mode](#enum-mode), [SecureBoot](#enum-secureboot), [ModulePolicyStatus](#message-modulepolicystatus).
 
 ### Disks { #method-disks }
 
@@ -966,6 +967,18 @@ What an install delivers: the node's credentials and config, the target and the 
 
 Field types: [InPlace](#message-inplace), [DiskReference](#message-diskreference), [ImageHeader](#message-imageheader), [ImageContract](#message-imagecontract), [ImageSource](#message-imagesource).
 
+### ModulePolicyStatus { #message-modulepolicystatus }
+
+The module policy's state.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `state` | ModulePolicyState |  |
+| `detail` | string | Why the policy is not enforced, failed or was tampered with; empty otherwise. |
+| `version` | string | The policy_version the kernel took; empty when it took none. |
+
+Field types: [ModulePolicyState](#enum-modulepolicystate).
+
 ### OutputStatus { #message-outputstatus }
 
 The state of one output of the running image.
@@ -1146,6 +1159,20 @@ The mode chalkd serves the node in.
 | `MODE_UNSPECIFIED` | 0 | No mode; chalkd never reports it. |
 | `MODE_MAINTENANCE` | 1 | The node is not installed: chalkd serves a self-signed certificate. |
 | `MODE_NORMAL` | 2 | The node is installed: chalkd serves its node certificate and requires client certificates. |
+
+### ModulePolicyState { #enum-modulepolicystate }
+
+What the node makes of the image's module policy, the IPE policy that lets the kernel load
+modules from the image's verity store and its initrd alone.
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| `MODULE_POLICY_STATE_UNSPECIFIED` | 0 | No state; chalkd never reports it. |
+| `MODULE_POLICY_STATE_ENFORCED` | 1 | The image's policy is active and enforced, and was during the whole boot. |
+| `MODULE_POLICY_STATE_NOT_ENFORCED` | 2 | Secure Boot is off and the kernel did not take the policy, so any module loads. |
+| `MODULE_POLICY_STATE_FAILED` | 3 | Secure Boot is on, but the policy did not load; detail says why. |
+| `MODULE_POLICY_STATE_TAMPERED` | 4 | The policy loaded, but enforcement was switched off or another policy activated since. |
+| `MODULE_POLICY_STATE_OFF` | 5 | The image leaves the module policy out. |
 
 ### PendingFate { #enum-pendingfate }
 

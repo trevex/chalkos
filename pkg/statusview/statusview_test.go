@@ -75,7 +75,7 @@ func richStatus() *nodev1.StatusResponse {
 
 func TestWrite(t *testing.T) {
 	var b bytes.Buffer
-	err := Write(&b, richStatus(), Options{Node: "n1", Inventory: fakeInventory{}, Layers: func(w io.Writer) error {
+	err := Write(&b, richStatus(), Options{Node: "n1", Inventory: fakeInventory{}, ModulePolicy: &nodev1.ModulePolicyStatus{State: nodev1.ModulePolicyState_MODULE_POLICY_STATE_ENFORCED, Version: "0.5.0"}, Layers: func(w io.Writer) error {
 		_, err := fmt.Fprintln(w, "layer section")
 		return err
 	}})
@@ -172,6 +172,24 @@ func TestTimeLine(t *testing.T) {
 	} {
 		if got := TimeLine(tc.status); got != tc.want {
 			t.Errorf("TimeLine = %q, want %q", got, tc.want)
+		}
+	}
+}
+
+func TestModulePolicyLine(t *testing.T) {
+	for _, tc := range []struct {
+		in   *nodev1.ModulePolicyStatus
+		want string
+	}{
+		{&nodev1.ModulePolicyStatus{State: nodev1.ModulePolicyState_MODULE_POLICY_STATE_ENFORCED, Version: "0.5.0"}, "module policy: enforced (version 0.5.0)"},
+		{&nodev1.ModulePolicyStatus{State: nodev1.ModulePolicyState_MODULE_POLICY_STATE_NOT_ENFORCED, Detail: "the image is not signed"}, "module policy: not enforced (no Secure Boot): the image is not signed"},
+		{&nodev1.ModulePolicyStatus{State: nodev1.ModulePolicyState_MODULE_POLICY_STATE_FAILED, Detail: "the kernel refused the module policy: required key not available"}, "module policy: failed: the kernel refused the module policy: required key not available"},
+		{&nodev1.ModulePolicyStatus{State: nodev1.ModulePolicyState_MODULE_POLICY_STATE_TAMPERED, Detail: "IPE is permissive"}, "module policy: tampered: IPE is permissive; the node's journal holds the audit records"},
+		{&nodev1.ModulePolicyStatus{State: nodev1.ModulePolicyState_MODULE_POLICY_STATE_OFF}, "module policy: off (the image leaves it out)"},
+		{nil, "module policy: unknown"},
+	} {
+		if got := ModulePolicyLine(tc.in); got != tc.want {
+			t.Errorf("ModulePolicyLine(%v) = %q, want %q", tc.in, got, tc.want)
 		}
 	}
 }

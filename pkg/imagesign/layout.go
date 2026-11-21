@@ -44,15 +44,16 @@ func SignLayout(ctx context.Context, in, out, key, cert string) (v1.Hash, error)
 	for _, part := range []struct {
 		mediaType  types.MediaType
 		what, file string
+		sign       func([]byte, secureboot.KeyPair) ([]byte, error)
 	}{
-		{ociimage.UKIType, "UKI", "uki.efi"},
-		{ociimage.BootLoaderType, "boot loader", "boot-loader.efi"},
+		{ociimage.UKIType, "UKI", "uki.efi", signUKI},
+		{ociimage.BootLoaderType, "boot loader", "boot-loader.efi", secureboot.Sign},
 	} {
 		path := filepath.Join(dir, part.file)
 		if err := extractLayer(img, part.mediaType, path); err != nil {
 			return v1.Hash{}, fmt.Errorf("the %s of %s: %w", part.what, in, err)
 		}
-		if err := signFile(path, signer); err != nil {
+		if err := signFile(path, signer, part.sign); err != nil {
 			return v1.Hash{}, err
 		}
 		if err := verifyFile(path, certs); err != nil {

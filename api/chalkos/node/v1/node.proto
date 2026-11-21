@@ -250,6 +250,34 @@ message InfoResponse {
   // The node's name, as its node certificate names it; empty in maintenance mode and on the
   // installer.
   string node_name = 15;
+  // Whether the kernel loads modules from the running image alone.
+  ModulePolicyStatus module_policy = 16;
+}
+
+// What the node makes of the image's module policy, the IPE policy that lets the kernel load
+// modules from the image's verity store and its initrd alone.
+enum ModulePolicyState {
+  // No state; chalkd never reports it.
+  MODULE_POLICY_STATE_UNSPECIFIED = 0;
+  // The image's policy is active and enforced, and was during the whole boot.
+  MODULE_POLICY_STATE_ENFORCED = 1;
+  // Secure Boot is off and the kernel did not take the policy, so any module loads.
+  MODULE_POLICY_STATE_NOT_ENFORCED = 2;
+  // Secure Boot is on, but the policy did not load; detail says why.
+  MODULE_POLICY_STATE_FAILED = 3;
+  // The policy loaded, but enforcement was switched off or another policy activated since.
+  MODULE_POLICY_STATE_TAMPERED = 4;
+  // The image leaves the module policy out.
+  MODULE_POLICY_STATE_OFF = 5;
+}
+
+// The module policy's state.
+message ModulePolicyStatus {
+  ModulePolicyState state = 1;
+  // Why the policy is not enforced, failed or was tampered with; empty otherwise.
+  string detail = 2;
+  // The policy_version the kernel took; empty when it took none.
+  string version = 3;
 }
 
 // The request of Disks.

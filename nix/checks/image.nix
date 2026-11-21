@@ -122,6 +122,38 @@ in
         touch $out
       '';
 
+  # The worker's UKI carries the module policy first: an uncompressed archive whose
+  # etc/chalkos/module-policy holds the policy with the store's root hash, padded with NULs to
+  # modulepolicy.SlotSize, unsigned until chalkbuild sign signs it.
+  module-policy =
+    let
+      c = worker.config;
+      uki = "${c.system.build.uki}/${c.system.boot.loader.ukiFile}";
+    in
+    pkgs.runCommand "chalkos-module-policy"
+      {
+        nativeBuildInputs = [
+          pkgs.binutils
+          pkgs.cpio
+          pkgs.jq
+        ];
+        inherit (c.system.build) chalkosModulePolicy;
+        passAsFile = [ "chalkosModulePolicy" ];
+      }
+      ''
+        fail() { echo "error: $*" >&2; exit 1; }
+        objcopy --dump-section .initrd=initrd.bin ${uki} uki.copy
+        last=$(cpio -t --quiet < initrd.bin | tail -n 1)
+        [ "$last" = etc/chalkos/module-policy ] || fail "the UKI's first archive ends with $last"
+        cpio -i --quiet --to-stdout etc/chalkos/module-policy < initrd.bin > slot
+        [ "$(stat -c %s slot)" = 16384 ] || fail "the policy's file is $(stat -c %s slot) bytes"
+        root=$(jq -r '[.[] | .roothash // empty] | first' ${c.system.build.image}/repart-output.json)
+        sed "s/@ROOT_HASH@/$root/" $chalkosModulePolicyPath > want
+        tr -d '\0' < slot > got
+        cmp got want || fail "the UKI's policy is not the image's"
+        touch $out
+      '';
+
   # The test images on each platform and the installer within their ceilings
   # (testing/image-sizes.nix), and without Python in their closures. An image over one fails the
   # check with the largest paths of its system's closure, read from closureInfo, as the build has

@@ -1,6 +1,7 @@
 node1  node n1  normal  up 3h 12m
 image 81bd81bd81bd generation 7  worker-metal on metal
 healthy
+module policy: enforced (version 0.5.0)
  1 Overview   2 Network   3 Storage   4 Logs   5 Router 
 bgp:
   VRF      PEER      NEIGHBOR       STATE        UPTIME  RECEIVED  SENT  BFD
@@ -21,5 +22,4 @@ wireguard:
     public key: uLRrWL5pg3FX2ydGsAsUrQ/VvWautg0OJpoJEGP12XM=
     private key: (hidden)
     listening port: 51820
-  peer: TNcjWUC/YZFd6+6UkoYLORnFxvy/jvqzi7gh5Tc0lRU=
 Tab/Left/Right 1-5 tabs  Up/Down/PgUp/PgDn scroll  a actions (off in this image)

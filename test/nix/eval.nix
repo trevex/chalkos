@@ -4533,4 +4533,91 @@ lib.runTests {
       kubelet = true;
     };
   };
+  # Every image loads its IPE policy: ipe in the one lsm= the kernel reads, audit for the
+  # records chalkd reads, the policy text with the store's root hash filled in at build, and
+  # the initrd unit that loads it before switch-root. The UKI's config names no initrd, as the
+  # UKI build passes the policy's archive first and the image's initrd after it.
+  testModulePolicy =
+    let
+      version = import ../../version.nix;
+      unit = w.boot.initrd.systemd.services.chalkos-module-policy;
+    in
+    {
+      expr = {
+        lsm = lib.filter (lib.hasPrefix "lsm=") w.boot.kernelParams;
+        audit = lib.elem "audit=1" w.boot.kernelParams;
+        policy = w.system.build.chalkosModulePolicy;
+        ukiInitrd = w.boot.uki.settings.UKI.Initrd or null;
+        unit = {
+          inherit (unit) wantedBy before;
+          inherit (unit.unitConfig) DefaultDependencies;
+          inherit (unit.serviceConfig) Type RemainAfterExit;
+          load = lib.hasSuffix "/bin/chalkos-module-policy load" unit.serviceConfig.ExecStart;
+        };
+        stored = lib.any (
+          p: lib.hasInfix "chalkos-module-policy" (toString (p.source or p))
+        ) w.boot.initrd.systemd.storePaths;
+      };
+      expected = {
+        lsm = [ "lsm=ipe,landlock,yama,bpf" ];
+        audit = true;
+        policy = ''
+          policy_name=chalkos policy_version=${version}
+          DEFAULT action=ALLOW
+          DEFAULT op=KMODULE action=DENY
+          op=KMODULE boot_verified=TRUE action=ALLOW
+          op=KMODULE dmverity_roothash=sha256:@ROOT_HASH@ action=ALLOW
+        '';
+        ukiInitrd = null;
+        unit = {
+          wantedBy = [ "sysinit.target" ];
+          before = [ "sysinit.target" ];
+          DefaultDependencies = false;
+          Type = "oneshot";
+          RemainAfterExit = true;
+          load = true;
+        };
+        stored = true;
+      };
+    };
+  # An image may leave the module policy out: no ipe, no unit, nixpkgs's own UKI.
+  testModulePolicyOptional =
+    let
+      c = worker [ { chalkos.kernel.modulePolicy.enable = false; } ];
+    in
+    {
+      expr = {
+        lsm = lib.any (lib.hasInfix "ipe") c.boot.kernelParams;
+        unit = c.boot.initrd.systemd.services ? chalkos-module-policy;
+        ukiInitrd = c.boot.uki.settings.UKI.Initrd != null;
+      };
+      expected = {
+        lsm = false;
+        unit = false;
+        ukiInitrd = true;
+      };
+    };
+  # The installer and the router load the policy too.
+  testModulePolicyEveryImage = {
+    expr = map (c: c.boot.initrd.systemd.services ? chalkos-module-policy) [
+      (installer [ ])
+      edge
+    ];
+    expected = [
+      true
+      true
+    ];
+  };
+  # No container, privileged or not, gets CAP_SYS_MODULE or CAP_MAC_ADMIN: containerd's bounding
+  # set, which its shims and runc inherit, leaves both out. allowMacAdmin gives CAP_MAC_ADMIN back.
+  testContainerdCapabilities = {
+    expr = map (c: c.systemd.services.containerd.serviceConfig.CapabilityBoundingSet) [
+      w
+      (worker [ { chalkos.kubernetes.containerd.allowMacAdmin = true; } ])
+    ];
+    expected = [
+      "~CAP_SYS_MODULE CAP_MAC_ADMIN"
+      "~CAP_SYS_MODULE"
+    ];
+  };
 }

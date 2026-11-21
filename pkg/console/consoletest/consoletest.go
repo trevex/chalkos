@@ -222,6 +222,7 @@ func Normal() *Client {
 		InfoResp: &nodev1.InfoResponse{
 			Mode: nodev1.Mode_MODE_NORMAL, Hostname: "node1", NodeName: "n1", Image: "worker-metal", Platform: "metal",
 			RootHash: hash(0x81, 0xbd), Fingerprint: strings.Repeat("ab", 32),
+			ModulePolicy: &nodev1.ModulePolicyStatus{State: nodev1.ModulePolicyState_MODULE_POLICY_STATE_ENFORCED, Version: "0.5.0"},
 		},
 		StatusResp: &nodev1.StatusResponse{
 			ConfigVersion:         "3fa9c1e2b7d0" + strings.Repeat("4e5f", 13),
@@ -270,6 +271,10 @@ func Maintenance() *Client {
 		InfoResp: &nodev1.InfoResponse{
 			Mode: nodev1.Mode_MODE_MAINTENANCE, Hostname: "nixos", RootHash: hash(0x81, 0xbd),
 			Fingerprint: "3b1f" + strings.Repeat("9e2d", 15),
+			ModulePolicy: &nodev1.ModulePolicyStatus{
+				State:  nodev1.ModulePolicyState_MODULE_POLICY_STATE_NOT_ENFORCED,
+				Detail: "the image is not signed",
+			},
 		},
 		StatusErr:   connect.NewError(connect.CodeFailedPrecondition, "the node is in maintenance mode; install it first"),
 		DisksResp:   disks(false),

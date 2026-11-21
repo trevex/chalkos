@@ -32,6 +32,7 @@ in
     chalklab
     chalklab-e2e
     chalkos-console
+    chalkos-module-policy
     chalkos-registry
     chalkos-storage
     ;

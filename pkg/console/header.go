@@ -35,6 +35,9 @@ func (m *Model) headerLines() []string {
 		second = append(second, OneLine(n+" on "+cmp.Or(info.GetPlatform(), "every platform")))
 	}
 	lines := []string{strings.Join(first, "  "), strings.Join(second, "  "), m.healthLine()}
+	if p := info.GetModulePolicy(); p != nil {
+		lines = append(lines, modulePolicyLine(p))
+	}
 	if info != nil && !m.node.Normal() {
 		lines = append(lines, wrapChars("fingerprint", OneLine(info.GetFingerprint()), m.width)...)
 		lines = append(lines, wrapWords("addresses", m.addressList(), m.width)...)
@@ -43,6 +46,19 @@ func (m *Model) headerLines() []string {
 		lines[i] = fit(lines[i], m.width)
 	}
 	return lines
+}
+
+// modulePolicyLine is the header's row of the module policy, in every mode: whether the kernel
+// loads modules from the running image alone.
+func modulePolicyLine(p *nodev1.ModulePolicyStatus) string {
+	line := OneLine(statusview.ModulePolicyLine(p))
+	switch p.GetState() {
+	case nodev1.ModulePolicyState_MODULE_POLICY_STATE_ENFORCED:
+		return OKStyle.Render(line)
+	case nodev1.ModulePolicyState_MODULE_POLICY_STATE_NOT_ENFORCED, nodev1.ModulePolicyState_MODULE_POLICY_STATE_OFF:
+		return WarnStyle.Render(line)
+	}
+	return ErrorStyle.Render(line)
 }
 
 // modeWord names the node's mode: normal, maintenance, or installer; empty before Info comes.
