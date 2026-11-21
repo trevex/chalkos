@@ -67,5 +67,7 @@
       '';
     };
   };
+  # The unit is a bash script, so the image carries a shell.
+  chalkos.shell.allow = true;
 }
 # --8<-- [end:tail]

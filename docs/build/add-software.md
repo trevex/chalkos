@@ -30,10 +30,10 @@ the tool it calls in its own `path`:
 {
   systemd.services.disk-report = {
     wantedBy = [ "multi-user.target" ];
-    path = [ pkgs.smartmontools ];
+    path = [ pkgs.nvme-cli ];
     serviceConfig = {
       Type = "oneshot";
-      ExecStart = "${pkgs.smartmontools}/bin/smartctl --scan";
+      ExecStart = "${pkgs.nvme-cli}/bin/nvme list";
     };
   };
 }
@@ -67,7 +67,10 @@ Nodes have no logins, so the system path holds none of NixOS's default packages.
 image's own modules put there, such as systemd, less, nftables, kmod and the mount helpers,
 and what your modules add. Name the tools a unit runs in its `path`, as above. No image has
 `/bin/sh` or `/usr/bin/env`, so a program that runs a command through `system()` or `popen()`
-fails on a node, as does a script whose first line names either.
+fails on a node, as does a script whose first line names either. The build fails when a shell,
+such as bash, gets into the image: through a unit's `script`, a shell script or a package's own
+scripts. [Keep an image shell-free](shell-free.md) shows how to find what brought it in and how to
+do without it.
 `environment.systemPackages` works as on any NixOS system. It is the place for what other programs
 look up on the system path, such as a mount helper (`mount.nfs`) that a CSI driver runs.
 
@@ -255,7 +258,10 @@ Kubernetes:
 }
 ```
 
-The option changes the image, so it reaches running nodes with an upgrade.
+The option changes the image, so it reaches running nodes with an upgrade. The image then
+carries bash, and its build lets a shell in, as
+[`chalkos.shell.allow`](../reference/image-options.md#chalkosshellallow) does. It still has no
+`/bin/sh`.
 
 !!! note "Kubernetes: a shell through a privileged pod"
 
@@ -291,7 +297,8 @@ anything, and these settings break the node or are refused:
 
 Your own image options take a namespace of their own, such as `rack.*` or `chalkos.rack.*`. Under
 `chalkos`, these names are taken: `cni`, `debug`, `disk`, `effects`, `facts`, `image`, `kernel`,
-`kinds`, `kubernetes`, `maintenance`, `outputs`, `platform`, `provenance`, `router` and `upgrade`.
+`kinds`, `kubernetes`, `maintenance`, `outputs`, `platform`, `provenance`, `router`, `shell` and
+`upgrade`.
 
 ## Keep the image within its slot
 

@@ -300,7 +300,7 @@ reference says the console may call.
 
 ## Debug and maintenance { #debug-and-maintenance }
 
-The debug tools an image carries, and the OS CA whose clients its maintenance mode accepts.
+The debug tools an image carries, whether its build lets a shell in, and the OS CA whose clients its maintenance mode accepts.
 
 ### `chalkos.debug.tools` { #chalkosdebugtools }
 
@@ -308,9 +308,27 @@ Type: boolean · Default: `false` · Declared in: [modules/node/base/closure.nix
 
 Add bash, coreutils, grep, sed, findutils, procps, iproute2 and util-linux to the system
 path, and crictl on images with Kubernetes; systemd, less, nftables and kmod are on it
-already. Without the debug tools the system path holds no shell; no image has `/bin/sh`.
+already. Without the debug tools the system path holds no shell, and the build fails when
+a shell gets into the image unless [`chalkos.shell.allow`](#chalkosshellallow) is set.
+With them the image carries bash and allows a shell, and still has no `/bin/sh`.
 Nodes have no logins; use the tools from a privileged pod on the node, for example
 `kubectl debug node/<node> -it --profile=sysadmin --image=busybox -- chroot /host /run/current-system/sw/bin/bash`.
+
+### `chalkos.shell.allow` { #chalkosshellallow }
+
+Type: boolean · Default: `false` · Declared in: [modules/node/base/closure.nix](https://github.com/trevex/chalkos/blob/main/modules/node/base/closure.nix)
+
+Let a shell, such as bash, dash or busybox, into the image's system or its initrd. Without
+it the build fails when one gets in, and names the shell's store paths and what references
+them. Nodes run no shell: nothing on them needs one, and a shell an attacker finds is the
+first tool they use.
+
+Set it on an image whose own units, outputs' checks, validators or diagnostics are shell
+scripts, such as those `pkgs.writeShellScript` and `pkgs.writeShellApplication` write,
+and to keep a package whose scripts the image does not run. A script still names its
+shell by its store path: the image has no `/bin/sh` either way.
+[Keep an image shell-free](../build/shell-free.md) shows how to find what brings a shell
+in and how to do without it. The debug tools allow a shell too.
 
 ### `chalkos.maintenance.osCA` { #chalkosmaintenanceosca }
 

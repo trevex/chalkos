@@ -185,6 +185,8 @@ shell functions the check scripts call: `fail`, `retry` and `refuses`, and for t
 | `kernel-modules` | An image's module tree holds its groups' modules and no others, and the tool refuses unknown modules and missing dependencies. |
 | `image-size` | The test images stay within the ceilings in `nix/testing/image-sizes.nix`, and the fit check every image build runs refuses images that leave no room. Its measure of each image agrees with `pkg/verity`. |
 | `bootspec` | An image's bootspec names the UKI on the ESP and no initrd. |
+| `no-shell` | The test and release images link no `/bin/sh`, have no activation script and no shell on the system path, and the release images build without the debug tools or `chalkos.shell.allow`, so no shell is in their systems or their initrds. |
+| `no-shell-calls` | No ELF file of the release images' systems and initrds imports `system`, `popen` or `wordexp` or holds `/bin/sh`, unless the allow-list in `nix/checks/image.nix` gives the reason it never runs a shell on a node. |
 | `vxlan-rule` | The VXLAN firewall rule, in network namespaces. |
 | `router-firewall` | A router's firewall unit and rulesets, in network namespaces. |
 | `router-policy-routing` | A router's policy routing: the example's ruleset with the kernel's rules and next-hop tables, in network namespaces. |
@@ -345,7 +347,7 @@ Every check builds with `nix build`, and a change runs the checks of the parts i
 | `examples/homelab` | `example-homelab` |
 | `examples/bgp-extension` | `example-bgp-extension`, `example-bgp-extension-validator-docs`, `image-tests` |
 | `examples/extensions` | `example-extensions`, `image-tests` |
-| Kernel modules, closure, image size | `kernel-modules`, `image-size`, `bootspec` |
+| Kernel modules, closure, image size | `kernel-modules`, `image-size`, `bootspec`, `no-shell`, `no-shell-calls` |
 | The firewall or VXLAN rule | `vxlan-rule`, `go-unit`, `e2e-kubernetes` |
 | The router's kinds, outputs or firewall | `router-firewall`, `rules`, `image-tests`, `eval`, `eval-kinds`, `go-unit` |
 | The router's BGP: its kinds, `frr` output, FRR's units, `pkg/router` | `rules`, `image-tests`, `frr-credentials`, `frr-reload`, `eval`, `eval-kinds`, `go-unit`, `e2e-router` |

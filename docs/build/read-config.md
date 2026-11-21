@@ -108,8 +108,11 @@ follows:
 over the keys prints them sorted. A path cannot hold a key that contains `.`, whitespace or one of
 `'`, `\`, `@`, `$`, `,`, `[`, `]`, `{` and `}`; a `go-template` output reads such a key.
 
-Run the command from a shell script, as `pkgs.writeShellScript` makes one, because systemd
-expands `$` and `%` in `ExecStart=` itself. networkd's `Network`, `NetDev` and `Link` kinds have
+A unit's `ExecStart=` takes the command as it is, as the rack unit above does, since systemd
+reads its quotes as a shell would. systemd also expands `$` and `%` there, so a command that
+holds either, such as one with a `go-template` output, needs each written twice, `$$` and `%%`.
+[Keep an image shell-free](shell-free.md) shows what a unit does in place of a shell script.
+networkd's `Network`, `NetDev` and `Link` kinds have
 no `get`, because their schemas come from systemd's tables when the image is built. A unit
 granted them runs `chalkcfg get Network -o json` directly.
 [`chalkcfg get`](../reference/cli/chalkcfg_get.md) lists every exit status.

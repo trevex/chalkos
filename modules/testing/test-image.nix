@@ -8,6 +8,9 @@
 {
   imports = [ ./probe.nix ];
 
+  # The probe, chalktest-ask and the test images' own checks and diagnostics are shell scripts.
+  chalkos.shell.allow = true;
+
   chalkos.disk = {
     espSize = "260M";
     storeSize = "2G";

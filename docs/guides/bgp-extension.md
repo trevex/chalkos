@@ -60,13 +60,17 @@ Add this entry to `images` in the homelab's `flake.nix`. It builds `node-bird-me
 ```
 
 Add `node-bird-metal` to the list inherited from `images` in `packages.${system}`. Create
-`extensions/default.nix` to import the extension.
+`extensions/default.nix` to import the extension. The extension's credentials unit and its
+output's check are bash scripts, so the file lets a shell into the image;
+[Keep an image shell-free](../build/shell-free.md) shows programs that need none.
 
 ```nix title="extensions/default.nix"
 # The guide's BGP extension, bird with its Speaker and Peer kinds and the config rendered from
-# them, which the image node-bird-metal carries in place of the built-in speaker.
+# them, which the image node-bird-metal carries in place of the built-in speaker. Its credentials
+# unit and its output's check are bash scripts, so the image carries a shell.
 {
   imports = [ ./bgp.nix ];
+  chalkos.shell.allow = true;
 }
 ```
 

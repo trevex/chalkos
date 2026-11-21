@@ -66,6 +66,7 @@ let
       "image-tests"
       "kernel-modules"
       "no-shell"
+      "no-shell-calls"
       "rules"
       "sbom"
       "template-cluster-metal"
