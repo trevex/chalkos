@@ -52,8 +52,8 @@ func (s Sandbox) namespaces() string {
 // own limit stops the program first and its result says so; it also bounds each systemctl call.
 const stopMargin = 10 * time.Second
 
-// sandbox holds the properties of every run's unit.
-var sandbox = []string{
+// sandbox holds the properties of every run's unit, which runs programs from the store alone.
+var sandbox = append([]string{
 	"--property=DynamicUser=yes",
 	"--property=NoNewPrivileges=yes",
 	"--property=ProtectSystem=strict",
@@ -75,7 +75,7 @@ var sandbox = []string{
 	// A run cannot starve the node it diagnoses.
 	"--property=MemoryMax=256M",
 	"--property=TasksMax=64",
-}
+}, command.StoreOnly...)
 
 // args are the arguments of systemd-run that run r as unit.
 func (s Sandbox) args(unit string, r Run) []string {

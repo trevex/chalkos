@@ -8,6 +8,7 @@
 # build, without Python, SNMP, Lua or watchfrr in its closure. A layer's BGP feature turns it on
 # and names the rendered config and the config of a node without one.
 {
+  chalkosLib,
   config,
   lib,
   pkgs,
@@ -16,6 +17,7 @@
 let
   cfg = config.chalkos.frr;
   inherit (pkgs.chalkos) frr;
+  inherit (chalkosLib.internal) noExec;
   # vtysh reads vtysh.conf from its config directory; the check's own holds no more, so vtysh
   # checks the rendered file alone.
   checkDir = pkgs.writeTextDir "vtysh.conf" "service integrated-vtysh-config\n";
@@ -145,7 +147,7 @@ in
             "chalkos-node-addresses.target"
           ];
           unitConfig.ConditionPathIsDirectory = condition;
-          serviceConfig = {
+          serviceConfig = noExec // {
             Type = "oneshot";
             RemainAfterExit = true;
             ExecStart = fill;
@@ -175,7 +177,7 @@ in
             after = [ "frr.service" ] ++ map unit daemon.after;
             before = [ "chalkos-node-addresses.target" ];
             unitConfig.ConditionPathIsDirectory = condition;
-            serviceConfig = {
+            serviceConfig = noExec // {
               Type = "forking";
               PIDFile = "/run/frr/${name}.pid";
               ExecStart = "${frr}/libexec/frr/${name} -d ${daemon.options}";

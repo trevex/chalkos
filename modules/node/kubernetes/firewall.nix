@@ -2,6 +2,7 @@
 # plane's ports, which only control planes open, and flannel's VXLAN, accepted only when sent to
 # the node's addresses.
 {
+  chalkosLib,
   config,
   lib,
   pkgs,
@@ -62,7 +63,7 @@ in
         "kubelet.service"
       ];
       path = lib.optional config.networking.firewall.enable pkgs.nftables;
-      serviceConfig = {
+      serviceConfig = chalkosLib.internal.noExec // {
         Type = "oneshot";
         RemainAfterExit = true;
         ExecStart =

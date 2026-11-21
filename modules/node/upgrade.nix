@@ -4,6 +4,7 @@
 # it, and chalkd numbers the UKIs it installs by generation, the highest of which systemd-boot
 # boots first. A boot the boot loader counts is blessed only once chalkd found the node healthy.
 {
+  chalkosLib,
   config,
   lib,
   pkgs,
@@ -72,7 +73,7 @@ in
       before = [ "boot-complete.target" ];
       after = [ "chalkd.service" ];
       path = [ config.systemd.package ];
-      serviceConfig = {
+      serviceConfig = chalkosLib.internal.noExec // {
         Type = "oneshot";
         RemainAfterExit = true;
         ExecStart = "${lib.getExe chalkd} health --wait ${toString cfg.healthTimeout}${

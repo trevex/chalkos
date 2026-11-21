@@ -4,6 +4,7 @@
 # node's config, and writes everything node-specific below /run/chalkos/kubernetes before the
 # kubelet starts.
 {
+  chalkosLib,
   config,
   lib,
   options,
@@ -146,7 +147,7 @@ in
         "chalkos-node-addresses.target"
       ];
       before = [ "kubelet.service" ];
-      serviceConfig = {
+      serviceConfig = chalkosLib.internal.noExec // {
         Type = "oneshot";
         RemainAfterExit = true;
         ExecStart = lib.mkDefault "${lib.getExe chalkd} kubernetes prepare";

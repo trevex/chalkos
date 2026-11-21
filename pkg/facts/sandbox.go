@@ -8,10 +8,10 @@ import (
 )
 
 // Sandbox runs command facts as transient units that cannot change the node: read-only file
-// systems but /dev and a private /tmp, no network, no kernel tunables or module loading, and no new
-// privileges. Devices stay readable and root keeps its capabilities but CAP_SYS_MODULE, because
-// resolving disks and testing a passphrase read block devices, and cryptsetup may map a device for
-// a cipher the kernel crypto API lacks.
+// systems but /dev and a private /tmp, programs from the store alone, no network, no kernel
+// tunables or module loading, and no new privileges. Devices stay readable and root keeps its
+// capabilities but CAP_SYS_MODULE, because resolving disks and testing a passphrase read block
+// devices, and cryptsetup may map a device for a cipher the kernel crypto API lacks.
 //
 // Store, when set, is a non-running image's store, mounted as the unit's /nix/store; the fact's
 // program runs from it, links followed within it. systemd-run sets no separate argv[0], so a fact
@@ -20,8 +20,8 @@ type Sandbox struct {
 	Store string
 }
 
-// sandbox holds the properties of every fact's unit.
-var sandbox = []string{
+// sandbox holds the properties of every fact's unit, which runs programs from the store alone.
+var sandbox = append([]string{
 	"--property=ProtectSystem=strict",
 	"--property=ReadOnlyPaths=-/state",
 	"--property=ProtectHome=yes",
@@ -32,7 +32,7 @@ var sandbox = []string{
 	"--property=PrivateNetwork=yes",
 	"--property=RestrictAddressFamilies=AF_UNIX AF_ALG",
 	"--property=NoNewPrivileges=yes",
-}
+}, command.StoreOnly...)
 
 func (s Sandbox) Run(ctx context.Context, argv []string, stdin []byte, limit int) ([]byte, error) {
 	cmd, err := s.command(argv)
@@ -51,7 +51,8 @@ func (s Sandbox) command(argv []string) ([]string, error) {
 		// cryptsetup's lock directory, for the passphrase test.
 		"--property=ReadWritePaths=-/run/cryptsetup")
 	if s.Store != "" {
-		args = append(args, "--property=BindReadOnlyPaths="+s.Store+":/nix/store")
+		// The program runs from where the store is on the node, which systemd-run finds.
+		args = append(args, "--property=BindReadOnlyPaths="+s.Store+":/nix/store", "--property=ExecPaths="+s.Store)
 		if command.InStore(argv[0]) {
 			program, err := command.ResolveInStore(s.Store, argv[0])
 			if err != nil {

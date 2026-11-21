@@ -107,10 +107,11 @@ func TestSandboxStopsTheUnitWhenTheCallEnds(t *testing.T) {
 	}
 }
 
-// The unit runs under a dynamic user, on a read-only system with a private /tmp, without new
-// privileges, with the capabilities, groups and time limit of the run alone.
+// The unit runs under a dynamic user, on a read-only system with a private /tmp and programs from
+// the store alone, without new privileges, with the capabilities, groups and time limit of the run
+// alone.
 func TestSandboxArgs(t *testing.T) {
-	for _, p := range []string{"--property=DynamicUser=yes", "--property=ProtectSystem=strict", "--property=PrivateTmp=yes", "--property=NoNewPrivileges=yes"} {
+	for _, p := range []string{"--property=DynamicUser=yes", "--property=ProtectSystem=strict", "--property=PrivateTmp=yes", "--property=NoNewPrivileges=yes", "--property=NoExecPaths=/", "--property=ExecPaths=/nix/store"} {
 		if !slices.Contains(sandbox, p) {
 			t.Errorf("the sandbox lacks %s", p)
 		}

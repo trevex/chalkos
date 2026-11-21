@@ -434,14 +434,59 @@ in
   # set-user-ID effect or open as a device, as fstab gives their options: the root tmpfs, /run,
   # /dev/shm, the outputs' tmpfs and the ESP. /dev, which holds the devices, is noexec. The
   # worker's exec paths, containerd's and the kubelet's roots, reach chalkos-storage's generator,
-  # which mounts them, and containerd and the kubelet wait for them; the router has none. The
-  # sandboxes of the console and the cluster registry run programs from the store alone.
+  # which mounts them, and containerd and the kubelet wait for them; the router has none. Every
+  # unit that chalkos's node modules define or change runs programs from the store alone, through
+  # chalkosLib.internal.noExec, or is one of mayExec, with the reason it may not.
   noexec-mounts =
     let
       images = {
         worker = worker.config;
         router = router.config;
       };
+      # The units of chalkos's node modules that may run programs from outside the store, by the
+      # reason: a unit whose mounts the host must see can have no mount namespace of its own, and
+      # systemd's units keep the sandboxes systemd gives them.
+      mayExec = {
+        chalkd = "mounts volumes and the ESP, which the host must see";
+        chalkos-nat64 = "ip netns add mounts each instance's namespace on /run/netns";
+        containerd = "mounts the containers' file systems, which run from its exec path";
+        kubelet = "mounts the pods' volumes, whose programs run from its exec path";
+        systemd-networkd = "systemd's; the router gives it credentials alone";
+        systemd-sysctl = "systemd's; the router orders it alone";
+        systemd-bless-boot = "systemd's; chalkos names its ESP alone";
+      };
+      noExec =
+        s:
+        s.serviceConfig.NoExecPaths or null == [ "/" ]
+        && s.serviceConfig.ExecPaths or null == [ "/nix/store" ];
+      modules = "${self}/modules/node/";
+      # The enabled units chalkos's node modules define or change in the image.
+      ownUnits =
+        image:
+        lib.filter (name: image.config.systemd.services.${name}.enable or false) (
+          lib.unique (
+            lib.concatMap (
+              d: lib.optionals (lib.hasPrefix modules d.file) (lib.attrNames d.value)
+            ) image.options.systemd.services.definitionsWithLocations
+          )
+        );
+      units = lib.mapAttrs (_: ownUnits) {
+        inherit worker router;
+      };
+      unitFailures =
+        name: own:
+        map (
+          unit:
+          "the ${name}'s ${unit} may run programs from outside the store: give it chalkosLib.internal.noExec, or list it in mayExec in nix/checks/image.nix with the reason"
+        ) (lib.filter (unit: !(mayExec ? ${unit}) && !noExec images.${name}.systemd.services.${unit}) own);
+      allOwn = lib.unique (lib.concatLists (lib.attrValues units));
+      stale = lib.filter (
+        unit:
+        !lib.elem unit allOwn
+        || lib.any (c: c.systemd.services ? ${unit} && noExec c.systemd.services.${unit}) (
+          lib.attrValues images
+        )
+      ) (lib.attrNames mayExec);
       fstabLine =
         name: c: mountPoint: flags:
         let
@@ -481,10 +526,7 @@ in
         ) "the ${name}'s fs.protected_fifos is not 2"
         ++ lib.optional (
           c.boot.kernel.sysctl."fs.protected_regular" != 2
-        ) "the ${name}'s fs.protected_regular is not 2"
-        ++ lib.optional (
-          c.systemd.services.chalkos-console.serviceConfig.NoExecPaths or null != [ "/" ]
-        ) "the ${name}'s console may run programs from outside the store";
+        ) "the ${name}'s fs.protected_regular is not 2";
       w = images.worker;
       requiresMountsFor =
         unit: lib.toList (w.systemd.services.${unit}.unitConfig.RequiresMountsFor or [ ]);
@@ -508,9 +550,25 @@ in
         ++ lib.optional (
           !lib.elem "/var/lib/kubelet" (requiresMountsFor "kubelet")
         ) "the kubelet does not wait for /var/lib/kubelet"
-        ++ lib.optional (
-          w.systemd.services.chalkos-registry.serviceConfig.NoExecPaths or null != [ "/" ]
-        ) "the cluster registry may run programs from outside the store"
+        ++ lib.concatLists (lib.mapAttrsToList unitFailures units)
+        ++ lib.optional (lib.any (unit: !lib.elem unit units.worker) [
+          "chalkos-console"
+          "chalkos-registry"
+          "chalkos-kubernetes"
+        ]) "the worker lacks a unit the check expects of it"
+        ++ lib.optional (lib.any (unit: !lib.elem unit units.router) [
+          "chalkos-console"
+          "chalkos-firewall"
+          "frr-bgpd"
+          "kea-dhcp4@"
+          "unbound@"
+          "dnsmasq-relay@"
+          "chronyd"
+        ]) "the router lacks a unit the check expects of it"
+        ++ map (
+          unit:
+          "mayExec in nix/checks/image.nix lists ${unit}, which no image's node modules define without noExec"
+        ) stale
         ++ lib.optional (
           images.router.chalkos.storage.execPaths != { }
         ) "the router has exec paths: ${toString (lib.attrNames images.router.chalkos.storage.execPaths)}";

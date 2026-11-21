@@ -71,8 +71,8 @@ const stopMargin = 10 * time.Second
 // outputs and runs its validators under the config lock.
 const DefaultTimeout = 30 * time.Second
 
-// sandbox holds the properties of the units Sandbox runs.
-var sandbox = []string{
+// sandbox holds the properties of the units Sandbox runs, which run programs from the store alone.
+var sandbox = append([]string{
 	"--property=User=" + RenderUser,
 	"--property=CapabilityBoundingSet=",
 	"--property=AmbientCapabilities=",
@@ -93,7 +93,7 @@ var sandbox = []string{
 	"--property=ProtectControlGroups=yes",
 	"--property=InaccessiblePaths=-/state -/var -/run/chalkos/config -/run/chalkos/credentials -/run/chalkos/kubernetes",
 	"--property=DefaultDependencies=no",
-}
+}, command.StoreOnly...)
 
 // sandboxArgs is the systemd-run command line that runs p as unit, reading input and, for a
 // program that reports refusals, printing into output.

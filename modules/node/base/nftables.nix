@@ -5,6 +5,7 @@
 # in their places, in the same order, and keeps nixpkgs's ruleset file, which nft runs as its
 # interpreter, and its check.
 {
+  chalkosLib,
   config,
   lib,
   options,
@@ -52,7 +53,7 @@ in
         message = "modules/node/base/nftables.nix: nixpkgs's nftables ruleset includes deletions other than the module's; update the module to nixpkgs's nftables.nix";
       }
     ];
-    systemd.services.nftables.serviceConfig = {
+    systemd.services.nftables.serviceConfig = chalkosLib.internal.noExec // {
       ExecStart = lib.mkForce [
         ensure
         rules

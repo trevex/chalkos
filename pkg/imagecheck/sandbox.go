@@ -18,7 +18,7 @@ import (
 
 // Sandbox runs an image's checker as the oneshot transient unit chalkos-check.service, with the
 // image's store bound read-only over /nix/store: the checker's renderers and their checks, and
-// every program they name, come from the image. The unit:
+// every program they name, come from the image, and nothing else runs as a program. The unit:
 //   - runs as a user of its own (DynamicUser), without capabilities, devices or network, on a
 //     read-only system without STATE, /var or what chalkd keeps below /run/chalkos, so it reads
 //     no Secret's value; checks may open netlink sockets in a user and network namespace of their
@@ -59,7 +59,7 @@ func DefaultSandbox(dir string) Sandbox {
 }
 
 // properties are the unit's sandbox, as systemd-run's options.
-var properties = []string{
+var properties = append([]string{
 	"--property=DynamicUser=yes",
 	"--property=CapabilityBoundingSet=",
 	"--property=AmbientCapabilities=",
@@ -88,7 +88,7 @@ var properties = []string{
 	"--property=MemorySwapMax=0",
 	fmt.Sprintf("--property=LimitFSIZE=%d", MaxResult),
 	"--property=DefaultDependencies=no",
-}
+}, command.StoreOnly...)
 
 // unitArgs is the systemd-run command line that runs the checker of img.
 func (s Sandbox) unitArgs(img Image) []string {
@@ -97,6 +97,8 @@ func (s Sandbox) unitArgs(img Image) []string {
 	return append(args,
 		"--property=BindReadOnlyPaths="+img.Store+":/nix/store",
 		"--property=BindReadOnlyPaths="+img.Checker+":"+checker,
+		// Besides the store, the checker alone runs as a program.
+		"--property=ExecPaths="+checker,
 		"--property=BindPaths="+filepath.Join(s.Dir, "facts.sock")+":"+socket,
 		"--property=MemoryMax="+s.Memory,
 		fmt.Sprintf("--property=TimeoutStartSec=%dms", s.Timeout.Milliseconds()),

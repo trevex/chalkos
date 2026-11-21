@@ -277,7 +277,8 @@ func TestSandboxed(t *testing.T) {
 		"--property=PrivateTmp=yes", "--property=ProtectKernelTunables=yes",
 		"--property=ProtectKernelModules=yes", "--property=ProtectControlGroups=yes",
 		"--property=PrivateNetwork=yes", "--property=RestrictAddressFamilies=AF_UNIX AF_ALG",
-		"--property=NoNewPrivileges=yes", "--property=RuntimeMaxSec=30",
+		"--property=NoNewPrivileges=yes", "--property=NoExecPaths=/", "--property=ExecPaths=/nix/store",
+		"--property=RuntimeMaxSec=30",
 		"--property=ReadWritePaths=-/run/cryptsetup", "--",
 		"/nix/store/x/bin/chalkos-storage", "facts", "disks"}
 	if got, err := (Sandbox{}).command([]string{"/nix/store/x/bin/chalkos-storage", "facts", "disks"}); err != nil || !slices.Equal(got, want) {
@@ -300,7 +301,8 @@ func TestSandboxed(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	want = append(slices.Clone(want[:len(want)-4]), "--property=BindReadOnlyPaths="+store+":/nix/store", "--",
+	want = append(slices.Clone(want[:len(want)-4]), "--property=BindReadOnlyPaths="+store+":/nix/store",
+		"--property=ExecPaths="+store, "--",
 		store+"/y/bin/chalkos-storage", "facts", "disks")
 	if got, err := (Sandbox{Store: store}).command([]string{"/nix/store/x/bin/chalkos-storage", "facts", "disks"}); err != nil || !slices.Equal(got, want) {
 		t.Errorf("command = %v, %v\nwant %v", got, err, want)

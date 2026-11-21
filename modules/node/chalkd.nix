@@ -48,7 +48,7 @@ in
       ];
       wants = [ "network-pre.target" ];
       unitConfig.DefaultDependencies = false;
-      serviceConfig = {
+      serviceConfig = chalkosLib.internal.noExec // {
         Type = "oneshot";
         RemainAfterExit = true;
         ExecStart = "${lib.getExe chalkd} load-config";
@@ -93,8 +93,8 @@ in
 
         # chalkd mounts volumes the host must see, writes efivars and sets the hostname, so it gets
         # no file system or UTS namespace: no ProtectSystem, PrivateTmp, PrivateDevices,
-        # ProtectHostname and the like. ProtectKernelLogs stays off too, as systemd gives it a
-        # mount namespace that stops chalkd's mounts reaching the host.
+        # ProtectHostname and the like. ProtectKernelLogs and NoExecPaths stay off too, as systemd
+        # gives them a mount namespace that stops chalkd's mounts reaching the host.
         NoNewPrivileges = true;
         # cryptsetup and systemd-cryptenroll use the kernel crypto API through AF_ALG. A
         # control-plane node holding the cluster's VIPs announces them with gratuitous ARP through

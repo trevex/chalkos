@@ -126,7 +126,7 @@ in
       # nixpkgs's preStart fetches the root trust anchor and makes remote control's keys, which
       # the image does neither of; what is left is a shell script that runs nothing.
       preStart = lib.mkForce "";
-      serviceConfig = {
+      serviceConfig = chalkosLib.internal.noExec // {
         # unbound-control reaches Unbound through the socket the rendered config names in
         # /run/unbound, which Unbound makes its user's and group's alone; the directory admits
         # them and root, so chalkd.
