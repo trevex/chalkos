@@ -27,11 +27,6 @@ let
   # the node receives, so a network plugin of the cluster's own (cni.provider "none") must not
   # use it.
   controlPlaneMark = "0x02000000";
-  controlPlanePorts = pkgs.callPackage ./controlplane-ports.nix {
-    typeCommand = config.chalkos.kinds.Node.get { path = "spec.type"; };
-    ports = config.networking.firewall.enable;
-    mark = controlPlaneMark;
-  };
 in
 {
   config = lib.mkIf config.chalkos.kubernetes.enable {
@@ -47,6 +42,11 @@ in
       };
     };
 
+    # chalkd makes etcd's directory on a control plane, by the Node document's type. The NixOS
+    # firewall drops what its own input chain does not accept, whatever other tables do, so with
+    # the firewall chalkd loads a table of its own, chalkos-controlplane, that only marks TCP to
+    # 6443, 2379 and 2380 on a control plane, and the firewall accepts what carries the mark. The
+    # firewall's reloads leave the table alone. On a worker the table goes.
     systemd.services.chalkos-controlplane = {
       description = "Open the control plane's ports and make etcd's directory by the node's type";
       chalkos.kinds = [ "Node" ];
@@ -61,10 +61,13 @@ in
         "chalkos-kubernetes.service"
         "kubelet.service"
       ];
+      path = lib.optional config.networking.firewall.enable pkgs.nftables;
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
-        ExecStart = lib.getExe controlPlanePorts;
+        ExecStart =
+          "${chalkd} kubernetes controlplane"
+          + lib.optionalString config.networking.firewall.enable " --firewall-mark ${controlPlaneMark}";
       };
     };
 

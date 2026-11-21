@@ -2979,6 +2979,25 @@ lib.runTests {
         execStart = true;
       };
     };
+  # The Kubernetes layer's units run chalkd itself, with no script around it: the control plane's
+  # ports with the firewall's mark and the nft that loads them, and containerd's registry hosts.
+  testKubernetesUnitsRunChalkd =
+    let
+      units = w.systemd.services;
+      chalkd = builtins.match "/nix/store/[^ /]*-chalkd-[^ /]*/bin/chalkd (.*)";
+    in
+    {
+      expr = {
+        controlplane = chalkd units.chalkos-controlplane.serviceConfig.ExecStart;
+        nft = lib.elem "nftables" (map lib.getName units.chalkos-controlplane.path);
+        mirrors = chalkd units.chalkos-registry-mirrors.serviceConfig.ExecStart;
+      };
+      expected = {
+        controlplane = [ "kubernetes controlplane --firewall-mark 0x02000000" ];
+        nft = true;
+        mirrors = [ "kubernetes registry-mirrors" ];
+      };
+    };
   # The image's build-time facts, which chalkd reads with the node's config: the kubelet's release
   # and the pod network. The node's file is the image directory's facts/kubernetes.json.
   testImageFacts =

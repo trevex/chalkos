@@ -2,11 +2,8 @@ package kubernetes
 
 import (
 	"fmt"
-	"io"
-	"maps"
 	"os"
 	"path/filepath"
-	"slices"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -17,11 +14,11 @@ import (
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
-	"github.com/trevex/chalkos/pkg/kubernetes/clusterregistry"
 	"github.com/trevex/chalkos/pkg/kubernetes/credprovider"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	"github.com/trevex/chalkos/pkg/kubernetes/translate"
 	"github.com/trevex/chalkos/pkg/kubernetes/vxlan"
+	"github.com/trevex/chalkos/pkg/tool"
 )
 
 var _ layer.Commands = (*Plugin)(nil)
@@ -56,14 +53,15 @@ func (p *Plugin) Commands() []*cobra.Command {
 				return vxlan.Default().Apply(file)
 			},
 		},
+		controlPlaneCommand(),
 		{
-			Use:   "containerd-hosts",
-			Short: "Print containerd's hosts.toml of each registry the node's documents name",
-			Long: "Print containerd's hosts.toml of each registry the node's Mirror, Registry and\n" +
-				"ClusterRegistry documents name, each after a line \"=== <directory>\". The cluster\n" +
-				"registry's endpoints come first, the one the node serves first of them.",
+			Use:   "registry-mirrors",
+			Short: "Write containerd's registry hosts from the node's documents",
+			Long: "Write containerd's hosts.toml of each registry the node's Mirror, Registry and\n" +
+				"ClusterRegistry documents name below " + certsDir + ", swapped in for the old files in\n" +
+				"one rename. The cluster registry's endpoints come first, the one the node serves first of them.",
 			Args: cli.NoArgs,
-			RunE: func(cmd *cobra.Command, _ []string) error { return containerdHosts(cmd.OutOrStdout(), runDir) },
+			RunE: func(*cobra.Command, []string) error { return registryMirrors(runDir, certsDir) },
 		},
 		{
 			Use:   "containerd-config FILE",
@@ -96,6 +94,31 @@ func (p *Plugin) Commands() []*cobra.Command {
 	}
 }
 
+// controlPlaneCommand is chalkd kubernetes controlplane [--firewall-mark MARK].
+func controlPlaneCommand() *cobra.Command {
+	var mark string
+	cmd := &cobra.Command{
+		Use:   "controlplane",
+		Short: "Make etcd's directory and open the control plane's ports by the node's type",
+		Long: "Make etcd's directory on a control plane. With --firewall-mark, also load the nftables table\n" +
+			controlPlaneTable + " on a control plane, which marks TCP to 6443, 2379 and 2380 with MARK for\n" +
+			"the firewall to accept, and delete it on a worker.",
+		Args: cli.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if mark != "" {
+				m, err := parseMark(mark)
+				if err != nil {
+					return cli.Usagef("--firewall-mark %v", err)
+				}
+				mark = m
+			}
+			return controlPlane(cmd.Context(), tool.ExecRunner{}, runDir, etcdDir, mark)
+		},
+	}
+	cmd.Flags().StringVar(&mark, "firewall-mark", "", "packet mark bit the firewall accepts the control plane's ports with")
+	return cmd
+}
+
 // prepareKubernetes prepares the node for Kubernetes, and with withRule then fills the firewall's
 // VXLAN table.
 func prepareKubernetes(withRule bool) error {
@@ -104,44 +127,6 @@ func prepareKubernetes(withRule bool) error {
 		firewall = knode.VXLANRule(vxlan.Default())
 	}
 	return knode.State{Paths: knode.DefaultPaths()}.Prepare(time.Now(), knode.WaitForAddresses, firewall)
-}
-
-// osCAs holds the OS CAs a node trusts: STATE's chalkd/ca.crt. The cluster registry's endpoints
-// serve node certificates, which they verify.
-const osCAs = "/state/chalkd/ca.crt"
-
-// containerdHosts prints containerd's hosts.toml of each registry the node's Mirror, Registry and
-// ClusterRegistry documents below runDir name, by its directory below containerd's config_path,
-// each after a line "=== <directory>", for chalkos-registry-mirrors to write. The cluster
-// registry's endpoints come first, the one this node serves first of them.
-func containerdHosts(w io.Writer, runDir string) error {
-	docs, err := slot.ReadRuntime(runDir)
-	if err != nil {
-		return err
-	}
-	r, err := config.RegistriesOf(docs, nil)
-	if err != nil {
-		return err
-	}
-	cluster, ok, err := translate.ClusterRegistry(docs)
-	if err != nil {
-		return err
-	}
-	first := map[string][]config.HostEndpoint{}
-	if ok {
-		for host, urls := range cluster.MirrorURLs(clusterregistry.Addrs(config.StaticAddresses(docs))) {
-			for _, u := range urls {
-				first[host] = append(first[host], config.HostEndpoint{URL: u, OverridePath: true, CA: osCAs})
-			}
-		}
-	}
-	files := r.HostsTOML(first)
-	for _, dir := range slices.Sorted(maps.Keys(files)) {
-		if _, err := fmt.Fprintf(w, "=== %s\n%s", dir, files[dir]); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // containerdConfig writes the containerd settings that come from the node's Cluster document

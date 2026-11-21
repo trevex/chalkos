@@ -110,7 +110,7 @@ Each row names where a change goes and the checks that cover it. `nix build
 | Secure Boot checks or signing | `pkg/secureboot`, `pkg/imagesign` | `go-unit`, `e2e-secureboot` |
 | OCI images | `pkg/ociimage`, `pkg/chalkbuild` | `go-unit`, `image-oci` |
 | Kubernetes on a node | `pkg/kubernetes` and its subpackages, `pkg/chalkd/layers/kubernetes`, `modules/node/kubernetes/` | `go-unit`, `eval`, `e2e-kubernetes`, `e2e-kubernetes-ha` |
-| containerd or registries | `modules/node/kubernetes/containerd.nix`, `registries.nix`, `registry-mirrors.nix` | `containerd-config`, `registry-mirrors` |
+| containerd or registries | `modules/node/kubernetes/containerd.nix`, `registries.nix`, `pkg/chalkd/layers/kubernetes/units.go` | `containerd-config`, `registry-mirrors`, `go-unit` |
 | The node's clock | `modules/node/time.nix` | `chrony-dhcp`, `image-tests` |
 | A router feature | `modules/node/router/<feature>/`, its renderer in `cmd/chalkos-render`, `pkg/router/derive` | `rules`, `image-tests`, `eval-kinds`, its `router-<feature>` check where one exists, `e2e-router` |
 | Status or the console | `pkg/statusview`, `pkg/console` and their `layers/<layer>` | `go-unit` |

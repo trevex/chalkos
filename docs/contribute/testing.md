@@ -357,7 +357,7 @@ Every check builds with `nix build`, and a change runs the checks of the parts i
 | The router's DHCP and relays: the `DHCPSubnet` and `DHCPRelay` kinds, the `kea` and `dhcp-relay` outputs, their units, `pkg/router` | `router-dhcp`, `router-dhcp6`, `router-dhcp-relay`, `router-firewall`, `rules`, `image-tests`, `eval`, `eval-kinds`, `go-unit`, `e2e-router` |
 | The router's time server: the `TimeServer` kind, the `chrony-server` output, `modules/node/router/ntp` | `rules`, `image-tests`, `eval`, `eval-kinds`, `go-unit`, `e2e-router` |
 | An image's checker: `pkg/imagecheck`, `chalkd check` | `image-checker`, `go-unit`, `go-lint`, `e2e-upgrade` |
-| containerd or registries: `modules/node/kubernetes/containerd.nix`, `registries.nix`, `registry-mirrors.nix` | `containerd-config`, `registry-mirrors`, `eval`, `image-tests`, `e2e-kubernetes` |
+| containerd or registries: `modules/node/kubernetes/containerd.nix`, `registries.nix`, `pkg/chalkd/layers/kubernetes/units.go` | `containerd-config`, `registry-mirrors`, `go-unit`, `eval`, `image-tests`, `e2e-kubernetes` |
 | The node's clock: `modules/node/time.nix`, the `TimeSync` kind | `chrony-dhcp`, `eval`, `eval-kinds`, `image-tests` |
 | OCI images: `pkg/ociimage`, `pkg/chalkbuild` | `go-unit`, `go-lint`, `image-oci`, `e2e-installer`, `e2e-upgrade` |
 | The console: `pkg/console`, `cmd/chalkos-console` | `go-unit`, `go-lint`, `e2e-image` |
