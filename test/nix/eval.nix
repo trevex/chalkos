@@ -778,7 +778,7 @@ lib.runTests {
           inherit (vrf.serviceConfig) BindNetworkInterface;
           inherit (vrf.unitConfig) Requires;
           records =
-            builtins.match "/nix/store/[^ ]*-chalkos-vrf-device dnsmasq-relay %I" vrf.serviceConfig.ExecStartPre
+            builtins.match "/nix/store/[^ ]*/bin/chalkd router record-device dnsmasq-relay %I" vrf.serviceConfig.ExecStartPre
             != null;
         };
         reconciler = {
@@ -1308,7 +1308,7 @@ lib.runTests {
           inherit (vrf.unitConfig) Requires ConditionPathExists;
           bound = vrf.unitConfig ? BindsTo;
           records =
-            builtins.match "/nix/store/[^ ]*-chalkos-vrf-device kea-dhcp4 %I" vrf.serviceConfig.ExecStartPre
+            builtins.match "/nix/store/[^ ]*/bin/chalkd router record-device kea-dhcp4 %I" vrf.serviceConfig.ExecStartPre
             != null;
         };
         server6 = {
@@ -1327,7 +1327,7 @@ lib.runTests {
           vrf = {
             inherit (vrf6.serviceConfig) BindNetworkInterface;
             records =
-              builtins.match "/nix/store/[^ ]*-chalkos-vrf-device kea-dhcp6 %I" vrf6.serviceConfig.ExecStartPre
+              builtins.match "/nix/store/[^ ]*/bin/chalkd router record-device kea-dhcp6 %I" vrf6.serviceConfig.ExecStartPre
               != null;
             inherit (vrf6.unitConfig) ConditionPathExists;
           };
@@ -1336,7 +1336,7 @@ lib.runTests {
           inherit (routes) after wantedBy;
           inherit (routes.unitConfig) StartLimitIntervalSec;
           inherit (routes.serviceConfig) Type RestrictAddressFamilies;
-          ip = hasPackage "iproute2" routes.path;
+          ip = hasPackage "iproute2-ip" routes.path;
           path = {
             inherit (edge.systemd.paths.chalkos-dhcp6-routes) wantedBy;
             inherit (edge.systemd.paths.chalkos-dhcp6-routes.pathConfig) PathChanged TriggerLimitIntervalSec;
@@ -1550,7 +1550,7 @@ lib.runTests {
             inherit (u.unitConfig) Requires ConditionPathExists;
             bound = u.unitConfig ? BindsTo;
             records =
-              builtins.match "/nix/store/[^ ]*-chalkos-vrf-device unbound %I" u.serviceConfig.ExecStartPre
+              builtins.match "/nix/store/[^ ]*/bin/chalkd router record-device unbound %I" u.serviceConfig.ExecStartPre
               != null;
             after = lib.all (x: lib.elem x u.after) [
               "sys-subsystem-net-devices-%i.device"

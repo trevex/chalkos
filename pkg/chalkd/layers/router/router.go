@@ -59,6 +59,22 @@ type Options struct {
 	RunDir string
 	// NetDir holds a directory per network device, with its index; default /sys/class/net.
 	NetDir string
+	// Links lists the network devices, IPv4Addrs the IPv4 addresses of one or, for "", every
+	// device, and ProtocolRoutes the routes of a protocol in every table; nil reads them through
+	// netlink.
+	Links          func() ([]routing.Link, error)
+	IPv4Addrs      func(link string) ([]routing.Addr, error)
+	ProtocolRoutes func(family, proto int) ([]routing.TableRoute, error)
+	// NetworkdDir is the directory of the output networkd, which networkd reads; default
+	// /run/systemd/network.
+	NetworkdDir string
+	// NetdevDirs are the directories networkd reads its units from, in its order; default
+	// /etc/systemd/network, NetworkdDir, /usr/local/lib/systemd/network and
+	// /usr/lib/systemd/network.
+	NetdevDirs []string
+	// NetnsDir holds the named network namespaces, those of the NAT64s among them; default
+	// /run/netns.
+	NetnsDir string
 }
 
 // withDefaults returns o with each zero field set to chalkd's own.
@@ -76,6 +92,20 @@ func (o Options) withDefaults() Options {
 	o.VRFDir = cmp.Or(o.VRFDir, defaultVRFDir)
 	o.RunDir = cmp.Or(o.RunDir, "/run")
 	o.NetDir = cmp.Or(o.NetDir, "/sys/class/net")
+	if o.Links == nil {
+		o.Links = routing.Links
+	}
+	if o.IPv4Addrs == nil {
+		o.IPv4Addrs = routing.IPv4Addrs
+	}
+	if o.ProtocolRoutes == nil {
+		o.ProtocolRoutes = routing.ProtocolRoutes
+	}
+	o.NetworkdDir = cmp.Or(o.NetworkdDir, "/run/systemd/network")
+	if o.NetdevDirs == nil {
+		o.NetdevDirs = []string{"/etc/systemd/network", o.NetworkdDir, "/usr/local/lib/systemd/network", "/usr/lib/systemd/network"}
+	}
+	o.NetnsDir = cmp.Or(o.NetnsDir, "/run/netns")
 	return o
 }
 

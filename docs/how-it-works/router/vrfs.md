@@ -140,7 +140,9 @@ run them.
 
 `networkctl reload` creates a VRF whose `.netdev` is new and moves links in and out of VRFs as
 their `.network` files say. It does not change the table of a VRF that exists, and it does not
-remove a VRF whose `.netdev` went. `chalkos-vrf.service` covers both. It reads the `.netdev` files
+remove a VRF whose `.netdev` went. `chalkos-vrf.service` covers both: it runs
+`chalkd router prune-devices`, which lists the kernel's devices over netlink and removes them with
+`ip`. It reads the `.netdev` files
 of `Kind=vrf` from `/etc/systemd/network`, `/run/systemd/network`, `/usr/local/lib/systemd/network`
 and `/usr/lib/systemd/network`, with the first of a name winning as networkd reads them. It then
 removes each kernel VRF that no file declares with its table.

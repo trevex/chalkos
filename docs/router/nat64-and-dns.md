@@ -75,7 +75,7 @@ An address that DHCP gives the uplink is not in any document, so the rules canno
 fails before it changes any instance and names the link:
 
 ```text
-chalkos-nat64: NAT64 edge: the pool entry 192.0.2.252/30 holds 192.0.2.253, an address of the link eth0, which the router answers itself; leave pool4 empty to take the address of the link the connections leave through; no instance changed
+chalkd router nat64: NAT64 edge: the pool entry 192.0.2.252/30 holds 192.0.2.253, an address of the link eth0, which the router answers itself; leave pool4 empty to take the address of the link the connections leave through; no instance changed
 ```
 
 Give such an uplink an empty `pool4`.

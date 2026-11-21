@@ -27,16 +27,8 @@ let
     cp out/ruleset.nft $out
   '';
   # A rendered ruleset that nft refuses leaves the fallback in place and fails the unit.
-  load = pkgs.writeShellScript "chalkos-firewall-load" ''
-    if [ ! -e ${ruleset} ]; then
-      echo "the node has no rendered ruleset; loading the fallback ruleset, which forwards nothing" >&2
-      exec ${nft} -f ${fallback}
-    fi
-    ${nft} -f ${ruleset} && exit 0
-    echo "nft refused ${ruleset}; loading the fallback ruleset, which forwards nothing" >&2
-    ${nft} -f ${fallback}
-    exit 1
-  '';
+  # chalkd runs nft from the unit's path.
+  load = "${lib.getExe pkgs.chalkos.chalkd} router load-firewall ${ruleset} ${fallback}";
 in
 {
   config = lib.mkIf config.chalkos.router.enable {
@@ -134,6 +126,7 @@ in
         "sysinit.target"
       ];
       wantedBy = [ "multi-user.target" ];
+      path = [ pkgs.nftables ];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;

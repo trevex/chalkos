@@ -5,9 +5,9 @@
 # not exist and stops when a reload does, so chalkos-dhcp starts the servers once their links
 # exist. A reload keeps the leases.
 #
-# Kea routes no prefix its DHCPv6 servers delegate: its run_script hook, chalkos-dhcp6-pd, records
-# each in /var/lib/chalkos-dhcp6-pd as kea, and chalkos-dhcp6-routes, which a change there starts,
-# routes each to the link-local address that asked for it. kea owns the records' directory but
+# Kea routes no prefix its DHCPv6 servers delegate: its run_script hook, chalkd router dhcp6-pd,
+# records each in /var/lib/chalkos-dhcp6-pd as kea, and chalkos-dhcp6-routes, which a change there
+# starts, routes each to the link-local address that asked for it. kea owns the records' directory but
 # cannot write /var/lib, so it cannot put another directory in its place; chalkd reads the records
 # as root and removes none.
 {
@@ -27,59 +27,19 @@ let
   # The hook writes each record here first and renames it into pdRecords, on the same file system,
   # so that the path unit sees a record once it is whole.
   pdRecordsNew = "/var/lib/chalkos-dhcp6-pd.new";
-  # Kea's run_script hook, run with the hook point's name and the leases' variables alone. A file
-  # per delegated prefix, <link>_<prefix>_<length>, readable by every user, holds the link-local
-  # address that asked for it and when its lease ends; release or expiry removes it. Values reach
+  # Kea's run_script hook, which Kea runs with the hook point's name and the leases' variables
+  # alone: chalkd router dhcp6-pd, through a link of chalkd whose name gives the command. A file per
+  # delegated prefix, <link>_<prefix>_<length>, readable by every user, holds the link-local address
+  # that asked for it and when its lease ends; release, decline or expiry removes it. Values reach
   # a file name only once they match the patterns of a link, an IPv6 address and a length; chalkd
   # router dhcp6-routes checks them again.
-  pdHook = pkgs.writeShellApplication {
-    name = "chalkos-dhcp6-pd";
-    runtimeInputs = [ pkgs.coreutils ];
-    text = ''
-      dir=${pdRecords}
-      link=''${QUERY6_IFACE_NAME:-}
-      via=''${QUERY6_REMOTE_ADDR:-}
-      [[ $link =~ ^[A-Za-z0-9_.:@-]{1,15}$ ]] || link=
-      # The record of the prefix $1 of the length $2 on the link the request came in on.
-      record() {
-        [[ -n $link && $1 =~ ^[0-9a-f:]{2,39}$ && $2 =~ ^[0-9]{1,3}$ ]] || return 1
-        printf '%s/%s_%s_%s' "$dir" "$link" "$1" "$2"
-      }
-      case ''${1:-} in
-      leases6_committed)
-        for ((i = 0; i < ''${DELETED_LEASES6_SIZE:-0}; i++)); do
-          t=DELETED_LEASES6_AT''${i}_TYPE a=DELETED_LEASES6_AT''${i}_ADDRESS l=DELETED_LEASES6_AT''${i}_PREFIX_LEN
-          [[ ''${!t:-} == IA_PD ]] || continue
-          if f=$(record "''${!a:-}" "''${!l:-}"); then rm -f "$f"; fi
-        done
-        for ((i = 0; i < ''${LEASES6_SIZE:-0}; i++)); do
-          t=LEASES6_AT''${i}_TYPE a=LEASES6_AT''${i}_ADDRESS l=LEASES6_AT''${i}_PREFIX_LEN
-          c=LEASES6_AT''${i}_CLTT v=LEASES6_AT''${i}_VALID_LIFETIME
-          [[ ''${!t:-} == IA_PD && $via =~ ^fe80:[0-9a-f:]*$ && ''${!c:-} =~ ^[0-9]+$ && ''${!v:-} =~ ^[0-9]+$ ]] || continue
-          f=$(record "''${!a:-}" "''${!l:-}") || continue
-          # Written whole in a directory of its own, then renamed, so that chalkd never reads half a
-          # record and the path unit sees the record once.
-          tmp=$(mktemp "${pdRecordsNew}/XXXXXX")
-          echo "$via $((''${!c} + ''${!v}))" >"$tmp"
-          chmod 0644 "$tmp"
-          mv -f "$tmp" "$f"
-        done
-        ;;
-      lease6_release | lease6_decline)
-        [[ ''${LEASE6_TYPE:-} == IA_PD ]] || exit 0
-        if f=$(record "''${LEASE6_ADDRESS:-}" "''${LEASE6_PREFIX_LEN:-}"); then rm -f "$f"; fi
-        ;;
-      lease6_expire)
-        # An expiry names no link: the prefix's record of any link goes.
-        [[ ''${LEASE6_TYPE:-} == IA_PD && ''${LEASE6_ADDRESS:-} =~ ^[0-9a-f:]{2,39}$ && ''${LEASE6_PREFIX_LEN:-} =~ ^[0-9]{1,3}$ ]] || exit 0
-        rm -f "$dir"/*_"$LEASE6_ADDRESS"_"$LEASE6_PREFIX_LEN"
-        ;;
-      esac
-    '';
-  };
+  pdHook = pkgs.runCommand "chalkos-dhcp6-pd" { meta.mainProgram = "chalkd-router-dhcp6-pd"; } ''
+    mkdir -p $out/bin
+    ln -s ${lib.getExe pkgs.chalkos.chalkd} $out/bin/chalkd-router-dhcp6-pd
+  '';
   # A server's sandbox: user kea, port 67 or 547, sockets in /run/kea and leases in /var/lib/kea,
   # which the servers share and which outlive them. DHCPv4 uses raw sockets; DHCPv6 uses UDP and
-  # runs chalkos-dhcp6-pd, which Kea runs only from KEA_HOOK_SCRIPTS_PATH. A server that stops by
+  # runs pdHook, which Kea runs only from KEA_HOOK_SCRIPTS_PATH. A server that stops by
   # itself, as when a link it serves goes away, starts again every 5 seconds.
   server =
     family:
@@ -224,7 +184,7 @@ in
           after = [ "chalkos-dhcp.service" ];
           unitConfig.StartLimitIntervalSec = 0;
           wantedBy = [ "multi-user.target" ];
-          path = [ pkgs.iproute2 ];
+          path = [ pkgs.chalkos.iproute2-ip ];
           serviceConfig = hardened // {
             Type = "oneshot";
             ExecStart = "${lib.getExe pkgs.chalkos.chalkd} router dhcp6-routes";

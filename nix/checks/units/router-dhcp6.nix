@@ -24,7 +24,8 @@ let
   routes = "timeout ${routesUnit.TimeoutStartSec} ${boundTo routesUnit.CapabilityBoundingSet} ${routesUnit.ExecStart}";
   records = router.systemd.paths.chalkos-dhcp6-routes.pathConfig.PathChanged;
   dir = router.chalkos.outputs.kea.dir;
-  leases = lib.elemAt router.chalkos.diagnostics.dhcp-leases.command 2;
+  # The diagnostic's command without its parameters' arguments.
+  leases = lib.concatStringsSep " " (lib.take 3 router.chalkos.diagnostics.dhcp-leases.command);
   inherit (checkLib) routerRendered;
 in
 unitCheck "router-dhcp6"
@@ -110,7 +111,7 @@ unitCheck "router-dhcp6"
       fail "access's table routes no prefix to the home router: $(ip -6 route show table 500)"
 
     # listed: the leases dhcp-leases lists, without the header and their ends.
-    listed() { bash -c ${lib.escapeShellArg leases} dhcp-leases "$@" | tail -n +2 | cut -f 1-5; }
+    listed() { ${leases} "$@" | tail -n +2 | cut -f 1-5; }
     [ "$(listed --subnet=customers | cut -f 1-3)" = "$(printf 'access\tcustomers\t2001:db8:100::/56')" ] ||
       fail "dhcp-leases lists no delegated prefix: $(listed)"
     [ "$(listed --mac=52:54:00:12:34:56 --subnet=office6)" = "$(printf 'default\toffice6\t2001:db8:1::10\t52:54:00:12:34:56\tprinter')" ] ||

@@ -52,14 +52,14 @@ in
     # The clients that chrony answered lately, and how many requests it served and dropped.
     chalkos.diagnostics.ntp-clients = {
       description = "The NTP clients the router's time server answered, as chronyc -n clients prints them, and its counts of requests, as chronyc serverstats prints them.";
+      # chalkd runs chronyc -h 127.0.0.1,::1 -n clients, prints an empty line, and runs chronyc
+      # serverstats, whose exit status it takes.
       command = [
-        "${pkgs.bash}/bin/bash"
-        "-c"
-        ''
-          ${chrony}/bin/chronyc -h 127.0.0.1,::1 -n clients
-          echo
-          exec ${chrony}/bin/chronyc -h 127.0.0.1,::1 serverstats
-        ''
+        (lib.getExe pkgs.chalkos.chalkd)
+        "router"
+        "ntp-clients"
+        "--chronyc"
+        "${chrony}/bin/chronyc"
       ];
       role = "reader";
       timeout = "10s";
