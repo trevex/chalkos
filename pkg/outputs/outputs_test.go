@@ -184,7 +184,8 @@ func TestRenderFailures(t *testing.T) {
 		"refused": def(t, r.Root, ok, script(t, `echo "bad file" >&2; exit 1`)),
 		"link":    def(t, r.Root, script(t, `ln -s /etc/passwd "$OUT/passwd"`), ""),
 		"big":     def(t, r.Root, script(t, `head -c 16777217 /dev/zero > "$OUT/big"`), ""),
-		"fine":    def(t, r.Root, ok, script(t, `grep -q fine "$OUT/file"`)),
+		// A check is a program with its arguments, with $OUT in its environment.
+		"fine": def(t, r.Root, ok, script(t, `grep -q "$2" "$OUT/$1"`)+" file fine"),
 	}
 	for name, d := range defs {
 		d.Dir = filepath.Join(r.Root, name)
@@ -354,9 +355,11 @@ func TestRenderTimeout(t *testing.T) {
 // opens. A check may write nothing, prints nowhere, and may open netlink sockets too. No file
 // either writes grows past MaxSize, and systemd stops either at its timeout.
 func TestSandboxArgs(t *testing.T) {
-	p := Program{Argv: []string{"/nix/store/x/bin/r", "a"}, Out: "/run/chalkos/outputs/.staging/demo.1", Write: true, Report: true, Timeout: 30 * time.Second}
+	p := Program{Argv: []string{"/nix/store/x/bin/r", "a", "$OUT/file"}, Out: "/run/chalkos/outputs/.staging/demo.1", Write: true, Report: true, Timeout: 30 * time.Second}
 	args := strings.Join(sandboxArgs("chalkos-render-1.service", p, "/in", "/out"), "\n")
 	for _, want := range []string{
+		// The program gets $OUT in its arguments as it is, as Direct passes it.
+		"--expand-environment=no",
 		"--property=User=chalkos-render",
 		"--property=CapabilityBoundingSet=",
 		"--property=NoNewPrivileges=yes",
@@ -371,7 +374,7 @@ func TestSandboxArgs(t *testing.T) {
 		"--property=StandardOutput=truncate:/out",
 		"--property=StandardInput=file:/in",
 		"--property=RestrictAddressFamilies=AF_UNIX",
-		"--\n/nix/store/x/bin/r\na",
+		"--\n/nix/store/x/bin/r\na\n$OUT/file",
 	} {
 		if !strings.Contains(args+"\n", want+"\n") {
 			t.Errorf("the arguments lack %q:\n%s", want, args)

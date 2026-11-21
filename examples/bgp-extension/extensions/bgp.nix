@@ -163,14 +163,23 @@ in
 
   # --8<-- [start:output]
   # bird.conf, with a session per Peer and interface. bird -p parses a config without running it;
-  # the constants the password lines name exist on the node alone, so the check defines each first.
+  # the constants the password lines name exist on the node alone, so the check, a script of the
+  # module's own, defines each first. chalkd runs it without a shell and with no PATH of use.
   chalkos.outputs.bird-conf = {
     inputs = [
       "Speaker"
       "Peer"
     ];
     render = chalkosLib.render.template ./bird.conf.tmpl;
-    check = ''
+    check = pkgs.writeShellScript "bird-conf-check" ''
+      set -e
+      PATH=${
+        lib.makeBinPath [
+          pkgs.coreutils
+          pkgs.gnugrep
+          pkgs.gnused
+        ]
+      }
       conf=$(mktemp)
       grep -o "'secret_[^']*'" "$OUT/bird.conf" | sort -u | sed 's/.*/define & = "checked";/' >"$conf"
       echo "include \"$OUT/bird.conf\";" >>"$conf"

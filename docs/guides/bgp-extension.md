@@ -292,6 +292,12 @@ Then declare the output in the body:
 --8<-- "examples/bgp-extension/extensions/bgp.nix:output"
 ```
 
+The check is a program, which chalkd runs without a shell. bird needs a constant for each password
+line, so this check is a script of the module's own that defines them before it runs `bird -p`. A
+check that only runs a program on the files needs no script:
+`chalkosLib.check.run [ "${bird}/bin/bird" "-p" "-c" "$OUT/bird.conf" ]` would do for a config
+without passwords.
+
 On a node, chalkd renders and checks every output before a delivery changes anything, and refuses
 the delivery when one fails. The same renderer and check run in the image's tests, without a node.
 
@@ -358,7 +364,7 @@ echo the documents. What bird printed is in the build's log. Build with `-L` to 
 ```console
 $ nix build -L .#nixosConfigurations.node-bird-metal.config.system.build.chalkosTestResults
 ...
-chalkos-test-results> 2026/11/16 07:52:35 output bird-conf: its check /nix/store/39kg0jfg9wiagx56jrf3hpnwjvh6xv44-chalkos-output-bird-conf-check failed (exit 1): "bird: 2026-11-16 07:52:35.151 [0000] <FATAL> /build/chalkos-tests-2581098952/.staging/bird-conf.1551592570/bird.conf:4:1 syntax error, unexpected PROTOCOL, expecting ';'"
+chalkos-test-results> 2026/11/16 07:52:35 output bird-conf: its check /nix/store/39kg0jfg9wiagx56jrf3hpnwjvh6xv44-bird-conf-check failed (exit 1): "bird: 2026-11-16 07:52:35.151 [0000] <FATAL> /build/chalkos-tests-2581098952/.staging/bird-conf.1551592570/bird.conf:4:1 syntax error, unexpected PROTOCOL, expecting ';'"
 ...
 ```
 

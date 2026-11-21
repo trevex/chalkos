@@ -394,76 +394,76 @@ in
         refused ${brokenDiagnostic.chalkosRulesImage} 'diagnostic broken: parameter table: its regex: error parsing regexp: missing closing ]'
         # The check of chrony's output passes the servers its template renders, and refuses a
         # line chronyd does not parse or a sourcedir file does not take.
-        check=$(jq -r .chrony.check ${testing.test-metal.nixos.config.system.build.chalkosOutputs})
+        read -ra check < <(jq -r .chrony.check ${testing.test-metal.nixos.config.system.build.chalkosOutputs})
         mkdir chrony
         printf 'server a.example iburst nts\nserver 10.0.0.1 iburst port 12300\n' >chrony/servers.sources
-        OUT=$PWD/chrony $check </dev/null
+        OUT=$PWD/chrony "''${check[@]}" </dev/null
         for bad in 'server a.example iburst bogus' 'pool a.example iburst' 'server a.example iburst nts maxpoll'; do
           printf '%s\n' "$bad" >chrony/servers.sources
-          refuses "chrony's check of $bad" "" env OUT=$PWD/chrony "$check" </dev/null
+          refuses "chrony's check of $bad" "" env OUT=$PWD/chrony "''${check[@]}" </dev/null
         done
         # The check of the router's time server passes the lines its renderer writes, and refuses
         # a subnet chronyd -p takes and any line of another form.
-        check=$(jq -r '."chrony-server".check' ${routerBuild.chalkosOutputs})
+        read -ra check < <(jq -r '."chrony-server".check' ${routerBuild.chalkosOutputs})
         mkdir chrony-server
         printf '# header\nallow 192.0.2.0/24\nallow 2001:db8:1::/64\nratelimit interval 1 burst 16\nlocal stratum 15 orphan\n' >chrony-server/server.conf
-        OUT=$PWD/chrony-server $check </dev/null
+        OUT=$PWD/chrony-server "''${check[@]}" </dev/null
         for bad in 'allow 10' 'allow all' 'local stratum 10' 'local stratum 16 orphan' 'port 0'; do
           printf '%s\n' "$bad" >chrony-server/server.conf
-          refuses "chrony-server's check of $bad" "" env OUT=$PWD/chrony-server "$check" </dev/null
+          refuses "chrony-server's check of $bad" "" env OUT=$PWD/chrony-server "''${check[@]}" </dev/null
         done
         # The check of the router's firewall passes the LAN example's ruleset and refuses one the
         # kernel would not load, with nft in a user and network namespace of its own.
-        check=$(jq -r '."router-nftables".check' ${routerBuild.chalkosOutputs})
+        read -ra check < <(jq -r '."router-nftables".check' ${routerBuild.chalkosOutputs})
         mkdir nftables
         install -m 644 ${routerRuleset "lan"} nftables/ruleset.nft
-        OUT=$PWD/nftables $check </dev/null
+        OUT=$PWD/nftables "''${check[@]}" </dev/null
         printf 'table inet chalkos {\n  chain input {\n    iif "nosuchif0" accept\n  }\n}\n' >nftables/ruleset.nft
-        refuses "the router's nftables check" 'Error: Interface does not exist' env OUT=$PWD/nftables "$check" </dev/null
+        refuses "the router's nftables check" 'Error: Interface does not exist' env OUT=$PWD/nftables "''${check[@]}" </dev/null
         # The check of FRR's config passes the edge example's and the IPv4 and IPv6 tracking of
         # the renderer's tests, and refuses a command no daemon takes, with vtysh alone.
-        check=$(jq -r .frr.check ${routerBuild.chalkosOutputs})
+        read -ra check < <(jq -r .frr.check ${routerBuild.chalkosOutputs})
         mkdir frr
         install -m 644 ${../../cmd/chalkos-render/testdata/router/tracked.frr} frr/frr.conf
-        OUT=$PWD/frr $check </dev/null
+        OUT=$PWD/frr "''${check[@]}" </dev/null
         install -m 644 ${routerRendered "edge"}/frr/frr.conf frr/frr.conf
-        OUT=$PWD/frr $check </dev/null
+        OUT=$PWD/frr "''${check[@]}" </dev/null
         sed -i 's/^ neighbor peer-fabric bfd$/ neighbor peer-fabric bfd sometimes/' frr/frr.conf
-        refuses "the router's FRR check" 'Unknown command' env OUT=$PWD/frr "$check" </dev/null
+        refuses "the router's FRR check" 'Unknown command' env OUT=$PWD/frr "''${check[@]}" </dev/null
         grep -qF 'neighbor peer-fabric bfd sometimes' refused.log || fail "the router's FRR check refused another command: $(cat refused.log)"
         # The check of the Kubernetes layer's FRR config passes the homelab's nodes' and that of
         # unnumbered and address sessions side by side, and refuses a command no daemon takes,
         # with vtysh alone.
-        check=$(jq -r .bgp.check ${examplesBuild.chalkosOutputs})
+        read -ra check < <(jq -r .bgp.check ${examplesBuild.chalkosOutputs})
         mkdir bgp
         install -m 644 ${../../modules/node/kubernetes/bgp/tests/mixed/bgp/frr.conf} bgp/frr.conf
-        OUT=$PWD/bgp $check </dev/null
+        OUT=$PWD/bgp "''${check[@]}" </dev/null
         install -m 644 ${../../modules/node/kubernetes/bgp/tests/address-interface/bgp/frr.conf} bgp/frr.conf
-        OUT=$PWD/bgp $check </dev/null
+        OUT=$PWD/bgp "''${check[@]}" </dev/null
         sed -i 's/^ neighbor peer-router-enp1s0 bfd$/ neighbor peer-router-enp1s0 bfd sometimes/' bgp/frr.conf
-        refuses "the Kubernetes FRR check" 'Unknown command' env OUT=$PWD/bgp "$check" </dev/null
+        refuses "the Kubernetes FRR check" 'Unknown command' env OUT=$PWD/bgp "''${check[@]}" </dev/null
         grep -qF 'neighbor peer-router-enp1s0 bfd sometimes' refused.log || fail "the Kubernetes FRR check refused another command: $(cat refused.log)"
         # The check of Jool's instances passes the edge example's and refuses a port past 65535,
         # with jool alone. It gets the edge example's instance file without its .veth.
-        check=$(jq -r .jool.check ${routerBuild.chalkosOutputs})
+        read -ra check < <(jq -r .jool.check ${routerBuild.chalkosOutputs})
         mkdir jool
         install -m 644 ${routerRendered "edge"}/jool/edge.json jool/edge.json
-        OUT=$PWD/jool $check </dev/null
+        OUT=$PWD/jool "''${check[@]}" </dev/null
         sed -i 's/"61001-65535"/"61001-70000"/' jool/edge.json
-        refuses "the router's Jool check" "'70000' is out of bounds" env OUT=$PWD/jool "$check" </dev/null
+        refuses "the router's Jool check" "'70000' is out of bounds" env OUT=$PWD/jool "''${check[@]}" </dev/null
         # The check of Unbound's config passes the LAN example's, with the trust anchor and zone
         # the image renders it with in place of the test result's, whose store paths have their
         # hashes written as e's, and refuses a record Unbound does not take.
-        check=$(jq -r .unbound.check ${routerBuild.chalkosOutputs})
+        read -ra check < <(jq -r .unbound.check ${routerBuild.chalkosOutputs})
         read -r _ _ anchor zone < <(jq -r .unbound.render ${routerBuild.chalkosOutputs})
         mkdir unbound
         sed -e "s|^\( *trust-anchor-file: \).*|\1\"$anchor\"|" -e "s|^\( *zonefile: \).*|\1\"$zone\"|" \
           ${routerRendered "lan"}/unbound/unbound.conf >unbound/unbound.conf
         grep -qF "trust-anchor-file: \"$anchor\"" unbound/unbound.conf \
           || fail "the LAN example's unbound.conf names no trust anchor to put $anchor in place of"
-        OUT=$PWD/unbound $check </dev/null
+        OUT=$PWD/unbound "''${check[@]}" </dev/null
         sed -i 's/IN A 192.0.2.1/IN A 192.0.2.300/' unbound/unbound.conf
-        refuses "the router's Unbound check" 'Bad local-data RR' env OUT=$PWD/unbound "$check" </dev/null
+        refuses "the router's Unbound check" 'Bad local-data RR' env OUT=$PWD/unbound "''${check[@]}" </dev/null
         touch $out
       '';
 

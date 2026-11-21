@@ -246,9 +246,8 @@ prints nothing for a `Peer` without a password. A key below a missing one, such 
 
 ## Program contract { #program-contract }
 
-Renderers and validators are programs of the image's store, and a check holds shell commands that
-bash runs. chalkd runs each with the same input and in the same sandbox, with the differences
-below.
+Renderers, checks and validators are programs of the image's store. chalkd runs each with the
+same input and in the same sandbox, with the differences below.
 
 ### Input { #program-input }
 
@@ -265,10 +264,12 @@ A renderer writes its files into the directory that the environment variable `OU
 runs a validator as `<program> validate <name>`: it appends `validate` and the validator's name to
 the command, which a program that serves several validators reads to tell them apart.
 
-A command that `render` or `program` names is a program of the image's store, with its arguments,
-or a package that is such a program. chalkd splits the command on spaces and runs it without a
-shell, so the command cannot redirect output or expand `$OUT`. A script from
-`pkgs.writeShellScript` does both.
+A command that `render`, `check` or `program` names is a program of the image's store, with its
+arguments, or a package that is such a program. chalkd splits the command on spaces and runs it
+without a shell, so the command cannot redirect output, and `$OUT` in an argument reaches the
+program as it is written. `chalkosLib.check.run` and `chalkosLib.check.each` replace `$OUT` in
+a check's arguments. A program of your own, such as a script from `pkgs.writeShellScript`, reads
+`OUT` from its environment.
 
 ### Output { #program-output }
 
@@ -316,18 +317,28 @@ failing. Its standard output goes nowhere.
 
 ### Check environment { #check-environment }
 
-`check` holds shell commands. chalkd runs them with bash and `set -e`, so the first command that
-fails refuses the files. The check runs after the renderer, in the same sandbox:
+`check` names a program, which chalkd runs after the renderer. An exit status other than 0
+refuses the files. The check runs in the renderer's sandbox, with these differences:
 
 - `$OUT` holds the files as the renderer wrote them, before they get the output's owner and mode.
   The check may not change them.
 - Standard input holds the renderer's input, so a check can compare the files with the documents.
-- `PATH` holds coreutils, grep and sed alone. Any other program is named by its store path,
-  as `${bird}/bin/bird` is.
+  The program that `chalkosLib.check.run` or `chalkosLib.check.each` runs gets no input.
+- `PATH` names no program of the image's store. A check names each program by its store path,
+  as `${bird}/bin/bird` does.
 - Unlike the renderer, the check may open netlink sockets. They reach the sandbox's own network
   namespace, or one the check creates: the router's check runs
-  `unshare --map-root-user --net nft --check --file "$OUT/ruleset.nft"`, so the kernel checks the
+  `unshare --map-root-user --net nft --check --file $OUT/ruleset.nft`, so the kernel checks the
   ruleset.
+
+Most checks run a service's own test of its config on the files.
+`chalkosLib.check.run [ "${pkgs.nftables}/bin/nft" "--check" "--file" "$OUT/ruleset.nft" ]` runs
+the program once, and `chalkosLib.check.each "*.conf" [ "${unbound}/bin/unbound-checkconf" "$FILE" ]`
+runs it once for each matching file. Both replace `$OUT` in the arguments, and `each` replaces
+`$FILE` too. No argument may hold white space. What the program prints goes to the node's journal
+when it fails. A check that needs more, such as a file of stand-ins for credentials, is a program of its
+own, as the check of `bird-conf` in [Render bird.conf](../guides/bgp-extension.md#render-birdconf)
+is.
 
 An output without `check` has its files served as the renderer wrote them.
 

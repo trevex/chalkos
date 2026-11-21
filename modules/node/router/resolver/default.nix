@@ -109,7 +109,7 @@ in
         "Network"
       ];
       render = "${lib.getExe pkgs.chalkos.chalkos-render} unbound ${pkgs.dns-root-data}/root.key ${ipv4only}";
-      check = ''for f in "$OUT"/*.conf; do [ ! -e "$f" ] || ${unbound}/bin/unbound-checkconf "$f" || exit; done'';
+      check = "${lib.getExe pkgs.chalkos.chalkos-render} check each *.conf ${unbound}/bin/unbound-checkconf $FILE";
     };
     chalkos.effects.unbound = {
       outputs = [ "unbound" ];

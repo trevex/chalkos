@@ -155,7 +155,7 @@ The options within each, by their path below `chalkos.outputs`:
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `<name>.check`{ #chalkosoutputscheck } | string or null | `null` | Shell commands, run by bash with `set -e` after the renderer, that check the rendered files in `$OUT`; null serves the files as the renderer wrote them. A failure refuses the delivery before it changes anything, and at boot fails `chalkos-config.service`. [Check environment](extension-runtime.md#check-environment) gives what the commands read and may run. Example: `"${pkgs.bird}/bin/bird -p -c $OUT/bird.conf"` |
+| `<name>.check`{ #chalkosoutputscheck } | command, package or chalkosLib.check value or null | `null` | Program of the image's store, with its arguments, that chalkd runs after the renderer to check the rendered files in `$OUT`; null serves the files as the renderer wrote them. chalkd runs it without a shell, and an exit status other than 0 refuses the delivery before it changes anything, and at boot fails `chalkos-config.service`. `chalkosLib.check.run` and `.each` run a service's own check of its config on the files. [Check environment](extension-runtime.md#check-environment) gives what the program reads and may run. Example: `chalkosLib.check.run [ "${pkgs.bird}/bin/bird" "-p" "-c" "$OUT/bird.conf" ]` |
 | `<name>.dir`{ #chalkosoutputsdir } | string | `"/run/chalkos/outputs/<name>"` | Where services read the output's files, a link to the last render. Refer to it as `config.chalkos.outputs.<name>.dir`, so a misspelled name fails the evaluation. [Output directories](extension-runtime.md#output-directories) gives the rules a dir follows. |
 | `<name>.group`{ #chalkosoutputsgroup } | string | `"root"` | Group of the output's files and directories. |
 | `<name>.inputs`{ #chalkosoutputsinputs } | list of string | `[ ]` | Config kinds, by name as for a grant, whose documents the renderer reads. Example: `[ "Peer" ]` |
@@ -347,9 +347,9 @@ included, uses that argument. The flake's `lib` holds the same functions, beside
 code outside an image.
 
 `chalkosLib` holds the type and the `mkOption` of an extension kind's fields, the renderers of
-`chalkos.outputs.<name>.render`, the validators of `chalkos.validators.<name>.program` and the
-common effects. `chalkosLib.internal` holds chalkos's own helpers; it is not part of the
-extension API and changes without notice.
+`chalkos.outputs.<name>.render`, the checks of `chalkos.outputs.<name>.check`, the validators of
+`chalkos.validators.<name>.program` and the common effects. `chalkosLib.internal` holds
+chalkos's own helpers; it is not part of the extension API and changes without notice.
 
 | Helper | Arguments | Result |
 | --- | --- | --- |
@@ -363,6 +363,8 @@ extension API and changes without notice.
 | `chalkosLib.render.template`{ #chalkoslibrendertemplate } | a path ending in `.tmpl` | Renderer of a Go `text/template` into one file, named as the template less `.tmpl`; a missing or null key prints as nothing. |
 | `chalkosLib.render.jq`{ #chalkoslibrenderjq } | a path ending in `.jq` | Renderer of a jq program into one file, named as the program less `.jq`; a string is written raw. |
 | `chalkosLib.render.documents`{ #chalkoslibrenderdocuments } | a list of kind names | Renderer of the documents of those kinds as they are, each as `<Kind>/<name>.json`. |
+| `chalkosLib.check.run`{ #chalkoslibcheckrun } | a list of a program and its arguments, none with white space | Check that runs the program once, with `$OUT` in the arguments replaced by the directory of the rendered files. It fails when the program exits with a status other than 0. |
+| `chalkosLib.check.each`{ #chalkoslibcheckeach } | a glob below `$OUT`, then a list of a program and its arguments, none with white space | Check that runs the program once for each file the glob matches, in the order of their names, with `$FILE` in the arguments replaced by the file's path and `$OUT` by the directory. It passes when no file matches, and fails at the first file the program refuses. |
 | `chalkosLib.validate.jq`{ #chalkoslibvalidatejq } | a path to a jq program | Validator that runs the jq program on its input, the documents by kind as a renderer reads them; what the program outputs is the report of refusals. |
 | `chalkosLib.restartOn`{ #chalkoslibrestarton } | `{ outputs ? [ ], kinds ? [ ] }`, then a list of units | Effect that restarts the units when one of the outputs, the documents of one of the kinds or a value of a Secret they reference changed. |
 | `chalkosLib.reloadOn`{ #chalkoslibreloadon } | `{ outputs ? [ ], kinds ? [ ] }`, then a list of units | Effect that reloads the units when one of the outputs, the documents of one of the kinds or a value of a Secret they reference changed. |

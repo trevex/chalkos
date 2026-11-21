@@ -40,15 +40,7 @@ in
       render = "${lib.getExe pkgs.chalkos.chalkos-render} chrony-server";
       # chronyd -p parses the directives of the files in the confdir, but takes any subnet of
       # allow, so the check also refuses a line of a form the renderer does not write.
-      check = ''
-        conf=$(mktemp)
-        echo "confdir $OUT" >"$conf"
-        ${chrony}/bin/chronyd -p -f "$conf" >/dev/null
-        [ ! -e "$OUT/server.conf" ] || ! grep -qvE '^(# .*|allow [0-9A-Fa-f.:]+/[0-9]+|local stratum ([1-9]|1[0-5]) orphan|ratelimit interval 1 burst 16)$' "$OUT/server.conf" || {
-          echo "server.conf holds a line that is no allow, local or ratelimit directive of the renderer" >&2
-          exit 1
-        }
-      '';
+      check = "${lib.getExe pkgs.chalkos.chalkos-render} check chrony-server ${chrony}/bin/chronyd";
     };
     # chronyd reads its config when it starts. A new port is open before chrony answers on it.
     chalkos.effects.chrony-server = {

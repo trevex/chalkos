@@ -88,7 +88,7 @@ in
       internal = true;
       readOnly = true;
       # vtysh parses the config as the daemons' commands take it, without the daemons.
-      default = "${frr}/bin/vtysh --dryrun --config_dir ${checkDir} -f \"$OUT/frr.conf\"";
+      default = "${lib.getExe pkgs.chalkos.chalkos-render} check run ${frr}/bin/vtysh --dryrun --config_dir ${checkDir} -f $OUT/frr.conf";
       description = "The check of an output that renders frr.conf.";
     };
   };

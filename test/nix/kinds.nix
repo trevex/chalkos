@@ -1370,14 +1370,14 @@ lib.runTests {
       hint = null;
     };
   };
-  # An output reaches chalkd with its check as a script of the store.
+  # An output reaches chalkd with its check's command as it is.
   testOutputsReachChalkd =
     let
       config = withBird {
         chalkos.outputs.bird-conf = {
           inputs = [ "Demo" ];
           render = "/nix/store/x-render/bin/render";
-          check = ''grep -q protocol "$OUT/bird.conf"'';
+          check = "/nix/store/x-bird/bin/bird -p -c";
           user = "bird";
         };
         chalkos.effects.bird = {
@@ -1397,7 +1397,7 @@ lib.runTests {
           group
           mode
           ;
-        check = lib.hasSuffix "-chalkos-output-bird-conf-check" output.check;
+        inherit (output) check;
         outputs = (effectsOf config).bird.outputs;
         dirOption = config.chalkos.outputs.bird-conf.dir;
       };
@@ -1408,9 +1408,87 @@ lib.runTests {
         user = "bird";
         group = "root";
         mode = "0644";
-        check = true;
+        check = "/nix/store/x-bird/bin/bird -p -c";
         outputs = [ "bird-conf" ];
         dirOption = "/run/chalkos/outputs/bird-conf";
+      };
+    };
+  # A check is a program: a command as it is, a package as its path, or chalkos-render's run of
+  # the command of chalkosLib.check.run or .each with $OUT and $FILE left for it to replace. A
+  # check of another form, or whose command has an argument with white space, which chalkd would
+  # split, fails the evaluation.
+  testChecks =
+    let
+      outputs =
+        checks:
+        withBird (
+          { chalkosLib, pkgs, ... }:
+          {
+            chalkos.outputs = lib.mapAttrs (_: check: {
+              render = "/nix/store/x-render/bin/render";
+              check = check chalkosLib pkgs;
+            }) checks;
+          }
+        );
+      config = outputs {
+        none = _: _: null;
+        package = _: pkgs: pkgs.writeShellScript "c" "true";
+        run =
+          chalkosLib: _:
+          chalkosLib.check.run [
+            "/nix/store/x-nft/bin/nft"
+            "--check"
+            "--file"
+            "$OUT/ruleset.nft"
+          ];
+        each =
+          chalkosLib: _:
+          chalkosLib.check.each "*.conf" [
+            "/nix/store/x-dnsmasq/bin/dnsmasq"
+            "--conf-file=$FILE"
+          ];
+      };
+      check = name: (outputsOf config).${name}.check;
+      refused =
+        check:
+        fails (
+          outputsOf (outputs {
+            x = check;
+          })
+        );
+      render = builtins.match "/nix/store/[^ ]+-chalkos-render-[^ ]+/bin/chalkos-render (.*)";
+    in
+    {
+      expr = {
+        none = check "none";
+        package = lib.hasPrefix "/nix/store/" (check "package");
+        run = render (check "run");
+        each = render (check "each");
+        value = chalkosLib.check.each "*.conf" [ "x" ];
+        spaced = refused (
+          chalkosLib: _:
+          chalkosLib.check.run [
+            "/nix/store/x-a/bin/a"
+            "b c"
+          ]
+        );
+        empty = refused (chalkosLib: _: chalkosLib.check.run [ ]);
+        spacedGlob = refused (chalkosLib: _: chalkosLib.check.each "a b" [ "/nix/store/x-a/bin/a" ]);
+        other = refused (_: _: { script = "true"; });
+      };
+      expected = {
+        none = "";
+        package = true;
+        run = [ "check run /nix/store/x-nft/bin/nft --check --file $OUT/ruleset.nft" ];
+        each = [ "check each *.conf /nix/store/x-dnsmasq/bin/dnsmasq --conf-file=$FILE" ];
+        value = {
+          each = "*.conf";
+          run = [ "x" ];
+        };
+        spaced = true;
+        empty = true;
+        spacedGlob = true;
+        other = true;
       };
     };
   # chalkosLib's renderers are data, which an output's render turns into the program's command,
@@ -1440,19 +1518,21 @@ lib.runTests {
           render "t"
         );
         documents = builtins.match ".*/bin/chalkos-render (documents Peer Link)" (render "d");
-        jq = lib.hasSuffix "-chalkos-render-jq-bird.conf" (render "j");
+        jq = builtins.match ".*/bin/chalkos-render jq /nix/store/[^ ]+/bin/jq /nix/store/[^ ]+-bird.conf.jq (bird.conf)" (
+          render "j"
+        );
         package = lib.hasPrefix "/nix/store/" (render "p");
       };
       expected = {
         value.documents = [ "Peer" ];
         template = [ "greeting" ];
         documents = [ "documents Peer Link" ];
-        jq = true;
+        jq = [ "bird.conf" ];
         package = true;
       };
     };
   # A validator reaches chalkd with its input kinds and its program's command: a command as it is,
-  # a package as its path, and a jq program of chalkosLib.validate as a wrapper of the store.
+  # a package as its path, and a jq program of chalkosLib.validate as chalkos-render's run of it.
   testValidatorsReachChalkd =
     let
       config = withBird (
@@ -1484,7 +1564,7 @@ lib.runTests {
         inherit (validators) c;
         inputs = validators.p.inputs;
         package = lib.hasPrefix "/nix/store/" validators.p.program;
-        jq = lib.hasSuffix "-chalkos-validate-jq-j" validators.j.program;
+        jq = builtins.match ".*/bin/chalkos-render validate-jq /nix/store/[^ ]+/bin/jq /nix/store/[^ ]+-(demo.jq)" validators.j.program;
         value = chalkosLib.validate.jq "x.jq";
       };
       expected = {
@@ -1497,7 +1577,7 @@ lib.runTests {
           "Network"
         ];
         package = true;
-        jq = true;
+        jq = [ "demo.jq" ];
         value.jq = "x.jq";
       };
     };
