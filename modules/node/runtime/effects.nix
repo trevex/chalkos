@@ -201,6 +201,7 @@ let
             "apply-links"
             "chrony-dhcp"
             "chrony-reload-sources"
+            "frr-credentials"
             "tcp-connect"
             "help"
           ])

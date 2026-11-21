@@ -242,18 +242,19 @@ POSIX and other regular expressions.
 
 The renderer sees no `Secret`. A peer's password renders as the placeholder
 `@secret_<secret>.<key>@` on its peer group's `password` line. `frr.service` gets the passwords
-that the `BGPPeer` documents name as its credentials. Before it starts and on each reload, a
-helper of the unit writes `/run/frr/frr.conf` with each password line's placeholder replaced by
-its credential. Only root reads the file, mode 0600, and `/etc/frr/frr.conf` links to it.
+that the `BGPPeer` documents name as its credentials. When it starts and on each reload, the unit
+runs `chalkd frr-credentials`, which writes `/run/frr/frr.conf` with each password line's
+placeholder replaced by its credential. Only root reads the file, mode 0600, and
+`/etc/frr/frr.conf` links to it.
 
-The helper fills in the password lines alone. A placeholder elsewhere stays as written, and a
+`chalkd frr-credentials` fills in the password lines alone. A placeholder elsewhere stays as written, and a
 description cannot hold one, as it holds no `@`. A password that is empty, longer than 80
 characters, or holds white space, a line break or anything but printable ASCII fails the unit and
 leaves the file as it was. So does a placeholder whose credential the unit lacks.
 
 A rotated password changes no rendered file. The effect of `frr` fires all the same, because the
 value of a `Secret` that its documents reference changed. The reload loads the credentials again
-before the helper runs.
+before `chalkd frr-credentials` runs.
 
 ## A delivery reloads FRR
 
@@ -287,12 +288,33 @@ chalkd reloads the units of one delivery in one `systemctl reload`. `frr.service
 ## FRR starts after the config and the firewall
 
 At boot, `frr.service` starts after `chalkos-config.service` has rendered the outputs and after
-`chalkos-firewall.service`. It orders before `chalkos-node-addresses.target` and is wanted by it,
-as a unit that announces the node's addresses. Without a rendered `frr.conf`, the helper writes
-the image's fallback config, which runs no BGP.
+`chalkos-firewall.service`. `multi-user.target` wants it. It also orders before
+`chalkos-node-addresses.target` and is wanted by it, as a unit that announces the node's
+addresses. Without a rendered `frr.conf`,
+`chalkd frr-credentials` writes the image's fallback config, which runs no BGP.
 
 `frr.service` starts only when chalkd has written its credentials, which it does once the node
 has config. In maintenance mode, which loads no config, the node runs no FRR.
+
+## systemd runs FRR's daemons
+
+FRR runs as five daemons: mgmtd, zebra, staticd, bfdd and bgpd. Each has a unit of its own,
+`frr-mgmtd.service`, `frr-zebra.service` and so on, which starts after `frr.service` has filled in
+the config. FRR's watchfrr and its start scripts are not in the image: they start daemons through
+`/bin/sh`, which the images lack. `frr.service` is a oneshot unit that writes the config, wants the
+daemons and upholds them. A stop or restart of `frr.service` stops or restarts the daemons with it.
+
+A daemon starts as FRR's scripts start it, with `-d`, and forks once its VTY socket listens. The
+unit then runs `vtysh -b -d <daemon>`, which loads the daemon's commands of `/etc/frr/frr.conf`
+into it. A config that `vtysh` cannot load fails the unit. Each daemon loads its own part of the
+config at boot and again when it restarts, since a daemon starts without config.
+
+systemd restarts a daemon that fails, one second later. staticd, bfdd and bgpd are clients of
+zebra and are bound to its unit, so a zebra that fails stops them too. As with FRR's watchfrr,
+`frr.service` starts them again once zebra runs, and each loads its config again. mgmtd holds the config of staticd and zebra and keeps running, and sends that config to
+each of them when it connects again. The logs of each daemon are in the journal of its own unit,
+such as `chalkctl logs <node> --unit=frr-bgpd.service`, and those of a reload in the journal of
+`frr.service`.
 
 networkd leaves zebra's routes and next hops alone. By default it removes the routes it did not
 configure itself each time it configures a link, so router images turn `ManageForeignRoutes=` and

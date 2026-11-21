@@ -255,3 +255,23 @@ func TestTCPConnectTimeout(t *testing.T) {
 		}
 	})
 }
+
+// frr-credentials fills the rendered config in, and FRR's fallback while there is none.
+func TestFRRCredentials(t *testing.T) {
+	dir := t.TempDir()
+	rendered, fallback, out := filepath.Join(dir, "rendered.conf"), filepath.Join(dir, "fallback.conf"), filepath.Join(dir, "frr.conf")
+	writeFile(t, fallback, "frr defaults traditional\n")
+	if err := FRRCredentials(rendered, fallback, out, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(out); string(got) != "frr defaults traditional\n" {
+		t.Errorf("without a rendered config, frr.conf = %q, want the fallback", got)
+	}
+	writeFile(t, rendered, "router bgp 65001\n")
+	if err := FRRCredentials(rendered, fallback, out, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(out); string(got) != "router bgp 65001\n" {
+		t.Errorf("with a rendered config, frr.conf = %q, want the rendered one", got)
+	}
+}

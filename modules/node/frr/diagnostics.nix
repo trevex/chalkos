@@ -11,7 +11,7 @@ let
   vtysh = description: show: parameters: {
     inherit description parameters;
     command = [
-      "${pkgs.frr}/bin/vtysh"
+      "${pkgs.chalkos.frr}/bin/vtysh"
       "-c"
       show
     ];

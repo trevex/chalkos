@@ -1,10 +1,48 @@
-# chalkos-frr-reload on a VM that runs FRR, without links or peers: for pairs of the renderers'
-# goldens it starts FRR on one and reloads it to the other in one pass that vtysh takes whole,
-# after which FRR's running config is the one FRR shows when it starts on the second, and for which
-# the reload plans nothing.
+# FRR's units on a VM without /bin/sh, which FRR's own scripts and watchfrr would run. For pairs
+# of the renderers' goldens, frr.service starts FRR on one and its reload, chalkos-frr-reload,
+# applies the other in one pass that vtysh takes whole, after which FRR's running config is the
+# one FRR shows when it starts on the second, and for which the reload plans nothing. Then FRR
+# runs a BGP session with a password to a peer in a network namespace: after bgpd is killed, and
+# after zebra is killed, which stops its clients, systemd starts the daemons again, they load
+# their config again and the session, its route and a static route come back.
 { pkgs, lib, ... }:
 let
+  inherit (pkgs.chalkos) frr;
   reload = "${lib.getExe pkgs.chalkos.chalkos-frr-reload} -vtysh vtysh";
+  # The rendered config, which frr.service fills in.
+  rendered = "/run/frr-test/frr.conf";
+  # The crash test's config: a peer group's password, which the fill fills in, a session with the
+  # peer and a static route.
+  crash = pkgs.writeText "crash.conf" ''
+    frr defaults traditional
+    log syslog informational
+    ip route 203.0.113.0/24 blackhole
+    router bgp 65001
+     bgp router-id 192.0.2.1
+     no bgp ebgp-requires-policy
+     neighbor peer-fabric peer-group
+     neighbor peer-fabric remote-as 65002
+     neighbor peer-fabric password @secret_bgp.fabric@
+     neighbor peer-fabric timers connect 1
+     neighbor 192.0.2.2 peer-group peer-fabric
+    exit
+  '';
+  # The peer, a zebra and bgpd of its own in a network namespace, announces a prefix.
+  peer = pkgs.writeText "peer.conf" ''
+    frr defaults traditional
+    hostname peer
+    router bgp 65002
+     bgp router-id 192.0.2.2
+     no bgp ebgp-requires-policy
+     no bgp network import-check
+     neighbor 192.0.2.1 remote-as 65001
+     neighbor 192.0.2.1 password example-password
+     neighbor 192.0.2.1 timers connect 1
+     address-family ipv4 unicast
+      network 198.51.100.0/24
+     exit-address-family
+    exit
+  '';
   edge = ../../../modules/node/router/tests/edge/frr/frr.conf;
   goldens = {
     router-none = ../../../modules/node/router/tests/none/frr/frr.conf;
@@ -161,20 +199,37 @@ let
       }' | sort
   '';
 in
-(pkgs.extend (final: _: { inherit (final.chalkos) frr; })).testers.runNixOSTest {
+pkgs.testers.runNixOSTest {
   name = "chalkos-frr-reload";
-  nodes.machine = {
-    services.frr = {
-      bgpd.enable = true;
-      bfdd.enable = true;
-      configFile = "/run/frr/frr.conf";
+  nodes.machine =
+    { lib, ... }:
+    {
+      imports = [ ../../../modules/node/frr ];
+      # The runtime's option, which the FRR module's diagnostics set.
+      options.chalkos.diagnostics = lib.mkOption {
+        type = lib.types.attrsOf lib.types.anything;
+        default = { };
+      };
+      config = {
+        chalkos.frr = {
+          enable = true;
+          inherit rendered;
+          fallback = goldens.router-none;
+        };
+        environment.systemPackages = [ pkgs.jq ];
+        # The test starts FRR on each config, with the credentials chalkd's grant would load.
+        systemd.services = {
+          frr = {
+            wantedBy = lib.mkForce [ ];
+            startLimitIntervalSec = 0;
+            serviceConfig.LoadCredential = [ "secret:/run/chalkos/credentials/frr" ];
+          };
+        }
+        // lib.genAttrs [ "frr-mgmtd" "frr-zebra" "frr-staticd" "frr-bgpd" "frr-bfdd" ] (_: {
+          startLimitIntervalSec = 0;
+        });
+      };
     };
-    # The test starts FRR on each config.
-    systemd.services.frr = {
-      wantedBy = lib.mkForce [ ];
-      startLimitIntervalSec = lib.mkForce 0;
-    };
-  };
   testScript = ''
     import difflib
 
@@ -183,14 +238,23 @@ in
     def plan():
         return machine.succeed("${reload} -n /run/frr/frr.conf")
 
-    # The daemons take their config after frr.service has started, so FRR runs a config once the
-    # reload plans nothing for it, which also shows that a config FRR runs holds no change.
+    # The daemons take their config once they run, after frr.service has started, so FRR runs a
+    # config once the reload plans nothing for it, which also shows that a config FRR runs holds
+    # no change.
     def start(name):
-        machine.succeed(f"install -m 644 {goldens[name]} /run/frr/frr.conf && systemctl restart frr")
+        machine.succeed(f"install -m 644 {goldens[name]} ${rendered} && systemctl restart frr")
         machine.wait_until_succeeds("p=$(${reload} -n /run/frr/frr.conf) && test -z \"$p\"", timeout=60)
 
+    def pid(daemon):
+        return machine.succeed(f"systemctl show -P MainPID frr-{daemon}.service").strip()
+
     machine.wait_for_unit("multi-user.target")
-    machine.succeed("mkdir -p /run/frr")
+    with subtest("the VM has no /bin/sh"):
+        machine.succeed("rm -f /bin/sh && test ! -e /bin/sh")
+        machine.succeed("mkdir -p /run/frr-test /run/chalkos/credentials/frr")
+        machine.succeed("printf example-password >/run/chalkos/credentials/frr/bgp.fabric")
+        machine.succeed("printf example-password >/run/chalkos/credentials/frr/bgp.password")
+
     fresh = {}
     for name in goldens:
         with subtest(f"FRR runs {name}"):
@@ -202,8 +266,11 @@ in
     }]:
         with subtest(f"{a} reloads to {b}"):
             start(a)
-            machine.succeed(f"install -m 644 {goldens[b]} /run/frr/frr.conf")
-            out = machine.succeed("${reload} /run/frr/frr.conf 2>&1")
+            cursor = machine.succeed("journalctl -n 1 -o export | sed -n 's/^__CURSOR=//p'").strip()
+            machine.succeed(f"install -m 644 {goldens[b]} ${rendered} && systemctl reload frr")
+            journal = f"journalctl -u frr.service -o cat --after-cursor='{cursor}'"
+            machine.wait_until_succeeds(f"{journal} | grep -q 'chalkos-frr-reload: FRR runs frr.conf'", timeout=30)
+            out = machine.succeed(journal)
             print(out)
             if "vtysh refused commands" in out or "pass 2" in out:
                 raise Exception(f"{a} reloaded to {b} in more than one clean pass")
@@ -213,5 +280,55 @@ in
                 raise Exception(f"{a} reloaded to {b} differs from {b} loaded fresh:\n{diff}")
             if p := plan():
                 raise Exception(f"after the reload to {b}, the reload plans:\n{p}")
+
+    def session():
+        try:
+            machine.wait_until_succeeds(
+                "vtysh -c 'show bgp neighbors 192.0.2.2 json' | jq -e '.\"192.0.2.2\".bgpState == \"Established\"'",
+                timeout=60,
+            )
+        except Exception:
+            print(machine.execute("vtysh -c 'show running-config'; vtysh -c 'show bgp neighbors'; ip netns exec peer vtysh --vty_socket /run/peer -c 'show bgp neighbors'; journalctl -u peer-bgpd.service")[1])
+            raise
+        machine.wait_until_succeeds("ip route show 198.51.100.0/24 proto bgp | grep -q .", timeout=30)
+        machine.wait_until_succeeds("ip route show 203.0.113.0/24 | grep -q blackhole", timeout=30)
+
+    with subtest("FRR runs a session with a password to a peer"):
+        machine.succeed(
+            "ip netns add peer",
+            "ip link add veth0 type veth peer name veth1 netns peer",
+            "ip address add 192.0.2.1/24 dev veth0 && ip link set veth0 up",
+            "ip -n peer address add 192.0.2.2/24 dev veth1 && ip -n peer link set veth1 up && ip -n peer link set lo up",
+            "install -d -o frr -g frr /run/peer",
+            "systemd-run --unit=peer-zebra ip netns exec peer ${frr}/libexec/frr/zebra -f /dev/null"
+            + " -i /run/peer/zebra.pid -z /run/peer/zserv.api --vty_socket /run/peer -A 127.0.0.1",
+            "systemd-run --unit=peer-bgpd ip netns exec peer ${frr}/libexec/frr/bgpd -f ${peer}"
+            + " -i /run/peer/bgpd.pid -z /run/peer/zserv.api --vty_socket /run/peer -A 127.0.0.1",
+        )
+        machine.succeed("install -m 644 ${crash} ${rendered} && systemctl restart frr")
+        session()
+        before = machine.succeed("${running}")
+
+    with subtest("a killed bgpd starts again with its config"):
+        old = pid("bgpd")
+        machine.succeed(f"kill -9 {old}")
+        machine.wait_until_succeeds(f"p=$(systemctl show -P MainPID frr-bgpd.service) && [ \"$p\" != 0 ] && [ \"$p\" != {old} ]", timeout=30)
+        machine.wait_for_unit("frr-bgpd.service")
+        session()
+        if (got := machine.succeed("${running}")) != before:
+            raise Exception(f"after bgpd's restart, FRR runs:\n{got}")
+
+    with subtest("a killed zebra restarts its clients, which start again with their config"):
+        old = {d: pid(d) for d in ["zebra", "bgpd", "staticd", "bfdd"]}
+        mgmtd = pid("mgmtd")
+        machine.succeed(f"kill -9 {old['zebra']}")
+        for d, p in old.items():
+            machine.wait_until_succeeds(f"n=$(systemctl show -P MainPID frr-{d}.service) && [ \"$n\" != 0 ] && [ \"$n\" != {p} ]", timeout=30)
+            machine.wait_for_unit(f"frr-{d}.service")
+        if pid("mgmtd") != mgmtd:
+            raise Exception("zebra's failure restarted mgmtd")
+        session()
+        if (got := machine.succeed("${running}")) != before:
+            raise Exception(f"after zebra's restart, FRR runs:\n{got}")
   '';
 }

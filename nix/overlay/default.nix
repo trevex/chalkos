@@ -2,7 +2,7 @@
 # nix/packages. Updating Go is a change to go.mod's go line. mkImage applies the overlay to the
 # images' nixpkgs, so images of another nixpkgs build chalkos's programs with this Go too.
 { go-overlay }:
-final: prev: {
+final: _: {
   chalkos = final.lib.makeScope final.newScope (
     self:
     final.lib.packagesFromDirectoryRecursive {
@@ -16,10 +16,9 @@ final: prev: {
       # go-lint checks build from; a program's passthru.goPaths lists its own paths instead.
       treeGoPaths = import ./go-paths.nix { inherit (final) lib; };
       # kea.nix and frr.nix wrap nixpkgs's packages, whose names inside the scope are their own,
-      # so they are passed nixpkgs's explicitly. The images' pkgs.frr is chalkos's, so frr.nix
-      # takes the one before this overlay.
+      # so they are passed nixpkgs's explicitly.
       kea = self.callPackage ../packages/kea.nix { inherit (final) kea; };
-      frr = self.callPackage ../packages/frr.nix { inherit (prev) frr; };
+      frr = self.callPackage ../packages/frr.nix { inherit (final) frr; };
     }
   );
 }

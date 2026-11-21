@@ -236,6 +236,7 @@ func TestCommandsRefuseArguments(t *testing.T) {
 		{"chrony-dhcp"},
 		{"chrony-reload-sources", "now"},
 		{"tcp-connect", "192.0.2.1"},
+		{"frr-credentials", "/run/chalkos/outputs/frr/frr.conf"},
 	} {
 		root, err := newCommand()
 		if err != nil {
@@ -263,6 +264,7 @@ func TestCallSites(t *testing.T) {
 		{"chrony-dhcp", "/run/chalkos/chrony-dhcp/dhcp.sources"},
 		{"chrony-reload-sources"},
 		{"tcp-connect", "2001:db8::1", "443"},
+		{"frr-credentials", "/run/chalkos/outputs/frr/frr.conf", "/nix/store/x-frr-fallback.conf"},
 		{"kubernetes", "prepare"},
 		{"kubernetes", "prepare", "--vxlan-rule"},
 		{"kubernetes", "vxlan-rule"},
