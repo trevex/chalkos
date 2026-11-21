@@ -121,6 +121,16 @@ modules of the kernel they depend on.
 
 Example: `[ "gpu" ]`
 
+### `chalkos.kernel.modulePolicy.enable` { #chalkoskernelmodulepolicyenable }
+
+Type: boolean · Default: `true` · Declared in: [modules/node/base/module-policy.nix](https://github.com/trevex/chalkos/blob/main/modules/node/base/module-policy.nix)
+
+Whether the kernel loads modules from the image's verity store and its initrd alone. The
+image carries an IPE policy that allows those two and denies every other module, which
+`chalkbuild sign` signs with the Secure Boot db key. A node whose firmware has the key in
+db enforces it from the initrd on; a node without Secure Boot boots without it, and
+`chalkctl status` says so.
+
 ## Kubernetes and CNI { #kubernetes-and-cni }
 
 Whether an image runs Kubernetes, the packages and images it runs it with, and its CNI.
@@ -130,6 +140,15 @@ Whether an image runs Kubernetes, the packages and images it runs it with, and i
 Type: boolean · Default: `true` · Declared in: [modules/node/kubernetes/bgp/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/bgp/default.nix)
 
 Whether Kubernetes images carry FRR, which runs BGP and BFD, and accept the kinds `BGPPeer` and `BGPSpeaker`. Only with the Kubernetes layer; set it false in an image's modules to leave the feature out of it.
+
+### `chalkos.kubernetes.containerd.allowMacAdmin` { #chalkoskubernetescontainerdallowmacadmin }
+
+Type: boolean · Default: `false` · Declared in: [modules/node/kubernetes/containerd.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/containerd.nix)
+
+Whether privileged containers may hold `CAP_MAC_ADMIN`, as the Security Profiles Operator
+needs. With it, such a container can switch the module policy to permissive, which
+`chalkctl status` then reports as tampered. No container ever holds `CAP_SYS_MODULE`: the
+kernel loads the modules pods need, on demand or at boot.
 
 ### `chalkos.kubernetes.enable` { #chalkoskubernetesenable }
 

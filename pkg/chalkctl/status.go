@@ -43,14 +43,15 @@ func (a *app) printStatus(ctx context.Context, t *target, conn *client.Conn) err
 	if err != nil {
 		return err
 	}
+	info, err := conn.Info(ctx, &nodev1.InfoRequest{})
+	if err != nil {
+		return err
+	}
 	return statusview.Write(a.stdout, resp, statusview.Options{
-		Node:      t.name,
-		Inventory: nodeInventory{c: t.cluster, name: t.name},
+		Node:         t.name,
+		Inventory:    nodeInventory{c: t.cluster, name: t.name},
+		ModulePolicy: info.ModulePolicy,
 		Layers: func(io.Writer) error {
-			info, err := conn.Info(ctx, &nodev1.InfoRequest{})
-			if err != nil {
-				return err
-			}
 			for _, p := range pluginsOf[layer.Status](info.Layers) {
 				if err := p.PrintStatus(ctx, host{a}, conn); err != nil {
 					return err

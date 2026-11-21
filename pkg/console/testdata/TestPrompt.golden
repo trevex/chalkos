@@ -1,13 +1,13 @@
 node1  node n1  normal  up 3h 12m
 image 81bd81bd81bd generation 7  worker-metal on metal
 healthy
+module policy: enforced (version 0.5.0)
 systemd asks for a password
 
 Please enter passphrase for disk data:
 chalkctl recovery-key n1 prints the node's recovery key
 
 > ***_
-
 
 
 

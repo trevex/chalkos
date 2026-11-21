@@ -67,6 +67,7 @@ which have no logins, so it has no `completion` command.
 | --- | --- |
 | `cmd/chalkd` | Builds chalkd's cobra command tree with `chalkd.NewCommand` and runs it with `chalkd.Execute`: `serve` (chalkd.service), `load-config` (chalkos-config.service), `health` (chalkos-health.service), `check` (an image's checker, which another image's chalkd runs), the commands of `chalkd/units` and each layer's commands as `chalkd <layer> <command>`, such as `chalkd kubernetes prepare` (chalkos-kubernetes.service). Lists the layer plugins compiled into chalkd in `plugins.go`, and loads the credentials `serve` starts with. |
 | `cmd/chalkos-registry` | `serve` serves `pkg/registry` on a port of every address, with the node certificate and OS CAs from its systemd credentials, and tells systemd once it listens; `catalog PORT` prints the repositories of the registry on this node, for a diagnostic. |
+| `cmd/chalkos-module-policy` | `load` loads and activates the image's signed module policy in the initrd, before switch-root, and records the outcome for chalkd. |
 
 | Package | What it does |
 | --- | --- |
@@ -91,7 +92,8 @@ which have no logins, so it has no `completion` command.
 | `arch` | The architectures chalkos builds images for, with every name and number each goes by. |
 | `image` | Reads a disk image: its partitions from `repart-output.json`, its store and hash tree, the UKI and boot loader off its ESP, and the provenance `metadata.json` names. |
 | `imagepart` | Describes the parts an image is sent in, its store, hash tree, UKI and boot loader, by size and SHA-256, and receives them from a stream. |
-| `imagesign` | Signs an image's boot loader and UKIs, in place or in a signed copy of an image directory. |
+| `imagesign` | Signs an image's boot loader and UKIs, in place or in a signed copy of an image directory, and with each UKI the module policy it carries. |
+| `modulepolicy` | Loads the image's IPE module policy in the initrd and records the outcome, and decides for chalkd whether the kernel enforces it: enforced, not enforced, failed, tampered or off. |
 | `ociimage` | Reads, writes, pulls and pushes chalkos images as OCI artifacts: one manifest whose config is the image header and whose layers are the store, hash tree, UKI, boot loader and contract. |
 | `imagepull` | Pulls a chalkos image from a registry, checked as a node checks it, into an image directory with a raw disk image as nix build lays it out, or into the OCI layout the registry serves; `chalkctl image pull` runs it. |
 | `install` | Installs a node in place or from the installer, step by step and repeatable: STATE, the ESP, the UEFI boot entries, wiping the target and the system region's definitions each have a file, and `parts.go` holds the steps of an install from the installer. |
@@ -99,7 +101,7 @@ which have no logins, so it has no `completion` command.
 | `storeslot` | The store slots of a disk and the writer an upgrade and an install share: retire a slot, write and verify the store, activate the slot. |
 | `fatfs` | Formats a FAT file system at an offset in a file, such as the ESP of a raw disk image, and reads, lists and writes its files there, without mounting it or running a tool. `image`, `imagesign` and `imagepull` read and write an image's ESP with it. |
 | `esp` | Lists the UKIs on an ESP with the image and generation each boots, writes a UKI under a temporary name, reads the UKI of an image staged in the inactive slot, and removes and names UKIs, for an install and an upgrade. |
-| `uki` | Reads a UKI's os-release and command line and an EFI binary's architecture, and refuses an image version systemd-boot would order its entry by. |
+| `uki` | Reads a UKI's os-release and command line and an EFI binary's architecture, finds the module policy in its first initrd, and refuses an image version systemd-boot would order its entry by. |
 | `verity` | Reads and checks dm-verity hash trees. |
 | `secureboot` | Signs an EFI binary for Secure Boot with an Authenticode signature, and checks one as Secure Boot firmware does, against db and dbx read from the firmware or against given certificates. Its `microsoft/` directory holds Microsoft's KEK, UEFI and option ROM CA certificates, which `chalkctl secureboot enroll --microsoft` enrols. |
 | `atomicfile` | Replaces a file in one step through a synced temporary file, and syncs directories, so a crash leaves the old content or the new. Writes a new file that must not exist yet, and takes the file locks that keep two processes apart. |

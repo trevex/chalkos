@@ -138,6 +138,72 @@ func (SecureBoot) EnumDescriptor() ([]byte, []int) {
 	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{1}
 }
 
+// What the node makes of the image's module policy, the IPE policy that lets the kernel load
+// modules from the image's verity store and its initrd alone.
+type ModulePolicyState int32
+
+const (
+	// No state; chalkd never reports it.
+	ModulePolicyState_MODULE_POLICY_STATE_UNSPECIFIED ModulePolicyState = 0
+	// The image's policy is active and enforced, and was during the whole boot.
+	ModulePolicyState_MODULE_POLICY_STATE_ENFORCED ModulePolicyState = 1
+	// Secure Boot is off and the kernel did not take the policy, so any module loads.
+	ModulePolicyState_MODULE_POLICY_STATE_NOT_ENFORCED ModulePolicyState = 2
+	// Secure Boot is on, but the policy did not load; detail says why.
+	ModulePolicyState_MODULE_POLICY_STATE_FAILED ModulePolicyState = 3
+	// The policy loaded, but enforcement was switched off or another policy activated since.
+	ModulePolicyState_MODULE_POLICY_STATE_TAMPERED ModulePolicyState = 4
+	// The image leaves the module policy out.
+	ModulePolicyState_MODULE_POLICY_STATE_OFF ModulePolicyState = 5
+)
+
+// Enum value maps for ModulePolicyState.
+var (
+	ModulePolicyState_name = map[int32]string{
+		0: "MODULE_POLICY_STATE_UNSPECIFIED",
+		1: "MODULE_POLICY_STATE_ENFORCED",
+		2: "MODULE_POLICY_STATE_NOT_ENFORCED",
+		3: "MODULE_POLICY_STATE_FAILED",
+		4: "MODULE_POLICY_STATE_TAMPERED",
+		5: "MODULE_POLICY_STATE_OFF",
+	}
+	ModulePolicyState_value = map[string]int32{
+		"MODULE_POLICY_STATE_UNSPECIFIED":  0,
+		"MODULE_POLICY_STATE_ENFORCED":     1,
+		"MODULE_POLICY_STATE_NOT_ENFORCED": 2,
+		"MODULE_POLICY_STATE_FAILED":       3,
+		"MODULE_POLICY_STATE_TAMPERED":     4,
+		"MODULE_POLICY_STATE_OFF":          5,
+	}
+)
+
+func (x ModulePolicyState) Enum() *ModulePolicyState {
+	p := new(ModulePolicyState)
+	*p = x
+	return p
+}
+
+func (x ModulePolicyState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ModulePolicyState) Descriptor() protoreflect.EnumDescriptor {
+	return file_chalkos_node_v1_node_proto_enumTypes[2].Descriptor()
+}
+
+func (ModulePolicyState) Type() protoreflect.EnumType {
+	return &file_chalkos_node_v1_node_proto_enumTypes[2]
+}
+
+func (x ModulePolicyState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ModulePolicyState.Descriptor instead.
+func (ModulePolicyState) EnumDescriptor() ([]byte, []int) {
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{2}
+}
+
 // The state of the image in the node's inactive slot.
 type SlotState int32
 
@@ -178,11 +244,11 @@ func (x SlotState) String() string {
 }
 
 func (SlotState) Descriptor() protoreflect.EnumDescriptor {
-	return file_chalkos_node_v1_node_proto_enumTypes[2].Descriptor()
+	return file_chalkos_node_v1_node_proto_enumTypes[3].Descriptor()
 }
 
 func (SlotState) Type() protoreflect.EnumType {
-	return &file_chalkos_node_v1_node_proto_enumTypes[2]
+	return &file_chalkos_node_v1_node_proto_enumTypes[3]
 }
 
 func (x SlotState) Number() protoreflect.EnumNumber {
@@ -191,7 +257,7 @@ func (x SlotState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SlotState.Descriptor instead.
 func (SlotState) EnumDescriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{2}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{3}
 }
 
 // The fate of a pending config in an upgrade.
@@ -237,11 +303,11 @@ func (x PendingFate) String() string {
 }
 
 func (PendingFate) Descriptor() protoreflect.EnumDescriptor {
-	return file_chalkos_node_v1_node_proto_enumTypes[3].Descriptor()
+	return file_chalkos_node_v1_node_proto_enumTypes[4].Descriptor()
 }
 
 func (PendingFate) Type() protoreflect.EnumType {
-	return &file_chalkos_node_v1_node_proto_enumTypes[3]
+	return &file_chalkos_node_v1_node_proto_enumTypes[4]
 }
 
 func (x PendingFate) Number() protoreflect.EnumNumber {
@@ -250,7 +316,7 @@ func (x PendingFate) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use PendingFate.Descriptor instead.
 func (PendingFate) EnumDescriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{3}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{4}
 }
 
 // The state of a live config activation.
@@ -306,11 +372,11 @@ func (x ActivationState) String() string {
 }
 
 func (ActivationState) Descriptor() protoreflect.EnumDescriptor {
-	return file_chalkos_node_v1_node_proto_enumTypes[4].Descriptor()
+	return file_chalkos_node_v1_node_proto_enumTypes[5].Descriptor()
 }
 
 func (ActivationState) Type() protoreflect.EnumType {
-	return &file_chalkos_node_v1_node_proto_enumTypes[4]
+	return &file_chalkos_node_v1_node_proto_enumTypes[5]
 }
 
 func (x ActivationState) Number() protoreflect.EnumNumber {
@@ -319,7 +385,7 @@ func (x ActivationState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ActivationState.Descriptor instead.
 func (ActivationState) EnumDescriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{4}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{5}
 }
 
 // The request of Info.
@@ -397,7 +463,9 @@ type InfoResponse struct {
 	Layers []string `protobuf:"bytes,14,rep,name=layers,proto3" json:"layers,omitempty"`
 	// The node's name, as its node certificate names it; empty in maintenance mode and on the
 	// installer.
-	NodeName      string `protobuf:"bytes,15,opt,name=node_name,json=nodeName,proto3" json:"node_name,omitempty"`
+	NodeName string `protobuf:"bytes,15,opt,name=node_name,json=nodeName,proto3" json:"node_name,omitempty"`
+	// Whether the kernel loads modules from the running image alone.
+	ModulePolicy  *ModulePolicyStatus `protobuf:"bytes,16,opt,name=module_policy,json=modulePolicy,proto3" json:"module_policy,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -537,6 +605,76 @@ func (x *InfoResponse) GetNodeName() string {
 	return ""
 }
 
+func (x *InfoResponse) GetModulePolicy() *ModulePolicyStatus {
+	if x != nil {
+		return x.ModulePolicy
+	}
+	return nil
+}
+
+// The module policy's state.
+type ModulePolicyStatus struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	State ModulePolicyState      `protobuf:"varint,1,opt,name=state,proto3,enum=chalkos.node.v1.ModulePolicyState" json:"state,omitempty"`
+	// Why the policy is not enforced, failed or was tampered with; empty otherwise.
+	Detail string `protobuf:"bytes,2,opt,name=detail,proto3" json:"detail,omitempty"`
+	// The policy_version the kernel took; empty when it took none.
+	Version       string `protobuf:"bytes,3,opt,name=version,proto3" json:"version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ModulePolicyStatus) Reset() {
+	*x = ModulePolicyStatus{}
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ModulePolicyStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ModulePolicyStatus) ProtoMessage() {}
+
+func (x *ModulePolicyStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ModulePolicyStatus.ProtoReflect.Descriptor instead.
+func (*ModulePolicyStatus) Descriptor() ([]byte, []int) {
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ModulePolicyStatus) GetState() ModulePolicyState {
+	if x != nil {
+		return x.State
+	}
+	return ModulePolicyState_MODULE_POLICY_STATE_UNSPECIFIED
+}
+
+func (x *ModulePolicyStatus) GetDetail() string {
+	if x != nil {
+		return x.Detail
+	}
+	return ""
+}
+
+func (x *ModulePolicyStatus) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
 // The request of Disks.
 type DisksRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -546,7 +684,7 @@ type DisksRequest struct {
 
 func (x *DisksRequest) Reset() {
 	*x = DisksRequest{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[2]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -558,7 +696,7 @@ func (x *DisksRequest) String() string {
 func (*DisksRequest) ProtoMessage() {}
 
 func (x *DisksRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[2]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -571,7 +709,7 @@ func (x *DisksRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DisksRequest.ProtoReflect.Descriptor instead.
 func (*DisksRequest) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{2}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{3}
 }
 
 // The response of Disks.
@@ -585,7 +723,7 @@ type DisksResponse struct {
 
 func (x *DisksResponse) Reset() {
 	*x = DisksResponse{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[3]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -597,7 +735,7 @@ func (x *DisksResponse) String() string {
 func (*DisksResponse) ProtoMessage() {}
 
 func (x *DisksResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[3]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -610,7 +748,7 @@ func (x *DisksResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DisksResponse.ProtoReflect.Descriptor instead.
 func (*DisksResponse) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{3}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *DisksResponse) GetDisks() []*Disk {
@@ -650,7 +788,7 @@ type Disk struct {
 
 func (x *Disk) Reset() {
 	*x = Disk{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[4]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -662,7 +800,7 @@ func (x *Disk) String() string {
 func (*Disk) ProtoMessage() {}
 
 func (x *Disk) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[4]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -675,7 +813,7 @@ func (x *Disk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Disk.ProtoReflect.Descriptor instead.
 func (*Disk) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{4}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Disk) GetName() string {
@@ -771,7 +909,7 @@ type Partition struct {
 
 func (x *Partition) Reset() {
 	*x = Partition{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[5]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -783,7 +921,7 @@ func (x *Partition) String() string {
 func (*Partition) ProtoMessage() {}
 
 func (x *Partition) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[5]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -796,7 +934,7 @@ func (x *Partition) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Partition.ProtoReflect.Descriptor instead.
 func (*Partition) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{5}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Partition) GetDevice() string {
@@ -857,7 +995,7 @@ type ContractRequest struct {
 
 func (x *ContractRequest) Reset() {
 	*x = ContractRequest{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[6]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -869,7 +1007,7 @@ func (x *ContractRequest) String() string {
 func (*ContractRequest) ProtoMessage() {}
 
 func (x *ContractRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[6]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -882,7 +1020,7 @@ func (x *ContractRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ContractRequest.ProtoReflect.Descriptor instead.
 func (*ContractRequest) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{6}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{7}
 }
 
 // The response of Contract: the config contract of the image the node runs.
@@ -906,7 +1044,7 @@ type ContractResponse struct {
 
 func (x *ContractResponse) Reset() {
 	*x = ContractResponse{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[7]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -918,7 +1056,7 @@ func (x *ContractResponse) String() string {
 func (*ContractResponse) ProtoMessage() {}
 
 func (x *ContractResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[7]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -931,7 +1069,7 @@ func (x *ContractResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ContractResponse.ProtoReflect.Descriptor instead.
 func (*ContractResponse) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{7}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ContractResponse) GetSchemas() map[string][]byte {
@@ -983,7 +1121,7 @@ type InstallRequest struct {
 
 func (x *InstallRequest) Reset() {
 	*x = InstallRequest{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[8]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -995,7 +1133,7 @@ func (x *InstallRequest) String() string {
 func (*InstallRequest) ProtoMessage() {}
 
 func (x *InstallRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[8]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1008,7 +1146,7 @@ func (x *InstallRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstallRequest.ProtoReflect.Descriptor instead.
 func (*InstallRequest) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{8}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *InstallRequest) GetMessage() isInstallRequest_Message {
@@ -1098,7 +1236,7 @@ type InstallHeader struct {
 
 func (x *InstallHeader) Reset() {
 	*x = InstallHeader{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[9]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1110,7 +1248,7 @@ func (x *InstallHeader) String() string {
 func (*InstallHeader) ProtoMessage() {}
 
 func (x *InstallHeader) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[9]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1123,7 +1261,7 @@ func (x *InstallHeader) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstallHeader.ProtoReflect.Descriptor instead.
 func (*InstallHeader) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{9}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *InstallHeader) GetNodeCertificate() []byte {
@@ -1289,7 +1427,7 @@ type ImageContract struct {
 
 func (x *ImageContract) Reset() {
 	*x = ImageContract{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[10]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1301,7 +1439,7 @@ func (x *ImageContract) String() string {
 func (*ImageContract) ProtoMessage() {}
 
 func (x *ImageContract) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[10]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1314,7 +1452,7 @@ func (x *ImageContract) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImageContract.ProtoReflect.Descriptor instead.
 func (*ImageContract) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{10}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ImageContract) GetSystemDefinitions() map[string]string {
@@ -1347,7 +1485,7 @@ type InPlace struct {
 
 func (x *InPlace) Reset() {
 	*x = InPlace{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[11]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1359,7 +1497,7 @@ func (x *InPlace) String() string {
 func (*InPlace) ProtoMessage() {}
 
 func (x *InPlace) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[11]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1372,7 +1510,7 @@ func (x *InPlace) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InPlace.ProtoReflect.Descriptor instead.
 func (*InPlace) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{11}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{12}
 }
 
 // A disk by /dev path, or by a selector whose set fields must all match.
@@ -1396,7 +1534,7 @@ type DiskReference struct {
 
 func (x *DiskReference) Reset() {
 	*x = DiskReference{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[12]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1408,7 +1546,7 @@ func (x *DiskReference) String() string {
 func (*DiskReference) ProtoMessage() {}
 
 func (x *DiskReference) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[12]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1421,7 +1559,7 @@ func (x *DiskReference) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiskReference.ProtoReflect.Descriptor instead.
 func (*DiskReference) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{12}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *DiskReference) GetPath() string {
@@ -1503,7 +1641,7 @@ type ImageHeader struct {
 
 func (x *ImageHeader) Reset() {
 	*x = ImageHeader{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[13]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1515,7 +1653,7 @@ func (x *ImageHeader) String() string {
 func (*ImageHeader) ProtoMessage() {}
 
 func (x *ImageHeader) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[13]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1528,7 +1666,7 @@ func (x *ImageHeader) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImageHeader.ProtoReflect.Descriptor instead.
 func (*ImageHeader) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{13}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ImageHeader) GetImageId() string {
@@ -1614,7 +1752,7 @@ type ImagePart struct {
 
 func (x *ImagePart) Reset() {
 	*x = ImagePart{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[14]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1626,7 +1764,7 @@ func (x *ImagePart) String() string {
 func (*ImagePart) ProtoMessage() {}
 
 func (x *ImagePart) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[14]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1639,7 +1777,7 @@ func (x *ImagePart) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImagePart.ProtoReflect.Descriptor instead.
 func (*ImagePart) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{14}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ImagePart) GetSize() uint64 {
@@ -1669,7 +1807,7 @@ type ImageSource struct {
 
 func (x *ImageSource) Reset() {
 	*x = ImageSource{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[15]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1681,7 +1819,7 @@ func (x *ImageSource) String() string {
 func (*ImageSource) ProtoMessage() {}
 
 func (x *ImageSource) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[15]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1694,7 +1832,7 @@ func (x *ImageSource) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImageSource.ProtoReflect.Descriptor instead.
 func (*ImageSource) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{15}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ImageSource) GetSource() isImageSource_Source {
@@ -1742,7 +1880,7 @@ type RegistryImage struct {
 
 func (x *RegistryImage) Reset() {
 	*x = RegistryImage{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[16]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1754,7 +1892,7 @@ func (x *RegistryImage) String() string {
 func (*RegistryImage) ProtoMessage() {}
 
 func (x *RegistryImage) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[16]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1767,7 +1905,7 @@ func (x *RegistryImage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegistryImage.ProtoReflect.Descriptor instead.
 func (*RegistryImage) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{16}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *RegistryImage) GetReference() string {
@@ -1789,7 +1927,7 @@ type ImageChunk struct {
 
 func (x *ImageChunk) Reset() {
 	*x = ImageChunk{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[17]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1801,7 +1939,7 @@ func (x *ImageChunk) String() string {
 func (*ImageChunk) ProtoMessage() {}
 
 func (x *ImageChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[17]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1814,7 +1952,7 @@ func (x *ImageChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImageChunk.ProtoReflect.Descriptor instead.
 func (*ImageChunk) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{17}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ImageChunk) GetData() []byte {
@@ -1833,7 +1971,7 @@ type InstallResponse struct {
 
 func (x *InstallResponse) Reset() {
 	*x = InstallResponse{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[18]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1845,7 +1983,7 @@ func (x *InstallResponse) String() string {
 func (*InstallResponse) ProtoMessage() {}
 
 func (x *InstallResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[18]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1858,7 +1996,7 @@ func (x *InstallResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstallResponse.ProtoReflect.Descriptor instead.
 func (*InstallResponse) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{18}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{19}
 }
 
 // The request of ApplyConfig: a config, or layer payloads, a node certificate or OS CAs to deliver.
@@ -1941,7 +2079,7 @@ type ApplyConfigRequest struct {
 
 func (x *ApplyConfigRequest) Reset() {
 	*x = ApplyConfigRequest{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[19]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1953,7 +2091,7 @@ func (x *ApplyConfigRequest) String() string {
 func (*ApplyConfigRequest) ProtoMessage() {}
 
 func (x *ApplyConfigRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[19]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1966,7 +2104,7 @@ func (x *ApplyConfigRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyConfigRequest.ProtoReflect.Descriptor instead.
 func (*ApplyConfigRequest) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{19}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ApplyConfigRequest) GetFallbackSecret() string {
@@ -2068,7 +2206,7 @@ type GetConfigRequest struct {
 
 func (x *GetConfigRequest) Reset() {
 	*x = GetConfigRequest{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[20]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2080,7 +2218,7 @@ func (x *GetConfigRequest) String() string {
 func (*GetConfigRequest) ProtoMessage() {}
 
 func (x *GetConfigRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[20]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2093,7 +2231,7 @@ func (x *GetConfigRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetConfigRequest.ProtoReflect.Descriptor instead.
 func (*GetConfigRequest) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{20}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *GetConfigRequest) GetStaged() bool {
@@ -2126,7 +2264,7 @@ type GetConfigResponse struct {
 
 func (x *GetConfigResponse) Reset() {
 	*x = GetConfigResponse{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[21]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2138,7 +2276,7 @@ func (x *GetConfigResponse) String() string {
 func (*GetConfigResponse) ProtoMessage() {}
 
 func (x *GetConfigResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[21]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2151,7 +2289,7 @@ func (x *GetConfigResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetConfigResponse.ProtoReflect.Descriptor instead.
 func (*GetConfigResponse) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{21}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *GetConfigResponse) GetDocuments() string {
@@ -2197,7 +2335,7 @@ type ApplyConfigResponse struct {
 
 func (x *ApplyConfigResponse) Reset() {
 	*x = ApplyConfigResponse{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[22]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2209,7 +2347,7 @@ func (x *ApplyConfigResponse) String() string {
 func (*ApplyConfigResponse) ProtoMessage() {}
 
 func (x *ApplyConfigResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[22]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2222,7 +2360,7 @@ func (x *ApplyConfigResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyConfigResponse.ProtoReflect.Descriptor instead.
 func (*ApplyConfigResponse) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{22}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ApplyConfigResponse) GetChanges() []*StorageChange {
@@ -2282,7 +2420,7 @@ type StagedSlot struct {
 
 func (x *StagedSlot) Reset() {
 	*x = StagedSlot{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[23]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2294,7 +2432,7 @@ func (x *StagedSlot) String() string {
 func (*StagedSlot) ProtoMessage() {}
 
 func (x *StagedSlot) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[23]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2307,7 +2445,7 @@ func (x *StagedSlot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StagedSlot.ProtoReflect.Descriptor instead.
 func (*StagedSlot) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{23}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *StagedSlot) GetVersion() string {
@@ -2338,7 +2476,7 @@ type PendingConfig struct {
 
 func (x *PendingConfig) Reset() {
 	*x = PendingConfig{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[24]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2350,7 +2488,7 @@ func (x *PendingConfig) String() string {
 func (*PendingConfig) ProtoMessage() {}
 
 func (x *PendingConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[24]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2363,7 +2501,7 @@ func (x *PendingConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PendingConfig.ProtoReflect.Descriptor instead.
 func (*PendingConfig) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{24}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *PendingConfig) GetVersion() string {
@@ -2402,7 +2540,7 @@ type Plan struct {
 
 func (x *Plan) Reset() {
 	*x = Plan{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[25]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2414,7 +2552,7 @@ func (x *Plan) String() string {
 func (*Plan) ProtoMessage() {}
 
 func (x *Plan) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[25]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2427,7 +2565,7 @@ func (x *Plan) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Plan.ProtoReflect.Descriptor instead.
 func (*Plan) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{25}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *Plan) GetVersion() string {
@@ -2474,7 +2612,7 @@ type PlannedEffect struct {
 
 func (x *PlannedEffect) Reset() {
 	*x = PlannedEffect{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[26]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2486,7 +2624,7 @@ func (x *PlannedEffect) String() string {
 func (*PlannedEffect) ProtoMessage() {}
 
 func (x *PlannedEffect) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[26]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2499,7 +2637,7 @@ func (x *PlannedEffect) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlannedEffect.ProtoReflect.Descriptor instead.
 func (*PlannedEffect) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{26}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *PlannedEffect) GetName() string {
@@ -2537,7 +2675,7 @@ type StorageChange struct {
 
 func (x *StorageChange) Reset() {
 	*x = StorageChange{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[27]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2549,7 +2687,7 @@ func (x *StorageChange) String() string {
 func (*StorageChange) ProtoMessage() {}
 
 func (x *StorageChange) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[27]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2562,7 +2700,7 @@ func (x *StorageChange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StorageChange.ProtoReflect.Descriptor instead.
 func (*StorageChange) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{27}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *StorageChange) GetVolume() string {
@@ -2596,7 +2734,7 @@ type ResetVolumeRequest struct {
 
 func (x *ResetVolumeRequest) Reset() {
 	*x = ResetVolumeRequest{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[28]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2608,7 +2746,7 @@ func (x *ResetVolumeRequest) String() string {
 func (*ResetVolumeRequest) ProtoMessage() {}
 
 func (x *ResetVolumeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[28]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2621,7 +2759,7 @@ func (x *ResetVolumeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResetVolumeRequest.ProtoReflect.Descriptor instead.
 func (*ResetVolumeRequest) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{28}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *ResetVolumeRequest) GetVolume() string {
@@ -2654,7 +2792,7 @@ type ResetVolumeResponse struct {
 
 func (x *ResetVolumeResponse) Reset() {
 	*x = ResetVolumeResponse{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[29]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2666,7 +2804,7 @@ func (x *ResetVolumeResponse) String() string {
 func (*ResetVolumeResponse) ProtoMessage() {}
 
 func (x *ResetVolumeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[29]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2679,7 +2817,7 @@ func (x *ResetVolumeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResetVolumeResponse.ProtoReflect.Descriptor instead.
 func (*ResetVolumeResponse) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{29}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{30}
 }
 
 // The request of RollbackConfig.
@@ -2696,7 +2834,7 @@ type RollbackConfigRequest struct {
 
 func (x *RollbackConfigRequest) Reset() {
 	*x = RollbackConfigRequest{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[30]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2708,7 +2846,7 @@ func (x *RollbackConfigRequest) String() string {
 func (*RollbackConfigRequest) ProtoMessage() {}
 
 func (x *RollbackConfigRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[30]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2721,7 +2859,7 @@ func (x *RollbackConfigRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RollbackConfigRequest.ProtoReflect.Descriptor instead.
 func (*RollbackConfigRequest) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{30}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *RollbackConfigRequest) GetVersion() string {
@@ -2748,7 +2886,7 @@ type RollbackConfigResponse struct {
 
 func (x *RollbackConfigResponse) Reset() {
 	*x = RollbackConfigResponse{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[31]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2760,7 +2898,7 @@ func (x *RollbackConfigResponse) String() string {
 func (*RollbackConfigResponse) ProtoMessage() {}
 
 func (x *RollbackConfigResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[31]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2773,7 +2911,7 @@ func (x *RollbackConfigResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RollbackConfigResponse.ProtoReflect.Descriptor instead.
 func (*RollbackConfigResponse) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{31}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *RollbackConfigResponse) GetChanges() []*StorageChange {
@@ -2812,7 +2950,7 @@ type RollbackImageRequest struct {
 
 func (x *RollbackImageRequest) Reset() {
 	*x = RollbackImageRequest{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[32]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2824,7 +2962,7 @@ func (x *RollbackImageRequest) String() string {
 func (*RollbackImageRequest) ProtoMessage() {}
 
 func (x *RollbackImageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[32]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2837,7 +2975,7 @@ func (x *RollbackImageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RollbackImageRequest.ProtoReflect.Descriptor instead.
 func (*RollbackImageRequest) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{32}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *RollbackImageRequest) GetRootHash() []byte {
@@ -2871,7 +3009,7 @@ type RollbackImageResponse struct {
 
 func (x *RollbackImageResponse) Reset() {
 	*x = RollbackImageResponse{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[33]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2883,7 +3021,7 @@ func (x *RollbackImageResponse) String() string {
 func (*RollbackImageResponse) ProtoMessage() {}
 
 func (x *RollbackImageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[33]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2896,7 +3034,7 @@ func (x *RollbackImageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RollbackImageResponse.ProtoReflect.Descriptor instead.
 func (*RollbackImageResponse) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{33}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *RollbackImageResponse) GetAlreadyInstalled() bool {
@@ -2939,7 +3077,7 @@ type ActivateImageRequest struct {
 
 func (x *ActivateImageRequest) Reset() {
 	*x = ActivateImageRequest{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[34]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2951,7 +3089,7 @@ func (x *ActivateImageRequest) String() string {
 func (*ActivateImageRequest) ProtoMessage() {}
 
 func (x *ActivateImageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[34]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2964,7 +3102,7 @@ func (x *ActivateImageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActivateImageRequest.ProtoReflect.Descriptor instead.
 func (*ActivateImageRequest) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{34}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *ActivateImageRequest) GetRootHash() []byte {
@@ -2989,7 +3127,7 @@ type ActivateImageResponse struct {
 
 func (x *ActivateImageResponse) Reset() {
 	*x = ActivateImageResponse{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[35]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3001,7 +3139,7 @@ func (x *ActivateImageResponse) String() string {
 func (*ActivateImageResponse) ProtoMessage() {}
 
 func (x *ActivateImageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[35]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3014,7 +3152,7 @@ func (x *ActivateImageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActivateImageResponse.ProtoReflect.Descriptor instead.
 func (*ActivateImageResponse) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{35}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *ActivateImageResponse) GetEntry() string {
@@ -3049,7 +3187,7 @@ type ConfirmConfigRequest struct {
 
 func (x *ConfirmConfigRequest) Reset() {
 	*x = ConfirmConfigRequest{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[36]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3061,7 +3199,7 @@ func (x *ConfirmConfigRequest) String() string {
 func (*ConfirmConfigRequest) ProtoMessage() {}
 
 func (x *ConfirmConfigRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[36]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3074,7 +3212,7 @@ func (x *ConfirmConfigRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfirmConfigRequest.ProtoReflect.Descriptor instead.
 func (*ConfirmConfigRequest) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{36}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *ConfirmConfigRequest) GetVersion() string {
@@ -3097,7 +3235,7 @@ type ConfirmConfigResponse struct {
 
 func (x *ConfirmConfigResponse) Reset() {
 	*x = ConfirmConfigResponse{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[37]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3109,7 +3247,7 @@ func (x *ConfirmConfigResponse) String() string {
 func (*ConfirmConfigResponse) ProtoMessage() {}
 
 func (x *ConfirmConfigResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[37]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3122,7 +3260,7 @@ func (x *ConfirmConfigResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfirmConfigResponse.ProtoReflect.Descriptor instead.
 func (*ConfirmConfigResponse) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{37}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *ConfirmConfigResponse) GetWarnings() []string {
@@ -3145,7 +3283,7 @@ type StatusRequest struct {
 
 func (x *StatusRequest) Reset() {
 	*x = StatusRequest{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[38]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3157,7 +3295,7 @@ func (x *StatusRequest) String() string {
 func (*StatusRequest) ProtoMessage() {}
 
 func (x *StatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[38]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3170,7 +3308,7 @@ func (x *StatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusRequest.ProtoReflect.Descriptor instead.
 func (*StatusRequest) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{38}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *StatusRequest) GetCheckHealth() bool {
@@ -3228,7 +3366,7 @@ type StatusResponse struct {
 
 func (x *StatusResponse) Reset() {
 	*x = StatusResponse{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[39]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3240,7 +3378,7 @@ func (x *StatusResponse) String() string {
 func (*StatusResponse) ProtoMessage() {}
 
 func (x *StatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[39]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3253,7 +3391,7 @@ func (x *StatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusResponse.ProtoReflect.Descriptor instead.
 func (*StatusResponse) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{39}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *StatusResponse) GetDisks() []*DiskStatus {
@@ -3400,7 +3538,7 @@ type ConfigTrial struct {
 
 func (x *ConfigTrial) Reset() {
 	*x = ConfigTrial{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[40]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3412,7 +3550,7 @@ func (x *ConfigTrial) String() string {
 func (*ConfigTrial) ProtoMessage() {}
 
 func (x *ConfigTrial) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[40]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3425,7 +3563,7 @@ func (x *ConfigTrial) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigTrial.ProtoReflect.Descriptor instead.
 func (*ConfigTrial) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{40}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *ConfigTrial) GetVersion() string {
@@ -3487,7 +3625,7 @@ type OutputStatus struct {
 
 func (x *OutputStatus) Reset() {
 	*x = OutputStatus{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[41]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3499,7 +3637,7 @@ func (x *OutputStatus) String() string {
 func (*OutputStatus) ProtoMessage() {}
 
 func (x *OutputStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[41]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3512,7 +3650,7 @@ func (x *OutputStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OutputStatus.ProtoReflect.Descriptor instead.
 func (*OutputStatus) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{41}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *OutputStatus) GetName() string {
@@ -3589,7 +3727,7 @@ type BootStatus struct {
 
 func (x *BootStatus) Reset() {
 	*x = BootStatus{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[42]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3601,7 +3739,7 @@ func (x *BootStatus) String() string {
 func (*BootStatus) ProtoMessage() {}
 
 func (x *BootStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[42]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3614,7 +3752,7 @@ func (x *BootStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BootStatus.ProtoReflect.Descriptor instead.
 func (*BootStatus) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{42}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *BootStatus) GetRunning() *BootImage {
@@ -3729,7 +3867,7 @@ type BootHealth struct {
 
 func (x *BootHealth) Reset() {
 	*x = BootHealth{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[43]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3741,7 +3879,7 @@ func (x *BootHealth) String() string {
 func (*BootHealth) ProtoMessage() {}
 
 func (x *BootHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[43]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3754,7 +3892,7 @@ func (x *BootHealth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BootHealth.ProtoReflect.Descriptor instead.
 func (*BootHealth) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{43}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *BootHealth) GetHealthy() bool {
@@ -3799,7 +3937,7 @@ type BootImage struct {
 
 func (x *BootImage) Reset() {
 	*x = BootImage{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[44]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3811,7 +3949,7 @@ func (x *BootImage) String() string {
 func (*BootImage) ProtoMessage() {}
 
 func (x *BootImage) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[44]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3824,7 +3962,7 @@ func (x *BootImage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BootImage.ProtoReflect.Descriptor instead.
 func (*BootImage) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{44}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *BootImage) GetRootHash() []byte {
@@ -3874,7 +4012,7 @@ type TrustStatus struct {
 
 func (x *TrustStatus) Reset() {
 	*x = TrustStatus{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[45]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3886,7 +4024,7 @@ func (x *TrustStatus) String() string {
 func (*TrustStatus) ProtoMessage() {}
 
 func (x *TrustStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[45]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3899,7 +4037,7 @@ func (x *TrustStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TrustStatus.ProtoReflect.Descriptor instead.
 func (*TrustStatus) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{45}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *TrustStatus) GetName() string {
@@ -3948,7 +4086,7 @@ type CertificateStatus struct {
 
 func (x *CertificateStatus) Reset() {
 	*x = CertificateStatus{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[46]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3960,7 +4098,7 @@ func (x *CertificateStatus) String() string {
 func (*CertificateStatus) ProtoMessage() {}
 
 func (x *CertificateStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[46]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3973,7 +4111,7 @@ func (x *CertificateStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CertificateStatus.ProtoReflect.Descriptor instead.
 func (*CertificateStatus) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{46}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *CertificateStatus) GetName() string {
@@ -4028,7 +4166,7 @@ type TimeStatus struct {
 
 func (x *TimeStatus) Reset() {
 	*x = TimeStatus{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[47]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4040,7 +4178,7 @@ func (x *TimeStatus) String() string {
 func (*TimeStatus) ProtoMessage() {}
 
 func (x *TimeStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[47]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4053,7 +4191,7 @@ func (x *TimeStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TimeStatus.ProtoReflect.Descriptor instead.
 func (*TimeStatus) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{47}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *TimeStatus) GetSynchronised() bool {
@@ -4100,7 +4238,7 @@ type DiskStatus struct {
 
 func (x *DiskStatus) Reset() {
 	*x = DiskStatus{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[48]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4112,7 +4250,7 @@ func (x *DiskStatus) String() string {
 func (*DiskStatus) ProtoMessage() {}
 
 func (x *DiskStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[48]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4125,7 +4263,7 @@ func (x *DiskStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiskStatus.ProtoReflect.Descriptor instead.
 func (*DiskStatus) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{48}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *DiskStatus) GetName() string {
@@ -4174,7 +4312,7 @@ type VolumeStatus struct {
 
 func (x *VolumeStatus) Reset() {
 	*x = VolumeStatus{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[49]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4186,7 +4324,7 @@ func (x *VolumeStatus) String() string {
 func (*VolumeStatus) ProtoMessage() {}
 
 func (x *VolumeStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[49]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4199,7 +4337,7 @@ func (x *VolumeStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VolumeStatus.ProtoReflect.Descriptor instead.
 func (*VolumeStatus) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{49}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *VolumeStatus) GetName() string {
@@ -4274,7 +4412,7 @@ type LogsRequest struct {
 
 func (x *LogsRequest) Reset() {
 	*x = LogsRequest{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[50]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4286,7 +4424,7 @@ func (x *LogsRequest) String() string {
 func (*LogsRequest) ProtoMessage() {}
 
 func (x *LogsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[50]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4299,7 +4437,7 @@ func (x *LogsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogsRequest.ProtoReflect.Descriptor instead.
 func (*LogsRequest) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{50}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *LogsRequest) GetUnit() string {
@@ -4334,7 +4472,7 @@ type LogsResponse struct {
 
 func (x *LogsResponse) Reset() {
 	*x = LogsResponse{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[51]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4346,7 +4484,7 @@ func (x *LogsResponse) String() string {
 func (*LogsResponse) ProtoMessage() {}
 
 func (x *LogsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[51]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4359,7 +4497,7 @@ func (x *LogsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogsResponse.ProtoReflect.Descriptor instead.
 func (*LogsResponse) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{51}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *LogsResponse) GetLine() string {
@@ -4378,7 +4516,7 @@ type RebootRequest struct {
 
 func (x *RebootRequest) Reset() {
 	*x = RebootRequest{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[52]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4390,7 +4528,7 @@ func (x *RebootRequest) String() string {
 func (*RebootRequest) ProtoMessage() {}
 
 func (x *RebootRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[52]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4403,7 +4541,7 @@ func (x *RebootRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RebootRequest.ProtoReflect.Descriptor instead.
 func (*RebootRequest) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{52}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{53}
 }
 
 // The response of Reboot, which the node sends before it reboots.
@@ -4415,7 +4553,7 @@ type RebootResponse struct {
 
 func (x *RebootResponse) Reset() {
 	*x = RebootResponse{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[53]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4427,7 +4565,7 @@ func (x *RebootResponse) String() string {
 func (*RebootResponse) ProtoMessage() {}
 
 func (x *RebootResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[53]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4440,7 +4578,7 @@ func (x *RebootResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RebootResponse.ProtoReflect.Descriptor instead.
 func (*RebootResponse) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{53}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{54}
 }
 
 // A message of the Upgrade stream: the header first, then the image's chunks.
@@ -4457,7 +4595,7 @@ type UpgradeRequest struct {
 
 func (x *UpgradeRequest) Reset() {
 	*x = UpgradeRequest{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[54]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4469,7 +4607,7 @@ func (x *UpgradeRequest) String() string {
 func (*UpgradeRequest) ProtoMessage() {}
 
 func (x *UpgradeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[54]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4482,7 +4620,7 @@ func (x *UpgradeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpgradeRequest.ProtoReflect.Descriptor instead.
 func (*UpgradeRequest) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{54}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *UpgradeRequest) GetMessage() isUpgradeRequest_Message {
@@ -4564,7 +4702,7 @@ type UpgradeHeader struct {
 
 func (x *UpgradeHeader) Reset() {
 	*x = UpgradeHeader{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[55]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4576,7 +4714,7 @@ func (x *UpgradeHeader) String() string {
 func (*UpgradeHeader) ProtoMessage() {}
 
 func (x *UpgradeHeader) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[55]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4589,7 +4727,7 @@ func (x *UpgradeHeader) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpgradeHeader.ProtoReflect.Descriptor instead.
 func (*UpgradeHeader) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{55}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *UpgradeHeader) GetImage() *ImageHeader {
@@ -4659,7 +4797,7 @@ type UpgradeResponse struct {
 
 func (x *UpgradeResponse) Reset() {
 	*x = UpgradeResponse{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[56]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4671,7 +4809,7 @@ func (x *UpgradeResponse) String() string {
 func (*UpgradeResponse) ProtoMessage() {}
 
 func (x *UpgradeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[56]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4684,7 +4822,7 @@ func (x *UpgradeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpgradeResponse.ProtoReflect.Descriptor instead.
 func (*UpgradeResponse) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{56}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *UpgradeResponse) GetAlreadyInstalled() bool {
@@ -4742,7 +4880,7 @@ type PendingOutcome struct {
 
 func (x *PendingOutcome) Reset() {
 	*x = PendingOutcome{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[57]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4754,7 +4892,7 @@ func (x *PendingOutcome) String() string {
 func (*PendingOutcome) ProtoMessage() {}
 
 func (x *PendingOutcome) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[57]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4767,7 +4905,7 @@ func (x *PendingOutcome) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PendingOutcome.ProtoReflect.Descriptor instead.
 func (*PendingOutcome) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{57}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *PendingOutcome) GetVersion() string {
@@ -4793,7 +4931,7 @@ type DiagnosticsRequest struct {
 
 func (x *DiagnosticsRequest) Reset() {
 	*x = DiagnosticsRequest{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[58]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4805,7 +4943,7 @@ func (x *DiagnosticsRequest) String() string {
 func (*DiagnosticsRequest) ProtoMessage() {}
 
 func (x *DiagnosticsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[58]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4818,7 +4956,7 @@ func (x *DiagnosticsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiagnosticsRequest.ProtoReflect.Descriptor instead.
 func (*DiagnosticsRequest) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{58}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{59}
 }
 
 // The response of Diagnostics.
@@ -4832,7 +4970,7 @@ type DiagnosticsResponse struct {
 
 func (x *DiagnosticsResponse) Reset() {
 	*x = DiagnosticsResponse{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[59]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4844,7 +4982,7 @@ func (x *DiagnosticsResponse) String() string {
 func (*DiagnosticsResponse) ProtoMessage() {}
 
 func (x *DiagnosticsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[59]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4857,7 +4995,7 @@ func (x *DiagnosticsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiagnosticsResponse.ProtoReflect.Descriptor instead.
 func (*DiagnosticsResponse) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{59}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *DiagnosticsResponse) GetDiagnostics() []*Diagnostic {
@@ -4887,7 +5025,7 @@ type Diagnostic struct {
 
 func (x *Diagnostic) Reset() {
 	*x = Diagnostic{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[60]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4899,7 +5037,7 @@ func (x *Diagnostic) String() string {
 func (*Diagnostic) ProtoMessage() {}
 
 func (x *Diagnostic) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[60]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4912,7 +5050,7 @@ func (x *Diagnostic) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Diagnostic.ProtoReflect.Descriptor instead.
 func (*Diagnostic) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{60}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *Diagnostic) GetName() string {
@@ -4978,7 +5116,7 @@ type DiagnosticParameter struct {
 
 func (x *DiagnosticParameter) Reset() {
 	*x = DiagnosticParameter{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[61]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4990,7 +5128,7 @@ func (x *DiagnosticParameter) String() string {
 func (*DiagnosticParameter) ProtoMessage() {}
 
 func (x *DiagnosticParameter) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[61]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5003,7 +5141,7 @@ func (x *DiagnosticParameter) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiagnosticParameter.ProtoReflect.Descriptor instead.
 func (*DiagnosticParameter) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{61}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *DiagnosticParameter) GetName() string {
@@ -5082,7 +5220,7 @@ type RunDiagnosticRequest struct {
 
 func (x *RunDiagnosticRequest) Reset() {
 	*x = RunDiagnosticRequest{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[62]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5094,7 +5232,7 @@ func (x *RunDiagnosticRequest) String() string {
 func (*RunDiagnosticRequest) ProtoMessage() {}
 
 func (x *RunDiagnosticRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[62]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5107,7 +5245,7 @@ func (x *RunDiagnosticRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunDiagnosticRequest.ProtoReflect.Descriptor instead.
 func (*RunDiagnosticRequest) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{62}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *RunDiagnosticRequest) GetName() string {
@@ -5139,7 +5277,7 @@ type RunDiagnosticResponse struct {
 
 func (x *RunDiagnosticResponse) Reset() {
 	*x = RunDiagnosticResponse{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[63]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5151,7 +5289,7 @@ func (x *RunDiagnosticResponse) String() string {
 func (*RunDiagnosticResponse) ProtoMessage() {}
 
 func (x *RunDiagnosticResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[63]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5164,7 +5302,7 @@ func (x *RunDiagnosticResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunDiagnosticResponse.ProtoReflect.Descriptor instead.
 func (*RunDiagnosticResponse) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{63}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *RunDiagnosticResponse) GetOutput() isRunDiagnosticResponse_Output {
@@ -5241,7 +5379,7 @@ type DiagnosticExit struct {
 
 func (x *DiagnosticExit) Reset() {
 	*x = DiagnosticExit{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[64]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5253,7 +5391,7 @@ func (x *DiagnosticExit) String() string {
 func (*DiagnosticExit) ProtoMessage() {}
 
 func (x *DiagnosticExit) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[64]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5266,7 +5404,7 @@ func (x *DiagnosticExit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiagnosticExit.ProtoReflect.Descriptor instead.
 func (*DiagnosticExit) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{64}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *DiagnosticExit) GetCode() int32 {
@@ -5304,7 +5442,7 @@ type EnrollSecureBootRequest struct {
 
 func (x *EnrollSecureBootRequest) Reset() {
 	*x = EnrollSecureBootRequest{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[65]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5316,7 +5454,7 @@ func (x *EnrollSecureBootRequest) String() string {
 func (*EnrollSecureBootRequest) ProtoMessage() {}
 
 func (x *EnrollSecureBootRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[65]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5329,7 +5467,7 @@ func (x *EnrollSecureBootRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnrollSecureBootRequest.ProtoReflect.Descriptor instead.
 func (*EnrollSecureBootRequest) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{65}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *EnrollSecureBootRequest) GetDb() []byte {
@@ -5383,7 +5521,7 @@ type EnrollSecureBootResponse struct {
 
 func (x *EnrollSecureBootResponse) Reset() {
 	*x = EnrollSecureBootResponse{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[66]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5395,7 +5533,7 @@ func (x *EnrollSecureBootResponse) String() string {
 func (*EnrollSecureBootResponse) ProtoMessage() {}
 
 func (x *EnrollSecureBootResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[66]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5408,7 +5546,7 @@ func (x *EnrollSecureBootResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnrollSecureBootResponse.ProtoReflect.Descriptor instead.
 func (*EnrollSecureBootResponse) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{66}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *EnrollSecureBootResponse) GetDbBefore() []string {
@@ -5455,7 +5593,7 @@ type SecureBootDriversRequest struct {
 
 func (x *SecureBootDriversRequest) Reset() {
 	*x = SecureBootDriversRequest{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[67]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5467,7 +5605,7 @@ func (x *SecureBootDriversRequest) String() string {
 func (*SecureBootDriversRequest) ProtoMessage() {}
 
 func (x *SecureBootDriversRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[67]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5480,7 +5618,7 @@ func (x *SecureBootDriversRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SecureBootDriversRequest.ProtoReflect.Descriptor instead.
 func (*SecureBootDriversRequest) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{67}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{68}
 }
 
 // The response of SecureBootDrivers.
@@ -5497,7 +5635,7 @@ type SecureBootDriversResponse struct {
 
 func (x *SecureBootDriversResponse) Reset() {
 	*x = SecureBootDriversResponse{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[68]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5509,7 +5647,7 @@ func (x *SecureBootDriversResponse) String() string {
 func (*SecureBootDriversResponse) ProtoMessage() {}
 
 func (x *SecureBootDriversResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[68]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5522,7 +5660,7 @@ func (x *SecureBootDriversResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SecureBootDriversResponse.ProtoReflect.Descriptor instead.
 func (*SecureBootDriversResponse) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{68}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *SecureBootDriversResponse) GetDrivers() []*SecureBootDriver {
@@ -5553,7 +5691,7 @@ type SecureBootDriver struct {
 
 func (x *SecureBootDriver) Reset() {
 	*x = SecureBootDriver{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[69]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5565,7 +5703,7 @@ func (x *SecureBootDriver) String() string {
 func (*SecureBootDriver) ProtoMessage() {}
 
 func (x *SecureBootDriver) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[69]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5578,7 +5716,7 @@ func (x *SecureBootDriver) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SecureBootDriver.ProtoReflect.Descriptor instead.
 func (*SecureBootDriver) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{69}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *SecureBootDriver) GetSha256() []byte {
@@ -5604,7 +5742,7 @@ type ShutdownRequest struct {
 
 func (x *ShutdownRequest) Reset() {
 	*x = ShutdownRequest{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[70]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5616,7 +5754,7 @@ func (x *ShutdownRequest) String() string {
 func (*ShutdownRequest) ProtoMessage() {}
 
 func (x *ShutdownRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[70]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5629,7 +5767,7 @@ func (x *ShutdownRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShutdownRequest.ProtoReflect.Descriptor instead.
 func (*ShutdownRequest) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{70}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{71}
 }
 
 // The response of Shutdown, which the node sends before it powers off.
@@ -5641,7 +5779,7 @@ type ShutdownResponse struct {
 
 func (x *ShutdownResponse) Reset() {
 	*x = ShutdownResponse{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[71]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5653,7 +5791,7 @@ func (x *ShutdownResponse) String() string {
 func (*ShutdownResponse) ProtoMessage() {}
 
 func (x *ShutdownResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[71]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5666,7 +5804,7 @@ func (x *ShutdownResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShutdownResponse.ProtoReflect.Descriptor instead.
 func (*ShutdownResponse) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{71}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{72}
 }
 
 // One BGP session: a BGPPeer's address, or one of its interfaces.
@@ -5695,7 +5833,7 @@ type BGPPeerStatus struct {
 
 func (x *BGPPeerStatus) Reset() {
 	*x = BGPPeerStatus{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[72]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5707,7 +5845,7 @@ func (x *BGPPeerStatus) String() string {
 func (*BGPPeerStatus) ProtoMessage() {}
 
 func (x *BGPPeerStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[72]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5720,7 +5858,7 @@ func (x *BGPPeerStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BGPPeerStatus.ProtoReflect.Descriptor instead.
 func (*BGPPeerStatus) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{72}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *BGPPeerStatus) GetName() string {
@@ -5792,7 +5930,7 @@ type BGPStatus struct {
 
 func (x *BGPStatus) Reset() {
 	*x = BGPStatus{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[73]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5804,7 +5942,7 @@ func (x *BGPStatus) String() string {
 func (*BGPStatus) ProtoMessage() {}
 
 func (x *BGPStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[73]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5817,7 +5955,7 @@ func (x *BGPStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BGPStatus.ProtoReflect.Descriptor instead.
 func (*BGPStatus) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{73}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *BGPStatus) GetPeers() []*BGPPeerStatus {
@@ -5860,7 +5998,7 @@ type ConfigActivation struct {
 
 func (x *ConfigActivation) Reset() {
 	*x = ConfigActivation{}
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[74]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5872,7 +6010,7 @@ func (x *ConfigActivation) String() string {
 func (*ConfigActivation) ProtoMessage() {}
 
 func (x *ConfigActivation) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_node_v1_node_proto_msgTypes[74]
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5885,7 +6023,7 @@ func (x *ConfigActivation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigActivation.ProtoReflect.Descriptor instead.
 func (*ConfigActivation) Descriptor() ([]byte, []int) {
-	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{74}
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *ConfigActivation) GetTargetVersion() string {
@@ -5949,7 +6087,7 @@ var File_chalkos_node_v1_node_proto protoreflect.FileDescriptor
 const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\n" +
 	"\x1achalkos/node/v1/node.proto\x12\x0fchalkos.node.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x19google/protobuf/any.proto\x1a\x1egoogle/protobuf/duration.proto\"\r\n" +
-	"\vInfoRequest\"\xcf\x03\n" +
+	"\vInfoRequest\"\x99\x04\n" +
 	"\fInfoResponse\x12)\n" +
 	"\x04mode\x18\x01 \x01(\x0e2\x15.chalkos.node.v1.ModeR\x04mode\x12\x19\n" +
 	"\bimage_id\x18\x02 \x01(\tR\aimageId\x12\x1c\n" +
@@ -5967,7 +6105,12 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\brevision\x18\f \x01(\tR\brevision\x12\x10\n" +
 	"\x03tag\x18\r \x01(\tR\x03tag\x12\x16\n" +
 	"\x06layers\x18\x0e \x03(\tR\x06layers\x12\x1b\n" +
-	"\tnode_name\x18\x0f \x01(\tR\bnodeName\"\x0e\n" +
+	"\tnode_name\x18\x0f \x01(\tR\bnodeName\x12H\n" +
+	"\rmodule_policy\x18\x10 \x01(\v2#.chalkos.node.v1.ModulePolicyStatusR\fmodulePolicy\"\x80\x01\n" +
+	"\x12ModulePolicyStatus\x128\n" +
+	"\x05state\x18\x01 \x01(\x0e2\".chalkos.node.v1.ModulePolicyStateR\x05state\x12\x16\n" +
+	"\x06detail\x18\x02 \x01(\tR\x06detail\x12\x18\n" +
+	"\aversion\x18\x03 \x01(\tR\aversion\"\x0e\n" +
 	"\fDisksRequest\"<\n" +
 	"\rDisksResponse\x12+\n" +
 	"\x05disks\x18\x01 \x03(\v2\x15.chalkos.node.v1.DiskR\x05disks\"\x80\x02\n" +
@@ -6360,7 +6503,14 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x17SECURE_BOOT_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14SECURE_BOOT_DISABLED\x10\x01\x12\x17\n" +
 	"\x13SECURE_BOOT_ENABLED\x10\x02\x12\x1a\n" +
-	"\x16SECURE_BOOT_SETUP_MODE\x10\x03*U\n" +
+	"\x16SECURE_BOOT_SETUP_MODE\x10\x03*\xdf\x01\n" +
+	"\x11ModulePolicyState\x12#\n" +
+	"\x1fMODULE_POLICY_STATE_UNSPECIFIED\x10\x00\x12 \n" +
+	"\x1cMODULE_POLICY_STATE_ENFORCED\x10\x01\x12$\n" +
+	" MODULE_POLICY_STATE_NOT_ENFORCED\x10\x02\x12\x1e\n" +
+	"\x1aMODULE_POLICY_STATE_FAILED\x10\x03\x12 \n" +
+	"\x1cMODULE_POLICY_STATE_TAMPERED\x10\x04\x12\x1b\n" +
+	"\x17MODULE_POLICY_STATE_OFF\x10\x05*U\n" +
 	"\tSlotState\x12\x1a\n" +
 	"\x16SLOT_STATE_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11SLOT_STATE_STAGED\x10\x01\x12\x15\n" +
@@ -6412,206 +6562,210 @@ func file_chalkos_node_v1_node_proto_rawDescGZIP() []byte {
 	return file_chalkos_node_v1_node_proto_rawDescData
 }
 
-var file_chalkos_node_v1_node_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_chalkos_node_v1_node_proto_msgTypes = make([]protoimpl.MessageInfo, 79)
+var file_chalkos_node_v1_node_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
+var file_chalkos_node_v1_node_proto_msgTypes = make([]protoimpl.MessageInfo, 80)
 var file_chalkos_node_v1_node_proto_goTypes = []any{
 	(Mode)(0),                         // 0: chalkos.node.v1.Mode
 	(SecureBoot)(0),                   // 1: chalkos.node.v1.SecureBoot
-	(SlotState)(0),                    // 2: chalkos.node.v1.SlotState
-	(PendingFate)(0),                  // 3: chalkos.node.v1.PendingFate
-	(ActivationState)(0),              // 4: chalkos.node.v1.ActivationState
-	(*InfoRequest)(nil),               // 5: chalkos.node.v1.InfoRequest
-	(*InfoResponse)(nil),              // 6: chalkos.node.v1.InfoResponse
-	(*DisksRequest)(nil),              // 7: chalkos.node.v1.DisksRequest
-	(*DisksResponse)(nil),             // 8: chalkos.node.v1.DisksResponse
-	(*Disk)(nil),                      // 9: chalkos.node.v1.Disk
-	(*Partition)(nil),                 // 10: chalkos.node.v1.Partition
-	(*ContractRequest)(nil),           // 11: chalkos.node.v1.ContractRequest
-	(*ContractResponse)(nil),          // 12: chalkos.node.v1.ContractResponse
-	(*InstallRequest)(nil),            // 13: chalkos.node.v1.InstallRequest
-	(*InstallHeader)(nil),             // 14: chalkos.node.v1.InstallHeader
-	(*ImageContract)(nil),             // 15: chalkos.node.v1.ImageContract
-	(*InPlace)(nil),                   // 16: chalkos.node.v1.InPlace
-	(*DiskReference)(nil),             // 17: chalkos.node.v1.DiskReference
-	(*ImageHeader)(nil),               // 18: chalkos.node.v1.ImageHeader
-	(*ImagePart)(nil),                 // 19: chalkos.node.v1.ImagePart
-	(*ImageSource)(nil),               // 20: chalkos.node.v1.ImageSource
-	(*RegistryImage)(nil),             // 21: chalkos.node.v1.RegistryImage
-	(*ImageChunk)(nil),                // 22: chalkos.node.v1.ImageChunk
-	(*InstallResponse)(nil),           // 23: chalkos.node.v1.InstallResponse
-	(*ApplyConfigRequest)(nil),        // 24: chalkos.node.v1.ApplyConfigRequest
-	(*GetConfigRequest)(nil),          // 25: chalkos.node.v1.GetConfigRequest
-	(*GetConfigResponse)(nil),         // 26: chalkos.node.v1.GetConfigResponse
-	(*ApplyConfigResponse)(nil),       // 27: chalkos.node.v1.ApplyConfigResponse
-	(*StagedSlot)(nil),                // 28: chalkos.node.v1.StagedSlot
-	(*PendingConfig)(nil),             // 29: chalkos.node.v1.PendingConfig
-	(*Plan)(nil),                      // 30: chalkos.node.v1.Plan
-	(*PlannedEffect)(nil),             // 31: chalkos.node.v1.PlannedEffect
-	(*StorageChange)(nil),             // 32: chalkos.node.v1.StorageChange
-	(*ResetVolumeRequest)(nil),        // 33: chalkos.node.v1.ResetVolumeRequest
-	(*ResetVolumeResponse)(nil),       // 34: chalkos.node.v1.ResetVolumeResponse
-	(*RollbackConfigRequest)(nil),     // 35: chalkos.node.v1.RollbackConfigRequest
-	(*RollbackConfigResponse)(nil),    // 36: chalkos.node.v1.RollbackConfigResponse
-	(*RollbackImageRequest)(nil),      // 37: chalkos.node.v1.RollbackImageRequest
-	(*RollbackImageResponse)(nil),     // 38: chalkos.node.v1.RollbackImageResponse
-	(*ActivateImageRequest)(nil),      // 39: chalkos.node.v1.ActivateImageRequest
-	(*ActivateImageResponse)(nil),     // 40: chalkos.node.v1.ActivateImageResponse
-	(*ConfirmConfigRequest)(nil),      // 41: chalkos.node.v1.ConfirmConfigRequest
-	(*ConfirmConfigResponse)(nil),     // 42: chalkos.node.v1.ConfirmConfigResponse
-	(*StatusRequest)(nil),             // 43: chalkos.node.v1.StatusRequest
-	(*StatusResponse)(nil),            // 44: chalkos.node.v1.StatusResponse
-	(*ConfigTrial)(nil),               // 45: chalkos.node.v1.ConfigTrial
-	(*OutputStatus)(nil),              // 46: chalkos.node.v1.OutputStatus
-	(*BootStatus)(nil),                // 47: chalkos.node.v1.BootStatus
-	(*BootHealth)(nil),                // 48: chalkos.node.v1.BootHealth
-	(*BootImage)(nil),                 // 49: chalkos.node.v1.BootImage
-	(*TrustStatus)(nil),               // 50: chalkos.node.v1.TrustStatus
-	(*CertificateStatus)(nil),         // 51: chalkos.node.v1.CertificateStatus
-	(*TimeStatus)(nil),                // 52: chalkos.node.v1.TimeStatus
-	(*DiskStatus)(nil),                // 53: chalkos.node.v1.DiskStatus
-	(*VolumeStatus)(nil),              // 54: chalkos.node.v1.VolumeStatus
-	(*LogsRequest)(nil),               // 55: chalkos.node.v1.LogsRequest
-	(*LogsResponse)(nil),              // 56: chalkos.node.v1.LogsResponse
-	(*RebootRequest)(nil),             // 57: chalkos.node.v1.RebootRequest
-	(*RebootResponse)(nil),            // 58: chalkos.node.v1.RebootResponse
-	(*UpgradeRequest)(nil),            // 59: chalkos.node.v1.UpgradeRequest
-	(*UpgradeHeader)(nil),             // 60: chalkos.node.v1.UpgradeHeader
-	(*UpgradeResponse)(nil),           // 61: chalkos.node.v1.UpgradeResponse
-	(*PendingOutcome)(nil),            // 62: chalkos.node.v1.PendingOutcome
-	(*DiagnosticsRequest)(nil),        // 63: chalkos.node.v1.DiagnosticsRequest
-	(*DiagnosticsResponse)(nil),       // 64: chalkos.node.v1.DiagnosticsResponse
-	(*Diagnostic)(nil),                // 65: chalkos.node.v1.Diagnostic
-	(*DiagnosticParameter)(nil),       // 66: chalkos.node.v1.DiagnosticParameter
-	(*RunDiagnosticRequest)(nil),      // 67: chalkos.node.v1.RunDiagnosticRequest
-	(*RunDiagnosticResponse)(nil),     // 68: chalkos.node.v1.RunDiagnosticResponse
-	(*DiagnosticExit)(nil),            // 69: chalkos.node.v1.DiagnosticExit
-	(*EnrollSecureBootRequest)(nil),   // 70: chalkos.node.v1.EnrollSecureBootRequest
-	(*EnrollSecureBootResponse)(nil),  // 71: chalkos.node.v1.EnrollSecureBootResponse
-	(*SecureBootDriversRequest)(nil),  // 72: chalkos.node.v1.SecureBootDriversRequest
-	(*SecureBootDriversResponse)(nil), // 73: chalkos.node.v1.SecureBootDriversResponse
-	(*SecureBootDriver)(nil),          // 74: chalkos.node.v1.SecureBootDriver
-	(*ShutdownRequest)(nil),           // 75: chalkos.node.v1.ShutdownRequest
-	(*ShutdownResponse)(nil),          // 76: chalkos.node.v1.ShutdownResponse
-	(*BGPPeerStatus)(nil),             // 77: chalkos.node.v1.BGPPeerStatus
-	(*BGPStatus)(nil),                 // 78: chalkos.node.v1.BGPStatus
-	(*ConfigActivation)(nil),          // 79: chalkos.node.v1.ConfigActivation
-	nil,                               // 80: chalkos.node.v1.ContractResponse.SchemasEntry
-	nil,                               // 81: chalkos.node.v1.ImageContract.SystemDefinitionsEntry
-	nil,                               // 82: chalkos.node.v1.ImageContract.SchemasEntry
-	nil,                               // 83: chalkos.node.v1.RunDiagnosticRequest.ArgumentsEntry
-	(*anypb.Any)(nil),                 // 84: google.protobuf.Any
-	(*durationpb.Duration)(nil),       // 85: google.protobuf.Duration
-	(*timestamppb.Timestamp)(nil),     // 86: google.protobuf.Timestamp
+	(ModulePolicyState)(0),            // 2: chalkos.node.v1.ModulePolicyState
+	(SlotState)(0),                    // 3: chalkos.node.v1.SlotState
+	(PendingFate)(0),                  // 4: chalkos.node.v1.PendingFate
+	(ActivationState)(0),              // 5: chalkos.node.v1.ActivationState
+	(*InfoRequest)(nil),               // 6: chalkos.node.v1.InfoRequest
+	(*InfoResponse)(nil),              // 7: chalkos.node.v1.InfoResponse
+	(*ModulePolicyStatus)(nil),        // 8: chalkos.node.v1.ModulePolicyStatus
+	(*DisksRequest)(nil),              // 9: chalkos.node.v1.DisksRequest
+	(*DisksResponse)(nil),             // 10: chalkos.node.v1.DisksResponse
+	(*Disk)(nil),                      // 11: chalkos.node.v1.Disk
+	(*Partition)(nil),                 // 12: chalkos.node.v1.Partition
+	(*ContractRequest)(nil),           // 13: chalkos.node.v1.ContractRequest
+	(*ContractResponse)(nil),          // 14: chalkos.node.v1.ContractResponse
+	(*InstallRequest)(nil),            // 15: chalkos.node.v1.InstallRequest
+	(*InstallHeader)(nil),             // 16: chalkos.node.v1.InstallHeader
+	(*ImageContract)(nil),             // 17: chalkos.node.v1.ImageContract
+	(*InPlace)(nil),                   // 18: chalkos.node.v1.InPlace
+	(*DiskReference)(nil),             // 19: chalkos.node.v1.DiskReference
+	(*ImageHeader)(nil),               // 20: chalkos.node.v1.ImageHeader
+	(*ImagePart)(nil),                 // 21: chalkos.node.v1.ImagePart
+	(*ImageSource)(nil),               // 22: chalkos.node.v1.ImageSource
+	(*RegistryImage)(nil),             // 23: chalkos.node.v1.RegistryImage
+	(*ImageChunk)(nil),                // 24: chalkos.node.v1.ImageChunk
+	(*InstallResponse)(nil),           // 25: chalkos.node.v1.InstallResponse
+	(*ApplyConfigRequest)(nil),        // 26: chalkos.node.v1.ApplyConfigRequest
+	(*GetConfigRequest)(nil),          // 27: chalkos.node.v1.GetConfigRequest
+	(*GetConfigResponse)(nil),         // 28: chalkos.node.v1.GetConfigResponse
+	(*ApplyConfigResponse)(nil),       // 29: chalkos.node.v1.ApplyConfigResponse
+	(*StagedSlot)(nil),                // 30: chalkos.node.v1.StagedSlot
+	(*PendingConfig)(nil),             // 31: chalkos.node.v1.PendingConfig
+	(*Plan)(nil),                      // 32: chalkos.node.v1.Plan
+	(*PlannedEffect)(nil),             // 33: chalkos.node.v1.PlannedEffect
+	(*StorageChange)(nil),             // 34: chalkos.node.v1.StorageChange
+	(*ResetVolumeRequest)(nil),        // 35: chalkos.node.v1.ResetVolumeRequest
+	(*ResetVolumeResponse)(nil),       // 36: chalkos.node.v1.ResetVolumeResponse
+	(*RollbackConfigRequest)(nil),     // 37: chalkos.node.v1.RollbackConfigRequest
+	(*RollbackConfigResponse)(nil),    // 38: chalkos.node.v1.RollbackConfigResponse
+	(*RollbackImageRequest)(nil),      // 39: chalkos.node.v1.RollbackImageRequest
+	(*RollbackImageResponse)(nil),     // 40: chalkos.node.v1.RollbackImageResponse
+	(*ActivateImageRequest)(nil),      // 41: chalkos.node.v1.ActivateImageRequest
+	(*ActivateImageResponse)(nil),     // 42: chalkos.node.v1.ActivateImageResponse
+	(*ConfirmConfigRequest)(nil),      // 43: chalkos.node.v1.ConfirmConfigRequest
+	(*ConfirmConfigResponse)(nil),     // 44: chalkos.node.v1.ConfirmConfigResponse
+	(*StatusRequest)(nil),             // 45: chalkos.node.v1.StatusRequest
+	(*StatusResponse)(nil),            // 46: chalkos.node.v1.StatusResponse
+	(*ConfigTrial)(nil),               // 47: chalkos.node.v1.ConfigTrial
+	(*OutputStatus)(nil),              // 48: chalkos.node.v1.OutputStatus
+	(*BootStatus)(nil),                // 49: chalkos.node.v1.BootStatus
+	(*BootHealth)(nil),                // 50: chalkos.node.v1.BootHealth
+	(*BootImage)(nil),                 // 51: chalkos.node.v1.BootImage
+	(*TrustStatus)(nil),               // 52: chalkos.node.v1.TrustStatus
+	(*CertificateStatus)(nil),         // 53: chalkos.node.v1.CertificateStatus
+	(*TimeStatus)(nil),                // 54: chalkos.node.v1.TimeStatus
+	(*DiskStatus)(nil),                // 55: chalkos.node.v1.DiskStatus
+	(*VolumeStatus)(nil),              // 56: chalkos.node.v1.VolumeStatus
+	(*LogsRequest)(nil),               // 57: chalkos.node.v1.LogsRequest
+	(*LogsResponse)(nil),              // 58: chalkos.node.v1.LogsResponse
+	(*RebootRequest)(nil),             // 59: chalkos.node.v1.RebootRequest
+	(*RebootResponse)(nil),            // 60: chalkos.node.v1.RebootResponse
+	(*UpgradeRequest)(nil),            // 61: chalkos.node.v1.UpgradeRequest
+	(*UpgradeHeader)(nil),             // 62: chalkos.node.v1.UpgradeHeader
+	(*UpgradeResponse)(nil),           // 63: chalkos.node.v1.UpgradeResponse
+	(*PendingOutcome)(nil),            // 64: chalkos.node.v1.PendingOutcome
+	(*DiagnosticsRequest)(nil),        // 65: chalkos.node.v1.DiagnosticsRequest
+	(*DiagnosticsResponse)(nil),       // 66: chalkos.node.v1.DiagnosticsResponse
+	(*Diagnostic)(nil),                // 67: chalkos.node.v1.Diagnostic
+	(*DiagnosticParameter)(nil),       // 68: chalkos.node.v1.DiagnosticParameter
+	(*RunDiagnosticRequest)(nil),      // 69: chalkos.node.v1.RunDiagnosticRequest
+	(*RunDiagnosticResponse)(nil),     // 70: chalkos.node.v1.RunDiagnosticResponse
+	(*DiagnosticExit)(nil),            // 71: chalkos.node.v1.DiagnosticExit
+	(*EnrollSecureBootRequest)(nil),   // 72: chalkos.node.v1.EnrollSecureBootRequest
+	(*EnrollSecureBootResponse)(nil),  // 73: chalkos.node.v1.EnrollSecureBootResponse
+	(*SecureBootDriversRequest)(nil),  // 74: chalkos.node.v1.SecureBootDriversRequest
+	(*SecureBootDriversResponse)(nil), // 75: chalkos.node.v1.SecureBootDriversResponse
+	(*SecureBootDriver)(nil),          // 76: chalkos.node.v1.SecureBootDriver
+	(*ShutdownRequest)(nil),           // 77: chalkos.node.v1.ShutdownRequest
+	(*ShutdownResponse)(nil),          // 78: chalkos.node.v1.ShutdownResponse
+	(*BGPPeerStatus)(nil),             // 79: chalkos.node.v1.BGPPeerStatus
+	(*BGPStatus)(nil),                 // 80: chalkos.node.v1.BGPStatus
+	(*ConfigActivation)(nil),          // 81: chalkos.node.v1.ConfigActivation
+	nil,                               // 82: chalkos.node.v1.ContractResponse.SchemasEntry
+	nil,                               // 83: chalkos.node.v1.ImageContract.SystemDefinitionsEntry
+	nil,                               // 84: chalkos.node.v1.ImageContract.SchemasEntry
+	nil,                               // 85: chalkos.node.v1.RunDiagnosticRequest.ArgumentsEntry
+	(*anypb.Any)(nil),                 // 86: google.protobuf.Any
+	(*durationpb.Duration)(nil),       // 87: google.protobuf.Duration
+	(*timestamppb.Timestamp)(nil),     // 88: google.protobuf.Timestamp
 }
 var file_chalkos_node_v1_node_proto_depIdxs = []int32{
 	0,  // 0: chalkos.node.v1.InfoResponse.mode:type_name -> chalkos.node.v1.Mode
 	1,  // 1: chalkos.node.v1.InfoResponse.secure_boot:type_name -> chalkos.node.v1.SecureBoot
-	9,  // 2: chalkos.node.v1.DisksResponse.disks:type_name -> chalkos.node.v1.Disk
-	10, // 3: chalkos.node.v1.Disk.partitions:type_name -> chalkos.node.v1.Partition
-	80, // 4: chalkos.node.v1.ContractResponse.schemas:type_name -> chalkos.node.v1.ContractResponse.SchemasEntry
-	84, // 5: chalkos.node.v1.ContractResponse.layer_facts:type_name -> google.protobuf.Any
-	14, // 6: chalkos.node.v1.InstallRequest.header:type_name -> chalkos.node.v1.InstallHeader
-	22, // 7: chalkos.node.v1.InstallRequest.chunk:type_name -> chalkos.node.v1.ImageChunk
-	16, // 8: chalkos.node.v1.InstallHeader.in_place:type_name -> chalkos.node.v1.InPlace
-	17, // 9: chalkos.node.v1.InstallHeader.disk:type_name -> chalkos.node.v1.DiskReference
-	18, // 10: chalkos.node.v1.InstallHeader.image:type_name -> chalkos.node.v1.ImageHeader
-	15, // 11: chalkos.node.v1.InstallHeader.contract:type_name -> chalkos.node.v1.ImageContract
-	20, // 12: chalkos.node.v1.InstallHeader.source:type_name -> chalkos.node.v1.ImageSource
-	84, // 13: chalkos.node.v1.InstallHeader.layers:type_name -> google.protobuf.Any
-	81, // 14: chalkos.node.v1.ImageContract.system_definitions:type_name -> chalkos.node.v1.ImageContract.SystemDefinitionsEntry
-	82, // 15: chalkos.node.v1.ImageContract.schemas:type_name -> chalkos.node.v1.ImageContract.SchemasEntry
-	84, // 16: chalkos.node.v1.ImageContract.layer_facts:type_name -> google.protobuf.Any
-	19, // 17: chalkos.node.v1.ImageHeader.store:type_name -> chalkos.node.v1.ImagePart
-	19, // 18: chalkos.node.v1.ImageHeader.hash_tree:type_name -> chalkos.node.v1.ImagePart
-	19, // 19: chalkos.node.v1.ImageHeader.uki:type_name -> chalkos.node.v1.ImagePart
-	19, // 20: chalkos.node.v1.ImageHeader.boot_loader:type_name -> chalkos.node.v1.ImagePart
-	21, // 21: chalkos.node.v1.ImageSource.oci:type_name -> chalkos.node.v1.RegistryImage
-	84, // 22: chalkos.node.v1.ApplyConfigRequest.layers:type_name -> google.protobuf.Any
-	85, // 23: chalkos.node.v1.ApplyConfigRequest.try:type_name -> google.protobuf.Duration
-	32, // 24: chalkos.node.v1.ApplyConfigResponse.changes:type_name -> chalkos.node.v1.StorageChange
-	30, // 25: chalkos.node.v1.ApplyConfigResponse.plan:type_name -> chalkos.node.v1.Plan
-	29, // 26: chalkos.node.v1.ApplyConfigResponse.pending:type_name -> chalkos.node.v1.PendingConfig
-	28, // 27: chalkos.node.v1.ApplyConfigResponse.staged:type_name -> chalkos.node.v1.StagedSlot
-	86, // 28: chalkos.node.v1.PendingConfig.since:type_name -> google.protobuf.Timestamp
-	31, // 29: chalkos.node.v1.Plan.effects:type_name -> chalkos.node.v1.PlannedEffect
-	32, // 30: chalkos.node.v1.RollbackConfigResponse.changes:type_name -> chalkos.node.v1.StorageChange
-	53, // 31: chalkos.node.v1.StatusResponse.disks:type_name -> chalkos.node.v1.DiskStatus
-	54, // 32: chalkos.node.v1.StatusResponse.volumes:type_name -> chalkos.node.v1.VolumeStatus
-	51, // 33: chalkos.node.v1.StatusResponse.certificates:type_name -> chalkos.node.v1.CertificateStatus
-	52, // 34: chalkos.node.v1.StatusResponse.time:type_name -> chalkos.node.v1.TimeStatus
-	50, // 35: chalkos.node.v1.StatusResponse.trust:type_name -> chalkos.node.v1.TrustStatus
-	47, // 36: chalkos.node.v1.StatusResponse.boot:type_name -> chalkos.node.v1.BootStatus
-	46, // 37: chalkos.node.v1.StatusResponse.outputs:type_name -> chalkos.node.v1.OutputStatus
-	45, // 38: chalkos.node.v1.StatusResponse.trial:type_name -> chalkos.node.v1.ConfigTrial
-	29, // 39: chalkos.node.v1.StatusResponse.pending_config:type_name -> chalkos.node.v1.PendingConfig
-	79, // 40: chalkos.node.v1.StatusResponse.config_activation:type_name -> chalkos.node.v1.ConfigActivation
-	86, // 41: chalkos.node.v1.ConfigTrial.deadline:type_name -> google.protobuf.Timestamp
-	49, // 42: chalkos.node.v1.BootStatus.running:type_name -> chalkos.node.v1.BootImage
-	49, // 43: chalkos.node.v1.BootStatus.staged:type_name -> chalkos.node.v1.BootImage
-	49, // 44: chalkos.node.v1.BootStatus.failed:type_name -> chalkos.node.v1.BootImage
-	49, // 45: chalkos.node.v1.BootStatus.previous:type_name -> chalkos.node.v1.BootImage
-	49, // 46: chalkos.node.v1.BootStatus.rollback:type_name -> chalkos.node.v1.BootImage
-	2,  // 47: chalkos.node.v1.BootStatus.staged_state:type_name -> chalkos.node.v1.SlotState
-	48, // 48: chalkos.node.v1.BootStatus.health:type_name -> chalkos.node.v1.BootHealth
-	86, // 49: chalkos.node.v1.CertificateStatus.not_after:type_name -> google.protobuf.Timestamp
-	60, // 50: chalkos.node.v1.UpgradeRequest.header:type_name -> chalkos.node.v1.UpgradeHeader
-	22, // 51: chalkos.node.v1.UpgradeRequest.chunk:type_name -> chalkos.node.v1.ImageChunk
-	18, // 52: chalkos.node.v1.UpgradeHeader.image:type_name -> chalkos.node.v1.ImageHeader
-	20, // 53: chalkos.node.v1.UpgradeHeader.source:type_name -> chalkos.node.v1.ImageSource
-	62, // 54: chalkos.node.v1.UpgradeResponse.pending:type_name -> chalkos.node.v1.PendingOutcome
-	3,  // 55: chalkos.node.v1.PendingOutcome.fate:type_name -> chalkos.node.v1.PendingFate
-	65, // 56: chalkos.node.v1.DiagnosticsResponse.diagnostics:type_name -> chalkos.node.v1.Diagnostic
-	66, // 57: chalkos.node.v1.Diagnostic.parameters:type_name -> chalkos.node.v1.DiagnosticParameter
-	83, // 58: chalkos.node.v1.RunDiagnosticRequest.arguments:type_name -> chalkos.node.v1.RunDiagnosticRequest.ArgumentsEntry
-	69, // 59: chalkos.node.v1.RunDiagnosticResponse.exit:type_name -> chalkos.node.v1.DiagnosticExit
-	74, // 60: chalkos.node.v1.SecureBootDriversResponse.drivers:type_name -> chalkos.node.v1.SecureBootDriver
-	77, // 61: chalkos.node.v1.BGPStatus.peers:type_name -> chalkos.node.v1.BGPPeerStatus
-	4,  // 62: chalkos.node.v1.ConfigActivation.state:type_name -> chalkos.node.v1.ActivationState
-	5,  // 63: chalkos.node.v1.NodeService.Info:input_type -> chalkos.node.v1.InfoRequest
-	7,  // 64: chalkos.node.v1.NodeService.Disks:input_type -> chalkos.node.v1.DisksRequest
-	11, // 65: chalkos.node.v1.NodeService.Contract:input_type -> chalkos.node.v1.ContractRequest
-	13, // 66: chalkos.node.v1.NodeService.Install:input_type -> chalkos.node.v1.InstallRequest
-	24, // 67: chalkos.node.v1.NodeService.ApplyConfig:input_type -> chalkos.node.v1.ApplyConfigRequest
-	25, // 68: chalkos.node.v1.NodeService.GetConfig:input_type -> chalkos.node.v1.GetConfigRequest
-	33, // 69: chalkos.node.v1.NodeService.ResetVolume:input_type -> chalkos.node.v1.ResetVolumeRequest
-	43, // 70: chalkos.node.v1.NodeService.Status:input_type -> chalkos.node.v1.StatusRequest
-	55, // 71: chalkos.node.v1.NodeService.Logs:input_type -> chalkos.node.v1.LogsRequest
-	57, // 72: chalkos.node.v1.NodeService.Reboot:input_type -> chalkos.node.v1.RebootRequest
-	59, // 73: chalkos.node.v1.NodeService.Upgrade:input_type -> chalkos.node.v1.UpgradeRequest
-	39, // 74: chalkos.node.v1.NodeService.ActivateImage:input_type -> chalkos.node.v1.ActivateImageRequest
-	63, // 75: chalkos.node.v1.NodeService.Diagnostics:input_type -> chalkos.node.v1.DiagnosticsRequest
-	67, // 76: chalkos.node.v1.NodeService.RunDiagnostic:input_type -> chalkos.node.v1.RunDiagnosticRequest
-	35, // 77: chalkos.node.v1.NodeService.RollbackConfig:input_type -> chalkos.node.v1.RollbackConfigRequest
-	37, // 78: chalkos.node.v1.NodeService.RollbackImage:input_type -> chalkos.node.v1.RollbackImageRequest
-	41, // 79: chalkos.node.v1.NodeService.ConfirmConfig:input_type -> chalkos.node.v1.ConfirmConfigRequest
-	70, // 80: chalkos.node.v1.NodeService.EnrollSecureBoot:input_type -> chalkos.node.v1.EnrollSecureBootRequest
-	72, // 81: chalkos.node.v1.NodeService.SecureBootDrivers:input_type -> chalkos.node.v1.SecureBootDriversRequest
-	75, // 82: chalkos.node.v1.NodeService.Shutdown:input_type -> chalkos.node.v1.ShutdownRequest
-	6,  // 83: chalkos.node.v1.NodeService.Info:output_type -> chalkos.node.v1.InfoResponse
-	8,  // 84: chalkos.node.v1.NodeService.Disks:output_type -> chalkos.node.v1.DisksResponse
-	12, // 85: chalkos.node.v1.NodeService.Contract:output_type -> chalkos.node.v1.ContractResponse
-	23, // 86: chalkos.node.v1.NodeService.Install:output_type -> chalkos.node.v1.InstallResponse
-	27, // 87: chalkos.node.v1.NodeService.ApplyConfig:output_type -> chalkos.node.v1.ApplyConfigResponse
-	26, // 88: chalkos.node.v1.NodeService.GetConfig:output_type -> chalkos.node.v1.GetConfigResponse
-	34, // 89: chalkos.node.v1.NodeService.ResetVolume:output_type -> chalkos.node.v1.ResetVolumeResponse
-	44, // 90: chalkos.node.v1.NodeService.Status:output_type -> chalkos.node.v1.StatusResponse
-	56, // 91: chalkos.node.v1.NodeService.Logs:output_type -> chalkos.node.v1.LogsResponse
-	58, // 92: chalkos.node.v1.NodeService.Reboot:output_type -> chalkos.node.v1.RebootResponse
-	61, // 93: chalkos.node.v1.NodeService.Upgrade:output_type -> chalkos.node.v1.UpgradeResponse
-	40, // 94: chalkos.node.v1.NodeService.ActivateImage:output_type -> chalkos.node.v1.ActivateImageResponse
-	64, // 95: chalkos.node.v1.NodeService.Diagnostics:output_type -> chalkos.node.v1.DiagnosticsResponse
-	68, // 96: chalkos.node.v1.NodeService.RunDiagnostic:output_type -> chalkos.node.v1.RunDiagnosticResponse
-	36, // 97: chalkos.node.v1.NodeService.RollbackConfig:output_type -> chalkos.node.v1.RollbackConfigResponse
-	38, // 98: chalkos.node.v1.NodeService.RollbackImage:output_type -> chalkos.node.v1.RollbackImageResponse
-	42, // 99: chalkos.node.v1.NodeService.ConfirmConfig:output_type -> chalkos.node.v1.ConfirmConfigResponse
-	71, // 100: chalkos.node.v1.NodeService.EnrollSecureBoot:output_type -> chalkos.node.v1.EnrollSecureBootResponse
-	73, // 101: chalkos.node.v1.NodeService.SecureBootDrivers:output_type -> chalkos.node.v1.SecureBootDriversResponse
-	76, // 102: chalkos.node.v1.NodeService.Shutdown:output_type -> chalkos.node.v1.ShutdownResponse
-	83, // [83:103] is the sub-list for method output_type
-	63, // [63:83] is the sub-list for method input_type
-	63, // [63:63] is the sub-list for extension type_name
-	63, // [63:63] is the sub-list for extension extendee
-	0,  // [0:63] is the sub-list for field type_name
+	8,  // 2: chalkos.node.v1.InfoResponse.module_policy:type_name -> chalkos.node.v1.ModulePolicyStatus
+	2,  // 3: chalkos.node.v1.ModulePolicyStatus.state:type_name -> chalkos.node.v1.ModulePolicyState
+	11, // 4: chalkos.node.v1.DisksResponse.disks:type_name -> chalkos.node.v1.Disk
+	12, // 5: chalkos.node.v1.Disk.partitions:type_name -> chalkos.node.v1.Partition
+	82, // 6: chalkos.node.v1.ContractResponse.schemas:type_name -> chalkos.node.v1.ContractResponse.SchemasEntry
+	86, // 7: chalkos.node.v1.ContractResponse.layer_facts:type_name -> google.protobuf.Any
+	16, // 8: chalkos.node.v1.InstallRequest.header:type_name -> chalkos.node.v1.InstallHeader
+	24, // 9: chalkos.node.v1.InstallRequest.chunk:type_name -> chalkos.node.v1.ImageChunk
+	18, // 10: chalkos.node.v1.InstallHeader.in_place:type_name -> chalkos.node.v1.InPlace
+	19, // 11: chalkos.node.v1.InstallHeader.disk:type_name -> chalkos.node.v1.DiskReference
+	20, // 12: chalkos.node.v1.InstallHeader.image:type_name -> chalkos.node.v1.ImageHeader
+	17, // 13: chalkos.node.v1.InstallHeader.contract:type_name -> chalkos.node.v1.ImageContract
+	22, // 14: chalkos.node.v1.InstallHeader.source:type_name -> chalkos.node.v1.ImageSource
+	86, // 15: chalkos.node.v1.InstallHeader.layers:type_name -> google.protobuf.Any
+	83, // 16: chalkos.node.v1.ImageContract.system_definitions:type_name -> chalkos.node.v1.ImageContract.SystemDefinitionsEntry
+	84, // 17: chalkos.node.v1.ImageContract.schemas:type_name -> chalkos.node.v1.ImageContract.SchemasEntry
+	86, // 18: chalkos.node.v1.ImageContract.layer_facts:type_name -> google.protobuf.Any
+	21, // 19: chalkos.node.v1.ImageHeader.store:type_name -> chalkos.node.v1.ImagePart
+	21, // 20: chalkos.node.v1.ImageHeader.hash_tree:type_name -> chalkos.node.v1.ImagePart
+	21, // 21: chalkos.node.v1.ImageHeader.uki:type_name -> chalkos.node.v1.ImagePart
+	21, // 22: chalkos.node.v1.ImageHeader.boot_loader:type_name -> chalkos.node.v1.ImagePart
+	23, // 23: chalkos.node.v1.ImageSource.oci:type_name -> chalkos.node.v1.RegistryImage
+	86, // 24: chalkos.node.v1.ApplyConfigRequest.layers:type_name -> google.protobuf.Any
+	87, // 25: chalkos.node.v1.ApplyConfigRequest.try:type_name -> google.protobuf.Duration
+	34, // 26: chalkos.node.v1.ApplyConfigResponse.changes:type_name -> chalkos.node.v1.StorageChange
+	32, // 27: chalkos.node.v1.ApplyConfigResponse.plan:type_name -> chalkos.node.v1.Plan
+	31, // 28: chalkos.node.v1.ApplyConfigResponse.pending:type_name -> chalkos.node.v1.PendingConfig
+	30, // 29: chalkos.node.v1.ApplyConfigResponse.staged:type_name -> chalkos.node.v1.StagedSlot
+	88, // 30: chalkos.node.v1.PendingConfig.since:type_name -> google.protobuf.Timestamp
+	33, // 31: chalkos.node.v1.Plan.effects:type_name -> chalkos.node.v1.PlannedEffect
+	34, // 32: chalkos.node.v1.RollbackConfigResponse.changes:type_name -> chalkos.node.v1.StorageChange
+	55, // 33: chalkos.node.v1.StatusResponse.disks:type_name -> chalkos.node.v1.DiskStatus
+	56, // 34: chalkos.node.v1.StatusResponse.volumes:type_name -> chalkos.node.v1.VolumeStatus
+	53, // 35: chalkos.node.v1.StatusResponse.certificates:type_name -> chalkos.node.v1.CertificateStatus
+	54, // 36: chalkos.node.v1.StatusResponse.time:type_name -> chalkos.node.v1.TimeStatus
+	52, // 37: chalkos.node.v1.StatusResponse.trust:type_name -> chalkos.node.v1.TrustStatus
+	49, // 38: chalkos.node.v1.StatusResponse.boot:type_name -> chalkos.node.v1.BootStatus
+	48, // 39: chalkos.node.v1.StatusResponse.outputs:type_name -> chalkos.node.v1.OutputStatus
+	47, // 40: chalkos.node.v1.StatusResponse.trial:type_name -> chalkos.node.v1.ConfigTrial
+	31, // 41: chalkos.node.v1.StatusResponse.pending_config:type_name -> chalkos.node.v1.PendingConfig
+	81, // 42: chalkos.node.v1.StatusResponse.config_activation:type_name -> chalkos.node.v1.ConfigActivation
+	88, // 43: chalkos.node.v1.ConfigTrial.deadline:type_name -> google.protobuf.Timestamp
+	51, // 44: chalkos.node.v1.BootStatus.running:type_name -> chalkos.node.v1.BootImage
+	51, // 45: chalkos.node.v1.BootStatus.staged:type_name -> chalkos.node.v1.BootImage
+	51, // 46: chalkos.node.v1.BootStatus.failed:type_name -> chalkos.node.v1.BootImage
+	51, // 47: chalkos.node.v1.BootStatus.previous:type_name -> chalkos.node.v1.BootImage
+	51, // 48: chalkos.node.v1.BootStatus.rollback:type_name -> chalkos.node.v1.BootImage
+	3,  // 49: chalkos.node.v1.BootStatus.staged_state:type_name -> chalkos.node.v1.SlotState
+	50, // 50: chalkos.node.v1.BootStatus.health:type_name -> chalkos.node.v1.BootHealth
+	88, // 51: chalkos.node.v1.CertificateStatus.not_after:type_name -> google.protobuf.Timestamp
+	62, // 52: chalkos.node.v1.UpgradeRequest.header:type_name -> chalkos.node.v1.UpgradeHeader
+	24, // 53: chalkos.node.v1.UpgradeRequest.chunk:type_name -> chalkos.node.v1.ImageChunk
+	20, // 54: chalkos.node.v1.UpgradeHeader.image:type_name -> chalkos.node.v1.ImageHeader
+	22, // 55: chalkos.node.v1.UpgradeHeader.source:type_name -> chalkos.node.v1.ImageSource
+	64, // 56: chalkos.node.v1.UpgradeResponse.pending:type_name -> chalkos.node.v1.PendingOutcome
+	4,  // 57: chalkos.node.v1.PendingOutcome.fate:type_name -> chalkos.node.v1.PendingFate
+	67, // 58: chalkos.node.v1.DiagnosticsResponse.diagnostics:type_name -> chalkos.node.v1.Diagnostic
+	68, // 59: chalkos.node.v1.Diagnostic.parameters:type_name -> chalkos.node.v1.DiagnosticParameter
+	85, // 60: chalkos.node.v1.RunDiagnosticRequest.arguments:type_name -> chalkos.node.v1.RunDiagnosticRequest.ArgumentsEntry
+	71, // 61: chalkos.node.v1.RunDiagnosticResponse.exit:type_name -> chalkos.node.v1.DiagnosticExit
+	76, // 62: chalkos.node.v1.SecureBootDriversResponse.drivers:type_name -> chalkos.node.v1.SecureBootDriver
+	79, // 63: chalkos.node.v1.BGPStatus.peers:type_name -> chalkos.node.v1.BGPPeerStatus
+	5,  // 64: chalkos.node.v1.ConfigActivation.state:type_name -> chalkos.node.v1.ActivationState
+	6,  // 65: chalkos.node.v1.NodeService.Info:input_type -> chalkos.node.v1.InfoRequest
+	9,  // 66: chalkos.node.v1.NodeService.Disks:input_type -> chalkos.node.v1.DisksRequest
+	13, // 67: chalkos.node.v1.NodeService.Contract:input_type -> chalkos.node.v1.ContractRequest
+	15, // 68: chalkos.node.v1.NodeService.Install:input_type -> chalkos.node.v1.InstallRequest
+	26, // 69: chalkos.node.v1.NodeService.ApplyConfig:input_type -> chalkos.node.v1.ApplyConfigRequest
+	27, // 70: chalkos.node.v1.NodeService.GetConfig:input_type -> chalkos.node.v1.GetConfigRequest
+	35, // 71: chalkos.node.v1.NodeService.ResetVolume:input_type -> chalkos.node.v1.ResetVolumeRequest
+	45, // 72: chalkos.node.v1.NodeService.Status:input_type -> chalkos.node.v1.StatusRequest
+	57, // 73: chalkos.node.v1.NodeService.Logs:input_type -> chalkos.node.v1.LogsRequest
+	59, // 74: chalkos.node.v1.NodeService.Reboot:input_type -> chalkos.node.v1.RebootRequest
+	61, // 75: chalkos.node.v1.NodeService.Upgrade:input_type -> chalkos.node.v1.UpgradeRequest
+	41, // 76: chalkos.node.v1.NodeService.ActivateImage:input_type -> chalkos.node.v1.ActivateImageRequest
+	65, // 77: chalkos.node.v1.NodeService.Diagnostics:input_type -> chalkos.node.v1.DiagnosticsRequest
+	69, // 78: chalkos.node.v1.NodeService.RunDiagnostic:input_type -> chalkos.node.v1.RunDiagnosticRequest
+	37, // 79: chalkos.node.v1.NodeService.RollbackConfig:input_type -> chalkos.node.v1.RollbackConfigRequest
+	39, // 80: chalkos.node.v1.NodeService.RollbackImage:input_type -> chalkos.node.v1.RollbackImageRequest
+	43, // 81: chalkos.node.v1.NodeService.ConfirmConfig:input_type -> chalkos.node.v1.ConfirmConfigRequest
+	72, // 82: chalkos.node.v1.NodeService.EnrollSecureBoot:input_type -> chalkos.node.v1.EnrollSecureBootRequest
+	74, // 83: chalkos.node.v1.NodeService.SecureBootDrivers:input_type -> chalkos.node.v1.SecureBootDriversRequest
+	77, // 84: chalkos.node.v1.NodeService.Shutdown:input_type -> chalkos.node.v1.ShutdownRequest
+	7,  // 85: chalkos.node.v1.NodeService.Info:output_type -> chalkos.node.v1.InfoResponse
+	10, // 86: chalkos.node.v1.NodeService.Disks:output_type -> chalkos.node.v1.DisksResponse
+	14, // 87: chalkos.node.v1.NodeService.Contract:output_type -> chalkos.node.v1.ContractResponse
+	25, // 88: chalkos.node.v1.NodeService.Install:output_type -> chalkos.node.v1.InstallResponse
+	29, // 89: chalkos.node.v1.NodeService.ApplyConfig:output_type -> chalkos.node.v1.ApplyConfigResponse
+	28, // 90: chalkos.node.v1.NodeService.GetConfig:output_type -> chalkos.node.v1.GetConfigResponse
+	36, // 91: chalkos.node.v1.NodeService.ResetVolume:output_type -> chalkos.node.v1.ResetVolumeResponse
+	46, // 92: chalkos.node.v1.NodeService.Status:output_type -> chalkos.node.v1.StatusResponse
+	58, // 93: chalkos.node.v1.NodeService.Logs:output_type -> chalkos.node.v1.LogsResponse
+	60, // 94: chalkos.node.v1.NodeService.Reboot:output_type -> chalkos.node.v1.RebootResponse
+	63, // 95: chalkos.node.v1.NodeService.Upgrade:output_type -> chalkos.node.v1.UpgradeResponse
+	42, // 96: chalkos.node.v1.NodeService.ActivateImage:output_type -> chalkos.node.v1.ActivateImageResponse
+	66, // 97: chalkos.node.v1.NodeService.Diagnostics:output_type -> chalkos.node.v1.DiagnosticsResponse
+	70, // 98: chalkos.node.v1.NodeService.RunDiagnostic:output_type -> chalkos.node.v1.RunDiagnosticResponse
+	38, // 99: chalkos.node.v1.NodeService.RollbackConfig:output_type -> chalkos.node.v1.RollbackConfigResponse
+	40, // 100: chalkos.node.v1.NodeService.RollbackImage:output_type -> chalkos.node.v1.RollbackImageResponse
+	44, // 101: chalkos.node.v1.NodeService.ConfirmConfig:output_type -> chalkos.node.v1.ConfirmConfigResponse
+	73, // 102: chalkos.node.v1.NodeService.EnrollSecureBoot:output_type -> chalkos.node.v1.EnrollSecureBootResponse
+	75, // 103: chalkos.node.v1.NodeService.SecureBootDrivers:output_type -> chalkos.node.v1.SecureBootDriversResponse
+	78, // 104: chalkos.node.v1.NodeService.Shutdown:output_type -> chalkos.node.v1.ShutdownResponse
+	85, // [85:105] is the sub-list for method output_type
+	65, // [65:85] is the sub-list for method input_type
+	65, // [65:65] is the sub-list for extension type_name
+	65, // [65:65] is the sub-list for extension extendee
+	0,  // [0:65] is the sub-list for field type_name
 }
 
 func init() { file_chalkos_node_v1_node_proto_init() }
@@ -6619,25 +6773,25 @@ func file_chalkos_node_v1_node_proto_init() {
 	if File_chalkos_node_v1_node_proto != nil {
 		return
 	}
-	file_chalkos_node_v1_node_proto_msgTypes[8].OneofWrappers = []any{
+	file_chalkos_node_v1_node_proto_msgTypes[9].OneofWrappers = []any{
 		(*InstallRequest_Header)(nil),
 		(*InstallRequest_Chunk)(nil),
 	}
-	file_chalkos_node_v1_node_proto_msgTypes[9].OneofWrappers = []any{
+	file_chalkos_node_v1_node_proto_msgTypes[10].OneofWrappers = []any{
 		(*InstallHeader_InPlace)(nil),
 		(*InstallHeader_Disk)(nil),
 		(*InstallHeader_Contract)(nil),
 		(*InstallHeader_Source)(nil),
 	}
-	file_chalkos_node_v1_node_proto_msgTypes[15].OneofWrappers = []any{
+	file_chalkos_node_v1_node_proto_msgTypes[16].OneofWrappers = []any{
 		(*ImageSource_Oci)(nil),
 	}
-	file_chalkos_node_v1_node_proto_msgTypes[54].OneofWrappers = []any{
+	file_chalkos_node_v1_node_proto_msgTypes[55].OneofWrappers = []any{
 		(*UpgradeRequest_Header)(nil),
 		(*UpgradeRequest_Chunk)(nil),
 	}
-	file_chalkos_node_v1_node_proto_msgTypes[61].OneofWrappers = []any{}
-	file_chalkos_node_v1_node_proto_msgTypes[63].OneofWrappers = []any{
+	file_chalkos_node_v1_node_proto_msgTypes[62].OneofWrappers = []any{}
+	file_chalkos_node_v1_node_proto_msgTypes[64].OneofWrappers = []any{
 		(*RunDiagnosticResponse_Stdout)(nil),
 		(*RunDiagnosticResponse_Stderr)(nil),
 		(*RunDiagnosticResponse_Exit)(nil),
@@ -6647,8 +6801,8 @@ func file_chalkos_node_v1_node_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_chalkos_node_v1_node_proto_rawDesc), len(file_chalkos_node_v1_node_proto_rawDesc)),
-			NumEnums:      5,
-			NumMessages:   79,
+			NumEnums:      6,
+			NumMessages:   80,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

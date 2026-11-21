@@ -86,7 +86,7 @@ var probeDoneRE = regexp.MustCompile(`CHALKTEST done=1`)
 // the cluster registry, which w1 pulls from, and the renewals check that it serves cp1's renewed
 // node certificate.
 func TestKubernetesCluster(t *testing.T) {
-	requireEnv(t, append([]string{"CHALKLAB_CHALKLAB", "CHALKLAB_K8S_IMAGE_DIR"}, chalkdEnv...)...)
+	requireEnv(t, append([]string{"CHALKLAB_CHALKLAB", "CHALKLAB_K8S_IMAGE_DIR", "CHALKLAB_OUTSIDE_MODULE"}, chalkdEnv...)...)
 	online := os.Getenv("CHALKLAB_K8S_ONLINE") == "1"
 	if !online {
 		requireEnv(t, "CHALKLAB_K8S_IMAGES")
@@ -152,6 +152,13 @@ func TestKubernetesCluster(t *testing.T) {
 		p.check(t, ctx, cs)
 		execPaths(t, ctx, cs)
 		logMemory(t, ctx, cs)
+	}) {
+		return
+	}
+
+	if !t.Run("host-integration", func(t *testing.T) {
+		modulePolicy(t, ctx, cs, nodes)
+		modulePolicyTampered(t, ctx, cs, nodes)
 	}) {
 		return
 	}

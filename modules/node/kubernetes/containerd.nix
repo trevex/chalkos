@@ -47,6 +47,17 @@ let
       '';
 in
 {
+  options.chalkos.kubernetes.containerd.allowMacAdmin = lib.mkOption {
+    type = lib.types.bool;
+    default = false;
+    description = ''
+      Whether privileged containers may hold `CAP_MAC_ADMIN`, as the Security Profiles Operator
+      needs. With it, such a container can switch the module policy to permissive, which
+      `chalkctl status` then reports as tampered. No container ever holds `CAP_SYS_MODULE`: the
+      kernel loads the modules pods need, on demand or at boot.
+    '';
+  };
+
   config = lib.mkIf config.chalkos.kubernetes.enable {
     # containerd and its runc shim alone: ctr and containerd-stress are half of the package. A copy,
     # so the store holds these two alone.
@@ -85,6 +96,12 @@ in
       iptables
       pkgs.nftables
     ];
+    # containerd's bounding set, which its shims, runc and every container inherit, leaves out
+    # loading modules and administering the LSMs, IPE's module policy among them. One assignment:
+    # a second line of CapabilityBoundingSet= would add its capabilities back.
+    systemd.services.containerd.serviceConfig.CapabilityBoundingSet =
+      "~CAP_SYS_MODULE"
+      + lib.optionalString (!config.chalkos.kubernetes.containerd.allowMacAdmin) " CAP_MAC_ADMIN";
 
     environment.systemPackages = lib.mkIf config.chalkos.debug.tools [ pkgs.cri-tools ];
 

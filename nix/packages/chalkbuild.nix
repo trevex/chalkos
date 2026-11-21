@@ -19,6 +19,7 @@ buildGoProgram {
     ../../pkg/internal/filecopy
     ../../pkg/internal/strs
     ../../pkg/jsonfile
+    ../../pkg/modulepolicy
     ../../pkg/ociimage
     ../../pkg/pki
     ../../pkg/networkdschema

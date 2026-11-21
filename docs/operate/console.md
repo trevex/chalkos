@@ -34,6 +34,7 @@ The rows at the top stay on every tab. On an installed node they read:
 node1  node n1  normal  up 3h 12m
 image 81bd81bd81bd generation 7  node-metal on metal
 healthy
+module policy: enforced (version 0.5.0)
  1 Overview   2 Network   3 Storage   4 Logs
 ```
 
@@ -54,6 +55,9 @@ semicolons:
 - `chalkd does not answer, retrying: <error>`: the console cannot reach chalkd. The tabs keep the
   data they last read, and the console asks chalkd again every 2 seconds.
 
+The fourth row says whether the kernel loads modules from the running image alone, in every mode,
+as [Read the module policy line](status-and-logs.md#read-the-module-policy-line) explains.
+
 In maintenance mode and on the installer, the header keeps the SHA-256 fingerprint of chalkd's
 certificate and the node's addresses on screen, which `chalkctl install` needs:
 
@@ -61,6 +65,7 @@ certificate and the node's addresses on screen, which `chalkctl install` needs:
 nixos  maintenance  up 3h 12m
 image 81bd81bd81bd
 maintenance mode: chalkctl install installs this node
+module policy: not enforced (no Secure Boot): the image is not signed
 fingerprint <fingerprint>
 addresses 192.168.1.50 2001:db8::50
  1 Overview   2 Network   3 Storage   4 Logs
@@ -270,6 +275,7 @@ answers the request itself. The question takes the screen below the header, in p
 node1  node n1  normal  up 3h 12m
 image 81bd81bd81bd generation 7  node-metal on metal
 healthy
+module policy: enforced (version 0.5.0)
 systemd asks for a password
 
 Please enter passphrase for disk data:

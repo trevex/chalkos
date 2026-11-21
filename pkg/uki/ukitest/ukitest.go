@@ -88,3 +88,35 @@ func WithMachine(image []byte, machine uint16) []byte {
 	binary.LittleEndian.PutUint16(out[0x44:], machine)
 	return out
 }
+
+// Newc is a newc cpio archive of the regular files, in name order, as the kernel unpacks an
+// initrd, ending in the TRAILER!!! entry.
+func Newc(files map[string][]byte) []byte {
+	var b []byte
+	entry := func(ino int, mode uint32, name string, data []byte) {
+		b = fmt.Appendf(b, "070701%08X%08X%08X%08X%08X%08X%08X%08X%08X%08X%08X%08X%08X",
+			ino, mode, 0, 0, 1, 0, len(data), 0, 0, 0, 0, len(name)+1, 0)
+		b = append(append(b, name...), 0)
+		b = append(b, make([]byte, (4-len(b)%4)%4)...)
+		b = append(b, data...)
+		b = append(b, make([]byte, (4-len(b)%4)%4)...)
+	}
+	for i, name := range slices.Sorted(maps.Keys(files)) {
+		entry(i+1, 0o100400, name, files[name])
+	}
+	entry(0, 0, "TRAILER!!!", nil)
+	return b
+}
+
+// PolicyUKI is a UKI whose first initrd holds the module policy file of slotSize bytes, the
+// policy followed by NULs, then a second archive standing in for the image's initrd, and whose
+// command line names the store root.
+func PolicyUKI(policy []byte, slotSize int, root string) []byte {
+	slot := append(append([]byte(nil), policy...), make([]byte, slotSize-len(policy))...)
+	initrd := append(Newc(map[string][]byte{"etc/chalkos/module-policy": slot}), Newc(map[string][]byte{"init": []byte("x")})...)
+	return Build(map[string][]byte{
+		".osrel":   []byte("IMAGE_ID=\"chalkos\"\n"),
+		".cmdline": []byte("init=/nix/store/x/init usrhash=" + root),
+		".initrd":  initrd,
+	})
+}

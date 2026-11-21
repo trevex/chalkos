@@ -1,6 +1,7 @@
 nixos  maintenance  up 3h 12m
 image 81bd81bd81bd
 maintenance mode: chalkctl install installs this node
+module policy: not enforced (no Secure Boot): the image is not signed
 fingerprint 3b1f9e2d9e2d9e2d9e2d9e2d9e2d9e2d9e2d9e2d9e2d9e2d9e2d9e2d9e2d9e2d
 addresses 192.168.1.50 2001:db8::50
 systemd asks for a password
@@ -17,8 +18,7 @@ Please enter the passphrase. Please enter the passphrase. Please enter the
   passphrase. Please enter the passphrase. Please enter the passphrase. Please
   enter the passphrase. Please enter the passphrase. Please enter the
   passphrase. Please enter the passphrase. Please enter the passphrase. Please
-  enter the passphrase. Please enter the passphrase. Please enter the
-  passphrase. Please enter the passphrase. Please enter the passphrase. Please…
+  enter the passphrase. Please enter the passphrase. Please enter the…
 chalkctl recovery-key <node> prints the node's recovery key
 
 > **_

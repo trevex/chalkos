@@ -31,6 +31,7 @@ $ chalkctl status node1 --secrets secrets.age
 config <version> (the inventory's)
 platform metal (the inventory's)
 image <image>, booted from chalkos_1.efi
+module policy: enforced (version <policy-version>)
 VOLUME  DISK    MOUNT POINT  STATE
 var     system  /var         mounted
 OUTPUT    HASH    STATE
@@ -64,6 +65,7 @@ The placeholders stand for values that differ on every node:
 - `<version>` is the config's version, the SHA-256 of its documents, in 64 hex characters.
 - `<image>` is the image's name: the first 12 hex characters of its root hash, followed by the
   tag and revision it was built from when the node knows them.
+- `<policy-version>` is the version of chalkos the image was built with.
 - `<hash>` is the first 12 hex characters of the hash of an output's files.
 - `<date>` is an expiry date, such as `2027-10-10`.
 - `<fingerprint>` is the first 16 hex characters of a CA's fingerprint.
@@ -203,6 +205,22 @@ still checks ends in `, not found healthy yet`. More lines follow after an upgra
 
 `image ...; its boot is unknown: ...` means chalkd could not read the boot entries on the ESP or
 the running store, for the reason named.
+
+## Read the module policy line
+
+`module policy: enforced (version <policy-version>)` means the kernel loads modules from the
+running image alone. The other states are these:
+
+- `not enforced (no Secure Boot)`: Secure Boot is off, so the kernel loads any module.
+- `failed`: Secure Boot is on, but the policy did not load. Check that db holds the certificate of
+  the key the image was signed with.
+- `tampered`: something switched IPE to permissive or activated another policy during this boot.
+  `chalkctl logs node1` shows the kernel's audit records, and the line stays until the node
+  reboots.
+
+The console's header shows the same line, in maintenance mode and on the installer too.
+[Security model](../how-it-works/node/security.md#kernel-modules-load-from-the-image-alone)
+explains the policy.
 
 ## Read the volume table
 

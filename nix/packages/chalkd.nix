@@ -37,6 +37,7 @@ buildGoProgram {
     ../../pkg/jsonfile
     ../../pkg/kubernetes
     ../../pkg/layers
+    ../../pkg/modulepolicy
     ../../pkg/nodeconfig
     ../../pkg/ociimage
     ../../pkg/outputs

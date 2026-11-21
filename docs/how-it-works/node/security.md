@@ -276,6 +276,39 @@ by the mount options alone: chalkd, containerd, the kubelet and `chalkos-nat64.s
 mounts the NAT64 instances' network namespaces on `/run/netns`. A unit of chalkos's modules that
 is neither on that list nor runs from the store alone fails chalkos's own checks.
 
+## Kernel modules load from the image alone
+
+The kernel loads a module only from the image's store, which dm-verity checks, or from the
+initrd, which Secure Boot checked as part of the UKI. It refuses every other module, including
+one passed to `init_module` as a buffer, and logs each refusal as an audit record. The rule is an
+IPE policy that allows the store by its verity root hash. Each image carries its own policy, and
+`chalkbuild sign` signs it with the db key when it signs the UKI. In the initrd,
+`chalkos-module-policy.service` loads the policy through securityfs and activates it before the
+booted system starts. The kernel checks the signature against the certificates in the firmware's
+db.
+
+No container holds `CAP_SYS_MODULE` or `CAP_MAC_ADMIN`, privileged or not: containerd's
+capability bounding set leaves both out. A pod that needs a module gets it from the image, loaded
+at boot or on demand by the kernel. An image built with
+[`chalkos.kubernetes.containerd.allowMacAdmin`](../../reference/image-options.md#chalkoskubernetescontainerdallowmacadmin)
+gives privileged containers `CAP_MAC_ADMIN` back, for workloads such as the Security Profiles
+Operator.
+
+chalkd reads securityfs, the initrd's record of the load and the boot's audit records, and
+reports the policy's state in every mode, on the installer and in maintenance mode too.
+`chalkctl status` and the console's header show it as one of these lines:
+
+| Line | Meaning |
+| --- | --- |
+| `module policy: enforced (version <version>)` | The image's policy is active and enforced, and was during the whole boot. |
+| `module policy: not enforced (no Secure Boot): …` | Secure Boot is off and the kernel did not take the policy, so any module loads. |
+| `module policy: failed: …` | Secure Boot is on, but the policy did not load, for example because db lacks the key that signed it. |
+| `module policy: tampered: …` | The policy loaded, but IPE was switched to permissive or another policy was activated during the boot. |
+| `module policy: off (the image leaves it out)` | The image was built with [`chalkos.kernel.modulePolicy.enable`](../../reference/image-options.md#chalkoskernelmodulepolicyenable) set to false. |
+
+A tampered policy stays reported until the node reboots, and the node's journal names the
+process that changed it.
+
 ## The console acts for whoever sits at the machine
 
 The machine's screen shows the [console](../../operate/console.md) in place of a login prompt.
@@ -349,6 +382,17 @@ runs no console, and chalkd serves no console socket.
   that host's mirror endpoints as well, as
   [How Kubernetes runs on a node](../kubernetes/overview.md#pods-pull-private-images-with-node-credentials)
   describes.
+- Any process with `CAP_MAC_ADMIN` in the host's user namespace can switch IPE to permissive with
+  one write to `/sys/kernel/security/ipe/enforce`, and can activate any policy signed with a key
+  in db whose version is not lower. chalkos detects both and reports the policy as tampered, but
+  cannot prevent them. A privileged pod that also mounts the host's `/run` can ask systemd to run
+  any program as host root. Restrict privileged pods with Pod Security admission.
+- The kernel trusts every certificate in db to sign a module policy. On firmware that still holds
+  Microsoft's certificates, a policy that Microsoft signed would load too. Enrol chalkos's keys
+  without Microsoft's, as `chalkctl secureboot enroll` does.
+- A node without Secure Boot loads any module. A node whose firmware ignores db, as it does when
+  the EFI variable `MokIgnoreDB` exists, cannot load the policy, which `chalkctl status` reports as
+  failed.
 
 ## Related pages
 

@@ -51,6 +51,10 @@ func TestImageBootsWithoutSecureBoot(t *testing.T) {
 		"vconsole_active":   "active",
 		"vconsole_warnings": "0",
 	})
+	// The image is not signed, so neither is its module policy, and the kernel loads any module.
+	if out, err := chalkctl(t, n, "base", "status", "chalklab"); err != nil || !strings.Contains(out, "module policy: not enforced (no Secure Boot)") {
+		t.Errorf("status of the unsigned node: %v\n%s", err, out)
+	}
 
 	// Without its serial port and its TPM, as a machine with a new TPM, the node boots with the
 	// metal platform's consoles: the screen is last. STATE asks for the recovery key there, and

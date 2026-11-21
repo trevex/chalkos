@@ -18,6 +18,8 @@ rec {
     pkgs.dosfstools
     # veritysetup, which the verity tests check their trees against.
     pkgs.cryptsetup
+    # openssl, which the module policy's signing test checks its signatures against.
+    pkgs.openssl
     # sfdisk, with which the upgrade tests partition a disk image, and blkid and the file system
     # tools systemd-repart runs when the install tests lay out theirs.
     pkgs.util-linux
