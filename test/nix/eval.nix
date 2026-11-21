@@ -2794,8 +2794,10 @@ lib.runTests {
     };
   };
   # An image carries the base groups of kernel modules plus what it adds; the initrd takes its
-  # modules from the same tree, and a module the image loads must be in it. The build check
-  # kernel-modules runs the filter and the check.
+  # modules from the same tree, and a module the image loads must be in it. The tree is the
+  # image's only one: it holds the modules of boot.extraModulePackages too, such as the router's
+  # jool, and every module of the kernel with allModules. The build check kernel-modules runs the
+  # filter and the check.
   testKernelModules = {
     expr =
       let
@@ -2808,7 +2810,6 @@ lib.runTests {
         ];
         all = worker [ { chalkos.kernel.allModules = true; } ];
         tree = c: c.system.build.chalkosKernelModules;
-        kernelModules = c: "${lib.getOutput "modules" c.boot.kernelPackages.kernel}";
         check = c.system.build.chalkosKernelModulesCheck;
         loaded = lib.splitString "\n" check.loaded;
       in
@@ -2819,9 +2820,17 @@ lib.runTests {
           gpu
         ];
         extra = lib.elem "kvm_amd" (tree gpu).names;
-        # The image's module tree is made of the filtered tree alone, not of the kernel's.
-        filtered = (tree c) ? directories && map toString c.system.modulesTree.paths == [ "${tree c}" ];
-        all = "${tree all}" == kernelModules all;
+        # The image's module tree is made of the filtered tree alone, not of the kernel's or of
+        # the out-of-tree module packages.
+        filtered =
+          map (c: (tree c) ? directories && map toString c.system.modulesTree.paths == [ "${tree c}" ])
+            [
+              c
+              edge
+              all
+            ];
+        extras = map toString (tree edge).extras == [ "${edge.boot.kernelPackages.jool}" ];
+        all = (tree all).directories;
         loadsChecked = lib.all (m: lib.elem m loaded) (
           c.boot.kernelModules ++ c.boot.initrd.kernelModules ++ c.boot.initrd.availableKernelModules
         );
@@ -2841,8 +2850,13 @@ lib.runTests {
         true
       ];
       extra = true;
-      filtered = true;
-      all = true;
+      filtered = [
+        true
+        true
+        true
+      ];
+      extras = true;
+      all = [ "." ];
       loadsChecked = true;
     };
   };

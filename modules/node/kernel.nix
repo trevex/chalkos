@@ -1,11 +1,14 @@
 # The kernel modules of an image: a filtered copy of nixpkgs's prebuilt module tree, so the
 # kernel and the binary cache stay as they are. Groups name directories of the tree where they
 # can, so a kernel update brings a subsystem's new drivers along; module names fill the gaps.
+# The copy also holds the modules of boot.extraModulePackages, as files of its own, so it is the
+# image's one module tree: the running system's, the initrd's and the one /lib/modules shows
+# pods on Kubernetes images, which need no store to read it.
 # Modules need no signatures: they live in the dm-verity store, whose root hash the signed UKI
 # pins, and the module policy (base/module-policy.nix) lets the kernel load modules from that
-# store and the initrd alone. The initrd's modules come from the same tree. The groups of the hardware an image may run
-# on are declared here; the modules of a feature, such as the base firewall or a layer, declare
-# theirs and add them while the feature is on.
+# store and the initrd alone. The groups of the hardware an image may run on are declared here;
+# the modules of a feature, such as the base firewall or a layer, declare theirs and add them
+# while the feature is on.
 {
   chalkosLib,
   config,
@@ -219,10 +222,17 @@ let
   selected = chalkosLib.internal.refuse (lib.optional (unknown != [ ])
     "chalkos.kernel.moduleGroups names ${lib.concatStringsSep ", " unknown}, which chalkos.kernel.groups does not declare; it declares ${lib.concatStringsSep ", " (lib.attrNames cfg.groups)}"
   ) (map (name: cfg.groups.${name}) (lib.unique cfg.moduleGroups));
-  directories = lib.unique (lib.concatMap (g: g.directories or [ ]) selected);
-  names = lib.unique (lib.concatMap (g: g.modules or [ ]) selected ++ cfg.extraModules);
+  # With allModules, . is every directory of the tree.
+  directories =
+    if cfg.allModules then [ "." ] else lib.unique (lib.concatMap (g: g.directories or [ ]) selected);
+  names =
+    if cfg.allModules then
+      [ ]
+    else
+      lib.unique (lib.concatMap (g: g.modules or [ ]) selected ++ cfg.extraModules);
+  extras = config.boot.extraModulePackages;
 
-  filtered =
+  tree =
     pkgs.runCommand "${config.boot.kernelPackages.kernel.name}-modules-filtered"
       {
         directories = lib.concatLines directories;
@@ -231,11 +241,11 @@ let
           "directories"
           "names"
         ];
-        passthru = { inherit directories names; };
+        passthru = { inherit directories names extras; };
       }
       ''
         ${lib.getExe tool} filter ${full} $out $directoriesPath $namesPath \
-          ${lib.escapeShellArgs config.boot.extraModulePackages}
+          ${lib.escapeShellArgs extras}
       '';
 
   # What the image loads by name, which the tree must hold.
@@ -323,13 +333,13 @@ in
   config = {
     chalkos.kernel.groups = groups;
     chalkos.kernel.moduleGroups = baseGroups;
-    system.modulesTree = lib.mkIf (!cfg.allModules) (
-      lib.mkForce ([ filtered ] ++ config.boot.extraModulePackages)
-    );
+    # NixOS joins the trees of the list into one of links; with the one tree, its links lead to
+    # the tree's files.
+    system.modulesTree = lib.mkForce [ tree ];
     # A module the image loads that its tree lacks, or one a module of the tree depends on, fails
     # the build, not the boot.
     chalkos.imageDirectory.checks = [ check ];
-    system.build.chalkosKernelModules = if cfg.allModules then full else filtered;
+    system.build.chalkosKernelModules = tree;
     system.build.chalkosKernelModulesCheck = check;
   };
 }

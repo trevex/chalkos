@@ -3,10 +3,12 @@
 #
 #   chalkos-kernel-modules filter SOURCE OUT DIRECTORIES NAMES [EXTRA...]
 #     copies to OUT the modules of SOURCE below the directories the file DIRECTORIES lists
-#     (relative to the tree's kernel/ directory), the modules the file NAMES lists and those the
-#     out-of-tree modules of the EXTRA packages depend on, with what they depend on and their soft
-#     dependencies, then runs depmod. A directory without modules, a name modprobe does not know
-#     and a dependency of an out-of-tree module that neither SOURCE nor EXTRA has fail.
+#     (relative to the tree's kernel/ directory; . is all of them), the modules the file NAMES
+#     lists, the out-of-tree modules of the EXTRA packages and those they depend on, with what
+#     they depend on and their soft dependencies, then runs depmod. OUT holds the files themselves,
+#     no links, so it is a module tree of its own. A directory without modules, a name modprobe
+#     does not know, two EXTRA packages with the same module file and a dependency of an
+#     out-of-tree module that neither SOURCE nor EXTRA has fail.
 #   chalkos-kernel-modules check TREE NAMES
 #     fails unless every module the file NAMES lists is in TREE or built into the kernel, and every
 #     module of TREE finds the modules it depends on there.
@@ -104,7 +106,7 @@ writeShellApplication {
 
     filter() {
       local source=$1 out=$2 directories=$3 names=$4 extras=("''${@:5}")
-      local version root work failed=0 dir name before after kind module dependency extra
+      local version root work failed=0 dir prefix name before after kind module dependency extra
       version=$(version "$source")
       root=$source/lib/modules/$version
       work=$(mktemp -d)
@@ -112,7 +114,9 @@ writeShellApplication {
 
       while read -r dir; do
         [[ -n $dir ]] || continue
-        if ! awk -F: -v prefix="kernel/$dir/" 'index($1, prefix) == 1 { print $1; found = 1 } END { exit !found }' \
+        prefix=kernel/$dir/
+        if [[ $dir == . ]]; then prefix=kernel/; fi
+        if ! awk -F: -v prefix="$prefix" 'index($1, prefix) == 1 { print $1; found = 1 } END { exit !found }' \
           "$root/modules.dep" >>"$work/selected"; then
           echo "error: no kernel module below $dir" >&2
           failed=1
@@ -164,8 +168,32 @@ writeShellApplication {
       (cd "$root" && xargs -r -a "$work/selected" cp --parents --no-preserve=mode -t "$out/lib/modules/$version")
       cp --no-preserve=mode "$root"/modules.builtin "$root"/modules.builtin.modinfo "$out/lib/modules/$version/"
       certificates "$root" "$work/selected" "$out/lib/modules/$version"
+
+      # The out-of-tree modules, as files of the tree, and the certificates they are signed with,
+      # which modules.cer takes after depmod. cp follows the links of a package that links its
+      # modules.
+      mkdir "$work/certificates"
+      for extra in "''${extras[@]}"; do
+        [[ -d $extra/lib/modules/$version ]] || continue
+        while read -r module; do
+          if [[ -e $out/lib/modules/$version/$module ]]; then
+            echo "error: two packages of boot.extraModulePackages hold $module" >&2
+            exit 1
+          fi
+          (cd "$extra/lib/modules/$version" && cp --parents --no-preserve=mode "$module" "$out/lib/modules/$version")
+          if [[ -f $extra/lib/modules/$version/''${module%.ko*}.ko.cer ]]; then
+            (cd "$extra/lib/modules/$version" && cp --parents --no-preserve=mode "''${module%.ko*}.ko.cer" "$work/certificates")
+          fi
+        done < <(cd "$extra/lib/modules/$version" && moduleFiles . | sed 's|^\./||')
+      done
+
       depmod -b "$out" -C no-config "$version"
-      echo "kept $(wc -l <"$work/selected") of $(wc -l <"$root/modules.dep") kernel modules"
+      # modules.cer goes on with the certificates of the out-of-tree modules, in the order of
+      # modules.dep, as NixOS joins them; a module without one adds none.
+      awk -F: '{ print $1 }' "$out/lib/modules/$version/modules.dep" | while read -r module; do
+        if [[ -f $work/certificates/''${module%.ko*}.ko.cer ]]; then cat "$work/certificates/''${module%.ko*}.ko.cer"; fi
+      done >>"$out/lib/modules/$version/modules.cer"
+      echo "kept $(wc -l <"$work/selected") of $(wc -l <"$root/modules.dep") kernel modules and $(wc -l <"$work/extra") out-of-tree ones"
       rm -r "$work"
     }
 

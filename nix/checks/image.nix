@@ -110,8 +110,24 @@ in
         refuses "the check of a module outside the tree" 'does not hold: amdgpu' ${tool} check ${tree} loaded
 
         has ${treeOf v4l2loopback} videodev || fail "the tree of an image with v4l2loopback lacks videodev"
+        # An image's tree holds its out-of-tree modules too, as its own files: pods that mount it
+        # read it without the store.
+        has ${treeOf v4l2loopback} v4l2loopback || fail "the tree of an image with v4l2loopback lacks it"
+        has ${treeOf router} jool || fail "the router's tree lacks jool"
+        for t in ${treeOf v4l2loopback} ${treeOf router} ${tree}; do
+          links=$(find "$t" -type l)
+          [ -z "$links" ] || fail "the module tree $t holds links: $links"
+        done
+        # . is every module of the kernel.
+        echo . >directories
+        : >names
+        ${tool} filter ${full} "$PWD/everything" directories names
+        [ "$(wc -l <everything/lib/modules/${version}/modules.dep)" = "$(wc -l <${full}/lib/modules/${version}/modules.dep)" ] ||
+          fail "the tree of every module holds $(wc -l <everything/lib/modules/${version}/modules.dep) of the kernel's $(wc -l <${full}/lib/modules/${version}/modules.dep)"
+        rm -r everything
         echo drivers/nvme >directories
         ${tool} filter ${full} "$PWD/stubbed" directories names ${stubWithDependencies}
+        has stubbed chalkos_stub || fail "the out-of-tree module is missing from the tree"
         has stubbed videodev || fail "the dependency of an out-of-tree module is missing"
         has stubbed uvcvideo || fail "the soft dependency of an out-of-tree module is missing"
         refuses "the filter of an out-of-tree module whose dependency the kernel lacks" 'chalkos_stub_missing depends on chalkos_no_such_module' \
