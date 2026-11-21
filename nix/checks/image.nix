@@ -285,6 +285,9 @@ in
           for sh in sh bash; do
             [ ! -e $top/sw/bin/$sh ] || fail "the ${name}'s system path holds $sh"
           done
+          for p in ${toString c.system.fsPackages}; do
+            [ ! -e $p/bin/fsck.btrfs ] || fail "the ${name}'s btrfs-progs holds fsck.btrfs, a bash script"
+          done
         '') images
       )}
       grep -q '^ *table inet nixos-fw {' ${checkLib.firewall} || fail "the worker's firewall has no nixos-fw table"
