@@ -336,9 +336,9 @@ func privatePull(t *testing.T, ctx context.Context, cs kubernetes.Interface) {
 // finds flannel's configuration through /etc/cni/net.d.
 const cniScript = `set -e
 grep -q '^tmpfs /cni tmpfs ' /proc/mounts
-cp /bin/busybox /cni/chalkos-e2e
-trap 'rm -f /cni/chalkos-e2e' EXIT
-/cni/chalkos-e2e true
+cp /bin/busybox /cni/busybox-chalkos-e2e
+trap 'rm -f /cni/busybox-chalkos-e2e' EXIT
+/cni/busybox-chalkos-e2e true
 test -f /netd/10-flannel.conflist
 `
 
