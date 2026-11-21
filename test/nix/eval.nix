@@ -588,7 +588,14 @@ lib.runTests {
             ];
             outputs = [ "frr" ];
             effects = [ "frr" ];
-            services = [ "frr" ];
+            services = [
+              "frr"
+              "frr-bfdd"
+              "frr-bgpd"
+              "frr-mgmtd"
+              "frr-staticd"
+              "frr-zebra"
+            ];
             users = [ "frr" ];
             groups = [
               "frr"
@@ -603,7 +610,6 @@ lib.runTests {
             chalkd = [ "frr" ];
             packages = [ "frr" ];
             etc = [
-              "frr/daemons"
               "frr/frr.conf"
               "frr/vtysh.conf"
             ];
@@ -1106,20 +1112,25 @@ lib.runTests {
       plain = [ ];
     };
   };
-  # Router images run FRR with bgpd and bfdd. frr.service starts after the firewall and before the
-  # node's addresses settle, fills the BGPPeers' passwords in from its credentials before it starts
-  # and on reload, which chalkos-frr-reload applies, and networkd keeps zebra's routes. They run
-  # chalkos's FRR. Other images run no FRR.
+  # Router images run FRR's mgmtd, zebra, staticd, bfdd and bgpd as units of their own, without
+  # watchfrr or FRR's scripts. frr.service starts after the firewall and before the node's
+  # addresses settle, fills the BGPPeers' passwords in from its credentials before the daemons
+  # start and on reload, which chalkos-frr-reload applies, and upholds the daemons. Each daemon
+  # starts after frr.service and stops or restarts with it, loads its config with vtysh once it
+  # runs and restarts when it fails; zebra's clients stop with zebra. networkd keeps zebra's
+  # routes. They run chalkos's FRR. Other images run no FRR.
   testRouterBGP = {
     expr =
       let
-        frr = edge.systemd.services.frr;
+        services = edge.systemd.services;
+        inherit (services) frr;
+        daemons = lib.filterAttrs (n: _: lib.hasPrefix "frr-" n) services;
+        frrPackage = "${layered.edge-metal.pkgs.chalkos.frr}";
       in
       {
-        daemons = {
-          inherit (edge.services.frr.bgpd) enable;
-          bfdd = edge.services.frr.bfdd.enable;
-        };
+        daemons = lib.attrNames daemons;
+        inherit (frr) upholds wants;
+        type = frr.serviceConfig.Type;
         check = lib.hasInfix "vtysh --dryrun" edge.chalkos.outputs.frr.check;
         grant = frr.chalkos.kinds;
         after = lib.subtractLists frr.after [
@@ -1128,51 +1139,99 @@ lib.runTests {
           "systemd-networkd.service"
         ];
         before = lib.elem "chalkos-node-addresses.target" frr.before;
-        wantedBy = lib.elem "chalkos-node-addresses.target" frr.wantedBy;
+        wantedBy = lib.sort lib.lessThan frr.wantedBy;
         filled = edge.environment.etc."frr/frr.conf".source;
         condition = frr.unitConfig.ConditionPathIsDirectory;
         reload = lib.length frr.serviceConfig.ExecReload;
-        fillsAlike = frr.serviceConfig.ExecStartPre == lib.head frr.serviceConfig.ExecReload;
+        fillsAlike = frr.serviceConfig.ExecStart == lib.head frr.serviceConfig.ExecReload;
+        fills = lib.hasInfix "/bin/chalkd frr-credentials " frr.serviceConfig.ExecStart;
         reloadsFilled =
           let
             reload = lib.last frr.serviceConfig.ExecReload;
           in
           lib.hasInfix "/bin/chalkos-frr-reload " reload && lib.hasSuffix " /run/frr/frr.conf" reload;
-        # The images run chalkos's FRR, which has no Python in its closure.
-        package =
-          frr.serviceConfig.ExecStart
-          == "${layered.edge-metal.pkgs.chalkos.frr}/libexec/frr/frrinit.sh start";
+        # Each daemon: its unit's ties to frr.service and zebra, and how it starts and loads its
+        # config, from chalkos's FRR, which has no Python, SNMP, Lua or shell in its closure.
+        units = lib.mapAttrs (
+          n: s:
+          let
+            name = lib.removePrefix "frr-" n;
+          in
+          {
+            inherit (s) bindsTo partOf requires;
+            before = lib.elem "chalkos-node-addresses.target" s.before;
+            condition = s.unitConfig.ConditionPathIsDirectory;
+            inherit (s.serviceConfig) Type PIDFile Restart;
+            start =
+              s.serviceConfig.ExecStart == "${frrPackage}/libexec/frr/${name} -d ${
+                if name == "zebra" then "-A 127.0.0.1 -s 90000000" else "-A 127.0.0.1"
+              }";
+            load = s.serviceConfig.ExecStartPost == "${frrPackage}/bin/vtysh -b -d ${name}";
+          }
+        ) daemons;
         refresh = frr.serviceConfig.RefreshOnReload;
         networkd = edge.systemd.network.config.networkConfig;
         groups = edge.chalkos.diagnostics.bgp-summary.groups;
-        plain = layered.plain-metal.config.services.frr.bgpd.enable;
+        plain = layered.plain-metal.config.systemd.services ? frr;
         node = layered.node-metal.config.chalkos.outputs ? frr;
       };
-    expected = {
-      daemons = {
-        enable = true;
-        bfdd = true;
+    expected =
+      let
+        daemons = [
+          "frr-bfdd"
+          "frr-bgpd"
+          "frr-mgmtd"
+          "frr-staticd"
+          "frr-zebra"
+        ];
+        unit = name: bindsTo: {
+          inherit bindsTo;
+          partOf = [ "frr.service" ];
+          requires = [ "frr.service" ];
+          before = true;
+          condition = "/run/chalkos/credentials/frr";
+          Type = "forking";
+          PIDFile = "/run/frr/${name}.pid";
+          Restart = "on-failure";
+          start = true;
+          load = true;
+        };
+      in
+      {
+        inherit daemons;
+        upholds = map (d: "${d}.service") daemons;
+        wants = map (d: "${d}.service") daemons;
+        type = "oneshot";
+        check = true;
+        grant = [ "BGPPeer" ];
+        after = [ ];
+        before = true;
+        wantedBy = [
+          "chalkos-node-addresses.target"
+          "multi-user.target"
+        ];
+        filled = "/run/frr/frr.conf";
+        condition = "/run/chalkos/credentials/frr";
+        reload = 2;
+        fillsAlike = true;
+        fills = true;
+        reloadsFilled = true;
+        units = {
+          frr-mgmtd = unit "mgmtd" [ ];
+          frr-zebra = unit "zebra" [ ];
+          frr-bfdd = unit "bfdd" [ "frr-zebra.service" ];
+          frr-bgpd = unit "bgpd" [ "frr-zebra.service" ];
+          frr-staticd = unit "staticd" [ "frr-zebra.service" ];
+        };
+        refresh = "credentials";
+        networkd = {
+          ManageForeignNextHops = false;
+          ManageForeignRoutes = false;
+        };
+        groups = [ "frrvty" ];
+        plain = false;
+        node = false;
       };
-      check = true;
-      grant = [ "BGPPeer" ];
-      after = [ ];
-      before = true;
-      wantedBy = true;
-      filled = "/run/frr/frr.conf";
-      condition = "/run/chalkos/credentials/frr";
-      reload = 2;
-      fillsAlike = true;
-      reloadsFilled = true;
-      package = true;
-      refresh = "credentials";
-      networkd = {
-        ManageForeignNextHops = false;
-        ManageForeignRoutes = false;
-      };
-      groups = [ "frrvty" ];
-      plain = false;
-      node = false;
-    };
   };
   # Router images accept VRF documents; other images do not. chalkos-vrf runs before networkd at
   # boot with CAP_NET_ADMIN alone, and FRR orders after networkd, which creates a VRF's device
@@ -4142,7 +4201,7 @@ lib.runTests {
     };
   };
   # A Kubernetes image carries BGP unless it leaves the feature out. Without it, the image lacks
-  # BGP's kinds, output, effect and tests, FRR's unit, user, groups, package, files and
+  # BGP's kinds, output, effect and tests, FRR's units, user, groups, package, files and
   # diagnostics, the BFD port and networkd's leave of zebra's routes; nothing else changes, and its
   # build allocates the IDs of the same users and groups.
   testKubernetesBGPOptional =
@@ -4202,7 +4261,14 @@ lib.runTests {
             "kubernetes-bgp-unconfigured-peer-interface"
             "kubernetes-bgp-unnumbered"
           ];
-          services = [ "frr" ];
+          services = [
+            "frr"
+            "frr-bfdd"
+            "frr-bgpd"
+            "frr-mgmtd"
+            "frr-staticd"
+            "frr-zebra"
+          ];
           users = [ "frr" ];
           groups = [
             "frr"
@@ -4216,7 +4282,6 @@ lib.runTests {
           ];
           packages = [ "frr" ];
           etc = [
-            "frr/daemons"
             "frr/frr.conf"
             "frr/vtysh.conf"
           ];
@@ -4313,7 +4378,7 @@ lib.runTests {
         reload = w.chalkos.effects.bgp.reload;
         grant = frr.chalkos.kinds;
         before = lib.elem "chalkos-node-addresses.target" frr.before;
-        wantedBy = lib.elem "chalkos-node-addresses.target" frr.wantedBy;
+        wantedBy = lib.sort lib.lessThan frr.wantedBy;
         prepareAfter = lib.elem "chalkos-node-addresses.target" w.systemd.services.chalkos-kubernetes.after;
         filled = w.environment.etc."frr/frr.conf".source;
         condition = frr.unitConfig.ConditionPathIsDirectory;
@@ -4330,7 +4395,10 @@ lib.runTests {
       reload = [ "frr.service" ];
       grant = [ "BGPPeer" ];
       before = true;
-      wantedBy = true;
+      wantedBy = [
+        "chalkos-node-addresses.target"
+        "multi-user.target"
+      ];
       prepareAfter = true;
       filled = "/run/frr/frr.conf";
       condition = "/run/chalkos/credentials/frr";

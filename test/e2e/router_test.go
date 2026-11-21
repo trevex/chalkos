@@ -276,6 +276,13 @@ func TestRouterLab(t *testing.T) {
 // NAT64 prefix. The status and bgp-summary show the session, no unit failed, and a reader's
 // status holds no password.
 func (rl *routerLab) bgp(t *testing.T) {
+	// A failed phase logs r1's FRR: frr.service and the units of its daemons.
+	defer func() {
+		if t.Failed() {
+			out, err := chalkctl(t, rl.nodes["r1"], "base", "logs", "r1", "--unit", "frr*")
+			t.Logf("FRR's journal of r1: %v\n%s", err, out)
+		}
+	}()
 	waitFor(t, 10*time.Minute, "r1's session with r2", func() error { return rl.established("r1", "fabric") })
 	waitFor(t, 2*time.Minute, "r2's session with r1", func() error { return rl.established("r2", "edge") })
 	waitFor(t, 2*time.Minute, "r2's default route from r1", func() error { return rl.learned("::/0") })

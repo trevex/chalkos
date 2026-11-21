@@ -304,14 +304,14 @@ applies the difference in place. Sessions the change leaves alone stay up. The j
 `frr.service`, which `chalkctl logs k1 --unit=frr.service` shows, lists the commands it applied:
 
 ```text
-k1 systemd[1]: Reloading FRRouting...
+k1 systemd[1]: Reloading frr.service - FRR's config and daemons...
 k1 chalkos-frr-reload[2501]: chalkos-frr-reload: pass 1 applies:
 k1 chalkos-frr-reload[2501]: hostname k1
 k1 chalkos-frr-reload[2501]: route-map export permit 20
 k1 chalkos-frr-reload[2501]:  match interface lb0
 k1 chalkos-frr-reload[2501]: exit
 k1 chalkos-frr-reload[2501]: chalkos-frr-reload: FRR runs frr.conf
-k1 systemd[1]: Reloaded FRRouting.
+k1 systemd[1]: Reloaded frr.service - FRR's config and daemons.
 ```
 
 A reload that fails fails the delivery, with the config stored, and a restart of `frr.service`

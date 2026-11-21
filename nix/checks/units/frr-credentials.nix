@@ -1,9 +1,9 @@
 # frr.service fills the rendered config's password placeholders in from its credentials into
-# /run/frr/frr.conf, readable by root alone and replaced whole, and loads the fallback config
-# without a rendered one. Only a peer group's password line takes a value: a placeholder
-# elsewhere stays as written. A password with a line break, a trailing one too, white space, a
-# NUL or more than 80 characters, and a credential the unit lacks, fail the unit and leave the
-# filled config as it was, as does a fill without a credentials directory.
+# /run/frr/frr.conf with chalkd frr-credentials, readable by root alone and replaced whole, and
+# loads the fallback config without a rendered one. Only a peer group's password line takes a
+# value: a placeholder elsewhere stays as written. A password with a line break, a trailing one
+# too, white space, a NUL or more than 80 characters, and a credential the unit lacks, fail the
+# unit and leave the filled config as it was, as does a fill without a credentials directory.
 {
   pkgs,
   checkLib,
@@ -11,7 +11,7 @@
   ...
 }:
 let
-  fill = checkLib.router.config.systemd.services.frr.serviceConfig.ExecStartPre;
+  fill = checkLib.router.config.systemd.services.frr.serviceConfig.ExecStart;
   dir = checkLib.router.config.chalkos.outputs.frr.dir;
   rendered = "${checkLib.routerRendered "edge"}/frr/frr.conf";
 in
@@ -28,7 +28,7 @@ unitCheck "frr-credentials" [ pkgs.diffutils ] ''
   [ "$(stat -c %a:%u:%g /run/frr/frr.conf)" = 600:0:0 ] || fail "the filled config is not root's alone"
   diff <(grep -vx -- "$filled" /run/frr/frr.conf) <(grep -vx ' neighbor peer-fabric password @secret_bgp.fabric@' ${dir}/frr.conf) || fail "the fill changed more than the peer group's password"
   grep -qx ' neighbor peer-fabric description x password @secret_bgp.fabric@' /run/frr/frr.conf || fail "the fill replaced a placeholder in a description"
-  [ "$(find /run/frr -name 'frr.conf.*' | wc -l)" = 0 ] || fail "the fill left a temporary file"
+  [ "$(find /run/frr -name '*frr.conf.*' | wc -l)" = 0 ] || fail "the fill left a temporary file"
   cp /run/frr/frr.conf good.conf
   if env -u CREDENTIALS_DIRECTORY ${fill} 2>err; then fail "the fill took a placeholder without credentials"; fi
   grep -q 'frr.service has no credentials' err || fail "the fill without credentials failed for another reason: $(cat err)"
@@ -43,7 +43,7 @@ unitCheck "frr-credentials" [ pkgs.diffutils ] ''
   printf 'nul\0byte' >credentials/secret_bgp.fabric
   if ${fill} 2>err; then fail "the fill took a password with a NUL"; fi
   grep -q 'FRR takes a password of 1 to 80 printable characters' err || fail "the fill refused a NUL for another reason: $(cat err)"
-  [ "$(find /run/frr -name 'frr.conf.*' | wc -l)" = 0 ] || fail "a refused fill left a temporary file"
+  [ "$(find /run/frr -name '*frr.conf.*' | wc -l)" = 0 ] || fail "a refused fill left a temporary file"
   rm credentials/secret_bgp.fabric
   if ${fill} 2>err; then fail "the fill took a credential the unit lacks"; fi
   grep -q 'names the credential secret_bgp.fabric, which frr.service does not have' err || fail "a missing credential was refused for another reason: $(cat err)"

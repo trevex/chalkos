@@ -1,9 +1,10 @@
-// Package units holds the chalkd commands that the units and diagnostics of every image run, in
-// place of shell scripts: chalkd <name>, with no layer's name before it. modules/node/runtime/effects.nix
-// lists their names among chalkd's own commands.
+// Package units holds the chalkd commands that the units and diagnostics of the common modules
+// run, in place of shell scripts: chalkd <name>, with no layer's name before it.
+// modules/node/runtime/effects.nix lists their names among chalkd's own commands.
 package units
 
 import (
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -49,6 +50,18 @@ func Commands(r tool.Runner) []*cobra.Command {
 			Long:  "Have chronyd read its sources again while it runs; one that does not run reads them when it starts.",
 			Args:  cli.NoArgs,
 			RunE:  func(cmd *cobra.Command, _ []string) error { return ReloadSources(cmd.Context(), r) },
+		},
+		{
+			Use:   "frr-credentials RENDERED FALLBACK",
+			Short: "Write FRR's config with the peers' passwords filled in from frr.service's credentials",
+			Long: "Write /run/frr/frr.conf, readable by root alone, from the rendered config RENDERED, or FALLBACK\n" +
+				"while there is none, with the placeholder @secret_<secret>.<key>@ of each peer group's password\n" +
+				"line replaced by the credential of that name in $CREDENTIALS_DIRECTORY. A password FRR does not\n" +
+				"take, or a missing credential, fails and leaves the file as it was.",
+			Args: cli.ExactArgs(2),
+			RunE: func(_ *cobra.Command, args []string) error {
+				return FRRCredentials(args[0], args[1], frrConfig, os.Getenv("CREDENTIALS_DIRECTORY"))
+			},
 		},
 		{
 			Use:   "tcp-connect ADDRESS PORT",
