@@ -2794,8 +2794,10 @@ lib.runTests {
     };
   };
   # An image carries the base groups of kernel modules plus what it adds; the initrd takes its
-  # modules from the same tree, and a module the image loads must be in it. The build check
-  # kernel-modules runs the filter and the check.
+  # modules from the same tree, and a module the image loads must be in it. The tree is the
+  # image's only one: it holds the modules of boot.extraModulePackages too, such as the router's
+  # jool, and every module of the kernel with allModules. The build check kernel-modules runs the
+  # filter and the check.
   testKernelModules = {
     expr =
       let
@@ -2808,7 +2810,6 @@ lib.runTests {
         ];
         all = worker [ { chalkos.kernel.allModules = true; } ];
         tree = c: c.system.build.chalkosKernelModules;
-        kernelModules = c: "${lib.getOutput "modules" c.boot.kernelPackages.kernel}";
         check = c.system.build.chalkosKernelModulesCheck;
         loaded = lib.splitString "\n" check.loaded;
       in
@@ -2819,9 +2820,17 @@ lib.runTests {
           gpu
         ];
         extra = lib.elem "kvm_amd" (tree gpu).names;
-        # The image's module tree is made of the filtered tree alone, not of the kernel's.
-        filtered = (tree c) ? directories && map toString c.system.modulesTree.paths == [ "${tree c}" ];
-        all = "${tree all}" == kernelModules all;
+        # The image's module tree is made of the filtered tree alone, not of the kernel's or of
+        # the out-of-tree module packages.
+        filtered =
+          map (c: (tree c) ? directories && map toString c.system.modulesTree.paths == [ "${tree c}" ])
+            [
+              c
+              edge
+              all
+            ];
+        extras = map toString (tree edge).extras == [ "${edge.boot.kernelPackages.jool}" ];
+        all = (tree all).directories;
         loadsChecked = lib.all (m: lib.elem m loaded) (
           c.boot.kernelModules ++ c.boot.initrd.kernelModules ++ c.boot.initrd.availableKernelModules
         );
@@ -2841,8 +2850,13 @@ lib.runTests {
         true
       ];
       extra = true;
-      filtered = true;
-      all = true;
+      filtered = [
+        true
+        true
+        true
+      ];
+      extras = true;
+      all = [ "." ];
       loadsChecked = true;
     };
   };
@@ -4620,4 +4634,141 @@ lib.runTests {
       "~CAP_SYS_MODULE"
     ];
   };
+  # A layer's feature is on by default and names its kinds; one may be off by default and carry
+  # no kinds. The descriptions of the existing features stay as they were.
+  testFeatureOption =
+    let
+      f = (import ../../lib/chalkos.nix { inherit lib; }).internal.feature;
+      opt = args: (f "Kubernetes" "x" args).x.enable;
+    in
+    {
+      expr = {
+        onDefault =
+          (opt {
+            carries = "X";
+            kinds = [ "A" ];
+          }).default;
+        onText =
+          (opt {
+            carries = "X";
+            kinds = [ "A" ];
+          }).description;
+        offDefault =
+          (opt {
+            carries = "X";
+            default = false;
+          }).default;
+        offText =
+          (opt {
+            carries = "X";
+            default = false;
+          }).description;
+      };
+      expected = {
+        onDefault = true;
+        onText = "Whether Kubernetes images carry X and accept the kind `A`. Only with the Kubernetes layer; set it false in an image's modules to leave the feature out of it.";
+        offDefault = false;
+        offText = "Whether Kubernetes images carry X. Only with the Kubernetes layer; set it true in an image's modules to add the feature to it.";
+      };
+    };
+  # Kubernetes images link /lib/modules to the image's module tree, whose files are its own, so
+  # the hostPath mounts of ceph-csi, Cilium, Longhorn and the GPU operator read the modules
+  # without the store; a router image has no such link. They put the host tools into /usr/bin and
+  # /usr/sbin of the store's file system, which is /usr on a node.
+  testKubernetesHostBase =
+    let
+      tools = worker [
+        (
+          { pkgs, ... }:
+          {
+            chalkos.kubernetes.hostTools.fstrim = "${pkgs.util-linux}/bin/fstrim";
+          }
+        )
+      ];
+      store = c: c.image.repart.partitions.${c.image.repart.verityStore.partitionIds.store};
+      entries = lib.mapAttrs (_: lib.mapAttrs (_: e: { inherit (e) mode argument; }));
+    in
+    {
+      expr = {
+        libModules = entries w.systemd.tmpfiles.settings.chalkos-lib-modules;
+        router = edge.systemd.tmpfiles.settings ? chalkos-lib-modules;
+        noTools = (store w).contents;
+        tools = lib.attrNames (store tools).contents;
+        usrIsStore = w.fileSystems."/nix/store".device;
+        stored = lib.any (p: lib.hasInfix "chalkos-usr-links" (toString p)) (store tools).storePaths;
+      };
+      expected = {
+        libModules = {
+          "/lib".d = {
+            mode = "0755";
+            argument = "";
+          };
+          "/lib/modules"."L+" = {
+            mode = "-";
+            argument = "${w.system.build.chalkosKernelModules}/lib/modules";
+          };
+        };
+        router = false;
+        noTools = { };
+        tools = [
+          "/bin"
+          "/sbin"
+        ];
+        usrIsStore = "/usr/nix/store";
+        stored = true;
+      };
+    };
+  # containerd's runtime handlers: runc, and those an image adds, in the read-only config; CDI
+  # specifications, which containerd 2.4 always reads, from the image (/etc/cdi) and from units
+  # at boot (/var/run/cdi).
+  testContainerdRuntimes =
+    let
+      c = worker [
+        {
+          chalkos.kubernetes.containerd.runtimes.kata.options.ConfigPath = "/etc/kata/configuration.toml";
+        }
+      ];
+      runtime = x: x.virtualisation.containerd.settings.plugins."io.containerd.cri.v1.runtime";
+    in
+    {
+      expr = {
+        runtimes = (runtime c).containerd.runtimes;
+        cdi = (runtime w).cdi_spec_dirs;
+        runcRefused = refuses "names runc, which is containerd's own handler" (worker [
+          { chalkos.kubernetes.containerd.runtimes.runc = { }; }
+        ]);
+      };
+      expected = {
+        runtimes = {
+          runc.options.SystemdCgroup = true;
+          kata = {
+            runtime_type = "io.containerd.runc.v2";
+            options.ConfigPath = "/etc/kata/configuration.toml";
+          };
+        };
+        cdi = [
+          "/etc/cdi"
+          "/var/run/cdi"
+        ];
+        runcRefused = true;
+      };
+    };
+  # The kernel's modprobe helper, which loads the modules pods need on demand, is kmod's ELF
+  # modprobe, set by nixos-init, and no modprobe.d install or remove command makes it run a shell.
+  testModprobeWithoutShell =
+    let
+      binary = w.boot.bootspec.extensions."org.nixos.nixos-init.v1".modprobe_binary;
+    in
+    {
+      expr = {
+        modprobe = lib.hasSuffix "/bin/modprobe" binary;
+        kmod = lib.hasInfix "-kmod-" binary;
+        commands = builtins.match "(.*\n)?[[:space:]]*(install|remove)[[:space:]].*" w.boot.extraModprobeConfig;
+      };
+      expected = {
+        modprobe = true;
+        kmod = true;
+        commands = null;
+      };
+    };
 }

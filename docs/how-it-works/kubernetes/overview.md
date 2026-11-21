@@ -251,6 +251,18 @@ A registry whose `Registry` sets `insecure` is reached over HTTP. It gets a file
 `Mirror`. An `http://` endpoint needs a `Registry` of its host with `insecure: true`, because
 nothing authenticates what a plain HTTP endpoint serves.
 
+containerd's config is built with the image and is read-only. Besides `runc`, it holds the runtime
+handlers of
+[`chalkos.kubernetes.containerd.runtimes`](../../reference/image-options.md#chalkoskubernetescontainerdruntimes),
+which a `RuntimeClass` names in its `handler`. containerd reads CDI specifications from the
+image's `/etc/cdi` and from `/var/run/cdi`, where units write them at boot.
+
+`/lib/modules` leads to the image's module tree, whose files are its own, so a DaemonSet that
+mounts it by `hostPath` reads the modules without the store. Programs in
+[`chalkos.kubernetes.hostTools`](../../reference/image-options.md#chalkoskuberneteshosttools)
+are linked into `/usr/bin` and `/usr/sbin`, for operators that run them in the host's mount
+namespace through `nsenter`.
+
 ## The cluster registry serves images from the control planes
 
 A [`ClusterRegistry`](../../reference/kinds.md#clusterregistry) document runs a registry on the

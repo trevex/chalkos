@@ -77,8 +77,13 @@ fail() { echo "$*"; exit 1; }
 bnd=$(sed -n 's/^CapBnd:[[:space:]]*//p' /proc/self/status)
 [ $(( (0x$bnd >> 16) & 1 )) = 0 ] || fail "the pod's bounding set $bnd holds CAP_SYS_MODULE"
 [ $(( (0x$bnd >> 33) & 1 )) = 0 ] || fail "the pod's bounding set $bnd holds CAP_MAC_ADMIN"
-m=$(find /kmods/$(uname -r)/ -name '*.ko*' | head -n 1)
-[ -n "$m" ] || fail "the image's module tree has no module: $(ls -la /kmods/ 2>&1)"
+# The host's /lib/modules, mounted as charts mount it, holds the image's modules as files, not as
+# links into the store, which the pod does not see.
+l=$(find /lib/modules/ -type l)
+[ -z "$l" ] || fail "the host's /lib/modules holds links: $l"
+[ -s /lib/modules/$(uname -r)/modules.dep ] || fail "the host's /lib/modules has no modules.dep: $(ls -la /lib/modules/ 2>&1)"
+m=$(find /lib/modules/$(uname -r)/ -name '*.ko*' | head -n 1)
+[ -n "$m" ] || fail "the image's module tree has no module: $(ls -la /lib/modules/ 2>&1)"
 if out=$(insmod "$m" 2>&1); then fail "the pod loaded $m"; fi
 case "$out" in *"not permitted"*) ;; *) fail "insmod of $m failed otherwise: $out" ;; esac
 if out=$( (echo 0 > /securityfs/ipe/enforce) 2>&1 ); then fail "the pod switched IPE to permissive"; fi
@@ -106,11 +111,9 @@ func modulePolicy(t *testing.T, ctx context.Context, cs kubernetes.Interface, no
 		t.Fatal(err)
 	}
 	hostPod(t, ctx, cs, "module-policy", policyScript, map[string]string{
-		"/kmods": "/run/booted-system/kernel-modules/lib/modules",
-		// The module tree links into the store by absolute paths.
-		"/nix/store":  "/nix/store",
-		"/securityfs": "/sys/kernel/security",
-		"/drop":       "/var/lib/chalktest-modules",
+		"/lib/modules": "/lib/modules",
+		"/securityfs":  "/sys/kernel/security",
+		"/drop":        "/var/lib/chalktest-modules",
 	}, corev1.Volume{Name: "outside", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: "outside"}}}})
 
 	wctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
