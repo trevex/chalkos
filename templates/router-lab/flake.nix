@@ -1,7 +1,7 @@
 {
   description = "A chalkos router and a client on its LAN that chalklab runs on this machine";
 
-  inputs.chalkos.url = "github:trevex/chalkos/v0.3.1"; # x-release-please-version
+  inputs.chalkos.url = "github:trevex/chalkos/v0.3.2"; # x-release-please-version
 
   outputs =
     { self, chalkos, ... }:

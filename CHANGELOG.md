@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.2](https://github.com/trevex/chalkos/compare/v0.3.1...v0.3.2) (2026-11-21)
+
+
+### Bug Fixes
+
+* **rules:** keep the rules' cost estimates on cel-go 0.33 and update the vendor hash ([#54](https://github.com/trevex/chalkos/issues/54)) ([b112e1c](https://github.com/trevex/chalkos/commit/b112e1cec20a946357648a93cab01619d6fa4623))
+
+
+### Dependencies
+
+* update the go modules ([dae95ee](https://github.com/trevex/chalkos/commit/dae95ee30c5e002f3582cf6f929d51228babe84c))
+* upgrade bubbletea and lipgloss to v2 ([45d75a2](https://github.com/trevex/chalkos/commit/45d75a2d9a343b4e70a8006a8981eaf3ad375290))
+* upgrade connect to v2 ([dc92600](https://github.com/trevex/chalkos/commit/dc92600f9a77ffa04d4aaa6f3d2a31846b28dee6))
+* upgrade go.yaml.in/yaml to v4 ([c326195](https://github.com/trevex/chalkos/commit/c326195d7f82f88ec577e4b33f50bed452d1fe53))
+
 ## [0.3.1](https://github.com/trevex/chalkos/compare/v0.3.0...v0.3.1) (2026-11-20)
 
 
