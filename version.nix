@@ -1,2 +1,2 @@
 # The version of chalkos, which release-please sets on a release.
-"0.4.0" # x-release-please-version
+"0.5.0" # x-release-please-version
