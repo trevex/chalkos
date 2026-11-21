@@ -26,7 +26,7 @@
       {
         "library": "libdhcp_run_script.so",
         "parameters": {
-          "name": "/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-chalkos-dhcp6-pd/bin/chalkos-dhcp6-pd"
+          "name": "/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-chalkos-dhcp6-pd/bin/chalkd-router-dhcp6-pd"
         }
       }
     ],

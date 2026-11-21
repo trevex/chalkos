@@ -172,17 +172,19 @@ alone that lacks both flags.
 
 Kea delegates prefixes but routes none of them. A delegated prefix needs a route on the router to
 the router that asked for it, at its link-local address on the link. Kea's run_script hook,
-loaded by a DHCPv6 server whose subnets delegate prefixes, runs `chalkos-dhcp6-pd` as the user
-`kea` on each committed, released, declined and expired lease. For a committed prefix it writes a
-record in `/var/lib/chalkos-dhcp6-pd`, named `<link>_<prefix>_<length>`, readable by every user.
-The record holds the address the request came from and when the lease ends. The hook writes it
-in `/var/lib/chalkos-dhcp6-pd.new` first and renames it into place, so the record appears whole
-and once. A release or an expiry removes it. `kea` owns both directories, the records' of mode
+loaded by a DHCPv6 server whose subnets delegate prefixes, runs `chalkd router dhcp6-pd` as the
+user `kea` on each committed, released, declined and expired lease. Kea runs a path with the hook
+point's name as its only argument, so the hook's path is a link to chalkd named
+`chalkd-router-dhcp6-pd`, and chalkd takes the layer and command from the link's name. For a
+committed prefix it writes a record in `/var/lib/chalkos-dhcp6-pd`, named
+`<link>_<prefix>_<length>`, readable by every user. The record holds the address the request
+came from and when the lease ends. The hook writes it in `/var/lib/chalkos-dhcp6-pd.new` first
+and renames it into place, so the record appears whole and once. A release or an expiry removes it. `kea` owns both directories, the records' of mode
 0755, but cannot write `/var/lib`, so it cannot put another directory in their place. Kea runs
 only scripts of the directory that the unit's `KEA_HOOK_SCRIPTS_PATH` names, which holds
-`chalkos-dhcp6-pd` alone.
+`chalkd-router-dhcp6-pd` alone.
 
-Kea runs the script without waiting for it. A release that comes right after its commit may run
+Kea runs the hook without waiting for it. A release that comes right after its commit may run
 first and leave the commit's record behind. The route of the released prefix then lasts until
 the lease would have ended, the subnet's lease time at most.
 
@@ -374,7 +376,8 @@ dhcp6 default: running
 dhcp-relay guest: running
 ```
 
-The diagnostic `dhcp-leases` runs as a member of the group `kea`. It asks each server for its
+The diagnostic `dhcp-leases` runs `chalkd router dhcp-leases` as a member of the group `kea`.
+chalkd connects to each server's control socket in `/run/kea` and asks it for its
 config and its leases with `config-get` and `lease4-get-all` or `lease6-get-all` by the server's
 family, commands of the lease commands' hook, and prints a line per lease. Kea logs each
 command on the control socket at a level its config keeps out of the journal.

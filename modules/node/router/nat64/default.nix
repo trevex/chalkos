@@ -14,244 +14,13 @@ let
   inherit (routerLib) hardened;
   kinds = routerLib.kinds ./kinds.nix;
   jool = pkgs.jool-cli;
-  # Reconciles Jool with the output jool (<name>.json is Jool's file, <name>.veth the link's). Every
-  # file is checked first, so a file jool or the link's form refuses, or a pool holding an address
-  # of a router link, changes no instance. Each instance runs in namespace nat64-<name>, joined to
-  # its VRF by the veth pair n64-<name> (end nat64 inside): Jool's hook takes the packets of every
-  # link of its namespace, so in the router's own it would translate other VRFs' packets too. The
-  # namespace forwards nothing: Jool sends what it translates, and a packet it leaves alone would
-  # loop back until its hop limit ran out. A link whose peer left the namespace (a namespace removed
-  # while a process held it) is made anew; a device of its name and another kind fails the
-  # instance, as does a VRF without the file's table after 30 s (with the VRF's other instances).
-  # An instance is created or replaced in place, keeping its sessions, except on a new pool6, which
-  # Jool cannot change: then it is removed first and loses them. The VRF's table routes the prefix
-  # and an explicit pool to the link with protocol 64, which BGP announces when a network names
-  # it. Protocol-64 routes, links and namespaces no file names are removed in that order, so no
-  # route goes with its link first; `stop` removes all, as does a missing output directory
-  # (maintenance mode). A failed step does not stop the others; the script then fails naming each.
-  # A failed instance keeps its routes.
-  apply = pkgs.writeShellApplication {
-    name = "chalkos-nat64";
-    runtimeInputs = [
-      jool
-      pkgs.iproute2
-      pkgs.util-linux
-      pkgs.procps
-      pkgs.jq
-      pkgs.gnused
-      pkgs.coreutils
-    ];
-    text = ''
-      dir=${config.chalkos.outputs.jool.dir}
-      proto=64
-      # The end of each veth pair in the instance's namespace.
-      peer=nat64
-      # Per instance: its prefix, VRF (empty for the default one), table, outer and inner address
-      # and IPv4 routes; keep holds "<table> <destination>" of each route a file names.
-      declare -A want=() pool6=() vrfs=() tables=() outers=() inners=() ipv4=() keep=()
-      # Per VRF and table, "<vrf> <table>": 1 when the VRF has the table, empty when it had not
-      # after 30 s.
-      declare -A tabled=()
-      failed=()
-      files=()
-      if [[ ''${1:-} != stop && -d $dir ]]; then
-        shopt -s nullglob
-        files=("$dir"/*.json)
-        shopt -u nullglob
-      fi
-      # The form of a link's file as chalkos-render writes it; a VRF's name is an interface's.
-      valid='(.table | type == "number")
-        and (.vrf == null or ((.vrf | type == "string") and (.vrf | test("^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$"))))
-        and (.outer | type == "string") and (.inner | type == "string")
-        and (.routes | type == "array" and all(type == "string" and test("^[0-9]{1,3}([.][0-9]{1,3}){3}/[0-9]{1,2}$")))'
-      for file in "''${files[@]}"; do
-        name=$(basename "$file" .json)
-        veth=$dir/$name.veth
-        if ! jool file check "$file" || ! jq -e "$valid" "$veth" >/dev/null; then
-          echo "chalkos-nat64: jool refuses $file, or $veth is no link's file; no instance changed" >&2
-          exit 1
-        fi
-        want[$name]=1
-        pool6[$name]=$(jq -er .global.pool6 "$file")
-        vrfs[$name]=$(jq -r '.vrf // ""' "$veth")
-        tables[$name]=$(jq -r .table "$veth")
-        outers[$name]=$(jq -r .outer "$veth")
-        inners[$name]=$(jq -r .inner "$veth")
-        ipv4[$name]=$(jq -r '.routes[]' "$veth")
-        keep["''${tables[$name]} ''${pool6[$name]}"]=1
-        mapfile -t pools < <(printf '%s' "''${ipv4[$name]}")
-        for route in "''${pools[@]}"; do
-          keep["''${tables[$name]} $route"]=1
-        done
-      done
-      # The IPv4 address $1 as a number.
-      number() {
-        local IFS=. b
-        read -r -a b <<<"$1"
-        echo $(((b[0] << 24) | (b[1] << 16) | (b[2] << 8) | b[3]))
-      }
-      # The router answers its own addresses before any route to a NAT64's link, so a pool that
-      # holds an address of one of the router's links, such as one from DHCP, which the rules
-      # cannot see, would translate nothing: the run fails before it changes anything.
-      if ! out=$(ip -4 -j addr show | jq -r '.[] | .ifname as $link | .addr_info[] | "\(.local) \($link)"'); then
-        echo "chalkos-nat64: cannot list the router's addresses; no instance changed" >&2
-        exit 1
-      fi
-      mapfile -t hosts < <(printf '%s' "$out")
-      for file in "''${files[@]}"; do
-        name=$(basename "$file" .json)
-        mapfile -t pools < <(printf '%s' "''${ipv4[$name]}")
-        for route in "''${pools[@]}"; do
-          mask=$(((0xffffffff << (32 - ''${route#*/})) & 0xffffffff))
-          net=$(($(number "''${route%/*}") & mask))
-          for host in "''${hosts[@]}"; do
-            if ((($(number "''${host% *}") & mask) == net)); then
-              echo "chalkos-nat64: NAT64 $name: the pool entry $route holds ''${host% *}, an address of the link ''${host#* }, which the router answers itself; leave pool4 empty to take the address of the link the connections leave through; no instance changed" >&2
-              exit 1
-            fi
-          done
-        done
-      done
-      # Runs a command in the namespace of the instance $1.
-      inside() {
-        local ns=/run/netns/nat64-$1
-        shift
-        nsenter --net="$ns" "$@"
-      }
-      # Brings up the namespace of the instance $1 and its veth pair: $2 the VRF, empty for the
-      # default one, of the table $3; $4 and $5 the outer and the inner address.
-      plumb() {
-        local name=$1 vrf=$2 table=$3 outer=$4 inner=$5 link=n64-$1 a addrs out current kind
-        if [[ ! -e /run/netns/nat64-$name ]]; then
-          ip netns add "nat64-$name" || return
-        fi
-        # A namespace takes the router's IPv4 forwarding when it is created.
-        inside "$name" sysctl -q -w net.ipv4.conf.all.forwarding=0 net.ipv4.conf.default.forwarding=0 \
-          net.ipv6.conf.all.forwarding=0 net.ipv6.conf.default.forwarding=0 || return
-        if ! ip link show dev "$link" >/dev/null 2>&1 || ! inside "$name" ip link show dev "$peer" >/dev/null 2>&1; then
-          # Either end without the other is no link of this namespace.
-          if ip link show dev "$link" >/dev/null 2>&1; then
-            # A device of another kind is none of the unit's links.
-            kind=$(ip -d -j link show dev "$link" | jq -r '.[0].linkinfo.info_kind // "none"') || return
-            if [[ $kind != veth ]]; then
-              echo "chalkos-nat64: $link is a device of kind $kind, not a NAT64's link; remove or rename it" >&2
-              return 1
-            fi
-            ip link del "$link" || return
-          fi
-          if inside "$name" ip link show dev "$peer" >/dev/null 2>&1; then
-            inside "$name" ip link del "$peer" || return
-          fi
-          ip link add "$link" mtu 65535 type veth peer name "$peer" mtu 65535 netns "nat64-$name" || return
-        fi
-        if [[ -n $vrf ]]; then
-          # networkd creates a VRF without waiting, at boot and when a delivery changed its table.
-          # The NAT64s of a VRF that timed out fail at once.
-          if [[ -z ''${tabled["$vrf $table"]+x} ]]; then
-            tabled["$vrf $table"]=
-            for _ in $(seq 150); do
-              current=$(ip -d -j link show dev "$vrf" 2>/dev/null | jq -r '.[0].linkinfo.info_data.table // empty') || current=
-              if [[ $current == "$table" ]]; then
-                tabled["$vrf $table"]=1
-                break
-              fi
-              sleep 0.2
-            done
-          fi
-          if [[ -z ''${tabled["$vrf $table"]} ]]; then
-            echo "chalkos-nat64: VRF $vrf has no table $table after 30 s" >&2
-            return 1
-          fi
-          ip link set dev "$link" master "$vrf" || return
-        else
-          ip link set dev "$link" nomaster || return
-        fi
-        out=$(ip -4 -j addr show dev "$link" | jq -r '.[].addr_info[] | "\(.local)/\(.prefixlen)"') || return
-        mapfile -t addrs < <(printf '%s' "$out")
-        for a in "''${addrs[@]}"; do
-          if [[ $a != "$outer" ]]; then
-            ip addr del "$a" dev "$link" || return
-          fi
-        done
-        ip addr replace "$outer" dev "$link" || return
-        ip -6 addr replace fe80::1/64 dev "$link" nodad || return
-        ip link set dev "$link" up || return
-        inside "$name" ip link set dev lo up || return
-        out=$(inside "$name" ip -4 -j addr show dev "$peer" | jq -r '.[].addr_info[] | "\(.local)/\(.prefixlen)"') || return
-        mapfile -t addrs < <(printf '%s' "$out")
-        for a in "''${addrs[@]}"; do
-          if [[ $a != "$inner" ]]; then
-            inside "$name" ip addr del "$a" dev "$peer" || return
-          fi
-        done
-        inside "$name" ip addr replace "$inner" dev "$peer" || return
-        inside "$name" ip -6 addr replace fe80::2/64 dev "$peer" nodad || return
-        inside "$name" ip link set dev "$peer" up || return
-        inside "$name" ip route replace default via "''${outer%/*}" dev "$peer" || return
-        inside "$name" ip -6 route replace default via fe80::1 dev "$peer"
-      }
-      for file in "''${files[@]}"; do
-        name=$(basename "$file" .json)
-        table=''${tables[$name]}
-        if ! plumb "$name" "''${vrfs[$name]}" "$table" "''${outers[$name]}" "''${inners[$name]}"; then
-          failed+=("bring up the namespace and link of $name")
-          continue
-        fi
-        current=$( (inside "$name" jool -i "$name" global display --csv 2>/dev/null || true) | sed -n 's/^pool6,//p')
-        if [[ -n $current && $current != "''${pool6[$name]}" ]]; then
-          inside "$name" jool -i "$name" instance remove || failed+=("remove instance $name of $current")
-        fi
-        inside "$name" jool file handle "$file" || failed+=("apply instance $name")
-        ip -6 route replace "''${pool6[$name]}" via fe80::2 dev "n64-$name" table "$table" proto "$proto" ||
-          failed+=("route ''${pool6[$name]}")
-        mapfile -t pools < <(printf '%s' "''${ipv4[$name]}")
-        for route in "''${pools[@]}"; do
-          ip -4 route replace "$route" via "''${inners[$name]%/*}" dev "n64-$name" table "$table" proto "$proto" ||
-            failed+=("route $route")
-        done
-      done
-      for family in -4 -6; do
-        # ip -N gives each table's number, and leaves out the table of a route of main.
-        routes=$(ip -N "$family" -j route show table all proto "$proto" | jq -r '.[] | "\(.table // "254") \(.dst)"') ||
-          failed+=("list routes")
-        while read -r table dst; do
-          # ip prints a route to one address without its length, which the rendered files give.
-          if [[ -n $dst && $dst != */* ]]; then
-            if [[ $family == -4 ]]; then
-              dst+=/32
-            else
-              dst+=/128
-            fi
-          fi
-          if [[ -n $dst && -z ''${keep["$table $dst"]+x} ]]; then
-            ip "$family" route del "$dst" table "$table" proto "$proto" || failed+=("remove route $dst of table $table")
-          fi
-        done <<<"$routes"
-      done
-      # ip link show type veth lists every link without a kind, as empty objects, while the
-      # kernel's veth module is not loaded, so jq picks the veth links from all links.
-      out=$(ip -d -j link show | jq -r '.[] | select(.linkinfo.info_kind == "veth") | .ifname | select(startswith("n64-"))') ||
-        failed+=("list links")
-      mapfile -t links < <(printf '%s' "$out")
-      for link in "''${links[@]}"; do
-        if [[ -z ''${want[''${link#n64-}]+x} ]]; then
-          ip link del "$link" || failed+=("remove the link $link")
-        fi
-      done
-      shopt -s nullglob
-      for ns in /run/netns/nat64-*; do
-        name=''${ns#/run/netns/nat64-}
-        if [[ -z ''${want[$name]+x} ]]; then
-          ip netns delete "nat64-$name" || failed+=("remove the namespace of $name")
-        fi
-      done
-      shopt -u nullglob
-      if ((''${#failed[@]} > 0)); then
-        printf 'chalkos-nat64: failed to %s\n' "''${failed[@]}" >&2
-        exit 1
-      fi
-    '';
-  };
+  # chalkd router nat64 brings Jool's instances to the output jool (<name>.json is Jool's file,
+  # <name>.veth the link's), each in the namespace nat64-<name> joined to its VRF by the veth pair
+  # n64-<name>, and routes their prefixes and pools to the links with protocol 64, which BGP
+  # announces when a network names it. It checks every file first and changes nothing when one is
+  # refused; `stop` removes all, as does a missing output directory (maintenance mode).
+  # pkg/chalkd/layers/router/nat64.go gives the steps.
+  nat64 = "${lib.getExe pkgs.chalkos.chalkd} router nat64";
 in
 {
   imports = [ ./diagnostics.nix ];
@@ -302,6 +71,13 @@ in
       ];
       before = [ "frr.service" ];
       wantedBy = [ "multi-user.target" ];
+      # chalkd runs jool, ip, nsenter and, in each instance's namespace, sysctl.
+      path = [
+        jool
+        pkgs.chalkos.iproute2-ip
+        pkgs.util-linux
+        pkgs.procps
+      ];
       serviceConfig =
         # ip netns add mounts a namespace on /run/netns, which the host must see, so the unit has no
         # mount namespace of its own: no ProtectSystem, PrivateTmp, PrivateDevices, ProtectHome,
@@ -322,9 +98,9 @@ in
         // {
           Type = "oneshot";
           RemainAfterExit = true;
-          ExecStart = lib.getExe apply;
-          ExecReload = lib.getExe apply;
-          ExecStop = "${lib.getExe apply} stop";
+          ExecStart = nat64;
+          ExecReload = nat64;
+          ExecStop = "${nat64} stop";
           CapabilityBoundingSet = [
             "CAP_NET_ADMIN"
             "CAP_SYS_ADMIN"
