@@ -130,6 +130,13 @@ mkImage returns the image directory, built only when asked for, with these attri
   [Publish images to a registry](../build/publish-images.md) signs and pushes it.
 - `nixos`: the evaluated NixOS system, to read the image's options, such as
   `images.node-metal.nixos.config.chalkos.kubernetes.package.version`.
+- `sbom`: the image's software bill of materials (SBOM) in SPDX 2.3 JSON, built only when asked
+  for, with the image's nixpkgs. It is the document a chalkos release publishes for its own
+  images. Its version is the image's `tag`, or `untagged` without one, and its creation time is
+  the Unix epoch, so a rebuild writes the same file. `sbom.override { name; tag; created; }`
+  changes the three, with `created` in RFC 3339.
+  [Inspect what an image contains](../build/add-software.md#inspect-what-an-image-contains)
+  reads it.
 - `tests`: the image's tests, its `chalkos.tests`, as a derivation that builds when every test
   passes and fails with what each failed test got otherwise. The image build itself runs them
   only with `chalkos.testsOnBuild`.

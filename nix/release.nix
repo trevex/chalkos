@@ -11,7 +11,6 @@
 {
   self,
   lib,
-  sbom,
 }:
 let
   inherit (self.lib) version;
@@ -78,13 +77,10 @@ let
         // {
           repository = "${registry}/${name}";
           inherit tag;
-          # Its SPDX SBOM, a release's <name>.spdx.json.
-          sbom = sbom.image (
-            {
-              inherit name tag;
-              inherit (image) nixos;
-            }
-            // lib.optionalAttrs (self ? lastModifiedDate) { inherit created; }
+          # Its SPDX SBOM, a release's <name>.spdx.json: the image's own, named by its repository
+          # and created at the commit's time.
+          sbom = image.sbom.override (
+            { inherit name; } // lib.optionalAttrs (self ? lastModifiedDate) { inherit created; }
           );
         }
       )

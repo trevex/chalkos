@@ -118,6 +118,11 @@ lib.runTests {
     expr = lib.all (i: lib.isString i.drvPath && lib.isString i.oci.drvPath) (lib.attrValues images);
     expected = true;
   };
+  # Each image's SBOM, the image's own, is named after its repository: <name>.spdx.json.
+  testSBOMs = {
+    expr = lib.mapAttrs (_: i: lib.substring 33 (-1) (baseNameOf i.sbom.drvPath)) images;
+    expected = lib.mapAttrs (name: _: "${name}.spdx.json.drv") expected;
+  };
   # The images carry no OS CA and record the release's tag and the commit's revision.
   testProvenance = {
     expr = lib.mapAttrs (_: i: {

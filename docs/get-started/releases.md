@@ -245,6 +245,10 @@ List the packages of an image with their versions and licences:
 ```sh
 jq -r '.packages[] | [.name, .versionInfo, .licenseDeclared] | @tsv' router-metal.spdx.json
 ```
+
+An image you build yourself has the same SBOM as its `sbom` attribute.
+[Inspect what an image contains](../build/add-software.md#inspect-what-an-image-contains) builds
+it and lists the image's store paths with plain Nix.
 ## Licences and source
 
 chalkos is licensed under the Apache License 2.0, and its release images carry the annotation

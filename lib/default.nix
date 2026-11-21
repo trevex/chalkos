@@ -1,11 +1,16 @@
 # chalkos's library, the flake's lib output: the helpers the images' modules get as chalkosLib,
 # here built from chalkos's nixpkgs for code outside an image, the functions of images.nix, which
-# build a cluster's images, the Kubernetes releases chalkos pins and chalkos's version.
-{ nixpkgs, overlay }:
+# build a cluster's images, the Kubernetes releases chalkos pins and chalkos's version. bombon
+# builds each image's SBOM.
+{
+  nixpkgs,
+  overlay,
+  bombon,
+}:
 import ./chalkos.nix { inherit (nixpkgs) lib; }
 // import ./images.nix {
   defaultNixpkgs = nixpkgs;
-  inherit overlay;
+  inherit overlay bombon;
 }
 // {
   # Each Kubernetes minor an image can run, as { version; hash; publish; }: its pinned patch
