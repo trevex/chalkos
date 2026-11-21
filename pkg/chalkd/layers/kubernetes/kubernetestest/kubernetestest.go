@@ -16,7 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
@@ -184,21 +183,21 @@ func WithoutFirewall(t *testing.T, p knode.Paths) {
 
 // Bootstrap asks the Kubernetes layer k to bootstrap the cluster.
 func Bootstrap(ctx context.Context, k kubernetesv1connect.KubernetesServiceHandler) (*kubernetesv1.BootstrapResponse, error) {
-	resp, err := k.Bootstrap(ctx, connect.NewRequest(&kubernetesv1.BootstrapRequest{}))
+	resp, err := k.Bootstrap(ctx, &kubernetesv1.BootstrapRequest{})
 	if err != nil {
 		return nil, err
 	}
-	return resp.Msg, nil
+	return resp, nil
 }
 
 // Status is the state of the node's Kubernetes as the layer k serves it.
 func Status(t *testing.T, k kubernetesv1connect.KubernetesServiceHandler) *kubernetesv1.StatusResponse {
 	t.Helper()
-	resp, err := k.Status(context.Background(), connect.NewRequest(&kubernetesv1.StatusRequest{}))
+	resp, err := k.Status(context.Background(), &kubernetesv1.StatusRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return resp.Msg
+	return resp
 }
 
 // ChalkdServing stands for chalkd: a TLS server that completes handshakes with the node's

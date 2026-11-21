@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/proto"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -69,7 +69,7 @@ func TestActionsOff(t *testing.T) {
 // An action that fails says why.
 func TestActionError(t *testing.T) {
 	c := consoletest.Normal()
-	c.ActionErr = connect.NewError(connect.CodePermissionDenied, errors.New("the image turns the console's actions off"))
+	c.ActionErr = connect.NewError(connect.CodePermissionDenied, "the image turns the console's actions off")
 	o := consoletest.Options()
 	o.Actions = true
 	tm := consoletest.Start(t, console.New(c, o))

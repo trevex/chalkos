@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -80,12 +79,12 @@ func TestStatusReportsTheBoot(t *testing.T) {
 			for name, version := range tc.others {
 				write(t, filepath.Join(s.Paths.ESP, "EFI", "Linux", name), string(ukitest.UKI(map[string]string{"IMAGE_ID": "rescue", "IMAGE_VERSION": version}, "usrhash="+strings.Repeat("99", 32))))
 			}
-			resp, err := s.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{}))
+			resp, err := s.Status(context.Background(), &nodev1.StatusRequest{})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !proto.Equal(resp.Msg.Boot, tc.want) {
-				t.Errorf("boot = %v, want %v", resp.Msg.Boot, tc.want)
+			if !proto.Equal(resp.Boot, tc.want) {
+				t.Errorf("boot = %v, want %v", resp.Boot, tc.want)
 			}
 		})
 	}
@@ -107,11 +106,11 @@ func TestStatusReportsTheBootsHealth(t *testing.T) {
 	}
 	status := func(check bool) *nodev1.BootStatus {
 		t.Helper()
-		resp, err := s.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{CheckHealth: check}))
+		resp, err := s.Status(context.Background(), &nodev1.StatusRequest{CheckHealth: check})
 		if err != nil {
 			t.Fatal(err)
 		}
-		return resp.Msg.Boot
+		return resp.Boot
 	}
 	if b := status(false); b.Health != nil || checks != 0 {
 		t.Errorf("health %v unasked, %d checks", b.Health, checks)
@@ -153,12 +152,12 @@ func TestStatusReportsWhetherTheBootSettled(t *testing.T) {
 			s.HealthTimeout = 300 * time.Second
 			s.Monotonic = func() (time.Duration, error) { return tc.now, nil }
 			s.Healthy = func(context.Context, []string) error { return errors.New("the API server is not ready") }
-			resp, err := s.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{CheckHealth: true}))
+			resp, err := s.Status(context.Background(), &nodev1.StatusRequest{CheckHealth: true})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if want := (&nodev1.BootHealth{Error: "the API server is not ready", Settled: tc.ready}); !proto.Equal(resp.Msg.Boot.Health, want) {
-				t.Errorf("health %v, want %v", resp.Msg.Boot.Health, want)
+			if want := (&nodev1.BootHealth{Error: "the API server is not ready", Settled: tc.ready}); !proto.Equal(resp.Boot.Health, want) {
+				t.Errorf("health %v, want %v", resp.Boot.Health, want)
 			}
 		})
 	}
@@ -176,14 +175,14 @@ func TestStatusWithoutTheRecordOfImages(t *testing.T) {
 				}
 			}
 			writeESP(t, s.Paths.ESP, s.Paths.EFIVars, s.Paths.Cmdline, "chalkos_2.efi", "chalkos_2.efi", "chalkos_3+3.efi")
-			resp, err := s.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{}))
+			resp, err := s.Status(context.Background(), &nodev1.StatusRequest{})
 			if err != nil {
 				t.Fatal(err)
 			}
 			want := &nodev1.BootStatus{Running: &nodev1.BootImage{RootHash: bytes.Repeat([]byte{0x32}, 32), Generation: 2}, Entry: "chalkos_2.efi", Blessed: true,
 				Staged: &nodev1.BootImage{RootHash: bytes.Repeat([]byte{0x33}, 32), Generation: 3}, StagedState: nodev1.SlotState_SLOT_STATE_ACTIVE}
-			if !proto.Equal(resp.Msg.Boot, want) {
-				t.Errorf("boot = %v, want %v", resp.Msg.Boot, want)
+			if !proto.Equal(resp.Boot, want) {
+				t.Errorf("boot = %v, want %v", resp.Boot, want)
 			}
 		})
 	}
@@ -229,12 +228,12 @@ func TestStatusReportsThePreviousImage(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			resp, err := s.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{}))
+			resp, err := s.Status(context.Background(), &nodev1.StatusRequest{})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !proto.Equal(resp.Msg.Boot.Previous, tc.want) {
-				t.Errorf("previous = %v, want %v", resp.Msg.Boot.Previous, tc.want)
+			if !proto.Equal(resp.Boot.Previous, tc.want) {
+				t.Errorf("previous = %v, want %v", resp.Boot.Previous, tc.want)
 			}
 		})
 	}
@@ -266,16 +265,16 @@ func TestStatusReportsTheRollback(t *testing.T) {
 			if tc.record != nil {
 				record(s, tc.record)
 			}
-			resp, err := s.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{}))
+			resp, err := s.Status(context.Background(), &nodev1.StatusRequest{})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !proto.Equal(resp.Msg.Boot.Rollback, tc.want) {
-				t.Errorf("rollback = %v, want %v", resp.Msg.Boot.Rollback, tc.want)
+			if !proto.Equal(resp.Boot.Rollback, tc.want) {
+				t.Errorf("rollback = %v, want %v", resp.Boot.Rollback, tc.want)
 			}
 			// The image the node stages is named as staged too.
-			if tc.want != nil && !bytes.Equal(tc.want.RootHash, resp.Msg.Boot.Running.RootHash) && !proto.Equal(resp.Msg.Boot.Staged, tc.want) {
-				t.Errorf("staged = %v, want %v", resp.Msg.Boot.Staged, tc.want)
+			if tc.want != nil && !bytes.Equal(tc.want.RootHash, resp.Boot.Running.RootHash) && !proto.Equal(resp.Boot.Staged, tc.want) {
+				t.Errorf("staged = %v, want %v", resp.Boot.Staged, tc.want)
 			}
 		})
 	}

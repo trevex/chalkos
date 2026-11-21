@@ -10,106 +10,95 @@
 package checkv1connect
 
 import (
-	connect "connectrpc.com/connect"
+	connect "connectrpc.com/connect/v2"
 	context "context"
-	errors "errors"
 	v1 "github.com/trevex/chalkos/pkg/api/check/v1"
-	http "net/http"
-	strings "strings"
+	sync "sync"
 )
-
-// This is a compile-time assertion to ensure that this generated file and the connect package are
-// compatible. If you get a compiler error that this constant is not defined, this code was
-// generated with a version of connect newer than the one compiled into your binary. You can fix the
-// problem by either regenerating this code with an older version of connect or updating the connect
-// version compiled into your binary.
-const _ = connect.IsAtLeastVersion1_13_0
 
 const (
 	// FactsServiceName is the fully-qualified name of the FactsService service.
 	FactsServiceName = "chalkos.check.v1.FactsService"
 )
 
-// These constants are the fully-qualified names of the RPCs defined in this package. They're
-// exposed at runtime as Spec.Procedure and as the final two segments of the HTTP route.
+// These constants are the procedure names of the RPCs defined in this package. They're exposed at
+// runtime as Spec.Procedure and as the final two segments of the HTTP route.
 //
 // Note that these are different from the fully-qualified method names used by
 // google.golang.org/protobuf/reflect/protoreflect. To convert from these constants to
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// FactsServiceFactProcedure is the fully-qualified name of the FactsService's Fact RPC.
+	// FactsServiceFactProcedure is the procedure name of the FactsService's Fact RPC.
 	FactsServiceFactProcedure = "/chalkos.check.v1.FactsService/Fact"
+)
+
+var (
+	factsServiceFactSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_chalkos_check_v1_check_proto.Services().ByName("FactsService").Methods().ByName("Fact"),
+			Procedure:  FactsServiceFactProcedure,
+		}
+	})
 )
 
 // FactsServiceClient is a client for the chalkos.check.v1.FactsService service.
 type FactsServiceClient interface {
 	// Fact loads one fact for a check whose command facts read input.
-	Fact(context.Context, *connect.Request[v1.FactRequest]) (*connect.Response[v1.FactResponse], error)
+	Fact(context.Context, *v1.FactRequest) (*v1.FactResponse, error)
 }
 
-// NewFactsServiceClient constructs a client for the chalkos.check.v1.FactsService service. By
-// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
-// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
-// connect.WithGRPC() or connect.WithGRPCWeb() options.
-//
-// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
-// http://api.acme.com or https://acme.com/grpc).
-func NewFactsServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) FactsServiceClient {
-	baseURL = strings.TrimRight(baseURL, "/")
-	factsServiceMethods := v1.File_chalkos_check_v1_check_proto.Services().ByName("FactsService").Methods()
-	return &factsServiceClient{
-		fact: connect.NewClient[v1.FactRequest, v1.FactResponse](
-			httpClient,
-			baseURL+FactsServiceFactProcedure,
-			connect.WithSchema(factsServiceMethods.ByName("Fact")),
-			connect.WithClientOptions(opts...),
-		),
-	}
-}
-
-// factsServiceClient implements FactsServiceClient.
-type factsServiceClient struct {
-	fact *connect.Client[v1.FactRequest, v1.FactResponse]
-}
-
-// Fact calls chalkos.check.v1.FactsService.Fact.
-func (c *factsServiceClient) Fact(ctx context.Context, req *connect.Request[v1.FactRequest]) (*connect.Response[v1.FactResponse], error) {
-	return c.fact.CallUnary(ctx, req)
+// NewFactsServiceClient constructs a client for the chalkos.check.v1.FactsService service. Multiple
+// service clients may share a single connect.Client.
+func NewFactsServiceClient(client *connect.Client) FactsServiceClient {
+	return &factsServiceClient{client: client}
 }
 
 // FactsServiceHandler is an implementation of the chalkos.check.v1.FactsService service.
 type FactsServiceHandler interface {
 	// Fact loads one fact for a check whose command facts read input.
-	Fact(context.Context, *connect.Request[v1.FactRequest]) (*connect.Response[v1.FactResponse], error)
+	Fact(context.Context, *v1.FactRequest) (*v1.FactResponse, error)
 }
 
-// NewFactsServiceHandler builds an HTTP handler from the service implementation. It returns the
-// path on which to mount the handler and the handler itself.
-//
-// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
-// and JSON codecs. They also support gzip compression.
-func NewFactsServiceHandler(svc FactsServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
-	factsServiceMethods := v1.File_chalkos_check_v1_check_proto.Services().ByName("FactsService").Methods()
-	factsServiceFactHandler := connect.NewUnaryHandler(
-		FactsServiceFactProcedure,
-		svc.Fact,
-		connect.WithSchema(factsServiceMethods.ByName("Fact")),
-		connect.WithHandlerOptions(opts...),
+// RegisterFactsServiceHandler registers svc as the chalkos.check.v1.FactsService implementation on
+// server.
+func RegisterFactsServiceHandler(server *connect.Server, svc FactsServiceHandler) {
+	adapter := factsServiceHandler{svc: svc}
+	server.Register(
+		connect.Method{Spec: factsServiceFactSpec(), Handler: adapter.fact},
 	)
-	return "/chalkos.check.v1.FactsService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case FactsServiceFactProcedure:
-			factsServiceFactHandler.ServeHTTP(w, r)
-		default:
-			http.NotFound(w, r)
-		}
-	})
 }
 
 // UnimplementedFactsServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedFactsServiceHandler struct{}
 
-func (UnimplementedFactsServiceHandler) Fact(context.Context, *connect.Request[v1.FactRequest]) (*connect.Response[v1.FactResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.check.v1.FactsService.Fact is not implemented"))
+func (UnimplementedFactsServiceHandler) Fact(context.Context, *v1.FactRequest) (*v1.FactResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "chalkos.check.v1.FactsService.Fact is not implemented")
+}
+
+type factsServiceClient struct {
+	client *connect.Client
+}
+
+func (c *factsServiceClient) Fact(ctx context.Context, req *v1.FactRequest) (*v1.FactResponse, error) {
+	var res v1.FactResponse
+	if err := c.client.CallUnary(ctx, factsServiceFactSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+type factsServiceHandler struct{ svc FactsServiceHandler }
+
+func (h factsServiceHandler) fact(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.FactRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Fact(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
 }

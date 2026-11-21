@@ -7,16 +7,15 @@ import (
 	"os"
 	"strings"
 
-	"connectrpc.com/connect"
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	frrstatus "github.com/trevex/chalkos/pkg/frr/status"
 	"github.com/trevex/chalkos/pkg/tool"
 )
 
-func (p *Plugin) BGPStatus(ctx context.Context, _ *connect.Request[kubernetesv1.BGPStatusRequest]) (*connect.Response[kubernetesv1.BGPStatusResponse], error) {
+func (p *Plugin) BGPStatus(ctx context.Context, _ *kubernetesv1.BGPStatusRequest) (*kubernetesv1.BGPStatusResponse, error) {
 	bgp := localBGPStatus(ctx, p.node.Runner(), "/etc/frr/frr.conf", "/run/chalkos/config/kubernetes.chalkos.dev/BGPSpeaker")
-	return connect.NewResponse(&kubernetesv1.BGPStatusResponse{Bgp: bgp}), nil
+	return &kubernetesv1.BGPStatusResponse{Bgp: bgp}, nil
 }
 
 // localBGPStatus is absent without FRR or a running speaker document. It reads neither the

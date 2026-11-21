@@ -26,7 +26,8 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/api/kubernetes/v1/kubernetesv1connect"
@@ -470,7 +471,10 @@ func dial(t *testing.T, addr string, cert *tls.Certificate) *client.Conn {
 
 // sendAll sends msgs on the stream and returns the server's answer. A server may answer before it
 // reads them all, which fails the sends after with io.EOF; the answer then says why.
-func sendAll[Req, Res any](t *testing.T, stream *connect.ClientStreamForClient[Req, Res], msgs ...*Req) (*connect.Response[Res], error) {
+func sendAll[Req, Res any](t *testing.T, stream interface {
+	Send(*Req) error
+	CloseAndReceive() (*Res, error)
+}, msgs ...*Req) (*Res, error) {
 	t.Helper()
 	for _, m := range msgs {
 		if err := stream.Send(m); errors.Is(err, io.EOF) {
@@ -482,97 +486,134 @@ func sendAll[Req, Res any](t *testing.T, stream *connect.ClientStreamForClient[R
 	return stream.CloseAndReceive()
 }
 
+// openUpgrade and openInstall open an Upgrade and an Install call on c.
+func openUpgrade(t *testing.T, c nodev1connect.NodeServiceClient) nodev1connect.NodeServiceUpgradeClientStream {
+	t.Helper()
+	stream, err := c.Upgrade(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return stream
+}
+
+func openInstall(t *testing.T, c nodev1connect.NodeServiceClient) nodev1connect.NodeServiceInstallClientStream {
+	t.Helper()
+	stream, err := c.Install(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return stream
+}
+
+// drain receives a stream's messages until it ends, and returns why it failed: nil when it ended
+// cleanly.
+func drain[T any](s interface{ Receive() (*T, error) }) error {
+	for {
+		if _, err := s.Receive(); errors.Is(err, io.EOF) {
+			return nil
+		} else if err != nil {
+			return err
+		}
+	}
+}
+
 // call runs one RPC and returns its error code; 0 when it succeeded.
 func call(c *client.Conn, procedure string) connect.Code {
 	ctx := context.Background()
-	k := kubernetesv1connect.NewKubernetesServiceClient(c.HTTPClient(), c.BaseURL())
-	rt := routerv1connect.NewRouterServiceClient(c.HTTPClient(), c.BaseURL())
+	k := kubernetesv1connect.NewKubernetesServiceClient(c.RPC())
+	rt := routerv1connect.NewRouterServiceClient(c.RPC())
 	var err error
 	switch procedure {
 	case "Info":
-		_, err = c.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
+		_, err = c.Info(ctx, &nodev1.InfoRequest{})
 	case "Status":
-		_, err = c.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+		_, err = c.Status(ctx, &nodev1.StatusRequest{})
 	case "Reboot":
-		_, err = c.Reboot(ctx, connect.NewRequest(&nodev1.RebootRequest{}))
+		_, err = c.Reboot(ctx, &nodev1.RebootRequest{})
 	case "Shutdown":
-		_, err = c.Shutdown(ctx, connect.NewRequest(&nodev1.ShutdownRequest{}))
+		_, err = c.Shutdown(ctx, &nodev1.ShutdownRequest{})
 	case "ApplyConfig":
-		_, err = c.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{}))
+		_, err = c.ApplyConfig(ctx, &nodev1.ApplyConfigRequest{})
 	case "RollbackConfig":
-		_, err = c.RollbackConfig(ctx, connect.NewRequest(&nodev1.RollbackConfigRequest{}))
+		_, err = c.RollbackConfig(ctx, &nodev1.RollbackConfigRequest{})
 	case "ConfirmConfig":
-		_, err = c.ConfirmConfig(ctx, connect.NewRequest(&nodev1.ConfirmConfigRequest{}))
+		_, err = c.ConfirmConfig(ctx, &nodev1.ConfirmConfigRequest{})
 	case "RollbackImage":
-		_, err = c.RollbackImage(ctx, connect.NewRequest(&nodev1.RollbackImageRequest{}))
+		_, err = c.RollbackImage(ctx, &nodev1.RollbackImageRequest{})
 	case "ResetVolume":
-		_, err = c.ResetVolume(ctx, connect.NewRequest(&nodev1.ResetVolumeRequest{Volume: "data"}))
+		_, err = c.ResetVolume(ctx, &nodev1.ResetVolumeRequest{Volume: "data"})
 	case "Contract":
-		_, err = c.Contract(ctx, connect.NewRequest(&nodev1.ContractRequest{}))
+		_, err = c.Contract(ctx, &nodev1.ContractRequest{})
 	case "Disks":
-		_, err = c.Disks(ctx, connect.NewRequest(&nodev1.DisksRequest{}))
+		_, err = c.Disks(ctx, &nodev1.DisksRequest{})
 	case "Bootstrap":
-		_, err = k.Bootstrap(ctx, connect.NewRequest(&kubernetesv1.BootstrapRequest{}))
+		_, err = k.Bootstrap(ctx, &kubernetesv1.BootstrapRequest{})
 	case "EtcdMembers":
-		_, err = k.EtcdMembers(ctx, connect.NewRequest(&kubernetesv1.EtcdMembersRequest{}))
+		_, err = k.EtcdMembers(ctx, &kubernetesv1.EtcdMembersRequest{})
 	case "EtcdRemoveMember":
-		_, err = k.EtcdRemoveMember(ctx, connect.NewRequest(&kubernetesv1.EtcdRemoveMemberRequest{Member: "cp2"}))
+		_, err = k.EtcdRemoveMember(ctx, &kubernetesv1.EtcdRemoveMemberRequest{Member: "cp2"})
 	case "EtcdLeave":
-		_, err = k.EtcdLeave(ctx, connect.NewRequest(&kubernetesv1.EtcdLeaveRequest{}))
+		_, err = k.EtcdLeave(ctx, &kubernetesv1.EtcdLeaveRequest{})
 	case "RenewNodeCertificate":
-		_, err = k.RenewNodeCertificate(ctx, connect.NewRequest(&kubernetesv1.RenewNodeCertificateRequest{}))
+		_, err = k.RenewNodeCertificate(ctx, &kubernetesv1.RenewNodeCertificateRequest{})
 	case "RotationStep":
-		_, err = k.RotationStep(ctx, connect.NewRequest(&kubernetesv1.RotationStepRequest{Step: kubernetesv1.RotationStep_ROTATION_STEP_COUNT_ENCRYPTED}))
+		_, err = k.RotationStep(ctx, &kubernetesv1.RotationStepRequest{Step: kubernetesv1.RotationStep_ROTATION_STEP_COUNT_ENCRYPTED})
 	case "Logs":
-		var s *connect.ServerStreamForClient[nodev1.LogsResponse]
-		if s, err = c.Logs(ctx, connect.NewRequest(&nodev1.LogsRequest{})); err == nil {
-			for s.Receive() {
-			}
-			err = s.Err()
+		var s interface {
+			Receive() (*nodev1.LogsResponse, error)
+		}
+		if s, err = c.Logs(ctx, &nodev1.LogsRequest{}); err == nil {
+			err = drain(s)
 		}
 	case "SecureBootDrivers":
-		_, err = c.SecureBootDrivers(ctx, connect.NewRequest(&nodev1.SecureBootDriversRequest{}))
+		_, err = c.SecureBootDrivers(ctx, &nodev1.SecureBootDriversRequest{})
 	case "EnrollSecureBoot":
-		_, err = c.EnrollSecureBoot(ctx, connect.NewRequest(&nodev1.EnrollSecureBootRequest{}))
+		_, err = c.EnrollSecureBoot(ctx, &nodev1.EnrollSecureBootRequest{})
 	case "Install":
-		stream := c.Install(ctx)
-		stream.Send(&nodev1.InstallRequest{})
-		_, err = stream.CloseAndReceive()
+		var stream nodev1connect.NodeServiceInstallClientStream
+		if stream, err = c.Install(ctx); err == nil {
+			stream.Send(&nodev1.InstallRequest{})
+			_, err = stream.CloseAndReceive()
+		}
 	case "DrainNode":
-		_, err = k.DrainNode(ctx, connect.NewRequest(&kubernetesv1.DrainNodeRequest{Node: "w1"}))
+		_, err = k.DrainNode(ctx, &kubernetesv1.DrainNodeRequest{Node: "w1"})
 	case "UncordonNode":
-		_, err = k.UncordonNode(ctx, connect.NewRequest(&kubernetesv1.UncordonNodeRequest{Node: "w1"}))
+		_, err = k.UncordonNode(ctx, &kubernetesv1.UncordonNodeRequest{Node: "w1"})
 	case "RevokeNode":
-		_, err = k.RevokeNode(ctx, connect.NewRequest(&kubernetesv1.RevokeNodeRequest{Node: "w1"}))
+		_, err = k.RevokeNode(ctx, &kubernetesv1.RevokeNodeRequest{Node: "w1"})
 	case "UnrevokeNode":
-		_, err = k.UnrevokeNode(ctx, connect.NewRequest(&kubernetesv1.UnrevokeNodeRequest{Node: "w1"}))
+		_, err = k.UnrevokeNode(ctx, &kubernetesv1.UnrevokeNodeRequest{Node: "w1"})
 	case "Diagnostics":
-		_, err = c.Diagnostics(ctx, connect.NewRequest(&nodev1.DiagnosticsRequest{}))
+		_, err = c.Diagnostics(ctx, &nodev1.DiagnosticsRequest{})
 	case "RunDiagnostic":
 		// A diagnostic the test image lacks: refused after authorisation.
-		var s *connect.ServerStreamForClient[nodev1.RunDiagnosticResponse]
-		if s, err = c.RunDiagnostic(ctx, connect.NewRequest(&nodev1.RunDiagnosticRequest{Name: "nope"})); err == nil {
-			for s.Receive() {
-			}
-			err = s.Err()
+		var s interface {
+			Receive() (*nodev1.RunDiagnosticResponse, error)
+		}
+		if s, err = c.RunDiagnostic(ctx, &nodev1.RunDiagnosticRequest{Name: "nope"}); err == nil {
+			err = drain(s)
 		}
 	case "Routes":
-		_, err = rt.Routes(ctx, connect.NewRequest(&routerv1.RoutesRequest{}))
+		_, err = rt.Routes(ctx, &routerv1.RoutesRequest{})
 	case "KubernetesStatus":
-		_, err = k.Status(ctx, connect.NewRequest(&kubernetesv1.StatusRequest{}))
+		_, err = k.Status(ctx, &kubernetesv1.StatusRequest{})
 	case "RouterStatus":
-		_, err = rt.Status(ctx, connect.NewRequest(&routerv1.StatusRequest{}))
+		_, err = rt.Status(ctx, &routerv1.StatusRequest{})
 	case "GetConfig":
-		_, err = c.GetConfig(ctx, connect.NewRequest(&nodev1.GetConfigRequest{}))
+		_, err = c.GetConfig(ctx, &nodev1.GetConfigRequest{})
 	case "UpgradeWithConfig":
 		// A header with config and no image: refused for its role before it is read further.
-		stream := c.Upgrade(ctx)
-		stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: &nodev1.UpgradeHeader{Config: "kind: Node"}}})
-		_, err = stream.CloseAndReceive()
+		var stream nodev1connect.NodeServiceUpgradeClientStream
+		if stream, err = c.Upgrade(ctx); err == nil {
+			stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: &nodev1.UpgradeHeader{Config: "kind: Node"}}})
+			_, err = stream.CloseAndReceive()
+		}
 	case "Upgrade":
-		stream := c.Upgrade(ctx)
-		stream.Send(&nodev1.UpgradeRequest{})
-		_, err = stream.CloseAndReceive()
+		var stream nodev1connect.NodeServiceUpgradeClientStream
+		if stream, err = c.Upgrade(ctx); err == nil {
+			stream.Send(&nodev1.UpgradeRequest{})
+			_, err = stream.CloseAndReceive()
+		}
 	}
 	if err == nil {
 		return 0
@@ -678,11 +719,11 @@ func TestInfo(t *testing.T) {
 	write(t, filepath.Join(s.Paths.TPM, "tpm0", "dev"), "10:224\n")
 	write(t, s.Paths.Cmdline, "init=/x usrhash="+strings.Repeat("ab", 32)+"\n")
 
-	resp, err := s.Info(context.Background(), connect.NewRequest(&nodev1.InfoRequest{}))
+	resp, err := s.Info(context.Background(), &nodev1.InfoRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := resp.Msg
+	got := resp
 	if got.Mode != maintenance || got.ImageId != "chalkos-installer" || !got.Installer || !bytes.Equal(got.RootHash, bytes.Repeat([]byte{0xab}, 32)) || got.Revision != "" || got.Tag != "" ||
 		got.BootDisk != "/dev/vda" || !got.Tpm || got.SecureBoot != nodev1.SecureBoot_SECURE_BOOT_ENABLED || got.Fingerprint != "ab01" || got.Image != "worker-metal" || got.Platform != "" {
 		t.Errorf("info = %+v", got)
@@ -690,29 +731,29 @@ func TestInfo(t *testing.T) {
 
 	// The record of installed images names the running image's provenance.
 	write(t, filepath.Join(s.Paths.StateDir, "chalkd", "images.json"), `{"`+strings.Repeat("ab", 32)+`": {"revision": "a1b2c3d4e5f6", "tag": "v1.5.0"}}`)
-	if resp, err = s.Info(context.Background(), connect.NewRequest(&nodev1.InfoRequest{})); err != nil || resp.Msg.Revision != "a1b2c3d4e5f6" || resp.Msg.Tag != "v1.5.0" {
-		t.Errorf("info with the record = %+v, %v", resp.Msg, err)
+	if resp, err = s.Info(context.Background(), &nodev1.InfoRequest{}); err != nil || resp.Revision != "a1b2c3d4e5f6" || resp.Tag != "v1.5.0" {
+		t.Errorf("info with the record = %+v, %v", resp, err)
 	}
 
 	// An installed node names itself as its node certificate does; maintenance mode names none.
-	if resp.Msg.NodeName != "" {
-		t.Errorf("node name in maintenance mode = %q", resp.Msg.NodeName)
+	if resp.NodeName != "" {
+		t.Errorf("node name in maintenance mode = %q", resp.NodeName)
 	}
 	c := newCreds(t)
 	s.Mode, s.Certificate = normal, loadedCertificate(t, c, c.node)
-	if resp, err = s.Info(context.Background(), connect.NewRequest(&nodev1.InfoRequest{})); err != nil || resp.Msg.NodeName != "n1" {
-		t.Errorf("node name = %q, %v; want n1", resp.Msg.GetNodeName(), err)
+	if resp, err = s.Info(context.Background(), &nodev1.InfoRequest{}); err != nil || resp.NodeName != "n1" {
+		t.Errorf("node name = %q, %v; want n1", resp.GetNodeName(), err)
 	}
 }
 
 // TestPlatform reports the platform the running image was built for in Info and Status.
 func TestPlatform(t *testing.T) {
 	s, _ := installedServer(t, section("", ""), false)
-	info, err := s.Info(context.Background(), connect.NewRequest(&nodev1.InfoRequest{}))
+	info, err := s.Info(context.Background(), &nodev1.InfoRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := info.Msg.Platform; got != "metal" {
+	if got := info.Platform; got != "metal" {
 		t.Errorf("Info names the platform %q, want metal", got)
 	}
 	if got := status(t, s).Platform; got != "metal" {
@@ -729,11 +770,11 @@ func TestDisks(t *testing.T) {
 	write(t, filepath.Join(s.Host.UdevRoot, "b253:7"), "E:ID_PART_ENTRY_NAME=var\nE:ID_FS_TYPE=crypto_LUKS\n")
 	writePins(t, s, `"extra": {"ref": {"serial": "chalk-extra"}, "identity": {"serial": "chalk-extra", "size": 1, "type": "hdd"}, "partitions": {}}`)
 
-	resp, err := s.Disks(context.Background(), connect.NewRequest(&nodev1.DisksRequest{}))
+	resp, err := s.Disks(context.Background(), &nodev1.DisksRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	disks := resp.Msg.Disks
+	disks := resp.Disks
 	if len(disks) != 2 || disks[0].Usage != "boot" || disks[1].Usage != "disk extra" || disks[1].Serial != "chalk-extra" {
 		t.Fatalf("disks = %+v", disks)
 	}
@@ -765,11 +806,11 @@ func TestStatus(t *testing.T) {
 		return 10 << 30, 3 << 30, nil
 	}
 
-	resp, err := s.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{}))
+	resp, err := s.Status(context.Background(), &nodev1.StatusRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := resp.Msg
+	got := resp
 	if got.ConfigVersion != "" {
 		t.Errorf("config version of a node without config = %q", got.ConfigVersion)
 	}
@@ -802,17 +843,22 @@ func TestLogsStreamsJournal(t *testing.T) {
 		return io.NopCloser(strings.NewReader("line one\nline two\n")), nil
 	}
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleReader])
-	stream, err := conn.Logs(context.Background(), connect.NewRequest(&nodev1.LogsRequest{Unit: "chalkd.service", Follow: true, Lines: 100}))
+	stream, err := conn.Logs(context.Background(), &nodev1.LogsRequest{Unit: "chalkd.service", Follow: true, Lines: 100})
 	if err != nil {
 		t.Fatal(err)
 	}
 	var lines []string
-	for stream.Receive() {
-		lines = append(lines, stream.Msg().Line)
+	for {
+		msg, err := stream.Receive()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			t.Fatal(err)
+		}
+		lines = append(lines, msg.Line)
 	}
-	if err := stream.Err(); err != nil {
-		t.Fatal(err)
-	}
+
 	if !reflect.DeepEqual(lines, []string{"line one", "line two"}) || unit != "chalkd.service" || !follow || last != 100 {
 		t.Errorf("lines = %v, unit = %q, follow = %v, last = %d", lines, unit, follow, last)
 	}
@@ -822,7 +868,7 @@ func TestRebootAfterResponse(t *testing.T) {
 	s, _ := newTestServer(t, normal, vda)
 	rebooted := make(chan struct{})
 	s.RebootNode = func() { close(rebooted) }
-	if _, err := s.Reboot(context.Background(), connect.NewRequest(&nodev1.RebootRequest{})); err != nil {
+	if _, err := s.Reboot(context.Background(), &nodev1.RebootRequest{}); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -838,7 +884,7 @@ func TestShutdownAfterResponse(t *testing.T) {
 	off := make(chan struct{})
 	s.PowerOffNode = func() { close(off) }
 	s.RebootNode = func() { t.Error("Shutdown rebooted the node") }
-	if _, err := s.Shutdown(context.Background(), connect.NewRequest(&nodev1.ShutdownRequest{})); err != nil {
+	if _, err := s.Shutdown(context.Background(), &nodev1.ShutdownRequest{}); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -863,7 +909,7 @@ func TestRequestSizeLimit(t *testing.T) {
 	ctx := context.Background()
 
 	large := strings.Repeat("x", maxMessageBytes+1)
-	_, err := conn.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{Config: large}))
+	_, err := conn.ApplyConfig(ctx, &nodev1.ApplyConfigRequest{Config: large})
 	if connect.CodeOf(err) != connect.CodeResourceExhausted {
 		t.Fatalf("err = %v, want resource exhausted", err)
 	}
@@ -871,7 +917,7 @@ func TestRequestSizeLimit(t *testing.T) {
 		t.Errorf("ran %v", r.Calls)
 	}
 	// Below the limit, the request reaches the handler, which refuses what is not config.
-	_, err = conn.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{Config: large[:maxMessageBytes-1024]}))
+	_, err = conn.ApplyConfig(ctx, &nodev1.ApplyConfigRequest{Config: large[:maxMessageBytes-1024]})
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("err = %v, want the handler's refusal", err)
 	}
@@ -882,14 +928,14 @@ func TestRequestSizeLimit(t *testing.T) {
 
 // rawClient is a NodeServiceClient with its own connect options, so a test can send compressed
 // requests, which client.Conn does not support.
-func rawClient(t *testing.T, addr string, opts ...connect.ClientOption) nodev1connect.NodeServiceClient {
+func rawClient(t *testing.T, addr string, opts ...connecthttp.Option) nodev1connect.NodeServiceClient {
 	t.Helper()
 	transport := &http.Transport{
 		TLSClientConfig:   &tls.Config{InsecureSkipVerify: true},
 		ForceAttemptHTTP2: true,
 	}
 	t.Cleanup(transport.CloseIdleConnections)
-	return nodev1connect.NewNodeServiceClient(&http.Client{Transport: transport}, "https://"+addr, opts...)
+	return nodev1connect.NewNodeServiceClient(connect.NewClient(connecthttp.NewTransport(&http.Client{Transport: transport}, "https://"+addr, opts...)))
 }
 
 // TestCompressionRefused checks that a gzip-compressed request is refused before chalkd spends
@@ -899,17 +945,17 @@ func TestCompressionRefused(t *testing.T) {
 	s, _ := newTestServer(t, maintenance, vda)
 	addr := serve(t, s, c, nil)
 
-	gzip := rawClient(t, addr, connect.WithSendGzip())
-	if _, err := gzip.Info(context.Background(), connect.NewRequest(&nodev1.InfoRequest{})); connect.CodeOf(err) != connect.CodeUnimplemented {
+	gzip := rawClient(t, addr, connecthttp.WithSendGzip())
+	if _, err := gzip.Info(context.Background(), &nodev1.InfoRequest{}); connect.CodeOf(err) != connect.CodeUnimplemented {
 		t.Fatalf("gzip request: err = %v, want CodeUnimplemented", err)
 	}
 
 	plain := rawClient(t, addr)
-	resp, err := plain.Info(context.Background(), connect.NewRequest(&nodev1.InfoRequest{}))
-	if err != nil {
+	ctx, info := connect.NewClientContext(context.Background())
+	if _, err := plain.Info(ctx, &nodev1.InfoRequest{}); err != nil {
 		t.Fatalf("uncompressed request: %v", err)
 	}
-	if ae := resp.Header().Get("Accept-Encoding"); strings.Contains(ae, "gzip") {
+	if ae := info.ResponseHeader().Get("Accept-Encoding"); strings.Contains(ae, "gzip") {
 		t.Errorf("server advertised compression: %q", ae)
 	}
 }
@@ -925,13 +971,11 @@ func TestLogsLimitsStreams(t *testing.T) {
 	}
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleReader])
 	logs := func() error {
-		stream, err := conn.Logs(context.Background(), connect.NewRequest(&nodev1.LogsRequest{}))
+		stream, err := conn.Logs(context.Background(), &nodev1.LogsRequest{})
 		if err != nil {
 			return err
 		}
-		for stream.Receive() {
-		}
-		return stream.Err()
+		return drain(stream)
 	}
 	s.logStreams.Store(maxLogStreams)
 	if err := logs(); connect.CodeOf(err) != connect.CodeResourceExhausted || journal.Load() != 0 {
@@ -970,7 +1014,7 @@ func rpcErr(err error) (*connect.Error, bool) {
 }
 
 // errorCodes answers a handler's error with its code, the code of a domain error it wraps, or
-// CodeInternal, and with its whole text; unary and streaming alike.
+// CodeInternal, and with its whole text.
 func TestErrorCodes(t *testing.T) {
 	for name, tc := range map[string]struct {
 		err  error
@@ -981,15 +1025,11 @@ func TestErrorCodes(t *testing.T) {
 		"refusal": {fmt.Errorf("activate: %w", &upgrade.RefusalError{Err: errors.New("no staged UKI")}), connect.CodeFailedPrecondition},
 		"trust":   {refusedTrust{errors.New("the OS CAs do not verify the node's certificate")}, connect.CodeInvalidArgument},
 	} {
-		unary := errorCodes{}.WrapUnary(func(context.Context, connect.AnyRequest) (connect.AnyResponse, error) { return nil, tc.err })
-		_, uerr := unary(context.Background(), nil)
-		streaming := errorCodes{}.WrapStreamingHandler(func(context.Context, connect.StreamingHandlerConn) error { return tc.err })
-		serr := streaming(context.Background(), nil)
-		for kind, err := range map[string]error{"unary": uerr, "streaming": serr} {
-			ce, ok := err.(*connect.Error)
-			if !ok || ce.Code() != tc.want || ce.Message() != tc.err.Error() {
-				t.Errorf("%s, %s: %v, want %v with %q", name, kind, err, tc.want, tc.err.Error())
-			}
+		handler := errorCodes(func(context.Context, connect.Spec, connect.ServerStream) error { return tc.err })
+		err := handler(context.Background(), connect.Spec{}, nil)
+		ce, ok := err.(*connect.Error)
+		if !ok || ce.Code() != tc.want || ce.Message() != tc.err.Error() {
+			t.Errorf("%s: %v, want %v with %q", name, err, tc.want, tc.err.Error())
 		}
 	}
 }

@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
@@ -158,14 +158,14 @@ func apply(s *Server, identity, fallback string) (*nodev1.ApplyConfigResponse, e
 	if err != nil {
 		return nil, err
 	}
-	return resp.Msg, nil
+	return resp, nil
 }
 
 // deliver runs what ApplyConfig runs once it has translated its config into identity, with the
 // rest of req; an empty identity keeps the node's. The storage and Kubernetes tests state the
 // identity exactly this way, with the documents of its storage section, which the storage rules
 // read.
-func deliver(ctx context.Context, s *Server, identity string, req *nodev1.ApplyConfigRequest) (*connect.Response[nodev1.ApplyConfigResponse], error) {
+func deliver(ctx context.Context, s *Server, identity string, req *nodev1.ApplyConfigRequest) (*nodev1.ApplyConfigResponse, error) {
 	r := applyRequest{identity: identity, msg: req}
 	if identity != "" {
 		r.next = slot.Stored{Version: "empty", Documents: documentsOf(identity)}
@@ -891,9 +891,9 @@ func TestApplyConfigDeliversNodeCertificateAlone(t *testing.T) {
 		t.Fatalf("a refused request changed the certificate or ran %v", r.Calls)
 	}
 
-	if _, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{
+	if _, err := s.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{
 		NodeCertificate: []byte(renewed.Certificate), NodeKey: []byte(renewed.Key),
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if s.Certificate.Fingerprint() == before {

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"

@@ -2,13 +2,12 @@ package console_test
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/trevex/chalkos/pkg/console"
@@ -79,7 +78,7 @@ func TestLogsWrap(t *testing.T) {
 // While chalkd does not answer, the console reads the journal itself.
 func TestLogsReadsTheJournalItself(t *testing.T) {
 	c := consoletest.Normal()
-	c.LogsErr = connect.NewError(connect.CodeUnavailable, errors.New("dial unix /run/chalkd/console.sock: connect: connection refused"))
+	c.LogsErr = connect.NewError(connect.CodeUnavailable, "dial unix /run/chalkd/console.sock: connect: connection refused")
 	o := consoletest.Options()
 	o.Journal = func(ctx context.Context, _ string, line func(string)) error {
 		line("2026-11-13T11:52:01+00:00 node1 systemd[1]: Started chalkd.service.")
@@ -134,7 +133,7 @@ func TestLogsUnprintable(t *testing.T) {
 // screen until chalkd's come.
 func TestLogsBackToChalkd(t *testing.T) {
 	c := consoletest.Normal()
-	c.LogsErr = connect.NewError(connect.CodeUnavailable, errors.New("dial unix /run/chalkd/console.sock: connect: connection refused"))
+	c.LogsErr = connect.NewError(connect.CodeUnavailable, "dial unix /run/chalkd/console.sock: connect: connection refused")
 	clock := consoletest.NewClock()
 	o := consoletest.Options()
 	o.Interval = 50 * time.Millisecond

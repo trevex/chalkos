@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/proto"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -88,7 +88,7 @@ func TestUpgrade(t *testing.T) {
 			for chunk := range slices.Chunk(image, 1<<20) {
 				msgs = append(msgs, &nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Chunk{Chunk: &nodev1.ImageChunk{Data: chunk}}})
 			}
-			resp, err := sendAll(t, conn.Upgrade(context.Background()), msgs...)
+			resp, err := sendAll(t, openUpgrade(t, conn), msgs...)
 			if connect.CodeOf(err) != tc.wantCode && !(err == nil && tc.wantCode == 0) {
 				t.Fatalf("upgrade = %v, want code %v", err, tc.wantCode)
 			}
@@ -96,8 +96,8 @@ func TestUpgrade(t *testing.T) {
 				if !strings.Contains(err.Error(), "the image's platform is kvm") {
 					t.Errorf("error %v does not say why", err)
 				}
-			} else if resp.Msg.Entry != tc.result.Entry || resp.Msg.AlreadyInstalled != tc.result.AlreadyInstalled || resp.Msg.AlreadyStaged != tc.result.AlreadyStaged || resp.Msg.Rebooting != tc.wantReboot {
-				t.Errorf("response %+v", resp.Msg)
+			} else if resp.Entry != tc.result.Entry || resp.AlreadyInstalled != tc.result.AlreadyInstalled || resp.AlreadyStaged != tc.result.AlreadyStaged || resp.Rebooting != tc.wantReboot {
+				t.Errorf("response %+v", resp)
 			}
 			if p := upgrade.ReadImages(filepath.Join(s.Paths.StateDir, upgrade.ImagesRecord)).Of([]byte{1, 2}); (p == upgrade.Provenance{Revision: "a1b2c3d4e5f6", Tag: "v1.5.0"}) != (tc.err == nil) {
 				t.Errorf("the record of installed images names %+v", p)
@@ -148,10 +148,10 @@ func TestUpgradeStageOnly(t *testing.T) {
 			ImageId: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: []byte{1, 2},
 			Store: &nodev1.ImagePart{Size: 1, Sha256: []byte{4}}, HashTree: &nodev1.ImagePart{Size: 1, Sha256: []byte{5}}, Uki: &nodev1.ImagePart{Size: 1, Sha256: []byte{6}},
 		}}
-		resp, err := sendAll(t, conn.Upgrade(context.Background()),
+		resp, err := sendAll(t, openUpgrade(t, conn),
 			&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: h}},
 			&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Chunk{Chunk: &nodev1.ImageChunk{Data: []byte("suh")}}})
-		if err != nil || resp.Msg.Entry != tc.entry || resp.Msg.Active == tc.stageOnly || resp.Msg.Rebooting {
+		if err != nil || resp.Entry != tc.entry || resp.Active == tc.stageOnly || resp.Rebooting {
 			t.Errorf("stage only %v: %v, %v", tc.stageOnly, resp, err)
 		}
 	}
@@ -167,7 +167,7 @@ func TestUpgradeWhoseActivationFails(t *testing.T) {
 	write(t, record, strings.Repeat("31", 32)+"\n")
 	fakeImageSlots(t, s).installs(upgrade.Result{}, &upgrade.StagedError{Result: upgrade.Result{Entry: ".staged-chalkos_2.efi", Wrote: true}, Err: &upgrade.RefusalError{Err: errors.New("Secure Boot would refuse the UKI")}})
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator])
-	stream := conn.Upgrade(context.Background())
+	stream := openUpgrade(t, conn)
 	h := &nodev1.UpgradeHeader{Reboot: true, Image: &nodev1.ImageHeader{ImageId: "chalkos", RootHash: []byte{1, 2}, Revision: "a1b2c3d4e5f6", Tag: "v1.5.0"}}
 	_, err := sendAll(t, stream, &nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: h}})
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "upgrade: the image is staged as .staged-chalkos_2.efi, but its activation failed: Secure Boot would refuse the UKI") {
@@ -183,11 +183,11 @@ func TestUpgradeWhoseActivationFails(t *testing.T) {
 
 // activateOn asks s to activate the image with the root hash.
 func activateOn(s *Server, root []byte) (*nodev1.ActivateImageResponse, error) {
-	resp, err := s.ActivateImage(context.Background(), connect.NewRequest(&nodev1.ActivateImageRequest{RootHash: root}))
+	resp, err := s.ActivateImage(context.Background(), &nodev1.ActivateImageRequest{RootHash: root})
 	if err != nil {
 		return nil, err
 	}
-	return resp.Msg, nil
+	return resp, nil
 }
 
 // TestActivateImage activates the staged image through the boot disk's activation and answers with
@@ -313,9 +313,12 @@ func TestUpgradeRefusesMalformedHeaders(t *testing.T) {
 		{&nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{ImageId: "chalkos"}, Source: &nodev1.ImageSource{}}, "the header's source names no image in a registry"},
 		{&nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{ImageId: "chalkos"}, StageOnly: true, Reboot: true}, "an upgrade that stops once the image is staged does not reboot"},
 	} {
-		stream := conn.Upgrade(context.Background())
+		stream, err := conn.Upgrade(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
 		stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: tc.header}})
-		_, err := stream.CloseAndReceive()
+		_, err = stream.CloseAndReceive()
 		if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%v: %v, want %q", tc.header, err, tc.want)
 		}
@@ -353,7 +356,7 @@ func TestUpgradeDeliversConfigOnlyForAdmins(t *testing.T) {
 				return upgrade.Result{AlreadyStaged: true, Entry: "chalkos_2+3.efi"}, wrote, err
 			}
 			conn := dial(t, serve(t, s, c, c.pool), c.clients[tc.role])
-			stream := conn.Upgrade(context.Background())
+			stream := openUpgrade(t, conn)
 			header := &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{ImageId: "chalkos", RootHash: newImage}, Config: tc.config, FallbackSecret: tc.secret}
 			_, err := sendAll(t, stream, &nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}})
 			if tc.want == "" {
@@ -664,7 +667,7 @@ func TestUpgradeRetiresConfigSlots(t *testing.T) {
 		return upgrade.Result{}, imageConfig{}, errors.New("the node's config does not suit the image")
 	}
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator])
-	stream := conn.Upgrade(context.Background())
+	stream := openUpgrade(t, conn)
 	header := &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{ImageId: "chalkos", RootHash: kept}}
 	if _, err := sendAll(t, stream, &nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}}); connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Fatalf("upgrade = %v, want its refusal", err)
@@ -691,9 +694,12 @@ func TestOneUpgradeAtATime(t *testing.T) {
 	addr := serve(t, s, c, c.pool)
 	conn := dial(t, addr, c.clients[pki.RoleOperator])
 	send := func() error {
-		stream := conn.Upgrade(context.Background())
+		stream, err := conn.Upgrade(context.Background())
+		if err != nil {
+			return err
+		}
 		stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{ImageId: "chalkos"}}}})
-		_, err := stream.CloseAndReceive()
+		_, err = stream.CloseAndReceive()
 		return err
 	}
 	first := make(chan error, 1)

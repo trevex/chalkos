@@ -3,7 +3,7 @@ package kubernetes
 import (
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 

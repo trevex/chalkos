@@ -13,7 +13,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
@@ -25,7 +25,7 @@ import (
 
 // StatusClient reads the router layer's status, as the generated client of RouterService does.
 type StatusClient interface {
-	Status(context.Context, *connect.Request[routerv1.StatusRequest]) (*connect.Response[routerv1.StatusResponse], error)
+	Status(context.Context, *routerv1.StatusRequest) (*routerv1.StatusResponse, error)
 }
 
 // Tab is the Router tab.
@@ -142,12 +142,12 @@ func (t *Tab) readAll(now time.Time) tea.Cmd {
 	return func() tea.Msg {
 		r := readMsg{at: now}
 		ctx, cancel := context.WithTimeout(context.Background(), statusTimeout)
-		resp, err := client.Status(ctx, connect.NewRequest(&routerv1.StatusRequest{}))
+		resp, err := client.Status(ctx, &routerv1.StatusRequest{})
 		cancel()
 		if err != nil {
 			r.statusErr = err
 		} else {
-			r.status = resp.Msg
+			r.status = resp
 		}
 		run := func(heading string, table bool, name string) {
 			ctx, cancel := context.WithTimeout(context.Background(), diagnosticTimeout)

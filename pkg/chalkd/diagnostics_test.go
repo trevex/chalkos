@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/proto"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -98,13 +98,20 @@ func diagnosticsNode(t *testing.T, f diagnostics.Runner, role pki.Role) (*Server
 
 // runDiagnostic runs a diagnostic and returns what it printed and how it ended.
 func runDiagnostic(conn *client.Conn, name string, args map[string]string) (stdout, stderr string, exit *nodev1.DiagnosticExit, err error) {
-	stream, err := conn.RunDiagnostic(context.Background(), connect.NewRequest(&nodev1.RunDiagnosticRequest{Name: name, Arguments: args}))
+	stream, err := conn.RunDiagnostic(context.Background(), &nodev1.RunDiagnosticRequest{Name: name, Arguments: args})
 	if err != nil {
 		return "", "", nil, err
 	}
 	var out, errOut strings.Builder
-	for stream.Receive() {
-		switch o := stream.Msg().Output.(type) {
+	for {
+		msg, err := stream.Receive()
+		if errors.Is(err, io.EOF) {
+			return out.String(), errOut.String(), exit, nil
+		}
+		if err != nil {
+			return out.String(), errOut.String(), exit, err
+		}
+		switch o := msg.Output.(type) {
 		case *nodev1.RunDiagnosticResponse_Stdout:
 			out.Write(o.Stdout)
 		case *nodev1.RunDiagnosticResponse_Stderr:
@@ -113,14 +120,13 @@ func runDiagnostic(conn *client.Conn, name string, args map[string]string) (stdo
 			exit = o.Exit
 		}
 	}
-	return out.String(), errOut.String(), exit, stream.Err()
 }
 
 // Diagnostics lists the image's diagnostics in name order, each parameter with what a call may
 // give, the required ones first.
 func TestDiagnosticsListsTheImagesDiagnostics(t *testing.T) {
 	_, conn := diagnosticsNode(t, &fakeDiagnose{}, pki.RoleReader)
-	resp, err := conn.Diagnostics(context.Background(), connect.NewRequest(&nodev1.DiagnosticsRequest{}))
+	resp, err := conn.Diagnostics(context.Background(), &nodev1.DiagnosticsRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,8 +139,8 @@ func TestDiagnosticsListsTheImagesDiagnostics(t *testing.T) {
 			{Name: "address", Type: "address", Description: "IPv4 or IPv6 address."},
 		}},
 	}}
-	if !proto.Equal(resp.Msg, want) {
-		t.Errorf("Diagnostics = %v, want %v", resp.Msg, want)
+	if !proto.Equal(resp, want) {
+		t.Errorf("Diagnostics = %v, want %v", resp, want)
 	}
 }
 
@@ -305,18 +311,25 @@ func TestRunDiagnosticDropsOutputAfterTheEnd(t *testing.T) {
 	})
 	_, conn := diagnosticsNode(t, run, pki.RoleReader)
 	for range 20 {
-		stream, err := conn.RunDiagnostic(context.Background(), connect.NewRequest(&nodev1.RunDiagnosticRequest{Name: "route-get", Arguments: map[string]string{"address": "192.0.2.1"}}))
+		stream, err := conn.RunDiagnostic(context.Background(), &nodev1.RunDiagnosticRequest{Name: "route-get", Arguments: map[string]string{"address": "192.0.2.1"}})
 		if err != nil {
 			t.Fatal(err)
 		}
 		var exit *nodev1.DiagnosticExit
-		for stream.Receive() {
-			if exit != nil {
-				t.Fatalf("a message after the exit: %v", stream.Msg())
+		for {
+			msg, err := stream.Receive()
+			if errors.Is(err, io.EOF) {
+				break
 			}
-			exit = stream.Msg().GetExit()
+			if err != nil {
+				t.Fatalf("route-get = %v, %v", exit, err)
+			}
+			if exit != nil {
+				t.Fatalf("a message after the exit: %v", msg)
+			}
+			exit = msg.GetExit()
 		}
-		if err := stream.Err(); err != nil || exit.GetStopped() != "signal" {
+		if exit.GetStopped() != "signal" {
 			t.Fatalf("route-get = %v, %v", exit, err)
 		}
 	}
@@ -334,13 +347,16 @@ func TestRunDiagnosticStopsWhenTheClientGoesAway(t *testing.T) {
 	})
 	s, conn := diagnosticsNode(t, run, pki.RoleReader)
 	ctx, cancel := context.WithCancel(context.Background())
-	stream, err := conn.RunDiagnostic(ctx, connect.NewRequest(&nodev1.RunDiagnosticRequest{Name: "route-get", Arguments: map[string]string{"address": "192.0.2.1"}}))
+	stream, err := conn.RunDiagnostic(ctx, &nodev1.RunDiagnosticRequest{Name: "route-get", Arguments: map[string]string{"address": "192.0.2.1"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	<-started
 	cancel()
-	for stream.Receive() {
+	for {
+		if _, err := stream.Receive(); err != nil {
+			break
+		}
 	}
 	select {
 	case <-stopped:

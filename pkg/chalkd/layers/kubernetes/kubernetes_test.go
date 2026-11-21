@@ -21,7 +21,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/rest"
 

@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
@@ -85,7 +85,7 @@ func slotVersion(t *testing.T, s *Server, rootHash []byte) string {
 }
 
 func sendStaged(s *Server, text string) error {
-	_, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: text, Staged: true}))
+	_, err := s.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{Config: text, Staged: true})
 	return err
 }
 
@@ -125,8 +125,8 @@ func TestApplyConfigStaged(t *testing.T) {
 			if !bytes.Equal(got.Boot.GetStaged().GetRootHash(), stagedImage) || got.Boot.GetStagedState() != tc.state || got.Boot.GetStagedKnownGood() {
 				t.Errorf("status names the staged image %x, %v, known-good %v", got.Boot.GetStaged().GetRootHash(), got.Boot.GetStagedState(), got.Boot.GetStagedKnownGood())
 			}
-			resp, err := s.GetConfig(context.Background(), connect.NewRequest(&nodev1.GetConfigRequest{Staged: true}))
-			if err != nil || resp.Msg.Version != hashOf(t, next) {
+			resp, err := s.GetConfig(context.Background(), &nodev1.GetConfigRequest{Staged: true})
+			if err != nil || resp.Version != hashOf(t, next) {
 				t.Errorf("GetConfig of the staged image = %v, %v", resp, err)
 			}
 		})
@@ -169,7 +169,7 @@ func TestApplyConfigStagedRefuses(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, r := stagedServer(t, tc.schemas)
-			_, err := s.ApplyConfig(context.Background(), connect.NewRequest(tc.req))
+			_, err := s.ApplyConfig(context.Background(), tc.req)
 			if codeOf(err) != tc.code || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("err = %v, want %v naming %q", err, tc.code, tc.want)
 			}
@@ -188,12 +188,12 @@ func TestApplyConfigStagedRefuses(t *testing.T) {
 func TestApplyConfigStagedAddsAVolume(t *testing.T) {
 	s, r := stagedServer(t, fixtureSchemas(t))
 	r.Rules = volumeRules(s)
-	resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: extraConfig("ext4"), Staged: true, FallbackSecret: secret}))
+	resp, err := s.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{Config: extraConfig("ext4"), Staged: true, FallbackSecret: secret})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(resp.Msg.Changes) != 1 || resp.Msg.Changes[0].Volume != "extra" {
-		t.Errorf("changes = %v, want the new volume", resp.Msg.Changes)
+	if len(resp.Changes) != 1 || resp.Changes[0].Volume != "extra" {
+		t.Errorf("changes = %v, want the new volume", resp.Changes)
 	}
 	if !contains(r.Calls, "systemctl start systemd-cryptsetup@extra.service srv-extra.mount") {
 		t.Errorf("the volume was not created: %v", r.Calls)
@@ -301,11 +301,11 @@ func TestStagedRefusalNamesTheFallbackSecret(t *testing.T) {
 func TestApplyConfigAddsAVolumeForBothImages(t *testing.T) {
 	s, r := stagedServer(t, fixtureSchemas(t))
 	r.Rules = volumeRules(s)
-	m, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: extraConfig("ext4"), FallbackSecret: secret}))
+	m, err := s.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{Config: extraConfig("ext4"), FallbackSecret: secret})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := m.Msg.Changes; len(got) != 1 || got[0].Volume != "extra" {
+	if got := m.Changes; len(got) != 1 || got[0].Volume != "extra" {
 		t.Errorf("changes = %v, want the new volume once", got)
 	}
 	for name, image := range map[string][]byte{"running": runningImage, "staged": stagedImage} {
@@ -442,11 +442,11 @@ func TestStagedStorageChangeFailingPartWay(t *testing.T) {
 func TestDryRunPlansTheStagedSlot(t *testing.T) {
 	s, r := stagedServer(t, fixtureSchemas(t))
 	r.Rules = volumeRules(s)
-	m, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: extraConfig("ext4"), FallbackSecret: secret, DryRun: true}))
+	m, err := s.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{Config: extraConfig("ext4"), FallbackSecret: secret, DryRun: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp := m.Msg
+	resp := m
 	if got := resp.Staged; got.GetVersion() != hashOf(t, extraConfig("ext4")) || got.GetReplaces() != hashOf(t, baseConfig) {
 		t.Errorf("the plan names the staged slot %v", got)
 	}
@@ -512,12 +512,12 @@ func TestTrialWritesTheStagedSlotOnceConfirmed(t *testing.T) {
 			}
 			want := hashOf(t, baseConfig)
 			if confirm {
-				m, err := s.ConfirmConfig(context.Background(), connect.NewRequest(&nodev1.ConfirmConfigRequest{Version: hashOf(t, nextConfig)}))
-				if err != nil || len(m.Msg.Warnings) != 0 {
+				m, err := s.ConfirmConfig(context.Background(), &nodev1.ConfirmConfigRequest{Version: hashOf(t, nextConfig)})
+				if err != nil || len(m.Warnings) != 0 {
 					t.Fatalf("confirm = %v, %v", m, err)
 				}
 				want = hashOf(t, nextConfig)
-			} else if _, err := s.RollbackConfig(context.Background(), connect.NewRequest(&nodev1.RollbackConfigRequest{Version: hashOf(t, baseConfig)})); err != nil {
+			} else if _, err := s.RollbackConfig(context.Background(), &nodev1.RollbackConfigRequest{Version: hashOf(t, baseConfig)}); err != nil {
 				t.Fatal(err)
 			}
 			if v := slotVersion(t, s, stagedImage); v != want {
@@ -589,11 +589,11 @@ func TestConfirmConfigKeepsTheStagedSlotWhileTheTrialStays(t *testing.T) {
 func TestALeftoverTrialCopyIsNeverWritten(t *testing.T) {
 	confirmAgain := func(t *testing.T, s *Server) []string {
 		t.Helper()
-		m, err := s.ConfirmConfig(context.Background(), connect.NewRequest(&nodev1.ConfirmConfigRequest{Version: hashOf(t, nextConfig)}))
+		m, err := s.ConfirmConfig(context.Background(), &nodev1.ConfirmConfigRequest{Version: hashOf(t, nextConfig)})
 		if err != nil {
 			t.Fatalf("a confirmation sent again = %v", err)
 		}
-		return m.Msg.Warnings
+		return m.Warnings
 	}
 	for name, remove := range map[string]func(*Server) error{
 		"at boot": func(s *Server) error { return RestoreTrialAtBoot(s.Paths.StateDir, s.Loader.Slots) },
@@ -652,14 +652,14 @@ func TestALeftoverTrialCopyIsNeverWritten(t *testing.T) {
 func TestConfirmConfigWarnsOfAHeldBackWriteThatFailed(t *testing.T) {
 	confirm := func(t *testing.T, s *Server) []string {
 		t.Helper()
-		m, err := s.ConfirmConfig(context.Background(), connect.NewRequest(&nodev1.ConfirmConfigRequest{Version: hashOf(t, nextConfig)}))
+		m, err := s.ConfirmConfig(context.Background(), &nodev1.ConfirmConfigRequest{Version: hashOf(t, nextConfig)})
 		if err != nil {
 			t.Fatal(err)
 		}
 		if trialOpenOn(t, s) || trialCopy(t, s) != "" {
 			t.Errorf("the trial is open %v with the copy %q, want both gone", trialOpenOn(t, s), trialCopy(t, s))
 		}
-		return m.Msg.Warnings
+		return m.Warnings
 	}
 	t.Run("staged slot", func(t *testing.T) {
 		s := stagedTrial(t)
@@ -726,11 +726,11 @@ func TestConfirmConfigDropsTheCopyOfAnImageNoLongerStaged(t *testing.T) {
 			if err := tc.change(s); err != nil {
 				t.Fatal(err)
 			}
-			m, err := s.ConfirmConfig(context.Background(), connect.NewRequest(&nodev1.ConfirmConfigRequest{Version: version}))
+			m, err := s.ConfirmConfig(context.Background(), &nodev1.ConfirmConfigRequest{Version: version})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if w := m.Msg.Warnings; len(w) != 1 || w[0] != tc.want {
+			if w := m.Warnings; len(w) != 1 || w[0] != tc.want {
 				t.Errorf("warnings = %q, want %q", w, tc.want)
 			}
 			held := ""
@@ -864,8 +864,8 @@ func TestGetConfigStaged(t *testing.T) {
 	if err := sendStaged(s, next); err != nil {
 		t.Fatal(err)
 	}
-	resp, err := s.GetConfig(context.Background(), connect.NewRequest(&nodev1.GetConfigRequest{Staged: true}))
-	if err != nil || resp.Msg.Version != hashOf(t, next) || !strings.Contains(resp.Msg.Documents, `"name":"second"`) {
+	resp, err := s.GetConfig(context.Background(), &nodev1.GetConfigRequest{Staged: true})
+	if err != nil || resp.Version != hashOf(t, next) || !strings.Contains(resp.Documents, `"name":"second"`) {
 		t.Errorf("staged config = %+v, %v", resp, err)
 	}
 }
@@ -886,7 +886,7 @@ func TestUpgradeOfAStagedImageNamesApplyConfigStaged(t *testing.T) {
 	}
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleAdmin])
 	send := func(rootHash []byte) error {
-		stream := conn.Upgrade(context.Background())
+		stream := openUpgrade(t, conn)
 		header := &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{ImageId: "chalkos", RootHash: rootHash}, Config: baseConfig}
 		_, err := sendAll(t, stream, &nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}})
 		return err
@@ -958,7 +958,7 @@ func TestKnownGoodImageKeepsItsConfig(t *testing.T) {
 		fakeImageSlots(t, s).installs(upgrade.Result{AlreadyStaged: true, Entry: "chalkos_3.efi"}, nil)
 		conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleAdmin])
 		send := func(config string) error {
-			stream := conn.Upgrade(context.Background())
+			stream := openUpgrade(t, conn)
 			header := &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{ImageId: "chalkos", RootHash: stagedImage}, Config: config}
 			_, err := sendAll(t, stream, &nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}})
 			return err

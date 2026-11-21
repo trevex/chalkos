@@ -12,7 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connectproto"
 	"golang.org/x/sys/unix"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
@@ -100,20 +101,20 @@ func memberNode(t *testing.T, others ...string) (*Plugin, *etcd.Client, map[stri
 
 func etcdMembers(t *testing.T, s *Plugin) []*kubernetesv1.EtcdMember {
 	t.Helper()
-	resp, err := s.EtcdMembers(context.Background(), connect.NewRequest(&kubernetesv1.EtcdMembersRequest{}))
+	resp, err := s.EtcdMembers(context.Background(), &kubernetesv1.EtcdMembersRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return resp.Msg.Members
+	return resp.Members
 }
 
 func removeMember(s *Plugin, member string, force bool) error {
-	_, err := s.EtcdRemoveMember(context.Background(), connect.NewRequest(&kubernetesv1.EtcdRemoveMemberRequest{Member: member, Force: force}))
+	_, err := s.EtcdRemoveMember(context.Background(), &kubernetesv1.EtcdRemoveMemberRequest{Member: member, Force: force})
 	return err
 }
 
 func leave(s *Plugin, force bool) error {
-	_, err := s.EtcdLeave(context.Background(), connect.NewRequest(&kubernetesv1.EtcdLeaveRequest{Force: force}))
+	_, err := s.EtcdLeave(context.Background(), &kubernetesv1.EtcdLeaveRequest{Force: force})
 	return err
 }
 
@@ -446,7 +447,7 @@ func TestEtcdNeedsMember(t *testing.T) {
 		s    *Plugin
 		want bool
 	}{"worker": {worker, false}, "not bootstrapped": {waiting, true}} {
-		_, err := tc.s.EtcdMembers(context.Background(), connect.NewRequest(&kubernetesv1.EtcdMembersRequest{}))
+		_, err := tc.s.EtcdMembers(context.Background(), &kubernetesv1.EtcdMembersRequest{})
 		if layer.CodeOf(err) != connect.CodeFailedPrecondition {
 			t.Errorf("members on %s: %v", name, err)
 		}
@@ -457,7 +458,7 @@ func TestEtcdNeedsMember(t *testing.T) {
 		ce := layer.Codes(nil).Error(err)
 		got := false
 		for _, d := range ce.Details() {
-			if v, err := d.Value(); err == nil {
+			if v, err := connectproto.UnmarshalErrorDetail(d); err == nil {
 				_, got = v.(*kubernetesv1.NotEtcdMember)
 			}
 		}

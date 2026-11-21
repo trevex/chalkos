@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/spf13/cobra"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -118,11 +118,11 @@ func confirmOnce(ctx context.Context, t *target, version string, timeout time.Du
 		return nil, err
 	}
 	defer conn.Close()
-	resp, err := conn.ConfirmConfig(ctx, connect.NewRequest(&nodev1.ConfirmConfigRequest{Version: version}))
+	resp, err := conn.ConfirmConfig(ctx, &nodev1.ConfirmConfigRequest{Version: version})
 	if err != nil {
 		return nil, err
 	}
-	return resp.Msg.Warnings, nil
+	return resp.Warnings, nil
 }
 
 // trialRolledBack waits over new connections, until trialEnd after the deadline, for the node to
@@ -141,23 +141,23 @@ func (a *app) trialRolledBack(ctx context.Context, t *target, version, previous 
 			return err
 		}
 		defer conn.Close()
-		resp, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+		resp, err := conn.Status(ctx, &nodev1.StatusRequest{})
 		if err != nil {
 			return err
 		}
 		// A record the node cannot read tells neither a confirmation nor a rollback, and holds
 		// back every change until a rollback removes it.
-		if e := resp.Msg.TrialError; e != "" {
+		if e := resp.TrialError; e != "" {
 			unreadable = e
 			return nil
 		}
-		if tr := resp.Msg.Trial; tr != nil {
+		if tr := resp.Trial; tr != nil {
 			if tr.Error != "" {
 				return fmt.Errorf("its trial of config %s is still open: an attempt to roll the config back failed: %s", tr.Version, tr.Error)
 			}
 			return fmt.Errorf("its trial of config %s is still open", tr.Version)
 		}
-		st = resp.Msg
+		st = resp
 		return nil
 	})
 	switch {

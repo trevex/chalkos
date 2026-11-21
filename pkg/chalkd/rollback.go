@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/atomicfile"
@@ -27,8 +27,8 @@ import (
 // deadline leaves it, gets it delivered again, which finishes that rollback. With a trial record
 // that cannot be read, it rolls back to the version asked for, or delivers it again when the slot
 // runs it already, and then removes the record.
-func (s *Server) RollbackConfig(ctx context.Context, req *connect.Request[nodev1.RollbackConfigRequest]) (*connect.Response[nodev1.RollbackConfigResponse], error) {
-	version := req.Msg.Version
+func (s *Server) RollbackConfig(ctx context.Context, req *nodev1.RollbackConfigRequest) (*nodev1.RollbackConfigResponse, error) {
+	version := req.Version
 	if version == "" {
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "the request names no version to roll back to")
 	}
@@ -88,7 +88,7 @@ func (s *Server) rollbackOrRedeliver(ctx context.Context, version string) (*node
 // endTrialRolledBack ends the trial once a rollback on request, which resp describes, went
 // through: the node runs the config from before it again. A record that cannot be removed stays,
 // and the warning says so and, after, what follows from that. The caller holds s.mu.
-func (s *Server) endTrialRolledBack(resp *nodev1.ApplyConfigResponse, after string) *connect.Response[nodev1.RollbackConfigResponse] {
+func (s *Server) endTrialRolledBack(resp *nodev1.ApplyConfigResponse, after string) *nodev1.RollbackConfigResponse {
 	if err := s.endTrial(); err != nil {
 		log.Printf("end the trial: %v", err)
 		resp.Warnings = append(resp.Warnings, fmt.Sprintf("the config was rolled back, but the record of its trial could not be removed for good: %v; %s", err, after))
@@ -99,8 +99,8 @@ func (s *Server) endTrialRolledBack(resp *nodev1.ApplyConfigResponse, after stri
 }
 
 // rollbackResponse is RollbackConfig's response to a rollback that resp describes.
-func rollbackResponse(resp *nodev1.ApplyConfigResponse) *connect.Response[nodev1.RollbackConfigResponse] {
-	return connect.NewResponse(&nodev1.RollbackConfigResponse{Changes: resp.Changes, RestartedUnits: resp.RestartedUnits, Warnings: resp.Warnings})
+func rollbackResponse(resp *nodev1.ApplyConfigResponse) *nodev1.RollbackConfigResponse {
+	return &nodev1.RollbackConfigResponse{Changes: resp.Changes, RestartedUnits: resp.RestartedUnits, Warnings: resp.Warnings}
 }
 
 // rollbackConfig delivers the previous config of the running image's slot, which must be of
@@ -169,15 +169,14 @@ func (s *Server) deliverStored(ctx context.Context, stored slot.Stored, what str
 	if err != nil {
 		return nil, d.started, err
 	}
-	return r.Msg, false, nil
+	return r, false, nil
 }
 
 // RollbackImage makes the previous image boot next again, through the upgrade path without
 // writing its store, and reboots into it when asked to. It runs under the lock an upgrade holds,
 // so neither writes the ESP while the other does. An image whose config slot STATE no longer
 // keeps is refused first: it would boot without config, fail its health check and fall back.
-func (s *Server) RollbackImage(ctx context.Context, req *connect.Request[nodev1.RollbackImageRequest]) (*connect.Response[nodev1.RollbackImageResponse], error) {
-	m := req.Msg
+func (s *Server) RollbackImage(ctx context.Context, m *nodev1.RollbackImageRequest) (*nodev1.RollbackImageResponse, error) {
 	if len(m.RootHash) == 0 {
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "the request names no image to roll back to")
 	}
@@ -216,7 +215,7 @@ func (s *Server) RollbackImage(ctx context.Context, req *connect.Request[nodev1.
 	switch {
 	case res.AlreadyInstalled:
 		log.Printf("%x runs already", m.RootHash)
-		return connect.NewResponse(resp), nil
+		return resp, nil
 	case res.AlreadyStaged:
 		log.Printf("%x boots next already, as %s", m.RootHash, res.Entry)
 	default:
@@ -227,7 +226,7 @@ func (s *Server) RollbackImage(ctx context.Context, req *connect.Request[nodev1.
 		resp.Rebooting = true
 		s.rebootSoon()
 	}
-	return connect.NewResponse(resp), nil
+	return resp, nil
 }
 
 // rollbackRecord is where STATE keeps the root hash of the image the last RollbackImage rolled back

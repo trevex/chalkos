@@ -6,7 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connectproto"
 	"github.com/spf13/cobra"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
@@ -64,7 +65,7 @@ func notEtcdMember(err error) bool {
 		return false
 	}
 	for _, d := range ce.Details() {
-		if v, err := d.Value(); err == nil {
+		if v, err := connectproto.UnmarshalErrorDetail(d); err == nil {
 			if _, ok := v.(*kubernetesv1.NotEtcdMember); ok {
 				return true
 			}
@@ -104,8 +105,8 @@ func etcdMembersCommand(h layer.Host) *cobra.Command {
 
 func etcdMembers(h layer.Host, ctx context.Context, f viaFlags) error {
 	var resp *kubernetesv1.EtcdMembersResponse
-	err := throughControlPlane(h, ctx, f, "", layer.Fetch(&resp, func(conn *client.Conn) (*connect.Response[kubernetesv1.EtcdMembersResponse], error) {
-		return Client(conn).EtcdMembers(ctx, connect.NewRequest(&kubernetesv1.EtcdMembersRequest{}))
+	err := throughControlPlane(h, ctx, f, "", layer.Fetch(&resp, func(conn *client.Conn) (*kubernetesv1.EtcdMembersResponse, error) {
+		return Client(conn).EtcdMembers(ctx, &kubernetesv1.EtcdMembersRequest{})
 	}))
 	if err != nil {
 		return err
@@ -146,8 +147,8 @@ func etcdRemoveMemberCommand(h layer.Host) *cobra.Command {
 
 func etcdRemoveMember(h layer.Host, ctx context.Context, f viaFlags, pos []string) error {
 	var resp *kubernetesv1.EtcdRemoveMemberResponse
-	err := throughControlPlane(h, ctx, f, pos[0], layer.Fetch(&resp, func(conn *client.Conn) (*connect.Response[kubernetesv1.EtcdRemoveMemberResponse], error) {
-		return Client(conn).EtcdRemoveMember(ctx, connect.NewRequest(&kubernetesv1.EtcdRemoveMemberRequest{Member: pos[0], Force: f.force}))
+	err := throughControlPlane(h, ctx, f, pos[0], layer.Fetch(&resp, func(conn *client.Conn) (*kubernetesv1.EtcdRemoveMemberResponse, error) {
+		return Client(conn).EtcdRemoveMember(ctx, &kubernetesv1.EtcdRemoveMemberRequest{Member: pos[0], Force: f.force})
 	}))
 	if err != nil {
 		return err
@@ -176,7 +177,7 @@ func etcdLeave(h layer.Host, ctx context.Context, f viaFlags, pos []string) erro
 		return err
 	}
 	if err := t.Call(func(conn *client.Conn) error {
-		_, err := Client(conn).EtcdLeave(ctx, connect.NewRequest(&kubernetesv1.EtcdLeaveRequest{Force: f.force}))
+		_, err := Client(conn).EtcdLeave(ctx, &kubernetesv1.EtcdLeaveRequest{Force: f.force})
 		return err
 	}); err != nil {
 		return err

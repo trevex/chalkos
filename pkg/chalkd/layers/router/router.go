@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -18,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
 	"github.com/trevex/chalkos/pkg/api/router/v1/routerv1connect"
@@ -99,8 +98,8 @@ func New(node layer.Node, o Options) *Plugin {
 
 func (p *Plugin) Name() string { return layers.Router }
 
-func (p *Plugin) Handler(opts ...connect.HandlerOption) (string, http.Handler) {
-	return routerv1connect.NewRouterServiceHandler(p, opts...)
+func (p *Plugin) Register(server *connect.Server) {
+	routerv1connect.RegisterRouterServiceHandler(server, p)
 }
 
 func (p *Plugin) Permissions() map[string]layer.Permission {
@@ -113,8 +112,8 @@ func (p *Plugin) Permissions() map[string]layer.Permission {
 // Start runs nothing: the router's state is read when it is asked for.
 func (p *Plugin) Start(context.Context) error { return nil }
 
-func (p *Plugin) Status(ctx context.Context, _ *connect.Request[routerv1.StatusRequest]) (*connect.Response[routerv1.StatusResponse], error) {
-	return connect.NewResponse(p.status(ctx)), nil
+func (p *Plugin) Status(ctx context.Context, _ *routerv1.StatusRequest) (*routerv1.StatusResponse, error) {
+	return p.status(ctx), nil
 }
 
 // askTimeout bounds the questions chalkd asks one router daemon, so Status answers while one
@@ -441,10 +440,10 @@ func (p *Plugin) dhcpRelays(ctx context.Context) []*routerv1.DHCPRelayStatus {
 	return relays
 }
 
-func (p *Plugin) Routes(ctx context.Context, req *connect.Request[routerv1.RoutesRequest]) (*connect.Response[routerv1.RoutesResponse], error) {
+func (p *Plugin) Routes(ctx context.Context, req *routerv1.RoutesRequest) (*routerv1.RoutesResponse, error) {
 	// The request's strings reach no command: the filter parses them, a VRF's name passes its
 	// pattern and names a running VRF document, and vtysh is asked for whole families alone.
-	table, vrf := req.Msg.Table, req.Msg.Vrf
+	table, vrf := req.Table, req.Vrf
 	if vrf != "" && table != "" {
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "give a VRF or a table, not both: a VRF's routes are those of its table")
 	}
@@ -456,7 +455,7 @@ func (p *Plugin) Routes(ctx context.Context, req *connect.Request[routerv1.Route
 		}
 		table = strconv.FormatUint(uint64(t), 10)
 	}
-	f, err := routing.NewFilter(req.Msg.Prefix, req.Msg.Protocol, table)
+	f, err := routing.NewFilter(req.Prefix, req.Protocol, table)
 	if err != nil {
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "%w", err)
 	}
@@ -488,7 +487,7 @@ func (p *Plugin) Routes(ctx context.Context, req *connect.Request[routerv1.Route
 			}
 		}
 	}
-	return connect.NewResponse(resp), nil
+	return resp, nil
 }
 
 // defaultVRFDir holds the running VRF documents, as chalkd writes the node's config for its

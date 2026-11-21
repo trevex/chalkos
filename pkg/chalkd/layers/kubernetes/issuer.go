@@ -10,7 +10,7 @@ import (
 	"net"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/api/kubernetes/v1/kubernetesv1connect"
@@ -23,7 +23,7 @@ import (
 
 var _ layer.Issuer = (*Plugin)(nil)
 
-func (p *Plugin) RenewNodeCertificate(ctx context.Context, req *connect.Request[kubernetesv1.RenewNodeCertificateRequest]) (*connect.Response[kubernetesv1.RenewNodeCertificateResponse], error) {
+func (p *Plugin) RenewNodeCertificate(ctx context.Context, req *kubernetesv1.RenewNodeCertificateRequest) (*kubernetesv1.RenewNodeCertificateResponse, error) {
 	peer := layer.Peer(ctx)
 	if peer == nil {
 		return nil, layer.Errorf(connect.CodeUnauthenticated, "renewing a node certificate needs the node's current one")
@@ -36,12 +36,12 @@ func (p *Plugin) RenewNodeCertificate(ctx context.Context, req *connect.Request[
 	if err := p.k.notRevoked(ctx, names.CommonName); err != nil {
 		return nil, err
 	}
-	chain, err := signRequest(nodeCA, names, req.Msg.CertificateRequest, time.Now())
+	chain, err := signRequest(nodeCA, names, req.CertificateRequest, time.Now())
 	if err != nil {
 		return nil, err
 	}
 	log.Printf("issued node %s a new node certificate", peer.Subject.CommonName)
-	return connect.NewResponse(&kubernetesv1.RenewNodeCertificateResponse{CertificateChain: []byte(chain)}), nil
+	return &kubernetesv1.RenewNodeCertificateResponse{CertificateChain: []byte(chain)}, nil
 }
 
 // nodeCA returns the node CA of a control-plane node's share; only control planes hold it.
@@ -130,10 +130,10 @@ func RenewThrough(ctx context.Context, cert layer.Certificate, addr string, requ
 	}
 	// Renewals are hours apart: nothing is kept open in between.
 	defer conn.Close()
-	k := kubernetesv1connect.NewKubernetesServiceClient(conn.HTTPClient(), conn.BaseURL())
-	resp, err := k.RenewNodeCertificate(ctx, connect.NewRequest(&kubernetesv1.RenewNodeCertificateRequest{CertificateRequest: request}))
+	k := kubernetesv1connect.NewKubernetesServiceClient(conn.RPC())
+	resp, err := k.RenewNodeCertificate(ctx, &kubernetesv1.RenewNodeCertificateRequest{CertificateRequest: request})
 	if err != nil {
 		return "", fmt.Errorf("the control plane at %s: %w", addr, err)
 	}
-	return string(resp.Msg.CertificateChain), nil
+	return string(resp.CertificateChain), nil
 }

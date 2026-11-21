@@ -15,7 +15,7 @@ import (
 	"slices"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"golang.org/x/sys/unix"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -47,7 +47,7 @@ type enrolment struct {
 // the node booted. A node that runs from its own disk deletes its STATE, which the TPM seals to
 // PCR 7, so the next boot creates it again. The node answers and reboots once the three writes went
 // through, with db and KEK as it reads them back, or empty when it cannot.
-func (s *Server) EnrollSecureBoot(ctx context.Context, req *connect.Request[nodev1.EnrollSecureBootRequest]) (*connect.Response[nodev1.EnrollSecureBootResponse], error) {
+func (s *Server) EnrollSecureBoot(ctx context.Context, req *nodev1.EnrollSecureBootRequest) (*nodev1.EnrollSecureBootResponse, error) {
 	if !s.mu.TryLock() {
 		return nil, layer.Errorf(connect.CodeAborted, "another change of the node is running")
 	}
@@ -63,9 +63,9 @@ func (s *Server) EnrollSecureBoot(ctx context.Context, req *connect.Request[node
 		return nil, layer.Errorf(connect.CodeFailedPrecondition, "the firmware is not in Setup Mode; clear the platform key in the firmware setup first")
 	}
 	vars := []*enrolment{
-		{name: "db", vendor: secureboot.ImageSecurityDatabase, attrs: secureboot.AttrAppend, update: req.Msg.Db},
-		{name: "KEK", vendor: secureboot.GlobalVariable, attrs: secureboot.AttrAppend, update: req.Msg.Kek},
-		{name: "PK", vendor: secureboot.GlobalVariable, attrs: secureboot.AttrReplace, update: req.Msg.Pk},
+		{name: "db", vendor: secureboot.ImageSecurityDatabase, attrs: secureboot.AttrAppend, update: req.Db},
+		{name: "KEK", vendor: secureboot.GlobalVariable, attrs: secureboot.AttrAppend, update: req.Kek},
+		{name: "PK", vendor: secureboot.GlobalVariable, attrs: secureboot.AttrReplace, update: req.Pk},
 	}
 	if err := checkEnrolment(vars); err != nil {
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "%w", err)
@@ -75,7 +75,7 @@ func (s *Server) EnrollSecureBoot(ctx context.Context, req *connect.Request[node
 		return nil, err
 	}
 	resp := &nodev1.EnrollSecureBootResponse{DbBefore: dbEntries(db), KekBefore: subjects(kek.Certificates)}
-	if !req.Msg.Force {
+	if !req.Force {
 		newDB := db
 		newDB.Certificates = slices.Concat(db.Certificates, vars[0].entries.Certificates)
 		newDB.SHA256 = slices.Concat(db.SHA256, vars[0].entries.SHA256)
@@ -117,12 +117,12 @@ func (s *Server) EnrollSecureBoot(ctx context.Context, req *connect.Request[node
 		dbAfter, kekAfter = secureboot.Database{}, secureboot.Database{}
 	}
 	resp.DbAfter, resp.KekAfter = dbEntries(dbAfter), subjects(kekAfter.Certificates)
-	return connect.NewResponse(resp), nil
+	return resp, nil
 }
 
 // SecureBootDrivers lists the drivers the TPM event log records in PCR 2, the option ROMs of
 // graphics and network cards as a rule, or none and why when the node has no event log.
-func (s *Server) SecureBootDrivers(ctx context.Context, req *connect.Request[nodev1.SecureBootDriversRequest]) (*connect.Response[nodev1.SecureBootDriversResponse], error) {
+func (s *Server) SecureBootDrivers(ctx context.Context, req *nodev1.SecureBootDriversRequest) (*nodev1.SecureBootDriversResponse, error) {
 	drivers, unchecked, err := s.readDrivers()
 	if err != nil {
 		return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
@@ -131,7 +131,7 @@ func (s *Server) SecureBootDrivers(ctx context.Context, req *connect.Request[nod
 	for _, d := range drivers {
 		resp.Drivers = append(resp.Drivers, &nodev1.SecureBootDriver{Sha256: d.SHA256, DevicePath: d.DevicePath})
 	}
-	return connect.NewResponse(resp), nil
+	return resp, nil
 }
 
 // readDrivers reads the drivers measured into PCR 2 from the TPM event log. Without an event log,

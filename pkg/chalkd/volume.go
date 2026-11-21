@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
@@ -111,10 +111,9 @@ func enrolled(recorded, section storage.Section) string {
 	return ""
 }
 
-func (s *Server) ResetVolume(ctx context.Context, req *connect.Request[nodev1.ResetVolumeRequest]) (*connect.Response[nodev1.ResetVolumeResponse], error) {
+func (s *Server) ResetVolume(ctx context.Context, m *nodev1.ResetVolumeRequest) (*nodev1.ResetVolumeResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	m := req.Msg
 	if m.Config == "" {
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "the request delivers no config, which defines the volume")
 	}
@@ -133,7 +132,7 @@ func (s *Server) ResetVolume(ctx context.Context, req *connect.Request[nodev1.Re
 	if err := s.resetVolume(ctx, name, m.Volume, c, m.FallbackSecret); err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&nodev1.ResetVolumeResponse{}), nil
+	return &nodev1.ResetVolumeResponse{}, nil
 }
 
 // resetVolume wipes the volume name and creates it again as next, the config translated for the

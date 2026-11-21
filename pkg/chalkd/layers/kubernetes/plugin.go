@@ -5,9 +5,8 @@ package kubernetes
 import (
 	"context"
 	"fmt"
-	"net/http"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/api/kubernetes/v1/kubernetesv1connect"
@@ -39,8 +38,8 @@ func (p *Plugin) Stop() { p.k.stop() }
 
 func (p *Plugin) Name() string { return layers.Kubernetes }
 
-func (p *Plugin) Handler(opts ...connect.HandlerOption) (string, http.Handler) {
-	return kubernetesv1connect.NewKubernetesServiceHandler(p, opts...)
+func (p *Plugin) Register(server *connect.Server) {
+	kubernetesv1connect.RegisterKubernetesServiceHandler(server, p)
 }
 
 func (p *Plugin) Permissions() map[string]layer.Permission {
@@ -69,12 +68,12 @@ func (p *Plugin) Start(ctx context.Context) error {
 	return nil
 }
 
-func (p *Plugin) Status(ctx context.Context, _ *connect.Request[kubernetesv1.StatusRequest]) (*connect.Response[kubernetesv1.StatusResponse], error) {
+func (p *Plugin) Status(ctx context.Context, _ *kubernetesv1.StatusRequest) (*kubernetesv1.StatusResponse, error) {
 	st, err := p.k.status(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("kubernetes: %w", err)
 	}
-	return connect.NewResponse(st), nil
+	return st, nil
 }
 
 var _ layer.Actions = (*Plugin)(nil)

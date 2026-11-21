@@ -1,11 +1,10 @@
 package console_test
 
 import (
-	"errors"
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	"github.com/trevex/chalkos/pkg/console"
 	"github.com/trevex/chalkos/pkg/console/consoletest"
@@ -37,7 +36,7 @@ func TestOverviewFailingSource(t *testing.T) {
 	tm := consoletest.Start(t, console.New(c, o))
 	consoletest.WaitFor(t, tm, "VOLUME")
 	c.Set(func(c *consoletest.Client) {
-		c.StatusErr = connect.NewError(connect.CodeDeadlineExceeded, errors.New("chronyc timed out"))
+		c.StatusErr = connect.NewError(connect.CodeDeadlineExceeded, "chronyc timed out")
 	})
 	consoletest.WaitFor(t, tm, "chronyc timed out")
 	consoletest.Snapshot(t, tm)

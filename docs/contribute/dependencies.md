@@ -41,6 +41,12 @@ a pull request with the import paths rewritten to the new major, then port the c
 branch, or open your own pull request and close Renovate's. Indirect Go modules follow from
 `go mod tidy`, which Renovate runs after each change of `go.mod`.
 
+The Connect code generator, protoc-gen-connect-go, is not a Go module of `go.mod`: the flake
+builds it from a pinned connect-go release in `nix/packages/protoc-gen-connect-go.nix`, for the
+dev shell and the `api-generated` check. When Renovate updates `connectrpc.com/connect/v2`, set
+the same version there, take `hash` and `vendorHash` from the errors of the next build, and run
+`buf generate` in the dev shell.
+
 The label `e2e` runs every end-to-end check on the pull request. The Kubernetes modules and the
 Go release change chalkd and every program in the images, and a Kubernetes release changes every
 kubelet, so their pull requests carry it from the start.

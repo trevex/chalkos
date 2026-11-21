@@ -7,15 +7,13 @@ import (
 	"os"
 	"slices"
 
-	"connectrpc.com/connect"
-
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/secureboot"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/uki"
 )
 
-func (s *Server) Info(ctx context.Context, _ *connect.Request[nodev1.InfoRequest]) (*connect.Response[nodev1.InfoResponse], error) {
+func (s *Server) Info(ctx context.Context, _ *nodev1.InfoRequest) (*nodev1.InfoResponse, error) {
 	release := readOSRelease(s.Paths.OSRelease)
 	resp := &nodev1.InfoResponse{
 		Mode:        s.Mode,
@@ -42,7 +40,7 @@ func (s *Server) Info(ctx context.Context, _ *connect.Request[nodev1.InfoRequest
 		resp.NodeName, _ = s.name()
 	}
 	resp.Hostname, _ = os.Hostname()
-	return connect.NewResponse(resp), nil
+	return resp, nil
 }
 
 func (s *Server) secureBoot() nodev1.SecureBoot {
@@ -67,7 +65,7 @@ func readOSRelease(path string) map[string]string {
 	return uki.ParseOSRelease(string(data))
 }
 
-func (s *Server) Disks(ctx context.Context, _ *connect.Request[nodev1.DisksRequest]) (*connect.Response[nodev1.DisksResponse], error) {
+func (s *Server) Disks(ctx context.Context, _ *nodev1.DisksRequest) (*nodev1.DisksResponse, error) {
 	disks, err := s.Host.Disks()
 	if err != nil {
 		return nil, fmt.Errorf("list disks: %w", err)
@@ -116,7 +114,7 @@ func (s *Server) Disks(ctx context.Context, _ *connect.Request[nodev1.DisksReque
 		}
 		resp.Disks = append(resp.Disks, disk)
 	}
-	return connect.NewResponse(resp), nil
+	return resp, nil
 }
 
 // CurrentFingerprint returns the SHA-256 of the certificate chalkd serves now, which changes

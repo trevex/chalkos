@@ -16,7 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -190,7 +191,7 @@ func refuse(procedure string, err *connect.Error) func(http.Handler) http.Handle
 				next.ServeHTTP(w, r)
 				return
 			}
-			connect.NewErrorWriter().Write(w, r, err)
+			connecthttp.NewErrorWriter().Write(w, r, err)
 		})
 	}
 }
@@ -270,7 +271,7 @@ func TestConfirmInterrupted(t *testing.T) {
 	// chalkctl is interrupted once it asks for the confirmation, which the node refuses meanwhile.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	unhealthy := refuse("ConfirmConfig", connect.NewError(connect.CodeUnavailable, errors.New("the node is not healthy: units failed: demo.service")))
+	unhealthy := refuse("ConfirmConfig", connect.NewError(connect.CodeUnavailable, "the node is not healthy: units failed: demo.service"))
 	ta.setWrap(func(next http.Handler) http.Handler {
 		h := unhealthy(next)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -291,8 +292,8 @@ func TestConfirmInterrupted(t *testing.T) {
 // the node rolls back and how to end the trial before.
 func TestConfirmRefused(t *testing.T) {
 	for _, err := range []*connect.Error{
-		connect.NewError(connect.CodeFailedPrecondition, errors.New("the trial is of config x, not y")),
-		connect.NewError(connect.CodeInternal, errors.New("end the trial: remove chalkd/trial: read-only file system")),
+		connect.NewError(connect.CodeFailedPrecondition, "the trial is of config x, not y"),
+		connect.NewError(connect.CodeInternal, "end the trial: remove chalkd/trial: read-only file system"),
 	} {
 		ta := newTestApp(t)
 		_, run, _, _ := trialNode(t, ta)

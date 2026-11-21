@@ -9,10 +9,11 @@ import (
 	"log"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/identity"
@@ -28,7 +29,7 @@ import (
 // names, with the credentials of the delivered config's Registry of its host, and checked against
 // the header as a streamed one; its contract layer gives the repart definitions, schemas and
 // layers' facts.
-func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev1.InstallRequest]) (*connect.Response[nodev1.InstallResponse], error) {
+func (s *Server) Install(ctx context.Context, stream nodev1connect.NodeServiceInstallServerStream) (*nodev1.InstallResponse, error) {
 	if !s.mu.TryLock() {
 		return nil, layer.Errorf(connect.CodeAborted, "another install is running")
 	}
@@ -144,7 +145,7 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 	s.installed = true
 	log.Print("installed; rebooting")
 	s.rebootSoon()
-	return connect.NewResponse(&nodev1.InstallResponse{}), nil
+	return &nodev1.InstallResponse{}, nil
 }
 
 // installCheck has the image an install from the installer writes, in the store st of the
@@ -188,7 +189,7 @@ func (s *Server) installPayloads(ctx context.Context, deliveries []layer.Deliver
 // host in the header's config, the only config the installer has. Before anything changes it
 // fetches the manifest, header and contract layer, and returns the contract, which the manifest's
 // digest pins. Install logs each refusal it returns.
-func (s *Server) pullInstall(ctx context.Context, stream *connect.ClientStream[nodev1.InstallRequest], h *nodev1.InstallHeader) (*ociimage.Pull, *nodev1.ImageContract, error) {
+func (s *Server) pullInstall(ctx context.Context, stream nodev1connect.NodeServiceInstallServerStream, h *nodev1.InstallHeader) (*ociimage.Pull, *nodev1.ImageContract, error) {
 	ref := h.GetSource().GetOci().GetReference()
 	img := imageHeader(h.Image)
 	if ref == "" {
@@ -235,29 +236,35 @@ type chunkMessage interface {
 	GetChunk() *nodev1.ImageChunk
 }
 
+// requests are the requests of an install's or an upgrade's stream.
+type requests[M any] interface {
+	// Receive returns the next request, or an error matching io.EOF once the client closed its
+	// side.
+	Receive() (M, error)
+}
+
 // chunks reads the image the requests after the header of stream carry.
-func chunks[T any, M interface {
-	*T
-	chunkMessage
-}](stream *connect.ClientStream[T]) io.Reader {
-	return &chunkReader{next: func() (*nodev1.ImageChunk, bool) {
-		if !stream.Receive() {
-			return nil, false
+func chunks[M chunkMessage](stream requests[M]) io.Reader {
+	return &chunkReader{next: func() (*nodev1.ImageChunk, error) {
+		msg, err := stream.Receive()
+		if err != nil {
+			return nil, err
 		}
-		return M(stream.Msg()).GetChunk(), true
-	}, err: stream.Err}
+		return msg.GetChunk(), nil
+	}}
 }
 
 // readHeader reads the first message of an install or upgrade (what), which must carry its header.
-func readHeader[T any, H comparable](stream *connect.ClientStream[T], get func(*T) H, what string) (H, error) {
+func readHeader[M any, H comparable](stream requests[M], get func(M) H, what string) (H, error) {
 	var none H
-	if !stream.Receive() {
-		if err := stream.Err(); err != nil {
-			return none, err
-		}
+	msg, err := stream.Receive()
+	if errors.Is(err, io.EOF) {
 		return none, layer.Errorf(connect.CodeInvalidArgument, "the %s request has no header", what)
 	}
-	h := get(stream.Msg())
+	if err != nil {
+		return none, err
+	}
+	h := get(msg)
 	if h == none {
 		return none, layer.Errorf(connect.CodeInvalidArgument, "the first %s message must be the header", what)
 	}
@@ -275,29 +282,32 @@ func logWarnings(rootHash []byte, warnings []string) {
 // noChunks refuses any request after the header: an install or upgrade (what) that pulls its
 // image from a registry gets no chunks from the client. Receive returns once the client closed its
 // side.
-func noChunks[T any](stream *connect.ClientStream[T], what string) error {
-	if stream.Receive() {
+func noChunks[M any](stream requests[M], what string) error {
+	_, err := stream.Receive()
+	switch {
+	case err == nil:
 		return layer.Errorf(connect.CodeInvalidArgument, "%s that pulls its image carries no chunks", what)
+	case errors.Is(err, io.EOF):
+		return nil
 	}
-	return stream.Err()
+	return err
 }
 
 // chunkReader reads an image from the chunks that follow a header: next returns the next message's
-// chunk, nil when the message is no chunk, and false at the stream's end, when err says why.
+// chunk, nil when the message is no chunk, and an error matching io.EOF at the stream's end.
 type chunkReader struct {
-	next func() (*nodev1.ImageChunk, bool)
-	err  func() error
+	next func() (*nodev1.ImageChunk, error)
 	buf  []byte
 }
 
 func (r *chunkReader) Read(p []byte) (int, error) {
 	for len(r.buf) == 0 {
-		chunk, ok := r.next()
-		if !ok {
-			if err := r.err(); err != nil {
-				return 0, err
-			}
+		chunk, err := r.next()
+		if errors.Is(err, io.EOF) {
 			return 0, io.EOF
+		}
+		if err != nil {
+			return 0, err
 		}
 		if chunk == nil {
 			return 0, errors.New("a second header follows the image")

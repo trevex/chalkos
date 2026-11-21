@@ -8,97 +8,226 @@
 package nodev1connect
 
 import (
-	connect "connectrpc.com/connect"
+	connect "connectrpc.com/connect/v2"
 	context "context"
-	errors "errors"
 	v1 "github.com/trevex/chalkos/pkg/api/node/v1"
-	http "net/http"
-	strings "strings"
+	sync "sync"
 )
-
-// This is a compile-time assertion to ensure that this generated file and the connect package are
-// compatible. If you get a compiler error that this constant is not defined, this code was
-// generated with a version of connect newer than the one compiled into your binary. You can fix the
-// problem by either regenerating this code with an older version of connect or updating the connect
-// version compiled into your binary.
-const _ = connect.IsAtLeastVersion1_13_0
 
 const (
 	// NodeServiceName is the fully-qualified name of the NodeService service.
 	NodeServiceName = "chalkos.node.v1.NodeService"
 )
 
-// These constants are the fully-qualified names of the RPCs defined in this package. They're
-// exposed at runtime as Spec.Procedure and as the final two segments of the HTTP route.
+// These constants are the procedure names of the RPCs defined in this package. They're exposed at
+// runtime as Spec.Procedure and as the final two segments of the HTTP route.
 //
 // Note that these are different from the fully-qualified method names used by
 // google.golang.org/protobuf/reflect/protoreflect. To convert from these constants to
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// NodeServiceInfoProcedure is the fully-qualified name of the NodeService's Info RPC.
+	// NodeServiceInfoProcedure is the procedure name of the NodeService's Info RPC.
 	NodeServiceInfoProcedure = "/chalkos.node.v1.NodeService/Info"
-	// NodeServiceDisksProcedure is the fully-qualified name of the NodeService's Disks RPC.
+	// NodeServiceDisksProcedure is the procedure name of the NodeService's Disks RPC.
 	NodeServiceDisksProcedure = "/chalkos.node.v1.NodeService/Disks"
-	// NodeServiceContractProcedure is the fully-qualified name of the NodeService's Contract RPC.
+	// NodeServiceContractProcedure is the procedure name of the NodeService's Contract RPC.
 	NodeServiceContractProcedure = "/chalkos.node.v1.NodeService/Contract"
-	// NodeServiceInstallProcedure is the fully-qualified name of the NodeService's Install RPC.
+	// NodeServiceInstallProcedure is the procedure name of the NodeService's Install RPC.
 	NodeServiceInstallProcedure = "/chalkos.node.v1.NodeService/Install"
-	// NodeServiceApplyConfigProcedure is the fully-qualified name of the NodeService's ApplyConfig RPC.
+	// NodeServiceApplyConfigProcedure is the procedure name of the NodeService's ApplyConfig RPC.
 	NodeServiceApplyConfigProcedure = "/chalkos.node.v1.NodeService/ApplyConfig"
-	// NodeServiceGetConfigProcedure is the fully-qualified name of the NodeService's GetConfig RPC.
+	// NodeServiceGetConfigProcedure is the procedure name of the NodeService's GetConfig RPC.
 	NodeServiceGetConfigProcedure = "/chalkos.node.v1.NodeService/GetConfig"
-	// NodeServiceResetVolumeProcedure is the fully-qualified name of the NodeService's ResetVolume RPC.
+	// NodeServiceResetVolumeProcedure is the procedure name of the NodeService's ResetVolume RPC.
 	NodeServiceResetVolumeProcedure = "/chalkos.node.v1.NodeService/ResetVolume"
-	// NodeServiceStatusProcedure is the fully-qualified name of the NodeService's Status RPC.
+	// NodeServiceStatusProcedure is the procedure name of the NodeService's Status RPC.
 	NodeServiceStatusProcedure = "/chalkos.node.v1.NodeService/Status"
-	// NodeServiceLogsProcedure is the fully-qualified name of the NodeService's Logs RPC.
+	// NodeServiceLogsProcedure is the procedure name of the NodeService's Logs RPC.
 	NodeServiceLogsProcedure = "/chalkos.node.v1.NodeService/Logs"
-	// NodeServiceRebootProcedure is the fully-qualified name of the NodeService's Reboot RPC.
+	// NodeServiceRebootProcedure is the procedure name of the NodeService's Reboot RPC.
 	NodeServiceRebootProcedure = "/chalkos.node.v1.NodeService/Reboot"
-	// NodeServiceUpgradeProcedure is the fully-qualified name of the NodeService's Upgrade RPC.
+	// NodeServiceUpgradeProcedure is the procedure name of the NodeService's Upgrade RPC.
 	NodeServiceUpgradeProcedure = "/chalkos.node.v1.NodeService/Upgrade"
-	// NodeServiceActivateImageProcedure is the fully-qualified name of the NodeService's ActivateImage
-	// RPC.
+	// NodeServiceActivateImageProcedure is the procedure name of the NodeService's ActivateImage RPC.
 	NodeServiceActivateImageProcedure = "/chalkos.node.v1.NodeService/ActivateImage"
-	// NodeServiceDiagnosticsProcedure is the fully-qualified name of the NodeService's Diagnostics RPC.
+	// NodeServiceDiagnosticsProcedure is the procedure name of the NodeService's Diagnostics RPC.
 	NodeServiceDiagnosticsProcedure = "/chalkos.node.v1.NodeService/Diagnostics"
-	// NodeServiceRunDiagnosticProcedure is the fully-qualified name of the NodeService's RunDiagnostic
-	// RPC.
+	// NodeServiceRunDiagnosticProcedure is the procedure name of the NodeService's RunDiagnostic RPC.
 	NodeServiceRunDiagnosticProcedure = "/chalkos.node.v1.NodeService/RunDiagnostic"
-	// NodeServiceRollbackConfigProcedure is the fully-qualified name of the NodeService's
-	// RollbackConfig RPC.
+	// NodeServiceRollbackConfigProcedure is the procedure name of the NodeService's RollbackConfig RPC.
 	NodeServiceRollbackConfigProcedure = "/chalkos.node.v1.NodeService/RollbackConfig"
-	// NodeServiceRollbackImageProcedure is the fully-qualified name of the NodeService's RollbackImage
-	// RPC.
+	// NodeServiceRollbackImageProcedure is the procedure name of the NodeService's RollbackImage RPC.
 	NodeServiceRollbackImageProcedure = "/chalkos.node.v1.NodeService/RollbackImage"
-	// NodeServiceConfirmConfigProcedure is the fully-qualified name of the NodeService's ConfirmConfig
-	// RPC.
+	// NodeServiceConfirmConfigProcedure is the procedure name of the NodeService's ConfirmConfig RPC.
 	NodeServiceConfirmConfigProcedure = "/chalkos.node.v1.NodeService/ConfirmConfig"
-	// NodeServiceEnrollSecureBootProcedure is the fully-qualified name of the NodeService's
-	// EnrollSecureBoot RPC.
+	// NodeServiceEnrollSecureBootProcedure is the procedure name of the NodeService's EnrollSecureBoot
+	// RPC.
 	NodeServiceEnrollSecureBootProcedure = "/chalkos.node.v1.NodeService/EnrollSecureBoot"
-	// NodeServiceSecureBootDriversProcedure is the fully-qualified name of the NodeService's
+	// NodeServiceSecureBootDriversProcedure is the procedure name of the NodeService's
 	// SecureBootDrivers RPC.
 	NodeServiceSecureBootDriversProcedure = "/chalkos.node.v1.NodeService/SecureBootDrivers"
-	// NodeServiceShutdownProcedure is the fully-qualified name of the NodeService's Shutdown RPC.
+	// NodeServiceShutdownProcedure is the procedure name of the NodeService's Shutdown RPC.
 	NodeServiceShutdownProcedure = "/chalkos.node.v1.NodeService/Shutdown"
+)
+
+var (
+	nodeServiceInfoSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_chalkos_node_v1_node_proto.Services().ByName("NodeService").Methods().ByName("Info"),
+			Procedure:  NodeServiceInfoProcedure,
+		}
+	})
+	nodeServiceDisksSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_chalkos_node_v1_node_proto.Services().ByName("NodeService").Methods().ByName("Disks"),
+			Procedure:  NodeServiceDisksProcedure,
+		}
+	})
+	nodeServiceContractSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_chalkos_node_v1_node_proto.Services().ByName("NodeService").Methods().ByName("Contract"),
+			Procedure:  NodeServiceContractProcedure,
+		}
+	})
+	nodeServiceInstallSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeClient,
+			Schema:     v1.File_chalkos_node_v1_node_proto.Services().ByName("NodeService").Methods().ByName("Install"),
+			Procedure:  NodeServiceInstallProcedure,
+		}
+	})
+	nodeServiceApplyConfigSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_chalkos_node_v1_node_proto.Services().ByName("NodeService").Methods().ByName("ApplyConfig"),
+			Procedure:  NodeServiceApplyConfigProcedure,
+		}
+	})
+	nodeServiceGetConfigSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_chalkos_node_v1_node_proto.Services().ByName("NodeService").Methods().ByName("GetConfig"),
+			Procedure:  NodeServiceGetConfigProcedure,
+		}
+	})
+	nodeServiceResetVolumeSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_chalkos_node_v1_node_proto.Services().ByName("NodeService").Methods().ByName("ResetVolume"),
+			Procedure:  NodeServiceResetVolumeProcedure,
+		}
+	})
+	nodeServiceStatusSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_chalkos_node_v1_node_proto.Services().ByName("NodeService").Methods().ByName("Status"),
+			Procedure:  NodeServiceStatusProcedure,
+		}
+	})
+	nodeServiceLogsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeServer,
+			Schema:     v1.File_chalkos_node_v1_node_proto.Services().ByName("NodeService").Methods().ByName("Logs"),
+			Procedure:  NodeServiceLogsProcedure,
+		}
+	})
+	nodeServiceRebootSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_chalkos_node_v1_node_proto.Services().ByName("NodeService").Methods().ByName("Reboot"),
+			Procedure:  NodeServiceRebootProcedure,
+		}
+	})
+	nodeServiceUpgradeSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeClient,
+			Schema:     v1.File_chalkos_node_v1_node_proto.Services().ByName("NodeService").Methods().ByName("Upgrade"),
+			Procedure:  NodeServiceUpgradeProcedure,
+		}
+	})
+	nodeServiceActivateImageSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_chalkos_node_v1_node_proto.Services().ByName("NodeService").Methods().ByName("ActivateImage"),
+			Procedure:  NodeServiceActivateImageProcedure,
+		}
+	})
+	nodeServiceDiagnosticsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_chalkos_node_v1_node_proto.Services().ByName("NodeService").Methods().ByName("Diagnostics"),
+			Procedure:  NodeServiceDiagnosticsProcedure,
+		}
+	})
+	nodeServiceRunDiagnosticSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeServer,
+			Schema:     v1.File_chalkos_node_v1_node_proto.Services().ByName("NodeService").Methods().ByName("RunDiagnostic"),
+			Procedure:  NodeServiceRunDiagnosticProcedure,
+		}
+	})
+	nodeServiceRollbackConfigSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_chalkos_node_v1_node_proto.Services().ByName("NodeService").Methods().ByName("RollbackConfig"),
+			Procedure:  NodeServiceRollbackConfigProcedure,
+		}
+	})
+	nodeServiceRollbackImageSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_chalkos_node_v1_node_proto.Services().ByName("NodeService").Methods().ByName("RollbackImage"),
+			Procedure:  NodeServiceRollbackImageProcedure,
+		}
+	})
+	nodeServiceConfirmConfigSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_chalkos_node_v1_node_proto.Services().ByName("NodeService").Methods().ByName("ConfirmConfig"),
+			Procedure:  NodeServiceConfirmConfigProcedure,
+		}
+	})
+	nodeServiceEnrollSecureBootSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_chalkos_node_v1_node_proto.Services().ByName("NodeService").Methods().ByName("EnrollSecureBoot"),
+			Procedure:  NodeServiceEnrollSecureBootProcedure,
+		}
+	})
+	nodeServiceSecureBootDriversSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_chalkos_node_v1_node_proto.Services().ByName("NodeService").Methods().ByName("SecureBootDrivers"),
+			Procedure:  NodeServiceSecureBootDriversProcedure,
+		}
+	})
+	nodeServiceShutdownSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_chalkos_node_v1_node_proto.Services().ByName("NodeService").Methods().ByName("Shutdown"),
+			Procedure:  NodeServiceShutdownProcedure,
+		}
+	})
 )
 
 // NodeServiceClient is a client for the chalkos.node.v1.NodeService service.
 type NodeServiceClient interface {
 	// Info describes the node and the agent. Available in maintenance and normal mode to readers.
 	// The console may call it.
-	Info(context.Context, *connect.Request[v1.InfoRequest]) (*connect.Response[v1.InfoResponse], error)
+	Info(context.Context, *v1.InfoRequest) (*v1.InfoResponse, error)
 	// Disks lists the node's disks and their partitions. Available in maintenance and normal mode to
 	// readers. The console may call it.
-	Disks(context.Context, *connect.Request[v1.DisksRequest]) (*connect.Response[v1.DisksResponse], error)
+	Disks(context.Context, *v1.DisksRequest) (*v1.DisksResponse, error)
 	// Contract returns the config contract of the image the node runs: its name and the platform it
 	// was built for, its layers, the schemas of the config kinds it accepts and its layers' facts,
 	// such as the Kubernetes image.json, which chalkctl checks config against before it delivers
 	// it. The installer refuses it: config is for the image it installs, whose contract comes with
 	// that image. Available in maintenance and normal mode to readers.
-	Contract(context.Context, *connect.Request[v1.ContractRequest]) (*connect.Response[v1.ContractResponse], error)
+	Contract(context.Context, *v1.ContractRequest) (*v1.ContractResponse, error)
 	// Install turns a node in maintenance mode into an installed node and reboots it. The first
 	// message carries the header; when the node is the installer, the image's store data, hash
 	// tree, UKI and boot loader follow as chunks, unless the header's source names an image in a
@@ -107,7 +236,7 @@ type NodeServiceClient interface {
 	// loader; a refusal fails the precondition and leaves a target that boots nothing. An install
 	// the installer did not finish continues when run again, from either. Available in maintenance
 	// mode to admins.
-	Install(context.Context) *connect.ClientStreamForClient[v1.InstallRequest, v1.InstallResponse]
+	Install(context.Context) (NodeServiceInstallClientStream, error)
 	// ApplyConfig replaces the config of an installed node, or delivers it payloads of its layers,
 	// such as a Kubernetes share, a node certificate or OS CAs. Destructive storage changes are
 	// refused; additive ones are applied live. With try, the config is on trial: the node rolls it
@@ -122,25 +251,25 @@ type NodeServiceClient interface {
 	// Config for the running image goes to the image staged in the inactive slot too, or replaces
 	// the pending config, as ApplyConfigRequest.config describes. Available in normal mode to
 	// admins.
-	ApplyConfig(context.Context, *connect.Request[v1.ApplyConfigRequest]) (*connect.Response[v1.ApplyConfigResponse], error)
+	ApplyConfig(context.Context, *v1.ApplyConfigRequest) (*v1.ApplyConfigResponse, error)
 	// GetConfig returns the config a slot keeps, the running image's, its previous one or the staged
 	// image's, as it was delivered, with secret values replaced by their hashes. Available in normal
 	// mode to admins.
-	GetConfig(context.Context, *connect.Request[v1.GetConfigRequest]) (*connect.Response[v1.GetConfigResponse], error)
+	GetConfig(context.Context, *v1.GetConfigRequest) (*v1.GetConfigResponse, error)
 	// ResetVolume wipes one volume and creates it again as the delivered config defines it. It
 	// refuses VAR, a volume the config no longer has and a volume the config moves to another
 	// disk. Available in normal mode to admins.
-	ResetVolume(context.Context, *connect.Request[v1.ResetVolumeRequest]) (*connect.Response[v1.ResetVolumeResponse], error)
+	ResetVolume(context.Context, *v1.ResetVolumeRequest) (*v1.ResetVolumeResponse, error)
 	// Status reports the state of an installed node: its config versions, storage, failed units,
 	// certificates, trust, clock, boot and outputs; each layer's own state is its service's Status.
 	// Available in normal mode to readers. The console may call it.
-	Status(context.Context, *connect.Request[v1.StatusRequest]) (*connect.Response[v1.StatusResponse], error)
+	Status(context.Context, *v1.StatusRequest) (*v1.StatusResponse, error)
 	// Logs streams the journal of the current boot, or of one unit in it. Available in maintenance
 	// and normal mode to readers. The console may call it.
-	Logs(context.Context, *connect.Request[v1.LogsRequest]) (*connect.ServerStreamForClient[v1.LogsResponse], error)
+	Logs(context.Context, *v1.LogsRequest) (NodeServiceLogsClientStream, error)
 	// Reboot reboots the node once the response is sent. Available in maintenance and normal mode
 	// to operators. The console may call it while the image allows the console's actions.
-	Reboot(context.Context, *connect.Request[v1.RebootRequest]) (*connect.Response[v1.RebootResponse], error)
+	Reboot(context.Context, *v1.RebootRequest) (*v1.RebootResponse, error)
 	// Upgrade installs a new image into the node's inactive slot and stages it there, then activates
 	// it as ActivateImage does, so it boots next, counting the image's boot tries until a boot is
 	// found healthy, and reboots the node when asked to. With the header's stage_only it stops once
@@ -154,7 +283,7 @@ type NodeServiceClient interface {
 	// image is one to trust: without Secure Boot, an operator can run any image as root, with STATE
 	// and VAR unsealed, as their keys are sealed to PCR 7 alone. Secure Boot is what limits upgrades
 	// to images signed for db.
-	Upgrade(context.Context) *connect.ClientStreamForClient[v1.UpgradeRequest, v1.UpgradeResponse]
+	Upgrade(context.Context) (NodeServiceUpgradeClientStream, error)
 	// ActivateImage makes the image staged in the node's inactive slot boot next: it gives the
 	// image's UKI its boot entry's name, one generation above the others, with the tries the UKI
 	// asks for, so boot counting falls back to the running image should its boots fail. It checks
@@ -166,11 +295,11 @@ type NodeServiceClient interface {
 	// root hash, and when STATE keeps no config slot of the image. An activation that fails leaves
 	// the UKI under its staged name, and the node keeps booting the running image. Available in
 	// normal mode to operators.
-	ActivateImage(context.Context, *connect.Request[v1.ActivateImageRequest]) (*connect.Response[v1.ActivateImageResponse], error)
+	ActivateImage(context.Context, *v1.ActivateImageRequest) (*v1.ActivateImageResponse, error)
 	// Diagnostics lists the diagnostics the image declares: read-only commands of the image, such as
 	// ip route get, that RunDiagnostic runs. Available in maintenance and normal mode to readers.
 	// The console may call it.
-	Diagnostics(context.Context, *connect.Request[v1.DiagnosticsRequest]) (*connect.Response[v1.DiagnosticsResponse], error)
+	Diagnostics(context.Context, *v1.DiagnosticsRequest) (*v1.DiagnosticsResponse, error)
 	// RunDiagnostic runs one of the image's diagnostics with the arguments given and streams what
 	// its command prints on standard output and standard error, then how it ended. It is refused
 	// with PERMISSION_DENIED unless the caller also has the diagnostic's own role, and with
@@ -180,7 +309,7 @@ type NodeServiceClient interface {
 	// names, for at most its timeout, and stops a command that prints more than 1 MiB. Four run at
 	// a time. The console runs the diagnostics of readers and operators. Available in maintenance
 	// and normal mode to readers. The console may call it.
-	RunDiagnostic(context.Context, *connect.Request[v1.RunDiagnosticRequest]) (*connect.ServerStreamForClient[v1.RunDiagnosticResponse], error)
+	RunDiagnostic(context.Context, *v1.RunDiagnosticRequest) (NodeServiceRunDiagnosticClientStream, error)
 	// RollbackConfig delivers the running image's previous config again: the config the image ran
 	// before the delivery that replaced it, which the node keeps until the next delivery replaces
 	// it in turn. It goes through ApplyConfig's checks and steps: the image's change rules compared
@@ -198,7 +327,7 @@ type NodeServiceClient interface {
 	// trial, previous_config_version is the config on trial, and config_version is the version that
 	// finishes the rollback. Available in normal mode to admins. The console may call it while the
 	// image allows the console's actions.
-	RollbackConfig(context.Context, *connect.Request[v1.RollbackConfigRequest]) (*connect.Response[v1.RollbackConfigResponse], error)
+	RollbackConfig(context.Context, *v1.RollbackConfigRequest) (*v1.RollbackConfigResponse, error)
 	// RollbackImage makes the previous image boot next again: the image an upgrade replaced, whose
 	// store the inactive slot still holds, whose UKI is on the ESP and whose config slot STATE
 	// keeps, until the next upgrade writes the slot. The node writes no store: it checks the image's
@@ -209,7 +338,7 @@ type NodeServiceClient interface {
 	// reboots into it when asked to. Refused with FAILED_PRECONDITION when the node keeps no
 	// previous image, as while an upgrade's image is staged. Available in normal mode to operators.
 	// The console may call it while the image allows the console's actions.
-	RollbackImage(context.Context, *connect.Request[v1.RollbackImageRequest]) (*connect.Response[v1.RollbackImageResponse], error)
+	RollbackImage(context.Context, *v1.RollbackImageRequest) (*v1.RollbackImageResponse, error)
 	// ConfirmConfig ends the trial of a config that ApplyConfig delivered with try, and the node keeps
 	// the config from then on. The node must be healthy as the health check of a boot finds it:
 	// chalkd serves, no unit of the boot failed but those the image ignores, and the image's layers
@@ -226,7 +355,7 @@ type NodeServiceClient interface {
 	// A confirmation also writes what the trial's delivery held back until then: the config slot of
 	// the image staged in the inactive slot, or the pending config the config on trial replaces.
 	// Available in normal mode to admins.
-	ConfirmConfig(context.Context, *connect.Request[v1.ConfirmConfigRequest]) (*connect.Response[v1.ConfirmConfigResponse], error)
+	ConfirmConfig(context.Context, *v1.ConfirmConfigRequest) (*v1.ConfirmConfigResponse, error)
 	// EnrollSecureBoot writes Secure Boot keys into firmware in Setup Mode, as signed updates of its
 	// variables that the client made: it appends to db, then to KEK, and writes PK last, which ends
 	// Setup Mode. It refuses firmware that is not in Setup Mode, and updates that do not write
@@ -238,291 +367,138 @@ type NodeServiceClient interface {
 	// dbx would revoke them. A node that runs from its own disk recreates STATE on its next boot,
 	// as the TPM no longer unseals it once the keys change PCR 7. Once the keys are written, the
 	// node answers and reboots. Available in maintenance mode to admins.
-	EnrollSecureBoot(context.Context, *connect.Request[v1.EnrollSecureBootRequest]) (*connect.Response[v1.EnrollSecureBootResponse], error)
+	EnrollSecureBoot(context.Context, *v1.EnrollSecureBootRequest) (*v1.EnrollSecureBootResponse, error)
 	// SecureBootDrivers lists the UEFI drivers the firmware loaded from outside its own firmware,
 	// as a rule the option ROMs of graphics and network cards, as the TPM event log records their
 	// measurements into PCR 2: the SHA-256 Authenticode digest of each, which db holds to allow it
 	// under Secure Boot, and where the firmware found it. Available in maintenance mode to
 	// readers.
-	SecureBootDrivers(context.Context, *connect.Request[v1.SecureBootDriversRequest]) (*connect.Response[v1.SecureBootDriversResponse], error)
+	SecureBootDrivers(context.Context, *v1.SecureBootDriversRequest) (*v1.SecureBootDriversResponse, error)
 	// Shutdown powers the node off once the response is sent, as Reboot reboots it. Available in
 	// maintenance and normal mode to operators. The console may call it while the image allows the
 	// console's actions.
-	Shutdown(context.Context, *connect.Request[v1.ShutdownRequest]) (*connect.Response[v1.ShutdownResponse], error)
+	Shutdown(context.Context, *v1.ShutdownRequest) (*v1.ShutdownResponse, error)
 }
 
-// NewNodeServiceClient constructs a client for the chalkos.node.v1.NodeService service. By default,
-// it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and
-// sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC()
-// or connect.WithGRPCWeb() options.
-//
-// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
-// http://api.acme.com or https://acme.com/grpc).
-func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) NodeServiceClient {
-	baseURL = strings.TrimRight(baseURL, "/")
-	nodeServiceMethods := v1.File_chalkos_node_v1_node_proto.Services().ByName("NodeService").Methods()
-	return &nodeServiceClient{
-		info: connect.NewClient[v1.InfoRequest, v1.InfoResponse](
-			httpClient,
-			baseURL+NodeServiceInfoProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("Info")),
-			connect.WithClientOptions(opts...),
-		),
-		disks: connect.NewClient[v1.DisksRequest, v1.DisksResponse](
-			httpClient,
-			baseURL+NodeServiceDisksProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("Disks")),
-			connect.WithClientOptions(opts...),
-		),
-		contract: connect.NewClient[v1.ContractRequest, v1.ContractResponse](
-			httpClient,
-			baseURL+NodeServiceContractProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("Contract")),
-			connect.WithClientOptions(opts...),
-		),
-		install: connect.NewClient[v1.InstallRequest, v1.InstallResponse](
-			httpClient,
-			baseURL+NodeServiceInstallProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("Install")),
-			connect.WithClientOptions(opts...),
-		),
-		applyConfig: connect.NewClient[v1.ApplyConfigRequest, v1.ApplyConfigResponse](
-			httpClient,
-			baseURL+NodeServiceApplyConfigProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("ApplyConfig")),
-			connect.WithClientOptions(opts...),
-		),
-		getConfig: connect.NewClient[v1.GetConfigRequest, v1.GetConfigResponse](
-			httpClient,
-			baseURL+NodeServiceGetConfigProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("GetConfig")),
-			connect.WithClientOptions(opts...),
-		),
-		resetVolume: connect.NewClient[v1.ResetVolumeRequest, v1.ResetVolumeResponse](
-			httpClient,
-			baseURL+NodeServiceResetVolumeProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("ResetVolume")),
-			connect.WithClientOptions(opts...),
-		),
-		status: connect.NewClient[v1.StatusRequest, v1.StatusResponse](
-			httpClient,
-			baseURL+NodeServiceStatusProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("Status")),
-			connect.WithClientOptions(opts...),
-		),
-		logs: connect.NewClient[v1.LogsRequest, v1.LogsResponse](
-			httpClient,
-			baseURL+NodeServiceLogsProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("Logs")),
-			connect.WithClientOptions(opts...),
-		),
-		reboot: connect.NewClient[v1.RebootRequest, v1.RebootResponse](
-			httpClient,
-			baseURL+NodeServiceRebootProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("Reboot")),
-			connect.WithClientOptions(opts...),
-		),
-		upgrade: connect.NewClient[v1.UpgradeRequest, v1.UpgradeResponse](
-			httpClient,
-			baseURL+NodeServiceUpgradeProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("Upgrade")),
-			connect.WithClientOptions(opts...),
-		),
-		activateImage: connect.NewClient[v1.ActivateImageRequest, v1.ActivateImageResponse](
-			httpClient,
-			baseURL+NodeServiceActivateImageProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("ActivateImage")),
-			connect.WithClientOptions(opts...),
-		),
-		diagnostics: connect.NewClient[v1.DiagnosticsRequest, v1.DiagnosticsResponse](
-			httpClient,
-			baseURL+NodeServiceDiagnosticsProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("Diagnostics")),
-			connect.WithClientOptions(opts...),
-		),
-		runDiagnostic: connect.NewClient[v1.RunDiagnosticRequest, v1.RunDiagnosticResponse](
-			httpClient,
-			baseURL+NodeServiceRunDiagnosticProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("RunDiagnostic")),
-			connect.WithClientOptions(opts...),
-		),
-		rollbackConfig: connect.NewClient[v1.RollbackConfigRequest, v1.RollbackConfigResponse](
-			httpClient,
-			baseURL+NodeServiceRollbackConfigProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("RollbackConfig")),
-			connect.WithClientOptions(opts...),
-		),
-		rollbackImage: connect.NewClient[v1.RollbackImageRequest, v1.RollbackImageResponse](
-			httpClient,
-			baseURL+NodeServiceRollbackImageProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("RollbackImage")),
-			connect.WithClientOptions(opts...),
-		),
-		confirmConfig: connect.NewClient[v1.ConfirmConfigRequest, v1.ConfirmConfigResponse](
-			httpClient,
-			baseURL+NodeServiceConfirmConfigProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("ConfirmConfig")),
-			connect.WithClientOptions(opts...),
-		),
-		enrollSecureBoot: connect.NewClient[v1.EnrollSecureBootRequest, v1.EnrollSecureBootResponse](
-			httpClient,
-			baseURL+NodeServiceEnrollSecureBootProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("EnrollSecureBoot")),
-			connect.WithClientOptions(opts...),
-		),
-		secureBootDrivers: connect.NewClient[v1.SecureBootDriversRequest, v1.SecureBootDriversResponse](
-			httpClient,
-			baseURL+NodeServiceSecureBootDriversProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("SecureBootDrivers")),
-			connect.WithClientOptions(opts...),
-		),
-		shutdown: connect.NewClient[v1.ShutdownRequest, v1.ShutdownResponse](
-			httpClient,
-			baseURL+NodeServiceShutdownProcedure,
-			connect.WithSchema(nodeServiceMethods.ByName("Shutdown")),
-			connect.WithClientOptions(opts...),
-		),
+// NewNodeServiceClient constructs a client for the chalkos.node.v1.NodeService service. Multiple
+// service clients may share a single connect.Client.
+func NewNodeServiceClient(client *connect.Client) NodeServiceClient {
+	return &nodeServiceClient{client: client}
+}
+
+// NodeServiceInstallClientStream is the client stream for the NodeService's Install RPC.
+type NodeServiceInstallClientStream struct {
+	stream connect.ClientStream
+}
+
+// SendHeaders opens the stream and flushes the request headers without a message. The first Send or
+// Receive does this implicitly.
+func (s NodeServiceInstallClientStream) SendHeaders() error {
+	return s.stream.SendHeaders()
+}
+
+// Send sends a request message to the server.
+func (s NodeServiceInstallClientStream) Send(req *v1.InstallRequest) error {
+	return s.stream.Send(req)
+}
+
+// CloseAndReceive closes the request side of the stream and returns the single response message. It
+// reads the stream to completion to release its resources.
+func (s NodeServiceInstallClientStream) CloseAndReceive() (*v1.InstallResponse, error) {
+	if err := s.stream.CloseSend(); err != nil {
+		return nil, err
 	}
+	var res v1.InstallResponse
+	if err := s.stream.Receive(&res); err != nil {
+		return nil, err
+	}
+	return &res, nil
 }
 
-// nodeServiceClient implements NodeServiceClient.
-type nodeServiceClient struct {
-	info              *connect.Client[v1.InfoRequest, v1.InfoResponse]
-	disks             *connect.Client[v1.DisksRequest, v1.DisksResponse]
-	contract          *connect.Client[v1.ContractRequest, v1.ContractResponse]
-	install           *connect.Client[v1.InstallRequest, v1.InstallResponse]
-	applyConfig       *connect.Client[v1.ApplyConfigRequest, v1.ApplyConfigResponse]
-	getConfig         *connect.Client[v1.GetConfigRequest, v1.GetConfigResponse]
-	resetVolume       *connect.Client[v1.ResetVolumeRequest, v1.ResetVolumeResponse]
-	status            *connect.Client[v1.StatusRequest, v1.StatusResponse]
-	logs              *connect.Client[v1.LogsRequest, v1.LogsResponse]
-	reboot            *connect.Client[v1.RebootRequest, v1.RebootResponse]
-	upgrade           *connect.Client[v1.UpgradeRequest, v1.UpgradeResponse]
-	activateImage     *connect.Client[v1.ActivateImageRequest, v1.ActivateImageResponse]
-	diagnostics       *connect.Client[v1.DiagnosticsRequest, v1.DiagnosticsResponse]
-	runDiagnostic     *connect.Client[v1.RunDiagnosticRequest, v1.RunDiagnosticResponse]
-	rollbackConfig    *connect.Client[v1.RollbackConfigRequest, v1.RollbackConfigResponse]
-	rollbackImage     *connect.Client[v1.RollbackImageRequest, v1.RollbackImageResponse]
-	confirmConfig     *connect.Client[v1.ConfirmConfigRequest, v1.ConfirmConfigResponse]
-	enrollSecureBoot  *connect.Client[v1.EnrollSecureBootRequest, v1.EnrollSecureBootResponse]
-	secureBootDrivers *connect.Client[v1.SecureBootDriversRequest, v1.SecureBootDriversResponse]
-	shutdown          *connect.Client[v1.ShutdownRequest, v1.ShutdownResponse]
+// NodeServiceLogsClientStream is the client stream for the NodeService's Logs RPC.
+type NodeServiceLogsClientStream struct {
+	stream connect.ClientStream
 }
 
-// Info calls chalkos.node.v1.NodeService.Info.
-func (c *nodeServiceClient) Info(ctx context.Context, req *connect.Request[v1.InfoRequest]) (*connect.Response[v1.InfoResponse], error) {
-	return c.info.CallUnary(ctx, req)
+// Receive returns the next response message from the server.
+func (s NodeServiceLogsClientStream) Receive() (*v1.LogsResponse, error) {
+	var res v1.LogsResponse
+	if err := s.stream.Receive(&res); err != nil {
+		return nil, err
+	}
+	return &res, nil
 }
 
-// Disks calls chalkos.node.v1.NodeService.Disks.
-func (c *nodeServiceClient) Disks(ctx context.Context, req *connect.Request[v1.DisksRequest]) (*connect.Response[v1.DisksResponse], error) {
-	return c.disks.CallUnary(ctx, req)
+// Close releases the stream's resources. It is idempotent and is typically deferred to clean up a
+// stream abandoned before io.EOF.
+func (s NodeServiceLogsClientStream) Close() error {
+	return s.stream.Close()
 }
 
-// Contract calls chalkos.node.v1.NodeService.Contract.
-func (c *nodeServiceClient) Contract(ctx context.Context, req *connect.Request[v1.ContractRequest]) (*connect.Response[v1.ContractResponse], error) {
-	return c.contract.CallUnary(ctx, req)
+// NodeServiceUpgradeClientStream is the client stream for the NodeService's Upgrade RPC.
+type NodeServiceUpgradeClientStream struct {
+	stream connect.ClientStream
 }
 
-// Install calls chalkos.node.v1.NodeService.Install.
-func (c *nodeServiceClient) Install(ctx context.Context) *connect.ClientStreamForClient[v1.InstallRequest, v1.InstallResponse] {
-	return c.install.CallClientStream(ctx)
+// SendHeaders opens the stream and flushes the request headers without a message. The first Send or
+// Receive does this implicitly.
+func (s NodeServiceUpgradeClientStream) SendHeaders() error {
+	return s.stream.SendHeaders()
 }
 
-// ApplyConfig calls chalkos.node.v1.NodeService.ApplyConfig.
-func (c *nodeServiceClient) ApplyConfig(ctx context.Context, req *connect.Request[v1.ApplyConfigRequest]) (*connect.Response[v1.ApplyConfigResponse], error) {
-	return c.applyConfig.CallUnary(ctx, req)
+// Send sends a request message to the server.
+func (s NodeServiceUpgradeClientStream) Send(req *v1.UpgradeRequest) error {
+	return s.stream.Send(req)
 }
 
-// GetConfig calls chalkos.node.v1.NodeService.GetConfig.
-func (c *nodeServiceClient) GetConfig(ctx context.Context, req *connect.Request[v1.GetConfigRequest]) (*connect.Response[v1.GetConfigResponse], error) {
-	return c.getConfig.CallUnary(ctx, req)
+// CloseAndReceive closes the request side of the stream and returns the single response message. It
+// reads the stream to completion to release its resources.
+func (s NodeServiceUpgradeClientStream) CloseAndReceive() (*v1.UpgradeResponse, error) {
+	if err := s.stream.CloseSend(); err != nil {
+		return nil, err
+	}
+	var res v1.UpgradeResponse
+	if err := s.stream.Receive(&res); err != nil {
+		return nil, err
+	}
+	return &res, nil
 }
 
-// ResetVolume calls chalkos.node.v1.NodeService.ResetVolume.
-func (c *nodeServiceClient) ResetVolume(ctx context.Context, req *connect.Request[v1.ResetVolumeRequest]) (*connect.Response[v1.ResetVolumeResponse], error) {
-	return c.resetVolume.CallUnary(ctx, req)
+// NodeServiceRunDiagnosticClientStream is the client stream for the NodeService's RunDiagnostic
+// RPC.
+type NodeServiceRunDiagnosticClientStream struct {
+	stream connect.ClientStream
 }
 
-// Status calls chalkos.node.v1.NodeService.Status.
-func (c *nodeServiceClient) Status(ctx context.Context, req *connect.Request[v1.StatusRequest]) (*connect.Response[v1.StatusResponse], error) {
-	return c.status.CallUnary(ctx, req)
+// Receive returns the next response message from the server.
+func (s NodeServiceRunDiagnosticClientStream) Receive() (*v1.RunDiagnosticResponse, error) {
+	var res v1.RunDiagnosticResponse
+	if err := s.stream.Receive(&res); err != nil {
+		return nil, err
+	}
+	return &res, nil
 }
 
-// Logs calls chalkos.node.v1.NodeService.Logs.
-func (c *nodeServiceClient) Logs(ctx context.Context, req *connect.Request[v1.LogsRequest]) (*connect.ServerStreamForClient[v1.LogsResponse], error) {
-	return c.logs.CallServerStream(ctx, req)
-}
-
-// Reboot calls chalkos.node.v1.NodeService.Reboot.
-func (c *nodeServiceClient) Reboot(ctx context.Context, req *connect.Request[v1.RebootRequest]) (*connect.Response[v1.RebootResponse], error) {
-	return c.reboot.CallUnary(ctx, req)
-}
-
-// Upgrade calls chalkos.node.v1.NodeService.Upgrade.
-func (c *nodeServiceClient) Upgrade(ctx context.Context) *connect.ClientStreamForClient[v1.UpgradeRequest, v1.UpgradeResponse] {
-	return c.upgrade.CallClientStream(ctx)
-}
-
-// ActivateImage calls chalkos.node.v1.NodeService.ActivateImage.
-func (c *nodeServiceClient) ActivateImage(ctx context.Context, req *connect.Request[v1.ActivateImageRequest]) (*connect.Response[v1.ActivateImageResponse], error) {
-	return c.activateImage.CallUnary(ctx, req)
-}
-
-// Diagnostics calls chalkos.node.v1.NodeService.Diagnostics.
-func (c *nodeServiceClient) Diagnostics(ctx context.Context, req *connect.Request[v1.DiagnosticsRequest]) (*connect.Response[v1.DiagnosticsResponse], error) {
-	return c.diagnostics.CallUnary(ctx, req)
-}
-
-// RunDiagnostic calls chalkos.node.v1.NodeService.RunDiagnostic.
-func (c *nodeServiceClient) RunDiagnostic(ctx context.Context, req *connect.Request[v1.RunDiagnosticRequest]) (*connect.ServerStreamForClient[v1.RunDiagnosticResponse], error) {
-	return c.runDiagnostic.CallServerStream(ctx, req)
-}
-
-// RollbackConfig calls chalkos.node.v1.NodeService.RollbackConfig.
-func (c *nodeServiceClient) RollbackConfig(ctx context.Context, req *connect.Request[v1.RollbackConfigRequest]) (*connect.Response[v1.RollbackConfigResponse], error) {
-	return c.rollbackConfig.CallUnary(ctx, req)
-}
-
-// RollbackImage calls chalkos.node.v1.NodeService.RollbackImage.
-func (c *nodeServiceClient) RollbackImage(ctx context.Context, req *connect.Request[v1.RollbackImageRequest]) (*connect.Response[v1.RollbackImageResponse], error) {
-	return c.rollbackImage.CallUnary(ctx, req)
-}
-
-// ConfirmConfig calls chalkos.node.v1.NodeService.ConfirmConfig.
-func (c *nodeServiceClient) ConfirmConfig(ctx context.Context, req *connect.Request[v1.ConfirmConfigRequest]) (*connect.Response[v1.ConfirmConfigResponse], error) {
-	return c.confirmConfig.CallUnary(ctx, req)
-}
-
-// EnrollSecureBoot calls chalkos.node.v1.NodeService.EnrollSecureBoot.
-func (c *nodeServiceClient) EnrollSecureBoot(ctx context.Context, req *connect.Request[v1.EnrollSecureBootRequest]) (*connect.Response[v1.EnrollSecureBootResponse], error) {
-	return c.enrollSecureBoot.CallUnary(ctx, req)
-}
-
-// SecureBootDrivers calls chalkos.node.v1.NodeService.SecureBootDrivers.
-func (c *nodeServiceClient) SecureBootDrivers(ctx context.Context, req *connect.Request[v1.SecureBootDriversRequest]) (*connect.Response[v1.SecureBootDriversResponse], error) {
-	return c.secureBootDrivers.CallUnary(ctx, req)
-}
-
-// Shutdown calls chalkos.node.v1.NodeService.Shutdown.
-func (c *nodeServiceClient) Shutdown(ctx context.Context, req *connect.Request[v1.ShutdownRequest]) (*connect.Response[v1.ShutdownResponse], error) {
-	return c.shutdown.CallUnary(ctx, req)
+// Close releases the stream's resources. It is idempotent and is typically deferred to clean up a
+// stream abandoned before io.EOF.
+func (s NodeServiceRunDiagnosticClientStream) Close() error {
+	return s.stream.Close()
 }
 
 // NodeServiceHandler is an implementation of the chalkos.node.v1.NodeService service.
 type NodeServiceHandler interface {
 	// Info describes the node and the agent. Available in maintenance and normal mode to readers.
 	// The console may call it.
-	Info(context.Context, *connect.Request[v1.InfoRequest]) (*connect.Response[v1.InfoResponse], error)
+	Info(context.Context, *v1.InfoRequest) (*v1.InfoResponse, error)
 	// Disks lists the node's disks and their partitions. Available in maintenance and normal mode to
 	// readers. The console may call it.
-	Disks(context.Context, *connect.Request[v1.DisksRequest]) (*connect.Response[v1.DisksResponse], error)
+	Disks(context.Context, *v1.DisksRequest) (*v1.DisksResponse, error)
 	// Contract returns the config contract of the image the node runs: its name and the platform it
 	// was built for, its layers, the schemas of the config kinds it accepts and its layers' facts,
 	// such as the Kubernetes image.json, which chalkctl checks config against before it delivers
 	// it. The installer refuses it: config is for the image it installs, whose contract comes with
 	// that image. Available in maintenance and normal mode to readers.
-	Contract(context.Context, *connect.Request[v1.ContractRequest]) (*connect.Response[v1.ContractResponse], error)
+	Contract(context.Context, *v1.ContractRequest) (*v1.ContractResponse, error)
 	// Install turns a node in maintenance mode into an installed node and reboots it. The first
 	// message carries the header; when the node is the installer, the image's store data, hash
 	// tree, UKI and boot loader follow as chunks, unless the header's source names an image in a
@@ -531,7 +507,7 @@ type NodeServiceHandler interface {
 	// loader; a refusal fails the precondition and leaves a target that boots nothing. An install
 	// the installer did not finish continues when run again, from either. Available in maintenance
 	// mode to admins.
-	Install(context.Context, *connect.ClientStream[v1.InstallRequest]) (*connect.Response[v1.InstallResponse], error)
+	Install(context.Context, NodeServiceInstallServerStream) (*v1.InstallResponse, error)
 	// ApplyConfig replaces the config of an installed node, or delivers it payloads of its layers,
 	// such as a Kubernetes share, a node certificate or OS CAs. Destructive storage changes are
 	// refused; additive ones are applied live. With try, the config is on trial: the node rolls it
@@ -546,25 +522,25 @@ type NodeServiceHandler interface {
 	// Config for the running image goes to the image staged in the inactive slot too, or replaces
 	// the pending config, as ApplyConfigRequest.config describes. Available in normal mode to
 	// admins.
-	ApplyConfig(context.Context, *connect.Request[v1.ApplyConfigRequest]) (*connect.Response[v1.ApplyConfigResponse], error)
+	ApplyConfig(context.Context, *v1.ApplyConfigRequest) (*v1.ApplyConfigResponse, error)
 	// GetConfig returns the config a slot keeps, the running image's, its previous one or the staged
 	// image's, as it was delivered, with secret values replaced by their hashes. Available in normal
 	// mode to admins.
-	GetConfig(context.Context, *connect.Request[v1.GetConfigRequest]) (*connect.Response[v1.GetConfigResponse], error)
+	GetConfig(context.Context, *v1.GetConfigRequest) (*v1.GetConfigResponse, error)
 	// ResetVolume wipes one volume and creates it again as the delivered config defines it. It
 	// refuses VAR, a volume the config no longer has and a volume the config moves to another
 	// disk. Available in normal mode to admins.
-	ResetVolume(context.Context, *connect.Request[v1.ResetVolumeRequest]) (*connect.Response[v1.ResetVolumeResponse], error)
+	ResetVolume(context.Context, *v1.ResetVolumeRequest) (*v1.ResetVolumeResponse, error)
 	// Status reports the state of an installed node: its config versions, storage, failed units,
 	// certificates, trust, clock, boot and outputs; each layer's own state is its service's Status.
 	// Available in normal mode to readers. The console may call it.
-	Status(context.Context, *connect.Request[v1.StatusRequest]) (*connect.Response[v1.StatusResponse], error)
+	Status(context.Context, *v1.StatusRequest) (*v1.StatusResponse, error)
 	// Logs streams the journal of the current boot, or of one unit in it. Available in maintenance
 	// and normal mode to readers. The console may call it.
-	Logs(context.Context, *connect.Request[v1.LogsRequest], *connect.ServerStream[v1.LogsResponse]) error
+	Logs(context.Context, *v1.LogsRequest, NodeServiceLogsServerStream) error
 	// Reboot reboots the node once the response is sent. Available in maintenance and normal mode
 	// to operators. The console may call it while the image allows the console's actions.
-	Reboot(context.Context, *connect.Request[v1.RebootRequest]) (*connect.Response[v1.RebootResponse], error)
+	Reboot(context.Context, *v1.RebootRequest) (*v1.RebootResponse, error)
 	// Upgrade installs a new image into the node's inactive slot and stages it there, then activates
 	// it as ActivateImage does, so it boots next, counting the image's boot tries until a boot is
 	// found healthy, and reboots the node when asked to. With the header's stage_only it stops once
@@ -578,7 +554,7 @@ type NodeServiceHandler interface {
 	// image is one to trust: without Secure Boot, an operator can run any image as root, with STATE
 	// and VAR unsealed, as their keys are sealed to PCR 7 alone. Secure Boot is what limits upgrades
 	// to images signed for db.
-	Upgrade(context.Context, *connect.ClientStream[v1.UpgradeRequest]) (*connect.Response[v1.UpgradeResponse], error)
+	Upgrade(context.Context, NodeServiceUpgradeServerStream) (*v1.UpgradeResponse, error)
 	// ActivateImage makes the image staged in the node's inactive slot boot next: it gives the
 	// image's UKI its boot entry's name, one generation above the others, with the tries the UKI
 	// asks for, so boot counting falls back to the running image should its boots fail. It checks
@@ -590,11 +566,11 @@ type NodeServiceHandler interface {
 	// root hash, and when STATE keeps no config slot of the image. An activation that fails leaves
 	// the UKI under its staged name, and the node keeps booting the running image. Available in
 	// normal mode to operators.
-	ActivateImage(context.Context, *connect.Request[v1.ActivateImageRequest]) (*connect.Response[v1.ActivateImageResponse], error)
+	ActivateImage(context.Context, *v1.ActivateImageRequest) (*v1.ActivateImageResponse, error)
 	// Diagnostics lists the diagnostics the image declares: read-only commands of the image, such as
 	// ip route get, that RunDiagnostic runs. Available in maintenance and normal mode to readers.
 	// The console may call it.
-	Diagnostics(context.Context, *connect.Request[v1.DiagnosticsRequest]) (*connect.Response[v1.DiagnosticsResponse], error)
+	Diagnostics(context.Context, *v1.DiagnosticsRequest) (*v1.DiagnosticsResponse, error)
 	// RunDiagnostic runs one of the image's diagnostics with the arguments given and streams what
 	// its command prints on standard output and standard error, then how it ended. It is refused
 	// with PERMISSION_DENIED unless the caller also has the diagnostic's own role, and with
@@ -604,7 +580,7 @@ type NodeServiceHandler interface {
 	// names, for at most its timeout, and stops a command that prints more than 1 MiB. Four run at
 	// a time. The console runs the diagnostics of readers and operators. Available in maintenance
 	// and normal mode to readers. The console may call it.
-	RunDiagnostic(context.Context, *connect.Request[v1.RunDiagnosticRequest], *connect.ServerStream[v1.RunDiagnosticResponse]) error
+	RunDiagnostic(context.Context, *v1.RunDiagnosticRequest, NodeServiceRunDiagnosticServerStream) error
 	// RollbackConfig delivers the running image's previous config again: the config the image ran
 	// before the delivery that replaced it, which the node keeps until the next delivery replaces
 	// it in turn. It goes through ApplyConfig's checks and steps: the image's change rules compared
@@ -622,7 +598,7 @@ type NodeServiceHandler interface {
 	// trial, previous_config_version is the config on trial, and config_version is the version that
 	// finishes the rollback. Available in normal mode to admins. The console may call it while the
 	// image allows the console's actions.
-	RollbackConfig(context.Context, *connect.Request[v1.RollbackConfigRequest]) (*connect.Response[v1.RollbackConfigResponse], error)
+	RollbackConfig(context.Context, *v1.RollbackConfigRequest) (*v1.RollbackConfigResponse, error)
 	// RollbackImage makes the previous image boot next again: the image an upgrade replaced, whose
 	// store the inactive slot still holds, whose UKI is on the ESP and whose config slot STATE
 	// keeps, until the next upgrade writes the slot. The node writes no store: it checks the image's
@@ -633,7 +609,7 @@ type NodeServiceHandler interface {
 	// reboots into it when asked to. Refused with FAILED_PRECONDITION when the node keeps no
 	// previous image, as while an upgrade's image is staged. Available in normal mode to operators.
 	// The console may call it while the image allows the console's actions.
-	RollbackImage(context.Context, *connect.Request[v1.RollbackImageRequest]) (*connect.Response[v1.RollbackImageResponse], error)
+	RollbackImage(context.Context, *v1.RollbackImageRequest) (*v1.RollbackImageResponse, error)
 	// ConfirmConfig ends the trial of a config that ApplyConfig delivered with try, and the node keeps
 	// the config from then on. The node must be healthy as the health check of a boot finds it:
 	// chalkd serves, no unit of the boot failed but those the image ignores, and the image's layers
@@ -650,7 +626,7 @@ type NodeServiceHandler interface {
 	// A confirmation also writes what the trial's delivery held back until then: the config slot of
 	// the image staged in the inactive slot, or the pending config the config on trial replaces.
 	// Available in normal mode to admins.
-	ConfirmConfig(context.Context, *connect.Request[v1.ConfirmConfigRequest]) (*connect.Response[v1.ConfirmConfigResponse], error)
+	ConfirmConfig(context.Context, *v1.ConfirmConfigRequest) (*v1.ConfirmConfigResponse, error)
 	// EnrollSecureBoot writes Secure Boot keys into firmware in Setup Mode, as signed updates of its
 	// variables that the client made: it appends to db, then to KEK, and writes PK last, which ends
 	// Setup Mode. It refuses firmware that is not in Setup Mode, and updates that do not write
@@ -662,273 +638,575 @@ type NodeServiceHandler interface {
 	// dbx would revoke them. A node that runs from its own disk recreates STATE on its next boot,
 	// as the TPM no longer unseals it once the keys change PCR 7. Once the keys are written, the
 	// node answers and reboots. Available in maintenance mode to admins.
-	EnrollSecureBoot(context.Context, *connect.Request[v1.EnrollSecureBootRequest]) (*connect.Response[v1.EnrollSecureBootResponse], error)
+	EnrollSecureBoot(context.Context, *v1.EnrollSecureBootRequest) (*v1.EnrollSecureBootResponse, error)
 	// SecureBootDrivers lists the UEFI drivers the firmware loaded from outside its own firmware,
 	// as a rule the option ROMs of graphics and network cards, as the TPM event log records their
 	// measurements into PCR 2: the SHA-256 Authenticode digest of each, which db holds to allow it
 	// under Secure Boot, and where the firmware found it. Available in maintenance mode to
 	// readers.
-	SecureBootDrivers(context.Context, *connect.Request[v1.SecureBootDriversRequest]) (*connect.Response[v1.SecureBootDriversResponse], error)
+	SecureBootDrivers(context.Context, *v1.SecureBootDriversRequest) (*v1.SecureBootDriversResponse, error)
 	// Shutdown powers the node off once the response is sent, as Reboot reboots it. Available in
 	// maintenance and normal mode to operators. The console may call it while the image allows the
 	// console's actions.
-	Shutdown(context.Context, *connect.Request[v1.ShutdownRequest]) (*connect.Response[v1.ShutdownResponse], error)
+	Shutdown(context.Context, *v1.ShutdownRequest) (*v1.ShutdownResponse, error)
 }
 
-// NewNodeServiceHandler builds an HTTP handler from the service implementation. It returns the path
-// on which to mount the handler and the handler itself.
-//
-// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
-// and JSON codecs. They also support gzip compression.
-func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
-	nodeServiceMethods := v1.File_chalkos_node_v1_node_proto.Services().ByName("NodeService").Methods()
-	nodeServiceInfoHandler := connect.NewUnaryHandler(
-		NodeServiceInfoProcedure,
-		svc.Info,
-		connect.WithSchema(nodeServiceMethods.ByName("Info")),
-		connect.WithHandlerOptions(opts...),
+// RegisterNodeServiceHandler registers svc as the chalkos.node.v1.NodeService implementation on
+// server.
+func RegisterNodeServiceHandler(server *connect.Server, svc NodeServiceHandler) {
+	adapter := nodeServiceHandler{svc: svc}
+	server.Register(
+		connect.Method{Spec: nodeServiceInfoSpec(), Handler: adapter.info},
+		connect.Method{Spec: nodeServiceDisksSpec(), Handler: adapter.disks},
+		connect.Method{Spec: nodeServiceContractSpec(), Handler: adapter.contract},
+		connect.Method{Spec: nodeServiceInstallSpec(), Handler: adapter.install},
+		connect.Method{Spec: nodeServiceApplyConfigSpec(), Handler: adapter.applyConfig},
+		connect.Method{Spec: nodeServiceGetConfigSpec(), Handler: adapter.getConfig},
+		connect.Method{Spec: nodeServiceResetVolumeSpec(), Handler: adapter.resetVolume},
+		connect.Method{Spec: nodeServiceStatusSpec(), Handler: adapter.status},
+		connect.Method{Spec: nodeServiceLogsSpec(), Handler: adapter.logs},
+		connect.Method{Spec: nodeServiceRebootSpec(), Handler: adapter.reboot},
+		connect.Method{Spec: nodeServiceUpgradeSpec(), Handler: adapter.upgrade},
+		connect.Method{Spec: nodeServiceActivateImageSpec(), Handler: adapter.activateImage},
+		connect.Method{Spec: nodeServiceDiagnosticsSpec(), Handler: adapter.diagnostics},
+		connect.Method{Spec: nodeServiceRunDiagnosticSpec(), Handler: adapter.runDiagnostic},
+		connect.Method{Spec: nodeServiceRollbackConfigSpec(), Handler: adapter.rollbackConfig},
+		connect.Method{Spec: nodeServiceRollbackImageSpec(), Handler: adapter.rollbackImage},
+		connect.Method{Spec: nodeServiceConfirmConfigSpec(), Handler: adapter.confirmConfig},
+		connect.Method{Spec: nodeServiceEnrollSecureBootSpec(), Handler: adapter.enrollSecureBoot},
+		connect.Method{Spec: nodeServiceSecureBootDriversSpec(), Handler: adapter.secureBootDrivers},
+		connect.Method{Spec: nodeServiceShutdownSpec(), Handler: adapter.shutdown},
 	)
-	nodeServiceDisksHandler := connect.NewUnaryHandler(
-		NodeServiceDisksProcedure,
-		svc.Disks,
-		connect.WithSchema(nodeServiceMethods.ByName("Disks")),
-		connect.WithHandlerOptions(opts...),
-	)
-	nodeServiceContractHandler := connect.NewUnaryHandler(
-		NodeServiceContractProcedure,
-		svc.Contract,
-		connect.WithSchema(nodeServiceMethods.ByName("Contract")),
-		connect.WithHandlerOptions(opts...),
-	)
-	nodeServiceInstallHandler := connect.NewClientStreamHandler(
-		NodeServiceInstallProcedure,
-		svc.Install,
-		connect.WithSchema(nodeServiceMethods.ByName("Install")),
-		connect.WithHandlerOptions(opts...),
-	)
-	nodeServiceApplyConfigHandler := connect.NewUnaryHandler(
-		NodeServiceApplyConfigProcedure,
-		svc.ApplyConfig,
-		connect.WithSchema(nodeServiceMethods.ByName("ApplyConfig")),
-		connect.WithHandlerOptions(opts...),
-	)
-	nodeServiceGetConfigHandler := connect.NewUnaryHandler(
-		NodeServiceGetConfigProcedure,
-		svc.GetConfig,
-		connect.WithSchema(nodeServiceMethods.ByName("GetConfig")),
-		connect.WithHandlerOptions(opts...),
-	)
-	nodeServiceResetVolumeHandler := connect.NewUnaryHandler(
-		NodeServiceResetVolumeProcedure,
-		svc.ResetVolume,
-		connect.WithSchema(nodeServiceMethods.ByName("ResetVolume")),
-		connect.WithHandlerOptions(opts...),
-	)
-	nodeServiceStatusHandler := connect.NewUnaryHandler(
-		NodeServiceStatusProcedure,
-		svc.Status,
-		connect.WithSchema(nodeServiceMethods.ByName("Status")),
-		connect.WithHandlerOptions(opts...),
-	)
-	nodeServiceLogsHandler := connect.NewServerStreamHandler(
-		NodeServiceLogsProcedure,
-		svc.Logs,
-		connect.WithSchema(nodeServiceMethods.ByName("Logs")),
-		connect.WithHandlerOptions(opts...),
-	)
-	nodeServiceRebootHandler := connect.NewUnaryHandler(
-		NodeServiceRebootProcedure,
-		svc.Reboot,
-		connect.WithSchema(nodeServiceMethods.ByName("Reboot")),
-		connect.WithHandlerOptions(opts...),
-	)
-	nodeServiceUpgradeHandler := connect.NewClientStreamHandler(
-		NodeServiceUpgradeProcedure,
-		svc.Upgrade,
-		connect.WithSchema(nodeServiceMethods.ByName("Upgrade")),
-		connect.WithHandlerOptions(opts...),
-	)
-	nodeServiceActivateImageHandler := connect.NewUnaryHandler(
-		NodeServiceActivateImageProcedure,
-		svc.ActivateImage,
-		connect.WithSchema(nodeServiceMethods.ByName("ActivateImage")),
-		connect.WithHandlerOptions(opts...),
-	)
-	nodeServiceDiagnosticsHandler := connect.NewUnaryHandler(
-		NodeServiceDiagnosticsProcedure,
-		svc.Diagnostics,
-		connect.WithSchema(nodeServiceMethods.ByName("Diagnostics")),
-		connect.WithHandlerOptions(opts...),
-	)
-	nodeServiceRunDiagnosticHandler := connect.NewServerStreamHandler(
-		NodeServiceRunDiagnosticProcedure,
-		svc.RunDiagnostic,
-		connect.WithSchema(nodeServiceMethods.ByName("RunDiagnostic")),
-		connect.WithHandlerOptions(opts...),
-	)
-	nodeServiceRollbackConfigHandler := connect.NewUnaryHandler(
-		NodeServiceRollbackConfigProcedure,
-		svc.RollbackConfig,
-		connect.WithSchema(nodeServiceMethods.ByName("RollbackConfig")),
-		connect.WithHandlerOptions(opts...),
-	)
-	nodeServiceRollbackImageHandler := connect.NewUnaryHandler(
-		NodeServiceRollbackImageProcedure,
-		svc.RollbackImage,
-		connect.WithSchema(nodeServiceMethods.ByName("RollbackImage")),
-		connect.WithHandlerOptions(opts...),
-	)
-	nodeServiceConfirmConfigHandler := connect.NewUnaryHandler(
-		NodeServiceConfirmConfigProcedure,
-		svc.ConfirmConfig,
-		connect.WithSchema(nodeServiceMethods.ByName("ConfirmConfig")),
-		connect.WithHandlerOptions(opts...),
-	)
-	nodeServiceEnrollSecureBootHandler := connect.NewUnaryHandler(
-		NodeServiceEnrollSecureBootProcedure,
-		svc.EnrollSecureBoot,
-		connect.WithSchema(nodeServiceMethods.ByName("EnrollSecureBoot")),
-		connect.WithHandlerOptions(opts...),
-	)
-	nodeServiceSecureBootDriversHandler := connect.NewUnaryHandler(
-		NodeServiceSecureBootDriversProcedure,
-		svc.SecureBootDrivers,
-		connect.WithSchema(nodeServiceMethods.ByName("SecureBootDrivers")),
-		connect.WithHandlerOptions(opts...),
-	)
-	nodeServiceShutdownHandler := connect.NewUnaryHandler(
-		NodeServiceShutdownProcedure,
-		svc.Shutdown,
-		connect.WithSchema(nodeServiceMethods.ByName("Shutdown")),
-		connect.WithHandlerOptions(opts...),
-	)
-	return "/chalkos.node.v1.NodeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case NodeServiceInfoProcedure:
-			nodeServiceInfoHandler.ServeHTTP(w, r)
-		case NodeServiceDisksProcedure:
-			nodeServiceDisksHandler.ServeHTTP(w, r)
-		case NodeServiceContractProcedure:
-			nodeServiceContractHandler.ServeHTTP(w, r)
-		case NodeServiceInstallProcedure:
-			nodeServiceInstallHandler.ServeHTTP(w, r)
-		case NodeServiceApplyConfigProcedure:
-			nodeServiceApplyConfigHandler.ServeHTTP(w, r)
-		case NodeServiceGetConfigProcedure:
-			nodeServiceGetConfigHandler.ServeHTTP(w, r)
-		case NodeServiceResetVolumeProcedure:
-			nodeServiceResetVolumeHandler.ServeHTTP(w, r)
-		case NodeServiceStatusProcedure:
-			nodeServiceStatusHandler.ServeHTTP(w, r)
-		case NodeServiceLogsProcedure:
-			nodeServiceLogsHandler.ServeHTTP(w, r)
-		case NodeServiceRebootProcedure:
-			nodeServiceRebootHandler.ServeHTTP(w, r)
-		case NodeServiceUpgradeProcedure:
-			nodeServiceUpgradeHandler.ServeHTTP(w, r)
-		case NodeServiceActivateImageProcedure:
-			nodeServiceActivateImageHandler.ServeHTTP(w, r)
-		case NodeServiceDiagnosticsProcedure:
-			nodeServiceDiagnosticsHandler.ServeHTTP(w, r)
-		case NodeServiceRunDiagnosticProcedure:
-			nodeServiceRunDiagnosticHandler.ServeHTTP(w, r)
-		case NodeServiceRollbackConfigProcedure:
-			nodeServiceRollbackConfigHandler.ServeHTTP(w, r)
-		case NodeServiceRollbackImageProcedure:
-			nodeServiceRollbackImageHandler.ServeHTTP(w, r)
-		case NodeServiceConfirmConfigProcedure:
-			nodeServiceConfirmConfigHandler.ServeHTTP(w, r)
-		case NodeServiceEnrollSecureBootProcedure:
-			nodeServiceEnrollSecureBootHandler.ServeHTTP(w, r)
-		case NodeServiceSecureBootDriversProcedure:
-			nodeServiceSecureBootDriversHandler.ServeHTTP(w, r)
-		case NodeServiceShutdownProcedure:
-			nodeServiceShutdownHandler.ServeHTTP(w, r)
-		default:
-			http.NotFound(w, r)
-		}
-	})
+}
+
+// NodeServiceInstallServerStream is the server stream for the NodeService's Install RPC.
+type NodeServiceInstallServerStream struct {
+	stream connect.ServerStream
+}
+
+// Receive returns the next request message from the client.
+func (s NodeServiceInstallServerStream) Receive() (*v1.InstallRequest, error) {
+	var req v1.InstallRequest
+	if err := s.stream.Receive(&req); err != nil {
+		return nil, err
+	}
+	return &req, nil
+}
+
+// NodeServiceLogsServerStream is the server stream for the NodeService's Logs RPC.
+type NodeServiceLogsServerStream struct {
+	stream connect.ServerStream
+}
+
+// SendHeaders flushes the response headers without a message. The first Send does this implicitly.
+func (s NodeServiceLogsServerStream) SendHeaders() error {
+	return s.stream.SendHeaders()
+}
+
+// Send sends a response message to the client.
+func (s NodeServiceLogsServerStream) Send(res *v1.LogsResponse) error {
+	return s.stream.Send(res)
+}
+
+// NodeServiceUpgradeServerStream is the server stream for the NodeService's Upgrade RPC.
+type NodeServiceUpgradeServerStream struct {
+	stream connect.ServerStream
+}
+
+// Receive returns the next request message from the client.
+func (s NodeServiceUpgradeServerStream) Receive() (*v1.UpgradeRequest, error) {
+	var req v1.UpgradeRequest
+	if err := s.stream.Receive(&req); err != nil {
+		return nil, err
+	}
+	return &req, nil
+}
+
+// NodeServiceRunDiagnosticServerStream is the server stream for the NodeService's RunDiagnostic
+// RPC.
+type NodeServiceRunDiagnosticServerStream struct {
+	stream connect.ServerStream
+}
+
+// SendHeaders flushes the response headers without a message. The first Send does this implicitly.
+func (s NodeServiceRunDiagnosticServerStream) SendHeaders() error {
+	return s.stream.SendHeaders()
+}
+
+// Send sends a response message to the client.
+func (s NodeServiceRunDiagnosticServerStream) Send(res *v1.RunDiagnosticResponse) error {
+	return s.stream.Send(res)
 }
 
 // UnimplementedNodeServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedNodeServiceHandler struct{}
 
-func (UnimplementedNodeServiceHandler) Info(context.Context, *connect.Request[v1.InfoRequest]) (*connect.Response[v1.InfoResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.Info is not implemented"))
+func (UnimplementedNodeServiceHandler) Info(context.Context, *v1.InfoRequest) (*v1.InfoResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "chalkos.node.v1.NodeService.Info is not implemented")
 }
 
-func (UnimplementedNodeServiceHandler) Disks(context.Context, *connect.Request[v1.DisksRequest]) (*connect.Response[v1.DisksResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.Disks is not implemented"))
+func (UnimplementedNodeServiceHandler) Disks(context.Context, *v1.DisksRequest) (*v1.DisksResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "chalkos.node.v1.NodeService.Disks is not implemented")
 }
 
-func (UnimplementedNodeServiceHandler) Contract(context.Context, *connect.Request[v1.ContractRequest]) (*connect.Response[v1.ContractResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.Contract is not implemented"))
+func (UnimplementedNodeServiceHandler) Contract(context.Context, *v1.ContractRequest) (*v1.ContractResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "chalkos.node.v1.NodeService.Contract is not implemented")
 }
 
-func (UnimplementedNodeServiceHandler) Install(context.Context, *connect.ClientStream[v1.InstallRequest]) (*connect.Response[v1.InstallResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.Install is not implemented"))
+func (UnimplementedNodeServiceHandler) Install(context.Context, NodeServiceInstallServerStream) (*v1.InstallResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "chalkos.node.v1.NodeService.Install is not implemented")
 }
 
-func (UnimplementedNodeServiceHandler) ApplyConfig(context.Context, *connect.Request[v1.ApplyConfigRequest]) (*connect.Response[v1.ApplyConfigResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.ApplyConfig is not implemented"))
+func (UnimplementedNodeServiceHandler) ApplyConfig(context.Context, *v1.ApplyConfigRequest) (*v1.ApplyConfigResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "chalkos.node.v1.NodeService.ApplyConfig is not implemented")
 }
 
-func (UnimplementedNodeServiceHandler) GetConfig(context.Context, *connect.Request[v1.GetConfigRequest]) (*connect.Response[v1.GetConfigResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.GetConfig is not implemented"))
+func (UnimplementedNodeServiceHandler) GetConfig(context.Context, *v1.GetConfigRequest) (*v1.GetConfigResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "chalkos.node.v1.NodeService.GetConfig is not implemented")
 }
 
-func (UnimplementedNodeServiceHandler) ResetVolume(context.Context, *connect.Request[v1.ResetVolumeRequest]) (*connect.Response[v1.ResetVolumeResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.ResetVolume is not implemented"))
+func (UnimplementedNodeServiceHandler) ResetVolume(context.Context, *v1.ResetVolumeRequest) (*v1.ResetVolumeResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "chalkos.node.v1.NodeService.ResetVolume is not implemented")
 }
 
-func (UnimplementedNodeServiceHandler) Status(context.Context, *connect.Request[v1.StatusRequest]) (*connect.Response[v1.StatusResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.Status is not implemented"))
+func (UnimplementedNodeServiceHandler) Status(context.Context, *v1.StatusRequest) (*v1.StatusResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "chalkos.node.v1.NodeService.Status is not implemented")
 }
 
-func (UnimplementedNodeServiceHandler) Logs(context.Context, *connect.Request[v1.LogsRequest], *connect.ServerStream[v1.LogsResponse]) error {
-	return connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.Logs is not implemented"))
+func (UnimplementedNodeServiceHandler) Logs(context.Context, *v1.LogsRequest, NodeServiceLogsServerStream) error {
+	return connect.NewError(connect.CodeUnimplemented, "chalkos.node.v1.NodeService.Logs is not implemented")
 }
 
-func (UnimplementedNodeServiceHandler) Reboot(context.Context, *connect.Request[v1.RebootRequest]) (*connect.Response[v1.RebootResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.Reboot is not implemented"))
+func (UnimplementedNodeServiceHandler) Reboot(context.Context, *v1.RebootRequest) (*v1.RebootResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "chalkos.node.v1.NodeService.Reboot is not implemented")
 }
 
-func (UnimplementedNodeServiceHandler) Upgrade(context.Context, *connect.ClientStream[v1.UpgradeRequest]) (*connect.Response[v1.UpgradeResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.Upgrade is not implemented"))
+func (UnimplementedNodeServiceHandler) Upgrade(context.Context, NodeServiceUpgradeServerStream) (*v1.UpgradeResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "chalkos.node.v1.NodeService.Upgrade is not implemented")
 }
 
-func (UnimplementedNodeServiceHandler) ActivateImage(context.Context, *connect.Request[v1.ActivateImageRequest]) (*connect.Response[v1.ActivateImageResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.ActivateImage is not implemented"))
+func (UnimplementedNodeServiceHandler) ActivateImage(context.Context, *v1.ActivateImageRequest) (*v1.ActivateImageResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "chalkos.node.v1.NodeService.ActivateImage is not implemented")
 }
 
-func (UnimplementedNodeServiceHandler) Diagnostics(context.Context, *connect.Request[v1.DiagnosticsRequest]) (*connect.Response[v1.DiagnosticsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.Diagnostics is not implemented"))
+func (UnimplementedNodeServiceHandler) Diagnostics(context.Context, *v1.DiagnosticsRequest) (*v1.DiagnosticsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "chalkos.node.v1.NodeService.Diagnostics is not implemented")
 }
 
-func (UnimplementedNodeServiceHandler) RunDiagnostic(context.Context, *connect.Request[v1.RunDiagnosticRequest], *connect.ServerStream[v1.RunDiagnosticResponse]) error {
-	return connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.RunDiagnostic is not implemented"))
+func (UnimplementedNodeServiceHandler) RunDiagnostic(context.Context, *v1.RunDiagnosticRequest, NodeServiceRunDiagnosticServerStream) error {
+	return connect.NewError(connect.CodeUnimplemented, "chalkos.node.v1.NodeService.RunDiagnostic is not implemented")
 }
 
-func (UnimplementedNodeServiceHandler) RollbackConfig(context.Context, *connect.Request[v1.RollbackConfigRequest]) (*connect.Response[v1.RollbackConfigResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.RollbackConfig is not implemented"))
+func (UnimplementedNodeServiceHandler) RollbackConfig(context.Context, *v1.RollbackConfigRequest) (*v1.RollbackConfigResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "chalkos.node.v1.NodeService.RollbackConfig is not implemented")
 }
 
-func (UnimplementedNodeServiceHandler) RollbackImage(context.Context, *connect.Request[v1.RollbackImageRequest]) (*connect.Response[v1.RollbackImageResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.RollbackImage is not implemented"))
+func (UnimplementedNodeServiceHandler) RollbackImage(context.Context, *v1.RollbackImageRequest) (*v1.RollbackImageResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "chalkos.node.v1.NodeService.RollbackImage is not implemented")
 }
 
-func (UnimplementedNodeServiceHandler) ConfirmConfig(context.Context, *connect.Request[v1.ConfirmConfigRequest]) (*connect.Response[v1.ConfirmConfigResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.ConfirmConfig is not implemented"))
+func (UnimplementedNodeServiceHandler) ConfirmConfig(context.Context, *v1.ConfirmConfigRequest) (*v1.ConfirmConfigResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "chalkos.node.v1.NodeService.ConfirmConfig is not implemented")
 }
 
-func (UnimplementedNodeServiceHandler) EnrollSecureBoot(context.Context, *connect.Request[v1.EnrollSecureBootRequest]) (*connect.Response[v1.EnrollSecureBootResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.EnrollSecureBoot is not implemented"))
+func (UnimplementedNodeServiceHandler) EnrollSecureBoot(context.Context, *v1.EnrollSecureBootRequest) (*v1.EnrollSecureBootResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "chalkos.node.v1.NodeService.EnrollSecureBoot is not implemented")
 }
 
-func (UnimplementedNodeServiceHandler) SecureBootDrivers(context.Context, *connect.Request[v1.SecureBootDriversRequest]) (*connect.Response[v1.SecureBootDriversResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.SecureBootDrivers is not implemented"))
+func (UnimplementedNodeServiceHandler) SecureBootDrivers(context.Context, *v1.SecureBootDriversRequest) (*v1.SecureBootDriversResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "chalkos.node.v1.NodeService.SecureBootDrivers is not implemented")
 }
 
-func (UnimplementedNodeServiceHandler) Shutdown(context.Context, *connect.Request[v1.ShutdownRequest]) (*connect.Response[v1.ShutdownResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.Shutdown is not implemented"))
+func (UnimplementedNodeServiceHandler) Shutdown(context.Context, *v1.ShutdownRequest) (*v1.ShutdownResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "chalkos.node.v1.NodeService.Shutdown is not implemented")
+}
+
+type nodeServiceClient struct {
+	client *connect.Client
+}
+
+func (c *nodeServiceClient) Info(ctx context.Context, req *v1.InfoRequest) (*v1.InfoResponse, error) {
+	var res v1.InfoResponse
+	if err := c.client.CallUnary(ctx, nodeServiceInfoSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *nodeServiceClient) Disks(ctx context.Context, req *v1.DisksRequest) (*v1.DisksResponse, error) {
+	var res v1.DisksResponse
+	if err := c.client.CallUnary(ctx, nodeServiceDisksSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *nodeServiceClient) Contract(ctx context.Context, req *v1.ContractRequest) (*v1.ContractResponse, error) {
+	var res v1.ContractResponse
+	if err := c.client.CallUnary(ctx, nodeServiceContractSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *nodeServiceClient) Install(ctx context.Context) (NodeServiceInstallClientStream, error) {
+	stream, err := c.client.CallClientStream(ctx, nodeServiceInstallSpec())
+	if err != nil {
+		return NodeServiceInstallClientStream{}, err
+	}
+	return NodeServiceInstallClientStream{stream: stream}, nil
+}
+
+func (c *nodeServiceClient) ApplyConfig(ctx context.Context, req *v1.ApplyConfigRequest) (*v1.ApplyConfigResponse, error) {
+	var res v1.ApplyConfigResponse
+	if err := c.client.CallUnary(ctx, nodeServiceApplyConfigSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *nodeServiceClient) GetConfig(ctx context.Context, req *v1.GetConfigRequest) (*v1.GetConfigResponse, error) {
+	var res v1.GetConfigResponse
+	if err := c.client.CallUnary(ctx, nodeServiceGetConfigSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *nodeServiceClient) ResetVolume(ctx context.Context, req *v1.ResetVolumeRequest) (*v1.ResetVolumeResponse, error) {
+	var res v1.ResetVolumeResponse
+	if err := c.client.CallUnary(ctx, nodeServiceResetVolumeSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *nodeServiceClient) Status(ctx context.Context, req *v1.StatusRequest) (*v1.StatusResponse, error) {
+	var res v1.StatusResponse
+	if err := c.client.CallUnary(ctx, nodeServiceStatusSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *nodeServiceClient) Logs(ctx context.Context, req *v1.LogsRequest) (NodeServiceLogsClientStream, error) {
+	stream, err := c.client.CallServerStream(ctx, nodeServiceLogsSpec(), req)
+	if err != nil {
+		return NodeServiceLogsClientStream{}, err
+	}
+	return NodeServiceLogsClientStream{stream: stream}, nil
+}
+
+func (c *nodeServiceClient) Reboot(ctx context.Context, req *v1.RebootRequest) (*v1.RebootResponse, error) {
+	var res v1.RebootResponse
+	if err := c.client.CallUnary(ctx, nodeServiceRebootSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *nodeServiceClient) Upgrade(ctx context.Context) (NodeServiceUpgradeClientStream, error) {
+	stream, err := c.client.CallClientStream(ctx, nodeServiceUpgradeSpec())
+	if err != nil {
+		return NodeServiceUpgradeClientStream{}, err
+	}
+	return NodeServiceUpgradeClientStream{stream: stream}, nil
+}
+
+func (c *nodeServiceClient) ActivateImage(ctx context.Context, req *v1.ActivateImageRequest) (*v1.ActivateImageResponse, error) {
+	var res v1.ActivateImageResponse
+	if err := c.client.CallUnary(ctx, nodeServiceActivateImageSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *nodeServiceClient) Diagnostics(ctx context.Context, req *v1.DiagnosticsRequest) (*v1.DiagnosticsResponse, error) {
+	var res v1.DiagnosticsResponse
+	if err := c.client.CallUnary(ctx, nodeServiceDiagnosticsSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *nodeServiceClient) RunDiagnostic(ctx context.Context, req *v1.RunDiagnosticRequest) (NodeServiceRunDiagnosticClientStream, error) {
+	stream, err := c.client.CallServerStream(ctx, nodeServiceRunDiagnosticSpec(), req)
+	if err != nil {
+		return NodeServiceRunDiagnosticClientStream{}, err
+	}
+	return NodeServiceRunDiagnosticClientStream{stream: stream}, nil
+}
+
+func (c *nodeServiceClient) RollbackConfig(ctx context.Context, req *v1.RollbackConfigRequest) (*v1.RollbackConfigResponse, error) {
+	var res v1.RollbackConfigResponse
+	if err := c.client.CallUnary(ctx, nodeServiceRollbackConfigSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *nodeServiceClient) RollbackImage(ctx context.Context, req *v1.RollbackImageRequest) (*v1.RollbackImageResponse, error) {
+	var res v1.RollbackImageResponse
+	if err := c.client.CallUnary(ctx, nodeServiceRollbackImageSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *nodeServiceClient) ConfirmConfig(ctx context.Context, req *v1.ConfirmConfigRequest) (*v1.ConfirmConfigResponse, error) {
+	var res v1.ConfirmConfigResponse
+	if err := c.client.CallUnary(ctx, nodeServiceConfirmConfigSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *nodeServiceClient) EnrollSecureBoot(ctx context.Context, req *v1.EnrollSecureBootRequest) (*v1.EnrollSecureBootResponse, error) {
+	var res v1.EnrollSecureBootResponse
+	if err := c.client.CallUnary(ctx, nodeServiceEnrollSecureBootSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *nodeServiceClient) SecureBootDrivers(ctx context.Context, req *v1.SecureBootDriversRequest) (*v1.SecureBootDriversResponse, error) {
+	var res v1.SecureBootDriversResponse
+	if err := c.client.CallUnary(ctx, nodeServiceSecureBootDriversSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *nodeServiceClient) Shutdown(ctx context.Context, req *v1.ShutdownRequest) (*v1.ShutdownResponse, error) {
+	var res v1.ShutdownResponse
+	if err := c.client.CallUnary(ctx, nodeServiceShutdownSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+type nodeServiceHandler struct{ svc NodeServiceHandler }
+
+func (h nodeServiceHandler) info(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.InfoRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Info(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h nodeServiceHandler) disks(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.DisksRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Disks(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h nodeServiceHandler) contract(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ContractRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Contract(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h nodeServiceHandler) install(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	res, err := h.svc.Install(ctx, NodeServiceInstallServerStream{stream: stream})
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h nodeServiceHandler) applyConfig(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ApplyConfigRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ApplyConfig(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h nodeServiceHandler) getConfig(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.GetConfigRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetConfig(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h nodeServiceHandler) resetVolume(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ResetVolumeRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ResetVolume(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h nodeServiceHandler) status(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.StatusRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Status(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h nodeServiceHandler) logs(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.LogsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	return h.svc.Logs(ctx, &req, NodeServiceLogsServerStream{stream: stream})
+}
+
+func (h nodeServiceHandler) reboot(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RebootRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Reboot(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h nodeServiceHandler) upgrade(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	res, err := h.svc.Upgrade(ctx, NodeServiceUpgradeServerStream{stream: stream})
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h nodeServiceHandler) activateImage(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ActivateImageRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ActivateImage(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h nodeServiceHandler) diagnostics(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.DiagnosticsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Diagnostics(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h nodeServiceHandler) runDiagnostic(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RunDiagnosticRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	return h.svc.RunDiagnostic(ctx, &req, NodeServiceRunDiagnosticServerStream{stream: stream})
+}
+
+func (h nodeServiceHandler) rollbackConfig(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RollbackConfigRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.RollbackConfig(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h nodeServiceHandler) rollbackImage(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RollbackImageRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.RollbackImage(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h nodeServiceHandler) confirmConfig(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ConfirmConfigRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ConfirmConfig(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h nodeServiceHandler) enrollSecureBoot(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.EnrollSecureBootRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.EnrollSecureBoot(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h nodeServiceHandler) secureBootDrivers(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.SecureBootDriversRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.SecureBootDrivers(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h nodeServiceHandler) shutdown(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ShutdownRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Shutdown(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
 }

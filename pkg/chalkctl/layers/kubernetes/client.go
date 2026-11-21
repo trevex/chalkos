@@ -5,8 +5,6 @@ import (
 	"errors"
 	"slices"
 
-	"connectrpc.com/connect"
-
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/api/kubernetes/v1/kubernetesv1connect"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -16,16 +14,16 @@ import (
 
 // Client is the client of the node's Kubernetes layer over conn.
 func Client(conn *client.Conn) kubernetesv1connect.KubernetesServiceClient {
-	return kubernetesv1connect.NewKubernetesServiceClient(conn.HTTPClient(), conn.BaseURL())
+	return kubernetesv1connect.NewKubernetesServiceClient(conn.RPC())
 }
 
 // Status reads the state of the node's Kubernetes over conn.
 func Status(ctx context.Context, conn *client.Conn) (*kubernetesv1.StatusResponse, error) {
-	resp, err := Client(conn).Status(ctx, connect.NewRequest(&kubernetesv1.StatusRequest{}))
+	resp, err := Client(conn).Status(ctx, &kubernetesv1.StatusRequest{})
 	if err != nil {
 		return nil, err
 	}
-	return resp.Msg, nil
+	return resp, nil
 }
 
 // errNoKubernetes is the error of a node whose image does not carry the Kubernetes layer.
@@ -34,11 +32,11 @@ var errNoKubernetes = errors.New("the node's image has no Kubernetes layer")
 // nodeStatus reads the state of the node's Kubernetes over conn; errNoKubernetes when its Info
 // names no Kubernetes layer.
 func nodeStatus(ctx context.Context, conn *client.Conn) (*kubernetesv1.StatusResponse, error) {
-	info, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
+	info, err := conn.Info(ctx, &nodev1.InfoRequest{})
 	if err != nil {
 		return nil, err
 	}
-	if !slices.Contains(info.Msg.Layers, layers.Kubernetes) {
+	if !slices.Contains(info.Layers, layers.Kubernetes) {
 		return nil, errNoKubernetes
 	}
 	return Status(ctx, conn)

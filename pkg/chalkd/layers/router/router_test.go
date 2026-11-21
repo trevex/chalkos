@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
@@ -68,11 +68,11 @@ func bound(t *testing.T, p *Plugin, svc services.Service, vrf, record, device st
 // routerStatus is the state of the router as the layer serves it.
 func routerStatus(t *testing.T, p *Plugin) *routerv1.StatusResponse {
 	t.Helper()
-	resp, err := p.Status(context.Background(), connect.NewRequest(&routerv1.StatusRequest{}))
+	resp, err := p.Status(context.Background(), &routerv1.StatusRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return resp.Msg
+	return resp
 }
 
 // routerRecording is a recording of FRR's JSON or jool's CSV from package router's tests.
@@ -118,12 +118,12 @@ func TestRouterWithoutBGP(t *testing.T) {
 	if !st.BgpAbsent || st.BgpError != "" || len(st.Peers) != 0 {
 		t.Errorf("router status without BGP = %v", st)
 	}
-	resp, err := p.Routes(context.Background(), connect.NewRequest(&routerv1.RoutesRequest{}))
+	resp, err := p.Routes(context.Background(), &routerv1.RoutesRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(resp.Msg.Kernel) != 1 || len(resp.Msg.Bgp) != 0 || resp.Msg.BgpError != "" {
-		t.Errorf("routes without BGP = %v", resp.Msg)
+	if len(resp.Kernel) != 1 || len(resp.Bgp) != 0 || resp.BgpError != "" {
+		t.Errorf("routes without BGP = %v", resp)
 	}
 	if slices.ContainsFunc(r.Calls, func(c string) bool { return strings.HasPrefix(c, "vtysh") }) {
 		t.Errorf("a router without BGP asked vtysh: %v", r.Calls)
@@ -339,11 +339,11 @@ func TestRoutesOfAVRF(t *testing.T) {
 		tooltest.Rule{Prefix: "vtysh -c show bgp ipv6 unicast detail json", Out: "{}"},
 	)
 	routes := func(req *routerv1.RoutesRequest) (*routerv1.RoutesResponse, error) {
-		resp, err := p.Routes(context.Background(), connect.NewRequest(req))
+		resp, err := p.Routes(context.Background(), req)
 		if err != nil {
 			return nil, err
 		}
-		return resp.Msg, nil
+		return resp, nil
 	}
 	got, err := routes(&routerv1.RoutesRequest{Vrf: "tenant"})
 	if err != nil {

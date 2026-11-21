@@ -7,9 +7,10 @@ import (
 	"log"
 	"path/filepath"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/config"
@@ -35,7 +36,7 @@ import (
 // the pending config, else the running image's. A pulled image is fetched by the header's digest
 // with the credentials of the config's Registry of its host, and checked against the header as a
 // streamed one.
-func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev1.UpgradeRequest]) (*connect.Response[nodev1.UpgradeResponse], error) {
+func (s *Server) Upgrade(ctx context.Context, stream nodev1connect.NodeServiceUpgradeServerStream) (*nodev1.UpgradeResponse, error) {
 	unlock, err := s.lockSlots("an upgrade")
 	if err != nil {
 		return nil, err
@@ -46,7 +47,7 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		return nil, err
 	}
 	if role, _ := ctx.Value(roleKey{}).(pki.Role); (h.GetConfig() != "" || h.GetFallbackSecret() != "") && !role.Allows(pki.RoleAdmin) {
-		return nil, layer.Errorf(connect.CodePermissionDenied, "%s with config or a fallback secret needs the %s role; without them the node gives the image its pending config, else carries its own config over", stream.Spec().Procedure, pki.RoleAdmin)
+		return nil, layer.Errorf(connect.CodePermissionDenied, "%s with config or a fallback secret needs the %s role; without them the node gives the image its pending config, else carries its own config over", nodev1connect.NodeServiceUpgradeProcedure, pki.RoleAdmin)
 	}
 	img := h.GetImage()
 	switch {
@@ -134,7 +135,7 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 	resp := &nodev1.UpgradeResponse{AlreadyInstalled: res.AlreadyInstalled, AlreadyStaged: res.AlreadyStaged, Entry: res.Entry, Active: res.Active, Pending: pending}
 	if res.AlreadyInstalled {
 		log.Printf("%x runs already", img.GetRootHash())
-		return connect.NewResponse(resp), nil
+		return resp, nil
 	}
 	if res.AlreadyStaged && h.GetConfig() == "" {
 		if keepsConfig, err = knownGood(); err != nil {
@@ -161,7 +162,7 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		resp.Rebooting = true
 		s.rebootSoon()
 	}
-	return connect.NewResponse(resp), nil
+	return resp, nil
 }
 
 // stageConfig writes the config slot of the image an upgrade installs, in the store st with the
@@ -324,8 +325,8 @@ func (s *Server) recordImages(installed *upgrade.Header) {
 // before it was staged. A staged image whose slot STATE no longer keeps is refused first: it would
 // boot without config, fail its health check and fall back. Refusals fail the precondition; a
 // failure to read or change the disk or the ESP is internal.
-func (s *Server) ActivateImage(ctx context.Context, req *connect.Request[nodev1.ActivateImageRequest]) (*connect.Response[nodev1.ActivateImageResponse], error) {
-	root := req.Msg.RootHash
+func (s *Server) ActivateImage(ctx context.Context, req *nodev1.ActivateImageRequest) (*nodev1.ActivateImageResponse, error) {
+	root := req.RootHash
 	if len(root) == 0 {
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "the request names no image to activate")
 	}
@@ -347,7 +348,7 @@ func (s *Server) ActivateImage(ctx context.Context, req *connect.Request[nodev1.
 	default:
 		log.Printf("activated %x, which boots next as %s", root, res.Entry)
 	}
-	return connect.NewResponse(&nodev1.ActivateImageResponse{Entry: res.Entry, AlreadyActive: res.AlreadyStaged, AlreadyInstalled: res.AlreadyInstalled}), nil
+	return &nodev1.ActivateImageResponse{Entry: res.Entry, AlreadyActive: res.AlreadyStaged, AlreadyInstalled: res.AlreadyInstalled}, nil
 }
 
 // checkStagedSlot refuses to activate the staged image, by its root hash, while STATE keeps no

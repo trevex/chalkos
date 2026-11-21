@@ -11,7 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/trevex/chalkos/pkg/atomicfile"

@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -62,7 +61,7 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 	if p.insecure {
 		// An insecure connection's fingerprint vouches only for that connection. The secrets go
 		// over a new one pinned to the fingerprint printed here.
-		if _, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{})); err != nil {
+		if _, err := conn.Info(ctx, &nodev1.InfoRequest{}); err != nil {
 			return maintenanceError(ctx, t, err)
 		}
 		fp := conn.Fingerprint()
@@ -74,11 +73,11 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		conn.Close()
 		conn = pinned
 	}
-	info, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
+	info, err := conn.Info(ctx, &nodev1.InfoRequest{})
 	if err != nil {
 		return maintenanceError(ctx, t, err)
 	}
-	if info.Msg.Mode != nodev1.Mode_MODE_MAINTENANCE {
+	if info.Mode != nodev1.Mode_MODE_MAINTENANCE {
 		return fmt.Errorf("%s at %s is installed already", t.name, t.addr)
 	}
 	if !f.force {
@@ -92,9 +91,9 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 	header := &nodev1.InstallHeader{CaCertificate: []byte(t.secrets.OSCABundle()), WipeDisk: f.wipeDisk}
 	var img *diskImage
 	var c contract
-	if !info.Msg.Installer {
+	if !info.Installer {
 		// The node runs its image already, which must be of the node's platform.
-		if err := t.cluster.samePlatform(t.name, info.Msg.Platform); err != nil {
+		if err := t.cluster.samePlatform(t.name, info.Platform); err != nil {
 			return err
 		}
 		if c, err = nodeContract(ctx, conn, t.name); err != nil {
@@ -162,7 +161,10 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		}
 	}
 
-	stream := conn.Install(ctx)
+	stream, err := conn.Install(ctx)
+	if err != nil {
+		return err
+	}
 	if err := stream.Send(&nodev1.InstallRequest{Message: &nodev1.InstallRequest_Header{Header: header}}); err != nil && !errors.Is(err, io.EOF) {
 		return err
 	}

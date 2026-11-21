@@ -17,7 +17,8 @@ import (
 	"syscall"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -56,9 +57,8 @@ type Conn struct {
 	netDial func(ctx context.Context, network, addr string) (net.Conn, error)
 	// source says where the address came from.
 	source string
-	// http and baseURL reach the node's services.
-	http    *http.Client
-	baseURL string
+	// rpc reaches the node's services.
+	rpc *connect.Client
 }
 
 // errClosed is what calls after Close fail with.
@@ -161,9 +161,7 @@ func Dial(endpoint string, o Options) (*Conn, error) {
 	if o.Untrusted != nil {
 		rt = &untrusted{RoundTripper: transport, conn: c, endpoint: endpoint, tls: cfg, replace: o.Untrusted}
 	}
-	c.http = &http.Client{Transport: rt}
-	c.baseURL = "https://" + endpoint
-	c.NodeServiceClient = nodev1connect.NewNodeServiceClient(c.http, c.baseURL)
+	c.connect(&http.Client{Transport: rt}, "https://"+endpoint)
 	return c, nil
 }
 
@@ -180,16 +178,27 @@ func DialSocket(path string) *Conn {
 		return conn, nil
 	}
 	c.transport = &http.Transport{DialContext: c.dial}
-	c.http = &http.Client{Transport: c.transport}
-	c.baseURL = "http://chalkd"
-	c.NodeServiceClient = nodev1connect.NewNodeServiceClient(c.http, c.baseURL)
+	c.connect(&http.Client{Transport: c.transport}, "http://chalkd")
 	return c
 }
 
-// HTTPClient and BaseURL reach the node's other services, such as a layer's, over the
-// connections and checks of this client: connect's New…Client takes them.
-func (c *Conn) HTTPClient() connect.HTTPClient { return c.http }
-func (c *Conn) BaseURL() string                { return c.baseURL }
+// connect calls the node's services at baseURL through hc. A response may be as large as the node
+// makes it, such as a node's diagnostics: connect would otherwise refuse one over 4 MiB.
+func (c *Conn) connect(hc *http.Client, baseURL string) {
+	c.rpc = connect.NewClient(connecthttp.NewTransport(hc, baseURL, connecthttp.WithReadMaxBytes(0)))
+	c.NodeServiceClient = nodev1connect.NewNodeServiceClient(c.rpc)
+}
+
+// FromNode reports whether err is an error the node answered a call with, rather than a failure to
+// reach the node or to read its answer.
+func FromNode(err error) bool {
+	ce, ok := errors.AsType[*connect.Error](err)
+	return ok && ce.IsRemote()
+}
+
+// RPC reaches the node's other services, such as a layer's, over the connections and checks of
+// this client: connect's generated New…Client takes it.
+func (c *Conn) RPC() *connect.Client { return c.rpc }
 
 // verifyConnection records the fingerprint of the node's certificate and checks the certificate
 // with v.

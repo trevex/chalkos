@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
@@ -19,8 +19,8 @@ import (
 // statusOf is a router layer that reports st.
 type statusOf struct{ st *routerv1.StatusResponse }
 
-func (s statusOf) Status(context.Context, *connect.Request[routerv1.StatusRequest]) (*connect.Response[routerv1.StatusResponse], error) {
-	return connect.NewResponse(s.st), nil
+func (s statusOf) Status(context.Context, *routerv1.StatusRequest) (*routerv1.StatusResponse, error) {
+	return s.st, nil
 }
 
 // status is a router with two BGP sessions, NAT64 instance edge and a DHCPv4 server with one
@@ -115,7 +115,7 @@ func TestRouterTabFailingDiagnostic(t *testing.T) {
 	c := routerNode()
 	c.DiagnosticErrs = map[string]error{
 		// The tab's own bound on a diagnostic's run passed before chalkd answered.
-		consoletest.Key("dhcp-leases", nil): connect.NewError(connect.CodeDeadlineExceeded, context.DeadlineExceeded),
+		consoletest.Key("dhcp-leases", nil): connect.NewError(connect.CodeDeadlineExceeded, context.DeadlineExceeded.Error()).WithCause(context.DeadlineExceeded),
 	}
 	tm := start(t, c, status(true))
 	consoletest.WaitFor(t, tm, "nat64-sessions instance=")

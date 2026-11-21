@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -40,19 +39,19 @@ func (a *app) status(ctx context.Context, n nodeFlags, pos []string) error {
 
 // printStatus prints the status of the node t over conn.
 func (a *app) printStatus(ctx context.Context, t *target, conn *client.Conn) error {
-	resp, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+	resp, err := conn.Status(ctx, &nodev1.StatusRequest{})
 	if err != nil {
 		return err
 	}
-	return statusview.Write(a.stdout, resp.Msg, statusview.Options{
+	return statusview.Write(a.stdout, resp, statusview.Options{
 		Node:      t.name,
 		Inventory: nodeInventory{c: t.cluster, name: t.name},
 		Layers: func(io.Writer) error {
-			info, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
+			info, err := conn.Info(ctx, &nodev1.InfoRequest{})
 			if err != nil {
 				return err
 			}
-			for _, p := range pluginsOf[layer.Status](info.Msg.Layers) {
+			for _, p := range pluginsOf[layer.Status](info.Layers) {
 				if err := p.PrintStatus(ctx, host{a}, conn); err != nil {
 					return err
 				}

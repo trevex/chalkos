@@ -3,7 +3,6 @@ package chalkctl
 import (
 	"cmp"
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -12,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
@@ -57,31 +56,31 @@ func (l *upgradeLab) refusedConfig(name string) error {
 	defer l.mu.Unlock()
 	if l.refuseConfig == name {
 		l.refuseConfig = ""
-		return connect.NewError(connect.CodeInvalidArgument, errors.New("the config is refused"))
+		return connect.NewError(connect.CodeInvalidArgument, "the config is refused")
 	}
 	return nil
 }
 
-func (n *upgradeFake) ConfirmConfig(ctx context.Context, req *connect.Request[nodev1.ConfirmConfigRequest]) (*connect.Response[nodev1.ConfirmConfigResponse], error) {
+func (n *upgradeFake) ConfirmConfig(ctx context.Context, req *nodev1.ConfirmConfigRequest) (*nodev1.ConfirmConfigResponse, error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	if n.trial == nil || n.trial.Version != req.Msg.Version {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("no such trial"))
+	if n.trial == nil || n.trial.Version != req.Version {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, "no such trial")
 	}
 	n.trial = nil
 	n.lab.record("%s confirm", n.name)
-	return connect.NewResponse(&nodev1.ConfirmConfigResponse{}), nil
+	return &nodev1.ConfirmConfigResponse{}, nil
 }
 
-func (n *upgradeFake) RollbackConfig(ctx context.Context, req *connect.Request[nodev1.RollbackConfigRequest]) (*connect.Response[nodev1.RollbackConfigResponse], error) {
+func (n *upgradeFake) RollbackConfig(ctx context.Context, req *nodev1.RollbackConfigRequest) (*nodev1.RollbackConfigResponse, error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if n.trial == nil {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("no trial"))
+		return nil, connect.NewError(connect.CodeFailedPrecondition, "no trial")
 	}
 	n.config, n.trial = n.trialPrevious, nil
 	n.lab.record("%s rollback", n.name)
-	return connect.NewResponse(&nodev1.RollbackConfigResponse{}), nil
+	return &nodev1.RollbackConfigResponse{}, nil
 }
 
 // rollTo names the API server, controller-manager and scheduler of the version in the lab's

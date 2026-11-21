@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
@@ -121,7 +121,7 @@ func (s *Server) keepsKnownGood(rootHash []byte, text string) (bool, error) {
 // changes nothing. Nothing the running image runs changes. Without a staged image the config is
 // held pending for the next upgrade; with one, a pending config stays as it is. The caller holds
 // s.mu.
-func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) (*connect.Response[nodev1.ApplyConfigResponse], error) {
+func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) (*nodev1.ApplyConfigResponse, error) {
 	if m.Config == "" || len(m.Layers) > 0 || len(m.NodeCertificate) > 0 || len(m.NodeKey) > 0 || len(m.Trust) > 0 {
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "a request for the staged image delivers config alone, with the fallback secret: the share, the certificates and the OS CAs are the node's")
 	}
@@ -153,7 +153,7 @@ func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) 
 		if m.DryRun {
 			resp.Plan = &nodev1.Plan{Version: held, Replaces: held}
 		}
-		return connect.NewResponse(resp), nil
+		return resp, nil
 	}
 	platform := readOSRelease(s.Paths.OSRelease)["CHALKOS_PLATFORM"]
 	// A dry run has the image check the config, as a delivery does, and stops before the machine
@@ -169,7 +169,7 @@ func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) 
 		}
 		resp := &nodev1.ApplyConfigResponse{Plan: &nodev1.Plan{Version: w.next.Version, Replaces: held}, Warnings: w.warnings}
 		resp.Changes = append(resp.Changes, storageChanges(w.machine.changes)...)
-		return connect.NewResponse(resp), nil
+		return resp, nil
 	}
 	recorded, _, err := s.recorded()
 	if err != nil {
@@ -190,7 +190,7 @@ func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) 
 	}
 	resp := &nodev1.ApplyConfigResponse{Warnings: warnings}
 	resp.Changes = append(resp.Changes, storageChanges(storage.Changes(recorded, after))...)
-	return connect.NewResponse(resp), nil
+	return resp, nil
 }
 
 // secondWrite is what config delivered to the running image writes besides the running slot: the

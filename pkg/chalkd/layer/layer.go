@@ -9,11 +9,10 @@ package layer
 import (
 	"context"
 	"crypto/tls"
-	"net/http"
 	"sync"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/types/known/anypb"
 
@@ -27,10 +26,10 @@ import (
 type Plugin interface {
 	// Name is the layer, as its marker /etc/chalkos/layers/<name> names it.
 	Name() string
-	// Handler serves the layer's API with the options given: its path and handler, as connect's
-	// generated New…Handler returns them. chalkd mounts that of every compiled plugin, so that it
-	// answers for a layer the image lacks.
-	Handler(opts ...connect.HandlerOption) (string, http.Handler)
+	// Register registers the layer's API on server, as connect's generated Register…Handler does.
+	// chalkd registers that of every compiled plugin, so that it answers for a layer the image
+	// lacks.
+	Register(server *connect.Server)
 	// Permissions are the modes, least role and console access of each of the layer's procedures;
 	// chalkd asks every compiled plugin.
 	Permissions() map[string]Permission

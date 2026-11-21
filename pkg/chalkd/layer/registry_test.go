@@ -2,12 +2,11 @@ package layer
 
 import (
 	"context"
-	"net/http"
 	"slices"
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	"github.com/trevex/chalkos/pkg/layers"
 )
@@ -17,10 +16,8 @@ type fake struct {
 	actions map[string]func(context.Context) error
 }
 
-func (f fake) Name() string { return f.name }
-func (f fake) Handler(...connect.HandlerOption) (string, http.Handler) {
-	return "/" + f.name + "/", http.NotFoundHandler()
-}
+func (f fake) Name() string                                    { return f.name }
+func (f fake) Register(*connect.Server)                        {}
 func (f fake) Permissions() map[string]Permission              { return nil }
 func (f fake) Start(context.Context) error                     { return nil }
 func (f fake) Actions() map[string]func(context.Context) error { return f.actions }

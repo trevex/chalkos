@@ -16,7 +16,7 @@ import (
 	"slices"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -156,8 +156,8 @@ func (r trialRecord) state(slots string) (string, trialState, error) {
 // deadline; a record that changed meanwhile, as a rollback at the deadline rewrites it, is refused
 // with UNAVAILABLE so the client asks again. A trial past its deadline is confirmed only while its
 // rollback failed without changing the node.
-func (s *Server) ConfirmConfig(ctx context.Context, req *connect.Request[nodev1.ConfirmConfigRequest]) (*connect.Response[nodev1.ConfirmConfigResponse], error) {
-	version := req.Msg.Version
+func (s *Server) ConfirmConfig(ctx context.Context, req *nodev1.ConfirmConfigRequest) (*nodev1.ConfirmConfigResponse, error) {
+	version := req.Version
 	if version == "" {
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "the request names no config version to confirm")
 	}
@@ -185,7 +185,7 @@ func (s *Server) ConfirmConfig(ctx context.Context, req *connect.Request[nodev1.
 		// whose first attempt crashed after it removed the record finds the copy of the staged slot
 		// it never wrote, and says so.
 		if running == version {
-			return connect.NewResponse(&nodev1.ConfirmConfigResponse{Warnings: s.unwrittenCopy(version)}), nil
+			return &nodev1.ConfirmConfigResponse{Warnings: s.unwrittenCopy(version)}, nil
 		}
 		return nil, layer.Errorf(connect.CodeFailedPrecondition, "no trial is open, and the node runs config %s, not %s", running, version)
 	}
@@ -218,7 +218,7 @@ func (s *Server) ConfirmConfig(ctx context.Context, req *connect.Request[nodev1.
 	log.Printf("config %s was confirmed; its trial ended", version)
 	warnings := s.writeHeldBack(r)
 	removeStagedCopy(s.Paths.StateDir)
-	return connect.NewResponse(&nodev1.ConfirmConfigResponse{Warnings: warnings}), nil
+	return &nodev1.ConfirmConfigResponse{Warnings: warnings}, nil
 }
 
 // writeHeldBack writes what the delivery of the confirmed trial r held back: the staged image's
@@ -492,7 +492,7 @@ func checkTrial(found bool, running, next string, m machineChange) error {
 // settleTrial arms the deadline or ends the trial. The staged image checks the config first, but
 // its slot and the pending config are written only at the confirmation, so any rollback leaves
 // them as they were. The caller holds s.mu and s.upgrading.
-func (s *Server) applyTrial(ctx context.Context, r applyRequest) (*connect.Response[nodev1.ApplyConfigResponse], error) {
+func (s *Server) applyTrial(ctx context.Context, r applyRequest) (*nodev1.ApplyConfigResponse, error) {
 	d, err := s.planDelivery(ctx, r)
 	if err != nil {
 		return nil, err
@@ -522,7 +522,7 @@ func (s *Server) applyTrial(ctx context.Context, r applyRequest) (*connect.Respo
 	st, ferr := s.settleTrial(rec)
 	if err == nil {
 		log.Printf("config %s is on trial until %s; it rolls back to config %s unless confirmed", rec.Version, rec.Deadline.UTC().Format(time.RFC3339), rec.Previous)
-		second.plan(resp.Msg)
+		second.plan(resp)
 		return resp, nil
 	}
 	switch {

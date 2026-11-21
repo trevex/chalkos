@@ -11,7 +11,7 @@ pkgs.mkShell (
         chalkos.go.tools.gopls.latest
         buf
         protoc-gen-go
-        protoc-gen-connect-go
+        chalkos.protoc-gen-connect-go
         protoc-gen-doc
         openssl
         python3Packages.virt-firmware

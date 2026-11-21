@@ -8,7 +8,7 @@ import (
 	"slices"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -107,19 +107,19 @@ func (r *configRollout) plan(ctx context.Context, names []string) error {
 			return err
 		}
 		if err := callNode(t, func(conn *client.Conn) error {
-			info, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
+			info, err := conn.Info(ctx, &nodev1.InfoRequest{})
 			if err != nil {
 				return err
 			}
-			n.layers = info.Msg.Layers
+			n.layers = info.Layers
 			// Several nodes are checked before the first gets anything; one node is checked by its
 			// delivery, as before.
 			if len(names) > 1 {
-				st, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+				st, err := conn.Status(ctx, &nodev1.StatusRequest{})
 				if err != nil {
 					return err
 				}
-				if err := trialOpen(name, st.Msg); err != nil {
+				if err := trialOpen(name, st); err != nil {
 					return err
 				}
 				ct, err := nodeContract(ctx, conn, name)
@@ -130,7 +130,7 @@ func (r *configRollout) plan(ctx context.Context, names []string) error {
 				if err != nil {
 					return err
 				}
-				n.version, n.runs = d.Version, st.Msg.ConfigVersion
+				n.version, n.runs = d.Version, st.ConfigVersion
 			}
 			return r.changes(ctx, conn, n)
 		}); err != nil {
@@ -240,11 +240,11 @@ func (b *rebooter) readVersions(ctx context.Context, l layer.Rollout) layer.Read
 		for _, name := range names {
 			var v *layer.NodeVersions
 			err := b.reach.Call(name, func(conn *client.Conn) error {
-				info, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
+				info, err := conn.Info(ctx, &nodev1.InfoRequest{})
 				if err != nil {
 					return err
 				}
-				if slices.Contains(pluginsOf[layer.Rollout](info.Msg.Layers), l) {
+				if slices.Contains(pluginsOf[layer.Rollout](info.Layers), l) {
 					versions, err := l.Versions(ctx, conn)
 					v = &layer.NodeVersions{Name: name, Versions: versions, Err: err}
 				}
@@ -304,11 +304,11 @@ func (a *app) waitDelivered(ctx context.Context, t *target, until time.Time) err
 		ctx, cancel := context.WithDeadline(ctx, until)
 		defer cancel()
 		err := callNode(t, func(conn *client.Conn) error {
-			info, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
+			info, err := conn.Info(ctx, &nodev1.InfoRequest{})
 			if err != nil {
 				return err
 			}
-			layers := pluginsOf[layer.Rollout](info.Msg.Layers)
+			layers := pluginsOf[layer.Rollout](info.Layers)
 			if len(layers) > 0 && !said {
 				fmt.Fprintf(a.stdout, "%s: waiting for its layers to serve with the config\n", t.name)
 				said = true
@@ -337,7 +337,7 @@ func (a *app) waitDelivered(ctx context.Context, t *target, until time.Time) err
 // config back by itself, as trialRolledBack does.
 func (a *app) rollbackTrial(ctx context.Context, t *target, version, previous string, deadline time.Time, failure error) error {
 	err := callNode(t, func(conn *client.Conn) error {
-		_, err := conn.RollbackConfig(ctx, connect.NewRequest(&nodev1.RollbackConfigRequest{Version: previous}))
+		_, err := conn.RollbackConfig(ctx, &nodev1.RollbackConfigRequest{Version: previous})
 		return err
 	})
 	if err != nil {

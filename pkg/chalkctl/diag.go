@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -68,13 +67,13 @@ func diagnosticArguments(words []string) (map[string]string, error) {
 }
 
 func (a *app) listDiagnostics(ctx context.Context, conn *client.Conn) error {
-	resp, err := conn.Diagnostics(ctx, connect.NewRequest(&nodev1.DiagnosticsRequest{}))
+	resp, err := conn.Diagnostics(ctx, &nodev1.DiagnosticsRequest{})
 	if err != nil {
 		return err
 	}
 	w := a.table()
 	fmt.Fprintln(w, "DIAGNOSTIC\tROLE\tDESCRIPTION")
-	for _, d := range resp.Msg.Diagnostics {
+	for _, d := range resp.Diagnostics {
 		fmt.Fprintf(w, "%s\t%s\t%s\n", d.Name, d.Role, d.Description)
 		for _, p := range d.Parameters {
 			fmt.Fprintf(w, "  %s\t\t%s\n", parameterUsage(p), parameterNotes(p))

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/api/kubernetes/v1/kubernetesv1connect"
@@ -34,16 +34,16 @@ func TestInfoAndContractNameTheLayers(t *testing.T) {
 			// The Kubernetes layer reads its image.json.
 			kubernetesImage(t, s)
 		}
-		info, err := s.Info(context.Background(), connect.NewRequest(&nodev1.InfoRequest{}))
+		info, err := s.Info(context.Background(), &nodev1.InfoRequest{})
 		if err != nil {
 			t.Fatal(err)
 		}
-		contract, err := s.Contract(context.Background(), connect.NewRequest(&nodev1.ContractRequest{}))
+		contract, err := s.Contract(context.Background(), &nodev1.ContractRequest{})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !slices.Equal(info.Msg.Layers, c.want) || !slices.Equal(contract.Msg.Layers, c.want) {
-			t.Errorf("layers %q in Info and %q in Contract, want %q", info.Msg.Layers, contract.Msg.Layers, c.want)
+		if !slices.Equal(info.Layers, c.want) || !slices.Equal(contract.Layers, c.want) {
+			t.Errorf("layers %q in Info and %q in Contract, want %q", info.Layers, contract.Layers, c.want)
 		}
 	}
 }
@@ -66,13 +66,13 @@ func TestLayerGate(t *testing.T) {
 		if got := call(conn, "RouterStatus"); got != connect.CodeUnimplemented {
 			t.Errorf("router status in %v without the router layer: code %v, want unimplemented", mode, got)
 		}
-		k := kubernetesv1connect.NewKubernetesServiceClient(conn.HTTPClient(), conn.BaseURL())
-		_, err := k.Bootstrap(context.Background(), connect.NewRequest(&kubernetesv1.BootstrapRequest{}))
+		k := kubernetesv1connect.NewKubernetesServiceClient(conn.RPC())
+		_, err := k.Bootstrap(context.Background(), &kubernetesv1.BootstrapRequest{})
 		if want := "the kubernetes layer is not in this image"; err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("bootstrap in %v: %v, want %q", mode, err, want)
 		}
-		r := routerv1connect.NewRouterServiceClient(conn.HTTPClient(), conn.BaseURL())
-		_, err = r.Routes(context.Background(), connect.NewRequest(&routerv1.RoutesRequest{}))
+		r := routerv1connect.NewRouterServiceClient(conn.RPC())
+		_, err = r.Routes(context.Background(), &routerv1.RoutesRequest{})
 		if want := "the router layer is not in this image"; connect.CodeOf(err) != connect.CodeUnimplemented || !strings.Contains(err.Error(), want) {
 			t.Errorf("routes in %v without the router layer: %v, want %q", mode, err, want)
 		}

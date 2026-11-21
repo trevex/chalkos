@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
@@ -146,12 +146,12 @@ func slotConfig(ctx context.Context, conn *client.Conn, staged bool) (config.Red
 // getConfig asks a node for the documents the request names, which it serves redacted; none when
 // the node holds none.
 func getConfig(ctx context.Context, conn *client.Conn, req *nodev1.GetConfigRequest) (config.Redacted, error) {
-	resp, err := conn.GetConfig(ctx, connect.NewRequest(req))
+	resp, err := conn.GetConfig(ctx, req)
 	if connect.CodeOf(err) == connect.CodeNotFound {
 		return config.Redacted{}, nil
 	}
 	if err != nil {
 		return config.Redacted{}, fmt.Errorf("ask for the config it holds: %w", err)
 	}
-	return config.ParseRedacted(strings.NewReader(resp.Msg.Documents))
+	return config.ParseRedacted(strings.NewReader(resp.Documents))
 }

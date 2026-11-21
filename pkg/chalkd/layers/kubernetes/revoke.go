@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -27,8 +27,8 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
-func (p *Plugin) RevokeNode(ctx context.Context, req *connect.Request[kubernetesv1.RevokeNodeRequest]) (*connect.Response[kubernetesv1.RevokeNodeResponse], error) {
-	name := req.Msg.Node
+func (p *Plugin) RevokeNode(ctx context.Context, req *kubernetesv1.RevokeNodeRequest) (*kubernetesv1.RevokeNodeResponse, error) {
+	name := req.Node
 	if err := checkNodeName(name); err != nil {
 		return nil, err
 	}
@@ -55,11 +55,11 @@ func (p *Plugin) RevokeNode(ctx context.Context, req *connect.Request[kubernetes
 		return nil, layer.Errorf(connect.CodeUnavailable, "%s is revoked, but deleting its Node failed: %w; revoking it again deletes it", name, err)
 	}
 	log.Printf("kubernetes: revoked node %s", name)
-	return connect.NewResponse(&kubernetesv1.RevokeNodeResponse{RevokedAt: timestamppb.New(at), NodeDeleted: deleted}), nil
+	return &kubernetesv1.RevokeNodeResponse{RevokedAt: timestamppb.New(at), NodeDeleted: deleted}, nil
 }
 
-func (p *Plugin) UnrevokeNode(ctx context.Context, req *connect.Request[kubernetesv1.UnrevokeNodeRequest]) (*connect.Response[kubernetesv1.UnrevokeNodeResponse], error) {
-	name := req.Msg.Node
+func (p *Plugin) UnrevokeNode(ctx context.Context, req *kubernetesv1.UnrevokeNodeRequest) (*kubernetesv1.UnrevokeNodeResponse, error) {
+	name := req.Node
 	if err := checkNodeName(name); err != nil {
 		return nil, err
 	}
@@ -75,7 +75,7 @@ func (p *Plugin) UnrevokeNode(ctx context.Context, req *connect.Request[kubernet
 		if stale, err = p.staleCAs(cp.share, at); err != nil {
 			return layer.Errorf(connect.CodeInternal, "%w", err)
 		}
-		if len(stale) > 0 && !req.Msg.Force {
+		if len(stale) > 0 && !req.Force {
 			return layer.Errorf(connect.CodeFailedPrecondition, "%s; rotate them first, or pass --force to unrevoke %s anyway", staleWarning(name, at, stale), name)
 		}
 		return nil
@@ -105,7 +105,7 @@ func (p *Plugin) UnrevokeNode(ctx context.Context, req *connect.Request[kubernet
 	if !at.IsZero() {
 		resp.RevokedAt = timestamppb.New(at)
 	}
-	return connect.NewResponse(resp), nil
+	return resp, nil
 }
 
 // policyRoom refuses to revoke a node not revoked yet while the admission policy's map of revoked

@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -154,7 +153,7 @@ func (b *rebooter) reboot(ctx context.Context, n *rebootNode, t bootTarget, hold
 		}
 	}
 	if err := b.reach.Call(n.name, func(conn *client.Conn) error {
-		_, err := conn.Reboot(ctx, connect.NewRequest(&nodev1.RebootRequest{}))
+		_, err := conn.Reboot(ctx, &nodev1.RebootRequest{})
 		return err
 	}); err != nil {
 		return err
@@ -211,9 +210,9 @@ func (b *rebooter) waitHealthy(ctx context.Context, n *rebootNode, t bootTarget)
 		var notReady error
 		err := b.reach.Call(n.name, func(conn *client.Conn) error {
 			status := func() error {
-				s, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{CheckHealth: checkHealth}))
+				s, err := conn.Status(ctx, &nodev1.StatusRequest{CheckHealth: checkHealth})
 				if err == nil {
-					st = s.Msg
+					st = s
 				}
 				return err
 			}
@@ -358,20 +357,20 @@ func (b *rebooter) probe(ctx context.Context, name string) (*nodev1.InfoResponse
 	var st *nodev1.StatusResponse
 	var roles upgradeRoles
 	err := b.reach.Call(name, func(conn *client.Conn) error {
-		i, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
+		i, err := conn.Info(ctx, &nodev1.InfoRequest{})
 		if err != nil {
 			return err
 		}
-		s, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+		s, err := conn.Status(ctx, &nodev1.StatusRequest{})
 		if err != nil {
 			return err
 		}
 		if !b.skipLayers {
-			if roles, err = readRoles(ctx, conn, i.Msg.Layers); err != nil {
+			if roles, err = readRoles(ctx, conn, i.Layers); err != nil {
 				return err
 			}
 		}
-		info, st = i.Msg, s.Msg
+		info, st = i, s
 		return nil
 	})
 	return info, st, roles, err
@@ -491,7 +490,7 @@ func (a *app) nodeReboot(ctx context.Context, f nodeRebootFlags, name string) er
 			return err
 		}
 		defer conn.Close()
-		if _, err := conn.Reboot(ctx, connect.NewRequest(&nodev1.RebootRequest{})); err != nil {
+		if _, err := conn.Reboot(ctx, &nodev1.RebootRequest{}); err != nil {
 			return err
 		}
 		fmt.Fprintf(a.stdout, "%s reboots\n", t.name)

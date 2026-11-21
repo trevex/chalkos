@@ -1,12 +1,11 @@
 package console_test
 
 import (
-	"errors"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	"github.com/trevex/chalkos/pkg/console"
 	"github.com/trevex/chalkos/pkg/console/consoletest"
@@ -29,7 +28,7 @@ func TestHeaderInstaller(t *testing.T) {
 // While chalkd does not answer, the header says so and the console keeps trying.
 func TestChalkdDoesNotAnswer(t *testing.T) {
 	c := consoletest.Normal()
-	c.InfoErr = connect.NewError(connect.CodeUnavailable, errors.New("dial unix /run/chalkd/console.sock: connect: connection refused"))
+	c.InfoErr = connect.NewError(connect.CodeUnavailable, "dial unix /run/chalkd/console.sock: connect: connection refused")
 	tm := consoletest.Start(t, console.New(c, consoletest.Options()))
 	consoletest.WaitFor(t, tm, "chalkd does not answer")
 	consoletest.Snapshot(t, tm)

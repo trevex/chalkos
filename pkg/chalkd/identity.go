@@ -3,7 +3,7 @@ package chalkd
 import (
 	"encoding/json"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/identity"

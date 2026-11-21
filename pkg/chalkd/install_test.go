@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	checkv1 "github.com/trevex/chalkos/pkg/api/check/v1"
@@ -86,7 +86,7 @@ func sendInstall(t *testing.T, s *Server, h *nodev1.InstallHeader, image []byte)
 	for chunk := range slices.Chunk(image, 1000) {
 		msgs = append(msgs, &nodev1.InstallRequest{Message: &nodev1.InstallRequest_Chunk{Chunk: &nodev1.ImageChunk{Data: chunk}}})
 	}
-	_, err := sendAll(t, conn.Install(context.Background()), msgs...)
+	_, err := sendAll(t, openInstall(t, conn), msgs...)
 	return err
 }
 

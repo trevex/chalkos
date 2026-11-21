@@ -10,7 +10,8 @@ import (
 	"slices"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connectproto"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
@@ -75,7 +76,7 @@ func (notEtcdMemberError) Error() string {
 func (notEtcdMemberError) Code() connect.Code { return connect.CodeFailedPrecondition }
 
 func (notEtcdMemberError) Details() []*connect.ErrorDetail {
-	detail, err := connect.NewErrorDetail(&kubernetesv1.NotEtcdMember{})
+	detail, err := connectproto.NewErrorDetail(&kubernetesv1.NotEtcdMember{})
 	if err != nil {
 		return nil
 	}
@@ -119,7 +120,7 @@ func memberMessage(m etcd.Member, unhealthy error) *kubernetesv1.EtcdMember {
 	return msg
 }
 
-func (p *Plugin) EtcdMembers(ctx context.Context, _ *connect.Request[kubernetesv1.EtcdMembersRequest]) (*connect.Response[kubernetesv1.EtcdMembersResponse], error) {
+func (p *Plugin) EtcdMembers(ctx context.Context, _ *kubernetesv1.EtcdMembersRequest) (*kubernetesv1.EtcdMembersResponse, error) {
 	k := p.k
 	cp, err := k.etcdMember()
 	if err != nil {
@@ -141,10 +142,10 @@ func (p *Plugin) EtcdMembers(ctx context.Context, _ *connect.Request[kubernetesv
 	for _, m := range members {
 		resp.Members = append(resp.Members, memberMessage(m, unhealthy[m.ID]))
 	}
-	return connect.NewResponse(resp), nil
+	return resp, nil
 }
 
-func (p *Plugin) EtcdRemoveMember(ctx context.Context, req *connect.Request[kubernetesv1.EtcdRemoveMemberRequest]) (*connect.Response[kubernetesv1.EtcdRemoveMemberResponse], error) {
+func (p *Plugin) EtcdRemoveMember(ctx context.Context, req *kubernetesv1.EtcdRemoveMemberRequest) (*kubernetesv1.EtcdRemoveMemberResponse, error) {
 	p.node.Changes().Lock()
 	defer p.node.Changes().Unlock()
 	k := p.k
@@ -164,7 +165,7 @@ func (p *Plugin) EtcdRemoveMember(ctx context.Context, req *connect.Request[kube
 	if err != nil {
 		return nil, layer.Errorf(connect.CodeUnavailable, "%w", err)
 	}
-	m, err := etcd.Find(members, req.Msg.Member)
+	m, err := etcd.Find(members, req.Member)
 	if err != nil {
 		return nil, layer.Errorf(connect.CodeNotFound, "%w", err)
 	}
@@ -174,7 +175,7 @@ func (p *Plugin) EtcdRemoveMember(ctx context.Context, req *connect.Request[kube
 		return nil, layer.Errorf(connect.CodeFailedPrecondition, "%s is this node's own member; chalkctl etcd leave %s takes the node out of etcd", name, name)
 	}
 	rctx, cancel = k.etcdRequest(ctx)
-	err = cli.Remove(rctx, m.ID, req.Msg.Force)
+	err = cli.Remove(rctx, m.ID, req.Force)
 	cancel()
 	if _, ok := errors.AsType[*etcd.QuorumError](err); ok {
 		return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w; pass --force to remove it anyway", err)
@@ -183,7 +184,7 @@ func (p *Plugin) EtcdRemoveMember(ctx context.Context, req *connect.Request[kube
 		return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
 	}
 	log.Printf("kubernetes: removed the etcd member %s", m)
-	return connect.NewResponse(&kubernetesv1.EtcdRemoveMemberResponse{Removed: memberMessage(m, nil)}), nil
+	return &kubernetesv1.EtcdRemoveMemberResponse{Removed: memberMessage(m, nil)}, nil
 }
 
 // ownMember finds the node's member among the members with etcd.Self, at the peer URL of the
@@ -217,7 +218,7 @@ func (k *side) leaveEndpoints(ctx context.Context, c k8s.Cluster, share kpki.Sha
 	return append(endpoints, others...)
 }
 
-func (p *Plugin) EtcdLeave(ctx context.Context, req *connect.Request[kubernetesv1.EtcdLeaveRequest]) (*connect.Response[kubernetesv1.EtcdLeaveResponse], error) {
+func (p *Plugin) EtcdLeave(ctx context.Context, req *kubernetesv1.EtcdLeaveRequest) (*kubernetesv1.EtcdLeaveResponse, error) {
 	p.node.Changes().Lock()
 	defer p.node.Changes().Unlock()
 	k := p.k
@@ -285,7 +286,7 @@ func (p *Plugin) EtcdLeave(ctx context.Context, req *connect.Request[kubernetesv
 	if ok {
 		// A bootstrapped node leaves through the other members alone only when forced: its own
 		// member may be healthy but cut off, or unable to run, as without its pinned address.
-		if bootstrapped && !req.Msg.Force && !slices.Contains(answered, k.localEtcd(c)) {
+		if bootstrapped && !req.Force && !slices.Contains(answered, k.localEtcd(c)) {
 			return nil, layer.Errorf(connect.CodeFailedPrecondition, "this node's etcd member %s does not answer at %s; pass --force to remove it through the other members, as when the node lost its pinned address", self, k.localEtcd(c))
 		}
 		rctx, cancel := k.etcdRequest(ctx)
@@ -349,7 +350,7 @@ func (p *Plugin) EtcdLeave(ctx context.Context, req *connect.Request[kubernetesv
 		return nil, fmt.Errorf("the node left etcd: %w", err)
 	}
 	log.Print("kubernetes: the node left etcd; reinstall it to join the cluster again")
-	return connect.NewResponse(&kubernetesv1.EtcdLeaveResponse{}), nil
+	return &kubernetesv1.EtcdLeaveResponse{}, nil
 }
 
 // etcdStopped waits until the node's etcd no longer listens, as the kubelet stops it once its

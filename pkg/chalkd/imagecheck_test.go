@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	checkv1 "github.com/trevex/chalkos/pkg/api/check/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -161,14 +161,14 @@ func TestStagedFacts(t *testing.T) {
 func TestApplyConfigStagedDryRun(t *testing.T) {
 	s, r := stagedServer(t, fixtureSchemas(t))
 	r.Rules = volumeRules(s)
-	resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: extraConfig("ext4"), Staged: true, DryRun: true, FallbackSecret: secret}))
+	resp, err := s.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{Config: extraConfig("ext4"), Staged: true, DryRun: true, FallbackSecret: secret})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p := resp.Msg.GetPlan(); p.GetVersion() != hashOf(t, extraConfig("ext4")) || p.GetReplaces() != hashOf(t, baseConfig) || len(p.GetOutputs()) != 0 || len(p.GetEffects()) != 0 {
+	if p := resp.GetPlan(); p.GetVersion() != hashOf(t, extraConfig("ext4")) || p.GetReplaces() != hashOf(t, baseConfig) || len(p.GetOutputs()) != 0 || len(p.GetEffects()) != 0 {
 		t.Errorf("plan = %v", p)
 	}
-	if c := resp.Msg.GetChanges(); len(c) != 1 || c[0].GetVolume() != "extra" {
+	if c := resp.GetChanges(); len(c) != 1 || c[0].GetVolume() != "extra" {
 		t.Errorf("changes = %v, want the new volume", c)
 	}
 	if v := slotVersion(t, s, stagedImage); v != hashOf(t, baseConfig) {
@@ -178,7 +178,7 @@ func TestApplyConfigStagedDryRun(t *testing.T) {
 		t.Errorf("a dry run ran %v", changed)
 	}
 	// A refusal is a delivery's.
-	_, err = s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: strings.Replace(baseConfig, "{disk: {path: /dev/vda}}", "{disk: {path: /dev/vda}, var: {size: 1G}}", 1), Staged: true, DryRun: true}))
+	_, err = s.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{Config: strings.Replace(baseConfig, "{disk: {path: /dev/vda}}", "{disk: {path: /dev/vda}, var: {size: 1G}}", 1), Staged: true, DryRun: true})
 	if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "only a reinstall of") {
 		t.Errorf("err = %v", err)
 	}
@@ -190,9 +190,9 @@ func TestApplyConfigStagedWarns(t *testing.T) {
 	s, _ := stagedServer(t, fixtureSchemas(t))
 	s.CheckImage = &recording{run: s.CheckImage, answer: func(res *checkv1.Result) { res.Warnings = []string{"effect demo: cannot evaluate"} }}
 	for _, dryRun := range []bool{true, false} {
-		resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: baseConfig, Staged: true, DryRun: dryRun}))
-		if err != nil || !slices.Equal(resp.Msg.GetWarnings(), []string{"effect demo: cannot evaluate"}) {
-			t.Errorf("dry run %v: warnings = %v, %v", dryRun, resp.Msg.GetWarnings(), err)
+		resp, err := s.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{Config: baseConfig, Staged: true, DryRun: dryRun})
+		if err != nil || !slices.Equal(resp.GetWarnings(), []string{"effect demo: cannot evaluate"}) {
+			t.Errorf("dry run %v: warnings = %v, %v", dryRun, resp.GetWarnings(), err)
 		}
 	}
 }

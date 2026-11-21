@@ -226,7 +226,7 @@ rec {
           docgen
           pkgs.buf
           pkgs.protoc-gen-go
-          pkgs.protoc-gen-connect-go
+          pkgs.chalkos.protoc-gen-connect-go
           pkgs.protoc-gen-doc
         ];
         api = lib.fileset.toSource {

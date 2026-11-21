@@ -2,12 +2,11 @@ package kubernetes_test
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -20,8 +19,8 @@ import (
 // statusOf is a Kubernetes layer that reports st.
 type statusOf struct{ st *kubernetesv1.StatusResponse }
 
-func (s statusOf) Status(context.Context, *connect.Request[kubernetesv1.StatusRequest]) (*connect.Response[kubernetesv1.StatusResponse], error) {
-	return connect.NewResponse(s.st), nil
+func (s statusOf) Status(context.Context, *kubernetesv1.StatusRequest) (*kubernetesv1.StatusResponse, error) {
+	return s.st, nil
 }
 
 // controlPlane is a bootstrapped control plane with 23 pods that do not run, of which its status
@@ -136,8 +135,8 @@ func TestKubernetesTabReads(t *testing.T) {
 // statusFails is a Kubernetes layer whose status cannot be read.
 type statusFails struct{}
 
-func (statusFails) Status(context.Context, *connect.Request[kubernetesv1.StatusRequest]) (*connect.Response[kubernetesv1.StatusResponse], error) {
-	return nil, connect.NewError(connect.CodeUnavailable, errors.New("the API server does not answer"))
+func (statusFails) Status(context.Context, *kubernetesv1.StatusRequest) (*kubernetesv1.StatusResponse, error) {
+	return nil, connect.NewError(connect.CodeUnavailable, "the API server does not answer")
 }
 
 // The power warning names etcd's quorum on a control plane and on a node whose status cannot be

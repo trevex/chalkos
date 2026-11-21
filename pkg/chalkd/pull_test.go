@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"google.golang.org/protobuf/proto"
 
@@ -132,7 +132,7 @@ func upgradeWith(t *testing.T, c creds, header *nodev1.UpgradeHeader, running, p
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleAdmin])
 	h := proto.Clone(header).(*nodev1.UpgradeHeader)
 	h.Config = cfg
-	stream := conn.Upgrade(context.Background())
+	stream := openUpgrade(t, conn)
 	_, err := sendAll(t, stream, &nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: h}})
 	return got, err
 }
@@ -198,9 +198,9 @@ func TestUpgradePullsNothingForAnImageItHolds(t *testing.T) {
 		return upgrade.Result{AlreadyInstalled: true}, imageConfig{}, nil
 	}
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator])
-	stream := conn.Upgrade(context.Background())
+	stream := openUpgrade(t, conn)
 	resp, err := sendAll(t, stream, &nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}})
-	if err != nil || !resp.Msg.GetAlreadyInstalled() {
+	if err != nil || !resp.GetAlreadyInstalled() {
 		t.Fatalf("upgrade = %v, %v", resp, err)
 	}
 	if n := manifests.Load() - before; n != 0 {
@@ -215,7 +215,10 @@ func TestUpgradeRefusesChunksOfAPull(t *testing.T) {
 	s, _ := newTestServer(t, normal, vda)
 	fakeImageSlots(t, s).forbidChanges()
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator])
-	stream := conn.Upgrade(context.Background())
+	stream, err := conn.Upgrade(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
 	stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: pulledHeader(t, ocitest.Registry(t))}})
 	stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Chunk{Chunk: &nodev1.ImageChunk{Data: []byte("store")}}})
 	if _, err := stream.CloseAndReceive(); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "an upgrade that pulls its image carries no chunks") {
@@ -277,7 +280,10 @@ func TestUpgradePullFailsInternallyWithoutTheRunningConfig(t *testing.T) {
 	}
 	fakeImageSlots(t, s).forbidChanges()
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator])
-	stream := conn.Upgrade(context.Background())
+	stream, err := conn.Upgrade(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
 	stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: pulledHeader(t, ocitest.Registry(t))}})
 	if _, err := stream.CloseAndReceive(); connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "read the running image's config slot") {
 		t.Errorf("upgrade = %v", err)

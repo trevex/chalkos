@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -32,11 +32,11 @@ import (
 )
 
 func rotationStep(ctx context.Context, s *Plugin, step kubernetesv1.RotationStep) (*kubernetesv1.RotationStepResponse, error) {
-	resp, err := s.RotationStep(ctx, connect.NewRequest(&kubernetesv1.RotationStepRequest{Step: step}))
+	resp, err := s.RotationStep(ctx, &kubernetesv1.RotationStepRequest{Step: step})
 	if err != nil {
 		return nil, err
 	}
-	return resp.Msg, nil
+	return resp, nil
 }
 
 // withAPI makes the node reach a fake API server holding the objects.

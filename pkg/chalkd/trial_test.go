@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
 
@@ -62,17 +62,17 @@ func trialOpenOn(t *testing.T, s *Server) bool {
 }
 
 func sendConfirm(s *Server, version string) error {
-	_, err := s.ConfirmConfig(context.Background(), connect.NewRequest(&nodev1.ConfirmConfigRequest{Version: version}))
+	_, err := s.ConfirmConfig(context.Background(), &nodev1.ConfirmConfigRequest{Version: version})
 	return err
 }
 
 func statusOf(t *testing.T, s *Server) *nodev1.StatusResponse {
 	t.Helper()
-	resp, err := s.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{}))
+	resp, err := s.Status(context.Background(), &nodev1.StatusRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return resp.Msg
+	return resp
 }
 
 // TestConfirmConfig ends a trial once the node is healthy, with the units the trial ignores left
@@ -183,7 +183,7 @@ func TestChangesWaitForATrial(t *testing.T) {
 	ctx := context.Background()
 	apply := func(m *nodev1.ApplyConfigRequest) func() error {
 		return func() error {
-			_, err := s.ApplyConfig(ctx, connect.NewRequest(m))
+			_, err := s.ApplyConfig(ctx, m)
 			return err
 		}
 	}
@@ -195,13 +195,16 @@ func TestChangesWaitForATrial(t *testing.T) {
 		{"staged config", "another delivery", apply(&nodev1.ApplyConfigRequest{Config: baseConfig, Staged: true})},
 		{"OS CAs", "another delivery", apply(&nodev1.ApplyConfigRequest{Trust: []byte("x")})},
 		{"image rollback", "an image rollback", func() error {
-			_, err := s.RollbackImage(ctx, connect.NewRequest(&nodev1.RollbackImageRequest{RootHash: bytes.Repeat([]byte{1}, 32)}))
+			_, err := s.RollbackImage(ctx, &nodev1.RollbackImageRequest{RootHash: bytes.Repeat([]byte{1}, 32)})
 			return err
 		}},
 		{"upgrade", "an upgrade", func() error {
-			stream := conn.Upgrade(ctx)
+			stream, err := conn.Upgrade(ctx)
+			if err != nil {
+				return err
+			}
 			stream.Send(&nodev1.UpgradeRequest{})
-			_, err := stream.CloseAndReceive()
+			_, err = stream.CloseAndReceive()
 			return err
 		}},
 	} {
@@ -473,13 +476,16 @@ func TestChangesPassAnEndedTrial(t *testing.T) {
 			return err
 		}, ""},
 		{"image rollback", func(s *Server, _ *client.Conn) error {
-			_, err := s.RollbackImage(ctx, connect.NewRequest(&nodev1.RollbackImageRequest{RootHash: bytes.Repeat([]byte{1}, 32)}))
+			_, err := s.RollbackImage(ctx, &nodev1.RollbackImageRequest{RootHash: bytes.Repeat([]byte{1}, 32)})
 			return err
 		}, "STATE holds no config for the image"},
 		{"upgrade", func(_ *Server, conn *client.Conn) error {
-			stream := conn.Upgrade(ctx)
+			stream, err := conn.Upgrade(ctx)
+			if err != nil {
+				return err
+			}
 			stream.Send(&nodev1.UpgradeRequest{})
-			_, err := stream.CloseAndReceive()
+			_, err = stream.CloseAndReceive()
 			return err
 		}, "the first upgrade message must be the header"},
 	} {
@@ -660,11 +666,11 @@ func expire(s *Server, r trialRecord) {
 }
 
 func sendTrial(s *Server, text string, d time.Duration) (*nodev1.ApplyConfigResponse, error) {
-	resp, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: text, Try: durationpb.New(d)}))
+	resp, err := s.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{Config: text, Try: durationpb.New(d)})
 	if err != nil {
 		return nil, err
 	}
-	return resp.Msg, nil
+	return resp, nil
 }
 
 // trialServer is configServer whose trial deadlines stop with the test.
@@ -682,11 +688,11 @@ func TestApplyConfigOnTrial(t *testing.T) {
 	s := trialServer(t)
 	before := time.Now()
 	ignore := []string{"late.service", "sync@a.timer"}
-	m, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: nextConfig, Try: durationpb.New(time.Hour), IgnoreUnits: ignore}))
+	m, err := s.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{Config: nextConfig, Try: durationpb.New(time.Hour), IgnoreUnits: ignore})
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp := m.Msg
+	resp := m
 	if len(resp.RestartedUnits) != 1 || resp.RestartedUnits[0] != "demo.service" {
 		t.Errorf("restarted %v, want demo.service", resp.RestartedUnits)
 	}
@@ -749,7 +755,7 @@ func TestTrialRefusals(t *testing.T) {
 		{"the running config", &nodev1.ApplyConfigRequest{Config: baseConfig, Try: try}, connect.CodeFailedPrecondition, "the node runs config " + hashOf(t, baseConfig) + " already; a trial needs a config that changes it"},
 		{"a volume", &nodev1.ApplyConfigRequest{Config: extraConfig("ext4"), FallbackSecret: secret, Try: try}, connect.CodeFailedPrecondition, "the config changes the node's storage, volume extra: "},
 	} {
-		_, err := s.ApplyConfig(context.Background(), connect.NewRequest(tc.req))
+		_, err := s.ApplyConfig(context.Background(), tc.req)
 		if codeOf(err) != tc.code || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: %v, want %v %q", tc.name, err, tc.code, tc.want)
 		}

@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -351,11 +350,11 @@ func (r *rotation) Call(name string, fn func(conn *client.Conn) error) error {
 // deliver sends a node what req carries.
 func (r *rotation) deliver(ctx context.Context, name string, req *nodev1.ApplyConfigRequest) error {
 	return r.Call(name, func(conn *client.Conn) error {
-		resp, err := conn.ApplyConfig(ctx, connect.NewRequest(req))
+		resp, err := conn.ApplyConfig(ctx, req)
 		if err != nil {
 			return err
 		}
-		r.a.warnDelivery(name, resp.Msg)
+		r.a.warnDelivery(name, resp)
 		return nil
 	})
 }

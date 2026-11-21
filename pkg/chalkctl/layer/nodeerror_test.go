@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 )
 
 // An error names its node once: one that names it already, also wrapped further, is printed as it
@@ -35,7 +35,7 @@ func TestNamed(t *testing.T) {
 		t.Error("Named(nil) is not nil")
 	}
 	// The connect code stays reachable.
-	if code := connect.CodeOf(Named("r1", connect.NewError(connect.CodeFailedPrecondition, errors.New("x")))); code != connect.CodeFailedPrecondition {
+	if code := connect.CodeOf(Named("r1", connect.NewError(connect.CodeFailedPrecondition, "x"))); code != connect.CodeFailedPrecondition {
 		t.Errorf("code = %v, want failed_precondition", code)
 	}
 }

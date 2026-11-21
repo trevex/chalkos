@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
@@ -75,7 +75,7 @@ func TestApplyConfigReplacesTheOSCAs(t *testing.T) {
 			return err
 		}
 		defer c.Close()
-		_, err = c.Info(context.Background(), connect.NewRequest(&nodev1.InfoRequest{}))
+		_, err = c.Info(context.Background(), &nodev1.InfoRequest{})
 		return err
 	}
 	if err := reach(); err == nil {
@@ -93,7 +93,7 @@ func TestApplyConfigReplacesTheOSCAs(t *testing.T) {
 		"a node CA as a root":                                                 {admin, &nodev1.ApplyConfigRequest{Trust: []byte(both + kubernetestest.NodeCA(t).Certificate)}},
 		"OS CAs with a node certificate":                                      {admin, &nodev1.ApplyConfigRequest{Trust: []byte(both), NodeCertificate: []byte(renewed.Certificate), NodeKey: []byte(renewed.Key)}},
 	} {
-		_, err := s.ApplyConfig(asCaller(tc.caller), connect.NewRequest(tc.req))
+		_, err := s.ApplyConfig(asCaller(tc.caller), tc.req)
 		if codeOf(err) != connect.CodeInvalidArgument {
 			t.Errorf("%s: %v, want invalid_argument", name, err)
 		} else if strings.Contains(err.Error(), "PRIVATE KEY") || strings.Contains(err.Error(), "BEGIN") {
@@ -104,7 +104,7 @@ func TestApplyConfigReplacesTheOSCAs(t *testing.T) {
 		t.Fatal("a refused request changed the OS CAs")
 	}
 
-	if _, err := s.ApplyConfig(asCaller(admin), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(both)})); err != nil {
+	if _, err := s.ApplyConfig(asCaller(admin), &nodev1.ApplyConfigRequest{Trust: []byte(both)}); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := os.ReadFile(filepath.Join(s.Paths.StateDir, "chalkd", CAFile)); string(got) != both || s.Certificate.OSCA() != both {
@@ -116,22 +116,22 @@ func TestApplyConfigReplacesTheOSCAs(t *testing.T) {
 	if err := reach(); err != nil {
 		t.Errorf("a client of the new OS CA is refused once it is trusted: %v", err)
 	}
-	resp, err := s.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{}))
+	resp, err := s.Status(context.Background(), &nodev1.StatusRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	want, _ := pki.Fingerprints(both)
 	var found bool
-	for _, tr := range resp.Msg.Trust {
+	for _, tr := range resp.Trust {
 		if tr.Name == "OS CA" {
 			found = slices.Equal(tr.Fingerprints, want)
 		}
 	}
 	if !found {
-		t.Errorf("status trust = %v, want the OS CAs %v", resp.Msg.Trust, want)
+		t.Errorf("status trust = %v, want the OS CAs %v", resp.Trust, want)
 	}
 	var osCAs int
-	for _, c := range resp.Msg.Certificates {
+	for _, c := range resp.Certificates {
 		if c.Name == "OS CA" {
 			osCAs++
 		}
@@ -162,10 +162,10 @@ func TestTrustKeepsTheControlPlanesNodeCA(t *testing.T) {
 	share, _ := kpki.ControlPlaneShare(k, nextNodeCA).Encode()
 	write(t, kubernetesState(s).Share(), string(share))
 	_, admin := adminOf(t, osCA)
-	if _, err := s.ApplyConfig(asCaller(admin), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(osCA.Certificate)})); codeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "node CA") {
+	if _, err := s.ApplyConfig(asCaller(admin), &nodev1.ApplyConfigRequest{Trust: []byte(osCA.Certificate)}); codeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "node CA") {
 		t.Errorf("OS CAs without the node CA's: %v, want a refusal naming the node CA", err)
 	}
-	if _, err := s.ApplyConfig(asCaller(admin), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(pki.Bundle(osCA.Certificate, next.Certificate))})); err != nil {
+	if _, err := s.ApplyConfig(asCaller(admin), &nodev1.ApplyConfigRequest{Trust: []byte(pki.Bundle(osCA.Certificate, next.Certificate))}); err != nil {
 		t.Errorf("OS CAs with the node CA's: %v", err)
 	}
 }
@@ -185,7 +185,7 @@ func TestRefusedTrustLeavesTheBaseline(t *testing.T) {
 	_, admin := adminOf(t, osCA)
 	refuse := func() {
 		t.Helper()
-		if _, err := s.ApplyConfig(asCaller(admin), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(osCA.Certificate)})); codeOf(err) != connect.CodeInvalidArgument {
+		if _, err := s.ApplyConfig(asCaller(admin), &nodev1.ApplyConfigRequest{Trust: []byte(osCA.Certificate)}); codeOf(err) != connect.CodeInvalidArgument {
 			t.Fatalf("OS CAs without the node CA's: %v, want a refusal", err)
 		}
 	}
@@ -331,7 +331,7 @@ func TestCallsVerifyAgainstTheCurrentOSCAs(t *testing.T) {
 		return c
 	}
 	info := func(c *client.Conn) error {
-		_, err := c.Info(context.Background(), connect.NewRequest(&nodev1.InfoRequest{}))
+		_, err := c.Info(context.Background(), &nodev1.InfoRequest{})
 		return err
 	}
 	// Two connections of the old root's admin, each kept open.
@@ -358,7 +358,7 @@ func TestCallsVerifyAgainstTheCurrentOSCAs(t *testing.T) {
 	if err := info(forInfo); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Errorf("Info on a connection of the old root: %v, want unauthenticated", err)
 	}
-	_, err = forApply.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(both)}))
+	_, err = forApply.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{Trust: []byte(both)})
 	if connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Errorf("ApplyConfig on a connection of the old root: %v, want unauthenticated", err)
 	}
@@ -399,7 +399,7 @@ func TestTrustNotRecordedIsAnInternalError(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Chmod(dir, 0o755) })
-	_, err := s.ApplyConfig(asCaller(admin), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(pki.Bundle(osCA.Certificate, next.Certificate))}))
+	_, err := s.ApplyConfig(asCaller(admin), &nodev1.ApplyConfigRequest{Trust: []byte(pki.Bundle(osCA.Certificate, next.Certificate))})
 	if codeOf(err) != connect.CodeInternal {
 		t.Errorf("%v, want internal", err)
 	}
@@ -425,7 +425,7 @@ func TestApplyConfigRefusesBeforeItTrusts(t *testing.T) {
 	before := s.Certificate.OSCA()
 	destructive := strings.Replace(baseConfig, "{disk: {path: /dev/vda}}", "{disk: {path: /dev/vda}, var: {size: 1G}}", 1)
 	req := &nodev1.ApplyConfigRequest{Config: destructive, Trust: []byte(pki.Bundle(osCA.Certificate, next.Certificate))}
-	if _, err := s.ApplyConfig(asCaller(admin), connect.NewRequest(req)); err == nil || !strings.Contains(err.Error(), "VAR: size 1G instead of filling its disk; only a reinstall of n1 carries it out") {
+	if _, err := s.ApplyConfig(asCaller(admin), req); err == nil || !strings.Contains(err.Error(), "VAR: size 1G instead of filling its disk; only a reinstall of n1 carries it out") {
 		t.Fatalf("err = %v, want the destructive change refused", err)
 	}
 	if s.Certificate.OSCA() != before {

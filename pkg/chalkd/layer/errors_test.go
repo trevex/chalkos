@@ -6,7 +6,8 @@ import (
 	"io/fs"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connectproto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -24,7 +25,7 @@ func TestCodes(t *testing.T) {
 		"a code":               {refused, connect.CodeInvalidArgument},
 		"a wrapped code":       {fmt.Errorf("upgrade: %w", refused), connect.CodeInvalidArgument},
 		"the outermost code":   {Errorf(connect.CodeInternal, "the image's facts: %w", refused), connect.CodeInternal},
-		"a connect error":      {fmt.Errorf("ask: %w", connect.NewError(connect.CodeUnavailable, fs.ErrNotExist)), connect.CodeUnavailable},
+		"a connect error":      {fmt.Errorf("ask: %w", connect.NewError(connect.CodeUnavailable, fs.ErrNotExist.Error()).WithCause(fs.ErrNotExist)), connect.CodeUnavailable},
 		"a domain error":       {fmt.Errorf("activate: %w", domainError{fs.ErrNotExist}), connect.CodeFailedPrecondition},
 		"a code in a join":     {errors.Join(fs.ErrNotExist, refused), connect.CodeInvalidArgument},
 		"a domain error first": {fmt.Errorf("%w: %w", domainError{fs.ErrNotExist}, refused), connect.CodeFailedPrecondition},
@@ -42,11 +43,11 @@ func TestCodesError(t *testing.T) {
 	if ce.Code() != connect.CodeInvalidArgument || ce.Message() != "upgrade: no image" {
 		t.Errorf("Error() = %v", ce)
 	}
-	direct := connect.NewError(connect.CodeUnimplemented, errors.New("not served"))
+	direct := connect.NewError(connect.CodeUnimplemented, "not served")
 	if got := Codes(nil).Error(direct); got != direct {
 		t.Errorf("Error(%v) = %v, want it as it is", direct, got)
 	}
-	detail, err := connect.NewErrorDetail(wrapperspb.String("ask another"))
+	detail, err := connectproto.NewErrorDetail(wrapperspb.String("ask another"))
 	if err != nil {
 		t.Fatal(err)
 	}
