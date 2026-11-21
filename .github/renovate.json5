@@ -84,6 +84,13 @@
   ],
   packageRules: [
     {
+      // cel-go 0.33 estimates the cost of nested cel.bind and comprehensions far higher (up to an
+      // overflow), so the image's rules exceed the cost limit and are refused. Held until that is
+      // understood.
+      matchPackageNames: ['cel.dev/cel-go'],
+      allowedVersions: '<0.33.0',
+    },
+    {
       // build(deps), over config:recommended's fix and chore.
       matchPackageNames: ['*'],
       semanticCommitType: 'build',

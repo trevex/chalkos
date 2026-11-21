@@ -3,7 +3,7 @@ module github.com/trevex/chalkos
 go 1.27.4
 
 require (
-	cel.dev/cel-go v0.33.4
+	cel.dev/cel-go v0.32.0
 	charm.land/bubbletea/v2 v2.1.2
 	charm.land/lipgloss/v2 v2.1.1
 	connectrpc.com/connect/v2 v2.0.2
