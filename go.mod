@@ -3,13 +3,13 @@ module github.com/trevex/chalkos
 go 1.27.4
 
 require (
-	cel.dev/cel-go v0.32.0
+	cel.dev/cel-go v0.33.4
 	charm.land/bubbletea/v2 v2.1.2
 	charm.land/lipgloss/v2 v2.1.1
 	connectrpc.com/connect/v2 v2.0.2
 	filippo.io/age v1.3.2
 	github.com/charmbracelet/colorprofile v0.4.3
-	github.com/charmbracelet/x/ansi v0.11.9
+	github.com/charmbracelet/x/ansi v0.11.10
 	github.com/charmbracelet/x/exp/golden v0.1.0
 	github.com/charmbracelet/x/exp/teatest/v2 v2.0.0-20261118134922-ee8f5034ce23
 	github.com/coreos/go-systemd/v22 v22.7.0
@@ -20,13 +20,13 @@ require (
 	github.com/sirupsen/logrus v1.10.2
 	github.com/soypat/fat v0.2.1
 	github.com/spf13/cobra v1.10.2
-	github.com/spf13/pflag v1.0.10
+	github.com/spf13/pflag v1.1.0
 	github.com/vishvananda/netlink v1.3.1
 	go.etcd.io/etcd/api/v3 v3.7.4
 	go.etcd.io/etcd/client/pkg/v3 v3.7.4
 	go.etcd.io/etcd/client/v3 v3.7.4
 	go.etcd.io/etcd/server/v3 v3.7.4
-	go.uber.org/zap v1.27.1
+	go.uber.org/zap v1.28.0
 	go.yaml.in/yaml/v4 v4.0.0
 	golang.org/x/crypto v0.59.0
 	golang.org/x/sys v0.50.0
