@@ -211,7 +211,7 @@ Whether router images carry Unbound, the DNS resolvers of the router's VRFs, and
 
 Type: boolean · Default: `true` · Declared in: [modules/node/router/wireguard/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/wireguard/default.nix)
 
-Whether router images carry WireGuard, whose interfaces networkd runs, with wireguard-tools for its diagnostic, and accept the kinds `WireGuard` and `WireGuardPeer`. Only with the router layer; set it false in an image's modules to leave the feature out of it.
+Whether router images carry WireGuard, whose interfaces networkd runs, with wg from wireguard-tools for its diagnostic, and accept the kinds `WireGuard` and `WireGuardPeer`. Only with the router layer; set it false in an image's modules to leave the feature out of it.
 
 ### `chalkos.forwarding.enable` { #chalkosforwardingenable }
 

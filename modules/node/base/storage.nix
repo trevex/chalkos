@@ -32,11 +32,17 @@ let
     };
   };
   stateDevice = "${utils.escapeSystemdPath "/dev/disk/chalk-boot/state"}.device";
+  # chalkos-storage under another name with arguments of its own, as a compiled wrapper: nodes
+  # carry no shell.
+  wrap =
+    name: args:
+    pkgs.runCommand name { nativeBuildInputs = [ pkgs.buildPackages.makeBinaryWrapper ]; } ''
+      makeBinaryWrapper ${exe} $out ${args}
+    '';
   # chalkos-storage facts runs in chalkd's sandbox, whose PATH need not hold cryptsetup.
-  facts = pkgs.writeShellScript "chalkos-storage-facts" ''
-    PATH=${lib.makeBinPath [ pkgs.cryptsetup ]}
-    exec ${exe} facts "$1"
-  '';
+  facts = wrap "chalkos-storage-facts" "--set PATH ${
+    lib.makeBinPath [ pkgs.cryptsetup ]
+  } --add-flags facts";
 in
 {
   # What the storage kinds' rules read of the machine: the storage section STATE records, what
@@ -120,7 +126,5 @@ in
     btrfs = true;
   };
 
-  systemd.generators.chalkos-storage = pkgs.writeShellScript "chalkos-storage-generator" ''
-    exec ${exe} generate --cryptsetup ${config.systemd.package}/bin/systemd-cryptsetup "$@"
-  '';
+  systemd.generators.chalkos-storage = wrap "chalkos-storage-generator" "--add-flags 'generate --cryptsetup ${config.systemd.package}/bin/systemd-cryptsetup'";
 }

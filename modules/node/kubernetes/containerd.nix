@@ -18,6 +18,15 @@ let
   # DaemonSets write it by default, links to it.
   confDir = "/var/lib/cni/net.d";
 
+  # NixOS puts iptables on containerd's path, for the CNI plugins. A copy without iptables-apply
+  # and ip6tables-apply, bash scripts; its tools are links to xtables-nft-multi within the copy,
+  # so it references nothing of the original.
+  iptables = pkgs.runCommand "iptables-${pkgs.iptables.version}" { } ''
+    cp -a ${pkgs.iptables} $out
+    chmod u+w $out/bin
+    rm $out/bin/iptables-apply $out/bin/ip6tables-apply
+  '';
+
   # The reference plugins the image names (chalkos.cni.plugins), and with flannel its own plugin.
   # Copies, so the store holds these alone.
   cniPlugins =
@@ -67,8 +76,14 @@ in
 
     system.build.chalkosCNIPlugins = cniPlugins;
 
-    # containerd runs the CNI plugins, and portmap programs nftables with nft.
-    systemd.services.containerd.path = [ pkgs.nftables ];
+    # containerd runs the CNI plugins, and portmap programs nftables with nft. NixOS's path, with
+    # the copy of iptables in place of its own.
+    systemd.services.containerd.path = lib.mkForce [
+      pkgs.containerd
+      pkgs.runc
+      iptables
+      pkgs.nftables
+    ];
 
     environment.systemPackages = lib.mkIf config.chalkos.debug.tools [ pkgs.cri-tools ];
 

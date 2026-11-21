@@ -16,7 +16,7 @@ let
 in
 {
   options.chalkos.router = routerLib.feature "wireguard" {
-    carries = "WireGuard, whose interfaces networkd runs, with wireguard-tools for its diagnostic,";
+    carries = "WireGuard, whose interfaces networkd runs, with wg from wireguard-tools for its diagnostic,";
     kinds = lib.attrNames kinds;
   };
 
@@ -43,7 +43,7 @@ in
     chalkos.diagnostics.wireguard = {
       description = "The router's WireGuard interfaces and their peers, as wg show prints them: public keys, endpoints, allowed IPs, the latest handshakes and the bytes sent and received. It shows no private or preshared key.";
       command = [
-        "${pkgs.wireguard-tools}/bin/wg"
+        (lib.getExe pkgs.chalkos.wireguard-wg)
         "show"
         "{interface}"
       ];

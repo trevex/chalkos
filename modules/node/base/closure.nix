@@ -43,8 +43,8 @@
     i18n.defaultLocale = "C.UTF-8";
     i18n.supportedLocales = [ "C.UTF-8/UTF-8" ];
 
-    # xfs_scrub brings python, ICU and GLib; mkfs.xfs, xfs_growfs, xfs_repair and xfs_admin are
-    # what nodes run.
+    # xfs_scrub brings python, ICU and GLib; mkfs.xfs, xfs_growfs and xfs_repair are what nodes
+    # run.
     nixpkgs.overlays = [
       (_: prev: {
         xfsprogs = prev.xfsprogs.overrideAttrs (old: {
@@ -59,7 +59,24 @@
               "python3"
             ]
           ) old.buildInputs;
+          # xfsprogs's shell scripts, xfs_admin, xfs_info and fsck.xfs among them: nodes carry no
+          # shell to run them. The fixup moves the tools to $bin, so they go after it.
+          postFixup = (old.postFixup or "") + ''
+            for f in $bin/bin/*; do
+              if [ "$(head -c 2 "$f")" = "#!" ]; then rm "$f"; fi
+            done
+          '';
         });
+        # mtools's shell scripts. Nodes run none of mtools, which NixOS adds beside dosfstools.
+        mtools = prev.mtools.overrideAttrs (old: {
+          postInstall = (old.postInstall or "") + ''
+            for f in $out/bin/*; do
+              if [ "$(head -c 2 "$f")" = "#!" ]; then rm "$f"; fi
+            done
+          '';
+        });
+        # The firewall's command-line tool, a bash script for interactive use.
+        nixos-firewall-tool = prev.runCommand "nixos-firewall-tool-empty" { } "mkdir $out";
       })
     ];
 
