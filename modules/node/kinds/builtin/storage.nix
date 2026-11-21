@@ -289,6 +289,11 @@ in
           default = null;
           description = "Where the volume is mounted; null leaves it unmounted.";
         };
+        exec = mkOption {
+          type = types.bool;
+          default = false;
+          description = "Whether programs on the volume may run. Volumes are mounted `nosuid,nodev,noexec`; `true` mounts the volume `exec,nosuid,nodev`. A volume mounted at one of the image's exec paths, such as `/var/lib/containerd` on a Kubernetes image, takes that path's options instead. Changing it mounts the volume again.";
+        };
         encryption.mode = mkOption {
           type = types.nullOr mode;
           default = null;

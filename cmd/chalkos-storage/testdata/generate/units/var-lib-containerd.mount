@@ -1,0 +1,9 @@
+# Written by chalkos-storage from /state/storage.
+[Unit]
+Description=Allow running programs from /var/lib/containerd
+
+[Mount]
+What=/var/lib/containerd
+Where=/var/lib/containerd
+Type=none
+Options=bind,exec,nodev,suid

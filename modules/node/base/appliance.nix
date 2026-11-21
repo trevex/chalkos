@@ -1,6 +1,11 @@
 # Appliance base: no Nix on the node, no switch-to-configuration, no shell, tmpfs root, read-only
 # /etc.
-{ lib, modulesPath, ... }:
+{
+  config,
+  lib,
+  modulesPath,
+  ...
+}:
 {
   imports = [
     "${modulesPath}/profiles/image-based-appliance.nix"
@@ -11,9 +16,64 @@
   system.stateVersion = "26.05";
 
   # The running system lives in tmpfs; persistent data goes to /state and /var (see storage.nix).
-  fileSystems."/" = {
-    fsType = "tmpfs";
-    options = [ "mode=0755" ];
+  # Programs run from the store alone: no writable file system lets a file run as a program, take
+  # set-user-ID effect or open as a device. The root holds /tmp, /opt and, until the node is
+  # installed, /var. The exec paths a layer declares (storage.nix) are the exceptions.
+  # systemd mounts /run, /dev and /dev/shm before it reads fstab, and systemd-remount-fs mounts
+  # them again with the options fstab gives: NixOS's, which boot.specialFileSystems holds but the
+  # systemd initrd does not read, with noexec added.
+  fileSystems = {
+    "/" = {
+      fsType = "tmpfs";
+      options = [
+        "mode=0755"
+        "nosuid"
+        "nodev"
+        "noexec"
+      ];
+    };
+    "/run" = {
+      device = "tmpfs";
+      fsType = "tmpfs";
+      options = [
+        "nosuid"
+        "nodev"
+        "noexec"
+        "strictatime"
+        "mode=755"
+        "size=${config.boot.runSize}"
+      ];
+    };
+    "/dev" = {
+      device = "devtmpfs";
+      fsType = "devtmpfs";
+      noCheck = true;
+      options = [
+        "nosuid"
+        "noexec"
+        "strictatime"
+        "mode=755"
+        "size=${config.boot.devSize}"
+      ];
+    };
+    "/dev/shm" = {
+      device = "tmpfs";
+      fsType = "tmpfs";
+      options = [
+        "nosuid"
+        "nodev"
+        "noexec"
+        "strictatime"
+        "mode=1777"
+        "size=${config.boot.devShmSize}"
+      ];
+    };
+  };
+  # A process may not open a FIFO or regular file in a sticky world-writable directory, such as
+  # /tmp, that another user owns, which closes the races of files planted there.
+  boot.kernel.sysctl = {
+    "fs.protected_fifos" = 2;
+    "fs.protected_regular" = 2;
   };
 
   # /etc is assembled from the image at boot and stays read-only. Users are fixed at build time.

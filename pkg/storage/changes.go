@@ -7,8 +7,8 @@ import (
 	"strings"
 )
 
-// Change is one volume that the delivered section adds, grows or mounts elsewhere. The image's
-// rules decide which changes are allowed.
+// Change is one volume that the delivered section adds, grows, mounts elsewhere or mounts with
+// exec or noexec instead. The image's rules decide which changes are allowed.
 type Change struct {
 	Volume string
 	Reason string
@@ -40,6 +40,9 @@ func Changes(recorded, delivered Section) []Change {
 		if old.MountPoint != cur.MountPoint {
 			reasons = append(reasons, fmt.Sprintf("mounted at %s instead of %s", orNull(cur.MountPoint), orNull(old.MountPoint)))
 		}
+		if old.Exec != cur.Exec {
+			reasons = append(reasons, fmt.Sprintf("mounted %s instead of %s", execOption(cur.Exec), execOption(old.Exec)))
+		}
 		if len(reasons) > 0 {
 			changes = append(changes, Change{name, strings.Join(reasons, "; ")})
 		}
@@ -65,6 +68,13 @@ func growth(old, cur string) (reason string, grows bool) {
 		return "", false
 	}
 	return fmt.Sprintf("larger: %s instead of %s", cur, old), true
+}
+
+func execOption(exec bool) string {
+	if exec {
+		return "exec"
+	}
+	return "noexec"
 }
 
 func orNull(s string) string {

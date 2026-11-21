@@ -107,7 +107,7 @@ func documentsOf(identity string) []config.Document {
 			disk = ref(sec.Disks[vol.Disk].Ref)
 		}
 		docs = append(docs, doc(config.StorageAPI, "Volume", name, map[string]any{
-			"disk": disk, "size": orNull(vol.Size), "format": orNull(vol.Format), "mountPoint": orNull(vol.MountPoint),
+			"disk": disk, "size": orNull(vol.Size), "format": orNull(vol.Format), "mountPoint": orNull(vol.MountPoint), "exec": vol.Exec,
 			"encryption": map[string]any{"mode": mode(vol.Encryption)}, "repart": map[string]any{},
 		}))
 	}
@@ -218,6 +218,37 @@ func TestApplyConfigAddsVolume(t *testing.T) {
 	}
 	if got, _ := readIdentity(s); string(got) != next {
 		t.Errorf("identity on STATE = %s", got)
+	}
+}
+
+// A volume that changes between noexec and exec stays where it is: its mount unit is reloaded,
+// which mounts it again with the options its unit now has.
+func TestApplyConfigRemountsVolumeWithExec(t *testing.T) {
+	s, r := installedServer(t, section("", "ext4"), true)
+	next := identityWith(editSection(t, section("", "ext4"), func(s *storage.Section) {
+		v := s.Volumes["extra"]
+		v.Exec = true
+		s.Volumes["extra"] = v
+	}))
+
+	resp, err := apply(s, next, secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Changes) != 1 || resp.Changes[0].Volume != "extra" || resp.Changes[0].Reason != "mounted exec instead of noexec" {
+		t.Errorf("changes = %v", resp.Changes)
+	}
+	if !contains(r.Calls, "systemctl try-reload-or-restart srv-extra.mount") {
+		t.Errorf("the volume was not mounted again: %v", r.Calls)
+	}
+	for _, call := range r.Calls {
+		if strings.HasPrefix(call, "systemctl stop") || strings.HasPrefix(call, "systemctl start") {
+			t.Errorf("stopped or started a unit of the volume: %s", call)
+		}
+	}
+	recorded, err := storage.ReadSection(filepath.Join(s.Paths.StateDir, "storage", "storage.json"))
+	if err != nil || !recorded.Volumes["extra"].Exec {
+		t.Errorf("recorded section = %+v, %v", recorded, err)
 	}
 }
 

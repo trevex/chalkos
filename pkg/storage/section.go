@@ -66,6 +66,9 @@ type Volume struct {
 	MountPoint string `json:"mountPoint"`
 	Encryption string `json:"encryption"`
 	Size       string `json:"size"`
+	// Exec mounts the volume with exec, so programs on it run. Volumes are mounted noexec
+	// otherwise.
+	Exec bool `json:"exec"`
 }
 
 // Ref references a disk by a /dev path or by a selector.

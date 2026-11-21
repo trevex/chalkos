@@ -145,6 +145,7 @@ func (s *Storage) Enroll(ctx context.Context, devices []EncryptedVolume, secret 
 //  1. It stops the units of volumes that move to another mount point.
 //  2. repart creates and grows partitions, and new encrypted volumes get the fallback keyslot.
 //  3. It records the section, reloads systemd and starts the units of new and moved volumes.
+//  4. It mounts volumes that change between exec and noexec again.
 //
 // An error IsInternal reports is a failure of the node itself; any other is a refusal.
 func (s *Storage) Change(ctx context.Context, recorded, section storage.Section, secret string, changes []storage.Change) error {
@@ -201,6 +202,25 @@ func (s *Storage) Change(ctx context.Context, recorded, section storage.Section,
 	if len(start) > 0 {
 		if _, err := tool.Run(ctx, s.Run, "systemctl", append([]string{"start"}, start...)...); err != nil {
 			return fmt.Errorf("start the units of new volumes: %w", err)
+		}
+	}
+	// A reload of a mount unit mounts it again with the options its unit now has; a volume whose
+	// mount unit is not active, as its disk is missing, gets them when it is mounted.
+	var remount []string
+	for _, c := range changes {
+		old, ok := recorded.Volumes[c.Volume]
+		cur := section.Volumes[c.Volume]
+		if ok && old.MountPoint == cur.MountPoint && old.Exec != cur.Exec {
+			for _, unit := range units.Of(c.Volume) {
+				if strings.HasSuffix(unit, ".mount") {
+					remount = append(remount, unit)
+				}
+			}
+		}
+	}
+	if len(remount) > 0 {
+		if _, err := tool.Run(ctx, s.Run, "systemctl", append([]string{"try-reload-or-restart"}, remount...)...); err != nil {
+			return fmt.Errorf("mount volumes again with their new options: %w", err)
 		}
 	}
 	return nil

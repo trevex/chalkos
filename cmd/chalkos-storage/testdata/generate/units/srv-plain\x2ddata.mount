@@ -8,4 +8,4 @@ Wants=systemd-growfs@srv-plain\x2ddata.service
 What=/dev/disk/chalk-boot/plain
 Where=/srv/plain-data
 Type=ext4
-Options=nofail
+Options=nofail,exec,nosuid,nodev

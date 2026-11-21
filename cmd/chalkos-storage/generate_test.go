@@ -41,6 +41,9 @@ func TestGenerateGolden(t *testing.T) {
 	err := runGenerate([]string{
 		"--state", "testdata/generate/state",
 		"--cryptsetup", "/run/current-system/sw/bin/systemd-cryptsetup",
+		"--exec-path", "/var/lib/containerd=exec,nodev,suid",
+		// spare has no partition yet, so its mount point gets a bind mount.
+		"--exec-path", "/srv/spare=exec,nosuid,dev",
 		out, out + "/early", out + "/late",
 	})
 	if err != nil {
@@ -77,6 +80,30 @@ func TestGenerateWithoutSection(t *testing.T) {
 	}
 	if files := readTree(t, out); len(files) != 0 {
 		t.Errorf("wrote %v without a storage section", files)
+	}
+}
+
+// A node that is not installed keeps /var on the root tmpfs, which is noexec too, so its exec
+// paths get their bind mounts all the same.
+func TestGenerateExecPathsWithoutSection(t *testing.T) {
+	out := t.TempDir()
+	if err := runGenerate([]string{"--state", t.TempDir(), "--exec-path", "/var/lib/kubelet=exec,nosuid,dev", out}); err != nil {
+		t.Fatal(err)
+	}
+	files := readTree(t, out)
+	if !strings.Contains(files["var-lib-kubelet.mount"], "\nWhat=/var/lib/kubelet\nWhere=/var/lib/kubelet\nType=none\nOptions=bind,exec,nosuid,dev\n") {
+		t.Errorf("var-lib-kubelet.mount:\n%s", files["var-lib-kubelet.mount"])
+	}
+	if files["local-fs.target.wants/var-lib-kubelet.mount"] != "-> ../var-lib-kubelet.mount" || len(files) != 2 {
+		t.Errorf("wrote %v, want the bind mount wanted by local-fs.target alone", files)
+	}
+}
+
+func TestGenerateRefusesBadExecPath(t *testing.T) {
+	for _, arg := range []string{"var/lib/kubelet=exec", "/var/lib/kubelet", "/var/lib/kubelet="} {
+		if err := runGenerate([]string{"--state", t.TempDir(), "--exec-path", arg, t.TempDir()}); err == nil {
+			t.Errorf("--exec-path %s accepted", arg)
+		}
 	}
 }
 

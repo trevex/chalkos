@@ -2696,8 +2696,8 @@ lib.runTests {
         ];
         etcdMount = config.systemd.services.chalkos-controlplane.unitConfig.RequiresMountsFor;
         # The kubelet waits for the mount too: its etcd pod would otherwise start on an empty
-        # directory.
-        kubeletEtcdMount = config.systemd.services.kubelet.unitConfig.RequiresMountsFor;
+        # directory. It waits for its own root, an exec path, as well.
+        kubeletMounts = config.systemd.services.kubelet.unitConfig.RequiresMountsFor;
         # Without the firewall the unit makes etcd's directory alone, and does not wait for it.
         afterAbsentFirewall =
           let
@@ -2711,7 +2711,10 @@ lib.runTests {
       grant = [ "Node" ];
       beforeKubernetes = true;
       etcdMount = "/var/lib/etcd";
-      kubeletEtcdMount = "/var/lib/etcd";
+      kubeletMounts = [
+        "/var/lib/etcd"
+        "/var/lib/kubelet"
+      ];
       afterAbsentFirewall = false;
     };
   };
@@ -3517,7 +3520,11 @@ lib.runTests {
       device = "/dev/disk/chalk-boot/esp";
       fsType = "vfat";
       options = [
-        "umask=0077"
+        "fmask=0177"
+        "dmask=0077"
+        "noexec"
+        "nosuid"
+        "nodev"
         "nofail"
         "x-systemd.automount"
         "x-systemd.idle-timeout=1min"

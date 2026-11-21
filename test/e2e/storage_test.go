@@ -44,6 +44,16 @@ func TestStorageVolumes(t *testing.T) {
 		"raw_tpm2":    "1",
 		"raw_block":   "1",
 		"raw_mounted": "0",
+		// No writable file system lets a file run as a program, take set-user-ID effect or open
+		// as a device; /dev holds the devices.
+		"root_flags":   "nodev,noexec,nosuid",
+		"run_flags":    "nodev,noexec,nosuid",
+		"devshm_flags": "nodev,noexec,nosuid",
+		"dev_flags":    "noexec,nosuid",
+		"state_flags":  "nodev,noexec,nosuid",
+		"var_flags":    "nodev,noexec,nosuid",
+		"data_flags":   "nodev,noexec,nosuid",
+		"plain_flags":  "nodev,noexec,nosuid",
 	})
 
 	if err := vm.Reset(); err != nil {

@@ -3,3 +3,5 @@ cryptsetup.target.wants/systemd-cryptsetup@raw.service -> ../systemd-cryptsetup@
 local-fs.target.wants/srv-plain\x2ddata.mount -> ../srv-plain\x2ddata.mount
 local-fs.target.wants/var-lib-data.mount -> ../var-lib-data.mount
 swap.target.wants/dev-disk-chalk\x2dboot-swap.swap -> ../dev-disk-chalk\x2dboot-swap.swap
+local-fs.target.wants/srv-spare.mount -> ../srv-spare.mount
+local-fs.target.wants/var-lib-containerd.mount -> ../var-lib-containerd.mount

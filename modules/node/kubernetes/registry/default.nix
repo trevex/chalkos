@@ -13,7 +13,12 @@
 }:
 let
   inherit (lib) mkOption types;
-  inherit (chalkosLib.internal) builtin cel hardened;
+  inherit (chalkosLib.internal)
+    builtin
+    cel
+    hardened
+    noExec
+    ;
   inherit (chalkosLib.internal.api) groups apiVersions;
   inherit (chalkosLib.types) address;
   k = config.chalkos.kubernetes;
@@ -143,6 +148,7 @@ in
     # keeps its images in its state directory. A Volume may be mounted there: the unit starts
     # after the mount, and systemd gives the directory, and everything below it when its owner
     # differs, to the unit's user before it starts, so a fresh file system is the registry's too.
+    # Nothing it stores runs as a program, even where an exec path or a Volume would allow it.
     systemd.services.chalkos-registry = {
       description = "Serve the cluster registry";
       wantedBy = [ "multi-user.target" ];
@@ -162,6 +168,7 @@ in
       };
       serviceConfig =
         hardened
+        // noExec
         // {
           # chalkos-registry tells systemd once its port is open.
           Type = "notify";

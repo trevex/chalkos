@@ -128,7 +128,7 @@ func TestTheImageIsCheckedBeforeItBoots(t *testing.T) {
 	}
 	parts := l.table()
 	open := "veritysetup open " + parts[5].Node + " " + StoreMapping + " " + parts[4].Node + " " + hex.EncodeToString(img.Root)
-	if !slices.Contains(r.Calls, open) || !slices.Contains(r.Calls, "mount -t erofs -o ro /dev/mapper/"+StoreMapping+" "+mount) ||
+	if !slices.Contains(r.Calls, open) || !slices.Contains(r.Calls, "mount -t erofs -o ro,nosuid,nodev /dev/mapper/"+StoreMapping+" "+mount) ||
 		r.Calls[len(r.Calls)-1] != "veritysetup close "+StoreMapping {
 		t.Errorf("ran %q", r.Calls)
 	}

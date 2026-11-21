@@ -133,7 +133,7 @@ func TestOpenStateEncrypted(t *testing.T) {
 		"blkid -p -o value -s TYPE /dev/disk/chalk-boot/state",
 		"systemd-cryptsetup attach state /dev/disk/chalk-boot/state - tpm2-device=auto",
 		"e2fsck -p /dev/mapper/state",
-		"mount -t ext4 /dev/mapper/state " + b.StateDir,
+		"mount -t ext4 -o nosuid,nodev,noexec /dev/mapper/state " + b.StateDir,
 	})
 }
 
@@ -148,7 +148,7 @@ func TestOpenStateUnencrypted(t *testing.T) {
 		"udevadm wait --timeout=60 /dev/disk/chalk-boot/state",
 		"blkid -p -o value -s TYPE /dev/disk/chalk-boot/state",
 		"e2fsck -p /dev/disk/chalk-boot/state",
-		"mount -t ext4 /dev/disk/chalk-boot/state " + b.StateDir,
+		"mount -t ext4 -o nosuid,nodev,noexec /dev/disk/chalk-boot/state " + b.StateDir,
 	})
 }
 
@@ -186,7 +186,7 @@ func TestSetUpFirstBoot(t *testing.T) {
 		"blkid -p -o value -s TYPE /dev/disk/chalk-boot/var",
 		"systemd-cryptsetup attach var /dev/disk/chalk-boot/var - tpm2-device=auto",
 		"e2fsck -p /dev/mapper/var",
-		"mount -t ext4 /dev/mapper/var " + b.VarDir,
+		"mount -t ext4 -o nosuid,nodev,noexec /dev/mapper/var " + b.VarDir,
 		"systemd-growfs " + b.VarDir,
 	})
 	pins, err := storage.ReadPins(b.PinsFile())
@@ -313,7 +313,7 @@ func TestSetUpWaitsForUdevBeforeResolving(t *testing.T) {
 			t.Errorf("resolved a reference before udev settled: %s", call)
 		}
 	}
-	if !slices.Contains(r.Calls, "mount -t ext4 /dev/mapper/var "+b.VarDir) {
+	if !slices.Contains(r.Calls, "mount -t ext4 -o nosuid,nodev,noexec /dev/mapper/var "+b.VarDir) {
 		t.Errorf("VAR not mounted: %v", r.Calls)
 	}
 	if s := readStatus(t, b); !strings.Contains(s.Disks["data"].Error, "udev") {
@@ -341,7 +341,7 @@ func TestSetUpPinnedDiskMissing(t *testing.T) {
 			t.Errorf("ran repart for the missing disk: %s", call)
 		}
 	}
-	if !slices.Contains(r.Calls, "mount -t ext4 /dev/mapper/var "+b.VarDir) {
+	if !slices.Contains(r.Calls, "mount -t ext4 -o nosuid,nodev,noexec /dev/mapper/var "+b.VarDir) {
 		t.Errorf("VAR not mounted: %v", r.Calls)
 	}
 	if s := readStatus(t, b); !strings.Contains(s.Disks["data"].Error, `pinned disk model "", size 2G, serial "chalk-data" is missing`) {
@@ -513,7 +513,7 @@ func TestSetUpMountsUnencryptedVar(t *testing.T) {
 	if err := b.SetUp(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Contains(r.Calls, "mount -t ext4 /dev/disk/chalk-boot/var "+b.VarDir) {
+	if !slices.Contains(r.Calls, "mount -t ext4 -o nosuid,nodev,noexec /dev/disk/chalk-boot/var "+b.VarDir) {
 		t.Errorf("unencrypted VAR not mounted: %v", r.Calls)
 	}
 }
@@ -670,7 +670,7 @@ func TestOpenStateChecksFileSystem(t *testing.T) {
 			b := newTestBoot(t, r, bootDisk)
 
 			err := b.OpenState(context.Background())
-			mounted := slices.Contains(r.Calls, "mount -t ext4 /dev/mapper/state "+b.StateDir)
+			mounted := slices.Contains(r.Calls, "mount -t ext4 -o nosuid,nodev,noexec /dev/mapper/state "+b.StateDir)
 			if c.refusal == "" {
 				if err != nil || !mounted {
 					t.Errorf("err = %v, mounted = %v; want STATE mounted", err, mounted)
@@ -747,7 +747,7 @@ func TestSetUpChecksPinnedDiskIsUnchanged(t *testing.T) {
 			if want := "pinned disk data at /dev/vdb now holds data chalkos did not create; refusing to touch it"; !strings.Contains(status.Error, want) {
 				t.Errorf("data status = %+v, want %q", status, want)
 			}
-			if !slices.Contains(r.Calls, "mount -t ext4 /dev/mapper/var "+b.VarDir) {
+			if !slices.Contains(r.Calls, "mount -t ext4 -o nosuid,nodev,noexec /dev/mapper/var "+b.VarDir) {
 				t.Errorf("VAR not mounted: %v", r.Calls)
 			}
 			after, err := storage.ReadPins(pinsFile)

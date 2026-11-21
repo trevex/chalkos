@@ -348,7 +348,7 @@ func TestInPlaceInstallsOnBootDisk(t *testing.T) {
 		"blkid -p -o value -s TYPE /dev/vda6",
 		"systemd-cryptsetup attach state /dev/vda6 - tpm2-device=auto,headless=true",
 		"e2fsck -p /dev/mapper/state",
-		"mount -t ext4 /dev/mapper/state " + i.StateDir,
+		"mount -t ext4 -o nosuid,nodev,noexec /dev/mapper/state " + i.StateDir,
 		"systemd-repart --dry-run=no --json=short --definitions=" + defs + " --seed=" + systemSeed + " /dev/vda",
 		"sfdisk --lock=nonblock --json /dev/vda",
 		"udevadm settle --timeout=30",
@@ -427,7 +427,7 @@ func TestInPlaceRecreatesStateForPolicy(t *testing.T) {
 	for _, want := range []string{
 		"sfdisk --lock=nonblock --delete /dev/vda 6",
 		"systemd-repart --dry-run=no --seed=random --definitions=" + system + " --tpm2-pcrs=7 /dev/vda",
-		"mount -t ext4 /dev/vda6 " + i.StateDir,
+		"mount -t ext4 -o nosuid,nodev,noexec /dev/vda6 " + i.StateDir,
 	} {
 		if !hasPrefix(r.Calls, want) {
 			t.Errorf("missing %q in %v", want, r.Calls)

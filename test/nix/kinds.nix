@@ -1962,7 +1962,7 @@ lib.runTests {
         neitherTmpfs = false;
       };
     };
-  # The outputs' files are on a tmpfs of their own, with room for each output's files twice and
+  # The outputs' files are on a noexec tmpfs of their own, with room for each output's files twice and
   # one more: the built-in outputs', and those of an extension.
   testOutputsTmpfs = {
     expr = {
@@ -1978,6 +1978,7 @@ lib.runTests {
         "mode=0755"
         "nosuid"
         "nodev"
+        "noexec"
         "size=144M"
         "nr_inodes=147456"
       ];
@@ -1985,6 +1986,7 @@ lib.runTests {
         "mode=0755"
         "nosuid"
         "nodev"
+        "noexec"
         "size=208M"
         "nr_inodes=212992"
       ];

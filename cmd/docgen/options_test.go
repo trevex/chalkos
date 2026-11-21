@@ -43,6 +43,8 @@ func TestWriteOptions(t *testing.T) {
 				"# image-options\n\nThe head of image-options.\n",
 				"\n## Disk { #disk }\n\n",
 				"\n### `chalkos.disk.espSize` { #chalkosdiskespsize }\n",
+				"\n## Storage { #storage }\n\n",
+				"\n### `chalkos.storage.execPaths` { #chalkosstorageexecpaths }\n",
 				"\n## Kernel { #kernel }\n\n",
 				"\n## Kubernetes and CNI { #kubernetes-and-cni }\n\n",
 				"\n### `chalkos.kubernetes.enable` { #chalkoskubernetesenable }\n",

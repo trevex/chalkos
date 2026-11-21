@@ -7,7 +7,7 @@
   "volumes": {
     "var": { "disk": "system", "label": "var", "format": "ext4", "mountPoint": "/var", "encryption": "tpm2", "size": "2G" },
     "data": { "disk": "data", "label": "data", "format": "xfs", "mountPoint": "/var/lib/data", "encryption": "tpm2", "size": null },
-    "plain": { "disk": "system", "label": "plain", "format": "ext4", "mountPoint": "/srv/plain-data", "encryption": "none", "size": "256M" },
+    "plain": { "disk": "system", "label": "plain", "format": "ext4", "mountPoint": "/srv/plain-data", "encryption": "none", "size": "256M", "exec": true },
     "raw": { "disk": "system", "label": "raw", "format": null, "mountPoint": null, "encryption": "tpm2", "size": "128M" },
     "swap": { "disk": "system", "label": "swap", "format": "swap", "mountPoint": null, "encryption": "none", "size": "64M" },
     "spare": { "disk": "spare", "label": "spare", "format": "ext4", "mountPoint": "/srv/spare", "encryption": "tpm2", "size": null }

@@ -63,6 +63,14 @@ let
       }
 
       fact root_fstype "$(findmnt -n -o FSTYPE /)"
+      # The mount's nosuid, nodev and noexec, in name order, such as nodev,noexec,nosuid.
+      flags() {
+        findmnt -n -o OPTIONS "$1" | tr ',' '\n' | grep -xE 'nosuid|nodev|noexec' | sort | paste -sd, - || true
+      }
+      fact root_flags "$(flags /)"
+      fact run_flags "$(flags /run)"
+      fact dev_flags "$(flags /dev)"
+      fact devshm_flags "$(flags /dev/shm)"
       # A whole-item match, so options such as errors=remount-ro do not count as read-only.
       fact etc_ro "$(findmnt -n -o OPTIONS /etc | tr ',' '\n' | grep -cx ro || true)"
       fact usr_verity "$(veritysetup status usr 2>/dev/null | awk '$1 == "status:" {print $2}' || true)"
@@ -76,6 +84,7 @@ let
       fact slot_b_empty "$(lsblk -rno PARTLABEL | grep -c '^_empty$' || true)"
 
       fact state_fstype "$(findmnt -n -o FSTYPE /state || true)"
+      fact state_flags "$(flags /state)"
       fact state_tpm2 "$(cryptsetup luksDump /dev/disk/chalk-boot/state 2>/dev/null | grep -c systemd-tpm2 || true)"
       fact state_keyslots "$(keyslots /dev/disk/chalk-boot/state)"
       if mountpoint -q /state; then fact state_boots "$(count_boots /state/chalktest/boots)"; fi
@@ -99,6 +108,7 @@ let
           if [[ -n $mountpoint ]]; then
             wait_for mountpoint -q "$mountpoint" || true
             fact "''${key}_fstype" "$(findmnt -n -o FSTYPE "$mountpoint" || true)"
+            fact "''${key}_flags" "$(flags "$mountpoint")"
             if mountpoint -q "$mountpoint"; then fact "''${key}_boots" "$(count_boots "$mountpoint/.chalktest-boots")"; fi
           else
             wait_for test -b "$dev" || true

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -24,20 +25,37 @@ type Units struct {
 }
 
 // Generate builds units for every volume except VAR, which the initrd mounts: a cryptsetup
-// service for encrypted volumes, and a mount or swap unit for formatted ones. All are only
-// wanted, so a missing disk fails its units without holding up the boot.
+// service for encrypted volumes, and a mount or swap unit for formatted ones. Then it builds a
+// bind mount for each of ExecPaths that no volume is mounted at. All are only wanted, so a
+// missing disk fails its units without holding up the boot.
 func (s *Storage) Generate(cryptsetup string) (Units, error) {
 	units := Units{files: map[string]string{}, owners: map[string]string{}, wants: map[string][]string{}}
-	section, err := storage.ReadSection(s.SectionFile())
-	if errors.Is(err, fs.ErrNotExist) {
-		return units, nil
-	}
+	mounted, err := s.volumeUnits(units, cryptsetup)
 	if err != nil {
 		return units, err
+	}
+	for _, path := range slices.Sorted(maps.Keys(s.ExecPaths)) {
+		if !mounted[path] {
+			units.write(escapePath(path)+".mount", "local-fs.target", execPathUnit(path, s.ExecPaths[path]))
+		}
+	}
+	return units, nil
+}
+
+// volumeUnits adds the units of the volumes the recorded section holds, if any, and returns the
+// mount points it wrote mount units for.
+func (s *Storage) volumeUnits(units Units, cryptsetup string) (map[string]bool, error) {
+	mounted := map[string]bool{}
+	section, err := storage.ReadSection(s.SectionFile())
+	if errors.Is(err, fs.ErrNotExist) {
+		return mounted, nil
+	}
+	if err != nil {
+		return nil, err
 	}
 	pins, err := storage.ReadPins(s.PinsFile())
 	if err != nil {
-		return units, err
+		return nil, err
 	}
 
 	names := make([]string, 0, len(section.Volumes))
@@ -64,7 +82,7 @@ func (s *Storage) Generate(cryptsetup string) (Units, error) {
 		if v.Encryption == storage.EncryptionTPM2 {
 			cryptUnit = "systemd-cryptsetup@" + strs.UnitEscape(name) + ".service"
 			if err := units.add(name, cryptUnit, "cryptsetup.target", cryptsetupUnit(name, dev, cryptsetup, section.Fallback != storage.FallbackNone)); err != nil {
-				return units, err
+				return nil, err
 			}
 			source = hostops.Mapper(name)
 		}
@@ -72,13 +90,26 @@ func (s *Storage) Generate(cryptsetup string) (Units, error) {
 		case v.Format == "swap":
 			err = units.add(name, escapePath(source)+".swap", "swap.target", swapUnit(name, source, cryptUnit))
 		case v.Format != "" && v.MountPoint != "":
-			err = units.add(name, escapePath(v.MountPoint)+".mount", "local-fs.target", mountUnit(name, source, v, cryptUnit))
+			err = units.add(name, escapePath(v.MountPoint)+".mount", "local-fs.target", mountUnit(name, source, v, s.mountOptions(v), cryptUnit))
+			mounted[v.MountPoint] = true
 		}
 		if err != nil {
-			return units, err
+			return nil, err
 		}
 	}
-	return units, nil
+	return mounted, nil
+}
+
+// mountOptions are a volume's mount options: those of the exec path it is mounted at, or
+// DataOptions, with exec in place of noexec when the volume asks for it.
+func (s *Storage) mountOptions(v storage.Volume) string {
+	if options, ok := s.ExecPaths[v.MountPoint]; ok {
+		return options
+	}
+	if v.Exec {
+		return "exec,nosuid,nodev"
+	}
+	return DataOptions
 }
 
 // add refuses a unit name another volume already uses: one unit would silently replace the
@@ -87,10 +118,15 @@ func (u Units) add(volume, name, wantedBy, content string) error {
 	if other, ok := u.owners[name]; ok {
 		return fmt.Errorf("volumes %s and %s both need the unit %s", other, volume, name)
 	}
-	u.files[name] = content
 	u.owners[name] = volume
-	u.wants[wantedBy] = append(u.wants[wantedBy], name)
+	u.write(name, wantedBy, content)
 	return nil
+}
+
+// write adds the unit, which the target wants.
+func (u Units) write(name, wantedBy, content string) {
+	u.files[name] = content
+	u.wants[wantedBy] = append(u.wants[wantedBy], name)
 }
 
 func (u Units) Write(dir string) error {
@@ -149,7 +185,7 @@ func requires(cryptUnit string) string {
 	return "Requires=" + cryptUnit + "\nAfter=" + cryptUnit + "\n"
 }
 
-func mountUnit(name, source string, v storage.Volume, cryptUnit string) string {
+func mountUnit(name, source string, v storage.Volume, options, cryptUnit string) string {
 	return header + fmt.Sprintf(`[Unit]
 Description=chalkos volume %s
 After=local-fs-pre.target
@@ -159,8 +195,23 @@ After=local-fs-pre.target
 What=%s
 Where=%s
 Type=%s
-Options=nofail
-`, name, requires(cryptUnit), escapePath(v.MountPoint), source, v.MountPoint, v.Format)
+Options=nofail,%s
+`, name, requires(cryptUnit), escapePath(v.MountPoint), source, v.MountPoint, v.Format, options)
+}
+
+// execPathUnit mounts path onto itself with options that allow running programs from it: a bind
+// mount keeps the flags of the mount it comes from, such as VAR's noexec, until it is given its
+// own. systemd orders it after the mounts of path's parent directories and creates path first.
+func execPathUnit(path, options string) string {
+	return header + fmt.Sprintf(`[Unit]
+Description=Allow running programs from %[1]s
+
+[Mount]
+What=%[1]s
+Where=%[1]s
+Type=none
+Options=bind,%[2]s
+`, path, options)
 }
 
 func swapUnit(name, source, cryptUnit string) string {

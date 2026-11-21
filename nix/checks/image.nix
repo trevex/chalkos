@@ -398,6 +398,103 @@ in
       touch $out
     '';
 
+  # No writable file system of the worker or the router lets a file run as a program, take
+  # set-user-ID effect or open as a device, as fstab gives their options: the root tmpfs, /run,
+  # /dev/shm, the outputs' tmpfs and the ESP. /dev, which holds the devices, is noexec. The
+  # worker's exec paths, containerd's and the kubelet's roots, reach chalkos-storage's generator,
+  # which mounts them, and containerd and the kubelet wait for them; the router has none. The
+  # sandboxes of the console and the cluster registry run programs from the store alone.
+  noexec-mounts =
+    let
+      images = {
+        worker = worker.config;
+        router = router.config;
+      };
+      fstabLine =
+        name: c: mountPoint: flags:
+        let
+          fs = c.fileSystems.${mountPoint} or null;
+          missing = lib.subtractLists (if fs == null then [ ] else fs.options) flags;
+        in
+        lib.optional (fs == null || missing != [ ])
+          "the ${name}'s ${mountPoint} lacks ${
+            lib.concatStringsSep "," (if fs == null then flags else missing)
+          }";
+      writable = [
+        "nosuid"
+        "nodev"
+        "noexec"
+      ];
+      mountFailures =
+        name: c:
+        lib.concatMap (p: fstabLine name c p writable) (
+          [
+            "/"
+            "/run"
+            "/dev/shm"
+            "/efi"
+          ]
+          ++ lib.optional (c.fileSystems ? "/run/chalkos/outputs") "/run/chalkos/outputs"
+        )
+        ++ fstabLine name c "/dev" [
+          "nosuid"
+          "noexec"
+        ]
+        ++ fstabLine name c "/efi" [
+          "fmask=0177"
+          "dmask=0077"
+        ]
+        ++ lib.optional (
+          c.boot.kernel.sysctl."fs.protected_fifos" != 2
+        ) "the ${name}'s fs.protected_fifos is not 2"
+        ++ lib.optional (
+          c.boot.kernel.sysctl."fs.protected_regular" != 2
+        ) "the ${name}'s fs.protected_regular is not 2"
+        ++ lib.optional (
+          c.systemd.services.chalkos-console.serviceConfig.NoExecPaths or null != [ "/" ]
+        ) "the ${name}'s console may run programs from outside the store";
+      w = images.worker;
+      requiresMountsFor =
+        unit: lib.toList (w.systemd.services.${unit}.unitConfig.RequiresMountsFor or [ ]);
+      failures =
+        lib.concatLists (lib.mapAttrsToList mountFailures images)
+        ++ lib.optional (
+          w.chalkos.storage.execPaths != {
+            "/var/lib/containerd" = {
+              suid = true;
+              dev = false;
+            };
+            "/var/lib/kubelet" = {
+              suid = false;
+              dev = true;
+            };
+          }
+        ) "the worker's exec paths are ${builtins.toJSON w.chalkos.storage.execPaths}"
+        ++ lib.optional (
+          !lib.elem "/var/lib/containerd" (requiresMountsFor "containerd")
+        ) "containerd does not wait for /var/lib/containerd"
+        ++ lib.optional (
+          !lib.elem "/var/lib/kubelet" (requiresMountsFor "kubelet")
+        ) "the kubelet does not wait for /var/lib/kubelet"
+        ++ lib.optional (
+          w.systemd.services.chalkos-registry.serviceConfig.NoExecPaths or null != [ "/" ]
+        ) "the cluster registry may run programs from outside the store"
+        ++ lib.optional (
+          images.router.chalkos.storage.execPaths != { }
+        ) "the router has exec paths: ${toString (lib.attrNames images.router.chalkos.storage.execPaths)}";
+    in
+    pkgs.runCommand "chalkos-noexec-mounts" { } ''
+      fail() { echo "error: $*" >&2; exit 1; }
+      ${lib.concatMapStrings (f: "fail ${lib.escapeShellArg f}\n") failures}
+      generator=${w.systemd.generators.chalkos-storage}
+      for arg in --exec-path /var/lib/containerd=exec,suid,nodev /var/lib/kubelet=exec,nosuid,dev; do
+        grep -qaF -- "$arg" $generator || fail "the worker's storage generator lacks $arg"
+      done
+      ! grep -qaF -- --exec-path ${images.router.systemd.generators.chalkos-storage} \
+        || fail "the router's storage generator mounts exec paths"
+      touch $out
+    '';
+
   # An image builds only when its rules compile and read the facts it declares, and its effects
   # act on units it defines. The test image's Greeting and the examples' Rack, Hardware and Peer
   # bring extension kinds with their own rules, facts, effects and outputs; a rule that does not

@@ -41,6 +41,7 @@ let
       "go-unit"
       "kubernetes-bgp-nht"
       "nix-lint"
+      "noexec-mounts"
       "registry-mirrors"
       "renovate"
       "release-eval"

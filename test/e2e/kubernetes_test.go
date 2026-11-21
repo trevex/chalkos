@@ -150,7 +150,7 @@ func TestKubernetesCluster(t *testing.T) {
 		waitFor(t, 10*time.Minute, "pods reaching each other", func() error { return p.reached(ctx, cs, nil) })
 		t.Logf("pods reached each other after %v", time.Since(start).Round(time.Second))
 		p.check(t, ctx, cs)
-		cniPaths(t, ctx, cs)
+		execPaths(t, ctx, cs)
 		logMemory(t, ctx, cs)
 	}) {
 		return
@@ -331,37 +331,76 @@ func privatePull(t *testing.T, ctx context.Context, cs kubernetes.Interface) {
 	podSucceeds(t, ctx, cs, "private", privateImage)
 }
 
-// cniScript copies busybox into the node's /opt/cni/bin and runs it from there, as a CNI
-// DaemonSet installs and containerd runs its plugins, checks that the directory is a tmpfs, and
-// finds flannel's configuration through /etc/cni/net.d.
-const cniScript = `set -e
+// execScript checks where the node runs programs from. runc mounts a pod's host paths with flags of
+// its own, so the script runs its copies of busybox in the node's mount namespace, with nsenter,
+// where the node's flags apply. The image's busybox needs a dynamic loader the node lacks, so a
+// copy the kernel lets run fails with ENOENT, exit status 127, after the mount's noexec check;
+// one on a noexec mount fails with EACCES, exit status 126, before it.
+//   - /opt/cni/bin, where a CNI DaemonSet installs the plugins containerd runs, allows it; the
+//     directory is a tmpfs, and flannel's configuration is found through /etc/cni/net.d;
+//   - a disk-backed emptyDir, which lies below /var/lib/kubelet, an exec path, allows it;
+//   - /var otherwise, which is noexec, does not.
+const execScript = `set -ex
 grep -q '^tmpfs /cni tmpfs ' /proc/mounts
-cp /bin/busybox /cni/busybox-chalkos-e2e
-trap 'rm -f /cni/busybox-chalkos-e2e' EXIT
-/cni/busybox-chalkos-e2e true
 test -f /netd/10-flannel.conflist
+cp /bin/busybox /cni/busybox-chalkos-e2e
+cp /bin/busybox /scratch/busybox
+cp /bin/busybox /var-noexec/busybox
+trap 'rm -f /cni/busybox-chalkos-e2e /var-noexec/busybox' EXIT
+# The exit status and message of running the file on the node.
+run() {
+  status=0
+  nsenter -t 1 -m -- "$1" true 2>/tmp/err || status=$?
+  echo "$status $(cat /tmp/err)"
+}
+runs() {
+  case "$(run "$1")" in
+  0*|"127 "*"No such file or directory"*) ;;
+  *) echo "$1 does not run: $(run "$1")"; exit 1 ;;
+  esac
+}
+runs /opt/cni/bin/busybox-chalkos-e2e
+runs "/var/lib/kubelet/pods/$POD_UID/volumes/kubernetes.io~empty-dir/scratch/busybox"
+case "$(run /var/lib/chalkos-e2e-noexec/busybox)" in
+"126 "*"Permission denied"*) ;;
+*) echo "a program below /var ran or failed otherwise: $(run /var/lib/chalkos-e2e-noexec/busybox)"; exit 1 ;;
+esac
 `
 
-// cniPaths runs cniScript on w1 in a pod that mounts the node's /opt/cni/bin and /etc/cni/net.d
-// by hostPath, as a CNI DaemonSet does, and waits for it to succeed.
-func cniPaths(t *testing.T, ctx context.Context, cs kubernetes.Interface) {
+// execPaths runs execScript on w1 in a privileged pod in the node's PID namespace that mounts the
+// node's /opt/cni/bin and /etc/cni/net.d by hostPath, as a CNI DaemonSet does, a directory below
+// /var by hostPath and an emptyDir, and waits for it to succeed.
+func execPaths(t *testing.T, ctx context.Context, cs kubernetes.Interface) {
 	t.Helper()
-	hostPath := func(name, path string) corev1.Volume {
-		return corev1.Volume{Name: name, VolumeSource: corev1.VolumeSource{HostPath: &corev1.HostPathVolumeSource{Path: path}}}
+	hostPath := func(name, path string, kind corev1.HostPathType) corev1.Volume {
+		return corev1.Volume{Name: name, VolumeSource: corev1.VolumeSource{HostPath: &corev1.HostPathVolumeSource{Path: path, Type: &kind}}}
 	}
+	privileged := true
 	_, err := cs.CoreV1().Pods("default").Create(ctx, &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: "cni-paths"},
+		ObjectMeta: metav1.ObjectMeta{Name: "exec-paths"},
 		Spec: corev1.PodSpec{
 			NodeSelector:  map[string]string{"kubernetes.io/hostname": "w1"},
 			RestartPolicy: corev1.RestartPolicyNever,
-			Volumes:       []corev1.Volume{hostPath("cni", "/opt/cni/bin"), hostPath("netd", "/etc/cni/net.d")},
+			HostPID:       true,
+			Volumes: []corev1.Volume{
+				hostPath("cni", "/opt/cni/bin", corev1.HostPathUnset),
+				hostPath("netd", "/etc/cni/net.d", corev1.HostPathUnset),
+				hostPath("var-noexec", "/var/lib/chalkos-e2e-noexec", corev1.HostPathDirectoryOrCreate),
+				{Name: "scratch", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+			},
 			Containers: []corev1.Container{{
-				Name:    "cni-paths",
-				Image:   "docker.io/library/busybox:1.37.0",
-				Command: []string{"sh", "-c", cniScript},
+				Name:            "exec-paths",
+				Image:           "docker.io/library/busybox:1.37.0",
+				Command:         []string{"sh", "-c", execScript},
+				SecurityContext: &corev1.SecurityContext{Privileged: &privileged},
+				Env: []corev1.EnvVar{{Name: "POD_UID", ValueFrom: &corev1.EnvVarSource{
+					FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.uid"},
+				}}},
 				VolumeMounts: []corev1.VolumeMount{
 					{Name: "cni", MountPath: "/cni"},
 					{Name: "netd", MountPath: "/netd", ReadOnly: true},
+					{Name: "var-noexec", MountPath: "/var-noexec"},
+					{Name: "scratch", MountPath: "/scratch"},
 				},
 			}},
 		},
@@ -369,8 +408,8 @@ func cniPaths(t *testing.T, ctx context.Context, cs kubernetes.Interface) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, 5*time.Minute, "the pod that runs a plugin from /opt/cni/bin", func() error {
-		pod, err := cs.CoreV1().Pods("default").Get(ctx, "cni-paths", metav1.GetOptions{})
+	waitFor(t, 5*time.Minute, "the pod that runs programs from the node's exec paths", func() error {
+		pod, err := cs.CoreV1().Pods("default").Get(ctx, "exec-paths", metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
@@ -378,7 +417,8 @@ func cniPaths(t *testing.T, ctx context.Context, cs kubernetes.Interface) {
 		case corev1.PodSucceeded:
 			return nil
 		case corev1.PodFailed:
-			t.Fatalf("the pod failed: %v", pod.Status.ContainerStatuses)
+			logs, lerr := cs.CoreV1().Pods("default").GetLogs("exec-paths", &corev1.PodLogOptions{}).DoRaw(ctx)
+			t.Fatalf("the pod failed: %v\nits log (%v):\n%s", pod.Status.ContainerStatuses, lerr, logs)
 		}
 		return fmt.Errorf("the pod is %s", pod.Status.Phase)
 	})

@@ -1,0 +1,9 @@
+# Written by chalkos-storage from /state/storage.
+[Unit]
+Description=Allow running programs from /srv/spare
+
+[Mount]
+What=/srv/spare
+Where=/srv/spare
+Type=none
+Options=bind,exec,nosuid,dev

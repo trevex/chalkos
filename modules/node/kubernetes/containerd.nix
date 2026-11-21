@@ -128,6 +128,13 @@ in
       };
     };
 
+    # Containers run from the snapshots below containerd's root, which VAR's noexec would stop, so
+    # the root is an exec path, mounted before containerd starts. Set-user-ID files take effect:
+    # images carry them, such as ping and sudo, and a pod's securityContext is where to restrict
+    # them. Device files stay inert.
+    chalkos.storage.execPaths."/var/lib/containerd".suid = true;
+    systemd.services.containerd.unitConfig.RequiresMountsFor = [ "/var/lib/containerd" ];
+
     # The plugins DaemonSets install, on a tmpfs of its own that allows running them. It is empty
     # at each boot until the DaemonSets copy their plugins again.
     fileSystems.${daemonSetPlugins} = {

@@ -217,6 +217,11 @@
           ],
           "default": null,
           "description": "Size of the volume, such as `100G`, with at most 18 digits without a suffix, and 15, 12, 9, 6 or 3 with K, M, G, T or P; null fills the remaining space on its disk."
+        },
+        "exec": {
+          "default": false,
+          "description": "Whether programs on the volume may run. Volumes are mounted `nosuid,nodev,noexec`; `true` mounts the volume `exec,nosuid,nodev`. A volume mounted at one of the image's exec paths, such as `/var/lib/containerd` on a Kubernetes image, takes that path's options instead. Changing it mounts the volume again.",
+          "type": "boolean"
         }
       },
       "type": "object"
