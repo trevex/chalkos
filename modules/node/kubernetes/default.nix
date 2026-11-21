@@ -48,6 +48,8 @@ in
     ./host.nix
     ./kernel.nix
     ./kinds.nix
+    ./ceph.nix
+    ./kubevirt.nix
     ./bgp
     ./registry
   ];
