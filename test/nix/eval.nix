@@ -2840,6 +2840,7 @@ lib.runTests {
         "filesystems"
         "firewall"
         "kubernetes"
+        "kubevirt"
         "network"
         "platform"
         "storage"
@@ -2893,7 +2894,13 @@ lib.runTests {
         ];
       in
       {
-        node = lib.sort lib.lessThan (base ++ [ "kubernetes" ]);
+        node = lib.sort lib.lessThan (
+          base
+          ++ [
+            "kubernetes"
+            "kubevirt"
+          ]
+        );
         plain = base;
         edge = base;
         declared = true;
@@ -4751,6 +4758,80 @@ lib.runTests {
           "/var/run/cdi"
         ];
         runcRefused = true;
+      };
+    };
+  # ceph and kubevirt are on by default: rbd, ceph and nbd load at boot, LVM stays for Rook's
+  # OSDs, and the kubevirt group carries KVM, vhost, VFIO and UIO for on-demand loading. The
+  # IOMMU option adds the kernel parameters and loads vfio_pci. Off, each leaves nothing behind.
+  testKubernetesCephKubevirt =
+    let
+      off = worker [
+        {
+          chalkos.kubernetes.ceph.enable = false;
+          chalkos.kubernetes.kubevirt.enable = false;
+        }
+      ];
+      iommu = worker [ { chalkos.kubernetes.kubevirt.iommu = true; } ];
+      ours = [
+        "rbd"
+        "ceph"
+        "nbd"
+        "vfio_pci"
+      ];
+      loaded = c: lib.filter (m: lib.elem m ours) c.boot.kernelModules;
+      iommuParams = c: lib.filter (lib.hasInfix "iommu") c.boot.kernelParams;
+    in
+    {
+      expr = {
+        defaults = {
+          inherit (w.chalkos.kubernetes.ceph) enable;
+          kubevirt = w.chalkos.kubernetes.kubevirt.enable;
+          inherit (w.chalkos.kubernetes.kubevirt) iommu;
+        };
+        loaded = loaded w;
+        lvm = w.services.lvm.enable;
+        group = lib.elem "kubevirt" w.chalkos.kernel.moduleGroups;
+        inherit (w.chalkos.kernel.groups.kubevirt) directories;
+        params = iommuParams w;
+        offLoaded = loaded off;
+        offGroup = lib.elem "kubevirt" off.chalkos.kernel.moduleGroups;
+        iommuParams = iommuParams iommu;
+        iommuLoaded = loaded iommu;
+        routerGroup = lib.elem "kubevirt" edge.chalkos.kernel.moduleGroups;
+      };
+      expected = {
+        defaults = {
+          enable = true;
+          kubevirt = true;
+          iommu = false;
+        };
+        loaded = [
+          "ceph"
+          "nbd"
+          "rbd"
+        ];
+        lvm = true;
+        group = true;
+        directories = [
+          "arch/x86/kvm"
+          "drivers/vhost"
+          "drivers/vfio"
+          "drivers/uio"
+        ];
+        params = [ ];
+        offLoaded = [ ];
+        offGroup = false;
+        iommuParams = [
+          "intel_iommu=on"
+          "iommu=pt"
+        ];
+        iommuLoaded = [
+          "ceph"
+          "nbd"
+          "rbd"
+          "vfio_pci"
+        ];
+        routerGroup = false;
       };
     };
   # The kernel's modprobe helper, which loads the modules pods need on demand, is kmod's ELF

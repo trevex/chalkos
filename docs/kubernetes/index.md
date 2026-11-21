@@ -10,13 +10,15 @@ layer. They build on [Operate nodes](../operate/index.md): they assume a worksta
 secrets file, and nodes installed as [Install a node](../operate/install.md) describes. Plan the
 cluster before you install its nodes, because a few of its settings are fixed once it runs. The
 other pages follow in order: bootstrap the cluster, configure it, run its control plane on several
-nodes, serve its images from the control planes, announce its addresses over BGP, upgrade
-Kubernetes, rotate its CAs and keys, and find out why it misbehaves.
+nodes, serve its images from the control planes, announce its addresses over BGP, run storage and
+virtualisation workloads, upgrade Kubernetes, rotate its CAs and keys, and find out why it
+misbehaves.
 
 ## Set up
 
 These pages take a cluster from its plan to a highly available control plane, which may serve the
-cluster's images and whose nodes may announce their addresses over BGP.
+cluster's images and whose nodes may announce their addresses over BGP, and run the workloads
+that need kernel modules from the host.
 
 <div class="grid cards" markdown>
 
@@ -72,6 +74,15 @@ cluster's images and whose nodes may announce their addresses over BGP.
     default route they send.
 
     [:octicons-arrow-right-24: Read](bgp.md)
+
+-   :material-harddisk: __Run storage and GPU workloads__
+
+    ---
+
+    Run Rook and Ceph CSI and KubeVirt with the kernel modules the image carries for them, and
+    pass PCI devices through to virtual machines.
+
+    [:octicons-arrow-right-24: Read](storage-and-gpu.md)
 
 </div>
 
