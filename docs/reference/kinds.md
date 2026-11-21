@@ -823,6 +823,7 @@ A node's config may hold several, each with a name of its own. It has 7 [change 
 | `spec.disk.type` | one of `nvme`, `ssd`, `hdd` or null | `null` | Kind of disk. |
 | `spec.disk.wwn` | string or null | `null` | The disk's World Wide Name. |
 | `spec.encryption.mode` | one of `tpm2`, `none` or null | `null` | Encryption mode of the volume, over the node's; null takes the node's. |
+| `spec.exec` | boolean | `false` | Whether programs on the volume may run. Volumes are mounted `nosuid,nodev,noexec`; `true` mounts the volume `exec,nosuid,nodev`. A volume mounted at one of the image's exec paths, such as `/var/lib/containerd` on a Kubernetes image, takes that path's options instead. Changing it mounts the volume again. |
 | `spec.format` | one of `ext4`, `xfs`, `btrfs`, `swap`, `raw` | `"ext4"` | File system of the volume; `raw` leaves a raw block device, which has no mountPoint. |
 | `spec.mountPoint` | string or null | `null` | Where the volume is mounted; null leaves it unmounted. Unique among the Volume documents. |
 | `spec.repart` | map of string | `{}` | Extra repart.d keys of the volume's partition. Type, Label, Encrypt, Format, SizeMinBytes, SizeMaxBytes and MountPoint come from the typed options. |

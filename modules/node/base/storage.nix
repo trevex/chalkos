@@ -43,6 +43,16 @@ let
   facts = wrap "chalkos-storage-facts" "--set PATH ${
     lib.makeBinPath [ pkgs.cryptsetup ]
   } --add-flags facts";
+  # The generator's --exec-path flags, one per exec path (exec-paths.nix).
+  execPathFlags = lib.mapAttrsToList (
+    path: p:
+    assert lib.assertMsg (
+      builtins.match "/[^ =']+" path != null
+    ) "chalkos.storage.execPaths: ${path} is no absolute path without spaces, = or '";
+    "--exec-path ${path}=exec,${lib.optionalString (!p.suid) "no"}suid,${
+      lib.optionalString (!p.dev) "no"
+    }dev"
+  ) config.chalkos.storage.execPaths;
 in
 {
   # What the storage kinds' rules read of the machine: the storage section STATE records, what
@@ -154,5 +164,14 @@ in
     btrfs = true;
   };
 
-  systemd.generators.chalkos-storage = wrap "chalkos-storage-generator" "--add-flags 'generate --cryptsetup ${config.systemd.package}/bin/systemd-cryptsetup'";
+  systemd.generators.chalkos-storage = wrap "chalkos-storage-generator" "--add-flags '${
+    lib.concatStringsSep " " (
+      [
+        "generate"
+        "--cryptsetup"
+        "${config.systemd.package}/bin/systemd-cryptsetup"
+      ]
+      ++ execPathFlags
+    )
+  }'";
 }

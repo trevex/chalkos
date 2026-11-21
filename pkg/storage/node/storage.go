@@ -35,6 +35,10 @@ type Storage struct {
 	// BootPartitions holds udev's links to the boot disk's partitions, by partition label.
 	BootPartitions string
 	StatusFile     string
+	// ExecPaths maps the directories programs run from, below the noexec VAR or root, to their
+	// mount options. Generate mounts each onto itself with them, or mounts the volume at it with
+	// them.
+	ExecPaths map[string]string
 }
 
 // The links udev makes to the boot disk and to its partitions.
@@ -93,7 +97,12 @@ type OpenOptions struct {
 	Encrypted bool
 }
 
-// Open unlocks dev as /dev/mapper/<name> if it holds LUKS and mounts the file system at target.
+// DataOptions are the mount options of STATE, VAR and volumes: nothing on them runs as a program,
+// takes set-user-ID or set-group-ID effect or opens as a device.
+const DataOptions = "nosuid,nodev,noexec"
+
+// Open unlocks dev as /dev/mapper/<name> if it holds LUKS and mounts the file system at target
+// with DataOptions.
 func (s *Storage) Open(ctx context.Context, name, dev, target string, o OpenOptions) error {
 	if _, err := tool.Run(ctx, s.Run, "udevadm", "wait", "--timeout=60", dev); err != nil {
 		return fmt.Errorf("wait for %s: %w", dev, err)
@@ -126,7 +135,7 @@ func (s *Storage) Open(ctx context.Context, name, dev, target string, o OpenOpti
 	if err := os.MkdirAll(target, 0o755); err != nil {
 		return err
 	}
-	if err := s.Ops.Mount(ctx, source, target, "ext4", ""); err != nil {
+	if err := s.Ops.Mount(ctx, source, target, "ext4", DataOptions); err != nil {
 		return fmt.Errorf("mount %s: %w", name, err)
 	}
 	return nil

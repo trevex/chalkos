@@ -483,5 +483,25 @@
     ],
     "readOnly": false,
     "type": "attribute set of path"
+  },
+  "chalkos.storage.execPaths": {
+    "declarations": [
+      {
+        "name": "modules/node/base/exec-paths.nix",
+        "url": "https://example.org/modules/node/base/exec-paths.nix"
+      }
+    ],
+    "default": {
+      "_type": "literalExpression",
+      "text": "{ }"
+    },
+    "description": "Directories programs run from.",
+    "loc": [
+      "chalkos",
+      "storage",
+      "execPaths"
+    ],
+    "readOnly": false,
+    "type": "attribute set of boolean"
   }
 }

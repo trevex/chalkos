@@ -41,6 +41,37 @@ Size of each store slot's dm-verity hash partition; null sizes it to its content
 image build fails when the hash tree takes more than 80% of it. With 4 KiB blocks the
 tree needs up to about 1/128 of storeSize.
 
+## Storage { #storage }
+
+The directories below the noexec VAR and root that programs run from.
+
+### `chalkos.storage.execPaths` { #chalkosstorageexecpaths }
+
+Type: map of submodule · Default: `{ }` · Declared in: [modules/node/base/exec-paths.nix](https://github.com/trevex/chalkos/blob/main/modules/node/base/exec-paths.nix)
+
+Directories programs run from, below the noexec VAR or root, by absolute path. Each is
+mounted onto itself with `exec` and `nosuid` or `suid`, `nodev` or `dev`, after the file
+systems it lies on, VAR or a Volume, and before the units that need it, which name it in
+`RequiresMountsFor`. A Volume mounted at the path itself takes these options instead of its
+own. Paths hold no spaces or `=`.
+
+Example:
+
+```nix
+{
+  "/var/lib/containerd" = {
+    suid = true;
+  };
+}
+```
+
+The options within each, by their path below `chalkos.storage.execPaths`:
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `<name>.dev`{ #chalkosstorageexecpathsdev } | boolean | `false` | Whether device files below the path open as devices. |
+| `<name>.suid`{ #chalkosstorageexecpathssuid } | boolean | `false` | Whether set-user-ID and set-group-ID files below the path take effect. |
+
 ## Kernel { #kernel }
 
 The kernel modules an image carries.

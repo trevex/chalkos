@@ -94,6 +94,14 @@ in
           || lib.versions.majorMinor k.package.version == k.version;
         message = "chalkos.kubernetes.package is Kubernetes ${k.package.version} and chalkos.kubernetes.version is ${k.version}; set one of them, or both to one minor";
       }
+      # runc runs a container's init from a copy of itself in a memfd when it cannot clone its
+      # binary otherwise, which vm.memfd_noexec = 2 forbids.
+      {
+        assertion = toString (config.boot.kernel.sysctl."vm.memfd_noexec" or 0) != "2";
+        message = "vm.memfd_noexec is ${
+          toString config.boot.kernel.sysctl."vm.memfd_noexec"
+        }; Kubernetes images need it at most 1, as runc may run containers from a memfd";
+      }
     ];
 
     chalkos.layers.kubernetes = "";
@@ -145,6 +153,13 @@ in
       };
     };
 
+    # Pods run programs from disk-backed emptyDir volumes, directories below the kubelet's root, as
+    # in Tekton's or Argo's pattern of copying a binary into a shared emptyDir, so the root is an
+    # exec path. Device files open as devices: raw block volumes are device nodes the kubelet
+    # keeps below it. Flexvolume drivers, which the kubelet runs from below
+    # /usr/libexec/kubernetes on the noexec root, are not supported.
+    chalkos.storage.execPaths."/var/lib/kubelet".dev = true;
+
     systemd.services.kubelet = {
       description = "Kubernetes kubelet";
       wantedBy = [ "multi-user.target" ];
@@ -166,8 +181,11 @@ in
         # A node without a share has no kubeconfig and runs no kubelet.
         ConditionPathExists = "${run}/kubelet/kubeconfig";
         # A control plane's etcd pod would make its directory on the file system below a volume
-        # that is missing, and start empty there.
-        RequiresMountsFor = "/var/lib/etcd";
+        # that is missing, and start empty there. The kubelet's root is an exec path.
+        RequiresMountsFor = [
+          "/var/lib/etcd"
+          "/var/lib/kubelet"
+        ];
       };
       path = [
         pkgs.util-linux

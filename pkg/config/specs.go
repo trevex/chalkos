@@ -40,6 +40,7 @@ type volumeSpec struct {
 	Size       *string          `json:"size"`
 	Format     string           `json:"format"`
 	MountPoint *string          `json:"mountPoint"`
+	Exec       bool             `json:"exec"`
 	Encryption struct {
 		Mode *string `json:"mode"`
 	} `json:"encryption"`

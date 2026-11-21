@@ -45,6 +45,7 @@ var imagePages = []optionPage{
 		name: "image-options",
 		sections: []optionSection{
 			{"Disk", "disk", "The sizes of the partitions an image's build lays out.", []string{"chalkos.disk"}},
+			{"Storage", "storage", "The directories below the noexec VAR and root that programs run from.", []string{"chalkos.storage"}},
 			{"Kernel", "kernel", "The kernel modules an image carries.", []string{"chalkos.kernel"}},
 			{"Kubernetes and CNI", "kubernetes-and-cni", "Whether an image runs Kubernetes, the packages and images it runs it with, and its CNI.", []string{"chalkos.kubernetes", "chalkos.cni"}},
 			{"Router and forwarding", "router-and-forwarding", "Whether an image carries the router layer, and whether its node forwards packets between its interfaces.", []string{"chalkos.router", "chalkos.forwarding"}},

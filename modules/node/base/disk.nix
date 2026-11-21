@@ -213,12 +213,17 @@ in
     services.udev.extraRules = bootDiskRules;
 
     # The ESP, where upgrades write UKIs and systemd-bless-boot marks a boot good. It is mounted
-    # when used and unmounted again once idle, so a power cut rarely finds its FAT in use.
+    # when used and unmounted again once idle, so a power cut rarely finds its FAT in use. Its
+    # files are root's alone and nothing runs from it: firmware reads the UKIs, not the system.
     fileSystems."/efi" = {
       device = "/dev/disk/chalk-boot/esp";
       fsType = "vfat";
       options = [
-        "umask=0077"
+        "fmask=0177"
+        "dmask=0077"
+        "noexec"
+        "nosuid"
+        "nodev"
         "nofail"
         "x-systemd.automount"
         "x-systemd.idle-timeout=1min"

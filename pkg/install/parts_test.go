@@ -1224,7 +1224,7 @@ func TestFromPartsChecksTheConfigWithTheImage(t *testing.T) {
 		if system != "/nix/store/x" {
 			t.Errorf("the check got the system %q, want the UKI's init= directory", system)
 		}
-		if !slices.Contains(l.r.Calls, "mount -t erofs -o ro /dev/mapper/"+upgrade.StoreMapping+" "+filepath.Join(l.i.WorkDir, "store")) {
+		if !slices.Contains(l.r.Calls, "mount -t erofs -o ro,nosuid,nodev /dev/mapper/"+upgrade.StoreMapping+" "+filepath.Join(l.i.WorkDir, "store")) {
 			t.Errorf("the store is not mounted for the check: %q", l.r.Calls)
 		}
 		if !bytes.Equal(l.file("EFI/Linux/chalkos_1.efi"), img.UKI) {

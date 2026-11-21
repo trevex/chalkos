@@ -64,7 +64,7 @@ Two kinds of config document declare a node's storage:
 - One [`SystemDisk`](../../reference/kinds.md#systemdisk), which every node's config holds: the disk
   the node runs from, the encryption of STATE, VAR and volumes, and VAR's size.
 - A [`Volume`](../../reference/kinds.md#volume) per further volume, named by its `metadata.name`:
-  its disk, size, format, mount point and encryption.
+  its disk, size, format, mount point, encryption and whether programs on it may run.
 
 Each node's set holds its own storage documents, usually in the node's own file, since disks
 differ between machines. Nothing merges a node's documents with those of other files: a field a
@@ -80,6 +80,11 @@ disk are refused on the node, when it finds the disks.
 
 A `Volume`'s `repart` field passes further systemd-repart keys through, for example `Weight`. The
 keys the typed fields set are refused there.
+
+STATE, VAR and volumes are mounted `nosuid,nodev,noexec`. A `Volume` with `exec: true` is mounted
+`exec,nosuid,nodev`, and a volume at one of the image's exec paths, such as `/var/lib/kubelet` with
+the Kubernetes layer, takes that path's options.
+[Mount options](../../reference/image-layout.md#mount-options) lists them.
 
 ## A disk is found once and then pinned
 
@@ -218,7 +223,8 @@ changes keep every byte of existing data, and the node applies them while it run
 
 - a new `Volume`, on the system disk or a new disk;
 - a larger size, or a fixed size changed to fill the disk, of a volume or of VAR;
-- a new, changed or removed mount point.
+- a new, changed or removed mount point;
+- a changed `exec`, which mounts the volume again with its new options.
 
 Destructive changes need a volume to be wiped:
 

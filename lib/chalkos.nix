@@ -26,6 +26,11 @@ let
       inherit outputs kinds;
       ${action} = units;
     };
+  # A unit's mount namespace in which no file system but the store lets a file run as a program.
+  noExec = {
+    NoExecPaths = [ "/" ];
+    ExecPaths = [ "/nix/store" ];
+  };
 in
 {
   types = {
@@ -98,7 +103,12 @@ in
     refuseLib
     // kindCheck
     // {
-      inherit api kindTypes declaredKinds;
+      inherit
+        api
+        kindTypes
+        declaredKinds
+        noExec
+        ;
       # The version of secrets.pub.json chalkos reads.
       secretsVersion = import ./secrets-version.nix;
       cel = import ./cel.nix;
@@ -139,8 +149,9 @@ in
       # The sandbox of a root unit that needs no capability and no network: Unix sockets alone,
       # which stay reachable on a read-only system and from the private network namespace, as it
       # hides abstract sockets alone; no home; kernel tunables, modules and cgroups out of reach;
-      # and the system calls of a system service of the native architecture.
-      unprivileged = {
+      # and the system calls of a system service of the native architecture. Programs run from the
+      # store alone.
+      unprivileged = noExec // {
         CapabilityBoundingSet = "";
         NoNewPrivileges = true;
         PrivateNetwork = true;

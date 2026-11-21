@@ -256,6 +256,7 @@ in
             "mode=0755"
             "nosuid"
             "nodev"
+            "noexec"
             "size=${toString (room * 16)}M"
             "nr_inodes=${toString (room * 16384)}"
           ];

@@ -376,6 +376,13 @@ image's registry.
 - An endpoint of the cluster registry is a node's static address, which its node certificate
   names, so a VIP cannot be one.
 - Anyone who reaches the cluster registry's port can pull every image it holds.
+- The node's noexec mounts bind the node's processes, not pods: runc mounts a pod's `hostPath`
+  volumes with flags of its own. A program a pod leaves below `/var`, outside the exec paths, does
+  not run on the node, as [Mount options](../../reference/image-layout.md#mount-options)
+  describes. Restricting what pods mount is the job of Pod Security admission.
+- Flexvolume drivers are not supported. The kubelet runs them from
+  `/usr/libexec/kubernetes/kubelet-plugins/volume/exec`, which is on the noexec root. CSI drivers
+  run in pods and are not affected.
 
 ## Related pages
 

@@ -10,4 +10,4 @@ Wants=systemd-growfs@var-lib-data.service
 What=/dev/mapper/data
 Where=/var/lib/data
 Type=xfs
-Options=nofail
+Options=nofail,nosuid,nodev,noexec

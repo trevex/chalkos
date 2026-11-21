@@ -151,6 +151,25 @@ The mounts are `nofail`, so a missing disk does not stop the boot. They are not 
     The kubelet is not ordered after the mounts. A pod with a host path below a mount point can
     start before its volume is mounted, and write to VAR.
 
+Volumes are mounted `nosuid,nodev,noexec`, so nothing on them runs as a program. Set `exec: true`
+for a volume whose programs must run, such as a build cache that holds compiled tools:
+
+```yaml title="nodes/node1.yaml"
+apiVersion: storage.chalkos.dev/v1alpha1
+kind: Volume
+metadata: {name: tools}
+spec:
+  size: 20G
+  mountPoint: /srv/tools
+  exec: true
+```
+
+The volume is then mounted `exec,nosuid,nodev`. A volume mounted at one of the image's exec paths
+takes that path's options and ignores `exec`. With the Kubernetes layer, a volume at
+`/var/lib/containerd` is mounted `exec,suid,nodev` and one at `/var/lib/kubelet` `exec,nosuid,dev`,
+as [Mount options](../reference/image-layout.md#mount-options) lists. Changing `exec` is an
+additive change: the node mounts the volume again with the new options.
+
 ## Choose the encryption
 
 A volume is encrypted like the node, by `spec.encryption.mode` of the `SystemDisk`. The default,

@@ -246,6 +246,27 @@ files, for the host, so the hypervisor's admin gets no shell on the node through
     [`chalkos.debug.tools`](../../reference/image-options.md#chalkosdebugtools) adds the usual
     command-line tools to an image for that.
 
+## Programs run from the store alone
+
+The store is the only file system a host process runs programs from. Every writable file system
+is mounted `nosuid,nodev,noexec`: the root tmpfs with `/tmp`, `/run`, `/dev/shm`, STATE, VAR,
+Volumes and the ESP. A file written to any of them does not run as a program, take set-user-ID
+effect or open as a device. `/dev` is `noexec` too. The kernel also refuses to open a FIFO or
+regular file in a sticky world-writable directory, such as `/tmp`, that another user owns
+(`fs.protected_fifos` and `fs.protected_regular` set to 2).
+
+Layers name the few directories that must allow execution as exec paths. With the Kubernetes
+layer, these are containerd's and the kubelet's roots, `/var/lib/containerd` and
+`/var/lib/kubelet`, where container images and `emptyDir` volumes live, plus `/opt/cni/bin`,
+where CNI DaemonSets install their plugins. The router layer has none. A Volume allows execution
+only when its `spec.exec` is true.
+[Mount options](../../reference/image-layout.md#mount-options) lists every mount.
+
+Some units also get a mount namespace in which only the store allows execution, through systemd's
+`NoExecPaths=/` and `ExecPaths=/nix/store`: the console, chalkd's serial log and the cluster
+registry. Even an exec path or a Volume with `spec.exec` does not let them run a program from
+outside the store.
+
 ## The console acts for whoever sits at the machine
 
 The machine's screen shows the [console](../../operate/console.md) in place of a login prompt.
@@ -302,6 +323,16 @@ runs no console, and chalkd serves no console socket.
   valid certificates and accepts expired ones until chrony sets it, as
   [The clock decides whether a certificate is valid](certificates.md#the-clock-decides-whether-a-certificate-is-valid)
   explains.
+- noexec stops a file from running as a program, but an interpreter can still read the file as a
+  script. Hosts carry no shell.
+- The mount options bind the node's processes, not pods. runc mounts a pod's `hostPath` volumes
+  with flags of its own, so a pod that may mount host paths may run programs from them inside its
+  container; Pod Security admission decides which pods may.
+- With the Kubernetes layer, `/var/lib/containerd` allows set-user-ID files, as container images
+  need them. A pod's `securityContext` restricts them.
+- chalkd, containerd and the kubelet have no mount namespace of their own, as the host must see
+  the mounts they make, so `NoExecPaths` does not apply to them. They are bound by the mount
+  options alone.
 - With the Kubernetes layer, a `Registry`'s credentials serve the image pulls of every pod on the
   node. chalkd keeps them in a `credentials.json` that only root reads, but the kubelet hands them
   to containerd for any pod whose image names the `Registry`'s host, and containerd sends them to

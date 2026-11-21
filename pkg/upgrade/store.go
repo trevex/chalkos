@@ -150,7 +150,8 @@ func UKISystem(path string) (string, error) {
 // OpenStore mounts the slot's store read-only through dm-verity with the root hash at dir, which
 // it creates, and passes it to read with system, the image's NixOS system in it; then it unmounts
 // the store and closes its dm-verity device. What read finds is what the root hash covers: a
-// block that does not match the hash tree fails to read.
+// block that does not match the hash tree fails to read. The store stays executable, as the
+// image's checker runs from it, but takes no set-user-ID effect and opens no device.
 func OpenStore(ctx context.Context, ops hostops.Ops, dir string, rootHash []byte, slot storeslot.Slot, system string, read func(Store) error) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
@@ -160,7 +161,7 @@ func OpenStore(ctx context.Context, ops hostops.Ops, dir string, rootHash []byte
 	}
 	mounted := false
 	defer func() { closeStore(ctx, ops, dir, mounted) }()
-	if err := ops.Mount(ctx, hostops.Mapper(StoreMapping), dir, "erofs", "ro"); err != nil {
+	if err := ops.Mount(ctx, hostops.Mapper(StoreMapping), dir, "erofs", "ro,nosuid,nodev"); err != nil {
 		return fmt.Errorf("mount the written store: %w", err)
 	}
 	mounted = true

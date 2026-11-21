@@ -133,8 +133,8 @@ labels. The installer's own medium keeps `store-verity` and `store`.
 
 ## Files on the ESP
 
-The ESP is mounted at `/efi` when it is used, with mode `0700`, and unmounted after a minute
-idle, so a power cut rarely finds its FAT file system in use.
+The ESP is mounted at `/efi` when it is used, with directories of mode `0700` and files of mode
+`0600`, and unmounted after a minute idle, so a power cut rarely finds its FAT file system in use.
 
 | Path | What it is |
 | --- | --- |
@@ -381,6 +381,49 @@ another disk carrying the same image or the same labels for its own.
 | `/var/lib/etcd` | etcd's data on a control plane, whose directory `chalkos-controlplane.service` makes when the node's `Node.spec.type` is `controlplane`. |
 | `/var/lib/kubelet/pki` | The kubelet's client and serving certificates. |
 | `/var/lib/chalkd/failed-boot` | The log lines of the last boot that was not found healthy. |
+
+## Mount options { #mount-options }
+
+Programs run from the store alone. Every writable file system is mounted `nosuid,nodev,noexec`,
+so a file written to it does not run as a program, take set-user-ID or set-group-ID effect or open
+as a device. The exceptions are the exec paths an image's layers declare and the CNI plugin
+directory.
+
+| Mount point | Options | Notes |
+| --- | --- | --- |
+| `/` | tmpfs, `nosuid,nodev,noexec` | Holds `/tmp`, `/opt` and, until the node is installed, `/var`. |
+| `/nix/store` | erofs through dm-verity, `ro,nosuid,nodev` | The image's programs. |
+| `/etc` | overlay, `ro,nosuid,nodev` | Allows execution; see below. |
+| `/state` | ext4, `nosuid,nodev,noexec` | |
+| `/var` | ext4, `nosuid,nodev,noexec` | VAR. |
+| Volumes | `nosuid,nodev,noexec` | `exec,nosuid,nodev` for a Volume with `spec.exec: true`; a Volume at an exec path takes the exec path's options. |
+| `/efi` | vfat, `noexec,nosuid,nodev,fmask=0177,dmask=0077` | Mounted on use. |
+| `/run` | tmpfs, `nosuid,nodev,noexec` | |
+| `/run/chalkos/outputs` | tmpfs, `nosuid,nodev,noexec` | |
+| `/run/chalkos/upgrade-store` | erofs through dm-verity, `ro,nosuid,nodev` | The staged image's store while chalkd runs that image's checker from it. |
+| `/dev` | devtmpfs, `nosuid,noexec` | |
+| `/dev/shm` | tmpfs, `nosuid,nodev,noexec` | |
+| `/opt/cni/bin` | tmpfs, `nosuid,nodev` | On images with Kubernetes. CNI DaemonSets install their plugins here. |
+| `/var/lib/containerd` | bind mount, `exec,suid,nodev` | Exec path on images with Kubernetes. Container images carry set-user-ID programs such as `ping`; a pod's `securityContext` restricts them. |
+| `/var/lib/kubelet` | bind mount, `exec,nosuid,dev` | Exec path on images with Kubernetes. Disk-backed `emptyDir` volumes live here, and raw block volumes are device nodes below it. |
+
+An exec path is a directory that `chalkos.storage.execPaths` names. chalkos-storage's systemd
+generator mounts the directory onto itself with `exec` once the file systems it lies on are
+mounted, because a bind mount keeps the noexec flag of the mount it comes from until it gets
+options of its own. If a Volume is mounted at the exec path itself, the generator mounts the
+Volume with the exec path's options and writes no bind mount. The units that run programs from an
+exec path name it in `RequiresMountsFor`. The router layer declares no exec paths.
+
+The flags bind the node's own processes. runc mounts a pod's `hostPath` volumes with flags of its
+own, so a container may run a program from a host path, while a node process that runs the same
+file below `/var`, outside the exec paths, fails with `EACCES`. A pod in a user namespace
+(`hostUsers: false`) cannot clear the flags of the mounts it gets, so for it the exec paths decide
+whether programs in its `emptyDir` volumes run. Flexvolume drivers are not supported: the kubelet
+runs them from `/usr/libexec/kubernetes/kubelet-plugins/volume/exec`, which is on the noexec root.
+
+`/etc` is not mounted noexec, as that would add nothing. The overlay is read-only and is built
+with the image. Every entry is a link into the store, apart from a few files of mode `0644` or
+less, such as `passwd`, so a program run through an `/etc` path runs from the store.
 
 Sources: `modules/node/base/disk.nix` for the system region and the device links,
 `modules/node/base/image-directory.nix` for the outputs of an image build,

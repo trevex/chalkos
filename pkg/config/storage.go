@@ -118,7 +118,7 @@ func (s *Set) storage(name string) (storage.Section, error) {
 			sec.Disks[v.name] = storage.Disk{Ref: *v.ref, Seed: seed(v.name), Repart: map[string]string{"10-" + v.name + ".conf": def}}
 		}
 		sec.Volumes[v.name] = storage.Volume{Disk: disk, Label: v.name, Format: format,
-			MountPoint: deref(v.spec.MountPoint), Encryption: mode, Size: deref(v.spec.Size)}
+			MountPoint: deref(v.spec.MountPoint), Encryption: mode, Size: deref(v.spec.Size), Exec: v.spec.Exec}
 	}
 	return sec, nil
 }
