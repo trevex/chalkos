@@ -4753,4 +4753,22 @@ lib.runTests {
         runcRefused = true;
       };
     };
+  # The kernel's modprobe helper, which loads the modules pods need on demand, is kmod's ELF
+  # modprobe, set by nixos-init, and no modprobe.d install or remove command makes it run a shell.
+  testModprobeWithoutShell =
+    let
+      binary = w.boot.bootspec.extensions."org.nixos.nixos-init.v1".modprobe_binary;
+    in
+    {
+      expr = {
+        modprobe = lib.hasSuffix "/bin/modprobe" binary;
+        kmod = lib.hasInfix "-kmod-" binary;
+        commands = builtins.match "(.*\n)?[[:space:]]*(install|remove)[[:space:]].*" w.boot.extraModprobeConfig;
+      };
+      expected = {
+        modprobe = true;
+        kmod = true;
+        commands = null;
+      };
+    };
 }
