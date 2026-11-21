@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.5.0](https://github.com/trevex/chalkos/compare/v0.4.0...v0.5.0) (2026-11-21)
+
+
+### Features
+
+* **node:** fail the build when a shell enters a node image ([#69](https://github.com/trevex/chalkos/issues/69)) ([b720109](https://github.com/trevex/chalkos/commit/b7201094306cb4bb160145e1bff479a6ba433e63))
+* **node:** keep chalkos's units and the router's daemons from running programs outside the store ([#75](https://github.com/trevex/chalkos/issues/75)) ([69b0640](https://github.com/trevex/chalkos/commit/69b064058f1a6f65a06f40009be0c426753e559a))
+* **node:** mount writable file systems noexec ([#70](https://github.com/trevex/chalkos/issues/70)) ([ed18d56](https://github.com/trevex/chalkos/commit/ed18d5640d117bb9d492f7716b305ba098ed86fe))
+* **router:** run the layer's unit scripts as chalkd subcommands ([#68](https://github.com/trevex/chalkos/issues/68)) ([5725cd9](https://github.com/trevex/chalkos/commit/5725cd9edcf69f3eed32910a5fe424cfaeee3362))
+
+
+### Bug Fixes
+
+* **client:** report a connection the node reset as unavailable ([#73](https://github.com/trevex/chalkos/issues/73)) ([f1aac0f](https://github.com/trevex/chalkos/commit/f1aac0f17aeeed2691fea0a5ef1f1c2afee563fe))
+* **node:** check that the console keymap loads without a shell ([#72](https://github.com/trevex/chalkos/issues/72)) ([973c6eb](https://github.com/trevex/chalkos/commit/973c6eb079ee5d5326ea064925a05fa3f1c2bef7))
+* **router:** keep the delegated prefixes' records and their staging directory on one mount ([#74](https://github.com/trevex/chalkos/issues/74)) ([44e266f](https://github.com/trevex/chalkos/commit/44e266f898f038ef4481cbb812385bc5704dca13))
+
 ## [0.4.0](https://github.com/trevex/chalkos/compare/v0.3.2...v0.4.0) (2026-11-21)
 
 
