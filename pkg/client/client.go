@@ -185,8 +185,45 @@ func DialSocket(path string) *Conn {
 // connect calls the node's services at baseURL through hc. A response may be as large as the node
 // makes it, such as a node's diagnostics: connect would otherwise refuse one over 4 MiB.
 func (c *Conn) connect(hc *http.Client, baseURL string) {
+	hc.Transport = brokenUnavailable{hc.Transport}
 	c.rpc = connect.NewClient(connecthttp.NewTransport(hc, baseURL, connecthttp.WithReadMaxBytes(0)))
 	c.NodeServiceClient = nodev1connect.NewNodeServiceClient(c.rpc)
+}
+
+// brokenUnavailable fails a call whose connection the node reset or closed under it as
+// unavailable. connect takes a reset or broken pipe for its handler's client going away and
+// codes it canceled, also on the client, where the caller canceled nothing: a node that refuses a
+// client's certificate after TLS 1.3's handshake, or restarts, would then answer canceled or
+// unavailable by timing.
+type brokenUnavailable struct{ http.RoundTripper }
+
+func (b brokenUnavailable) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := b.RoundTripper.RoundTrip(req)
+	if err != nil {
+		return nil, unavailable(req.Context(), err)
+	}
+	resp.Body = brokenBody{resp.Body, req.Context()}
+	return resp, nil
+}
+
+// brokenBody is a response's body whose connection breaking fails the call as unavailable.
+type brokenBody struct {
+	io.ReadCloser
+	ctx context.Context
+}
+
+func (b brokenBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	return n, unavailable(b.ctx, err)
+}
+
+// unavailable codes err unavailable when it is a broken connection and ctx, the call's, is not
+// done.
+func unavailable(ctx context.Context, err error) error {
+	if ctx.Err() != nil || !(errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE)) {
+		return err
+	}
+	return connect.NewError(connect.CodeUnavailable, err.Error()).WithCause(err)
 }
 
 // FromNode reports whether err is an error the node answered a call with, rather than a failure to

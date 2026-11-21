@@ -352,3 +352,60 @@ func TestAlertShapedConnNotEstablished(t *testing.T) {
 		t.Error("an unrelated http2 error is alert-shaped")
 	}
 }
+
+// A node that resets the connection under a call, as one that refuses the client's certificate
+// after TLS 1.3's handshake may, fails the call as unavailable: connect alone would code it
+// canceled, which the caller did not do.
+func TestResetConnectionIsUnavailable(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			// Reading the ClientHello first makes the close a reset rather than an end of file.
+			conn.Read(make([]byte, 1))
+			conn.(*net.TCPConn).SetLinger(0)
+			conn.Close()
+		}
+	}()
+	c, err := Dial(ln.Addr().String(), Options{Verify: AnyCertificate()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if err := info(c); connect.CodeOf(err) != connect.CodeUnavailable || !errors.Is(err, syscall.ECONNRESET) {
+		t.Errorf("a call on a reset connection: %v, want unavailable", err)
+	}
+}
+
+// unavailable recodes a broken connection alone, and only while the call's context is live.
+func TestUnavailable(t *testing.T) {
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	reset := &net.OpError{Op: "write", Err: syscall.ECONNRESET}
+	for _, tc := range []struct {
+		name string
+		ctx  context.Context
+		err  error
+		want connect.Code
+	}{
+		{"a connection reset", context.Background(), reset, connect.CodeUnavailable},
+		{"a write to a closed connection", context.Background(), &net.OpError{Op: "write", Err: syscall.EPIPE}, connect.CodeUnavailable},
+		{"a reset of a canceled call", canceled, reset, 0},
+		{"the end of a body", context.Background(), io.EOF, 0},
+	} {
+		got := unavailable(tc.ctx, tc.err)
+		if !errors.Is(got, tc.err) {
+			t.Errorf("%s: %v lost %v", tc.name, got, tc.err)
+		}
+		if ce, ok := errors.AsType[*connect.Error](got); ok != (tc.want != 0) || ok && ce.Code() != tc.want {
+			t.Errorf("%s: %v, want code %v", tc.name, got, tc.want)
+		}
+	}
+}
