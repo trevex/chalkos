@@ -21,7 +21,9 @@ import (
 
 // PDRecordDir is the directory chalkos-dhcp6-pd records the delegated prefixes in. The user kea
 // owns it, in a directory it cannot write, so that it cannot put another directory in its place.
-const PDRecordDir = "/var/lib/chalkos-dhcp6-pd"
+// That directory also holds PDRecordDir.new, where the hook writes a record before it renames it
+// in, and Kea's sandbox binds it whole, so that the rename stays on one mount.
+const PDRecordDir = "/var/lib/chalkos-dhcp6-pd/records"
 
 // MaxPDRecords caps the live records ReadPDRecords routes; the renderer keeps all pools within
 // it. maxPDRecordSize caps the bytes read of a record; a longer one is ignored.

@@ -1346,8 +1346,9 @@ lib.runTests {
             inherit (edge.systemd.timers.chalkos-dhcp6-routes.timerConfig) OnBootSec OnUnitActiveSec;
           };
           records = lib.all (r: lib.elem r edge.systemd.tmpfiles.rules) [
-            "d /var/lib/chalkos-dhcp6-pd 0755 kea kea - -"
-            "d /var/lib/chalkos-dhcp6-pd.new 0700 kea kea - -"
+            "d /var/lib/chalkos-dhcp6-pd 0755 root root - -"
+            "d /var/lib/chalkos-dhcp6-pd/records 0755 kea kea - -"
+            "d /var/lib/chalkos-dhcp6-pd/records.new 0700 kea kea - -"
           ];
         };
         reconciler = {
@@ -1420,10 +1421,9 @@ lib.runTests {
           "AF_INET"
           "AF_INET6"
         ];
-        ReadWritePaths = [
-          "-/var/lib/chalkos-dhcp6-pd"
-          "-/var/lib/chalkos-dhcp6-pd.new"
-        ];
+        # One parent of the records and their staging directory: two entries would be two mounts,
+        # across which the hook's rename fails with EXDEV.
+        ReadWritePaths = [ "-/var/lib/chalkos-dhcp6-pd" ];
         hookPath = true;
         ConditionPathExists = "/run/chalkos/outputs/kea/kea-dhcp6.json";
         vrf = {
@@ -1444,7 +1444,7 @@ lib.runTests {
         ip = true;
         path = {
           wantedBy = [ "multi-user.target" ];
-          PathChanged = "/var/lib/chalkos-dhcp6-pd";
+          PathChanged = "/var/lib/chalkos-dhcp6-pd/records";
           TriggerLimitIntervalSec = 0;
         };
         timer = {

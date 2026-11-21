@@ -6,7 +6,7 @@
 # exist. A reload keeps the leases.
 #
 # Kea routes no prefix its DHCPv6 servers delegate: its run_script hook, chalkd router dhcp6-pd,
-# records each in /var/lib/chalkos-dhcp6-pd as kea, and chalkos-dhcp6-routes, which a change there
+# records each in /var/lib/chalkos-dhcp6-pd/records as kea, and chalkos-dhcp6-routes, which a change there
 # starts, routes each to the link-local address that asked for it. kea owns the records' directory but
 # cannot write /var/lib, so it cannot put another directory in its place; chalkd reads the records
 # as root and removes none.
@@ -23,10 +23,13 @@ let
   kinds = routerLib.kinds ./kinds.nix;
   inherit (pkgs.chalkos) kea;
   dir = config.chalkos.outputs.kea.dir;
-  pdRecords = "/var/lib/chalkos-dhcp6-pd";
-  # The hook writes each record here first and renames it into pdRecords, on the same file system,
-  # so that the path unit sees a record once it is whole.
-  pdRecordsNew = "/var/lib/chalkos-dhcp6-pd.new";
+  # The records and their staging directory share a parent, which root owns so that kea cannot
+  # put another directory in place of either, and which a DHCPv6 server's sandbox binds whole:
+  # the hook writes each record in pdRecordsNew first and renames it into pdRecords, which must
+  # stay on one mount, so that the path unit sees a record once it is whole.
+  pdState = "/var/lib/chalkos-dhcp6-pd";
+  pdRecords = "${pdState}/records";
+  pdRecordsNew = "${pdRecords}.new";
   # Kea's run_script hook, which Kea runs with the hook point's name and the leases' variables
   # alone: chalkd router dhcp6-pd, through a link of chalkd whose name gives the command. A file per
   # delegated prefix, <link>_<prefix>_<length>, readable by every user, holds the link-local address
@@ -66,10 +69,7 @@ let
       RuntimeDirectoryPreserve = true;
       StateDirectory = "kea";
       StateDirectoryMode = "0750";
-      ReadWritePaths = lib.optionals (!v4) [
-        "-${pdRecords}"
-        "-${pdRecordsNew}"
-      ];
+      ReadWritePaths = lib.optional (!v4) "-${pdState}";
       UMask = "0027";
       RestrictAddressFamilies = [
         "AF_UNIX"
@@ -219,6 +219,7 @@ in
     # The records' directory exists before a server or the path unit looks at it.
     systemd.tmpfiles.rules = [
       "d /var/lib/kea 0750 kea kea - -"
+      "d ${pdState} 0755 root root - -"
       "d ${pdRecords} 0755 kea kea - -"
       "d ${pdRecordsNew} 0700 kea kea - -"
     ];
