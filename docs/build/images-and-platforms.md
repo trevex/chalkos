@@ -287,10 +287,10 @@ and drivers.
 order, each as the kernel's `console=` parameter takes it, such as `ttyS0,115200` or `tty0` for
 the screen. The kernel prints its messages on every console, and systemd asks for each passphrase
 and recovery key on every console, so any of them can answer. The last entry becomes
-`/dev/console`: systemd's boot status and the emergency shell appear there alone.
+`/dev/console`: systemd's boot status and the emergency messages appear there alone.
 
 `metal`, a platform of your own and the installer put the screen last, so a machine without a
-serial port shows its boot and its emergency shell on the screen. While the last console is a
+serial port shows its boot and its emergency messages on the screen. While the last console is a
 virtual terminal such as the screen, the unit `chalkos-serial-log@` copies chalkd's lines, with
 its fingerprint and addresses, from the journal to every serial port of the list, such as
 `ttyS0`, `ttyAMA0` or `hvc0`, so a BMC's serial-over-LAN shows them. An entry of another form,
@@ -300,7 +300,7 @@ itself; an image without the console shows chalkd's lines there. While the last 
 serial port, chalkd's lines reach it as `/dev/console`.
 
 A machine whose BMC's serial-over-LAN is the console people watch can put that port last, so the
-boot's status and the emergency shell appear there too. Set it in the image's modules, or in
+boot's status and the emergency messages appear there too. Set it in the image's modules, or in
 `modules` for every image:
 
 ```nix

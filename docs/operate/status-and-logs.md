@@ -441,7 +441,7 @@ takes only the client files of its cluster in maintenance mode, each with its ow
 
 The machine's screen and its serial console show the boot: the boot loader, the kernel's
 messages and a passphrase prompt for an encrypted disk. systemd's boot status and the emergency
-shell appear on the last of the image's kernel consoles alone: the screen on `metal` and the
+messages appear on the last of the image's kernel consoles alone: the screen on `metal` and the
 installer, the serial port on `kvm`, as
 [Images and platforms](../build/images-and-platforms.md#choose-the-console-people-watch)
 describes. Once chalkd serves, the screen shows [the console](console.md) in place of a login

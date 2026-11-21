@@ -265,7 +265,7 @@ kernel prints on every one, and systemd asks for each passphrase and recovery ke
 one, so any of them can answer. An image whose modules set the list twice fails to build,
 unless one of them uses `lib.mkDefault` or `lib.mkForce`.
 
-The last entry becomes `/dev/console`, where systemd's boot status, the emergency shell and
+The last entry becomes `/dev/console`, where systemd's boot status, the emergency messages and
 chalkd's lines (its fingerprint and addresses among them) appear. While it is `tty0` or
 `tty1` and the console runs on tty1, chalkd keeps off `/dev/console` and the console shows
 the fingerprint and addresses. While it is a virtual terminal, `chalkos-serial-log@` copies
@@ -275,7 +275,7 @@ such as `uart8250,mmio32,0xfe215040`, gets only the kernel's messages.
 
 The `metal` platform, a platform of your own and the installer put the screen last; `kvm`
 has the first serial port alone. Where people watch a BMC's serial-over-LAN, put that port
-last, such as `[ "tty0" "ttyS0,115200" ]`, so the boot's status and the emergency shell
+last, such as `[ "tty0" "ttyS0,115200" ]`, so the boot's status and the emergency messages
 appear there too.
 
 Example: `[ "tty0" "ttyS1,115200" ]`
