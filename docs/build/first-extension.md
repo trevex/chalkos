@@ -54,7 +54,9 @@ The module has four parts:
   template.
 - `chalkos.effects.hardware-info` restarts the unit when the output's files change.
 - `systemd.services.hardware-info` reads the rendered file as its environment and prints one line.
-  The `-` before the path lets the unit start on a node without the file.
+  The `-` before the path lets the unit start on a node without the file. The unit is a bash
+  script, which the image takes only with `chalkos.shell.allow`;
+  [Keep an image shell-free](shell-free.md) shows units that need no shell.
 
 Add the module to the image `node-kvm` in `flake.nix`:
 

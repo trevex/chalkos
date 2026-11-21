@@ -3590,11 +3590,15 @@ lib.runTests {
     };
   };
   # Images run nixos-init in place of NixOS's bash activation and link no /bin/sh or /usr/bin/env,
-  # with the debug tools too, and neither the initrd nor the system path holds a shell. The NixOS
-  # firewall, which nixpkgs's bashless profile would turn off, stays on.
+  # with the debug tools too, and neither the initrd nor the system path holds a shell. The build
+  # refuses a shell's store path, but not bash-completion's, unless the debug tools or
+  # chalkos.shell.allow let one in. The NixOS firewall, which nixpkgs's bashless profile would
+  # turn off, stays on.
   testNoShell = {
     expr =
       let
+        forbidden =
+          c: path: lib.any (r: builtins.match "(${r}).*" path != null) c.system.forbiddenDependenciesRegexes;
         shell = c: {
           nixosInit = c.system.nixos-init.enable;
           activatable = c.system.activatable;
@@ -3603,12 +3607,19 @@ lib.runTests {
           initrdShell = c.boot.initrd.systemd.shell.enable;
           shutdownShell = c.systemd.shutdownRamfs.shell.enable;
           bash = lib.elem "bash-interactive" (map lib.getName c.environment.systemPackages);
+          forbidden = map (forbidden c) [
+            "${builtins.storeDir}/0123456789abcdfghijklmnpqrsvwxyz-bash-5.3p15"
+            "${builtins.storeDir}/0123456789abcdfghijklmnpqrsvwxyz-bash-interactive-5.3p15-man"
+            "${builtins.storeDir}/0123456789abcdfghijklmnpqrsvwxyz-busybox-1.37.0"
+            "${builtins.storeDir}/0123456789abcdfghijklmnpqrsvwxyz-bash-completion-2.16.0"
+          ];
         };
         c = worker [ ];
       in
       {
         worker = shell c;
         debug = shell (worker [ { chalkos.debug.tools = true; } ]);
+        allowed = (shell (worker [ { chalkos.shell.allow = true; } ])).forbidden;
         router = shell (router [ ]);
         firewall = c.networking.firewall.enable && c.networking.nftables.tables ? nixos-fw;
       };
@@ -3622,13 +3633,28 @@ lib.runTests {
           initrdShell = false;
           shutdownShell = false;
           bash = false;
+          forbidden = shellsForbidden;
         };
+        shellsForbidden = [
+          true
+          true
+          true
+          false
+        ];
+        noneForbidden = [
+          false
+          false
+          false
+          false
+        ];
       in
       {
         worker = none;
         debug = none // {
           bash = true;
+          forbidden = noneForbidden;
         };
+        allowed = noneForbidden;
         router = none;
         firewall = true;
       };

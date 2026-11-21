@@ -2258,7 +2258,7 @@ lib.runTests {
             modules = [ ../../examples/extensions/rack.nix ];
           }).nixos.config;
       in
-      lib.hasInfix "/bin/chalkcfg get Rack rack -o 'jsonpath={.spec.location}'" c.systemd.services.rack-location.serviceConfig.ExecStart.text;
+      lib.hasInfix "/bin/chalkcfg get Rack rack -o 'jsonpath={.spec.location}'" c.systemd.services.rack-location.serviceConfig.ExecStart;
     expected = true;
   };
   # A field's rules reach its property, also in a submodule, with takes defaulted and the

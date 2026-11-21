@@ -248,14 +248,14 @@ let
             # "/nix/store/…-chalkcfg-0.1.0/bin/chalkcfg get Rack rack -o 'jsonpath={.spec.location}'"
           '';
           description = ''
-            Builds a shell command that prints the node's documents of the kind with chalkcfg:
+            Builds a command that prints the node's documents of the kind with chalkcfg:
             every document, one a line, or the one `name` names, such as `rack`. `path`, such as
             `spec.location`, prints one field and must follow the kind's options, or the
             evaluation fails and lists the fields where it went wrong. `output` passes `json`,
             `yaml`, `jsonpath=<expression>` or `go-template=<template>` instead of a path. A
-            document without the field fails the command with status 1. Run the command from a
-            shell script, such as `pkgs.writeShellScript`, since systemd expands `$` and `%` in
-            `ExecStart=` itself. [chalkcfg prints one field](../build/read-config.md#chalkcfg-prints-one-field)
+            document without the field fails the command with status 1. A unit's `ExecStart=`
+            takes the command as it is; systemd expands `$` and `%` there, so a command that holds
+            either needs each written twice. [chalkcfg prints one field](../build/read-config.md#chalkcfg-prints-one-field)
             gives the path's syntax, its order over attribute sets and the keys it cannot address.
           '';
         };

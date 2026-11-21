@@ -50,7 +50,7 @@ var imagePages = []optionPage{
 			{"Router and forwarding", "router-and-forwarding", "Whether an image carries the router layer, and whether its node forwards packets between its interfaces.", []string{"chalkos.router", "chalkos.forwarding"}},
 			{"Upgrade and health", "upgrade-and-health", "How many times systemd-boot boots a new image before it falls back, and when a boot of it is healthy.", []string{"chalkos.upgrade"}},
 			{"Console", "console", "The kernel's consoles, where the boot and its passphrase prompts appear, whether chalkd serves the console on the machine's screen, and whether the console may act on the node.", []string{"chalkos.consoles", "chalkos.console"}},
-			{"Debug and maintenance", "debug-and-maintenance", "The debug tools an image carries, and the OS CA whose clients its maintenance mode accepts.", []string{"chalkos.debug", "chalkos.maintenance"}},
+			{"Debug and maintenance", "debug-and-maintenance", "The debug tools an image carries, whether its build lets a shell in, and the OS CA whose clients its maintenance mode accepts.", []string{"chalkos.debug", "chalkos.shell", "chalkos.maintenance"}},
 			{"Set by mkImage", "set-by-mkimage", "mkImage sets these from its arguments; a module reads them rather than setting them.", []string{"chalkos.image", "chalkos.platform", "chalkos.provenance"}},
 		},
 		sources: "Sources: the option declarations of the node modules in `modules/node/`, through\nnixosOptionsDoc.\n",

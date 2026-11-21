@@ -7,7 +7,6 @@
   chalkosLib,
   config,
   lib,
-  pkgs,
   ...
 }:
 {
@@ -43,12 +42,10 @@
       Type = "oneshot";
       RemainAfterExit = true;
       # A path the kind lacks fails the image's evaluation.
-      ExecStart = pkgs.writeShellScript "rack-location" (
-        config.chalkos.kinds.Rack.get {
-          name = "rack";
-          path = "spec.location";
-        }
-      );
+      ExecStart = config.chalkos.kinds.Rack.get {
+        name = "rack";
+        path = "spec.location";
+      };
     };
   };
   # --8<-- [end:unit]

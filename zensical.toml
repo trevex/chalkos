@@ -105,6 +105,7 @@ nav = [
       "build/first-image.md",
       "build/images-and-platforms.md",
       "build/add-software.md",
+      "build/shell-free.md",
     ] },
     { "Configure services" = [
       "build/first-extension.md",

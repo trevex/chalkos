@@ -263,16 +263,30 @@ in
       touch $out
     '';
 
-  # The worker and the router have no /bin/sh and no shell on the system path: nixos-init, which
-  # sets the system up in the initrd, is given no sh or env binary to link, and the system has no
-  # bash activation script. The worker's NixOS firewall stays on: NixOS's bashless profile, which
-  # chalkos does not import, would turn it off. The router runs a firewall of its own.
+  # The worker, the router and the release images have no /bin/sh and no shell on the system path:
+  # nixos-init, which sets the system up in the initrd, is given no sh or env binary to link, and
+  # the system has no bash activation script. The release images build with neither the debug
+  # tools nor chalkos.shell.allow, so their builds hold that no shell is in their systems or
+  # what their initrds' store paths reference. The worker's NixOS firewall stays on: NixOS's
+  # bashless profile, which chalkos does not import, would turn it off. The router runs a
+  # firewall of its own.
   no-shell =
     let
+      release = self.releaseImages.${pkgs.stdenv.hostPlatform.system};
       images = {
         worker = worker.config;
         router = router.config;
-      };
+      }
+      // lib.mapAttrs (
+        name: image:
+        let
+          c = image.nixos.config;
+        in
+        assert lib.assertMsg (
+          !c.chalkos.debug.tools && !c.chalkos.shell.allow
+        ) "no-shell: the release image ${name} allows a shell";
+        c
+      ) release;
     in
     pkgs.runCommand "chalkos-no-shell" { nativeBuildInputs = [ pkgs.jq ]; } ''
       fail() { echo "error: $*" >&2; exit 1; }
@@ -291,6 +305,96 @@ in
         '') images
       )}
       grep -q '^ *table inet nixos-fw {' ${checkLib.firewall} || fail "the worker's firewall has no nixos-fw table"
+      touch $out
+    '';
+
+  # The release images' ELF files that may run a shell: those that import system, popen or
+  # wordexp, which glibc runs /bin/sh for, and those that hold /bin/sh as a string, as Go and
+  # execl do. Each must be on the allow-list, by its package's name without the version and its
+  # path below the package, such as frr/bin/vtysh, or a glob of those, with the reason it never
+  # runs a shell on a node. A new caller, as FRR's watchfrr was, fails the check: run it without
+  # the shell, drop it from the image or add it here with its reason. The scan covers each
+  # image's system and what its initrd's store paths reference.
+  no-shell-calls =
+    let
+      images = lib.attrValues self.releaseImages.${pkgs.stdenv.hostPlatform.system};
+      closure = pkgs.closureInfo {
+        rootPaths = lib.concatMap (
+          image: with image.nixos.config.system.build; [
+            toplevel
+            chalkosInitrdSources
+          ]
+        ) images;
+      };
+      allowed = {
+        "glibc/lib/libc.so.6" = "implements system, popen and wordexp";
+        "systemd/*" =
+          "the shell of user records without one, debug-shell.service, emergency mode, run0, systemd-run --shell and systemd-nspawn, none of which a node runs";
+        "systemd-minimal/*" = allowed."systemd/*";
+        "util-linux/*" =
+          "the shell that login, su, runuser, script, nsenter, unshare and flock start when not given a command, which a node never leaves out";
+        "util-linux-minimal/*" = allowed."util-linux/*";
+        "shadow/*" = "login shells and vipw's editor; nodes have no logins";
+        "linux-pam/lib/security/pam_shells.so" =
+          "checks a login shell against /etc/shells; nodes have no logins";
+        "coreutils/bin/coreutils" = "chroot without a command runs a shell; nothing runs chroot";
+        "kmod/*" = "runs the install and remove commands of modprobe.d, which no image sets";
+        "e2fsprogs/*" =
+          "mke2fs -c and e2fsck -c run badblocks, debugfs runs a pager and libss runs a command after !; chalkos runs mke2fs and e2fsck without -c";
+        "frr/bin/vtysh" = "runs VTYSH_PAGER as a pager, which chalkos's vtysh -c and -b leave unset";
+        "frr/lib/libfrr.so*" = "show configuration compare runs diff, which nothing asks";
+        "frr/libexec/frr/nhrpd" = "asks strongSwan's ipsec for its directory; no image runs nhrpd";
+        "chrony/bin/chronyd" =
+          "mails a clock change through the mailonchange directive, which chrony.conf never sets";
+        "dnsmasq/bin/dnsmasq" = "runs dhcp-script, which the router's dnsmasq config never sets";
+        "gnused/bin/sed" = "the e command and the e flag of s, which no unit's sed script uses";
+        "kbd/*" =
+          "spawn_console, spawn_login and resizecons, which nothing runs, and libkbdfile, which runs gzip -d through a shell for a compressed keymap or font, so systemd-vconsole-setup fails to load the us keymap, the kernel's own";
+        "less/bin/less" = "shell escapes, LESSOPEN and the editor of an interactive session";
+        "procps/bin/top" = "interactive";
+        "procps/bin/watch" = "runs its command through a shell; interactive";
+        "ncurses/bin/tput" = "tput init and reset run the terminal's init program; interactive";
+        "ncurses/bin/tset" = allowed."ncurses/bin/tput";
+        "npth/lib/libnpth.so*" = "wraps system for gnupg's threads";
+        "gnupg/bin/gpg" = "shows photo IDs with a viewer; systemd-importd's verification shows none";
+        "numactl/bin/numastat" = "reads other tools' output; qemu-ga links libnuma and runs no numastat";
+        "rdma-core/bin/ibacm" = "a daemon no image runs";
+        "glib/lib/libglib-2.0.so*" =
+          "runs a script without #! through a shell; qemu-ga, which links GLib, runs commands only for guest-exec, which it does not allow";
+        "libarchive/lib/libarchive.so*" = "writes #!/bin/sh into shar archives, which nothing writes";
+        "audit/lib/libauparse.so*" = "names /usr/bin/sh among the shells it interprets in audit records";
+        "tpm2-tss/lib/libtss2-tcti-cmd.so*" = "the cmd TCTI runs a command; chalkos uses the device TCTI";
+        "iproute2/bin/tc" = "tc exec bpf runs a shell; nothing on a node runs it";
+        "mtools/bin/mtools" =
+          "expands a drive's file name from mtools.conf through a shell; nodes run no mtools";
+        "erofs-utils/bin/mount.erofs" =
+          "runs a shell for a FUSE mount alone; nodes mount erofs in the kernel";
+        "nixos-init/bin/nixos-init" =
+          "links /bin/sh when the bootspec names a shell, which the no-shell check holds it does not";
+        "nixos-system-nixos/init" = allowed."nixos-init/bin/nixos-init";
+        "cni-plugins-chalkos/bin/portmap" = "a string of Go's tables, which no code executes";
+        "chalkd/bin/chalkd" = "the command of flannel's container, which runs in the container";
+      };
+    in
+    pkgs.runCommand "chalkos-no-shell-calls" { nativeBuildInputs = [ pkgs.pax-utils ]; } ''
+      xargs scanelf -R -y -q -B -s -system,-popen,-wordexp -F '%s %F' <${closure}/store-paths \
+        | sed 's/@[^ ,]*//g' >calls
+      # /bin/sh as a word of its own, not /bin/shutdown.
+      xargs grep -rlaE '/bin/sh([^A-Za-z0-9_.-]|$)' <${closure}/store-paths >strings || true
+      xargs -r scanelf -q -B -F '%F' <strings | sed 's|^|/bin/sh |' >>calls
+      sort -u calls | while read -r what file; do
+        rest=''${file#"$NIX_STORE"/*-}
+        package=''${rest%%/*}
+        id=''${package%%-[0-9]*}/''${rest#*/}
+        case $id in
+          ${lib.concatStringsSep "|" (lib.attrNames allowed)}) ;;
+          *) echo "error: $id ($file) may run a shell: it calls $what" >&2; touch failed ;;
+        esac
+      done
+      if [ -e failed ]; then
+        echo "Run it without a shell, leave it out of the image, or allow it in nix/checks/image.nix with the reason it never runs one on a node." >&2
+        exit 1
+      fi
       touch $out
     '';
 
