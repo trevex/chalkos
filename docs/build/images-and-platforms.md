@@ -294,7 +294,8 @@ serial port shows its boot and its emergency messages on the screen. While the l
 virtual terminal such as the screen, the unit `chalkos-serial-log@` copies chalkd's lines, with
 its fingerprint and addresses, from the journal to every serial port of the list, such as
 `ttyS0`, `ttyAMA0` or `hvc0`, so a BMC's serial-over-LAN shows them. An entry of another form,
-such as `uart8250,mmio32,0xfe215040`, gets only the kernel's messages. On the screen, chalkd's
+such as `uart8250,mmio32,0xfe215040`, gets only the kernel's messages. No serial port gets a
+login prompt, as no account logs in on a node. On the screen, chalkd's
 lines keep off [the console](../operate/console.md), which shows the fingerprint and addresses
 itself; an image without the console shows chalkd's lines there. While the last console is a
 serial port, chalkd's lines reach it as `/dev/console`.

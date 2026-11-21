@@ -1941,7 +1941,7 @@ lib.runTests {
             && lib.elem "systemd-networkd.service" c.systemd.services.chalkos-chrony-dhcp.after;
           dhcpDir = lib.elem "d /run/chalkos/chrony-dhcp 0755 root root - -" c.systemd.tmpfiles.rules;
           dhcpGrant = (etcJSON "services.json" c).chalkos-chrony-dhcp.kinds;
-          dhcpReadsConfig = lib.hasInfix "chalkcfg get TimeSync" c.systemd.services.chalkos-chrony-dhcp.script;
+          dhcpReadsConfig = lib.hasSuffix "/bin/chalkd chrony-dhcp /run/chalkos/chrony-dhcp/dhcp.sources" c.systemd.services.chalkos-chrony-dhcp.serviceConfig.ExecStart;
           # Active after it ran, so chalkd's try-restart runs it again; a link's change restarts it.
           dhcpRerunsOnChange =
             c.systemd.services.chalkos-chrony-dhcp.serviceConfig.RemainAfterExit
@@ -1954,13 +1954,13 @@ lib.runTests {
             && c.systemd.services.chalkos-chrony-dhcp-links.startLimitIntervalSec == 0
             && c.systemd.services.chalkos-chrony-dhcp.startLimitIntervalSec == 0;
           chalkdHasChronyc = lib.elem c.services.chrony.package c.systemd.services.chalkd.path;
-          # chrony's effect, on its output, runs a script of chalkd's PATH, which leaves a chronyd
+          # chrony's effect, on its output, runs chalkd from chalkd's PATH, which leaves a chronyd
           # that does not run.
           reloadSources =
             (etcJSON "effects.json" c).chrony == {
               outputs = [ "chrony" ];
               kinds = [ ];
-              run = "chalkos-chrony-reload-sources";
+              run = "chalkd chrony-reload-sources";
               reload = [ ];
               restart = [ ];
               start = false;
@@ -1968,7 +1968,7 @@ lib.runTests {
               chalkd = "";
               hint = null;
             }
-            && hasPackage "chalkos-chrony-reload-sources" c.systemd.services.chalkd.path;
+            && hasPackage "chalkd" c.systemd.services.chalkd.path;
           # chronyd checks the output chrony, whose examples are tests of the image.
           output = {
             check = lib.hasInfix "/bin/chronyd -p -f" c.chalkos.outputs.chrony.check;
@@ -2271,7 +2271,7 @@ lib.runTests {
         ];
         unit = {
           condition = unit.unitConfig.ConditionPathExists;
-          typeZero = lib.hasInfix "grep -qsx 0 /sys/class/tty/%i/type" unit.serviceConfig.ExecCondition;
+          typeZero = lib.hasSuffix "/bin/grep -qsvx 0 /sys/class/tty/%i/type" unit.serviceConfig.ExecCondition;
           follows = lib.tail (lib.splitString " " unit.serviceConfig.ExecStart);
           inherit (unit.serviceConfig)
             StandardInput
@@ -3627,7 +3627,7 @@ lib.runTests {
       dbus = true;
       chalkd = [
         "btrfs-progs"
-        "chalkos-chrony-reload-sources"
+        "chalkd"
         "chrony"
         "coreutils"
         "cryptsetup"
@@ -3939,12 +3939,8 @@ lib.runTests {
         inStore = lib.all (d: lib.hasPrefix "/nix/store/" (lib.head d.command)) (lib.attrValues node);
         ip = lib.hasSuffix "-iproute2-ip-${pkgs.iproute2.version}/bin/ip" (lib.head node.route-get.command);
         tcpConnect = {
-          program = lib.head node.tcp-connect.command;
-          arguments = lib.drop 3 node.tcp-connect.command;
-          # bash runs timeout itself, so it can say when the connect timed out.
-          timeout = lib.hasInfix (builtins.unsafeDiscardStringContext "${pkgs.coreutils}/bin/timeout 5 ") (
-            lib.elemAt node.tcp-connect.command 2
-          );
+          program = lib.hasSuffix "/bin/chalkd" (lib.head node.tcp-connect.command);
+          arguments = lib.tail node.tcp-connect.command;
         };
       };
       expected = {
@@ -3952,15 +3948,13 @@ lib.runTests {
         installer = names;
         inStore = true;
         ip = true;
-        # After bash, -c and its script: $0 and the arguments.
         tcpConnect = {
-          program = "${pkgs.bash}/bin/bash";
+          program = true;
           arguments = [
             "tcp-connect"
             "{address}"
             "{port}"
           ];
-          timeout = true;
         };
       };
     };
@@ -4026,30 +4020,52 @@ lib.runTests {
       };
     };
   };
-  # A serial port's getty runs only where the port exists and is a UART of a known type, which
-  # ends its restarts on a machine without one: the 8250 driver registers ttyS0 on x86 with type 0
-  # when no UART answers. The conditions are in the template's drop-in, next to agetty's
-  # ExecStart, and no instance has a drop-in of its own, whose file of the same name would hide
-  # the template's and leave the upstream unit's ExecStart, a path that does not exist.
-  testSerialGettyNeedsThePort = {
+  # No serial port or hypervisor console gets a getty: systemd's getty generator, which starts
+  # them from the kernel's console= entries, is masked, and no image adds an instance itself.
+  # nixpkgs's template stays, without a condition of chalkos's.
+  testNoSerialGetty = {
     expr =
       let
         c = w;
-        unit = c.systemd.services."serial-getty@";
       in
       {
-        condition = unit.unitConfig.ConditionPathExists;
-        knownType =
-          builtins.match ".*/bin/[a-z]+ -c '! /nix/store/[^ ]*/bin/grep -qsx 0 /sys/class/tty/%I/type'" unit.serviceConfig.ExecCondition
-          != null;
-        agetty = lib.hasInfix "/bin/agetty " c.systemd.units."serial-getty@.service".text;
-        instances = lib.filter (lib.hasPrefix "serial-getty@tty") (lib.attrNames c.systemd.units);
+        generator = c.systemd.generators.systemd-getty-generator;
+        condition = c.systemd.services."serial-getty@".serviceConfig ? ExecCondition;
+        units = lib.filter (lib.hasPrefix "serial-getty@") (lib.attrNames c.systemd.units);
       };
     expected = {
-      condition = "/sys/class/tty/%I";
-      knownType = true;
-      agetty = true;
-      instances = [ ];
+      generator = "/dev/null";
+      condition = false;
+      units = [ "serial-getty@.service" ];
+    };
+  };
+  # The nftables unit runs touch, cp, rm and nft in place of nixpkgs's three bash scripts, and
+  # keeps nixpkgs's ruleset, whose deletions are the file the unit saves.
+  testNftablesUnitWithoutScripts = {
+    expr =
+      let
+        s = w.systemd.services.nftables.serviceConfig;
+        commands = map toString (s.ExecStart ++ [ s.ExecStartPost ] ++ s.ExecReload ++ s.ExecStop);
+        # Each command's program by its name, without a store path's hash.
+        programs = lib.unique (
+          map (
+            c: lib.last (builtins.match "([a-z0-9]{32}-)?(.*)" (baseNameOf (lib.head (lib.splitString " " c))))
+          ) commands
+        );
+      in
+      {
+        inherit programs;
+        rules = lib.hasSuffix "-nftables-rules" (toString (lib.elemAt s.ExecStart 1));
+      };
+    expected = {
+      programs = [
+        "touch"
+        "nftables-rules"
+        "cp"
+        "nft"
+        "rm"
+      ];
+      rules = true;
     };
   };
   # An image's own overlay can override chalkos's packages with overrideScope: mkImage adds the

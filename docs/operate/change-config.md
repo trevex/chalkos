@@ -104,7 +104,7 @@ cp1: config 1 added, 0 removed, 0 changed
 + TimeSync "default"
 cp1: config <previous-version> → <version>
   outputs:  chrony
-  effects:  chrony: run chalkos-chrony-reload-sources (output chrony)
+  effects:  chrony: run chalkd chrony-reload-sources (output chrony)
             chrony-dhcp: restart chalkos-chrony-dhcp.service (rule)
   storage:  none
 ```

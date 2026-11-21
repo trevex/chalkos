@@ -192,12 +192,16 @@ let
         if
           lib.length runWords >= 2
           && baseNameOf (lib.head runWords) == "chalkd"
-          # chalkd's common subcommands, which name no layer; they must match those of cmd/chalkd.
+          # chalkd's own subcommands, which name no layer; they must match those of cmd/chalkd.
           && !(lib.elem (lib.elemAt runWords 1) [
             "serve"
             "load-config"
             "health"
             "check"
+            "apply-links"
+            "chrony-dhcp"
+            "chrony-reload-sources"
+            "tcp-connect"
             "help"
           ])
         then

@@ -229,7 +229,7 @@ means is gone once the link replaces the directory.
 
 The output `chrony` writes `servers.sources`, one `server` line per server of the `TimeSync`, or
 chalkos's own servers without one. Its check parses the file with `chronyd -p` and accepts only
-`server` lines of a host name or address. Its effect runs `chalkos-chrony-reload-sources`, which
+`server` lines of a host name or address. Its effect runs `chalkd chrony-reload-sources`, which
 runs `chronyc reload sources` while `chronyd.service` is active. The time servers that DHCP
 announces are no output, because they come from the network at runtime.
 

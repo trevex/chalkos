@@ -271,7 +271,8 @@ chalkd's lines (its fingerprint and addresses among them) appear. While it is `t
 the fingerprint and addresses. While it is a virtual terminal, `chalkos-serial-log@` copies
 chalkd's lines from the journal to every serial port of the list (`ttyS0`, `ttyAMA0`,
 `ttyUSB0`, `hvc0`, …), so a BMC's serial-over-LAN shows them. An entry of another form,
-such as `uart8250,mmio32,0xfe215040`, gets only the kernel's messages.
+such as `uart8250,mmio32,0xfe215040`, gets only the kernel's messages. No entry gets a login
+prompt: no account logs in on a node.
 
 The `metal` platform, a platform of your own and the installer put the screen last; `kvm`
 has the first serial port alone. Where people watch a BMC's serial-over-LAN, put that port

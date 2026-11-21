@@ -55,7 +55,7 @@
     ],
     "reload": [],
     "restart": [],
-    "run": "chalkos-chrony-reload-sources",
+    "run": "chalkd chrony-reload-sources",
     "start": false,
     "when": ""
   },

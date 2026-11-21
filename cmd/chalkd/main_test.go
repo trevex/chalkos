@@ -232,6 +232,10 @@ func TestCommandsRefuseArguments(t *testing.T) {
 		{"kubernetes", "prepare", "--vxlan"},
 		{"router", "prepare"},
 		{"router", "services", "bind"},
+		{"apply-links", "eth0"},
+		{"chrony-dhcp"},
+		{"chrony-reload-sources", "now"},
+		{"tcp-connect", "192.0.2.1"},
 	} {
 		root, err := newCommand()
 		if err != nil {
@@ -255,6 +259,10 @@ func TestCallSites(t *testing.T) {
 		{"health", "--wait", "30", "--ignore-unit", "a.service", "--ignore-unit", "b.service"},
 		{"health", "--stopped"},
 		{"check", "--system", "/nix/store/x-system", "--facts", "/run/facts.sock"},
+		{"apply-links"},
+		{"chrony-dhcp", "/run/chalkos/chrony-dhcp/dhcp.sources"},
+		{"chrony-reload-sources"},
+		{"tcp-connect", "2001:db8::1", "443"},
 		{"kubernetes", "prepare"},
 		{"kubernetes", "prepare", "--vxlan-rule"},
 		{"kubernetes", "vxlan-rule"},

@@ -409,8 +409,7 @@ The command's output goes to standard output and its errors to standard error. c
 when the command fails. A `tcp-connect` to a port that nothing listens on prints:
 
 ```text
-tcp-connect: connect: Connection refused
-tcp-connect: line 1: /dev/tcp/192.0.2.10/443: Connection refused
+no connection to 192.0.2.10 port 443: connection refused
 chalkctl: tcp-connect exited with status 1
 ```
 
@@ -456,6 +455,9 @@ chalkd: addresses 192.168.1.50; certificate fingerprint <fingerprint>
 
 On an image with the console, the kernel prints only emergencies on its consoles, so the serial
 console shows a panic or an oops but no other kernel message. The journal keeps them all.
+
+The serial console shows no login prompt. No account logs in on a node, so chalkos starts no
+getty on a serial port or a hypervisor console.
 
 On hardware the serial console is the BMC's serial-over-LAN. A VM of the `kvm` platform writes
 its console to the serial port alone. In a lab, `chalklab console` prints a VM's serial console
