@@ -176,11 +176,13 @@ loaded by a DHCPv6 server whose subnets delegate prefixes, runs `chalkd router d
 user `kea` on each committed, released, declined and expired lease. Kea runs a path with the hook
 point's name as its only argument, so the hook's path is a link to chalkd named
 `chalkd-router-dhcp6-pd`, and chalkd takes the layer and command from the link's name. For a
-committed prefix it writes a record in `/var/lib/chalkos-dhcp6-pd`, named
+committed prefix it writes a record in `/var/lib/chalkos-dhcp6-pd/records`, named
 `<link>_<prefix>_<length>`, readable by every user. The record holds the address the request
-came from and when the lease ends. The hook writes it in `/var/lib/chalkos-dhcp6-pd.new` first
-and renames it into place, so the record appears whole and once. A release or an expiry removes it. `kea` owns both directories, the records' of mode
-0755, but cannot write `/var/lib`, so it cannot put another directory in their place. Kea runs
+came from and when the lease ends. The hook writes it in `/var/lib/chalkos-dhcp6-pd/records.new`
+first and renames it into place, so the record appears whole and once. A release or an expiry
+removes it. `kea` owns both directories, the records' of mode 0755, but root owns their parent,
+so `kea` cannot put another directory in their place. The server's sandbox makes the parent
+writable as one mount, because a rename between two mounts fails. Kea runs
 only scripts of the directory that the unit's `KEA_HOOK_SCRIPTS_PATH` names, which holds
 `chalkd-router-dhcp6-pd` alone.
 
@@ -326,7 +328,7 @@ Every server runs as the user `kea` with NixOS's usual sandbox: a read-only syst
 devices and temporary files, and no other address families than Unix, netlink, IPv4 and IPv6. A
 DHCPv4 server also has `CAP_NET_RAW` and packet sockets, for its raw sockets, and
 `CAP_NET_BIND_SERVICE`, for port 67. A DHCPv6 server has `CAP_NET_BIND_SERVICE` alone, for port
-547, and may write `/var/lib/chalkos-dhcp6-pd`, the records of its delegated prefixes.
+547, and may write below `/var/lib/chalkos-dhcp6-pd`, the records of its delegated prefixes.
 
 ## Leases live in /var/lib/kea
 
@@ -346,7 +348,7 @@ and upgrades, so a lease outlives both.
 The DHCPv6 servers share their server identifier, a DUID that Kea keeps in
 `/var/lib/kea/kea-dhcp6-serverid`. DHCPv6 asks for one identifier per server, and the router's
 servers serve different links. The records of delegated prefixes live apart from the leases, in
-`/var/lib/chalkos-dhcp6-pd`, as
+`/var/lib/chalkos-dhcp6-pd/records`, as
 [Delegated prefixes become routes](#delegated-prefixes-become-routes) describes.
 
 ## chalkd reads the servers' state

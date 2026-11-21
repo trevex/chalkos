@@ -51,6 +51,7 @@ unitCheck "router-dhcp6"
 
     mkdir -p ${dir} /var/lib /var/run/dhcpcd /var/db/dhcpcd /var/lib/dhcpcd
     mkdir -m 0750 /run/kea /var/lib/kea
+    mkdir -p ${builtins.dirOf records}
     mkdir -m 0755 ${records}
     mkdir -m 0700 ${records}.new
     ${routerFirewall.load "dhcp6"}
