@@ -17,7 +17,6 @@ let
     builtin
     cel
     hardened
-    noExec
     ;
   inherit (chalkosLib.internal.api) groups apiVersions;
   inherit (chalkosLib.types) address;
@@ -168,7 +167,6 @@ in
       };
       serviceConfig =
         hardened
-        // noExec
         // {
           # chalkos-registry tells systemd once its port is open.
           Type = "notify";
@@ -211,7 +209,7 @@ in
       # --no-block queues the restart and ends the service at once: a path unit does not start
       # an active service again, so waiting for the registry's restart would miss a change of
       # the other file during it.
-      serviceConfig = {
+      serviceConfig = chalkosLib.internal.noExec // {
         Type = "oneshot";
         ExecStart = "${config.systemd.package}/bin/systemctl --no-block try-restart chalkos-registry.service";
       };

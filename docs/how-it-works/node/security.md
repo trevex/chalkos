@@ -262,10 +262,19 @@ where CNI DaemonSets install their plugins. The router layer has none. A Volume 
 only when its `spec.exec` is true.
 [Mount options](../../reference/image-layout.md#mount-options) lists every mount.
 
-Some units also get a mount namespace in which only the store allows execution, through systemd's
-`NoExecPaths=/` and `ExecPaths=/nix/store`: the console, chalkd's serial log and the cluster
-registry. Even an exec path or a Volume with `spec.exec` does not let them run a program from
-outside the store.
+chalkos's units also get a mount namespace in which only the store allows execution, through
+systemd's `NoExecPaths=/` and `ExecPaths=/nix/store`. These are the oneshots that load the
+config, apply Links, decide a boot's health and prepare Kubernetes and containerd; the console
+and chalkd's serial log; the NixOS firewall, chrony and FRR; the cluster registry; the router's
+firewall, Kea, Unbound and dnsmasq;
+and the transient units in which chalkd runs renderers, checks, validators, command facts,
+diagnostics and an image's checker. Even an exec path or a Volume with `spec.exec` does not let
+them run a program from outside the store.
+
+A unit whose mounts the host must see gets no mount namespace of its own, so these four are bound
+by the mount options alone: chalkd, containerd, the kubelet and `chalkos-nat64.service`, which
+mounts the NAT64 instances' network namespaces on `/run/netns`. A unit of chalkos's modules that
+is neither on that list nor runs from the store alone fails chalkos's own checks.
 
 ## The console acts for whoever sits at the machine
 
@@ -330,9 +339,10 @@ runs no console, and chalkd serves no console socket.
   container; Pod Security admission decides which pods may.
 - With the Kubernetes layer, `/var/lib/containerd` allows set-user-ID files, as container images
   need them. A pod's `securityContext` restricts them.
-- chalkd, containerd and the kubelet have no mount namespace of their own, as the host must see
-  the mounts they make, so `NoExecPaths` does not apply to them. They are bound by the mount
-  options alone.
+- chalkd, containerd, the kubelet and `chalkos-nat64.service` have no mount namespace of their
+  own, as the host must see the mounts they make, so `NoExecPaths` does not apply to them. They
+  are bound by the mount options alone. systemd's own units, and those of NixOS modules an
+  extension adds, keep the sandboxes they come with.
 - With the Kubernetes layer, a `Registry`'s credentials serve the image pulls of every pod on the
   node. chalkd keeps them in a `credentials.json` that only root reads, but the kubelet hands them
   to containerd for any pod whose image names the `Registry`'s host, and containerd sends them to

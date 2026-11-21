@@ -81,10 +81,11 @@ in
       serviceConfig =
         # ip netns add mounts a namespace on /run/netns, which the host must see, so the unit has no
         # mount namespace of its own: no ProtectSystem, PrivateTmp, PrivateDevices, ProtectHome,
-        # ProtectKernelLogs, ProtectKernelModules, ProtectControlGroups or ProtectKernelTunables,
-        # each of which gives it one and keeps the namespaces from the host. Mounting a namespace and
-        # entering it take CAP_SYS_ADMIN and the mount system calls, and RestrictNamespaces lets
-        # network namespaces alone through; jool, ip and the namespaces' sysctls take CAP_NET_ADMIN.
+        # ProtectKernelLogs, ProtectKernelModules, ProtectControlGroups, ProtectKernelTunables,
+        # NoExecPaths or ExecPaths, each of which gives it one and keeps the namespaces from the
+        # host. It thus may run programs from outside the store. Mounting a namespace and entering
+        # it take CAP_SYS_ADMIN and the mount system calls, and RestrictNamespaces lets network
+        # namespaces alone through; jool, ip and the namespaces' sysctls take CAP_NET_ADMIN.
         removeAttrs hardened [
           "ProtectSystem"
           "PrivateTmp"
@@ -94,6 +95,8 @@ in
           "ProtectKernelModules"
           "ProtectControlGroups"
           "ProtectKernelTunables"
+          "NoExecPaths"
+          "ExecPaths"
         ]
         // {
           Type = "oneshot";

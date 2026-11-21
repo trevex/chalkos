@@ -211,6 +211,8 @@ pkgs.testers.runNixOSTest {
         default = { };
       };
       config = {
+        # The module argument images get, whose sandbox the units take.
+        _module.args.chalkosLib = import ../../../lib/chalkos.nix { inherit lib; };
         chalkos.frr = {
           enable = true;
           inherit rendered;

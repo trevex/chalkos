@@ -3,6 +3,7 @@
 # the network comes up, and a fallback ruleset when the node has none rendered; the output's
 # effect reloads it, in one transaction, when it changes.
 {
+  chalkosLib,
   config,
   lib,
   pkgs,
@@ -127,7 +128,7 @@ in
       ];
       wantedBy = [ "multi-user.target" ];
       path = [ pkgs.nftables ];
-      serviceConfig = {
+      serviceConfig = chalkosLib.internal.noExec // {
         Type = "oneshot";
         RemainAfterExit = true;
         ExecStart = load;

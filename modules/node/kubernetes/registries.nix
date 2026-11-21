@@ -1,6 +1,7 @@
 # The node's registries on images that run Kubernetes: containerd's mirrors and the kubelet's
 # registry credentials, both from the Mirror and Registry documents.
 {
+  chalkosLib,
   config,
   lib,
   pkgs,
@@ -30,7 +31,7 @@ in
       wantedBy = [ "containerd.service" ];
       before = [ "containerd.service" ];
       after = [ "chalkos-config.service" ];
-      serviceConfig = {
+      serviceConfig = chalkosLib.internal.noExec // {
         Type = "oneshot";
         RemainAfterExit = true;
         ExecStart = "${lib.getExe chalkd} kubernetes registry-mirrors";
@@ -46,7 +47,7 @@ in
       wantedBy = [ "multi-user.target" ];
       before = [ "kubelet.service" ];
       after = [ "chalkos-config.service" ];
-      serviceConfig = {
+      serviceConfig = chalkosLib.internal.noExec // {
         Type = "oneshot";
         RemainAfterExit = true;
         ExecStart = "${lib.getExe chalkd} kubernetes registry-credentials";

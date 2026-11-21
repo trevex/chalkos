@@ -170,9 +170,9 @@ in
       # The sandbox of a service that talks to the network: no new privileges, a read-only
       # system, no devices, no home and a private /tmp, kernel settings, modules, logs, cgroups,
       # clock and host name out of reach, no namespaces, realtime scheduling or set-user-ID files,
-      # and the system calls of a system service of the native architecture. A unit adds its own
-      # capabilities and address families.
-      hardened = {
+      # the system calls of a system service of the native architecture, and programs from the
+      # store alone. A unit adds its own capabilities and address families.
+      hardened = noExec // {
         NoNewPrivileges = true;
         ProtectSystem = "strict";
         ProtectHome = true;

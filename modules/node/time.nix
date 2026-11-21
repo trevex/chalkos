@@ -15,7 +15,7 @@ let
   sources = config.chalkos.outputs.chrony.dir;
   dhcpSources = "/run/chalkos/chrony-dhcp";
   inherit (config.services.chrony) package;
-  inherit (chalkosLib.internal) cel;
+  inherit (chalkosLib.internal) cel noExec;
   inherit (chalkosLib.internal.api) apiVersions;
   # A server as a line of chrony's sources file.
   server =
@@ -82,7 +82,7 @@ in
   systemd.services.chalkos-chrony-dhcp-links = {
     description = "Pass the time servers DHCP announced to chrony after a link changed";
     startLimitIntervalSec = 0;
-    serviceConfig = {
+    serviceConfig = noExec // {
       Type = "oneshot";
       ExecStart = "${config.systemd.package}/bin/systemctl restart chalkos-chrony-dhcp.service";
     };
@@ -102,12 +102,15 @@ in
     # runs chronyc reload sources and ignores its failure: a chronyd that does not run yet reads
     # the file when it starts.
     path = [ package ];
-    serviceConfig = {
+    serviceConfig = noExec // {
       Type = "oneshot";
       RemainAfterExit = true;
       ExecStart = "${chalkd} chrony-dhcp ${dhcpSources}/dhcp.sources";
     };
   };
+  # nixpkgs's chronyd, with the time server's config on router images, runs no program but its
+  # own.
+  systemd.services.chronyd.serviceConfig = noExec;
 
   # The sources file holds the TimeSync's servers, or chalkos's own without a TimeSync. chronyd
   # reads sourcedir files only when it starts or reloads its sources, and its -p parses files of

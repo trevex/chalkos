@@ -10,6 +10,10 @@ import (
 // private socket: chalkd renders before sysinit.target, where the system bus does not run yet.
 const Manager = "DBUS_SYSTEM_BUS_ADDRESS=unix:path=/run/systemd/private"
 
+// StoreOnly are the properties of a transient unit that runs programs from the store alone: in the
+// unit's mount namespace no other file system lets a file run as a program.
+var StoreOnly = []string{"--property=NoExecPaths=/", "--property=ExecPaths=/nix/store"}
+
 // UnitTimeout bounds each question to the manager about a unit, asked after the caller's context
 // may have ended.
 const UnitTimeout = 10 * time.Second
