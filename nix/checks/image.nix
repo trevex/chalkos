@@ -314,10 +314,28 @@ in
   # path below the package, such as frr/bin/vtysh, or a glob of those, with the reason it never
   # runs a shell on a node. A new caller, as FRR's watchfrr was, fails the check: run it without
   # the shell, drop it from the image or add it here with its reason. The scan covers each
-  # image's system and what its initrd's store paths reference.
+  # image's system and what its initrd's store paths reference. libkbdfile pipes a compressed
+  # keymap or font through a tool only when it cannot open the tool's library, so each image's
+  # console keymap must load with the tools disabled, as systemd-vconsole-setup runs loadkeys,
+  # and each initrd must carry the zlib that libkbdfile opens for a gzipped keymap or font.
   no-shell-calls =
     let
-      images = lib.attrValues self.releaseImages.${pkgs.stdenv.hostPlatform.system};
+      release = self.releaseImages.${pkgs.stdenv.hostPlatform.system};
+      images = lib.attrValues release;
+      keymaps = lib.concatStrings (
+        lib.mapAttrsToList (
+          name: image:
+          let
+            c = image.nixos.config;
+          in
+          lib.optionalString c.console.enable ''
+            KBDFILE_IGNORE_DECOMP_UTILS=1 LOADKEYS_KEYMAP_PATH='${c.environment.etc.kbd.source}/keymaps/**' \
+              ${c.systemd.package.kbd}/bin/loadkeys -b -u ${lib.escapeShellArg c.console.keyMap} >/dev/null \
+              || fail "the ${name}'s keymap ${c.console.keyMap} does not load with the decompression tools disabled"
+            initrdZlib ${name} ${c.boot.initrd.systemd.package.kbd} ${c.system.build.initialRamdisk}/initrd
+          ''
+        ) release
+      );
       closure = pkgs.closureInfo {
         rootPaths = lib.concatMap (
           image: with image.nixos.config.system.build; [
@@ -348,8 +366,11 @@ in
           "mails a clock change through the mailonchange directive, which chrony.conf never sets";
         "dnsmasq/bin/dnsmasq" = "runs dhcp-script, which the router's dnsmasq config never sets";
         "gnused/bin/sed" = "the e command and the e flag of s, which no unit's sed script uses";
-        "kbd/*" =
-          "spawn_console, spawn_login and resizecons, which nothing runs, and libkbdfile, which runs gzip -d through a shell for a compressed keymap or font, so systemd-vconsole-setup fails to load the us keymap, the kernel's own";
+        "kbd/bin/spawn_console" = "nothing runs it";
+        "kbd/bin/spawn_login" = allowed."kbd/bin/spawn_console";
+        "kbd/bin/resizecons" = allowed."kbd/bin/spawn_console";
+        "kbd/lib/libkbdfile.so*" =
+          "pipes a compressed keymap or font through a tool only when it cannot open the tool's library from its runpath, which below holds for the images' keymaps and initrds";
         "less/bin/less" = "shell escapes, LESSOPEN and the editor of an interactive session";
         "procps/bin/top" = "interactive";
         "procps/bin/watch" = "runs its command through a shell; interactive";
@@ -377,6 +398,17 @@ in
       };
     in
     pkgs.runCommand "chalkos-no-shell-calls" { nativeBuildInputs = [ pkgs.pax-utils ]; } ''
+      fail() { echo "error: $*" >&2; exit 1; }
+      # Whether the initrd holds libz.so.1 in a directory of the runpath of its kbd's libkbdfile.
+      initrdZlib() {
+        ${lib.getExe' pkgs.libarchive "bsdtar"} -tf "$3" | sed 's|^\./||; s|^|/|' >initrd-files
+        rpath=$(scanelf -q -F '%r' "$2/lib/libkbdfile.so.1" | cut -d' ' -f1)
+        for dir in ''${rpath//:/ }; do
+          if grep -qx "$dir/libz.so.1" initrd-files; then return; fi
+        done
+        fail "the $1's initrd lacks the zlib that libkbdfile opens"
+      }
+      ${keymaps}
       xargs scanelf -R -y -q -B -s -system,-popen,-wordexp -F '%s %F' <${closure}/store-paths \
         | sed 's/@[^ ,]*//g' >calls
       # /bin/sh as a word of its own, not /bin/shutdown.

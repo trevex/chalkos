@@ -186,7 +186,7 @@ shell functions the check scripts call: `fail`, `retry` and `refuses`, and for t
 | `image-size` | The test images stay within the ceilings in `nix/testing/image-sizes.nix`, and the fit check every image build runs refuses images that leave no room. Its measure of each image agrees with `pkg/verity`. |
 | `bootspec` | An image's bootspec names the UKI on the ESP and no initrd. |
 | `no-shell` | The test and release images link no `/bin/sh`, have no activation script and no shell on the system path, and the release images build without the debug tools or `chalkos.shell.allow`, so no shell is in their systems or their initrds. |
-| `no-shell-calls` | No ELF file of the release images' systems and initrds imports `system`, `popen` or `wordexp` or holds `/bin/sh`, unless the allow-list in `nix/checks/image.nix` gives the reason it never runs a shell on a node. |
+| `no-shell-calls` | No ELF file of the release images' systems and initrds imports `system`, `popen` or `wordexp` or holds `/bin/sh`, unless the allow-list in `nix/checks/image.nix` gives the reason it never runs a shell on a node. The images' console keymaps load with the decompression tools disabled, and their initrds carry the zlib that kbd opens for gzipped keymaps and fonts. |
 | `vxlan-rule` | The VXLAN firewall rule, in network namespaces. |
 | `router-firewall` | A router's firewall unit and rulesets, in network namespaces. |
 | `router-policy-routing` | A router's policy routing: the example's ruleset with the kernel's rules and next-hop tables, in network namespaces. |
@@ -277,7 +277,7 @@ test or a group of them:
 
 | Check | Test | VMs |
 | --- | --- | --- |
-| `e2e-image` | The test image boots without Secure Boot, then without its serial port and TPM: STATE asks for the recovery key on the screen, which the test reads with the test image's console font and answers on the keyboard, and the console answers a password request after the boot. A second test installs volumes on the system disk and a data disk. | 1 per test |
+| `e2e-image` | The test image boots without Secure Boot, then without its serial port and TPM: STATE asks for the recovery key on the screen, which the test reads with the test image's console font and answers on the keyboard, and the console answers a password request after the boot. systemd-vconsole-setup loads the keymap and the font without warnings. A second test installs volumes on the system disk and a data disk. | 1 per test |
 | `e2e-secureboot` | Secure Boot refuses an unsigned image, and dm-verity a tampered store. | 1 per test |
 | `e2e-install` | An install in place, with a second disk. | 1 |
 | `e2e-installer` | The installer installs a node under Secure Boot onto a disk that holds an LVM volume group: an install streamed from a directory that wipes the disk and is cancelled while it writes slot A, one whose config the image's validator refuses once the store is on the disk, and one that continues on the disk, which the installer pulls from a registry the test serves, with credentials. | 1 |
