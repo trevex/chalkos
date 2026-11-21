@@ -150,6 +150,26 @@ needs. With it, such a container can switch the module policy to permissive, whi
 `chalkctl status` then reports as tampered. No container ever holds `CAP_SYS_MODULE`: the
 kernel loads the modules pods need, on demand or at boot.
 
+### `chalkos.kubernetes.containerd.runtimes` { #chalkoskubernetescontainerdruntimes }
+
+Type: map of submodule · Default: `{ }` · Declared in: [modules/node/kubernetes/containerd.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/containerd.nix)
+
+containerd's runtime handlers besides `runc`, by name, which a RuntimeClass's `handler`
+names. They are part of containerd's read-only config, built with the image.
+
+Example:
+
+```nix
+{ kata.options.ConfigPath = "/etc/kata/configuration.toml"; }
+```
+
+The options within each, by their path below `chalkos.kubernetes.containerd.runtimes`:
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `<name>.options`{ #chalkoskubernetescontainerdruntimesoptions } | TOML value | `{ }` | The handler's options, as containerd's CRI plugin takes them. Example: `{ BinaryName = "/nix/store/…/bin/nvidia-container-runtime"; }` |
+| `<name>.runtimeType`{ #chalkoskubernetescontainerdruntimesruntimetype } | string | `"io.containerd.runc.v2"` | containerd's runtime type of the handler. |
+
 ### `chalkos.kubernetes.enable` { #chalkoskubernetesenable }
 
 Type: boolean · Default: `false` · Declared in: [modules/node/kubernetes/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/default.nix)
@@ -157,6 +177,20 @@ Type: boolean · Default: `false` · Declared in: [modules/node/kubernetes/defau
 Whether the image runs Kubernetes: containerd, the kubelet and the preparation of the
 node's Kubernetes configuration. An image's modules set it by listing the Kubernetes layer,
 `chalkos.nixosModules.kubernetes`; the installer runs none.
+
+### `chalkos.kubernetes.hostTools` { #chalkoskuberneteshosttools }
+
+Type: map of path · Default: `{ }` · Declared in: [modules/node/kubernetes/host.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/host.nix)
+
+Programs of the image, by name, that the image links into `/usr/bin` and `/usr/sbin`, where
+workloads find them when they run them in the host's mount namespace through `nsenter`, as
+Longhorn runs `fstrim`. Empty by default; features add theirs.
+
+Example:
+
+```nix
+{ fstrim = "${pkgs.util-linux}/bin/fstrim"; }
+```
 
 ### `chalkos.kubernetes.package` { #chalkoskubernetespackage }
 

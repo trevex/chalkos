@@ -217,7 +217,10 @@ third of the kernel's 7,300 modules, about 45 MiB of the full tree's 145 MiB, an
 Kubernetes adds the `kubernetes` group. A missing module fails the build, not the boot. The build
 checks that every module the image loads by name, and every dependency of a module in the tree,
 is in the tree. Out-of-tree modules from NixOS's `boot.extraModulePackages` are always included
-whole.
+whole. The tree holds them as files of its own, beside the kernel's, so it is the image's one
+module tree: the running system and the initrd load from it, and on an image with Kubernetes
+`/lib/modules` leads to it, so a pod that mounts `/lib/modules` reads the modules without the
+store.
 
 The system path holds none of NixOS's default packages, because nodes have no logins. It holds
 what the image's own modules put there, such as systemd, less, nftables, kmod and the mount
