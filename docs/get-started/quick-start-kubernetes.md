@@ -52,7 +52,7 @@ initialise it from the template:
 <!-- x-release-please-start-version -->
 ```console
 $ mkdir lab && cd lab
-$ nix flake init -t github:trevex/chalkos/v0.3.2#lab
+$ nix flake init -t github:trevex/chalkos/v0.4.0#lab
 wrote: "/home/alice/lab/.gitignore"
 wrote: "/home/alice/lab/README.md"
 wrote: "/home/alice/lab/chalkos.yaml"
@@ -191,7 +191,7 @@ image into the lab's state once, and copies it for each node:
 ```console
 $ chalklab create --secrets secrets.json
 creating the lab's Secure Boot keys in /home/alice/.local/state/chalklab/lab/keys
-pulled ghcr.io/trevex/chalkos/kubernetes-1.37-kvm:v0.3.2 as ghcr.io/trevex/chalkos/kubernetes-1.37-kvm@sha256:<digest>
+pulled ghcr.io/trevex/chalkos/kubernetes-1.37-kvm:v0.4.0 as ghcr.io/trevex/chalkos/kubernetes-1.37-kvm@sha256:<digest>
 copying the image of cp1 from /home/alice/.local/state/chalklab/lab/images/sha256-<digest>
 using cached ghcr.io/trevex/chalkos/kubernetes-1.37-kvm@sha256:<digest>
 copying the image of w1 from /home/alice/.local/state/chalklab/lab/images/sha256-<digest>
