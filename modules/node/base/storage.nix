@@ -120,6 +120,34 @@ in
     };
   };
 
+  # btrfs support puts btrfs-progs in the initrd, the system and the fsck and makefs units; this is
+  # a copy without fsck.btrfs, a bash script that checks nothing. systemd-fsck skips a file system
+  # whose fsck.<type> is missing. The tools reference nothing of the original and btrfsck links to
+  # btrfs within the copy, so btrfs-progs is not rebuilt. containerd builds against btrfs-progs's
+  # headers and references nothing of it: built against the original, it stays the binary
+  # cache's. The overlay goes first, as Kubernetes's module overlays containerd with a copy of its
+  # binaries.
+  nixpkgs.overlays = lib.mkBefore [
+    (_: prev: {
+      btrfs-progs =
+        prev.runCommand "btrfs-progs-${prev.btrfs-progs.version}"
+          {
+            pname = "btrfs-progs";
+            inherit (prev.btrfs-progs) version;
+            # The copy has out alone; btrfs-progs's meta names man too, for the system path.
+            meta = prev.btrfs-progs.meta // {
+              outputsToInstall = [ "out" ];
+            };
+          }
+          ''
+            cp -a ${prev.btrfs-progs} $out
+            chmod u+w $out/bin
+            rm $out/bin/fsck.btrfs
+          '';
+      containerd = prev.containerd.override { inherit (prev) btrfs-progs; };
+    })
+  ];
+
   # The booted system mounts the remaining volumes of other file systems and swap too.
   boot.supportedFilesystems = {
     xfs = true;

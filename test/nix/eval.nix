@@ -3633,6 +3633,32 @@ lib.runTests {
         firewall = true;
       };
   };
+  # btrfs support takes a copy of btrfs-progs, which the no-shell check finds without fsck.btrfs,
+  # in the system, the initrd and chalkd's path, while containerd stays nixpkgs's build against the
+  # original.
+  testBtrfsProgs = {
+    expr =
+      let
+        c = worker [ ];
+        copy = lib.findFirst (p: lib.getName p == "btrfs-progs") null c.system.fsPackages;
+      in
+      {
+        copied = copy != null && copy.drvPath != pkgs.btrfs-progs.drvPath;
+        initrd = lib.elem copy c.boot.initrd.systemd.initrdBin;
+        chalkd = lib.elem copy c.systemd.services.chalkd.path;
+        containerd = lib.hasInfix (builtins.unsafeDiscardStringContext pkgs.containerd.outPath) (
+          builtins.unsafeDiscardStringContext
+            (lib.findFirst (p: lib.getName p == "containerd") null c.systemd.services.containerd.path)
+            .buildCommand
+        );
+      };
+    expected = {
+      copied = true;
+      initrd = true;
+      chalkd = true;
+      containerd = true;
+    };
+  };
   # The system path holds what the image's modules put there, such as the mount helpers util-linux
   # looks up there, and none of NixOS's default packages. The debug tools add a shell's tools, and
   # crictl where the image runs Kubernetes. Units name their own tools.
