@@ -96,7 +96,7 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           GH_REPO: ${{ github.repository }}
           SLUG: ${{ steps.app.outputs.app-slug }}
-          TITLE: "build(deps): update the flake inputs"
+          TITLE: "deps: update the flake inputs"
         run: |
           id=$(gh api "/users/$SLUG%5Bbot%5D" --jq .id)
           git config user.name "${SLUG}[bot]"
