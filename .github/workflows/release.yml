@@ -1,14 +1,15 @@
 # Releases chalkos. On every push to main, release-please opens or updates the release pull
-# request from the Conventional Commits since the last release, and once that pull request is
-# merged it tags the release and creates its GitHub release. The same run then publishes the
+# request, as a draft, from the Conventional Commits since the last release. Once a maintainer has
+# marked that pull request ready for review and merged it, release-please tags the release and
+# creates its GitHub release. The same run then publishes the
 # release from the tagged commit: it pushes each image of the flake output releaseImages to its
 # repository, signs it with cosign and attests its provenance and its SBOM, uploads the installer,
 # chalkctl and chalkbuild and the SBOMs of the images and the programs with their checksums,
 # signatures and attestations, and adds the images' digests to the release notes.
 #
 # release-please acts with a GitHub App's token, from the secrets RELEASE_APP_ID and
-# RELEASE_APP_PRIVATE_KEY, because a pull request, a label or a tag that the workflow's own token
-# creates starts no workflow, and the release pull request must run ci with its e2e label. The
+# RELEASE_APP_PRIVATE_KEY, because a pull request, a label, a tag or a return to draft that the
+# workflow's own token makes starts no workflow, and the release pull request must run ci. The
 # publishing jobs run in this workflow for the same reason rather than on the tag.
 #
 # Started by hand with dry-run, the default, the workflow builds the images and the assets of the
@@ -74,6 +75,20 @@ jobs:
           token: ${{ steps.app.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+      # release-please opens the release pull request as a draft, but keeps a ready one ready when
+      # it rebuilds it. Returning it to draft makes its CI run only the light checks until a
+      # maintainer marks it ready for review, which runs every check on the rebuilt pull request.
+      # gh does nothing to a pull request that is already a draft.
+      - name: Return the release pull request to draft
+        if: steps.release.outputs.prs_created == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          PRS: ${{ steps.release.outputs.prs }}
+        run: |
+          for number in $(jq -r '.[].number' <<<"$PRS"); do
+            gh pr ready --undo "$number"
+          done
 
   # The commit to build, whether the run publishes, and the release images to build, from
   # releaseImages, one job each.

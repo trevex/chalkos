@@ -1,5 +1,6 @@
-# Runs every tier of the CI workflow on main each night, end-to-end checks included, unless a push
-# run already passed on main's latest commit; a run started by hand always builds. A failing
+# Runs every tier of the CI workflow on main each night, end-to-end checks included, which no push
+# to main runs. A scheduled run skips CI when an earlier nightly run already passed it on main's
+# latest commit, as after a night with no push; a run started by hand always builds. A failing
 # check opens or updates the issue labelled ci-failure. Forks do not run it.
 name: nightly
 
@@ -15,6 +16,8 @@ concurrency:
 permissions: {}
 
 jobs:
+  # A nightly run that passed has the job "ci / result" with the conclusion success; a run that
+  # skipped CI has none, so the run that passed stays the one that counts.
   tested:
     if: github.repository == 'trevex/chalkos'
     runs-on: ubuntu-latest
@@ -23,7 +26,7 @@ jobs:
     outputs:
       passed: ${{ steps.main.outputs.passed }}
     steps:
-      - name: Look for a passed run of main's latest commit
+      - name: Look for a passed nightly run of main's latest commit
         id: main
         env:
           GH_TOKEN: ${{ github.token }}
@@ -31,14 +34,20 @@ jobs:
           EVENT: ${{ github.event_name }}
           SHA: ${{ github.sha }}
         run: |
-          runs=$(gh run list --workflow ci.yml --branch main --event push --commit "$SHA" \
-            --status success --json databaseId --jq length)
-          if [ "$EVENT" = schedule ] && [ "$runs" -gt 0 ]; then
-            echo "A push run already passed on $SHA."
-            echo "passed=true" >>"$GITHUB_OUTPUT"
-          else
-            echo "passed=false" >>"$GITHUB_OUTPUT"
+          passed=false
+          if [ "$EVENT" = schedule ]; then
+            for run in $(gh run list --workflow nightly.yml --branch main --commit "$SHA" --limit 50 \
+              --json databaseId --jq '.[].databaseId'); do
+              result=$(gh api --paginate "repos/$GH_REPO/actions/runs/$run/jobs?per_page=100" \
+                --jq '.jobs[] | select(.name == "ci / result" and .conclusion == "success") | .id')
+              if [ -n "$result" ]; then
+                echo "The nightly run $run already passed CI on $SHA."
+                passed=true
+                break
+              fi
+            done
           fi
+          echo "passed=$passed" >>"$GITHUB_OUTPUT"
 
   ci:
     needs: tested
