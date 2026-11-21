@@ -118,15 +118,7 @@ in
   chalkos.outputs.chrony = {
     inputs = [ "TimeSync" ];
     render = chalkosLib.render.template template;
-    check = ''
-      conf=$(mktemp)
-      echo "include $OUT/servers.sources" >"$conf"
-      ${package}/bin/chronyd -p -f "$conf" >/dev/null
-      if grep -qvE '^server [A-Za-z0-9][A-Za-z0-9.:-]* iburst( nts)?( port [0-9]+)?$' "$OUT/servers.sources"; then
-        echo "servers.sources holds a line that is no server of a host" >&2
-        exit 1
-      fi
-    '';
+    check = "${lib.getExe pkgs.chalkos.chalkos-render} check chrony ${package}/bin/chronyd";
   };
   chalkos.tests = chalkosLib.internal.exampleTests "chrony" ./examples/chrony;
   # chrony reads the sources again when they change; whether the servers DHCP announces count is

@@ -113,11 +113,8 @@ in
       render = "${render} cluster-registry ${mark}";
       # nft checks a table with the kernel, which takes CAP_NET_ADMIN; the check has it in a user
       # and network namespace of its own.
-      check = ''
-        if [ -e "$OUT/registry.nft" ]; then
-          ${pkgs.util-linux}/bin/unshare --map-root-user --net ${nft} --check --file "$OUT/registry.nft"
-        fi
-      '';
+      # A node that serves no registry gets no table.
+      check = "${render} check each registry.nft ${pkgs.util-linux}/bin/unshare --map-root-user --net ${nft} --check --file $FILE";
     };
     # A node that starts or stops serving starts or stops the registry. A Volume mounted at or
     # above the storage starts it again too: systemd hands the new file system to the registry's

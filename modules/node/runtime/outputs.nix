@@ -34,13 +34,38 @@ let
     else if lib.attrNames r == [ "template" ] then
       "${lib.getExe chalkos-render} template ${r.template} ${fileName ".tmpl" r.template}"
     else if lib.attrNames r == [ "jq" ] then
-      toString (
-        pkgs.writeShellScript "chalkos-render-jq-${fileName ".jq" r.jq}" ''
-          exec ${lib.getExe pkgs.jq} -r -f ${r.jq} > "$OUT/${fileName ".jq" r.jq}"
-        ''
-      )
+      "${lib.getExe chalkos-render} jq ${lib.getExe pkgs.jq} ${r.jq} ${fileName ".jq" r.jq}"
     else if lib.attrNames r == [ "documents" ] then
       "${lib.getExe chalkos-render} documents ${lib.concatStringsSep " " r.documents}"
+    else
+      null;
+  # The command of an output's check: "" for none, a command as it is, or that of a check of
+  # chalkosLib.check; null for anything else. chalkd splits a command at white space, so no
+  # argument of chalkosLib.check's holds any.
+  checkCommand =
+    c:
+    let
+      argv = map toString c.run;
+      plain = s: builtins.match ".*[[:space:]].*" s == null && s != "";
+      command = lib.concatStringsSep " " argv;
+    in
+    if c == null then
+      ""
+    else if lib.isString c then
+      c
+    else if !(c ? run && lib.isList c.run && c.run != [ ] && lib.all plain argv) then
+      null
+    else if lib.attrNames c == [ "run" ] then
+      "${lib.getExe chalkos-render} check run ${command}"
+    else if
+      lib.attrNames c == [
+        "each"
+        "run"
+      ]
+      && lib.isString c.each
+      && plain c.each
+    then
+      "${lib.getExe chalkos-render} check each ${c.each} ${command}"
     else
       null;
 
@@ -66,15 +91,17 @@ let
           '';
         };
         check = lib.mkOption {
-          type = lib.types.nullOr lib.types.lines;
+          type = lib.types.nullOr (chalkosLib.internal.programType "chalkosLib.check");
           default = null;
-          example = lib.literalExpression ''"''${pkgs.bird}/bin/bird -p -c $OUT/bird.conf"'';
+          example = lib.literalExpression ''chalkosLib.check.run [ "''${pkgs.bird}/bin/bird" "-p" "-c" "$OUT/bird.conf" ]'';
           description = ''
-            Shell commands, run by bash with `set -e` after the renderer, that check the rendered
-            files in `$OUT`; null serves the files as the renderer wrote them. A failure refuses the
+            Program of the image's store, with its arguments, that chalkd runs after the renderer
+            to check the rendered files in `$OUT`; null serves the files as the renderer wrote
+            them. chalkd runs it without a shell, and an exit status other than 0 refuses the
             delivery before it changes anything, and at boot fails `chalkos-config.service`.
-            [Check environment](extension-runtime.md#check-environment) gives what the commands
-            read and may run.
+            `chalkosLib.check.run` and `.each` run a service's own check of its config on the
+            files. [Check environment](extension-runtime.md#check-environment) gives what the
+            program reads and may run.
           '';
         };
         dir = lib.mkOption {
@@ -163,9 +190,12 @@ let
     ++ kindProblems config.chalkos.kinds "${where}.inputs" o.inputs
     ++
       lib.optional (renderCommand o.render == null)
-        "${where}.render: a renderer is a command or one of chalkosLib.render.template, .jq and .documents, not ${attrsetText o.render}";
+        "${where}.render: a renderer is a command or one of chalkosLib.render.template, .jq and .documents, not ${attrsetText o.render}"
+    ++
+      lib.optional (checkCommand o.check == null)
+        "${where}.check: a check is a command or one of chalkosLib.check.run and .each, each with a command whose arguments hold no white space, not ${attrsetText o.check}";
   # An output as chalkd reads it.
-  outputJSON = name: o: {
+  outputJSON = _: o: {
     inherit (o)
       inputs
       dir
@@ -174,23 +204,7 @@ let
       mode
       ;
     render = renderCommand o.render;
-    check =
-      if o.check == null then
-        ""
-      else
-        toString (
-          pkgs.writeShellScript "chalkos-output-${name}-check" ''
-            set -e
-            PATH=${
-              lib.makeBinPath [
-                pkgs.coreutils
-                pkgs.gnugrep
-                pkgs.gnused
-              ]
-            }
-            ${o.check}
-          ''
-        );
+    check = checkCommand o.check;
   };
   outputsJSON = refuse (clashes ++ lib.concatLists (lib.mapAttrsToList outputProblems outputs)) (
     builtins.toJSON (lib.mapAttrs outputJSON outputs)

@@ -764,7 +764,7 @@ lib.runTests {
         relays = edge.systemd.services.chalkos-dhcp-relays;
       in
       {
-        check = lib.hasInfix "/bin/dnsmasq --test" edge.chalkos.outputs.dhcp-relay.check;
+        check = lib.hasInfix "/bin/chalkos-render check each *.conf /nix/store/" edge.chalkos.outputs.dhcp-relay.check;
         relay = {
           inherit (relay.serviceConfig)
             User
@@ -1131,7 +1131,7 @@ lib.runTests {
         daemons = lib.attrNames daemons;
         inherit (frr) upholds wants;
         type = frr.serviceConfig.Type;
-        check = lib.hasInfix "vtysh --dryrun" edge.chalkos.outputs.frr.check;
+        check = lib.hasInfix "/bin/chalkos-render check run /nix/store/" edge.chalkos.outputs.frr.check;
         grant = frr.chalkos.kinds;
         after = lib.subtractLists frr.after [
           "chalkos-config.service"
@@ -1281,7 +1281,7 @@ lib.runTests {
       {
         kind = edge.chalkos.kinds ? DHCPSubnet;
         plainKind = layered.plain-metal.config.chalkos.kinds ? DHCPSubnet;
-        check = lib.hasInfix "/bin/kea-$family -t" edge.chalkos.outputs.kea.check;
+        check = lib.hasInfix "/bin/chalkos-render check kea /nix/store/" edge.chalkos.outputs.kea.check;
         package = lib.hasSuffix "-kea-dhcp-${pkgs.kea.version}" kea;
         hooks = builtins.attrNames (builtins.readDir "${kea}/lib/kea/hooks");
         user = edge.users.users.kea.isSystemUser;
@@ -1479,8 +1479,8 @@ lib.runTests {
       in
       {
         checks = {
-          jool = lib.hasInfix "/bin/jool file check" edge.chalkos.outputs.jool.check;
-          unbound = lib.hasInfix "/bin/unbound-checkconf" edge.chalkos.outputs.unbound.check;
+          jool = lib.hasInfix "/bin/jool file check $FILE" edge.chalkos.outputs.jool.check;
+          unbound = lib.hasInfix "/bin/unbound-checkconf $FILE" edge.chalkos.outputs.unbound.check;
         };
         nat64After = lib.subtractLists nat64.after [
           "chalkos-config.service"
@@ -1580,7 +1580,7 @@ lib.runTests {
             reloads = r.serviceConfig.ExecReload == r.serviceConfig.ExecStart;
             stops = lib.hasSuffix " stop" r.serviceConfig.ExecStop;
           };
-        unboundCheck = lib.hasInfix ''for f in "$OUT"/*.conf'' edge.chalkos.outputs.unbound.check;
+        unboundCheck = lib.hasInfix "/bin/chalkos-render check each *.conf /nix/store/" edge.chalkos.outputs.unbound.check;
         plain = {
           unbound = layered.plain-metal.config.services.unbound.enable;
           jool = layered.plain-metal.config.chalkos.outputs ? jool;
@@ -2030,7 +2030,7 @@ lib.runTests {
             && hasPackage "chalkd" c.systemd.services.chalkd.path;
           # chronyd checks the output chrony, whose examples are tests of the image.
           output = {
-            check = lib.hasInfix "/bin/chronyd -p -f" c.chalkos.outputs.chrony.check;
+            check = lib.hasInfix "/bin/chalkos-render check chrony /nix/store/" c.chalkos.outputs.chrony.check;
             tests = lib.filter (lib.hasPrefix "chrony-") (lib.attrNames c.chalkos.tests);
           };
           chalkdProtectsClock = c.systemd.services.chalkd.serviceConfig.ProtectClock;
@@ -4417,7 +4417,7 @@ lib.runTests {
       in
       {
         option = w.chalkos.kubernetes.bgp.enable;
-        check = lib.hasInfix "vtysh --dryrun" bgp.check;
+        check = lib.hasInfix "/bin/vtysh --dryrun" bgp.check;
         render = lib.hasSuffix " kubernetes-frr" bgp.render;
         inherit (bgp) inputs;
         reload = w.chalkos.effects.bgp.reload;

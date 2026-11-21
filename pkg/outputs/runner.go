@@ -98,7 +98,10 @@ var sandbox = []string{
 // sandboxArgs is the systemd-run command line that runs p as unit, reading input and, for a
 // program that reports refusals, printing into output.
 func sandboxArgs(unit string, p Program, input, output string) []string {
-	args := append([]string{"systemd-run", "--quiet", "--service-type=oneshot", "--unit=" + unit}, sandbox...)
+	// Without --expand-environment=no, the manager would expand $NAME and ${NAME} in the program's
+	// arguments, such as the $OUT and $FILE of chalkos-render's checks, which Direct passes as
+	// they are.
+	args := append([]string{"systemd-run", "--quiet", "--expand-environment=no", "--service-type=oneshot", "--unit=" + unit}, sandbox...)
 	stdout := "null"
 	if p.Report {
 		// The manager opens the file, root's alone, before the unit drops its privileges.

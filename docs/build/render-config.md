@@ -232,16 +232,30 @@ refuse the same config, the operator sees the validator's refusal.
 
 ## Check the rendered files
 
-`check` holds shell commands, which chalkd runs with bash and `set -e` after the renderer. The
-first command that fails refuses the files.
+`check` names a program, which chalkd runs after the renderer, without a shell. An exit status
+other than 0 refuses the files.
 [Check environment](../reference/extension-runtime.md#check-environment) lists what a check reads
 and may run.
 
-The best check is the service's own validator, such as `bird -p`, `nginx -t` or `chronyd -p`. A
-program that is not on the check's `PATH` is named by its store path, as `${bird}/bin/bird` is in
-the check of `bird-conf` in [Render bird.conf](../guides/bgp-extension.md#render-birdconf). A config
-that names files the node alone holds, such as credentials, needs the check to stand in for them
-first: that check defines each password constant before it runs `bird -p`.
+The best check is the service's own test of its config, such as `nginx -t` or `chronyd -p`.
+`chalkosLib.check.run` runs it on the rendered files, with `$OUT` in its arguments replaced by
+their directory. Name the program by its store path, because the check's `PATH` names none:
+
+```nix
+chalkos.outputs.myapp-conf.check = chalkosLib.check.run [
+  "${pkgs.nginx}/bin/nginx"
+  "-t"
+  "-c"
+  "$OUT/nginx.conf"
+];
+```
+
+`chalkosLib.check.each` runs the program once for each file a glob matches, with `$FILE` replaced
+by the file's path, for a renderer that writes a file per document. A config that names files the
+node alone holds, such as credentials, needs the check to stand in for them first. That takes a
+program of your own: the check of `bird-conf` in
+[Render bird.conf](../guides/bgp-extension.md#render-birdconf) is a script that defines each
+password constant before it runs `bird -p`.
 
 ## Test the output
 

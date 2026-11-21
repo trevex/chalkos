@@ -110,7 +110,7 @@ in
       render = "${render} router-nftables ${chalkdPort}";
       # nft checks a ruleset with the kernel, which takes CAP_NET_ADMIN; the check has it in a
       # user and network namespace of its own.
-      check = "${unshare} --map-root-user --net ${nft} --check --file \"$OUT/ruleset.nft\"";
+      check = "${render} check run ${unshare} --map-root-user --net ${nft} --check --file $OUT/ruleset.nft";
     };
     chalkos.effects.router-nftables = {
       outputs = [ "router-nftables" ];

@@ -1,8 +1,9 @@
 // Command chalkos-render renders chalkd's built-in outputs and those of chalkosLib.render's
-// helpers, and is the program of the validator router. chalkd runs it in an output's or a
-// validator's sandbox with the input as JSON on standard input, {"node": {"name": …},
-// "documents": {"<Kind>": [<document>, …]}}; a renderer writes into $OUT, the only path it may
-// write. A router image's build runs it for the fallback ruleset.
+// helpers, checks the files of outputs, and is the program of the validator router and of
+// chalkosLib.validate.jq's validators. chalkd runs it in an output's or a validator's sandbox with
+// the input as JSON on standard input, {"node": {"name": …}, "documents": {"<Kind>": [<document>,
+// …]}}; a renderer writes into $OUT, the only path it may write, and a check reads the files
+// there. A router image's build runs it for the fallback ruleset.
 package main
 
 import (
@@ -25,6 +26,7 @@ import (
 )
 
 const usage = `usage: chalkos-render template TEMPLATE FILE
+       chalkos-render jq JQ PROGRAM FILE
        chalkos-render documents KIND...
        chalkos-render networkd SCHEMAS
        chalkos-render router-networkd SCHEMAS
@@ -40,11 +42,21 @@ const usage = `usage: chalkos-render template TEMPLATE FILE
        chalkos-render kea PD-HOOK
        chalkos-render dhcp-relay
        chalkos-render validate router
+       chalkos-render validate-jq JQ PROGRAM validate NAME
+       chalkos-render check run COMMAND ARG...
+       chalkos-render check each GLOB COMMAND ARG...
+       chalkos-render check chrony CHRONYD
+       chalkos-render check chrony-server CHRONYD
+       chalkos-render check kea KEA-DHCP4 KEA-DHCP6
 
 Each renderer reads the output's input on standard input and writes into $OUT; a config it
-refuses it prints as {"refusals": [...]} on standard output, and fails. validate router prints
-the validator's report on standard output, one of no refusals for a config it accepts, and
-succeeds; it fails on input it cannot read.`
+refuses it prints as {"refusals": [...]} on standard output, and fails. jq runs the jq program
+JQ PROGRAM on the input and writes what it prints, raw for a string, to $OUT/FILE. validate
+router prints the validator's report on standard output, one of no refusals for a config it
+accepts, and succeeds; it fails on input it cannot read. validate-jq prints what the jq program
+makes of the input as the report. Each check reads the files in $OUT and fails when it refuses
+them: run runs the command once, and each once for every file of $OUT that GLOB matches, with
+$OUT in the arguments replaced by the directory and $FILE by the file.`
 
 // main prints a refused config, a *refusals.Error, as a report on standard output for chalkd, and
 // every error on standard error, which only the journal sees, since it can echo the documents.
@@ -79,8 +91,21 @@ func run(args []string, stdin io.Reader, stdout io.Writer, out string) error {
 		}
 		return validate(args[1], stdin, stdout)
 	}
+	if args[0] == "validate-jq" {
+		// chalkd runs a validator as <program> validate <name>.
+		if len(args) != 5 || args[3] != "validate" {
+			return errUsage
+		}
+		return runJQ(args[1], "--compact-output", args[2], stdin, stdout)
+	}
 	if out == "" {
 		return errors.New("$OUT names no directory to write")
+	}
+	switch {
+	case args[0] == "jq" && len(args) == 4:
+		return renderJQ(args[1], args[2], args[3], stdin, out)
+	case args[0] == "check":
+		return check(args[1:], out)
 	}
 	in, err := readInput(stdin)
 	if err != nil {

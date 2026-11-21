@@ -79,12 +79,7 @@ in
           "NAT64"
         ];
       render = "${lib.getExe pkgs.chalkos.chalkos-render} dhcp-relay";
-      check = ''
-        for f in "$OUT"/*.conf; do
-          [ -e "$f" ] || continue
-          ${dnsmasq}/bin/dnsmasq --test --conf-file="$f" >/dev/null
-        done
-      '';
+      check = "${lib.getExe pkgs.chalkos.chalkos-render} check each *.conf ${dnsmasq}/bin/dnsmasq --test --conf-file=$FILE";
     };
     # A relay added, changed or removed, and a VRF networkd creates anew.
     chalkos.effects.dhcp-relay = {

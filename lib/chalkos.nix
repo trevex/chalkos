@@ -73,6 +73,18 @@ in
     documents = kinds: { documents = kinds; };
   };
 
+  check = {
+    # A command and its arguments, run once, with $OUT in the arguments replaced by the output's
+    # directory.
+    run = argv: { run = argv; };
+    # A command and its arguments, run once for every file of the output that glob matches, with
+    # $FILE in the arguments replaced by the file's path and $OUT by the output's directory.
+    each = glob: argv: {
+      each = glob;
+      run = argv;
+    };
+  };
+
   validate = {
     # A jq program that reads the input of the documents by kind and makes the report of refusals.
     jq = path: { jq = path; };

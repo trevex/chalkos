@@ -49,7 +49,16 @@
   chalkos.outputs.greeting = {
     inputs = [ "Greeting" ];
     render = chalkosLib.render.template ./greeting.tmpl;
-    check = ''
+    # A program of the test's own, as an extension may write one, whose probes of the sandbox no
+    # check of chalkosLib.check makes.
+    check = pkgs.writeShellScript "chalktest-greeting-check" ''
+      set -e
+      PATH=${
+        lib.makeBinPath [
+          pkgs.coreutils
+          pkgs.gnugrep
+        ]
+      }
       lines=$(wc -l < "$OUT/greeting")
       [ "$lines" -eq 0 ] || [ "$lines" -eq 2 ]
       # The sandbox: no root, no capabilities and no STATE.
