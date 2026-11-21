@@ -194,6 +194,60 @@ var oidData = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 7, 1}
 // the signer's certificate, and one signer without authenticated attributes whose RSA PKCS #1
 // v1.5 signature covers the SHA-256 of the content.
 func signPKCS7(content []byte, cert *x509.Certificate, key *rsa.PrivateKey) ([]byte, error) {
+	return signedDataOf(content, cert, key, contentInfo{ContentType: oidData})
+}
+
+// SignAttached signs content as the kernel reads a signed IPE policy: a DER ContentInfo of
+// SignedData that carries the content as data, the signer's certificate, and one signer without
+// authenticated attributes whose RSA PKCS #1 v1.5 signature covers the SHA-256 of the content.
+// It is what openssl cms -sign -noattr -nodetach -binary -outform der writes.
+func SignAttached(content []byte, signer KeyPair) ([]byte, error) {
+	octets, err := asn1.Marshal(content)
+	if err != nil {
+		return nil, err
+	}
+	sd, err := signedDataOf(content, signer.Cert, signer.Key, contentInfo{
+		ContentType: oidData,
+		Content:     asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true, Bytes: octets},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return asn1.Marshal(contentInfo{
+		ContentType: oidSignedData,
+		Content:     asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true, Bytes: sd},
+	})
+}
+
+// AttachedContent returns the content of a signature SignAttached made, without checking the
+// signature.
+func AttachedContent(der []byte) ([]byte, error) {
+	var ci contentInfo
+	rest, err := asn1.Unmarshal(der, &ci)
+	if err != nil || !ci.ContentType.Equal(oidSignedData) {
+		return nil, errors.New("the signature is not PKCS #7 signed data")
+	}
+	if len(rest) > 0 {
+		return nil, errors.New("the signature has trailing data")
+	}
+	var sd signedData
+	if _, err := asn1.Unmarshal(ci.Content.Bytes, &sd); err != nil {
+		return nil, fmt.Errorf("the signature's signed data: %w", err)
+	}
+	if !sd.ContentInfo.ContentType.Equal(oidData) {
+		return nil, errors.New("the signed content is not data")
+	}
+	var content []byte
+	if _, err := asn1.Unmarshal(sd.ContentInfo.Content.Bytes, &content); err != nil {
+		return nil, fmt.Errorf("the signed content: %w", err)
+	}
+	return content, nil
+}
+
+// signedDataOf is the DER SignedData of one signer without authenticated attributes whose RSA
+// PKCS #1 v1.5 signature covers the SHA-256 of content, with the certificate and ci, which
+// carries the content or leaves it out.
+func signedDataOf(content []byte, cert *x509.Certificate, key *rsa.PrivateKey, ci contentInfo) ([]byte, error) {
 	sha256Alg := pkix.AlgorithmIdentifier{Algorithm: oidSHA256, Parameters: asn1.NullRawValue}
 	digest := sha256.Sum256(content)
 	sig, err := rsa.SignPKCS1v15(nil, key, crypto.SHA256, digest[:])
@@ -203,7 +257,7 @@ func signPKCS7(content []byte, cert *x509.Certificate, key *rsa.PrivateKey) ([]b
 	return asn1.Marshal(signedData{
 		Version:          1,
 		DigestAlgorithms: []pkix.AlgorithmIdentifier{sha256Alg},
-		ContentInfo:      contentInfo{ContentType: oidData},
+		ContentInfo:      ci,
 		Certificates:     asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true, Bytes: cert.Raw},
 		SignerInfos: []signerInfo{{
 			Version:                   1,
