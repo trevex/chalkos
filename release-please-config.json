@@ -14,9 +14,15 @@
       "extra-files": [
         "version.nix",
         "templates/lab/flake.nix",
-        { "type": "generic", "path": "templates/lab/chalkos.yaml" },
+        {
+          "type": "generic",
+          "path": "templates/lab/chalkos.yaml"
+        },
         "templates/router-lab/flake.nix",
-        { "type": "generic", "path": "templates/router-lab/chalkos.yaml" },
+        {
+          "type": "generic",
+          "path": "templates/router-lab/chalkos.yaml"
+        },
         "templates/cluster-metal/flake.nix",
         "examples/homelab/flake.nix",
         "examples/extensions/flake.nix",
@@ -28,6 +34,63 @@
         "docs/get-started/releases.md",
         "docs/guides/release-your-images.md",
         "docs/contribute/ci.md"
+      ],
+      "changelog-sections": [
+        {
+          "type": "feat",
+          "section": "Features"
+        },
+        {
+          "type": "fix",
+          "section": "Bug Fixes"
+        },
+        {
+          "type": "perf",
+          "section": "Performance Improvements"
+        },
+        {
+          "type": "deps",
+          "section": "Dependencies"
+        },
+        {
+          "type": "revert",
+          "section": "Reverts"
+        },
+        {
+          "type": "docs",
+          "section": "Documentation",
+          "hidden": true
+        },
+        {
+          "type": "style",
+          "section": "Styles",
+          "hidden": true
+        },
+        {
+          "type": "chore",
+          "section": "Miscellaneous Chores",
+          "hidden": true
+        },
+        {
+          "type": "refactor",
+          "section": "Code Refactoring",
+          "hidden": true
+        },
+        {
+          "type": "test",
+          "section": "Tests",
+          "hidden": true
+        },
+        {
+          "type": "build",
+          "section": "Build System",
+          "hidden": true
+        },
+        {
+          "type": "ci",
+          "section": "Continuous Integration",
+          "hidden": true
+        }
       ]
     }
   }

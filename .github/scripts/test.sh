@@ -104,6 +104,7 @@ for title in \
   "feat!: drop the old API" \
   "ci(release): rebuild the release pull request" \
   "style(chalkd): wrap a doc comment" \
+  "deps: update module golang.org/x/net to v0.62.0" \
   "revert: feat: add a kind"; do
   expect pass "the title '$title'" bash "$scripts/pr-title.sh" "$title"
 done

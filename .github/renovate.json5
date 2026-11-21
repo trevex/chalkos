@@ -16,8 +16,10 @@
   dependencyDashboard: true,
   labels: ['dependencies'],
   semanticCommits: 'enabled',
-  semanticCommitType: 'build',
-  semanticCommitScope: 'deps',
+  // deps is release-please's patch-releasing type: an update of what chalkos ships
+  // (Go modules, Kubernetes pins) releases. CI's own dependencies stay ci(deps), which do not.
+  semanticCommitType: 'deps',
+  semanticCommitScope: null,
   rebaseWhen: 'behind-base-branch',
   // The commits of renovate-fixup.yml, made as the release App's bot, leave a branch Renovate's
   // own, so Renovate still rebases it.
@@ -84,19 +86,21 @@
   ],
   packageRules: [
     {
-      // build(deps), over config:recommended's fix and chore.
+      // deps, over config:recommended's fix and chore.
       matchPackageNames: ['*'],
-      semanticCommitType: 'build',
+      semanticCommitType: 'deps',
     },
     {
       // Actions' patch and minor releases and digests in one pull request, merged once CI
       // passes; a major release gets a pull request of its own, merged by hand.
       matchManagers: ['github-actions'],
       semanticCommitType: 'ci',
+      semanticCommitScope: 'deps',
     },
     {
       matchDepNames: ['Mic92/hestia'],
       semanticCommitType: 'ci',
+      semanticCommitScope: 'deps',
     },
     {
       matchManagers: ['github-actions', 'custom.regex'],

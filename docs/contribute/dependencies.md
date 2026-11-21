@@ -20,8 +20,10 @@ for `modules/node/kubernetes/releases.nix` and for Hestia's `version` input besi
 `nix` manager and every other one stay off.
 
 Renovate works on Monday before 06:00 Europe/Berlin. Each group is one pull request on the branch
-`renovate/<group>`, labelled `dependencies`. Its commits are Conventional Commits with the scope
-`deps`: `ci(deps):` for actions and `build(deps):` for everything else. Renovate rebases a pull
+`renovate/<group>`, labelled `dependencies`. Its commits are Conventional Commits: `deps:` for what chalkos ships, the Go modules and the
+Kubernetes pins, and `ci(deps):` for actions. release-please makes a patch release for `deps:`
+commits and lists them under Dependencies; `ci(deps):` commits change nothing chalkos ships and
+release nothing. Renovate rebases a pull
 request once `main` moves past it, and lists every pending and open update on its Dependency
 Dashboard, an issue it keeps open.
 
@@ -142,7 +144,7 @@ a week. A change of nixpkgs
 can change how Nix fetches and builds the Kubernetes sources and the Go modules, so the workflow
 runs `update-pins` and `update-vendor-hash` after it.
 
-When anything changed, the workflow commits it as `build(deps): update the flake inputs`, signed
+When anything changed, the workflow commits it as `deps: update the flake inputs`, signed
 off by the App's bot, and makes the commit through GitHub's API like the fixup workflow, on a
 branch of the run that starts at `main`. It then moves `bot/update-flake-lock` to that commit,
 replacing what the branch held, deletes the run's branch, and opens a pull request labelled
