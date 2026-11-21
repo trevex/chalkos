@@ -187,7 +187,7 @@
             },
             {
               "hostPath": {
-                "path": "/run/booted-system/kernel-modules/lib/modules"
+                "path": "/lib/modules"
               },
               "name": "lib-modules"
             }

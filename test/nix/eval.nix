@@ -4671,4 +4671,51 @@ lib.runTests {
         offText = "Whether Kubernetes images carry X. Only with the Kubernetes layer; set it true in an image's modules to add the feature to it.";
       };
     };
+  # Kubernetes images link /lib/modules to the image's module tree, whose files are its own, so
+  # the hostPath mounts of ceph-csi, Cilium, Longhorn and the GPU operator read the modules
+  # without the store; a router image has no such link. They put the host tools into /usr/bin and
+  # /usr/sbin of the store's file system, which is /usr on a node.
+  testKubernetesHostBase =
+    let
+      tools = worker [
+        (
+          { pkgs, ... }:
+          {
+            chalkos.kubernetes.hostTools.fstrim = "${pkgs.util-linux}/bin/fstrim";
+          }
+        )
+      ];
+      store = c: c.image.repart.partitions.${c.image.repart.verityStore.partitionIds.store};
+      entries = lib.mapAttrs (_: lib.mapAttrs (_: e: { inherit (e) mode argument; }));
+    in
+    {
+      expr = {
+        libModules = entries w.systemd.tmpfiles.settings.chalkos-lib-modules;
+        router = edge.systemd.tmpfiles.settings ? chalkos-lib-modules;
+        noTools = (store w).contents;
+        tools = lib.attrNames (store tools).contents;
+        usrIsStore = w.fileSystems."/nix/store".device;
+        stored = lib.any (p: lib.hasInfix "chalkos-usr-links" (toString p)) (store tools).storePaths;
+      };
+      expected = {
+        libModules = {
+          "/lib".d = {
+            mode = "0755";
+            argument = "";
+          };
+          "/lib/modules"."L+" = {
+            mode = "-";
+            argument = "${w.system.build.chalkosKernelModules}/lib/modules";
+          };
+        };
+        router = false;
+        noTools = { };
+        tools = [
+          "/bin"
+          "/sbin"
+        ];
+        usrIsStore = "/usr/nix/store";
+        stored = true;
+      };
+    };
 }

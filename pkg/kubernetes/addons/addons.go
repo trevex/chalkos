@@ -215,8 +215,7 @@ func kubeProxy(c kubernetes.Cluster) ([]any, error) {
 						WithVolumes(
 							configMapVolume("kube-proxy", "kube-proxy"),
 							xtablesLock(),
-							// NixOS keeps the running kernel's modules here, not in /lib/modules.
-							hostPath("lib-modules", "/run/booted-system/kernel-modules/lib/modules"),
+							hostPath("lib-modules", "/lib/modules"),
 						)))),
 	}, nil
 }

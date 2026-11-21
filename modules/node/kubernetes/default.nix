@@ -45,6 +45,7 @@ in
     ./containerd.nix
     ./registries.nix
     ./firewall.nix
+    ./host.nix
     ./kernel.nix
     ./kinds.nix
     ./bgp
