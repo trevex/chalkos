@@ -1603,7 +1603,7 @@ The effects every image declares.
 
 | Effect | Fires when | Does |
 | --- | --- | --- |
-| `chrony`{ #effect-chrony } | The output `chrony` changed. | Runs `chalkos-chrony-reload-sources`. |
+| `chrony`{ #effect-chrony } | The output `chrony` changed. | Runs `chalkd chrony-reload-sources`. |
 | `chrony-dhcp`{ #effect-chrony-dhcp } | The `when` after the table holds, which reads the documents of `TimeSync`. | Restarts `chalkos-chrony-dhcp.service`. |
 | `links`{ #effect-links } | The documents of `Link`, or a value of a Secret they reference, changed. | Runs after `networkd` when those effects are due. Restarts `chalkos-links.service`, and starts them when they are stopped. |
 | `networkd`{ #effect-networkd } | The output `networkd` changed. | Reloads `systemd-networkd.service`. |
@@ -1720,21 +1720,7 @@ The diagnostics every image declares.
 | `ping`{ #diagnostic-ping } | Sends ICMP echo requests to an address and prints the replies, for at most 10 seconds. Runs `ping -n -w 10 -c {count} {address}`. | `address`, address; `count`, int from 1 to 10, default `4` | operator | `CAP_NET_RAW` |
 | `route-get`{ #diagnostic-route-get } | The route the kernel takes to an address. Runs `ip -json route get {address}`. | `address`, address | reader | — |
 | `routes`{ #diagnostic-routes } | The routes of one family in one routing table, as ip -json route show prints them. Runs `ip -json -family {family} route show table {table}`. | `family`, enum of `inet` or `inet6`, default `inet`; `table`, pattern `^(main|local|default|all|[0-9]+)$`, default `main` | reader | — |
-| `tcp-connect`{ #diagnostic-tcp-connect } | Opens a TCP connection to an address and port, closes it again and says whether it connected. Runs `bash -c <script> tcp-connect {address} {port}`, with the script after the table. | `address`, address; `port`, int from 1 to 65535 | operator | — |
-
-Script of `tcp-connect`:
-
-```text
-if timeout 5 bash -c ': <>"/dev/tcp/$1/$2"' tcp-connect "$1" "$2"; then
-  echo "connected to $1 port $2"
-else
-  status=$?
-  if [ "$status" = 124 ]; then
-    echo "no connection to $1 port $2 within 5 seconds" >&2
-  fi
-  exit "$status"
-fi
-```
+| `tcp-connect`{ #diagnostic-tcp-connect } | Opens a TCP connection to an address and port, closes it again and says whether it connected. Runs `chalkd tcp-connect {address} {port}`. | `address`, address; `port`, int from 1 to 65535 | operator | — |
 
 ### Images with Kubernetes { #diagnostics-kubernetes }
 

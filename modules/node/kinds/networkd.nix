@@ -115,20 +115,8 @@ in
       RemainAfterExit = true;
       # udev settles within seconds; a unit that hangs fails instead of holding up the boot.
       TimeoutStartSec = "30s";
-      ExecStart = pkgs.writeShellScript "chalkos-links" ''
-        set -eu
-        udevadm=${config.systemd.package}/bin/udevadm
-        "$udevadm" control --reload
-        set --
-        for d in /sys/class/net/*; do
-          if [ -e "$d/device" ]; then
-            set -- "$@" "$d"
-          fi
-        done
-        if [ $# -gt 0 ]; then
-          exec "$udevadm" trigger --action=add --settle "$@"
-        fi
-      '';
+      # udevadm comes from the unit's default PATH, which holds systemd's tools.
+      ExecStart = "${lib.getExe pkgs.chalkos.chalkd} apply-links";
     };
   };
   # A delivery that changes the Link documents runs the unit again, after networkd's reload.

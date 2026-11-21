@@ -29,6 +29,7 @@ import (
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/chalkd"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
+	"github.com/trevex/chalkos/pkg/chalkd/units"
 	"github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/layers"
@@ -58,14 +59,14 @@ func newCommand() (*cobra.Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	return chalkd.NewCommand(reg,
-		&cobra.Command{
+	cmds := []*cobra.Command{
+		{
 			Use:   "serve",
 			Short: "Serve the node API",
 			Args:  chalkd.NoArgs,
 			RunE:  func(*cobra.Command, []string) error { return serve() },
 		},
-		&cobra.Command{
+		{
 			Use:   "load-config",
 			Short: "Apply the config recorded on STATE",
 			Long: "Apply the config recorded on STATE: its identity and documents, after ending a config's trial\n" +
@@ -75,7 +76,8 @@ func newCommand() (*cobra.Command, error) {
 		},
 		healthCommand(health),
 		checkCommand(),
-	), nil
+	}
+	return chalkd.NewCommand(reg, append(cmds, units.Commands(tool.ExecRunner{})...)...), nil
 }
 
 // checkCommand is chalkd check --system <system> --facts <socket>.

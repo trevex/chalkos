@@ -28,7 +28,9 @@ the exit status:
 - 2, with the command's usage, after a usage error, such as a wrong number of arguments, an
   unknown flag or a required flag not set;
 - 1 after another error;
-- 130 in chalkctl after an error once Ctrl+C cancelled it.
+- 130 in chalkctl after an error once Ctrl+C cancelled it;
+- the status of a `cli.Status` error, which prints nothing, for a command that said why it failed
+  itself, such as `chalkd tcp-connect`, which exits with 124 after a timeout.
 
 chalkd's tree in `cmd/chalkd` runs through the same `Execute`, by way of `chalkd.Execute`, which
 prints each error a failed command joins on a line of its own. Each package keeps its help texts in
@@ -51,7 +53,7 @@ which have no logins, so it has no `completion` command.
 | `chalklab` | The chalklab command tree. |
 | `chalkbuild` | The chalkbuild command tree. |
 | `chalkcfg` | The chalkcfg command tree: reads the documents below `/run/chalkos/config` and the kinds the image's schemas name, and prints them. |
-| `internal/cli` | What the command trees of chalkctl, chalkd, chalklab, chalkbuild and chalkcfg share: usage errors and their exit status, the root and group commands, positional argument checks and flags that take one of a set of values. |
+| `internal/cli` | What the command trees of chalkctl, chalkd, chalklab, chalkbuild and chalkcfg share: usage errors and their exit status, errors that carry an exit status of their own, the root and group commands, positional argument checks and flags that take one of a set of values. |
 | `version` | chalkos's version and the git revision of the build, which the linker sets from `version.nix` and, in the flake's chalkctl and chalkbuild alone, from the flake's revision, and the `version` command of chalkctl and chalkbuild that prints them. |
 | `inventory` | Reads chalkctl's inventory: the cluster's nodes, the address chalkctl reaches each at, the image each runs and the config files each gets. It passes each node's documents through the filters its caller gives, which chalkctl takes from its layers, and names no layer. |
 | `client` | Connections to chalkd, each with one way to verify the node: by fingerprint in maintenance mode, by the OS CA otherwise; the names chalkd's status gives the OS's certificates and trusted values. |
@@ -63,7 +65,7 @@ which have no logins, so it has no `completion` command.
 
 | Program | What its main does |
 | --- | --- |
-| `cmd/chalkd` | Builds chalkd's cobra command tree with `chalkd.NewCommand` and runs it with `chalkd.Execute`: `serve` (chalkd.service), `load-config` (chalkos-config.service), `health` (chalkos-health.service), `check` (an image's checker, which another image's chalkd runs) and each layer's commands as `chalkd <layer> <command>`, such as `chalkd kubernetes prepare` (chalkos-kubernetes.service). Lists the layer plugins compiled into chalkd in `plugins.go`, and loads the credentials `serve` starts with. |
+| `cmd/chalkd` | Builds chalkd's cobra command tree with `chalkd.NewCommand` and runs it with `chalkd.Execute`: `serve` (chalkd.service), `load-config` (chalkos-config.service), `health` (chalkos-health.service), `check` (an image's checker, which another image's chalkd runs), the commands of `chalkd/units` and each layer's commands as `chalkd <layer> <command>`, such as `chalkd kubernetes prepare` (chalkos-kubernetes.service). Lists the layer plugins compiled into chalkd in `plugins.go`, and loads the credentials `serve` starts with. |
 | `cmd/chalkos-registry` | `serve` serves `pkg/registry` on a port of every address, with the node certificate and OS CAs from its systemd credentials, and tells systemd once it listens; `catalog PORT` prints the repositories of the registry on this node, for a diagnostic. |
 
 | Package | What it does |
@@ -72,6 +74,7 @@ which have no logins, so it has no `completion` command.
 | `chalkd` | The node API server, with the permissions of each NodeService method; the registry of layer plugins it mounts, starts and asks for hooks; and chalkd's work at boot: the node certificate's renewal and the health check. |
 | `chalkd/layer` | The interfaces of chalkd's layer plugins, their optional hooks and the registry of the compiled and active plugins. |
 | `chalkd/renewal` | Renews a certificate, or a set of them, once it is due, for the node certificate and a layer's own; without anything to renew it with, it logs once that the certificate is due. |
+| `chalkd/units` | The commands that the units and diagnostics of every image run as `chalkd <command>` in place of shell scripts: `apply-links` (chalkos-links.service), `chrony-dhcp` (chalkos-chrony-dhcp.service), `chrony-reload-sources` (chrony's effect) and `tcp-connect` (the diagnostic). `modules/node/runtime/effects.nix` lists their names among chalkd's own. |
 | `layers` | Reads the layers an image carries from their markers in `/etc/chalkos/layers`, for the plugins chalkd activates and the `layers` of Info and Contract. |
 | `pki` | The OS CA and node CA, client and node certificates and their checks, client roles, PEM keys and certificate bundles. |
 | `registry` | An OCI registry: distribution's registry handlers with the filesystem storage driver alone, over TLS with the node certificate, which it reads once: its unit restarts it when chalkd replaces the certificate. Anyone reads, and an `Authorization` header on a read is ignored; writes, deletes and garbage collection take a client certificate of the admin role, verified again for every request, which no certificate of the node CA has. Garbage collection runs on an admin's request alone and refuses writes while it runs. |

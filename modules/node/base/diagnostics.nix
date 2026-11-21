@@ -2,7 +2,7 @@
 # rules and neighbours, the route to an address, ping, DNS queries, TCP connects and the nftables
 # ruleset. Those that send traffic from the node or show its firewall need an operator. Each tool
 # is the smallest that does the job, as every image carries them: ip alone rather than iproute2,
-# ldns's drill rather than dig, and bash's /dev/tcp for a TCP connect.
+# ldns's drill rather than dig, and chalkd itself for a TCP connect.
 {
   lib,
   pkgs,
@@ -10,7 +10,6 @@
 }:
 let
   ip = lib.getExe pkgs.chalkos.iproute2-ip;
-  bash = "${pkgs.bash}/bin/bash";
   address = {
     type = "address";
     description = "IPv4 or IPv6 address.";
@@ -179,25 +178,12 @@ in
       role = "operator";
       timeout = "15s";
     };
-    # bash opens the connection and closes it on exit; the address and port are its arguments,
-    # never part of the script. timeout ends a connect that would wait for TCP's own timeout, and
-    # exits with 124 without a word, so the outer bash says so.
+    # chalkd connects and closes the connection again. A connect without an answer within 5
+    # seconds exits with 124, as coreutils' timeout does, and any other failure with 1.
     tcp-connect = {
       description = "Opens a TCP connection to an address and port, closes it again and says whether it connected.";
       command = [
-        bash
-        "-c"
-        ''
-          if ${pkgs.coreutils}/bin/timeout 5 ${bash} -c ': <>"/dev/tcp/$1/$2"' tcp-connect "$1" "$2"; then
-            echo "connected to $1 port $2"
-          else
-            status=$?
-            if [ "$status" = 124 ]; then
-              echo "no connection to $1 port $2 within 5 seconds" >&2
-            fi
-            exit "$status"
-          fi
-        ''
+        (lib.getExe pkgs.chalkos.chalkd)
         "tcp-connect"
         "{address}"
         "{port}"

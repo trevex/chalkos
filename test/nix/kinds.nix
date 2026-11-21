@@ -1821,7 +1821,7 @@ lib.runTests {
         before = lib.sort lib.lessThan unit.before;
         inherit (unit.unitConfig) DefaultDependencies ConditionPathExistsGlob;
         inherit (unit.serviceConfig) Type RemainAfterExit TimeoutStartSec;
-        script = lib.hasSuffix "-chalkos-links" (toString unit.serviceConfig.ExecStart);
+        script = lib.hasSuffix "/bin/chalkd apply-links" unit.serviceConfig.ExecStart;
       };
     expected = {
       wantedBy = [ "sysinit.target" ];

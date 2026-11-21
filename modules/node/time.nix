@@ -15,7 +15,6 @@ let
   sources = config.chalkos.outputs.chrony.dir;
   dhcpSources = "/run/chalkos/chrony-dhcp";
   inherit (config.services.chrony) package;
-  dhcpEnabled = config.chalkos.kinds.TimeSync.get { path = "spec.dhcp"; };
   inherit (chalkosLib.internal) cel;
   inherit (chalkosLib.internal.api) apiVersions;
   # A server as a line of chrony's sources file.
@@ -31,13 +30,7 @@ let
     server {{ .host }} iburst{{ if .nts }} nts{{ end }}{{ with .port }}{{ if ne (print .) "0" }} port {{ . }}{{ end }}{{ end }}
     {{ end }}{{ else }}${lib.concatMapStrings server config.chalkos.kinds.TimeSync.spec.servers.default}{{ end -}}
   '';
-  # What chrony's effect runs: chronyd reads its sources when it starts, so one that does not run
-  # needs no reload, and a reload it cannot take must not fail the delivery. systemctl and chronyc
-  # come from chalkd's PATH.
-  reloadSources = pkgs.writeShellScriptBin "chalkos-chrony-reload-sources" ''
-    systemctl is-active --quiet chronyd.service || exit 0
-    exec chronyc reload sources
-  '';
+  chalkd = lib.getExe pkgs.chalkos.chalkd;
 in
 {
   services.chrony = {
@@ -104,31 +97,16 @@ in
       "chronyd.service"
       "systemd-networkd.service"
     ];
-    path = [
-      pkgs.coreutils
-      pkgs.gnused
-      package
-    ];
+    # chalkd writes the servers of the NTP= lines of networkd's link state when the TimeSync sets
+    # dhcp, and none without a TimeSync or with one it cannot read, whose error it logs. It then
+    # runs chronyc reload sources and ignores its failure: a chronyd that does not run yet reads
+    # the file when it starts.
+    path = [ package ];
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
+      ExecStart = "${chalkd} chrony-dhcp ${dhcpSources}/dhcp.sources";
     };
-    script = ''
-      # No TimeSync takes no servers from DHCP, and chalkcfg prints nothing for it; one that
-      # chalkcfg cannot read takes none either, and its error is logged.
-      dhcp=$(${dhcpEnabled}) || dhcp=false
-      tmp=$(mktemp ${dhcpSources}/.dhcp.XXXXXX)
-      if [ "$dhcp" = true ]; then
-        for link in /run/systemd/netif/links/*; do
-          [ -f "$link" ] || continue
-          for server in $(sed -n 's/^NTP=//p' "$link"); do
-            echo "server $server iburst"
-          done
-        done | sort -u > "$tmp"
-      fi
-      mv "$tmp" ${dhcpSources}/dhcp.sources
-      chronyc reload sources || true
-    '';
   };
 
   # The sources file holds the TimeSync's servers, or chalkos's own without a TimeSync. chronyd
@@ -155,12 +133,14 @@ in
   # chalkos-chrony-dhcp's. The effect tells the chronyd every node runs, while it runs.
   chalkos.effects.chrony = {
     outputs = [ "chrony" ];
-    run = "chalkos-chrony-reload-sources";
+    run = "chalkd chrony-reload-sources";
   };
 
-  # chalkd reads chrony's tracking state for the node's status, and runs chrony's effect.
+  # chalkd reads chrony's tracking state for the node's status, and runs chrony's effect from its
+  # PATH, which reloads the sources of a chronyd that runs alone: one that does not run reads them
+  # when it starts.
   systemd.services.chalkd.path = [
     package
-    reloadSources
+    pkgs.chalkos.chalkd
   ];
 }

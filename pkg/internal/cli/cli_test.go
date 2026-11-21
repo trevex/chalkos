@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -85,6 +86,19 @@ func TestExecuteInterrupted(t *testing.T) {
 		if got := Execute(ctx, root, c.opts); got != c.want {
 			t.Errorf("tool %s with %+v exits with %d, want %d", c.args, c.opts, got, c.want)
 		}
+	}
+}
+
+// A Status ends the command with its exit status and prints nothing.
+func TestExecuteStatus(t *testing.T) {
+	var stderr bytes.Buffer
+	root := tree(&stderr)
+	root.AddCommand(&cobra.Command{Use: "status", RunE: func(*cobra.Command, []string) error {
+		return fmt.Errorf("wrapped: %w", Status(124))
+	}})
+	root.SetArgs([]string{"status"})
+	if got := Execute(context.Background(), root, Options{}); got != 124 || stderr.Len() != 0 {
+		t.Errorf("tool status exits with %d and prints %q, want 124 and nothing", got, stderr.String())
 	}
 }
 

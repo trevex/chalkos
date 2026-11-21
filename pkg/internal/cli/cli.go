@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -31,6 +32,12 @@ func usage(err error) error {
 	}
 	return fmt.Errorf("%w: %w", ErrUsage, err)
 }
+
+// Status is the error of a command that said why it failed itself: Execute prints nothing more
+// and exits with the status, as a diagnostic that mirrors another tool's statuses does.
+type Status int
+
+func (s Status) Error() string { return "exit status " + strconv.Itoa(int(s)) }
 
 // Root makes root a Group at the root of a tree that Execute runs. Every flag error is a usage
 // error, and cobra prints nothing, since Execute prints errors and the usage.
@@ -92,12 +99,15 @@ type Options struct {
 }
 
 // Execute runs the command tree of root with ctx, prints its error and returns the exit status:
-// 0 after success, 2 and the command's usage after a usage error, 1 after another error, and with
-// opts.Interruptible 130 after an error once ctx ended.
+// 0 after success, a Status's own without a word, 2 and the command's usage after a usage error,
+// 1 after another error, and with opts.Interruptible 130 after an error once ctx ended.
 func Execute(ctx context.Context, root *cobra.Command, opts Options) int {
 	cmd, err := root.ExecuteContextC(ctx)
 	if err == nil {
 		return 0
+	}
+	if s, ok := errors.AsType[Status](err); ok {
+		return int(s)
 	}
 	if isUsage(cmd, err) {
 		err = usage(err)
