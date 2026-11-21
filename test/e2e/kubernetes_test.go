@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 	certificatesv1 "k8s.io/api/certificates/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -49,7 +49,7 @@ func labMemory(t *testing.T) map[string]int {
 			} `yaml:"nodes"`
 		} `yaml:"spec"`
 	}
-	if err := yaml.Unmarshal(data, &lf); err != nil {
+	if err := yaml.Load(data, &lf); err != nil {
 		t.Fatalf("%s: %v", path, err)
 	}
 	memory := map[string]int{}

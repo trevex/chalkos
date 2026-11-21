@@ -22,7 +22,9 @@
   // The commits of renovate-fixup.yml, made as the release App's bot, leave a branch Renovate's
   // own, so Renovate still rebases it.
   gitIgnoredAuthors: ['359050260+chalkreleaser[bot]@users.noreply.github.com'],
-  postUpdateOptions: ['gomodTidy'],
+  // After a Go module's major update, Renovate rewrites the import paths of the code to the new
+  // major's.
+  postUpdateOptions: ['gomodTidy', 'gomodUpdateImportPaths'],
   // An update that fixes a known vulnerability, from the repository's Dependabot alerts or the
   // OSV database, comes at any time in a pull request of its own, outside the groups below,
   // labelled security.
@@ -162,6 +164,14 @@
       commitMessageTopic: 'the newest Kubernetes minor',
       dependencyDashboardApproval: true,
       addLabels: ['e2e'],
+    },
+    {
+      // A Go module's major release usually changes its API, which the code must be ported to by
+      // hand, so it waits on the Dependency Dashboard. Approving it opens a pull request with the
+      // import paths rewritten, to port the code on.
+      matchManagers: ['gomod'],
+      matchUpdateTypes: ['major'],
+      dependencyDashboardApproval: true,
     },
     {
       // Nothing but actions merges by itself.

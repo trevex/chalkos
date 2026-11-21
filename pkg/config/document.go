@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/trevex/chalkos/pkg/jsonfile"
 )
@@ -60,11 +60,14 @@ const mergeTag = "!!merge"
 // value, so no date becomes a time.Time and no number loses precision. Mapping keys must be
 // strings, and merge keys (<<) are refused, the error naming the document and line.
 func Parse(r io.Reader) ([]Document, error) {
-	dec := yaml.NewDecoder(r)
+	loader, err := yaml.NewLoader(r)
+	if err != nil {
+		return nil, err
+	}
 	var docs []Document
 	for i := 1; ; i++ {
 		var doc yaml.Node
-		err := dec.Decode(&doc)
+		err := loader.Load(&doc)
 		if errors.Is(err, io.EOF) {
 			return docs, nil
 		}
@@ -128,7 +131,7 @@ func scalarValue(doc int, n *yaml.Node) (any, error) {
 		return nil, nil
 	case "!!bool":
 		var b bool
-		if err := n.Decode(&b); err != nil {
+		if err := n.Load(&b); err != nil {
 			return nil, fmt.Errorf("document %d, line %d: %w", doc, n.Line, err)
 		}
 		return b, nil
@@ -142,7 +145,7 @@ func scalarValue(doc int, n *yaml.Node) (any, error) {
 		return json.Number(i.String()), nil
 	case "!!float":
 		var f float64
-		if err := n.Decode(&f); err != nil {
+		if err := n.Load(&f); err != nil {
 			return nil, fmt.Errorf("document %d, line %d: %w", doc, n.Line, err)
 		}
 		if math.IsInf(f, 0) || math.IsNaN(f) {

@@ -20,7 +20,7 @@ import (
 	"unicode/utf8"
 
 	"filippo.io/age"
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/internal/strs"
@@ -172,9 +172,9 @@ func runSOPS(ctx context.Context, stderr io.Writer, input []byte, args ...string
 }
 
 func selectSecret(data []byte, pointer string) (*yaml.Node, error) {
-	var doc, extra yaml.Node
-	dec := yaml.NewDecoder(bytes.NewReader(data))
-	if dec.Decode(&doc) != nil || len(doc.Content) != 1 || dec.Decode(&extra) != io.EOF {
+	// Load refuses a stream of more than one document.
+	var doc yaml.Node
+	if yaml.Load(data, &doc) != nil || len(doc.Content) != 1 {
 		return nil, errors.New("a secret selector requires a single YAML or JSON document")
 	}
 	node := doc.Content[0]
@@ -266,7 +266,7 @@ func clusterBundleJSON(data []byte) ([]byte, error) {
 		return nil, errors.New("the cluster bundle must be an object")
 	}
 	var value map[string]any
-	if node.Decode(&value) != nil {
+	if node.Load(&value) != nil {
 		return nil, errors.New("cannot decode the cluster bundle")
 	}
 	data, err = json.Marshal(value)

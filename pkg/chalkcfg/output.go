@@ -9,7 +9,7 @@ import (
 	"strings"
 	"text/template"
 
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 	"k8s.io/client-go/util/jsonpath"
 
 	"github.com/trevex/chalkos/pkg/config"
@@ -92,12 +92,16 @@ func (o output) write(w io.Writer, docs []config.Document, named bool) error {
 			_, err = w.Write(append(data, '\n'))
 			return err
 		}
-		enc := yaml.NewEncoder(w)
-		enc.SetIndent(2)
-		if err := enc.Encode(yamlValue(v)); err != nil {
+		// Two-space indents, sequences indented under their key as kubectl writes them, and no
+		// line wrapping.
+		dumper, err := yaml.NewDumper(w, yaml.WithV3Defaults(), yaml.WithIndent(2), yaml.WithLineWidth(-1))
+		if err != nil {
 			return err
 		}
-		return enc.Close()
+		if err := dumper.Dump(yamlValue(v)); err != nil {
+			return err
+		}
+		return dumper.Close()
 	}
 	for _, d := range docs {
 		// Filters and templates compare numbers, which a json.Number, a string type, is not.
