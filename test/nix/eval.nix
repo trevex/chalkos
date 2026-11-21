@@ -3511,6 +3511,50 @@ lib.runTests {
       ];
     };
   };
+  # Images run nixos-init in place of NixOS's bash activation and link no /bin/sh or /usr/bin/env,
+  # with the debug tools too, and neither the initrd nor the system path holds a shell. The NixOS
+  # firewall, which nixpkgs's bashless profile would turn off, stays on.
+  testNoShell = {
+    expr =
+      let
+        shell = c: {
+          nixosInit = c.system.nixos-init.enable;
+          activatable = c.system.activatable;
+          binsh = c.environment.binsh;
+          usrbinenv = c.environment.usrbinenv;
+          initrdShell = c.boot.initrd.systemd.shell.enable;
+          shutdownShell = c.systemd.shutdownRamfs.shell.enable;
+          bash = lib.elem "bash-interactive" (map lib.getName c.environment.systemPackages);
+        };
+        c = worker [ ];
+      in
+      {
+        worker = shell c;
+        debug = shell (worker [ { chalkos.debug.tools = true; } ]);
+        router = shell (router [ ]);
+        firewall = c.networking.firewall.enable && c.networking.nftables.tables ? nixos-fw;
+      };
+    expected =
+      let
+        none = {
+          nixosInit = true;
+          activatable = false;
+          binsh = null;
+          usrbinenv = null;
+          initrdShell = false;
+          shutdownShell = false;
+          bash = false;
+        };
+      in
+      {
+        worker = none;
+        debug = none // {
+          bash = true;
+        };
+        router = none;
+        firewall = true;
+      };
+  };
   # The system path holds what the image's modules put there, such as the mount helpers util-linux
   # looks up there, and none of NixOS's default packages. The debug tools add a shell's tools, and
   # crictl where the image runs Kubernetes. Units name their own tools.
@@ -3559,6 +3603,7 @@ lib.runTests {
       nixosDefaults = [ ];
       nfs = true;
       debug = [
+        "bash-interactive"
         "coreutils"
         "cri-tools"
         "findutils"
@@ -3569,6 +3614,7 @@ lib.runTests {
         "util-linux"
       ];
       debugWithoutKubernetes = [
+        "bash-interactive"
         "coreutils"
         "findutils"
         "gnugrep"

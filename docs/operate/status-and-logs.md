@@ -7,7 +7,7 @@ description: "Read what chalkctl status reports, follow a unit's journal, run th
 
 This page is for an operator who wants to know what a node is doing. It explains each line of
 `chalkctl status`, then the four places that tell more: a unit's journal, the image's
-diagnostics, the serial console and a shell on the node. The examples read the homelab's `node1`, a control plane.
+diagnostics, the serial console and a shell on a node with the debug tools. The examples read the homelab's `node1`, a control plane.
 
 At the machine itself, the console on its screen shows the same status, the node's network,
 storage and journal, without a workstation or a network, as
@@ -441,7 +441,7 @@ takes only the client files of its cluster in maintenance mode, each with its ow
 
 The machine's screen and its serial console show the boot: the boot loader, the kernel's
 messages and a passphrase prompt for an encrypted disk. systemd's boot status and the emergency
-shell appear on the last of the image's kernel consoles alone: the screen on `metal` and the
+messages appear on the last of the image's kernel consoles alone: the screen on `metal` and the
 installer, the serial port on `kvm`, as
 [Images and platforms](../build/images-and-platforms.md#choose-the-console-people-watch)
 describes. Once chalkd serves, the screen shows [the console](console.md) in place of a login
@@ -469,12 +469,13 @@ The lab's console is read-only, so a lab node cannot answer a passphrase prompt.
 
 ## Reach the node's tools through kubectl debug
 
-Nodes have no logins and no SSH. systemd, bash, less, nftables and kmod are on every image. An
-image built with `chalkos.debug.tools` adds coreutils, grep, sed, findutils, procps, iproute2 and
-util-linux, and crictl with the Kubernetes layer. The image author sets the option, and it reaches
-running nodes with an upgrade to the new image.
+Nodes have no logins and no SSH. Every image has systemd, less, nftables and kmod, but no shell.
+An image built with `chalkos.debug.tools` adds bash, coreutils, grep, sed, findutils, procps,
+iproute2 and util-linux, and crictl with the Kubernetes layer. The image author sets the option,
+and it reaches running nodes with an upgrade to the new image.
 
-With the Kubernetes layer, a privileged pod on the node reaches the tools through the host's root:
+With the Kubernetes layer and the debug tools, a privileged pod on the node reaches the tools
+through the host's root:
 
 ```sh
 kubectl debug node/node1 -it --profile=sysadmin --image=busybox -- \
@@ -482,8 +483,8 @@ kubectl debug node/node1 -it --profile=sysadmin --image=busybox -- \
 ```
 
 `--profile=sysadmin` makes the pod privileged, which tools such as `nft` need. kubectl's default
-profile leaves the pod without their capabilities. A node has no `/bin/bash`, so the command names
-the bash of the system path.
+profile leaves the pod without their capabilities. A node has no `/bin/bash` and no `/bin/sh`, so
+the command names the bash that the debug tools put on the system path.
 
 This needs the node's kubelet and the API server. A node that has not joined the cluster has
 `chalkctl logs`, `chalkctl node diag` and its console. On an image without the Kubernetes layer, the

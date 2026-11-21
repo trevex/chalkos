@@ -64,8 +64,10 @@ that platform's images.
 [Images and platforms](images-and-platforms.md) covers both and the order the modules apply in.
 
 Nodes have no logins, so the system path holds none of NixOS's default packages. It holds what the
-image's own modules put there, such as systemd, bash, less, nftables, kmod and the mount helpers,
-and what your modules add. Name the tools a unit runs in its `path`, as above.
+image's own modules put there, such as systemd, less, nftables, kmod and the mount helpers,
+and what your modules add. Name the tools a unit runs in its `path`, as above. No image has
+`/bin/sh` or `/usr/bin/env`, so a program that runs a command through `system()` or `popen()`
+fails on a node, as does a script whose first line names either.
 `environment.systemPackages` works as on any NixOS system. It is the place for what other programs
 look up on the system path, such as a mount helper (`mount.nfs`) that a CSI driver runs.
 
@@ -243,7 +245,7 @@ build fails when such a module depends on one the kernel does not have.
 
 ## Add the debug tools
 
-[`chalkos.debug.tools`](../reference/image-options.md#chalkosdebugtools) adds coreutils, grep, sed,
+[`chalkos.debug.tools`](../reference/image-options.md#chalkosdebugtools) adds bash, coreutils, grep, sed,
 findutils, procps, iproute2 and util-linux to the system path, and crictl on images with
 Kubernetes:
 

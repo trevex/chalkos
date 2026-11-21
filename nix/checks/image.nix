@@ -263,6 +263,34 @@ in
       touch $out
     '';
 
+  # The worker and the router have no /bin/sh and no shell on the system path: nixos-init, which
+  # sets the system up in the initrd, is given no sh or env binary to link, and the system has no
+  # bash activation script. The worker's NixOS firewall stays on: NixOS's bashless profile, which
+  # chalkos does not import, would turn it off. The router runs a firewall of its own.
+  no-shell =
+    let
+      images = {
+        worker = worker.config;
+        router = router.config;
+      };
+    in
+    pkgs.runCommand "chalkos-no-shell" { nativeBuildInputs = [ pkgs.jq ]; } ''
+      fail() { echo "error: $*" >&2; exit 1; }
+      ${lib.concatStrings (
+        lib.mapAttrsToList (name: c: ''
+          top=${c.system.build.toplevel}
+          jq -e '."org.nixos.nixos-init.v1" | (has("sh_binary") or has("env_binary")) | not' $top/boot.json >/dev/null \
+            || fail "the ${name}'s bootspec gives nixos-init a /bin/sh or /usr/bin/env to link"
+          [ ! -e $top/activate ] || fail "the ${name} has an activation script"
+          for sh in sh bash; do
+            [ ! -e $top/sw/bin/$sh ] || fail "the ${name}'s system path holds $sh"
+          done
+        '') images
+      )}
+      grep -q '^ *table inet nixos-fw {' ${checkLib.firewall} || fail "the worker's firewall has no nixos-fw table"
+      touch $out
+    '';
+
   # An image builds only when its rules compile and read the facts it declares, and its effects
   # act on units it defines. The test image's Greeting and the examples' Rack, Hardware and Peer
   # bring extension kinds with their own rules, facts, effects and outputs; a rule that does not

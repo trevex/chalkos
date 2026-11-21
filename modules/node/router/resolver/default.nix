@@ -91,6 +91,14 @@ in
       resolveLocalQueries = false;
       # The module's own config goes unused.
       checkconf = false;
+      # Without unbound-control-setup, a shell script that makes the keys of a remote control
+      # over TLS; unbound-control reaches Unbound through a local socket. It goes after the fixup,
+      # whose preFixup runs the install, and with it the script's wrapping, a second time.
+      package = pkgs.unbound-with-systemd.overrideAttrs (old: {
+        postFixup = (old.postFixup or "") + ''
+          rm -f $out/bin/unbound-control-setup $out/bin/.unbound-control-setup-wrapped*
+        '';
+      });
     };
     environment.etc."unbound/unbound.conf".source = lib.mkForce rendered;
 

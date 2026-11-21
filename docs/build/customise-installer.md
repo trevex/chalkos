@@ -202,7 +202,7 @@ second port lists that port:
 ```
 
 A serial port put last becomes `/dev/console` and shows the boot's status and the emergency
-shell too, as
+messages too, as
 [Images and platforms](images-and-platforms.md#choose-the-console-people-watch)
 describes.
 

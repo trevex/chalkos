@@ -64,7 +64,10 @@ A node built from an image cannot drift from it, because images use NixOS's imag
 profile:
 
 - There is no Nix daemon, no `nixos-rebuild` and no `switch-to-configuration`, so the system
-  cannot be rebuilt on the node.
+  cannot be rebuilt on the node. NixOS's nixos-init sets the system up in the initrd, in place of
+  its bash activation script, and nothing activates the system again until the next boot.
+- There is no `/bin/sh`. The initrd holds no shell, and the system path holds bash only with the
+  debug tools.
 - The root file system is a tmpfs, so nothing written outside STATE and VAR survives a reboot.
 - `/etc` is assembled from the image at boot and stays read-only.
 - Users and groups are fixed at build time. Nodes have no interactive logins, so no account needs
@@ -217,9 +220,9 @@ is in the tree. Out-of-tree modules from NixOS's `boot.extraModulePackages` are 
 whole.
 
 The system path holds none of NixOS's default packages, because nodes have no logins. It holds
-what the image's own modules put there, such as systemd, bash, less, nftables, kmod and the mount
+what the image's own modules put there, such as systemd, less, nftables, kmod and the mount
 helpers, and what the image's modules add. Each service names the tools it runs in its own path.
-[`chalkos.debug.tools`](../../reference/image-options.md#chalkosdebugtools) adds coreutils, grep, sed,
+[`chalkos.debug.tools`](../../reference/image-options.md#chalkosdebugtools) adds bash, coreutils, grep, sed,
 findutils, procps, iproute2 and util-linux, and crictl on images with Kubernetes.
 [Status, logs and the console](../../operate/status-and-logs.md#reach-the-nodes-tools-through-kubectl-debug)
 shows how they are reached.
