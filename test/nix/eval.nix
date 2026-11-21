@@ -4620,4 +4620,41 @@ lib.runTests {
       "~CAP_SYS_MODULE"
     ];
   };
+  # A layer's feature is on by default and names its kinds; one may be off by default and carry
+  # no kinds. The descriptions of the existing features stay as they were.
+  testFeatureOption =
+    let
+      f = (import ../../lib/chalkos.nix { inherit lib; }).internal.feature;
+      opt = args: (f "Kubernetes" "x" args).x.enable;
+    in
+    {
+      expr = {
+        onDefault =
+          (opt {
+            carries = "X";
+            kinds = [ "A" ];
+          }).default;
+        onText =
+          (opt {
+            carries = "X";
+            kinds = [ "A" ];
+          }).description;
+        offDefault =
+          (opt {
+            carries = "X";
+            default = false;
+          }).default;
+        offText =
+          (opt {
+            carries = "X";
+            default = false;
+          }).description;
+      };
+      expected = {
+        onDefault = true;
+        onText = "Whether Kubernetes images carry X and accept the kind `A`. Only with the Kubernetes layer; set it false in an image's modules to leave the feature out of it.";
+        offDefault = false;
+        offText = "Whether Kubernetes images carry X. Only with the Kubernetes layer; set it true in an image's modules to add the feature to it.";
+      };
+    };
 }
