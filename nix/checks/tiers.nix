@@ -1,10 +1,12 @@
 # The tiers CI runs the flake's checks in, by name. Fast checks build no image and run on every
-# pull request and push to main, as one job; image checks build the images other checks share,
-# fetch the test registry's images or boot a NixOS test VM, and run there too, one job each;
-# end-to-end checks boot the test images or build images of their own, one job each, on a push
-# to main, nightly, and on a pull request by its labels. e2eLabels maps each label that selects
+# ready pull request and push to main, as one job; image checks build the images other checks
+# share, fetch the test registry's images or boot a NixOS test VM, and run there too, one job
+# each; end-to-end checks boot the test images or build images of their own, one job each,
+# nightly and on a ready pull request by its labels. e2eLabels maps each label that selects
 # end-to-end checks to its checks: e2e:<name> to e2e-<name>, e2e:examples to the examples'
-# checks, and e2e:release to the checks that build the release images, one job each. Every check is in exactly one tier, and every name a tier lists is a check.
+# checks, and e2e:release to the checks that build the release images, one job each. Every check
+# is in exactly one tier, and every name a tier lists is a check. lint names the fast checks that
+# a draft pull request runs in place of the tiers, in one job.
 { lib, names }:
 let
   examples = [
@@ -71,6 +73,14 @@ let
     ];
     e2e = lib.concatLists (lib.attrValues e2eLabels);
   };
+  lint = [
+    "ci-tiers"
+    "go-lint"
+    "nix-lint"
+    "renovate"
+    "workflows"
+  ];
+  notFast = lib.subtractLists tiers.fast lint;
   listed = lib.concatLists (lib.attrValues tiers);
   unlisted = lib.subtractLists listed names;
   unknown = lib.subtractLists names listed;
@@ -85,4 +95,7 @@ assert lib.assertMsg (
 assert lib.assertMsg (
   twice == [ ]
 ) "nix/checks/tiers.nix puts these checks in more than one tier: ${toString twice}";
-tiers // { inherit e2eLabels; }
+assert lib.assertMsg (
+  notFast == [ ]
+) "nix/checks/tiers.nix lists these lint checks, which are no fast checks: ${toString notFast}";
+tiers // { inherit e2eLabels lint; }

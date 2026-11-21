@@ -1,25 +1,28 @@
 # Builds the flake's checks by the tiers of nix/checks/tiers.nix: the fast checks in one job, and
-# each image and end-to-end check in a job of its own. A pull request runs the fast and image
-# tiers, and the end-to-end checks its labels name: e2e names them all, and each other label the
-# checks e2eLabels of the tiers maps it to; adding any label runs the workflow again. Every run
-# also runs govulncheck, which reads the Go vulnerability database from the network and so runs
-# outside the flake's checks. A pull
-# request's title, which a squash merge makes the subject of its commit on main, must be a
-# Conventional Commit, and each of its commits must carry its author's DCO sign-off. Editing the
-# title or the description runs the workflow again. A push to main and the nightly run, which
-# calls this workflow, run every tier and open or update an issue labelled ci-failure when a
-# check fails. The job result is the one check that branch protection requires.
+# each image and end-to-end check in a job of its own. A ready pull request runs the fast and
+# image tiers, and the end-to-end checks its labels name: e2e names them all, and each other label
+# the checks e2eLabels of the tiers maps it to; adding any label runs the workflow again. Every
+# run but a draft's also runs govulncheck, which reads the Go vulnerability database from the
+# network and so runs outside the flake's checks. A pull request's title, which a squash merge
+# makes the subject of its commit on main, must be a Conventional Commit, and each of its commits
+# must carry its author's DCO sign-off. Editing the title or the description runs the workflow
+# again. A draft pull request runs only those two jobs and lint, which builds the tiers' lint
+# checks; marking it ready for review runs the workflow again with everything. A push to main runs
+# the fast and image tiers, and the nightly run, which calls this workflow, runs every tier; both
+# open or update an issue labelled ci-failure when a check fails. The job result is the one check
+# that branch protection requires.
 name: ci
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled, edited]
+    types: [opened, synchronize, reopened, labeled, edited, ready_for_review, converted_to_draft]
   push:
     branches: [main]
   workflow_call:
 
-# A pull request's newer run cancels its older one, also when an edit starts it; the newer run
-# substitutes from the cache what the older one built. Every commit on main runs to its end.
+# A pull request's newer run cancels its older one, also when an edit or a change between draft
+# and ready starts it; the newer run substitutes from the cache what the older one built. Every
+# commit on main runs to its end.
 concurrency:
   group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -27,7 +30,9 @@ concurrency:
 permissions: {}
 
 jobs:
+  # A draft pull request runs no tier; its check jobs skip with this job.
   tiers:
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -39,6 +44,8 @@ jobs:
           persist-credentials: false
       - uses: cachix/install-nix-action@bb0495a1086c46893eee56f32fd192dfe4a15bb9 # v32.0.0
       # Each job's timeout in minutes is its tier's, below the six hours the cache's token lasts.
+      # A push to main runs no end-to-end check; the nightly run, whose event is schedule or
+      # workflow_dispatch, runs them all.
       - name: List the checks to build
         id: matrix
         env:
@@ -46,7 +53,9 @@ jobs:
           LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: |
           tiers=$(nix eval --json .#ciTiers.x86_64-linux)
-          if [ "$EVENT" != pull_request ] || jq -e 'any(. == "e2e")' <<<"$LABELS" >/dev/null; then
+          if [ "$EVENT" = push ]; then
+            e2e='[]'
+          elif [ "$EVENT" != pull_request ] || jq -e 'any(. == "e2e")' <<<"$LABELS" >/dev/null; then
             e2e=$(jq -c .e2e <<<"$tiers")
           else
             e2e=$(jq -c --argjson labels "$LABELS" \
@@ -99,11 +108,35 @@ jobs:
             nix build --print-build-logs --no-link --keep-going "${installables[@]}"
           fi
 
+  # A draft pull request builds the lint checks of the tiers, which belong to the fast tier too,
+  # and no other; a ready one builds them in the fast job.
+  lint:
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      # Hestia checks which cached packs GitHub has evicted.
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/nix
+        with:
+          cachix-name: ${{ vars.CACHIX_NAME }}
+      - name: Build the lint checks
+        run: |
+          mapfile -t checks < <(nix eval --json .#ciTiers.x86_64-linux.lint | jq -r '.[]')
+          installables=("${checks[@]/#/.#checks.x86_64-linux.}")
+          nix build --print-build-logs --no-link --keep-going "${installables[@]}"
+
   # govulncheck checks the Go code against the Go vulnerability database, which it reads from
   # vuln.go.dev, and fails when the code calls a function with a known vulnerability; one in a
   # module the code requires but does not call passes. The database changes every day, so the
   # nightly run also finds a new advisory against main.
   govulncheck:
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -126,9 +159,10 @@ jobs:
   # GitHub runs no check again when main moves; release-please rebuilds the pull request then,
   # and branch protection, which wants branches up to date, holds the merge until it has.
   # "Update branch" adds a merge commit with main's changes but none of the release's, which this
-  # job refuses. Every other pull request skips it.
+  # job refuses. Every other pull request skips it, and so does the release pull request while it
+  # is a draft.
   release-pr:
-    if: github.event_name == 'pull_request' && github.head_ref == 'release-please--branches--main'
+    if: github.event_name == 'pull_request' && github.head_ref == 'release-please--branches--main' && !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -195,10 +229,12 @@ jobs:
           HEAD: ${{ github.event.pull_request.head.sha }}
         run: .github/scripts/dco.sh "$BASE" "$HEAD"
 
-  # The jobs that run on pull requests alone pass on a push or the nightly run when skipped.
+  # The jobs that run on pull requests alone pass on a push or the nightly run when skipped. A
+  # draft pull request skips this job, so its run reports no result; GitHub merges no draft, and
+  # marking it ready runs the workflow again.
   result:
     needs: [tiers, check, govulncheck, release-pr, pr-title, dco]
-    if: always()
+    if: ${{ always() && !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     steps:
       - name: Every check passed

@@ -24,6 +24,25 @@ the `result` check, which passes when every check of the run passed, a branch th
 with `main`, and a review from the code owners of `.github/CODEOWNERS`. The pull request template
 asks for the end-to-end labels the change needs.
 
+## Draft pull requests
+
+A draft pull request runs three jobs: `dco`, `pr-title` and `lint`. The `lint` job builds the
+checks that `lint` of `nix/checks/tiers.nix` names, `nix-lint`, `workflows`, `renovate`,
+`ci-tiers` and `go-lint`, in one `nix build`. These checks belong to the `fast` tier too, and
+`tiers.nix` fails its evaluation when `lint` names a check outside that tier. No tier, no
+end-to-end check, `govulncheck`, `release-pr` or `result` runs on a draft, so a branch can take
+many pushes while it changes without booting a VM. Open a pull request as a draft while the
+change is in progress.
+
+"Ready for review" runs the workflow again with every job of a pull request: the tiers, the
+end-to-end checks of its labels, `govulncheck` and `result`. That run cancels the draft's run if
+it is still going. A draft's run reports no `result`.
+
+"Convert to draft" runs the workflow again with the three draft jobs, which cancels the run in
+progress. GitHub keeps the checks of earlier runs on the same commit, so a `result` that passed
+before the conversion still shows as passed. Merging stays blocked, because GitHub merges no
+draft, and the next "Ready for review" runs `result` again.
+
 A pull request with several changes for the changelog lists them in its description, between
 `BEGIN_COMMIT_OVERRIDE` and `END_COMMIT_OVERRIDE`, one Conventional Commit each:
 
@@ -40,7 +59,7 @@ release-please then takes these lines in place of the merged commit's message, a
 block also corrects the changelog entry of a pull request that is already merged, as long as no
 release has taken it yet.
 
-Two jobs check every pull request besides the flake checks:
+Two jobs check every pull request, draft or ready, besides the flake checks:
 
 | Job | Passes when |
 | --- | --- |
@@ -53,7 +72,7 @@ commits with `git rebase --signoff origin/main` and force-push. Editing the pull
 or description runs the workflow again; the new run cancels the older one and substitutes from
 the cache what that run built.
 
-On the release pull request alone, the job `release-pr` checks that it holds one commit, made by
+On the release pull request alone, once it is ready, the job `release-pr` checks that it holds one commit, made by
 release-please, on the tip of `main`.
 [Merge and publish](releasing.md#merge-and-publish) explains why.
 
@@ -68,9 +87,13 @@ nix eval --json .#ciTiers.x86_64-linux
 
 | Tier | Checks | Runs on | Jobs |
 | --- | --- | --- | --- |
-| `fast` | the evaluation tests, linters, generated files, the docs, the Go unit tests and the namespace checks | every pull request, every push to `main` and the nightly run | one job, `fast`, of at most 90 minutes |
-| `images` | the image builds and their checks, the templates, `fixtures`, and the NixOS VM checks `frr-reload` and `image-checker` | every pull request, every push to `main` and the nightly run | one job per check, of at most 120 minutes |
-| `e2e` | every `e2e-*` check, the `example-*` checks, which build the examples' images that no other check shares, and the `release-image-*` checks, which build the [release images](#release-images) | every push to `main`, the nightly run, and a pull request by its labels | one job per check, of at most 180 minutes |
+| `fast` | the evaluation tests, linters, generated files, the docs, the Go unit tests and the namespace checks | every ready pull request, every push to `main` and the nightly run | one job, `fast`, of at most 90 minutes |
+| `images` | the image builds and their checks, the templates, `fixtures`, and the NixOS VM checks `frr-reload` and `image-checker` | every ready pull request, every push to `main` and the nightly run | one job per check, of at most 120 minutes |
+| `e2e` | every `e2e-*` check, the `example-*` checks, which build the examples' images that no other check shares, and the `release-image-*` checks, which build the [release images](#release-images) | the nightly run, and a ready pull request by its labels | one job per check, of at most 180 minutes |
+
+A push to `main` runs the `fast` and `images` tiers and `govulncheck`, and no end-to-end check:
+the pull request ran the end-to-end checks its labels name before the merge, and the nightly run
+runs them all on `main`.
 
 A job whose build fails builds once more, which rebuilds only what failed, because a download
 from a module proxy or a registry fails now and then. The job's log warns of the retry.
@@ -87,7 +110,7 @@ end-to-end check needs its label there too, and the label `ci-failure`.
 
 ## End-to-end labels
 
-A pull request runs no end-to-end check unless a label asks for it:
+A ready pull request runs no end-to-end check unless a label asks for it, and a draft runs none:
 
 | Label | Runs |
 | --- | --- |
@@ -98,8 +121,9 @@ A pull request runs no end-to-end check unless a label asks for it:
 
 Add `e2e` when a change touches boot, the install, upgrades or a layer, `e2e:<name>` when one
 check covers the change, `e2e:examples` when it touches `examples/`, and `e2e:release` when it
-touches `nix/release.nix` or what the release images record. Adding any label, an end-to-end one or another, runs the workflow again:
-the fast and image tiers, and the end-to-end checks the pull request's labels name. Only
+touches `nix/release.nix` or what the release images record. Adding any label, an end-to-end one
+or another, runs the workflow again: on a ready pull request the fast and image tiers and the
+end-to-end checks its labels name, on a draft the three draft jobs. Only
 people with triage access to the repository can add labels, so a pull request from a fork boots
 no end-to-end VM before a maintainer has read it. The release pull request always carries `e2e`,
 as [Release chalkos](releasing.md#the-release-pull-request) describes.
@@ -112,7 +136,7 @@ The workflow `.github/workflows/labels.yml` creates or updates the repository's 
 
 ## govulncheck
 
-The job `govulncheck` runs on every pull request, every push to `main` and in the nightly run,
+The job `govulncheck` runs on every ready pull request, every push to `main` and in the nightly run,
 beside the tiers, and feeds `result`. It runs `nix run .#govulncheck`, which checks the Go code
 with govulncheck, built with the Go release of `go.mod`. The job fails when the code calls a
 function with a known vulnerability. A vulnerability in a module that chalkos requires but never
@@ -131,9 +155,18 @@ nix run .#govulncheck
 
 ## Nightly run and failures
 
-The workflow `.github/workflows/nightly.yml` runs every tier on `main` each night, unless a run
-of a push already passed on `main`'s latest commit. A run started by hand always builds. When a check fails on a push to `main` or in the nightly run, CI opens an issue
-labelled `ci-failure`, or comments on the open one, with a link to the run.
+The workflow `.github/workflows/nightly.yml` runs every tier on `main` each night, the
+end-to-end checks included, which no push to `main` runs. A scheduled run skips CI when an
+earlier nightly run already passed it on `main`'s latest commit, as after a day without a merge:
+the run looks for a nightly run of that commit whose job `ci / result` passed. A push run cannot
+stand in for it, since it runs no end-to-end check. A run started by hand always builds:
+
+```sh
+gh workflow run nightly.yml
+```
+
+When a check fails on a push to `main` or in the nightly run, CI opens an issue labelled
+`ci-failure`, or comments on the open one, with a link to the run.
 
 The nightly run's job `vulnix` runs every night, whether or not the tiers run. It builds the NixOS
 system of each release image, which the caches usually hold from the `release-image-*` checks,

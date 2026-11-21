@@ -39,9 +39,23 @@ version (`bump-minor-pre-major`). Only `feat`, `fix`, `perf` and `revert` commit
 changes appear in the changelog, and a release needs at least one of them.
 
 release-please labels the pull request `autorelease: pending` and `e2e`. The label `e2e` makes CI
-run every end-to-end check on it, as [Continuous integration](ci.md#end-to-end-labels) describes.
-release-please finds its pull request by both labels, so keep them on it. The `result` check and a
-code owner's review then gate the merge as on any pull request.
+run every end-to-end check on it once it is ready, as
+[Continuous integration](ci.md#end-to-end-labels) describes. release-please finds its pull request
+by both labels, so keep them on it. The `result` check and a code owner's review then gate the
+merge as on any pull request.
+
+The release pull request stays a draft until a release is due, so the pushes to `main` that
+rebuild it run only the [draft jobs](ci.md#draft-pull-requests) on it, and no end-to-end check.
+release-please opens it as a draft, `draft-pull-request` in `release-please-config.json`, but
+leaves a ready pull request ready when it rebuilds it. The release workflow therefore converts the
+pull request back to draft after every rebuild, with `gh pr ready --undo` and the release App's
+token, which does nothing to a pull request that is already a draft. The App's token matters here
+too: a conversion that the workflow's own token makes starts no CI run, so the full run that the
+rebuild started would go on.
+
+To release, mark the release pull request "Ready for review". CI then runs every check, the
+end-to-end checks of its `e2e` label included, on the rebuilt commit. Any later push to `main`
+rebuilds the pull request and returns it to draft, so mark it ready again after that rebuild.
 
 release-please's commit is signed off by the release GitHub App's bot, the `signoff` of
 `release-please-config.json`. The `dco` job of [Continuous integration](ci.md#pull-requests)
@@ -60,7 +74,7 @@ Two settings keep such a release pull request from being merged:
 
 - Branch protection on `main`, a ruleset, requires the `result` check and "Require branches to be
   up to date before merging". The merge stays blocked until release-please has pushed the
-  rebuilt pull request and its checks have passed.
+  rebuilt pull request, a maintainer has marked it ready, and its checks have passed.
 - The CI job `release-pr` runs on the release pull request alone. It fails unless the pull
   request's head is one commit that release-please made, whose parent is the current tip of
   `main`. A commit of anyone else, such as the merge that "Update branch" adds, fails it: that
@@ -70,7 +84,8 @@ Never use "Update branch" on the release pull request; wait until release-please
 merge queue does not replace this, because it tests the pull request on `main`'s tip but does not
 let release-please regenerate its contents.
 
-Merge the release pull request with "Squash and merge", like any other. The ruleset on `main`
+Mark the release pull request ready for review, wait for `result`, and merge it with "Squash and
+merge", like any other. The ruleset on `main`
 allows squash merges alone and requires signed commits and a linear history. Every commit of a
 pull request needs a signature that GitHub verifies, and GitHub signs the squash commit it makes.
 release-please's commit passes, since release-please makes it through GitHub's API, which signs
