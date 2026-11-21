@@ -65,6 +65,7 @@ let
       "image-size"
       "image-tests"
       "kernel-modules"
+      "no-shell"
       "rules"
       "sbom"
       "template-cluster-metal"

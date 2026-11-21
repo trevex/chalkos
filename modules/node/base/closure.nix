@@ -14,9 +14,10 @@
     type = lib.types.bool;
     default = false;
     description = ''
-      Add coreutils, grep, sed, findutils, procps, iproute2 and util-linux to the system path,
-      and crictl on images with Kubernetes; systemd, bash, less, nftables and kmod are on it
-      already. Nodes have no logins; use them from a privileged pod on the node, for example
+      Add bash, coreutils, grep, sed, findutils, procps, iproute2 and util-linux to the system
+      path, and crictl on images with Kubernetes; systemd, less, nftables and kmod are on it
+      already. Without the debug tools the system path holds no shell; no image has `/bin/sh`.
+      Nodes have no logins; use the tools from a privileged pod on the node, for example
       `kubectl debug node/<node> -it --profile=sysadmin --image=busybox -- chroot /host /run/current-system/sw/bin/bash`.
     '';
   };
@@ -32,6 +33,7 @@
       pkgs.procps
       pkgs.iproute2
       pkgs.util-linux
+      pkgs.bashInteractive
     ];
     programs.nano.enable = false;
     security.sudo.enable = false;

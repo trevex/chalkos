@@ -1,4 +1,5 @@
-# Appliance base: no Nix on the node, no switch-to-configuration, tmpfs root, read-only /etc.
+# Appliance base: no Nix on the node, no switch-to-configuration, no shell, tmpfs root, read-only
+# /etc.
 { lib, modulesPath, ... }:
 {
   imports = [
@@ -42,6 +43,21 @@
     MulticastDNS = false;
   };
 
+  # Nodes carry no shell. nixos-init sets the system up in the initrd in place of NixOS's bash
+  # activation, and nothing activates the system again: an upgrade boots another image. These are
+  # the options of nixpkgs's bashless profile, set one by one, because the profile also turns the
+  # firewall off.
+  system.nixos-init.enable = true;
+  system.activatable = false;
+  # No /bin/sh, no shell in the system path or the initrd, and no /etc/shells.
+  environment.shell.enable = false;
+  programs.bash.enable = false;
   # A read-only /usr leaves nowhere to create /usr/bin/env.
-  system.activationScripts.usrbinenv = lib.mkForce "";
+  environment.usrbinenv = null;
+  # Each of these brings a bash script: the setuid wrappers, which no chalkos module declares, the
+  # sleep hooks, the lingering of user sessions and LVM's resize helper.
+  security.enableWrappers = false;
+  powerManagement.enable = false;
+  users.manageLingering = false;
+  services.lvm.resizeHelper.enable = false;
 }
