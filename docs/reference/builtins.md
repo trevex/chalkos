@@ -1585,7 +1585,7 @@ The outputs router images add, and the output `networkd` of every image as route
 | `dhcp-relay`{ #output-dhcp-relay } | `DHCPRelay`, `VRF`, `Network`, `DHCPSubnet`, `NAT64` | `/run/chalkos/outputs/dhcp-relay` | Command `chalkos-render dhcp-relay` | yes |
 | `frr`{ #output-frr } | `BGP`, `BGPPeer`, `CommunityList`, `PrefixList`, `RoutingPolicy`, `Network`, `VRF`, `WireGuard` | `/run/chalkos/outputs/frr` | Command `chalkos-render frr` | yes |
 | `jool`{ #output-jool } | `NAT64`, `VRF`, `Network` | `/run/chalkos/outputs/jool` | Command `chalkos-render jool` | yes |
-| `kea`{ #output-kea } | `DHCPSubnet`, `VRF`, `Network`, `NAT64` | `/run/chalkos/outputs/kea` | Command `chalkos-render kea chalkos-dhcp6-pd` | yes |
+| `kea`{ #output-kea } | `DHCPSubnet`, `VRF`, `Network`, `NAT64` | `/run/chalkos/outputs/kea` | Command `chalkos-render kea chalkd-router-dhcp6-pd` | yes |
 | `networkd`{ #outputs-router-images-networkd } | `Link`, `NetDev`, `Network`, `NAT64`, `VRF`, `NextHop`, `PolicyRoute`, `WireGuard`, `WireGuardPeer` | `/run/systemd/network` | Command `chalkos-render router-networkd chalkos-networkd-schemas` | no |
 | `router-nftables`{ #output-router-nftables } | `Router`, `AddressSet`, `FirewallPolicy`, `FirewallZone`, `NATRule`, `BGPPeer`, `Resolver`, `DHCPSubnet`, `DHCPRelay`, `WireGuard`, `TimeServer`, `VRF`, `Network`, `NAT64`, `NextHop`, `PolicyRoute` | `/run/chalkos/outputs/router-nftables` | Command `chalkos-render router-nftables 50000` | yes |
 | `router-sysctl`{ #output-router-sysctl } | `Router` | `/run/sysctl.d` | Command `chalkos-render router-sysctl` | no |
@@ -1744,77 +1744,11 @@ The diagnostics router images add.
 | `bgp-neighbor`{ #diagnostics-router-images-bgp-neighbor } | One BGP session in detail, as show bgp neighbors prints it: its state, timers, capabilities and routes. Runs `vtysh -c show bgp vrf {vrf} neighbors {peer}`. | `peer`, pattern `^([0-9A-Fa-f:.]+|[A-Za-z0-9_.:@-]{1,15})$`; `vrf`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, default `default` | reader | — |
 | `bgp-route`{ #diagnostics-router-images-bgp-route } | One VRF's BGP paths to a prefix, as show bgp prints them: each path's AS path, next hop and attributes, and the best. Runs `vtysh -c show bgp vrf {vrf} {family} unicast {prefix}`. | `prefix`, prefix; `vrf`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, default `default`; `family`, enum of `ipv4` or `ipv6`, default `ipv6` | reader | — |
 | `bgp-summary`{ #diagnostics-router-images-bgp-summary } | One VRF's BGP sessions of each address family, as show bgp summary prints them. Runs `vtysh -c show bgp vrf {vrf} summary`. | `vrf`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, default `default` | reader | — |
-| `dhcp-leases`{ #diagnostic-dhcp-leases } | The leases of the DHCPv4 and DHCPv6 servers of every VRF, or of one subnet or MAC address: each lease's VRF, subnet, address or delegated prefix, MAC address, host name and end, as Kea's lease commands report them. Runs `bash -c <script> dhcp-leases --subnet={subnet} --mac={mac}`, with the script after the table. | `subnet`, pattern `^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`, optional; `mac`, pattern `^[0-9a-f]{2}(:[0-9a-f]{2}){5}$`, optional | operator | — |
-| `nat64-sessions`{ #diagnostic-nat64-sessions } | A NAT64 instance's sessions, as jool session display prints them: each translated TCP, UDP and ICMP connection's IPv6 and IPv4 addresses and ports, and when it expires. Runs `bash -c <script> nat64-sessions {instance}`, with the script after the table. | `instance`, pattern `^[a-z0-9]([-a-z0-9.]{0,9}[a-z0-9])?$` | operator | `CAP_NET_ADMIN` |
-| `ntp-clients`{ #diagnostic-ntp-clients } | The NTP clients the router's time server answered, as chronyc -n clients prints them, and its counts of requests, as chronyc serverstats prints them. Runs `bash -c <script>`, with the script after the table. | — | reader | — |
+| `dhcp-leases`{ #diagnostic-dhcp-leases } | The leases of the DHCPv4 and DHCPv6 servers of every VRF, or of one subnet or MAC address: each lease's VRF, subnet, address or delegated prefix, MAC address, host name and end, as Kea's lease commands report them. Runs `chalkd router dhcp-leases --subnet={subnet} --mac={mac}`. | `subnet`, pattern `^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`, optional; `mac`, pattern `^[0-9a-f]{2}(:[0-9a-f]{2}){5}$`, optional | operator | — |
+| `nat64-sessions`{ #diagnostic-nat64-sessions } | A NAT64 instance's sessions, as jool session display prints them: each translated TCP, UDP and ICMP connection's IPv6 and IPv4 addresses and ports, and when it expires. Runs `chalkd router nat64-sessions --jool jool {instance}`. | `instance`, pattern `^[a-z0-9]([-a-z0-9.]{0,9}[a-z0-9])?$` | operator | `CAP_NET_ADMIN` |
+| `ntp-clients`{ #diagnostic-ntp-clients } | The NTP clients the router's time server answered, as chronyc -n clients prints them, and its counts of requests, as chronyc serverstats prints them. Runs `chalkd router ntp-clients --chronyc chronyc`. | — | reader | — |
 | `traceroute`{ #diagnostic-traceroute } | The routers on the path to an address, as traceroute -n prints them: one probe a hop, 30 hops at most. Runs `traceroute -n -m 30 -q 1 -w 2 {address}`. | `address`, address | operator | — |
 | `wireguard`{ #diagnostic-wireguard } | The router's WireGuard interfaces and their peers, as wg show prints them: public keys, endpoints, allowed IPs, the latest handshakes and the bytes sent and received. It shows no private or preshared key. Runs `wg show {interface}`. | `interface`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, optional | reader | `CAP_NET_ADMIN` |
-
-Script of `dhcp-leases`:
-
-```text
-set -euo pipefail
-subnet= mac=
-for a in "$@"; do
-  case $a in
-  --subnet=*) subnet=${a#--subnet=} ;;
-  --mac=*) mac=${a#--mac=} ;;
-  esac
-done
-# The answer of the server of the socket $1 to the command $2; fails unless it is a JSON object.
-ask() {
-  local answer
-  answer=$(printf '%s' "$2" | socat -T 2 -t 2 - "UNIX-CONNECT:$1" 2>/dev/null) || return 1
-  jq -e 'type == "object"' <<<"$answer" >/dev/null 2>&1 || return 1
-  printf '%s' "$answer"
-}
-printf 'VRF\tSUBNET\tADDRESS\tMAC\tHOSTNAME\tENDS\n'
-shopt -s nullglob
-for socket in /run/kea/dhcp4.sock /run/kea/dhcp4-*.sock /run/kea/dhcp6.sock /run/kea/dhcp6-*.sock; do
-  # dhcp4.sock and dhcp6.sock are no patterns, so nullglob keeps them whether they exist or not.
-  [[ -S $socket ]] || continue
-  family=${socket#/run/kea/dhcp}
-  family=${family:0:1}
-  vrf=${socket#/run/kea/dhcp"$family"}
-  vrf=${vrf%.sock}
-  vrf=${vrf#-}
-  vrf=${vrf:-default}
-  if ((SECONDS >= 24)); then
-    echo "the DHCPv$family server of VRF $vrf was not asked: the others took too long" >&2
-    continue
-  fi
-  if ! config=$(ask "$socket" '{"command": "config-get"}') || ! leases=$(ask "$socket" "{\"command\": \"lease$family-get-all\"}"); then
-    echo "the DHCPv$family server of VRF $vrf does not answer" >&2
-    continue
-  fi
-  # A delegated prefix is its address and length.
-  jq -rn --argjson c "$config" --argjson l "$leases" --arg vrf "$vrf" --arg subnet "$subnet" --arg mac "$mac" '
-    (($c.arguments.Dhcp4.subnet4 // $c.arguments.Dhcp6.subnet6) | map({key: (.id | tostring), value: .["user-context"].name}) | from_entries) as $names
-    | ($l.arguments.leases // [])[]
-    | ($names[.["subnet-id"] | tostring] // "-") as $name
-    | select(($subnet == "" or $name == $subnet) and ($mac == "" or .["hw-address"] == $mac))
-    | [$vrf, $name, (if .type == "IA_PD" then "\(.["ip-address"])/\(.["prefix-len"])" else .["ip-address"] end),
-      (if (.["hw-address"] // "") == "" then "-" else .["hw-address"] end),
-      (if (.hostname // "") == "" then "-" else .hostname end), (.cltt + .["valid-lft"] | todate)]
-    | @tsv' || echo "the DHCPv$family server of VRF $vrf answered without its subnets or leases" >&2
-done
-```
-
-Script of `nat64-sessions`:
-
-```text
-for protocol in --tcp --udp --icmp; do
-  jool -i "$1" session display --numeric "$protocol" || exit
-done
-```
-
-Script of `ntp-clients`:
-
-```text
-chronyc -h 127.0.0.1,::1 -n clients
-echo
-exec chronyc -h 127.0.0.1,::1 serverstats
-```
 
 Sources: the schemas, `facts.json`, `validators.json`, `outputs.json`, `effects.json` and
 `diagnostics.json` that an image holds in `/etc/chalkos`, of an image with the Kubernetes layer,

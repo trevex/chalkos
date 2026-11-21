@@ -60,18 +60,14 @@ let
     # another feature only on images that carry it.
     declared = lib.filter (k: lib.elem k routerLib.accepted);
 
-    # The ExecStartPre= of a VRF's instance of a per-VRF service, run with the service's name $1 and
-    # the VRF $2: it keeps the index of the VRF's device in $RUNTIME_DIRECTORY/$1-$2.ifindex, where
+    # The ExecStartPre= of a VRF's instance of a per-VRF service, run with the service's name and
+    # the VRF: it keeps the index of the VRF's device in $RUNTIME_DIRECTORY/<name>-<vrf>.ifindex, where
     # chalkd router services and chalkd's status read it, and fails while the VRF has no device, so
     # that the instance does not start with its sockets bound to none. systemd looked the index up
     # when it set the unit's cgroup up, a moment before: a VRF removed and created anew within that
     # moment leaves a record of the new index for sockets bound to the old one. Only chalkos-vrf
     # removes a VRF, and the units that run chalkd router services run after it.
-    recordDevice = pkgs.writeShellScript "chalkos-vrf-device" ''
-      set -e
-      read -r ifindex <"/sys/class/net/$2/ifindex"
-      echo "$ifindex" >"$RUNTIME_DIRECTORY/$1-$2.ifindex"
-    '';
+    recordDevice = "${lib.getExe pkgs.chalkos.chalkd} router record-device";
 
     # The template unit <name>@ of a per-VRF service, whose sockets systemd binds to the device of
     # the VRF %I, as ip vrf exec would. systemd starts a unit whose interface it cannot find without

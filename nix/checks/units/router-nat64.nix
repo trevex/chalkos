@@ -10,14 +10,15 @@
   ...
 }:
 let
-  inherit (checkLib.router.config.systemd.services.chalkos-nat64.serviceConfig)
-    ExecStart
-    ExecReload
-    ExecStop
-    ;
+  unit = checkLib.router.config.systemd.services.chalkos-nat64;
+  # The unit's commands run chalkd, which runs jool, ip, nsenter and sysctl from the unit's path.
+  inPath = command: "PATH=${lib.makeBinPath unit.path}:$PATH ${command}";
+  ExecStart = inPath unit.serviceConfig.ExecStart;
+  ExecReload = inPath unit.serviceConfig.ExecReload;
+  ExecStop = inPath unit.serviceConfig.ExecStop;
   jool = lib.findFirst (
     p: lib.getName p == "jool-cli"
-  ) (throw "chalkd's PATH holds no jool") checkLib.router.config.systemd.services.chalkd.path;
+  ) (throw "chalkos-nat64's PATH holds no jool") unit.path;
   dir = checkLib.router.config.chalkos.outputs.jool.dir;
   inherit (checkLib) routerRendered routerRuleset;
   # Answers a connection with the address and port it came from.
@@ -90,7 +91,7 @@ unitCheck "router-nat64"
     exit 2
     STUB
     chmod +x stub/jool
-    # The unit's script puts the image's jool ahead of PATH; the check's user namespace owns a
+    # The unit's path puts the image's jool ahead of PATH; the check's user namespace owns a
     # mount namespace of its own, in which the stub takes jool's place.
     mount --bind stub/jool ${jool}/bin/jool
     inside() {

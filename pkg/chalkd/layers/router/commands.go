@@ -56,7 +56,121 @@ func (p *Plugin) Commands() []*cobra.Command {
 				return p.runServices(context.Background(), p.perVRFServices()[args[0]], len(args) == 2)
 			},
 		},
+		{
+			Use:   "nat64 [stop]",
+			Short: "Bring the NAT64 instances, their namespaces, links and routes to the output jool",
+			Long: "Bring Jool's instances, their network namespaces and links and the routes to them to the files\n" +
+				"of the output jool, after checking every file. With stop, or without the output, remove them all.",
+			Args: cobra.MatchAll(cli.RangeArgs(0, 1), func(cmd *cobra.Command, args []string) error {
+				if len(args) == 1 && args[0] != "stop" {
+					return cli.Usagef("%s takes stop alone", cmd.CommandPath())
+				}
+				return nil
+			}),
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return p.reconcileNAT64(cmd.Context(), len(args) == 1, cmd.ErrOrStderr())
+			},
+		},
+		{
+			Use:   "prune-devices",
+			Short: "Remove the VRFs and WireGuard devices that no networkd unit declares",
+			Long: "Remove each VRF that no .netdev unit declares with its table, after flushing the unreachable\n" +
+				"defaults networkd put in its table, and each WireGuard device that no .netdev unit declares.",
+			Args: cli.NoArgs,
+			RunE: func(cmd *cobra.Command, _ []string) error { return p.pruneDevices(cmd.Context(), cmd.ErrOrStderr()) },
+		},
+		{
+			Use:   "record-device SERVICE VRF",
+			Short: "Record the index of a VRF's device for the VRF's instance of a per-VRF service",
+			Long: "Write the index of the device of VRF to $RUNTIME_DIRECTORY/SERVICE-VRF.ifindex, and fail while\n" +
+				"the VRF has no device, as the ExecStartPre= of the VRF's instance of a per-VRF service.",
+			Args: cli.ExactArgs(2),
+			RunE: func(_ *cobra.Command, args []string) error {
+				return p.recordDevice(args[0], args[1], os.Getenv("RUNTIME_DIRECTORY"))
+			},
+		},
+		{
+			Use:   "resolver-vrfs-ready",
+			Short: "Say whether the VRFs of the rendered resolvers exist with their tables",
+			Long: "Exit with status 0 when the VRF of each rendered resolver of a VRF exists with the table its\n" +
+				"rendered unit gives, and with status 75 while one does not.",
+			Args: cli.NoArgs,
+			RunE: func(*cobra.Command, []string) error { return p.resolverVRFsReady() },
+		},
+		{
+			Use:   "load-firewall RULESET FALLBACK",
+			Short: "Load the rendered ruleset, or the fallback ruleset without one or when nft refuses it",
+			Long: "Load the nftables ruleset RULESET, or FALLBACK, which forwards nothing, when the node has no\n" +
+				"rendered ruleset. A ruleset nft refuses leaves FALLBACK loaded and fails.",
+			Args: cli.ExactArgs(2),
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return p.loadFirewall(cmd.Context(), args[0], args[1], cmd.ErrOrStderr())
+			},
+		},
+		{
+			Use:   "dhcp6-pd HOOK",
+			Short: "Record the prefixes a DHCPv6 server delegates, as Kea's run_script hook",
+			Long: "Record or remove the prefixes the leases of Kea's hook point HOOK delegate, from the hook's\n" +
+				"variables. Kea's run_script hook runs it through a link named chalkd-router-dhcp6-pd.",
+			Args: cli.ExactArgs(1),
+			RunE: func(_ *cobra.Command, args []string) error { return p.dhcp6PD(args[0], os.Getenv) },
+		},
+		ntpClientsCommand(p),
+		nat64SessionsCommand(p),
+		dhcpLeasesCommand(p),
 	}
+}
+
+// ntpClientsCommand is chalkd router ntp-clients [--chronyc PATH].
+func ntpClientsCommand(p *Plugin) *cobra.Command {
+	chronyc := "chronyc"
+	cmd := &cobra.Command{
+		Use:   "ntp-clients",
+		Short: "Print the NTP clients the time server answered and its counts of requests",
+		Long: "Print the NTP clients the node's chronyd answered, as chronyc -n clients prints them, an empty\n" +
+			"line, and its counts of requests, as chronyc serverstats prints them.",
+		Args: cli.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return p.ntpClients(cmd.Context(), chronyc, cmd.OutOrStdout())
+		},
+	}
+	cmd.Flags().StringVar(&chronyc, "chronyc", chronyc, "chronyc to run")
+	return cmd
+}
+
+// nat64SessionsCommand is chalkd router nat64-sessions [--jool PATH] INSTANCE.
+func nat64SessionsCommand(p *Plugin) *cobra.Command {
+	jool := "jool"
+	cmd := &cobra.Command{
+		Use:   "nat64-sessions INSTANCE",
+		Short: "Print a NAT64 instance's sessions",
+		Long: "Print the TCP, UDP and ICMP sessions of the Jool instance INSTANCE of the network namespace the\n" +
+			"command runs in, as jool session display prints them.",
+		Args: cli.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return p.nat64Sessions(cmd.Context(), jool, args[0], cmd.OutOrStdout())
+		},
+	}
+	cmd.Flags().StringVar(&jool, "jool", jool, "jool to run")
+	return cmd
+}
+
+// dhcpLeasesCommand is chalkd router dhcp-leases [--subnet NAME] [--mac ADDRESS].
+func dhcpLeasesCommand(p *Plugin) *cobra.Command {
+	var subnet, mac string
+	cmd := &cobra.Command{
+		Use:   "dhcp-leases",
+		Short: "Print the leases of the DHCP servers",
+		Long: "Print the leases of the DHCP servers of every VRF, or of one subnet or MAC address, a line each of\n" +
+			"the lease's VRF, subnet, address or delegated prefix, MAC address, host name and end.",
+		Args: cli.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return dhcpLeases(filepath.Join(p.RunDir, "kea"), subnet, mac, keaAskTimeout, time.Now().Add(leasesBudget), cmd.OutOrStdout(), cmd.ErrOrStderr())
+		},
+	}
+	cmd.Flags().StringVar(&subnet, "subnet", "", "name of the DHCPSubnet document whose leases to print")
+	cmd.Flags().StringVar(&mac, "mac", "", "MAC address whose leases to print")
+	return cmd
 }
 
 // dhcp6Routes routes each prefix Kea's hook recorded as delegated, on a link a rendered config

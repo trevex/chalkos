@@ -46,7 +46,25 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	if args, ok := linkedCommand(os.Args); ok {
+		root.SetArgs(args)
+	}
 	os.Exit(chalkd.Execute(root))
+}
+
+// linkedCommand is the command line of chalkd run through a link named chalkd-<layer>-<command>,
+// for a program that runs a path with arguments of its own alone, such as Kea's run_script hook:
+// chalkd <layer> <command> and the link's arguments.
+func linkedCommand(argv []string) ([]string, bool) {
+	rest, ok := strings.CutPrefix(filepath.Base(argv[0]), "chalkd-")
+	if !ok {
+		return nil, false
+	}
+	layer, command, ok := strings.Cut(rest, "-")
+	if !ok {
+		return nil, false
+	}
+	return append([]string{layer, command}, argv[1:]...), true
 }
 
 // newCommand is chalkd's command tree: its own commands, and those of each compiled layer below

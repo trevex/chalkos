@@ -158,20 +158,24 @@ networkd document of that name, a `NetDev` that creates a device of the link's n
 
 `chalkos-nat64.service` runs the instances. It is a oneshot unit that starts at boot after
 `chalkos-config.service`, `chalkos-firewall.service` and `systemd-networkd.service`, and before
-`frr.service`. Each delivery that changes the output reloads it. A start and a reload do the same:
+`frr.service`. Each delivery that changes the output reloads it. A start and a reload both run
+`chalkd router nat64`, and its stop runs `chalkd router nat64 stop`. chalkd reads the kernel's
+links, addresses and routes over netlink, and runs `ip`, `nsenter`, `sysctl` and `jool` for each
+change. A start and a reload do the same:
 
 1. It reads every file first, Jool's with `jool file check` and the link's against the form that
-   chalkos-render writes. A file it refuses fails the unit, and no instance changes. It then
-   reads the router's IPv4 addresses, those from DHCP included, which the rules cannot see. An
-   explicit pool that holds one fails the unit too, before any instance changes:
-   `chalkos-nat64: NAT64 edge: the pool entry 192.0.2.252/30 holds 192.0.2.253, an address of the link eth0, …`.
+   chalkos-render writes. A file it refuses fails the unit, and no instance changes. When an
+   instance has an explicit pool, it then reads the router's IPv4 addresses, those from DHCP
+   included, which the rules cannot see. A pool that holds one fails the unit too, before any
+   instance changes:
+   `chalkd router nat64: NAT64 edge: the pool entry 192.0.2.252/30 holds 192.0.2.253, an address of the link eth0, …`.
 2. Per instance, it creates the namespace, turns forwarding off inside it, and creates the veth
    pair. A link whose other end is not in the namespace is made anew. A device of the link's name
    and another kind, such as a dummy, stays, and the instance fails.
 3. It puts the outer end into its VRF, or out of every VRF for the default VRF. networkd creates
    a VRF without waiting, at boot and when a delivery changed its table, so the unit waits up to
    30 seconds for the VRF's device with the rendered table. A VRF that does not have it by then
-   fails the instance with `chalkos-nat64: VRF guest has no table 300 after 30 s`. The unit
+   fails the instance with `chalkd router nat64: VRF guest has no table 300 after 30 s`. The unit
    waits once per VRF, and the other instances of that VRF fail at once.
 4. It sets the addresses of both ends and the namespace's default routes.
 5. `jool file handle`, run in the namespace through `nsenter`, creates the instance or replaces it
@@ -369,11 +373,11 @@ hardening and `CAP_NET_BIND_SERVICE` alone. It reads `unbound-<vrf>.conf` and ke
 socket in `/run/unbound-<vrf>`. `BindNetworkInterface=<vrf>` has systemd bind every socket of the
 unit to the VRF's device, as `ip vrf exec` would, so Unbound answers on the VRF's links and sends
 its queries through the VRF's table. systemd binds the sockets to the device's index, which it
-looks up when the unit starts. The unit writes that index to
-`/run/unbound-<vrf>/unbound-<vrf>.ifindex` before Unbound starts, and fails if the VRF has no
-device, since systemd would otherwise start Unbound with its sockets in the default VRF. The unit
-requires the VRF's device unit, so a start waits for the device to appear, but the device going
-away does not stop the resolver.
+looks up when the unit starts. The unit's `ExecStartPre=`, `chalkd router record-device`, writes
+that index to `/run/unbound-<vrf>/unbound-<vrf>.ifindex` before Unbound starts, and fails if the
+VRF has no device, since systemd would otherwise start Unbound with its sockets in the default
+VRF. The unit requires the VRF's device unit, so a start waits for the device to appear, but the
+device going away does not stop the resolver.
 
 `chalkos-resolvers.service` runs these units with `chalkd router services unbound`. It is a
 oneshot unit that starts at boot after `chalkos-vrf.service` and networkd, which create the VRFs.
@@ -445,8 +449,9 @@ to `false` carries no Unbound and refuses the kind Resolver. Such an image rende
 that feature, so chalkd asks Jool or Unbound nothing. `chalkctl status` prints no `nat64` or
 `resolver` line, as on a router without NAT64 or Resolver documents.
 
-The diagnostic `nat64-sessions` lists an instance's sessions with `jool session display`, for TCP,
-UDP and ICMP. It declares `networkNamespace = "nat64-{instance}"`, so chalkd runs it with
+The diagnostic `nat64-sessions` runs `chalkd router nat64-sessions`, which lists an instance's
+sessions with `jool session display`, for TCP, UDP and ICMP, and stops at the first protocol that
+fails. It declares `networkNamespace = "nat64-{instance}"`, so chalkd runs it with
 `NetworkNamespacePath=/run/netns/nat64-<instance>`, in the instance's namespace. Jool shows the
 sessions to `CAP_NET_ADMIN` alone, which the diagnostic's unit gets. It needs an operator, as the
 sessions show who connects where.

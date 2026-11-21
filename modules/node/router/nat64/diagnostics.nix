@@ -11,15 +11,14 @@
     chalkos.diagnostics = {
       nat64-sessions = {
         description = "A NAT64 instance's sessions, as jool session display prints them: each translated TCP, UDP and ICMP connection's IPv6 and IPv4 addresses and ports, and when it expires.";
+        # chalkd runs jool session display for TCP, UDP and ICMP in turn, and stops at the first
+        # that fails.
         command = [
-          "${pkgs.bash}/bin/bash"
-          "-c"
-          ''
-            for protocol in --tcp --udp --icmp; do
-              ${pkgs.jool-cli}/bin/jool -i "$1" session display --numeric "$protocol" || exit
-            done
-          ''
+          (lib.getExe pkgs.chalkos.chalkd)
+          "router"
           "nat64-sessions"
+          "--jool"
+          "${pkgs.jool-cli}/bin/jool"
           "{instance}"
         ];
         # A NAT64 document's name of 11 characters at most, as the kinds take it, in ShortName's

@@ -13,7 +13,8 @@ let
   router = checkLib.router.config;
   inherit (router.systemd.services.kea-dhcp4.serviceConfig) ExecStart;
   dir = router.chalkos.outputs.kea.dir;
-  leases = lib.elemAt router.chalkos.diagnostics.dhcp-leases.command 2;
+  # The diagnostic's command without its parameters' arguments.
+  leases = lib.concatStringsSep " " (lib.take 3 router.chalkos.diagnostics.dhcp-leases.command);
   udhcpc = "${pkgs.busybox}/bin/busybox udhcpc";
   inherit (checkLib) routerRendered;
 in
@@ -61,7 +62,7 @@ unitCheck "router-dhcp" checkLib.networkTools ''
   got "$(lease 52:54:00:aa:bb:cc -x 0x5d:0000 -x 0x4d:69505845)" "$pool hostname= siaddr=192.0.2.5 boot_file=http://192.0.2.5/boot.ipxe" "iPXE on BIOS"
 
   # listed <arguments>: the leases dhcp-leases lists, without the header and their ends.
-  listed() { bash -c ${lib.escapeShellArg leases} dhcp-leases "$@" | tail -n +2 | cut -f 1-5; }
+  listed() { ${leases} "$@" | tail -n +2 | cut -f 1-5; }
   printer=$(printf 'default\toffice\t192.0.2.10\t52:54:00:12:34:56\tprinter')
   other=$(printf 'default\toffice\t192.0.2.100\t52:54:00:aa:bb:cc\t-')
   got "$(listed)" "$printer"$'\n'"$other" "dhcp-leases"
@@ -72,7 +73,7 @@ unitCheck "router-dhcp" checkLib.networkTools ''
   ${pkgs.socat}/bin/socat UNIX-LISTEN:/run/kea/dhcp4-ghost.sock,fork SYSTEM:true &
   ghost=$!
   retry 600 "Kea opened no control socket dhcp4-ghost.sock" test -S /run/kea/dhcp4-ghost.sock
-  bash -c ${lib.escapeShellArg leases} dhcp-leases >all.tsv 2>errors.txt ||
+  ${leases} >all.tsv 2>errors.txt ||
     fail "dhcp-leases failed beside a server that does not answer: $(cat errors.txt)"
   grep -qx 'the DHCPv4 server of VRF ghost does not answer' errors.txt ||
     fail "dhcp-leases did not name the server that does not answer: $(cat errors.txt)"

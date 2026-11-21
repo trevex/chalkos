@@ -256,6 +256,8 @@ what the protected rules do not accept. Its node API answers on every interface,
 can reach the node to deliver config.
 
 The unit also loads the fallback when nft refuses the rendered ruleset at boot, and then fails.
+Its start runs `chalkd router load-firewall` with both rulesets, which runs `nft -f` on each in
+turn; its reload runs `nft -f` on the rendered ruleset alone.
 The node keeps the fallback until a delivery changes the ruleset: chalkd then restarts the failed
 unit, which loads the new one.
 
