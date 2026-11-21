@@ -150,6 +150,7 @@ func TestKubernetesCluster(t *testing.T) {
 		waitFor(t, 10*time.Minute, "pods reaching each other", func() error { return p.reached(ctx, cs, nil) })
 		t.Logf("pods reached each other after %v", time.Since(start).Round(time.Second))
 		p.check(t, ctx, cs)
+		cniPaths(t, ctx, cs)
 		logMemory(t, ctx, cs)
 	}) {
 		return
@@ -328,6 +329,59 @@ func revocation(t *testing.T, ctx context.Context, nodes map[string]*node, kubec
 func privatePull(t *testing.T, ctx context.Context, cs kubernetes.Interface) {
 	t.Helper()
 	podSucceeds(t, ctx, cs, "private", privateImage)
+}
+
+// cniScript copies busybox into the node's /opt/cni/bin and runs it from there, as a CNI
+// DaemonSet installs and containerd runs its plugins, checks that the directory is a tmpfs, and
+// finds flannel's configuration through /etc/cni/net.d.
+const cniScript = `set -e
+grep -q '^tmpfs /cni tmpfs ' /proc/mounts
+cp /bin/busybox /cni/busybox-chalkos-e2e
+trap 'rm -f /cni/busybox-chalkos-e2e' EXIT
+/cni/busybox-chalkos-e2e true
+test -f /netd/10-flannel.conflist
+`
+
+// cniPaths runs cniScript on w1 in a pod that mounts the node's /opt/cni/bin and /etc/cni/net.d
+// by hostPath, as a CNI DaemonSet does, and waits for it to succeed.
+func cniPaths(t *testing.T, ctx context.Context, cs kubernetes.Interface) {
+	t.Helper()
+	hostPath := func(name, path string) corev1.Volume {
+		return corev1.Volume{Name: name, VolumeSource: corev1.VolumeSource{HostPath: &corev1.HostPathVolumeSource{Path: path}}}
+	}
+	_, err := cs.CoreV1().Pods("default").Create(ctx, &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "cni-paths"},
+		Spec: corev1.PodSpec{
+			NodeSelector:  map[string]string{"kubernetes.io/hostname": "w1"},
+			RestartPolicy: corev1.RestartPolicyNever,
+			Volumes:       []corev1.Volume{hostPath("cni", "/opt/cni/bin"), hostPath("netd", "/etc/cni/net.d")},
+			Containers: []corev1.Container{{
+				Name:    "cni-paths",
+				Image:   "docker.io/library/busybox:1.37.0",
+				Command: []string{"sh", "-c", cniScript},
+				VolumeMounts: []corev1.VolumeMount{
+					{Name: "cni", MountPath: "/cni"},
+					{Name: "netd", MountPath: "/netd", ReadOnly: true},
+				},
+			}},
+		},
+	}, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 5*time.Minute, "the pod that runs a plugin from /opt/cni/bin", func() error {
+		pod, err := cs.CoreV1().Pods("default").Get(ctx, "cni-paths", metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		switch pod.Status.Phase {
+		case corev1.PodSucceeded:
+			return nil
+		case corev1.PodFailed:
+			t.Fatalf("the pod failed: %v", pod.Status.ContainerStatuses)
+		}
+		return fmt.Errorf("the pod is %s", pod.Status.Phase)
+	})
 }
 
 // podSucceeds runs true in a pod of the name and the image on w1, without pull secrets, and waits

@@ -11,6 +11,12 @@ let
   # containerd's settings from the node's config, which its own config imports.
   importDir = "/run/containerd/conf.d";
   clusterSettings = "${importDir}/chalkos.toml";
+  # Where CNI DaemonSets such as Cilium's or Calico's copy their plugins by hostPath. containerd
+  # searches it before the store's plugins, so a DaemonSet's plugin of the same name wins.
+  daemonSetPlugins = "/opt/cni/bin";
+  # The pod network's configuration. /etc is read-only, so it lives on VAR; /etc/cni/net.d, where
+  # DaemonSets write it by default, links to it.
+  confDir = "/var/lib/cni/net.d";
 
   # The reference plugins the image names (chalkos.cni.plugins), and with flannel its own plugin.
   # Copies, so the store holds these alone.
@@ -80,10 +86,12 @@ in
           registry.config_path = "/run/containerd/certs.d";
         };
         plugins."io.containerd.cri.v1.runtime" = {
-          # /etc is read-only, so the pod network's configuration lives on VAR.
           cni = {
-            bin_dirs = [ "${cniPlugins}/bin" ];
-            conf_dir = "/var/lib/cni/net.d";
+            bin_dirs = [
+              daemonSetPlugins
+              "${cniPlugins}/bin"
+            ];
+            conf_dir = confDir;
           };
           containerd.runtimes.runc.options.SystemdCgroup = true;
         };
@@ -105,8 +113,22 @@ in
       };
     };
 
+    # The plugins DaemonSets install, on a tmpfs of its own that allows running them. It is empty
+    # at each boot until the DaemonSets copy their plugins again.
+    fileSystems.${daemonSetPlugins} = {
+      device = "tmpfs";
+      fsType = "tmpfs";
+      options = [
+        "mode=0755"
+        "nosuid"
+        "nodev"
+      ];
+    };
+
+    environment.etc."cni/net.d".source = confDir;
+
     systemd.tmpfiles.rules = [
-      "d /var/lib/cni/net.d 0755 root root -"
+      "d ${confDir} 0755 root root -"
     ];
   };
 }

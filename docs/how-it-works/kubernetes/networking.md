@@ -277,6 +277,21 @@ accept the document; for another image it is an unknown kind. An image built wit
 reference plugin, for clusters whose `Addon` documents bring their own. Opening that network's ports
 is then up to the image's NixOS modules.
 
+## A CNI DaemonSet installs its plugins on the node
+
+Network plugins such as Cilium, Calico or flannel's own chart run a DaemonSet that copies its CNI
+plugins and writes its CNI configuration onto each node through `hostPath` volumes. Their default
+paths work on chalkos nodes without changes to the chart:
+
+| Path | What it holds |
+| --- | --- |
+| `/opt/cni/bin` | The plugins a DaemonSet copies. A tmpfs of its own, mounted `nosuid,nodev` with execution allowed. It is empty at each boot until the DaemonSet copies its plugins again. |
+| `/etc/cni/net.d` | A link to `/var/lib/cni/net.d` on VAR, containerd's CNI configuration directory, which keeps its files across reboots. |
+
+containerd searches `/opt/cni/bin` first and then the plugins the image ships from
+[`chalkos.cni.plugins`](../../reference/image-options.md#chalkoscniplugins), so a DaemonSet's
+plugin wins over the image's plugin of the same name. The rest of `/etc` stays read-only.
+
 ## The firewall accepts VXLAN only for the node's own addresses
 
 VXLAN carries pod packets unauthenticated, so the firewall accepts it only when it is sent to one of
