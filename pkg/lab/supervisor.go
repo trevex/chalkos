@@ -218,7 +218,7 @@ func StartStopped(ctx context.Context, dir string) error {
 	// supervisor runs it still and skips it: the supervisor is asked again until every VM runs.
 	// It starts only the VMs that do not run, so asking again starts none twice.
 	var signalled time.Time
-	err = poll.UntilDone(ctx, "", 100*time.Millisecond, func() error {
+	err = poll.UntilDone(ctx, "", 100*time.Millisecond, func(context.Context) error {
 		if _, running, err := Supervisor(dir); err != nil {
 			return poll.Permanent{Err: err}
 		} else if !running {
@@ -268,7 +268,7 @@ func Supervisor(dir string) (int, bool, error) {
 	}
 	// A supervisor that just took the lock writes its PID right after.
 	var pid int
-	err = poll.Until(context.Background(), "", 5*time.Second, 20*time.Millisecond, func() error {
+	err = poll.Until(context.Background(), "", 5*time.Second, 20*time.Millisecond, func(context.Context) error {
 		data, err := os.ReadFile(f.Name())
 		if err != nil {
 			return poll.Permanent{Err: err}
@@ -312,7 +312,7 @@ func StopLab(ctx context.Context, dir string) error {
 		if err := syscall.Kill(pid, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
 			return fmt.Errorf("stop the supervisor: %w", err)
 		}
-		err := poll.UntilDone(ctx, fmt.Sprintf("the supervisor %d to stop the lab", pid), 100*time.Millisecond, func() error {
+		err := poll.UntilDone(ctx, fmt.Sprintf("the supervisor %d to stop the lab", pid), 100*time.Millisecond, func(context.Context) error {
 			_, running, err := Supervisor(dir)
 			switch {
 			case err != nil:

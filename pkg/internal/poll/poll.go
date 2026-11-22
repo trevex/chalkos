@@ -9,23 +9,37 @@ import (
 )
 
 // Until runs check every interval until it passes, up to timeout; a timeout of 0 or less checks
-// once. A Permanent error ends the wait at once. A failed wait returns the last check's error,
-// with ctx's cause when ctx ended it, prefixed "waiting for <what>: " when what is not empty.
-func Until(ctx context.Context, what string, timeout, interval time.Duration, check func() error) error {
+// once. Each check gets a context that ends at the timeout, so a check stuck in a call cannot
+// overrun it; the single check of a timeout already past gets ctx. A Permanent error ends the wait
+// at once. A failed wait returns the last check's error, or the one before when the timeout cut the
+// last check short, with ctx's cause when ctx ended it, prefixed "waiting for <what>: " when what
+// is not empty.
+func Until(ctx context.Context, what string, timeout, interval time.Duration, check func(context.Context) error) error {
 	return wait(ctx, what, time.Now().Add(timeout), interval, check)
 }
 
 // UntilDone is Until bounded by ctx alone: it checks until a check passes or ctx ends.
-func UntilDone(ctx context.Context, what string, interval time.Duration, check func() error) error {
+func UntilDone(ctx context.Context, what string, interval time.Duration, check func(context.Context) error) error {
 	return wait(ctx, what, time.Time{}, interval, check)
 }
 
 // wait checks until deadline, or until ctx ends when deadline is zero.
-func wait(ctx context.Context, what string, deadline time.Time, interval time.Duration, check func() error) error {
+func wait(ctx context.Context, what string, deadline time.Time, interval time.Duration, check func(context.Context) error) error {
+	checkCtx := ctx
+	if !deadline.IsZero() && time.Until(deadline) > 0 {
+		var cancel context.CancelFunc
+		checkCtx, cancel = context.WithDeadline(ctx, deadline)
+		defer cancel()
+	}
+	var prev error
 	for {
-		err := check()
+		err := check(checkCtx)
 		if err == nil {
 			return nil
+		}
+		// A check the timeout cut short says less than the one before it.
+		if prev != nil && checkCtx.Err() != nil && ctx.Err() == nil {
+			return named(what, prev)
 		}
 		if p, ok := errors.AsType[Permanent](err); ok {
 			return p.Err
@@ -36,6 +50,7 @@ func wait(ctx context.Context, what string, deadline time.Time, interval time.Du
 			if left <= 0 {
 				return named(what, err)
 			}
+			prev = err
 			pause = min(pause, left)
 		}
 		select {

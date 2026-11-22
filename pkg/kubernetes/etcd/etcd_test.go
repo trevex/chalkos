@@ -262,7 +262,7 @@ func join(t *testing.T, ctx context.Context, cli *Client, ca pki.CertKey, name s
 	var added Member
 	var initial string
 	// etcd adds no member while one it just promoted is not yet in touch with the others.
-	err := poll.UntilDone(ctx, "the learner", 100*time.Millisecond, func() (err error) {
+	err := poll.UntilDone(ctx, "the learner", 100*time.Millisecond, func(ctx context.Context) (err error) {
 		added, initial, err = joinAsLearner(ctx, cli, name, peerURL, false)
 		return err
 	})

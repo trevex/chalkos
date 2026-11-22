@@ -304,7 +304,7 @@ func TestVIPReleasedBeforeLeaseExpires(t *testing.T) {
 	testwait.Eventually(t, "renewals of the holder's lease", func() bool { return first.renewals.Load() >= renewed+2 })
 	revoked := make(chan time.Time, 1)
 	go func() {
-		if poll.UntilDone(ctx, "", 10*time.Millisecond, func() error {
+		if poll.UntilDone(ctx, "", 10*time.Millisecond, func(ctx context.Context) error {
 			if ttl, err := cli.TimeToLive(ctx, lease); err != nil || ttl.TTL != -1 {
 				return errors.New("the lease lives")
 			}

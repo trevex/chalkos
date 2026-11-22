@@ -31,7 +31,7 @@ func startDaemon(ctx context.Context, cmd *exec.Cmd, ready, hint string) (*daemo
 		cmd.Wait()
 		close(d.exited)
 	}()
-	err := poll.UntilDone(ctx, fmt.Sprintf("%s to create %s", name, ready), 20*time.Millisecond, func() error {
+	err := poll.UntilDone(ctx, fmt.Sprintf("%s to create %s", name, ready), 20*time.Millisecond, func(context.Context) error {
 		_, err := os.Stat(ready)
 		if err == nil {
 			return nil

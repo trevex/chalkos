@@ -152,11 +152,9 @@ func (h *Health) Wait(ctx context.Context, timeout time.Duration) error {
 	if interval == 0 {
 		interval = 5 * time.Second
 	}
-	checks, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 	var last string
-	err := poll.Until(ctx, "", timeout, interval, func() error {
-		err := h.Check(checks)
+	err := poll.Until(ctx, "", timeout, interval, func(ctx context.Context) error {
+		err := h.Check(ctx)
 		if err != nil && err.Error() != last {
 			last = err.Error()
 			log.Printf("not healthy yet: %v", err)

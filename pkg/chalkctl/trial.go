@@ -60,7 +60,7 @@ func (a *app) confirmTrial(ctx context.Context, t *target, version, previous str
 		warnings []string
 	)
 	permanent := false
-	err := poll.Until(ctx, "", time.Until(until), a.poll(), func() error {
+	err := poll.Until(ctx, "", time.Until(until), a.poll(), func(ctx context.Context) error {
 		var err error
 		warnings, err = confirmOnce(ctx, t, version, time.Until(until))
 		// An attempt the deadline cut short says less than the one before it.
@@ -133,7 +133,7 @@ func (a *app) trialRolledBack(ctx context.Context, t *target, version, previous 
 	until := deadline.Add(trialEnd)
 	var st *nodev1.StatusResponse
 	unreadable := ""
-	err := poll.Until(ctx, "", time.Until(until), a.poll(), func() error {
+	err := poll.Until(ctx, "", time.Until(until), a.poll(), func(ctx context.Context) error {
 		ctx, cancel := context.WithDeadline(ctx, until)
 		defer cancel()
 		conn, err := dialInstalled(t)

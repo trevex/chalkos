@@ -363,7 +363,7 @@ func etcdStopped(ctx context.Context, c k8s.Cluster) error {
 		return err
 	}
 	addr := u.Host
-	return poll.UntilDone(ctx, "", time.Second, func() error {
+	return poll.UntilDone(ctx, "", time.Second, func(ctx context.Context) error {
 		conn, err := (&net.Dialer{Timeout: time.Second}).DialContext(ctx, "tcp", addr)
 		if err != nil && ctx.Err() == nil {
 			return nil

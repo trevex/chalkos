@@ -9,6 +9,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
+	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -61,7 +62,7 @@ func (a *app) nodeRenew(ctx context.Context, f nodeRenewFlags, pos []string) err
 	if err != nil {
 		return err
 	}
-	resp, err := conn.ApplyConfig(ctx, &nodev1.ApplyConfigRequest{
+	resp, err := conn.ApplyConfig(client.Unbounded(ctx), &nodev1.ApplyConfigRequest{
 		NodeCertificate: []byte(cert.Certificate),
 		NodeKey:         []byte(cert.Key),
 	})

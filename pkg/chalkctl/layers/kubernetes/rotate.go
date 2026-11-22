@@ -243,7 +243,7 @@ func controlPlanesInTurn(ctx context.Context, r layer.Rotating, kind clustersecr
 // addressed wrongly, which waiting does not fix.
 func waitQuorum(ctx context.Context, r layer.Rotating, name string) error {
 	silent := poll.Sustained{Window: min(10*r.Poll(), r.Timeout())}
-	return poll.Until(ctx, "etcd's members to be healthy", r.Timeout(), r.Poll(), func() error {
+	return poll.Until(ctx, "etcd's members to be healthy", r.Timeout(), r.Poll(), func(ctx context.Context) error {
 		var members []*kubernetesv1.EtcdMember
 		var answer error
 		err := r.Call(name, func(conn *client.Conn) error {

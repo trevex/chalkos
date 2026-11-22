@@ -83,7 +83,7 @@ func (a *Applier) Apply(ctx context.Context, objects []map[string]any) error {
 func (a *Applier) mapping(ctx context.Context, obj *unstructured.Unstructured) (*meta.RESTMapping, error) {
 	gvk := obj.GroupVersionKind()
 	var mapping *meta.RESTMapping
-	err := poll.Until(ctx, "", a.NoMatchRetry, time.Second, func() error {
+	err := poll.Until(ctx, "", a.NoMatchRetry, time.Second, func(context.Context) error {
 		var err error
 		mapping, err = a.mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
 		if err != nil && !meta.IsNoMatchError(err) {
@@ -104,7 +104,7 @@ func WaitReady(ctx context.Context, cfg *rest.Config) error {
 		return err
 	}
 	client := dc.RESTClient()
-	return poll.UntilDone(ctx, "the API server to be ready", 2*time.Second, func() error {
+	return poll.UntilDone(ctx, "the API server to be ready", 2*time.Second, func(ctx context.Context) error {
 		body, err := client.Get().AbsPath("/readyz").Timeout(5 * time.Second).DoRaw(ctx)
 		if err == nil && string(body) != "ok" {
 			err = fmt.Errorf("/readyz answered %q", body)

@@ -35,7 +35,8 @@ func (s Sfdisk) Exec(ctx context.Context, args ...string) ([]byte, error) {
 		wait = DefaultLockWait
 	}
 	var out []byte
-	err := poll.Until(ctx, "", wait, lockRetry, func() error {
+	// The lock wait bounds the retries, not a run: sfdisk that writes the table is not killed.
+	err := poll.Until(ctx, "", wait, lockRetry, func(context.Context) error {
 		var err error
 		out, err = tool.Run(ctx, s.Run, "sfdisk", append([]string{"--lock=nonblock"}, args...)...)
 		if err != nil && !locked(err) {

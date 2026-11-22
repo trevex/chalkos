@@ -207,7 +207,7 @@ var ErrMemberRemoved = errors.New("the member was removed")
 // interval while etcd says it has not. Each request ends after timeout. A member that is a voter
 // already is left as it is.
 func (cli *Client) Promote(ctx context.Context, id uint64, interval, timeout time.Duration) error {
-	err := poll.UntilDone(ctx, "", interval, func() error {
+	err := poll.UntilDone(ctx, "", interval, func(ctx context.Context) error {
 		pctx, cancel := context.WithTimeout(ctx, timeout)
 		_, err := cli.MemberPromote(pctx, id)
 		cancel()
@@ -287,7 +287,7 @@ func (cli *Client) Remove(ctx context.Context, id uint64, force bool) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	retry := cmp.Or(cli.RetryInterval, time.Second)
-	err = poll.UntilDone(ctx, "", retry, func() error {
+	err = poll.UntilDone(ctx, "", retry, func(ctx context.Context) error {
 		_, err := cli.MemberRemove(ctx, id)
 		if err != nil && !errors.Is(err, rpctypes.ErrUnhealthy) {
 			return poll.Permanent{Err: err}

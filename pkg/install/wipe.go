@@ -42,7 +42,7 @@ func openExclusive(ctx context.Context, path string) (Disk, error) {
 	}
 	// udev probes a disk, and rereads its partition table, when it is closed after writing; the
 	// lock keeps udev waiting until the kernel dropped the old partitions, so the two never race.
-	err = poll.Until(ctx, "", diskLockWait, lockRetry, func() error {
+	err = poll.Until(ctx, "", diskLockWait, lockRetry, func(context.Context) error {
 		err := atomicfile.Flock(f, false)
 		if err != nil && !errors.Is(err, atomicfile.ErrLocked) {
 			return poll.Permanent{Err: fmt.Errorf("lock %s: %w", path, err)}

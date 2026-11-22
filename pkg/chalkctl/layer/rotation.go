@@ -75,7 +75,7 @@ type Rotating interface {
 
 // WaitStatus waits, up to the run's timeout, until a node's status passes check.
 func WaitStatus(ctx context.Context, r Rotating, name, what string, check func(st *nodev1.StatusResponse) error) error {
-	return poll.Until(ctx, name+" "+what, r.Timeout(), r.Poll(), func() error {
+	return poll.Until(ctx, name+" "+what, r.Timeout(), r.Poll(), func(ctx context.Context) error {
 		st, err := r.Status(ctx, name)
 		if err != nil {
 			return err

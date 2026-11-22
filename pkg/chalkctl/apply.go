@@ -334,7 +334,7 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 	// chalkctl's deadline starts before the node's, so it falls before it. An answer that comes
 	// after it is of no use: the node may have rolled the config back by then.
 	deadline := time.Now().Add(f.try)
-	applyCtx := ctx
+	applyCtx := client.Unbounded(ctx)
 	if f.try > 0 {
 		req.Try, req.IgnoreUnits = durationpb.New(f.try), f.ignoreUnits
 		var cancel context.CancelFunc
@@ -555,7 +555,7 @@ func (a *app) rollbackConfig(ctx context.Context, f rollbackConfigFlags, name st
 		changes.writeRemoved(a.stdout, "in the running config, not in the previous one")
 		return nil
 	}
-	resp, err := conn.RollbackConfig(ctx, &nodev1.RollbackConfigRequest{Version: version})
+	resp, err := conn.RollbackConfig(client.Unbounded(ctx), &nodev1.RollbackConfigRequest{Version: version})
 	if err != nil {
 		return layer.Named(t.name, err)
 	}
@@ -637,7 +637,7 @@ func (a *app) resetVolume(ctx context.Context, f resetVolumeFlags, pos []string)
 			return err
 		}
 	}
-	if _, err := conn.ResetVolume(ctx, &nodev1.ResetVolumeRequest{Volume: pos[1], Config: d.Text, FallbackSecret: fallback}); err != nil {
+	if _, err := conn.ResetVolume(client.Unbounded(ctx), &nodev1.ResetVolumeRequest{Volume: pos[1], Config: d.Text, FallbackSecret: fallback}); err != nil {
 		return layer.Named(t.name, err)
 	}
 	fmt.Fprintf(a.stdout, "volume %s of %s was wiped and created again\n", pos[1], t.name)
