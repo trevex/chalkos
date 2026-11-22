@@ -219,6 +219,28 @@ Type: boolean · Default: `false` · Declared in: [modules/node/kubernetes/longh
 
 Whether Kubernetes images carry what Longhorn runs on the host: iscsid and iscsiadm, the NFS client, the `iscsi_tcp` and `dm_crypt` kernel modules, loaded at boot, and links for `iscsiadm`, `fstrim`, `cryptsetup`, `dmsetup` and `mount` in `/usr/bin` and `/usr/sbin`. Only with the Kubernetes layer; set it true in an image's modules to add the feature to it.
 
+### `chalkos.kubernetes.nvidia.enable` { #chalkoskubernetesnvidiaenable }
+
+Type: boolean · Default: `false` · Declared in: [modules/node/kubernetes/nvidia.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/nvidia.nix)
+
+Whether Kubernetes images carry NVIDIA's GPU driver, loaded at boot, with its firmware, containerd's runtime handler `nvidia`, a CDI specification of the node's GPUs written at boot and the driver's programs and libraries in `/usr/local/nvidia`, for NVIDIA's GPU operator with the driver and the toolkit on the host. The driver is unfree: the image's nixpkgs must allow it. Only with the Kubernetes layer; set it true in an image's modules to add the feature to it.
+
+### `chalkos.kubernetes.nvidia.kernelModuleType` { #chalkoskubernetesnvidiakernelmoduletype }
+
+Type: one of `open`, `proprietary` · Default: `"open"` · Declared in: [modules/node/kubernetes/nvidia.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/nvidia.nix)
+
+Which of NVIDIA's kernel modules the image carries: `open`, NVIDIA's open modules,
+which GPUs from Turing on run, or `proprietary`, which GPUs before Turing need.
+Only with `chalkos.kubernetes.nvidia.enable`.
+
+### `chalkos.kubernetes.nvidia.package` { #chalkoskubernetesnvidiapackage }
+
+Type: package · Default: `config.boot.kernelPackages.nvidiaPackages.stable` · Declared in: [modules/node/kubernetes/nvidia.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/nvidia.nix)
+
+NVIDIA's driver, of the image's kernel packages, whose kernel modules, firmware,
+programs and libraries the image carries. Only with
+`chalkos.kubernetes.nvidia.enable`.
+
 ### `chalkos.kubernetes.package` { #chalkoskubernetespackage }
 
 Type: package · Default: the release `chalkos.kubernetes.version` selects · Declared in: [modules/node/kubernetes/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/default.nix)
