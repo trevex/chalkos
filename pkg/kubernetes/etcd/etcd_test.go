@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/trevex/chalkos/pkg/internal/poll"
+	"github.com/trevex/chalkos/pkg/internal/testwait"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd/etcdtest"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -119,7 +120,15 @@ func TestJoinAndPromote(t *testing.T) {
 	if err := cli.Promote(ctx, added.ID, 100*time.Millisecond, 10*time.Second); err != nil {
 		t.Fatal(err)
 	}
-	list := members(t, dial(t, ca, m2))
+	// The leader commits the promotion before m2 applies it, and a learner refuses to list the
+	// members, so ask m2 until it answers as a voter.
+	m2cli := dial(t, ca, m2)
+	var list []Member
+	testwait.Eventually(t, "m2 to apply its promotion", func() bool {
+		l, err := m2cli.Members(ctx)
+		list = l
+		return err == nil
+	})
 	if len(list) != 2 || list[0].Name != "m1" || list[1].Name != "m2" || list[0].Learner || list[1].Learner {
 		t.Errorf("members %+v, want voters m1 and m2", list)
 	}
