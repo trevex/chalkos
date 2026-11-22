@@ -29,12 +29,18 @@ Dashboard, an issue it keeps open.
 
 | Group | What it updates | Labels | Merge |
 | --- | --- | --- | --- |
-| `github-actions` | The actions' patch and minor releases and digests, which stay pinned by digest with the version as a comment, and Hestia's `version` input | `dependencies` | automerge |
+| `github-actions` | The actions' patch and minor releases and digests, which stay pinned by digest with the version as a comment, except those of `github-actions-release` | `dependencies` | automerge |
+| `github-actions-release` | The patch and minor releases and digests of the actions that run in the release jobs holding `id-token: write`: those of the `nix` composite action and Hestia's `version` input, `sigstore/cosign-installer`, `actions/attest`, `actions/attest-build-provenance`, `actions/checkout`, `actions/upload-artifact` and `actions/download-artifact` | `dependencies` | by hand |
 | `go-kubernetes` | The modules `k8s.io/*`, `sigs.k8s.io/*` and `go.etcd.io/*` | `dependencies`, `e2e` | by hand |
 | `go-x` | The modules `golang.org/x/*` | `dependencies` | by hand |
 | `go-deps` | Every other Go module's patch and minor releases and pseudo-versions | `dependencies` | by hand |
 | `go-toolchain` | The `go` directive and the `toolchain` line of `go.mod` | `dependencies`, `e2e` | by hand |
 | `kubernetes-<minor>` | The patch release of one minor in `releases.nix`, a pull request per minor | `dependencies`, `e2e` | by hand |
+
+Renovate proposes a release of an action or a Go module only once it is seven days old,
+`minimumReleaseAge` in `.github/renovate.json5`. A compromised release is usually found and
+withdrawn within that time, before Renovate opens a pull request for it. A security update does
+not wait, as the next section describes.
 
 A major release of an action gets a pull request of its own, outside its group, and never merges
 by itself. A major release of a Go module waits on the Dependency Dashboard under "Pending
@@ -59,7 +65,8 @@ An update that fixes a known vulnerability does not wait for Monday. Renovate re
 vulnerabilities of the Go modules and the actions from the repository's Dependabot alerts and from
 the [OSV](https://osv.dev/) database, and opens a pull request for each fixed version at any time,
 outside its group, labelled `dependencies` and `security`. Its title ends with `[SECURITY]`. It
-merges like the group it leaves: an action's fix by itself once CI passes, a Go module's by hand.
+merges like the group it leaves: an action's fix of the `github-actions` group by itself once CI
+passes, every other fix by hand.
 `vulnerabilityAlerts` in `.github/renovate.json5` sets this.
 
 govulncheck in CI fails when the code calls a vulnerable function, often before Renovate's pull
@@ -81,6 +88,12 @@ the checks that branch protection requires pass. Where GitHub's auto-merge is un
 while the repository setting "Allow auto-merge" is off, Renovate merges the pull request itself
 on a later run, once every check of the branch has passed. A pull request with a failed or
 pending check, or with no check at all, stays open.
+
+The release workflow's `image` and `assets` jobs hold `id-token: write`, which lets any step in
+them sign an image or a binary as `release.yml@refs/heads/main`, the identity users verify. An
+update of an action that runs in those jobs therefore goes to the `github-actions-release` group,
+which a maintainer merges after reading the action's diff. When an action is added to either
+job, add it to that group's `matchDepNames` too.
 
 GitHub's auto-merge waits only for the required checks. With "Allow auto-merge" on and no
 required check, GitHub merges an action's pull request at once, before CI finishes. Turn the
