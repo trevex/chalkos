@@ -1,15 +1,16 @@
 ---
 title: "Storage and GPU workloads"
-description: "Run Rook and Ceph CSI, KubeVirt and Longhorn on chalkos nodes"
+description: "Run Rook and Ceph CSI, KubeVirt, Longhorn and NVIDIA's GPU operator on chalkos nodes"
 ---
 
 # Storage and GPU workloads
 
 This page shows what Kubernetes images carry for workloads that need kernel modules from the
-host or programs of the host, such as Ceph CSI, KubeVirt and Longhorn, and how to run them. A
-node's kernel loads modules only from its image, and no container can load one, so the image must
-carry the modules these workloads use. Each workload has a feature of the Kubernetes layer that
-adds them. `ceph` and `kubevirt` are on by default; `longhorn` is off.
+host or programs of the host, such as Ceph CSI, KubeVirt, Longhorn and NVIDIA's GPU operator,
+and how to run them. A node's kernel loads modules only from its image, and no container can load
+one, so the image must carry the modules these workloads use. Each workload has a feature of the
+Kubernetes layer that adds them. `ceph` and `kubevirt` are on by default; `longhorn` and `nvidia`
+are off.
 
 ## Before you begin
 
@@ -106,6 +107,76 @@ boot.kernelParams = [
 ```
 
 Then set the chart's `defaultSettings.v2DataEngine` to `true`.
+
+## Run NVIDIA's GPU operator
+
+[`chalkos.kubernetes.nvidia.enable`](../reference/image-options.md#chalkoskubernetesnvidiaenable)
+is off by default. NVIDIA's driver is unfree, so chalkos publishes no GPU image: build your own,
+with the feature on and the driver's packages allowed in the image's nixpkgs:
+
+```nix
+nixpkgs.config.allowUnfreePredicate = p: lib.elem (lib.getName p) [ "nvidia-x11" ];
+chalkos.kubernetes.nvidia.enable = true;
+```
+
+An image that turns the feature on without the allowance fails to build, and the error names the
+packages to allow.
+
+The image carries NVIDIA's open kernel modules, which GPUs from Turing on run. GPUs before Turing
+need the proprietary modules, which are unfree as well:
+
+```nix
+nixpkgs.config.allowUnfreePredicate = p: lib.elem (lib.getName p) [
+  "nvidia-x11"
+  "nvidia-kernel-modules"
+];
+chalkos.kubernetes.nvidia = {
+  enable = true;
+  kernelModuleType = "proprietary";
+};
+```
+
+Both are built against the image's kernel. NixOS's binary cache holds no unfree packages, so the
+image's build compiles the proprietary modules itself. With the feature on, the image:
+
+- loads `nvidia`, `nvidia_uvm`, `nvidia_modeset` and `nvidia_drm` at boot, keeps `nouveau` from
+  loading and carries NVIDIA's GSP firmware;
+- writes the CDI specification of the node's GPUs to `/var/run/cdi/nvidia.yaml` at boot, with
+  `nvidia-ctk cdi generate`;
+- gives containerd the runtime handler `nvidia`, which runs `nvidia-container-runtime` in CDI
+  mode;
+- keeps `nvidia-smi` and the driver's compute, utility and video libraries in
+  `/usr/local/nvidia`, the driver root the operator mounts into its containers. The libraries of
+  the graphics and display capabilities are left out.
+
+[`chalkos.kubernetes.nvidia.package`](../reference/image-options.md#chalkoskubernetesnvidiapackage)
+selects the driver, nixpkgs's stable branch by default.
+
+With the stable driver 595, the feature adds about 700 MiB to the image's store, about 260 MiB
+of the compressed store partition that every upgrade sends. The default store slot of 3 GiB holds
+it. An image with other large software may need a larger
+[`chalkos.disk.storeSize`](../reference/image-options.md#chalkosdiskstoresize), as
+[Add software](../build/add-software.md) describes.
+
+Install the operator with the driver and the toolkit left to the image:
+
+```console
+$ helm repo add nvidia https://helm.ngc.nvidia.com/nvidia
+$ helm install gpu-operator nvidia/gpu-operator \
+    --namespace gpu-operator --create-namespace \
+    --set driver.enabled=false \
+    --set toolkit.enabled=false \
+    --set cdi.enabled=true \
+    --set hostPaths.driverInstallDir=/usr/local/nvidia
+```
+
+The operator creates the RuntimeClass `nvidia`, whose handler is the image's runtime handler of
+that name. Pods that set `runtimeClassName: nvidia` and request `nvidia.com/gpu` get the GPUs.
+
+No GPU has run this feature in chalkos's tests, which build the images but cannot load the
+driver. On the first GPU node, check that the modules load, that `/dev/nvidia*` exist, that
+`/var/run/cdi/nvidia.yaml` lists the GPUs and that a pod with `runtimeClassName: nvidia` runs
+`nvidia-smi`.
 
 ## Leave a workload's modules out of an image
 
