@@ -181,7 +181,22 @@ The `age1` recipient here stands for your offline backup key's public key.
 
     `flake.nix` names `secrets.pub.json` in the `osCA` of `mkImages` already. The image and the
     installer therefore carry the cluster's OS CA, and a machine that waits in the installer
-    accepts only a chalkctl that holds this cluster's secrets.
+    accepts only a chalkctl that holds this cluster's secrets file or one of its client files.
+
+### Issue your client file
+
+The secrets file holds the OS CA's key, so keep it for the commands that need it. Issue yourself
+a client file with the operator role for the others, such as `chalkctl status` and
+`chalkctl node diag`:
+
+```console
+$ chalkctl client new --name=alice --role=operator --secrets=secrets.age
+wrote /home/alice/.config/chalkos/config for alice with the operator role; its certificate expires on 2027-02-20
+```
+
+A command that takes a client file reads it from `~/.config/chalkos/config` when you pass no
+`--secrets`. The commands that install a node, deliver its config, bootstrap the cluster, write a
+kubeconfig or upgrade with config take `--secrets=secrets.age`.
 
 ### Choose the addresses
 
@@ -375,7 +390,7 @@ the keys and names it: add `--option-roms` to enrol its digest.
 List the machine's disks with [`chalkctl disks`](../reference/cli/chalkctl_disks.md):
 
 ```sh
-chalkctl disks cp1 --fingerprint=<fingerprint> --secrets=secrets.age
+chalkctl disks cp1 --fingerprint=<fingerprint>
 ```
 
 It prints a line per disk with its device, size, type, model, serial number, WWN and use. The
@@ -390,7 +405,7 @@ The diagnostic `addresses`, which
 filter of "Get the tools" puts each on a line:
 
 ```sh
-chalkctl node diag cp1 --fingerprint=<fingerprint> --secrets=secrets.age addresses \
+chalkctl node diag cp1 --fingerprint=<fingerprint> addresses \
   | jq -r "$ports"
 ```
 
@@ -450,7 +465,7 @@ Until the bootstrap, the `kubernetes controlplane` line of
 bootstrap or for the cluster at the VIP:
 
 ```sh
-chalkctl status cp1 --secrets=secrets.age
+chalkctl status cp1
 ```
 
 Repeat the steps for cp2 and cp3, each with its own file and the address its installer shows.
@@ -492,10 +507,10 @@ on it. `kubectl get nodes -o wide` shows each node's static address as `INTERNAL
 `vip holder`, and that of the other two `vip standby`:
 
 ```sh
-chalkctl status cp1 --secrets=secrets.age
+chalkctl status cp1
 ```
 
-To see the VIP move, reboot its holder with `chalkctl node reboot cp1 --secrets=secrets.age`.
+To see the VIP move, reboot its holder with `chalkctl node reboot cp1`.
 chalkctl drains cp1 and keeps etcd's quorum while it reboots. Another control plane wins the
 election and announces the VIP once the old holder's lease of 10 seconds runs out. `kubectl get
 nodes` then answers again.

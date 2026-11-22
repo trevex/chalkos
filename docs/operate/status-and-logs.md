@@ -27,7 +27,7 @@ operator's. The boot and the serial console need the machine's BMC, a screen, or
 image with the inventory. A healthy `node1` reads:
 
 ```console
-$ chalkctl status node1 --secrets secrets.age
+$ chalkctl status node1
 config <version> (the inventory's)
 platform metal (the inventory's)
 image <image>, booted from chalkos_1.efi
@@ -373,7 +373,7 @@ chalkd runs it on the node and sends back what it prints, so a node without a lo
 its addresses, routes and firewall. Without a diagnostic, `chalkctl node diag` lists them:
 
 ```console
-$ chalkctl node diag node1 --secrets secrets.age
+$ chalkctl node diag node1
 DIAGNOSTIC            ROLE      DESCRIPTION
 addresses             reader    The addresses of the node's interfaces, as ip -json address show prints them.
 bfd-peers             reader    One VRF's BFD sessions and their state, as show bfd peers prints them.

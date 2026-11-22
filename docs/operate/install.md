@@ -19,7 +19,7 @@ nix build .#installer -o installer
 chalkbuild sign --key keys/db.key --cert keys/db.crt installer installer-signed
 chalkctl disks --address=<address> --fingerprint=<fingerprint> --secrets=secrets.age
 chalkctl install cp1 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint>
-chalkctl status cp1 --secrets=secrets.age
+chalkctl status cp1
 ```
 
 With the published images of a chalkos release, the release's installer takes the place of the
@@ -375,7 +375,7 @@ volumes, certificates and failed units, as
 [Status, logs and the console](status-and-logs.md) explains:
 
 ```sh
-chalkctl status cp1 --secrets=secrets.age
+chalkctl status cp1
 ```
 
 The node shows its volumes as mounted and no failed units.

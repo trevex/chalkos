@@ -181,7 +181,7 @@ run the everyday commands without the secrets file. `chalkctl client new` issues
 secrets file:
 
 ```console
-$ chalkctl client new --name alice --role operator --secrets secrets.age
+$ chalkctl client new --name alice --role operator --secrets=secrets.age
 wrote /home/alice/.config/chalkos/config for alice with the operator role; its certificate expires on 2027-01-21
 ```
 
@@ -204,8 +204,10 @@ describes how to take access away.
 ## Pass the secrets file or a client file
 
 Pass the secrets file with `--secrets` to the commands that issue certificates or deliver keys and
-config: `install`, `config apply`, `client new`, `recovery-key`, `node renew` and `rotate`. Run the
-others with a client file of a high enough role, or with the secrets file, which counts as admin.
+config: `install`, `config apply`, `client new`, `recovery-key`, `node renew`, `rotate` and
+`kubeconfig`. Run the others with a client file of a high enough role, or with the secrets file,
+which counts as admin. The examples of these pages pass `--secrets` only where a command needs the
+secrets file or the admin role, and leave it off the commands your client file runs.
 [Commands](../reference/access.md#commands) lists the credential each command needs. A command
 that needs the secrets file says so when `--secrets` is missing.
 

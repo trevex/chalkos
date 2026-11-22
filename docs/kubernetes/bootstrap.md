@@ -14,7 +14,7 @@ uses the homelab's control planes `node1`, `node2` and `node3`, behind the VIP
 In short:
 
 ```sh
-chalkctl status node1 --secrets=secrets.age
+chalkctl status node1
 chalkctl bootstrap node1 --secrets=secrets.age
 chalkctl kubeconfig --secrets=secrets.age
 kubectl --kubeconfig kubeconfig get nodes
@@ -26,7 +26,7 @@ kubectl --kubeconfig kubeconfig get nodes
   describes.
 - The cluster's `Cluster` document names the endpoint you chose in [Plan a cluster](plan.md).
 - You hold the secrets file `secrets.age`. `chalkctl bootstrap` also works with an admin client
-  file; `chalkctl kubeconfig` needs the secrets file.
+  file; `chalkctl kubeconfig` needs the secrets file. `chalkctl status` runs with your client file.
 - kubectl is on your workstation, for the check at the end.
 
 A cluster starts once, on one control plane. After that, nothing runs a join command: each node

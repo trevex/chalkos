@@ -14,16 +14,16 @@ In short:
 
 ```sh
 chalkctl validate
-chalkctl config apply r1 --secrets secrets.age --try 2m
-chalkctl node diag r1 --secrets secrets.age nft-ruleset
-chalkctl node diag r1 --secrets secrets.age traceroute address=2001:db8:2::1
+chalkctl config apply r1 --secrets=secrets.age --try 2m
+chalkctl node diag r1 nft-ruleset
+chalkctl node diag r1 traceroute address=2001:db8:2::1
 ```
 
 ## Before you begin
 
 You need a router image, which an image author builds as
-[Images and platforms](../build/images-and-platforms.md) describes, the secrets file, and a
-node installed as [Install a node](../operate/install.md) describes. The examples use the router
+[Images and platforms](../build/images-and-platforms.md) describes, the secrets file, an
+operator client file and a node installed as [Install a node](../operate/install.md) describes. The examples use the router
 `r1`.
 
 ## Configure the interfaces
@@ -69,7 +69,7 @@ Deliver a change of `spec.management.interfaces` on trial, so that the router ro
 chalkctl cannot reach it any more:
 
 ```sh
-chalkctl config apply r1 --secrets secrets.age --try 2m
+chalkctl config apply r1 --secrets=secrets.age --try 2m
 ```
 
 chalkctl confirms the config over a new connection, which the firewall accepts only on a
@@ -94,14 +94,14 @@ Validate the files and deliver them as for any node:
 
 ```sh
 chalkctl validate
-chalkctl config apply r1 --secrets secrets.age
+chalkctl config apply r1 --secrets=secrets.age
 ```
 
 Show the ruleset the router loaded, and the path to an address:
 
 ```sh
-chalkctl node diag r1 --secrets secrets.age nft-ruleset
-chalkctl node diag r1 --secrets secrets.age traceroute address=2001:db8:2::1
+chalkctl node diag r1 nft-ruleset
+chalkctl node diag r1 traceroute address=2001:db8:2::1
 ```
 
 `nft-ruleset` prints the table `inet chalkos`, whose chains

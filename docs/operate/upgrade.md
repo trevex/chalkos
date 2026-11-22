@@ -38,6 +38,9 @@ needs one of these credentials:
 - an operator client file, which upgrades too but delivers no config. Each node then carries its
   own config over.
 
+The examples pass `--secrets` to the upgrade and run `chalkctl status`, `chalkctl node activate` and
+`chalkctl node reboot` with your client file.
+
 You also need the new image, in a registry or in an image directory, as
 [Name the new image in the inventory](#name-the-new-image-in-the-inventory) describes. For your
 own images on nodes that enforce Secure Boot, you need the db key and certificate, `db.key` and
@@ -60,7 +63,7 @@ When chalkd is reachable but Kubernetes or etcd cannot start, run `chalkctl upgr
 install the repair image over the node API. Name every target explicitly:
 
 ```sh
-chalkctl upgrade --nodes cp1 --force --secrets secrets.age
+chalkctl upgrade --nodes cp1 --force --secrets=secrets.age
 ```
 
 The run reaches only the selected nodes, in batches of `--max-unavailable` without coordinator
@@ -70,7 +73,7 @@ be interrupted and etcd can lose quorum. The node's image and config checks, Sec
 and protection of its fallback image still apply. chalkctl still waits for the new boot to pass
 the node's health checks and stops if it falls back. A node cordoned before recovery stays
 cordoned. If the node refuses to overwrite the fallback of an unblessed boot,
-`chalkctl upgrade --nodes cp1 --rollback --force --secrets secrets.age` recovers by booting the
+`chalkctl upgrade --nodes cp1 --rollback --force --secrets=secrets.age` recovers by booting the
 previous image first.
 
 `--force` is a client option; the installed chalkd needs no new API. Use it with `--until stage`
@@ -135,7 +138,7 @@ it changes with `--diff`, which prints each node's changes as
 
 ```sh
 chalkctl validate cp3
-chalkctl upgrade --nodes=cp3 --diff --secrets secrets.age
+chalkctl upgrade --nodes=cp3 --diff --secrets=secrets.age
 ```
 
 The run also stops before it sends anything when a node runs another platform than its image in the
@@ -157,7 +160,7 @@ run of the homelab example upgrades its three Kubernetes nodes, `node1` to `node
 which run two images:
 
 ```console
-$ chalkctl upgrade --secrets secrets.age
+$ chalkctl upgrade --secrets=secrets.age
 upgrading node-metal on metal to <new>: node1, node2, node3
 upgrading router-metal on metal to <new-router>: router
 node1: installing <new>
@@ -215,7 +218,7 @@ the image before it, so its first upgrade names the nodes with `--nodes`. chalkc
 as the directory holds it and checks no signature, so sign it first:
 
 ```sh
-chalkctl upgrade --image=images/node-metal-signed --secrets secrets.age
+chalkctl upgrade --image=images/node-metal-signed --secrets=secrets.age
 ```
 
 When the inventory names the image in a registry, by `source.oci`, the node pulls the image
@@ -247,16 +250,16 @@ lists what it does with each node.
 `--until` stops each node after a step. A later command runs the next step, for one node at a time:
 
 ```console
-$ chalkctl upgrade --nodes cp3 --until stage --secrets secrets.age
+$ chalkctl upgrade --nodes cp3 --until stage --secrets=secrets.age
 upgrading node-metal on metal to <new>: cp3
 cp3: installing <new>
 cp3: config unchanged
 cp3: installed <new>, staged as .staged-chalkos_2.efi
 staged <new> on 1 node; chalkctl node activate makes it boot next
-$ chalkctl node activate cp3 --secrets secrets.age
+$ chalkctl node activate cp3
 cp3: activated <new>, which boots next as chalkos_2+3.efi
 cp3: chalkctl node reboot cp3 boots it
-$ chalkctl node reboot cp3 --secrets secrets.age
+$ chalkctl node reboot cp3
 cp3: cordoned, evicted <n> pods, kept <n>
 cp3: rebooting into <new>
 cp3: runs <new>, found healthy
@@ -283,7 +286,7 @@ describes.
 was found healthy:
 
 ```console
-$ chalkctl status cp3 --secrets secrets.age
+$ chalkctl status cp3
 ...
 image <new>, booted from chalkos_2.efi
 ...

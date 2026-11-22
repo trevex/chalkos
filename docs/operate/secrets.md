@@ -106,7 +106,7 @@ and keeps service credentials outside that write. The `.prev` file holds the bun
 before the rotation. Keep `.prev` and `.lock` out of version control.
 
 ```sh
-chalkctl rotate kubernetes-ca --secrets secrets.enc.json
+chalkctl rotate kubernetes-ca --secrets=secrets.enc.json
 ```
 
 Follow the command's instructions at each pause. For SOPS, use version 3.11 or newer: chalkctl

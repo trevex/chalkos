@@ -16,7 +16,8 @@ links, serves IPv6, delegates prefixes, relays requests and checks the leases.
 
 ## Before you begin
 
-You need a router set up as [Set up a router](set-up.md) describes, and the secrets file. Its
+You need a router set up as [Set up a router](set-up.md) describes, the secrets file and an
+operator client file. Its
 image must carry Kea. Router images do unless their modules set the image option
 [`chalkos.router.dhcp.enable`](../reference/image-options.md#chalkosrouterdhcpenable) to `false`.
 An image without Kea does not accept `DHCPSubnet` documents: `chalkctl validate` reports that it
@@ -305,7 +306,7 @@ Deliver the documents as any config:
 
 ```sh
 chalkctl validate
-chalkctl config apply r1 --secrets secrets.age
+chalkctl config apply r1 --secrets=secrets.age
 ```
 
 `chalkctl status` shows each VRF's DHCP server and, while it runs, the addresses each subnet
@@ -313,7 +314,7 @@ leased and the addresses of its pools. A reserved address counts as leased once 
 it:
 
 ```sh
-chalkctl status r1 --secrets secrets.age
+chalkctl status r1
 ```
 
 ```text
@@ -344,7 +345,7 @@ A server or relay that does not run says why, such as
 The routes of delegated prefixes have the protocol `dhcp-pd`:
 
 ```sh
-chalkctl node routes r1 --secrets secrets.age --vrf access --protocol dhcp-pd
+chalkctl node routes r1 --vrf access --protocol dhcp-pd
 ```
 
 ```text
@@ -359,7 +360,7 @@ host name and when the lease ends. `subnet` and `mac` narrow the list. It
 takes the operator role, as the leases show which machines are on the networks:
 
 ```sh
-chalkctl node diag r1 --secrets secrets.age dhcp-leases subnet=office
+chalkctl node diag r1 dhcp-leases subnet=office
 ```
 
 ```text

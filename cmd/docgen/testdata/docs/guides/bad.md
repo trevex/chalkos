@@ -47,3 +47,9 @@ chalkctl install cp1 --fingerprnt 00ff
 chalkbuild sign --keys db.key in out
 chalkcfg get --outptu json
 ```
+
+```sh
+chalkctl status cp1 --secrets=secrets.age
+chalkctl node diag w1 --secrets secrets.age
+chalkctl disks w1 --secrets=secrets.age
+```

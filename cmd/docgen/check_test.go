@@ -45,6 +45,9 @@ func TestCheck(t *testing.T) {
 		`testdata/docs/guides/bad.md:46: chalkctl install cp1 --fingerprnt 00ff: chalkctl install has no flag --fingerprnt`,
 		`testdata/docs/guides/bad.md:47: chalkbuild sign --keys db.key in out: chalkbuild sign has no flag --keys`,
 		`testdata/docs/guides/bad.md:48: chalkcfg get --outptu json: chalkcfg get has no flag --outptu`,
+		`testdata/docs/guides/bad.md:52: chalkctl status cp1 --secrets=secrets.age: chalkctl status runs with a client file; pass --secrets only to a command that needs the secrets file`,
+		`testdata/docs/guides/bad.md:53: chalkctl node diag w1 --secrets secrets.age: chalkctl node diag runs with a client file; pass --secrets only to a command that needs the secrets file`,
+		`testdata/docs/guides/bad.md:54: chalkctl disks w1 --secrets=secrets.age: chalkctl disks runs with a client file; pass --secrets only to a command that needs the secrets file`,
 	}
 	got := strings.Split(err.Error(), "\n")[1:]
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
@@ -141,6 +144,21 @@ func TestCombinedShortFlags(t *testing.T) {
 			}
 		} else if want != "" {
 			t.Errorf("%s passes, want %q", args, want)
+		}
+	}
+}
+
+// The commands that need the secrets file, and disks of a machine in maintenance mode, take
+// --secrets.
+func TestSecretsOutsideReaderCommands(t *testing.T) {
+	for _, args := range []string{
+		"chalkctl config apply w1 --secrets=secrets.age",
+		"chalkctl install w1 --fingerprint=00ff --secrets secrets.age",
+		"chalkctl disks --address=10.0.0.5 --fingerprint=00ff --secrets=secrets.age",
+		"chalkctl status w1",
+	} {
+		if err := checkInvocation(programs(), strings.Fields(args)); err != nil {
+			t.Errorf("%s: %v", args, err)
 		}
 	}
 }

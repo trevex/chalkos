@@ -18,7 +18,7 @@ nix build .#node-kvm -o images/node-kvm
 chalkbuild sign --key keys/db.key --cert keys/db.crt images/node-kvm images/node-kvm-signed
 cp --sparse=always images/node-kvm-signed/chalkos.raw node.raw
 chalkctl install vm1 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint>
-chalkctl status vm1 --secrets=secrets.age
+chalkctl status vm1
 ```
 
 ## Before you begin
@@ -323,7 +323,7 @@ made from the same image share one.
 volumes, certificates and failed units:
 
 ```sh
-chalkctl status vm1 --secrets=secrets.age
+chalkctl status vm1
 ```
 
 The hypervisor also sees the guest agent. Under libvirt, `virsh domifaddr` lists the addresses the

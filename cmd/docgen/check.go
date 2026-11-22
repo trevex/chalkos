@@ -159,8 +159,18 @@ func program(cmd []string) []string {
 	return nil
 }
 
-// checkInvocation checks that a program has the command args name and the flags they pass.
-// Positional arguments and flag values are not checked: documentation writes placeholders.
+// readerCommands are the commands that read a node or the cluster and run with a client file of
+// any role. The documentation passes them no --secrets, so readers copy a client file, not the
+// OS CA's key, into their everyday commands. disks with --address alone reaches a machine in
+// maintenance mode, which reads no default client file, so it may take --secrets.
+var readerCommands = []string{
+	"chalkctl status", "chalkctl logs", "chalkctl disks", "chalkctl node diag", "chalkctl node routes",
+	"chalkctl etcd members", "chalkctl registry list",
+}
+
+// checkInvocation checks that a program has the command args name and the flags they pass, and
+// that a reader command passes no --secrets. Positional arguments and flag values are not
+// checked: documentation writes placeholders.
 func checkInvocation(roots []*cobra.Command, args []string) error {
 	var root *cobra.Command
 	for _, r := range roots {
@@ -177,17 +187,20 @@ func checkInvocation(roots []*cobra.Command, args []string) error {
 	}
 	cmd.InitDefaultHelpFlag()
 	fs := cmd.Flags()
+	secrets, positional := false, false
 	for i := 0; i < len(rest); i++ {
 		arg := rest[i]
 		switch {
 		case arg == "--":
-			return nil
+			positional = positional || i+1 < len(rest)
+			i = len(rest)
 		case strings.HasPrefix(arg, "--"):
 			name, _, hasValue := strings.Cut(arg[2:], "=")
 			f := fs.Lookup(name)
 			if f == nil {
 				return fmt.Errorf("%s has no flag --%s", cmd.CommandPath(), name)
 			}
+			secrets = secrets || name == "secrets"
 			if !hasValue && f.NoOptDefVal == "" {
 				if i+1 == len(rest) {
 					return fmt.Errorf("--%s of %s needs a value", name, cmd.CommandPath())
@@ -221,7 +234,13 @@ func checkInvocation(roots []*cobra.Command, args []string) error {
 			}
 		case cmd.HasAvailableSubCommands():
 			return fmt.Errorf("%s has no command %q", cmd.CommandPath(), arg)
+		default:
+			positional = true
 		}
+	}
+	path := cmd.CommandPath()
+	if secrets && slices.Contains(readerCommands, path) && (path != "chalkctl disks" || positional) {
+		return fmt.Errorf("%s runs with a client file; pass --secrets only to a command that needs the secrets file", path)
 	}
 	return nil
 }

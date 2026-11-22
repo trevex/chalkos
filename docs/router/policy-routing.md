@@ -15,7 +15,8 @@ it.
 
 ## Before you begin
 
-You need a router set up as [Set up a router](set-up.md) describes, and the secrets file. The
+You need a router set up as [Set up a router](set-up.md) describes, the secrets file and an
+operator client file. The
 examples configure a LAN router `r1` with these links:
 
 - `lan0` and `lan1`, the LAN, in the `FirewallZone` `lan`.
@@ -192,14 +193,14 @@ Deliver the documents as any config:
 
 ```sh
 chalkctl validate
-chalkctl config apply r1 --secrets secrets.age
+chalkctl config apply r1 --secrets=secrets.age
 ```
 
 The diagnostic `ip-rules` lists the kernel's rules of one family. Each target table has a rule of
 priority 900 that matches its mark:
 
 ```sh
-chalkctl node diag r1 --secrets secrets.age ip-rules family=inet6
+chalkctl node diag r1 ip-rules family=inet6
 ```
 
 The diagnostic prints the rules as one JSON array on a single line, shown here a rule per line:
@@ -218,7 +219,7 @@ The diagnostic `routes` lists a next hop's table, here with the route through th
 the unreachable default:
 
 ```sh
-chalkctl node diag r1 --secrets secrets.age routes family=inet6 table=201
+chalkctl node diag r1 routes family=inet6 table=201
 ```
 
 ```json
@@ -230,7 +231,7 @@ The firewall's chain `policy-routing` counts the packets each rule marked. Its c
 document and the rule's number:
 
 ```sh
-chalkctl node diag r1 --secrets secrets.age nft-ruleset
+chalkctl node diag r1 nft-ruleset
 ```
 
 ```text

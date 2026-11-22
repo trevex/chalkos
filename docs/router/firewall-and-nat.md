@@ -170,14 +170,14 @@ Validate the files and deliver them as for any config:
 
 ```sh
 chalkctl validate
-chalkctl config apply r1 --secrets secrets.age
+chalkctl config apply r1 --secrets=secrets.age
 ```
 
 The node checks the rendered ruleset with nft before it changes anything, and loads it in one
 transaction. Show what it loaded:
 
 ```sh
-chalkctl node diag r1 --secrets secrets.age nft-ruleset
+chalkctl node diag r1 nft-ruleset
 ```
 
 When nft refuses the rendered ruleset at boot, the router loads the fallback ruleset instead,
@@ -186,7 +186,7 @@ reads `nft refused /run/chalkos/outputs/router-nftables/ruleset.nft; loading the
 which forwards nothing`:
 
 ```sh
-chalkctl logs r1 --secrets secrets.age --unit=chalkos-firewall.service
+chalkctl logs r1 --unit=chalkos-firewall.service
 ```
 
 The next delivery that changes the firewall documents loads the rendered ruleset again.

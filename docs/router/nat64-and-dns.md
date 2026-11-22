@@ -14,7 +14,8 @@ both.
 
 ## Before you begin
 
-You need a router set up as [Set up a router](set-up.md) describes, and the secrets file. Its
+You need a router set up as [Set up a router](set-up.md) describes, the secrets file and an
+operator client file. Its
 image must carry Jool for NAT64 and Unbound for the resolver. Router images do unless their
 modules set the image option
 [`chalkos.router.nat64.enable`](../reference/image-options.md#chalkosrouternat64enable) or
@@ -153,7 +154,7 @@ exists while the NAT64 runs. An explicit pool's prefixes get such a route too. `
 routes` lists them:
 
 ```sh
-chalkctl node routes r1 --protocol nat64 --secrets secrets.age
+chalkctl node routes r1 --protocol nat64
 ```
 
 ```text
@@ -261,7 +262,7 @@ address. The router routes its prefix to its link in `guest`'s table, where the 
 and no other VRF does:
 
 ```sh
-chalkctl node routes r1 --vrf guest --protocol nat64 --secrets secrets.age
+chalkctl node routes r1 --vrf guest --protocol nat64
 ```
 
 ```text
@@ -356,7 +357,7 @@ Validate the files and deliver them:
 
 ```sh
 chalkctl validate
-chalkctl config apply r1 --secrets secrets.age
+chalkctl config apply r1 --secrets=secrets.age
 ```
 
 The delivery applies the NAT64s and reloads the resolvers, which keep their caches. A `Resolver`
@@ -370,7 +371,7 @@ fails on an upgrade's first boot, the router falls back to the image it ran, as
 `chalkctl status` shows the NAT64s and the resolvers after the BGP sessions:
 
 ```sh
-chalkctl status r1 --secrets secrets.age
+chalkctl status r1
 ```
 
 ```text
@@ -413,7 +414,7 @@ runs neither.
 The diagnostic `dns-query` asks the resolver from the router:
 
 ```sh
-chalkctl node diag r1 --secrets secrets.age dns-query name=ipv4only.arpa type=AAAA server=2001:db8:ffff::1
+chalkctl node diag r1 dns-query name=ipv4only.arpa type=AAAA server=2001:db8:ffff::1
 ```
 
 ```text
@@ -433,7 +434,7 @@ then ICMP. Each shows the remote host's and the client's address and port, then 
 address and port and the address the client connected to:
 
 ```sh
-chalkctl node diag r1 --secrets secrets.age nat64-sessions instance=edge
+chalkctl node diag r1 nat64-sessions instance=edge
 ```
 
 ```text

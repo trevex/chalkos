@@ -224,7 +224,7 @@ chalkctl validate node1
 Then deliver the config:
 
 ```console
-$ chalkctl config apply node1 --secrets secrets.age
+$ chalkctl config apply node1 --secrets=secrets.age
 node1: config 1 added, 0 removed, 0 changed
 volume scratch: new volume
 node1 runs config 45095fb6414e5f6744a8bf134254107d7d943537457d513fc51e7440deace75f
@@ -265,7 +265,7 @@ refusals. VAR, a removed volume and a volume that moves to another disk take a r
 document now defines it:
 
 ```console
-$ chalkctl storage reset node1 scratch --secrets secrets.age
+$ chalkctl storage reset node1 scratch --secrets=secrets.age
 volume scratch of node1 was wiped and created again
 ```
 

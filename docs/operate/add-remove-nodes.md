@@ -191,7 +191,7 @@ could register its Node again. `chalkctl node revoke` cuts the node off by name,
 without a rotation:
 
 ```console
-$ chalkctl node revoke w1 --secrets secrets.age
+$ chalkctl node revoke w1 --secrets=secrets.age
 revoked node w1 (since 2026-10-23T22:42:25Z); deleted its Node object
 ```
 
@@ -269,7 +269,7 @@ to. Then remove the name from the revoked nodes:
 3. Unrevoke the name:
 
     ```console
-    $ chalkctl node unrevoke w1 --secrets secrets.age
+    $ chalkctl node unrevoke w1 --secrets=secrets.age
     unrevoked node w1; the certificates it held before <time> are no longer trusted
     ```
 
@@ -296,7 +296,7 @@ chalkctl: cp1: failed_precondition: w1 was revoked at 2026-10-23T22:42:25Z, but 
 example after revoking the wrong node. Its old certificates then work again until they expire:
 
 ```console
-$ chalkctl node unrevoke w1 --force --secrets secrets.age
+$ chalkctl node unrevoke w1 --force --secrets=secrets.age
 unrevoked node w1; its certificates from before 2026-10-23T22:42:25Z work again until they expire: the os-ca and kubernetes-ca were not rotated since
 the old w1's kubelet does not register its Node again by itself: reboot it with chalkctl node reboot w1 --no-drain, or restart its kubelet; a node installed afresh as w1 registers as usual
 ```

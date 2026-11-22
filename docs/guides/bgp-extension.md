@@ -677,15 +677,15 @@ printed.
 
 ### An output fails
 
-`chalkctl status node1 --secrets=secrets.age` lists the outputs, `bird-conf` among them, each with
+`chalkctl status node1` lists the outputs, `bird-conf` among them, each with
 the hash of the files the node serves and its state. `failed:` names the last failure. The refusal
 names the output and the exit status alone, as in the tests. The render ran as a transient unit,
 `chalkos-render-<n>.service`, which chalkd's journal names beside the failure, and that unit's
 journal holds what the renderer or the check printed:
 
 ```sh
-chalkctl logs node1 --secrets=secrets.age --unit=chalkd.service
-chalkctl logs node1 --secrets=secrets.age --unit=chalkos-render-<n>.service
+chalkctl logs node1 --unit=chalkd.service
+chalkctl logs node1 --unit=chalkos-render-<n>.service
 ```
 
 A node renders every output again at boot, from the config it boots with. A renderer reads its
@@ -697,7 +697,7 @@ documents renders the same `bird.conf` the node serves.
 bird's journal shows its start, each reload and the errors of `bird-credentials`:
 
 ```sh
-chalkctl logs node1 --secrets=secrets.age --unit=bird.service
+chalkctl logs node1 --unit=bird.service
 ```
 
 `bird takes no password with a quote or a line break` needs another value in the `Secret`.
@@ -710,7 +710,7 @@ new entries while you deliver a change, so a reload shows as it happens.
 The diagnostic shows bird's sessions, each named after its `Peer` and interface:
 
 ```console
-$ chalkctl node diag node1 --secrets=secrets.age bird-protocols
+$ chalkctl node diag node1 bird-protocols
 ...
 Name           Proto      Table      State  Since         Info
 ...
@@ -724,9 +724,9 @@ their addresses, `neighbours` that the router answers on the port, and `routes` 
 has a default route with protocol `ra`:
 
 ```sh
-chalkctl node diag node1 --secrets=secrets.age addresses
-chalkctl node diag node1 --secrets=secrets.age neighbours
-chalkctl node diag node1 --secrets=secrets.age routes family=inet6
+chalkctl node diag node1 addresses
+chalkctl node diag node1 neighbours
+chalkctl node diag node1 routes family=inet6
 ```
 
 The kernel drops TCP segments whose MD5 signature does not match, so a wrong password logs nothing

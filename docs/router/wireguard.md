@@ -12,7 +12,8 @@ reads them as credentials, and no file that chalkos renders holds a key.
 
 ## Before you begin
 
-You need a router set up as [Set up a router](set-up.md) describes, and the secrets file. Its
+You need a router set up as [Set up a router](set-up.md) describes, the secrets file and an
+operator client file. Its
 image must accept the WireGuard kinds. Router images do unless their modules set the image option
 [`chalkos.router.wireguard.enable`](../reference/image-options.md#chalkosrouterwireguardenable)
 to `false`. An image without WireGuard refuses the kinds: `chalkctl validate` reports that it
@@ -166,7 +167,7 @@ Validate the files and deliver them:
 
 ```sh
 chalkctl validate
-chalkctl config apply r1 --secrets secrets.age
+chalkctl config apply r1 --secrets=secrets.age
 ```
 
 A delivery reloads networkd, which creates the interface, or applies the changed settings and
@@ -180,7 +181,7 @@ endpoints, the allowed IPs, the latest handshake and the bytes of each peer. It 
 private and preshared keys as `(hidden)`. `interface` narrows it to one interface:
 
 ```sh
-chalkctl node diag r1 --secrets secrets.age wireguard interface=wg0
+chalkctl node diag r1 wireguard interface=wg0
 ```
 
 ```text

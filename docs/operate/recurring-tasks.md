@@ -13,8 +13,8 @@ In short:
 
 ```sh
 chalkctl status <node>          # the certificates: section shows what expires when
-chalkctl client new --name=<name> --role=<role> --secrets secrets.age --force
-chalkctl rotate node-ca --secrets secrets.age
+chalkctl client new --name=<name> --role=<role> --secrets=secrets.age --force
+chalkctl rotate node-ca --secrets=secrets.age
 nix flake update chalkos        # after changing the input's tag; then rebuild, validate and upgrade
 ```
 

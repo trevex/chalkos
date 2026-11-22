@@ -199,7 +199,9 @@ nix build --no-link -L .#checks.x86_64-linux.docs .#checks.x86_64-linux.docs-gen
 `shell-session` or without a language. It strips `$ ` prompts, joins lines ending in `\`,
 follows wrappers such as `sudo`, `env`, `nix run .#chalklab --` and `nix develop -c`, and
 reports a `chalkctl`, `chalklab`, `chalkbuild` or `chalkcfg` command, subcommand or flag that
-does not exist, a single-dash long flag and a flag missing its value. Positional arguments and
+does not exist, a single-dash long flag and a flag missing its value. It also reports `--secrets` on a
+command that reads with a client file: `chalkctl status`, `logs`, `disks` of a named node,
+`node diag`, `node routes`, `etcd members` and `registry list`. Positional arguments and
 flag values are not checked, so placeholders such as `<node>` pass. For a page whose block runs
 `chalkctl upgrade` with a `--dry-run` flag and `chalkctl status` with `-insecure`, it reports:
 

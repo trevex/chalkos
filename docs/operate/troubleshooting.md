@@ -119,7 +119,7 @@ config from before the trial again.
 - `chalkctl: warning: node1: units failed already: late.service; the trial rolls back at its deadline unless they recover, the image ignores them or --ignore-unit leaves them out`:
   a unit failed before the trial, and any failed unit keeps the node from confirming. Leave it
   out of the trial's check with `--ignore-unit`, one unit per flag:
-  `chalkctl config apply node1 --secrets secrets.age --try 5m --ignore-unit late.service`.
+  `chalkctl config apply node1 --secrets=secrets.age --try 5m --ignore-unit late.service`.
 
 [chalkctl confirms a trial over a new connection](../how-it-works/node/config.md#chalkctl-confirms-a-trial-over-a-new-connection)
 explains what the confirmation waits for.
@@ -131,16 +131,16 @@ explains what the confirmation waits for.
 
 - `the image <hash> staged in the inactive slot: ... no fallback secret was sent; ...`: the staged
   image's storage needs the fallback secret and the running image's does not. Deliver the config to
-  the staged image with `chalkctl config apply --staged node1 --secrets secrets.age`.
+  the staged image with `chalkctl config apply --staged node1 --secrets=secrets.age`.
 - `the node runs config <version> (<what it did>), but writing the config slot of the image <hash> staged in the inactive slot failed, so it keeps config <version>: ...`:
   the running image took the config, and the staged image kept its earlier one. Run the command
   again to write it.
 - `config <version> is confirmed, but the image <hash>, staged in the inactive slot when the trial began, is the running image now, ...`:
   the node booted into the staged image during the trial, so the running image's config slot never
-  got the confirmed config. Run `chalkctl config apply node1 --secrets secrets.age` to write it.
+  got the confirmed config. Run `chalkctl config apply node1 --secrets=secrets.age` to write it.
 - `config <version> is confirmed, but the confirmation that ended its trial stopped before it wrote the config slot of the image <hash> ...`:
   chalkd or the node stopped while it confirmed the trial, and the staged image kept its earlier
-  config. Run `chalkctl config apply node1 --secrets secrets.age` to write it.
+  config. Run `chalkctl config apply node1 --secrets=secrets.age` to write it.
 
 ## An upgrade refuses the pending config
 

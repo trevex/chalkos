@@ -12,7 +12,8 @@ into VRFs, runs BGP in each, imports routes from one VRF into another and checks
 
 ## Before you begin
 
-You need a router set up as [Set up a router](set-up.md) describes, and the secrets file. The
+You need a router set up as [Set up a router](set-up.md) describes, the secrets file and an
+operator client file. The
 examples configure the edge `r1`. Its management link `eth0` stays out of every VRF. Its uplink
 `eth1` goes into the VRF `internet`, and `eth2` and the `swp` links to a tenant's leaves go into
 the VRF `tenant`. Each link has a `Network` document that names it in `[Match] Name=`:
@@ -87,7 +88,7 @@ link chalkctl reaches the router through, so deliver every change of VRFs as a t
 rolls the trial back when chalkctl cannot reach it over a new connection:
 
 ```sh
-chalkctl config apply r1 --try 2m --secrets secrets.age
+chalkctl config apply r1 --try 2m --secrets=secrets.age
 ```
 
 ## Declare the VRFs
@@ -127,7 +128,7 @@ default route of BGP or of a member's `Network` takes precedence over them.
 `static`:
 
 ```sh
-chalkctl node routes r1 --vrf tenant --protocol static --secrets secrets.age
+chalkctl node routes r1 --vrf tenant --protocol static
 ```
 
 ```text
@@ -351,7 +352,7 @@ Deliver the documents as a trial, as above. `chalkctl status` lists the sessions
 the default VRF's first:
 
 ```sh
-chalkctl status r1 --secrets secrets.age
+chalkctl status r1
 ```
 
 ```text
@@ -365,14 +366,14 @@ bgp:
 `chalkctl node routes --vrf` lists a VRF's table and the paths of its instance:
 
 ```sh
-chalkctl node routes r1 --vrf tenant --secrets secrets.age
+chalkctl node routes r1 --vrf tenant
 ```
 
 Without `--vrf`, the command lists the main table and the default VRF's paths. A path that an
 instance imported names its VRF as its peer:
 
 ```sh
-chalkctl node routes r1 2001:db8:100::/40 --secrets secrets.age
+chalkctl node routes r1 2001:db8:100::/40
 ```
 
 ```text
@@ -389,8 +390,8 @@ not know VRFs cannot list a VRF's routes, and `--vrf` fails on it. The diagnosti
 `bgp-neighbor`, `bgp-route` and `bfd-peers` take `vrf`, which is `default` when it is left out:
 
 ```sh
-chalkctl node diag r1 --secrets secrets.age bgp-summary vrf=tenant
-chalkctl node diag r1 --secrets secrets.age bgp-route vrf=internet family=ipv4 prefix=198.51.100.0/24
+chalkctl node diag r1 bgp-summary vrf=tenant
+chalkctl node diag r1 bgp-route vrf=internet family=ipv4 prefix=198.51.100.0/24
 ```
 
 ## Change a VRF's table

@@ -11,7 +11,7 @@ new value alone, and every kubeconfig in use chains to the new CAs.
 [`chalkctl rotate`](../reference/cli/chalkctl_rotate.md) rotates three Kubernetes kinds:
 
 ```console
-$ chalkctl rotate kubernetes-ca --secrets secrets.age
+$ chalkctl rotate kubernetes-ca --secrets=secrets.age
 secrets.age records the rotation of the Kubernetes CAs; the previous version is secrets.age.prev; secrets.pub.json holds the new public half
 kubernetes-ca: the accept phase
   cp1 runs on its new files
@@ -29,7 +29,7 @@ worker, `w1`. The lab's secrets file and kubeconfig had other names; the output 
 
 ## Before you begin
 
-- You hold the secrets file and know how a rotation runs, as
+- You hold the secrets file and a client file, and know how a rotation runs, as
   [Act at the pauses of a rotation](../operate/access.md#act-at-the-pauses-of-a-rotation)
   describes.
 - Every node of the inventory runs and is reachable. Each phase waits until every node confirms
@@ -73,7 +73,7 @@ once, before the finish.
 ## Rotate the Kubernetes CAs
 
 `kubernetes-ca` replaces the cluster's three Kubernetes CAs together. Start it with
-`chalkctl rotate kubernetes-ca --secrets secrets.age`, as at the top of this page. The accept
+`chalkctl rotate kubernetes-ca --secrets=secrets.age`, as at the top of this page. The accept
 phase gives control planes and workers both CAs and restarts chalkos's add-ons and the workloads of
 the [`Addon`](../reference/kinds.md#addon) documents.
 
@@ -85,7 +85,7 @@ At the first pause:
    keep working through the rotation:
 
     ```console
-    $ chalkctl kubeconfig --secrets secrets.age --out admin.kubeconfig
+    $ chalkctl kubeconfig --secrets=secrets.age --out admin.kubeconfig
     wrote admin.kubeconfig; its certificate is valid for 24h0m0s
     ```
 
@@ -94,7 +94,7 @@ each worker a kubelet client certificate of the new CA and has every kubelet req
 certificate. Control planes issued their kubelet client certificates themselves at the switch:
 
 ```console
-$ chalkctl rotate kubernetes-ca --resume --secrets secrets.age
+$ chalkctl rotate kubernetes-ca --resume --secrets=secrets.age
 kubernetes-ca: the switch phase
   cp1 runs on its new files
   cp2 runs on its new files
@@ -118,7 +118,7 @@ Unable to connect to the server: tls: failed to verify certificate: x509: certif
 At the second pause, issue kubeconfigs for anyone who did not get one at the first. Then finish:
 
 ```console
-$ chalkctl rotate kubernetes-ca --finish --secrets secrets.age
+$ chalkctl rotate kubernetes-ca --finish --secrets=secrets.age
 kubernetes-ca: the finish phase
   cp1 runs on its new files
   cp2 runs on its new files
@@ -139,7 +139,7 @@ refresh in one command. The refresh restarts chalkos's add-ons and the workloads
 documents, which get tokens of the new key at once:
 
 ```console
-$ chalkctl rotate service-account-key --secrets secrets.age
+$ chalkctl rotate service-account-key --secrets=secrets.age
 secrets.age records the rotation of the service-account key; the previous version is secrets.age.prev; secrets.pub.json holds the new public half
 service-account-key: the accept phase
   cp1 runs on its new files
@@ -169,7 +169,7 @@ A finish before that hour is refused, because it would invalidate tokens that po
 chalkctl: tokens signed with the old service-account key are renewed until 2026-10-23T20:58:51+02:00, an hour after every control plane applied the switch; finish then, or pass --force to refuse the tokens not renewed yet
 ```
 
-Run `chalkctl rotate service-account-key --finish --secrets secrets.age` once the time has
+Run `chalkctl rotate service-account-key --finish --secrets=secrets.age` once the time has
 passed. `--finish --force` finishes earlier and refuses the tokens that were not renewed yet.
 
 ## Rotate the encryption key
@@ -179,7 +179,7 @@ every encrypted object, so etcd stores it under the new key. It then checks that
 under the old key:
 
 ```console
-$ chalkctl rotate encryption-key --secrets secrets.age
+$ chalkctl rotate encryption-key --secrets=secrets.age
 ...
 encryption-key: the refresh phase
   rewrote 1 encrypted object unchanged
@@ -190,7 +190,7 @@ etcd holds every encrypted object under the new key; remove the old key with cha
 
 `...` stands for the accept and switch phases, whose lines match those of the service-account key.
 `chalkos-20261023t180036z` is the name of the new key. Then finish with
-`chalkctl rotate encryption-key --finish --secrets secrets.age`.
+`chalkctl rotate encryption-key --finish --secrets=secrets.age`.
 
 On a large cluster the rewrite can take longer than `--timeout`, 10 minutes by default. The error
 then names a command with a longer timeout. `--resume` repeats the rewrite without harm: it writes
@@ -223,7 +223,7 @@ fingerprint. `(issues)` marks the value a control plane issues or signs with. Du
 the Kubernetes CAs a control plane trusts two of each:
 
 ```console
-$ chalkctl status cp1 --secrets secrets.age
+$ chalkctl status cp1
 ...
 trust:
   OS CA                 1fb637c2d290057d

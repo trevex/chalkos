@@ -15,16 +15,17 @@ In short:
 
 ```sh
 chalkctl validate
-chalkctl config apply cp1 --secrets secrets.age --diff
-chalkctl config apply cp1 --secrets secrets.age --dry-run
-chalkctl config apply cp1 cp2 cp3 --secrets secrets.age
-chalkctl status cp1 --secrets secrets.age
+chalkctl config apply cp1 --secrets=secrets.age --diff
+chalkctl config apply cp1 --secrets=secrets.age --dry-run
+chalkctl config apply cp1 cp2 cp3 --secrets=secrets.age
+chalkctl status cp1
 ```
 
 ## Before you begin
 
 You need the workstation that [Set up your workstation](workstation.md) describes, with the secrets
 file `secrets.age`. `chalkctl config apply` needs the secrets file. No client file suffices.
+`chalkctl status` runs with your client file.
 
 The commands of this page are under [`chalkctl config`](../reference/cli/chalkctl_config.md).
 [`chalkctl apply`](../reference/cli/chalkctl_apply.md) is the short form of `chalkctl config apply`
@@ -72,7 +73,7 @@ and holds its value shows when `--diff`, `--dry-run` or a delivery reads it.
 nothing:
 
 ```console
-$ chalkctl config apply cp1 --secrets secrets.age --diff
+$ chalkctl config apply cp1 --secrets=secrets.age --diff
 cp1: config 1 added, 0 removed, 0 changed
 + TimeSync "default"
 ```
@@ -99,7 +100,7 @@ validate` and `--diff` run no renderer, so a config they accept can still be ref
 A dry run shows that refusal first:
 
 ```console
-$ chalkctl config apply cp1 --secrets secrets.age --dry-run
+$ chalkctl config apply cp1 --secrets=secrets.age --dry-run
 cp1: config 1 added, 0 removed, 0 changed
 + TimeSync "default"
 cp1: config <previous-version> → <version>
@@ -131,7 +132,7 @@ line counts both kinds, such as
 Run the command without `--diff`:
 
 ```console
-$ chalkctl config apply cp1 --secrets secrets.age
+$ chalkctl config apply cp1 --secrets=secrets.age
 cp1: config 1 added, 0 removed, 0 changed
 restarted <unit>
 cp1 runs config 415c8f6a2ad1aaf92090cbf7b9814c5384220d2ec63d276334234e2bfcef86ad
@@ -153,7 +154,7 @@ Deliver the config to each node whose files changed. One command takes several n
 to them one after the other. The change reaches `cp2` and `cp3` as well:
 
 ```sh
-chalkctl config apply cp1 cp2 cp3 --secrets secrets.age
+chalkctl config apply cp1 cp2 cp3 --secrets=secrets.age
 ```
 
 chalkctl checks every node before the first one gets anything, and stops at the first node that
@@ -172,7 +173,7 @@ image that boots with config of its own. A plain `config apply` delivers to that
 both images have checked the config:
 
 ```console
-$ chalkctl config apply cp1 --secrets secrets.age
+$ chalkctl config apply cp1 --secrets=secrets.age
 cp1: config 1 added, 0 removed, 0 changed
 cp1 runs config <version>
 cp1 boots config <version> with its staged image too
@@ -181,7 +182,7 @@ cp1 boots config <version> with its staged image too
 `--staged` delivers to the staged image alone, staged or active, and restarts nothing:
 
 ```sh
-chalkctl config apply cp1 --staged --secrets secrets.age
+chalkctl config apply cp1 --staged --secrets=secrets.age
 ```
 
 The command ends with `cp1 boots config <version> with its staged image`. With `--dry-run`, the
@@ -191,7 +192,7 @@ On a node without a staged image, `--staged` holds the config for the next upgra
 pending config:
 
 ```console
-$ chalkctl config apply cp1 --staged --secrets secrets.age
+$ chalkctl config apply cp1 --staged --secrets=secrets.age
 cp1: config 1 added, 0 removed, 0 changed
 cp1 holds config <version> pending, unchecked; the next upgrade checks it against its image
 ```
@@ -200,7 +201,7 @@ A later `config apply` without `--staged` replaces the pending config with the c
 `chalkctl config discard` removes the pending config and needs no inventory:
 
 ```console
-$ chalkctl config discard cp1 --secrets secrets.age
+$ chalkctl config discard cp1 --secrets=secrets.age
 cp1 dropped its pending config <version>
 ```
 
@@ -212,7 +213,7 @@ explains which image checks what and when each slot is written.
 `chalkctl status` shows the config the node runs and whether it is the inventory's:
 
 ```console
-$ chalkctl status cp1 --secrets secrets.age
+$ chalkctl status cp1
 config 415c8f6a2ad1aaf92090cbf7b9814c5384220d2ec63d276334234e2bfcef86ad (the inventory's)
 ...
 ```
@@ -227,7 +228,7 @@ A node keeps the config its running image ran before the last delivery, its prev
 it with `--diff` first, which prints what the rollback changes and changes nothing:
 
 ```console
-$ chalkctl config rollback cp1 --secrets secrets.age --diff
+$ chalkctl config rollback cp1 --secrets=secrets.age --diff
 cp1: config 0 added, 1 removed (TimeSync "default"), 0 changed
 - TimeSync "default" (in the running config, not in the previous one)
 ```
@@ -235,7 +236,7 @@ cp1: config 0 added, 1 removed (TimeSync "default"), 0 changed
 Then run it without `--diff`:
 
 ```console
-$ chalkctl config rollback cp1 --secrets secrets.age
+$ chalkctl config rollback cp1 --secrets=secrets.age
 cp1: config 0 added, 1 removed (TimeSync "default"), 0 changed
 restarted <unit>
 cp1 runs config <previous-version> again; config 415c8f6a2ad1aaf92090cbf7b9814c5384220d2ec63d276334234e2bfcef86ad is its previous one now
@@ -264,7 +265,7 @@ at the end of the duration unless chalkctl confirms it first. `--try` takes a du
 24h and has no default:
 
 ```console
-$ chalkctl config apply cp1 --secrets secrets.age --try 5m
+$ chalkctl config apply cp1 --secrets=secrets.age --try 5m
 cp1: config 1 added, 0 removed, 0 changed
 cp1: delivering config <version> on trial until <deadline>
 restarted <unit>
@@ -298,8 +299,8 @@ chalkctl config confirm cp1 keeps it; chalkctl config rollback cp1 rolls it back
 trial's deadline:
 
 ```sh
-chalkctl config apply cp1 --secrets secrets.age --try 30m --no-confirm
-chalkctl config confirm cp1 --secrets secrets.age
+chalkctl config apply cp1 --secrets=secrets.age --try 30m --no-confirm
+chalkctl config confirm cp1 --secrets=secrets.age
 ```
 
 The node keeps the config on trial, so the command needs no inventory.
@@ -320,7 +321,7 @@ you have verified that the dependent service can safely run, repeat the config d
 `--ignore-readiness`:
 
 ```sh
-chalkctl config apply cp1 --secrets secrets.age --ignore-readiness
+chalkctl config apply cp1 --secrets=secrets.age --ignore-readiness
 ```
 
 The probe still runs within its configured deadline. A failure is reported as a warning and

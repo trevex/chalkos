@@ -27,7 +27,7 @@ A client file holds a certificate of one role, its key and the OS CA. It lets a 
 without the secrets file. Issue one per person with `chalkctl client new`:
 
 ```sh
-chalkctl client new --name alice --role operator --ttl 2160h --out alice.json --secrets secrets.age
+chalkctl client new --name alice --role operator --ttl 2160h --out alice.json --secrets=secrets.age
 ```
 
 `--role` is reader, operator or admin. Give each person the least role their work needs.
@@ -77,7 +77,7 @@ A node whose image runs no Kubernetes has no control plane to ask. Renew its cer
 `chalkctl node renew` once a year, before it expires:
 
 ```console
-$ chalkctl node renew w1 --secrets secrets.age
+$ chalkctl node renew w1 --secrets=secrets.age
 w1 serves a new node certificate; it expires <date>
 ```
 
@@ -101,7 +101,7 @@ once less than 18 months remain, with `node CA expires <date>; run chalkctl rota
 the node CA, and gives every node a certificate of it:
 
 ```console
-$ chalkctl rotate node-ca --secrets secrets.age
+$ chalkctl rotate node-ca --secrets=secrets.age
 secrets.age records the rotation of the node CA; the previous version is secrets.age.prev; secrets.pub.json holds the new public half
 node-ca: the accept phase
   every node trusts the OS CA the new node CA chains to; nothing to deliver
@@ -230,7 +230,7 @@ The OS CA is the root every node and client file trusts. Rotating it replaces th
 gives every node a new certificate. Start the rotation:
 
 ```console
-$ chalkctl rotate os-ca --secrets secrets.age
+$ chalkctl rotate os-ca --secrets=secrets.age
 secrets.age records the rotation of the OS CA; the previous version is secrets.age.prev; secrets.pub.json holds the new public half
 os-ca: the accept phase
   cp1 trusts the 2 OS CAs of the secrets file
@@ -242,7 +242,7 @@ Every node trusts the old and the new OS CA. Issue new client files now with cha
 Issue a new client file for everyone who keeps access, with `chalkctl client new`. Then resume:
 
 ```console
-$ chalkctl rotate os-ca --resume --secrets secrets.age
+$ chalkctl rotate os-ca --resume --secrets=secrets.age
 os-ca: the switch phase
   cp1 renews node certificates with the new node CA
 os-ca: every node applied the switch phase
@@ -262,7 +262,7 @@ again. Running nodes need no new image. The next image built carries the new OS 
 a new root hash like any other change. Then finish:
 
 ```sh
-chalkctl rotate os-ca --finish --secrets secrets.age
+chalkctl rotate os-ca --finish --secrets=secrets.age
 ```
 
 The finish ends with
@@ -280,7 +280,7 @@ issued before it.
 fingerprint. During an OS CA rotation a node trusts two:
 
 ```console
-$ chalkctl status w1 --secrets secrets.age
+$ chalkctl status w1
 ...
 trust:
   OS CA  <old fingerprint>, <new fingerprint>
