@@ -2383,7 +2383,7 @@ lib.runTests {
   };
   # The guest agent answers what the host asks about the node and shuts it down; it runs no
   # commands and touches no files. It shuts the node down with systemd's commands, which it runs
-  # from /sbin.
+  # from /sbin, a tmpfs of its own: when an image has links below /usr, /sbin leads to /usr/sbin.
   testGuestAgentRestricted =
     let
       config = workerImages.worker-kvm.nixos.config;
@@ -2393,6 +2393,7 @@ lib.runTests {
       expr = {
         rpcs = lib.splitString "," (lib.head (builtins.match ".*--allow-rpcs=([^ ]*).*" service.ExecStart));
         sbin = service.BindReadOnlyPaths or [ ];
+        sbinTmpfs = service.TemporaryFileSystem or null;
       };
       expected = {
         rpcs = [
@@ -2413,6 +2414,7 @@ lib.runTests {
           "reboot"
           "shutdown"
         ];
+        sbinTmpfs = "/sbin";
       };
     };
   # A kvm image finds its disks at boot: the initrd loads virtio's PCI transport and its block and

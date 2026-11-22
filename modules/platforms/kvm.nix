@@ -17,7 +17,10 @@
   services.qemuGuest.enable = true;
   systemd.services.qemu-guest-agent = {
     unitConfig.ConditionVirtualization = "kvm";
-    # It shuts the node down with /sbin/poweroff, halt, reboot or shutdown, which systemd gives.
+    # It shuts the node down with /sbin/poweroff, halt, reboot or shutdown, which systemd gives,
+    # on a tmpfs of its own: an image with links below /usr has /sbin lead to the read-only
+    # /usr/sbin, where no mount point can be made.
+    serviceConfig.TemporaryFileSystem = "/sbin";
     serviceConfig.BindReadOnlyPaths = map (b: "${config.systemd.package}/bin/${b}:/sbin/${b}") [
       "poweroff"
       "halt"
