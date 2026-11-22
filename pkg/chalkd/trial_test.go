@@ -172,8 +172,8 @@ func TestTrialState(t *testing.T) {
 	check(trialLost)
 }
 
-// TestChangesWaitForATrial refuses every delivery, an upgrade and an image rollback while a config
-// is on trial, names how to end it, and changes nothing.
+// TestChangesWaitForATrial refuses every delivery, a volume reset, an upgrade and an image rollback
+// while a config is on trial, names how to end it, and changes nothing.
 func TestChangesWaitForATrial(t *testing.T) {
 	s, r := configServer(t)
 	rec := recordTrial(t, s, nextConfig)
@@ -194,6 +194,10 @@ func TestChangesWaitForATrial(t *testing.T) {
 		{"config", "another delivery", apply(&nodev1.ApplyConfigRequest{Config: baseConfig})},
 		{"staged config", "another delivery", apply(&nodev1.ApplyConfigRequest{Config: baseConfig, Staged: true})},
 		{"OS CAs", "another delivery", apply(&nodev1.ApplyConfigRequest{Trust: []byte("x")})},
+		{"volume reset", "a volume reset", func() error {
+			_, err := s.ResetVolume(ctx, &nodev1.ResetVolumeRequest{Volume: "data", Config: baseConfig})
+			return err
+		}},
 		{"image rollback", "an image rollback", func() error {
 			_, err := s.RollbackImage(ctx, &nodev1.RollbackImageRequest{RootHash: bytes.Repeat([]byte{1}, 32)})
 			return err

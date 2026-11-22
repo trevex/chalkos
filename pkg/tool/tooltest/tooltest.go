@@ -30,13 +30,18 @@ type Runner struct {
 	Cmds []tool.Cmd
 	// Before, when set, sees each command line before the command is answered.
 	Before func(line string)
+	// Ended holds the command lines run with a context that had ended, in order.
+	Ended []string
 }
 
-func (f *Runner) Exec(_ context.Context, c tool.Cmd) ([]byte, error) {
+func (f *Runner) Exec(ctx context.Context, c tool.Cmd) ([]byte, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	l := c.String()
 	f.Calls = append(f.Calls, l)
+	if ctx.Err() != nil {
+		f.Ended = append(f.Ended, l)
+	}
 	f.Cmds = append(f.Cmds, c)
 	if f.Before != nil {
 		f.Before(l)
@@ -75,4 +80,5 @@ func (f *Runner) ResetCalls() {
 	defer f.mu.Unlock()
 	f.Calls = nil
 	f.Cmds = nil
+	f.Ended = nil
 }
