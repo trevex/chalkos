@@ -6,7 +6,8 @@
 # and which systemd restarts when it fails, as FRR's watchfrr would: a failed zebra stops its
 # clients, which frr.service starts again once zebra runs. No unit runs a shell. FRR is chalkos's
 # build, without Python, SNMP, Lua or watchfrr in its closure. A layer's BGP feature turns it on
-# and names the rendered config and the config of a node without one.
+# and names the rendered config, the config of a node without one and, if FRR runs only on nodes
+# whose config holds BGP, the marker that tells them.
 {
   chalkosLib,
   config,
@@ -28,8 +29,12 @@ let
   # credential, fails the unit and leaves the file as it was.
   fill = "${lib.getExe pkgs.chalkos.chalkd} frr-credentials ${cfg.rendered} ${cfg.fallback}";
   # chalkd writes frr.service's credentials once the node has config; in maintenance mode, which
-  # loads none, the node runs no FRR.
-  condition = "/run/chalkos/credentials/frr";
+  # loads none, the node runs no FRR. A layer may name a marker besides, which its output writes
+  # when the node runs BGP.
+  condition = {
+    ConditionPathIsDirectory = "/run/chalkos/credentials/frr";
+  }
+  // lib.optionalAttrs (cfg.marker != null) { ConditionPathExists = cfg.marker; };
   # The daemons, with those each starts after, in the order FRR's scripts start them, and their
   # options: the VTY's TCP port listens on the loopback address alone, as NixOS's FRR module has
   # it, and zebra's netlink socket takes 90 MB, enough for the routes of a full table. Every
@@ -84,6 +89,12 @@ in
       type = lib.types.path;
       internal = true;
       description = "frr.conf of a node without a rendered one, as in maintenance mode, which runs no BGP.";
+    };
+    marker = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      internal = true;
+      description = "Path of a file, an output's, without which FRR's units do not start, so a node whose config holds no BGP runs no FRR; null to start FRR on every node with config.";
     };
     check = lib.mkOption {
       type = lib.types.str;
@@ -146,7 +157,7 @@ in
             "multi-user.target"
             "chalkos-node-addresses.target"
           ];
-          unitConfig.ConditionPathIsDirectory = condition;
+          unitConfig = condition;
           serviceConfig = noExec // {
             Type = "oneshot";
             RemainAfterExit = true;
@@ -176,7 +187,7 @@ in
             bindsTo = lib.optional (name != "mgmtd" && name != "zebra") (unit "zebra");
             after = [ "frr.service" ] ++ map unit daemon.after;
             before = [ "chalkos-node-addresses.target" ];
-            unitConfig.ConditionPathIsDirectory = condition;
+            unitConfig = condition;
             serviceConfig = noExec // {
               Type = "forking";
               PIDFile = "/run/frr/${name}.pid";

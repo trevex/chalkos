@@ -1579,6 +1579,7 @@ The outputs images with Kubernetes add.
 
 | Output | Inputs | Directory | Renderer | Check |
 | --- | --- | --- | --- | --- |
+| `bfd-firewall`{ #output-bfd-firewall } | `BGPPeer`, `BGPSpeaker` | `/run/chalkos/outputs/bfd-firewall` | Command `chalkos-render kubernetes-bfd 0x08000000` | yes |
 | `bgp`{ #output-bgp } | `BGPPeer`, `BGPSpeaker`, `Node` | `/run/chalkos/outputs/bgp` | Command `chalkos-render kubernetes-frr` | yes |
 | `cluster-registry`{ #output-cluster-registry } | `ClusterRegistry`, `Network` | `/run/chalkos/outputs/cluster-registry` | Command `chalkos-render cluster-registry 0x04000000` | yes |
 
@@ -1627,7 +1628,8 @@ The effects images with Kubernetes add.
 
 | Effect | Fires when | Does |
 | --- | --- | --- |
-| `bgp`{ #effect-bgp } | The output `bgp` changed. | Runs after `networkd` and `links` when those effects are due. Reloads `frr.service`. |
+| `bgp`{ #effect-bgp } | One of the outputs `bgp` and `bfd-firewall` changed. | Runs after `networkd` and `links` when those effects are due. Reloads `frr.service`. |
+| `bgp-speaker`{ #effect-bgp-speaker } | The `when` after the table holds, which reads the documents of `BGPSpeaker`. | Runs after `networkd` and `links` when those effects are due. Restarts `frr.service`, and starts them when they are stopped. |
 | `chalkd-cluster`{ #effect-chalkd-cluster } | The `when` after the table holds, which reads the documents of `Cluster` and `Flannel` and the fact `cluster`. | Runs after `kubernetes` when those effects are due. Runs chalkd's action `kubernetes:restart`. |
 | `chalkd-share`{ #effect-chalkd-share } | The `when` after the table holds, which reads the documents of `Addon`, `Cluster`, `Flannel` and `Node` and the facts `cluster` and `share`. | Runs after `kubernetes` when those effects are due. Runs chalkd's action `kubernetes:reload`. |
 | `cluster-registry`{ #effect-cluster-registry } | The output `cluster-registry` changed, or the `when` after the table holds, which reads the documents of `Volume`. | Restarts `chalkos-registry.service`, and starts them when they are stopped. |
@@ -1636,6 +1638,12 @@ The effects images with Kubernetes add.
 | `kubernetes`{ #effect-kubernetes } | The `when` after the table holds, which reads the documents of `Cluster`, `Flannel`, `Host`, `Network` and `Node` and the facts `cluster` and `share`. | Runs after `networkd`, `links`, `controlplane-ports`, `cluster-registry` and `registry-mirrors` when those effects are due. Restarts `chalkos-kubernetes.service` and `kubelet.service`, and starts them when they are stopped. |
 | `registry-credentials`{ #effect-registry-credentials } | The documents of `Registry`, or a value of a Secret they reference, changed. | Restarts `chalkos-registry-credentials.service` and `kubelet.service`. |
 | `registry-mirrors`{ #effect-registry-mirrors } | The `when` after the table holds, which reads the documents of `ClusterRegistry`, `Mirror`, `Network` and `Registry`. | Restarts `chalkos-registry-mirrors.service`. |
+
+`when` of `bgp-speaker`:
+
+```text
+(size((("kubernetes.chalkos.dev/v1alpha1" in config && "BGPSpeaker" in config["kubernetes.chalkos.dev/v1alpha1"]) ? config["kubernetes.chalkos.dev/v1alpha1"].BGPSpeaker : {})) > 0) != (size((("kubernetes.chalkos.dev/v1alpha1" in oldConfig && "BGPSpeaker" in oldConfig["kubernetes.chalkos.dev/v1alpha1"]) ? oldConfig["kubernetes.chalkos.dev/v1alpha1"].BGPSpeaker : {})) > 0)
+```
 
 `when` of `chalkd-cluster`:
 

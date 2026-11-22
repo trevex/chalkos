@@ -1,0 +1,14 @@
+table inet chalkos-bfd
+delete table inet chalkos-bfd
+table inet chalkos-bfd {
+  chain input {
+    type filter hook input priority filter - 1; policy accept;
+    meta mark & 0x08000000 == 0x08000000 meta mark set meta mark ^ 0x08000000
+    iifname { "fabric0" } udp dport 3784 meta mark set meta mark | 0x08000000 comment "BGPPeer fabric"
+    iifname { "enp1s0" } ip6 saddr fdc8:a1b2:c3d4:1::1 udp dport 3784 meta mark set meta mark | 0x08000000 comment "BGPPeer router"
+  }
+  chain clear {
+    type filter hook input priority filter + 1; policy accept;
+    meta mark & 0x08000000 == 0x08000000 meta mark set meta mark ^ 0x08000000
+  }
+}

@@ -1,5 +1,8 @@
-# The tests of BGP on Kubernetes images: the frr.conf each config renders, the refusals of the
-# kinds' rules and the reload a new password takes.
+# The tests of BGP on Kubernetes images: the frr.conf each config renders, with the marker of a
+# speaker, and with the firewall the table that marks BFD, the refusals of the kinds' rules, the
+# reload a new password takes and the restart of FRR a delivery that adds or removes the speaker
+# takes. firewall tells whether the image has the output bfd-firewall.
+{ firewall }:
 let
   # A test of tests/<name>.yaml with the refusals given.
   refused = name: refusals: {
@@ -10,11 +13,20 @@ let
   };
   unconfigured = i: what: "${i} has no Network document whose [Match] Name= names it; ${what}";
   sessions = "FRR runs sessions on interfaces the node configures";
-  # A test of tests/<name>.yaml whose output bgp renders tests/<name>/bgp.
+  # A test of tests/<name>.yaml whose output bgp renders tests/<name>/bgp and, with the firewall,
+  # whose output bfd-firewall renders tests/<name>/bfd-firewall where that exists.
   rendered = name: {
     "kubernetes-bgp-${name}" = {
       config = ./tests + "/${name}.yaml";
-      outputs.bgp = ./tests + "/${name}/bgp";
+      outputs = {
+        bgp = ./tests + "/${name}/bgp";
+      }
+      // (
+        let
+          bfd = ./tests + "/${name}/bfd-firewall";
+        in
+        if firewall && builtins.pathExists bfd then { bfd-firewall = bfd; } else { }
+      );
     };
   };
 in
@@ -32,6 +44,26 @@ rendered "unnumbered"
     config = ./tests/address-interface-new-password.yaml;
     outputs.bgp = ./tests/address-interface/bgp;
     effects = [ "bgp" ];
+  };
+  # The first speaker restarts frr.service, which then finds the marker and starts FRR; a config
+  # without one leaves no marker, and the restart stops FRR.
+  kubernetes-bgp-add-speaker = {
+    before = ./tests/unnumbered-without-speaker.yaml;
+    config = ./tests/unnumbered.yaml;
+    outputs.bgp = ./tests/unnumbered/bgp;
+    effects = [
+      "bgp"
+      "bgp-speaker"
+    ];
+  };
+  kubernetes-bgp-remove-speaker = {
+    before = ./tests/unnumbered.yaml;
+    config = ./tests/unnumbered-without-speaker.yaml;
+    outputs.bgp = ./tests/none/bgp;
+    effects = [
+      "bgp"
+      "bgp-speaker"
+    ];
   };
   # A speaker keeps its AS number.
   kubernetes-bgp-new-asn = {

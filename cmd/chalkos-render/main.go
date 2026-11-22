@@ -35,6 +35,7 @@ const usage = `usage: chalkos-render template TEMPLATE FILE
        chalkos-render router-nftables-fallback PORT
        chalkos-render frr
        chalkos-render kubernetes-frr
+       chalkos-render kubernetes-bfd MARK
        chalkos-render cluster-registry MARK
        chalkos-render jool
        chalkos-render unbound TRUST-ANCHOR ZONE-FILE
@@ -130,6 +131,8 @@ func run(args []string, stdin io.Reader, stdout io.Writer, out string) error {
 		return renderFRR(in, out)
 	case args[0] == "kubernetes-frr" && len(args) == 1:
 		return renderKubernetesFRR(in, out)
+	case args[0] == "kubernetes-bfd" && len(args) == 2:
+		return renderKubernetesBFD(args[1], in, out)
 	case args[0] == "cluster-registry" && len(args) == 2:
 		return renderClusterRegistry(args[1], in, out)
 	case args[0] == "jool" && len(args) == 1:

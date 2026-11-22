@@ -112,8 +112,8 @@ These limits hold in the current code, grouped by area.
   the other control planes; etcd accepts only certificates of its CA there.
 - The firewall opens the NodePort range for TCP only.
 - Packets a node receives lose the packet mark bit 0x02000000, which the firewall's rule for the
-  control plane's ports uses, and on a node that serves the cluster registry the bit 0x04000000
-  of its port's rule. A network plugin of the cluster's own (`chalkos.cni.provider = "none"`)
+  control plane's ports uses, on a node that serves the cluster registry the bit 0x04000000
+  of its port's rule, and on a node that runs FRR the bit 0x08000000 of BFD's rule. A network plugin of the cluster's own (`chalkos.cni.provider = "none"`)
   must not use them.
 - The endpoints of the cluster registry do not replicate. Each holds what was pushed to it, and
   `chalkctl registry list` shows where they differ.

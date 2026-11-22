@@ -2006,16 +2006,16 @@ in
         "nosuid"
         "nodev"
         "noexec"
-        "size=144M"
-        "nr_inodes=147456"
+        "size=176M"
+        "nr_inodes=180224"
       ];
       extension = [
         "mode=0755"
         "nosuid"
         "nodev"
         "noexec"
-        "size=208M"
-        "nr_inodes=212992"
+        "size=240M"
+        "nr_inodes=245760"
       ];
     };
   };
