@@ -79,8 +79,8 @@ that need kernel modules from the host.
 
     ---
 
-    Run Rook and Ceph CSI and KubeVirt with the kernel modules the image carries for them, and
-    pass PCI devices through to virtual machines.
+    Run Rook and Ceph CSI, KubeVirt and Longhorn with the kernel modules and host tools the image
+    carries for them, and pass PCI devices through to virtual machines.
 
     [:octicons-arrow-right-24: Read](storage-and-gpu.md)
 
