@@ -175,12 +175,18 @@ func TestClusterValidate(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, edit := range map[string]func(c *Cluster){
-		"kind":         func(c *Cluster) { c.Kind = "etcd" },
-		"endpoint":     func(c *Cluster) { c.Endpoint = "http://10.0.0.10:6443" },
-		"domain":       func(c *Cluster) { c.Domain = "" },
-		"validSubnets": func(c *Cluster) { c.NodeIP.ValidSubnets = []string{"10.0.0.0"} },
-		"timeout":      func(c *Cluster) { c.NodeIP.Timeout = -1 },
-		"flannel MTU":  func(c *Cluster) { c.Flannel, c.Images.Flannel = &Flannel{MTU: -1}, flannelImage },
+		"kind":     func(c *Cluster) { c.Kind = "etcd" },
+		"endpoint": func(c *Cluster) { c.Endpoint = "http://10.0.0.10:6443" },
+		"domain":   func(c *Cluster) { c.Domain = "" },
+		// CoreDNS's Corefile, the issuer and the certificate take the domain as written.
+		"upper-case domain":          func(c *Cluster) { c.Domain = "Cluster.local" },
+		"domain with the root's dot": func(c *Cluster) { c.Domain = "cluster.local." },
+		"domain with a space":        func(c *Cluster) { c.Domain = "a b" },
+		"domain with a brace":        func(c *Cluster) { c.Domain = "a}" },
+		"domain with an underscore":  func(c *Cluster) { c.Domain = "a_b.local" },
+		"validSubnets":               func(c *Cluster) { c.NodeIP.ValidSubnets = []string{"10.0.0.0"} },
+		"timeout":                    func(c *Cluster) { c.NodeIP.Timeout = -1 },
+		"flannel MTU":                func(c *Cluster) { c.Flannel, c.Images.Flannel = &Flannel{MTU: -1}, flannelImage },
 		// Pods get 50 less than flannel's MTU, which must leave them IPv4's minimum of 576, or
 		// IPv6's of 1280 with IPv6 in use (clusterJSON lists no families, so IPv4 alone).
 		"flannel MTU below IPv4's minimum": func(c *Cluster) { c.Flannel, c.Images.Flannel = &Flannel{MTU: 625}, flannelImage },

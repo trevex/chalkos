@@ -245,10 +245,20 @@ in
             type = types.strMatching "https://.+";
             description = "URL of the cluster's Kubernetes API server, which every node of the cluster names alike.";
           };
-          domain = mkOption {
-            type = types.nonEmptyStr;
+          domain = chalkosLib.mkOption {
+            # CoreDNS's Corefile, the service account issuer and the API server's certificate
+            # take the domain as written, so it is a lower-case name without the root's dot.
+            type = types.strMatching "([a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?[.])*[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?";
             default = "cluster.local";
-            description = "DNS domain of the cluster.";
+            description = "DNS domain of the cluster, a lower-case DNS name without a trailing dot; it is fixed once the node holds a Kubernetes share.";
+            # The service account issuer and every service's name follow the domain.
+            rules = [
+              {
+                description = "The cluster's domain stays once the node holds a Kubernetes share.";
+                rule = "facts.share == null || self == oldSelf";
+                messageExpression = ''"the config changes the cluster's domain from " + oldSelf + " to " + self + "; it is fixed once the cluster exists, so keep it, or reinstall the node into a new cluster"'';
+              }
+            ];
           };
           allowSchedulingOnControlPlanes = chalkosLib.mkOption {
             type = types.bool;

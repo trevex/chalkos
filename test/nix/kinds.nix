@@ -1278,6 +1278,26 @@ lib.runTests {
       ]).chalkos.kinds.Demo.spec.x.type;
     expected = null;
   };
+  # The cluster domain is a lower-case DNS name without the root's dot: CoreDNS's Corefile, the
+  # service account issuer and the API server's certificate take it as written.
+  testClusterDomain = {
+    expr = lib.genAttrs [
+      "cluster.local"
+      "k8s.example.org"
+      "Cluster.local"
+      "cluster.local."
+      "a b"
+      "a}"
+    ] kubernetesImage.chalkos.kinds.Cluster.spec.domain.type.check;
+    expected = {
+      "cluster.local" = true;
+      "k8s.example.org" = true;
+      "Cluster.local" = false;
+      "cluster.local." = false;
+      "a b" = false;
+      "a}" = false;
+    };
+  };
   testBuiltinSchemasMatchFixtures = {
     expr = map builtinSchema [
       "Host"

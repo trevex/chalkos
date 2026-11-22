@@ -51,7 +51,7 @@ document. Its fields fall into groups:
 | --- | --- | --- |
 | `endpoint` | The URL of the API server, the cluster endpoint | required |
 | `images` | The images of the control plane, kube-proxy, CoreDNS, the pod sandbox and flannel | required |
-| `domain` | The cluster's DNS domain | `cluster.local` |
+| `domain` | The cluster's DNS domain, a lower-case DNS name without a trailing dot; fixed once the cluster exists | `cluster.local` |
 | `ipFamilies`, `podCIDRs`, `serviceCIDRs`, `dnsIPs` | The address families, their pod and service ranges and the cluster DNS address of each; fixed once the cluster exists | IPv4, `10.244.0.0/16`, `10.96.0.0/12`, the 10th address of the service range |
 | `nodeCIDRMaskSizes` | The prefix length of each node's part of the pod range | 24 for IPv4, 64 for IPv6 |
 | `nodeIP` | The subnets nodes without a fixed address pick theirs from, and how long a node waits for it at boot | any global unicast address, 300 seconds |
@@ -433,7 +433,8 @@ A changed `Addon` document restarts nothing: the control planes apply its object
 [Built-ins](../reference/builtins.md#effects-kubernetes) lists these effects.
 
 A node that holds a Kubernetes share refuses a config that changes `ipFamilies`, `podCIDRs`,
-`serviceCIDRs` or `dnsIPs`, or the node's `type`, and names what the change takes.
+`serviceCIDRs`, `dnsIPs` or `domain`, or the node's `type`, and names what the change takes. The
+service account issuer and every service's DNS name follow the domain.
 
 ## Check that it worked
 

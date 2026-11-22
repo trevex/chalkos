@@ -24,7 +24,7 @@ func TestBuiltinRulesCompile(t *testing.T) {
 		"storage.chalkos.dev/v1alpha1 Volume":     7,
 		"storage.chalkos.dev/v1alpha1 SystemDisk": 1,
 		"kubernetes.chalkos.dev/v1alpha1 Node":    4,
-		"kubernetes.chalkos.dev/v1alpha1 Cluster": 5,
+		"kubernetes.chalkos.dev/v1alpha1 Cluster": 6,
 		"oci.chalkos.dev/v1alpha1 Registry":       1,
 	} {
 		if count[kind] != want {

@@ -207,7 +207,7 @@ func TestApplyConfigRestartsKubernetesOnChange(t *testing.T) {
 		"the Node's name":     {strings.Replace(base, "kind: Node\nmetadata: {name: default}", "kind: Node\nmetadata: {name: node}", 1), false},
 		"a Host":              {base + hostConfig("default", "h1"), true},
 		"a static address":    {strings.Replace(base, "10.0.0.11/24", "10.0.0.12/24", 1), true},
-		"the cluster":         {strings.Replace(base, `spec: {endpoint: "https://192.168.100.11:6443", `, `spec: {endpoint: "https://192.168.100.11:6443", domain: lab.local, `, 1), true},
+		"the cluster":         {strings.Replace(base, `spec: {endpoint: "https://192.168.100.11:6443", `, `spec: {endpoint: "https://192.168.100.11:6443", nodeIP: {timeout: 99}, `, 1), true},
 		"the endpoint":        {strings.Replace(base, "192.168.100.11:6443", "192.168.100.12:6443", 1), true},
 		"a Flannel's sources": {base + "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Flannel\nmetadata: {name: default}\nspec: {vxlanSourceSubnets: [192.168.100.0/24]}\n", true},
 		"a Network's gateway": {strings.Replace(base, "address: [10.0.0.11/24]", "address: [10.0.0.11/24], gateway: 10.0.0.1", 1), false},
@@ -496,11 +496,11 @@ func TestApplyConfigWritesTheClusterAndRestartsKubernetes(t *testing.T) {
 	}
 
 	r.Calls = nil
-	if resp, err = sendConfig(s, withClusterSpec("{domain: lab.local}")); err != nil {
+	if resp, err = sendConfig(s, withClusterSpec("{nodeIP: {timeout: 99}}")); err != nil {
 		t.Fatal(err)
 	}
-	if c, _ := k8s.ReadCluster(kubernetesState(s).Cluster); c.Domain != "lab.local" {
-		t.Errorf("domain = %q", c.Domain)
+	if c, _ := k8s.ReadCluster(kubernetesState(s).Cluster); c.NodeIP.Timeout != 99 {
+		t.Errorf("nodeIP.timeout = %d", c.NodeIP.Timeout)
 	}
 	if !slices.Contains(resp.RestartedUnits, "kubelet.service") || !slices.Contains(r.Calls, "systemctl restart chalkos-kubernetes.service kubelet.service") {
 		t.Errorf("restarted %v, ran %v", resp.RestartedUnits, r.Calls)
@@ -516,13 +516,13 @@ func TestApplyConfigNamesAFailedClusterRestart(t *testing.T) {
 	if _, err := sendConfig(s, workerConfig); err != nil {
 		t.Fatal(err)
 	}
-	next := withClusterSpec("{domain: lab.local}")
+	next := withClusterSpec("{nodeIP: {timeout: 99}}")
 	r.Rules = []tooltest.Rule{{Prefix: "systemctl restart chalkos-kubernetes.service kubelet.service", Err: errors.New("exit status 1")}}
 	if _, err := sendConfig(s, next); err == nil || !strings.Contains(err.Error(), "restart chalkos-kubernetes.service kubelet.service by hand once that is fixed, or deliver it again") {
 		t.Fatalf("err = %v, want the units named", err)
 	}
-	if c, _ := k8s.ReadCluster(kubernetesState(s).Cluster); c.Domain != "lab.local" {
-		t.Fatalf("domain = %q, want the cluster file written", c.Domain)
+	if c, _ := k8s.ReadCluster(kubernetesState(s).Cluster); c.NodeIP.Timeout != 99 {
+		t.Fatalf("nodeIP.timeout = %d, want the cluster file written", c.NodeIP.Timeout)
 	}
 	r.Rules, r.Calls = nil, nil
 	resp, err := sendConfig(s, next)
@@ -639,7 +639,7 @@ func TestApplyConfigActsOnTheLoopsWhenTheGrantedConfigFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	write(t, credentials, "")
-	next := withClusterSpec("{domain: lab.local}")
+	next := withClusterSpec("{nodeIP: {timeout: 99}}")
 	if _, err := sendConfig(s, next); err == nil || !strings.Contains(err.Error(), "write the config for the granted units") {
 		t.Fatalf("err = %v, want the granted units' config to fail", err)
 	}
@@ -674,7 +674,7 @@ func TestApplyConfigActsOnTheLoopsWhenTheNodeCertificateFails(t *testing.T) {
 	acted := loops(s)
 	send := func() (*nodev1.ApplyConfigResponse, error) {
 		resp, err := s.ApplyConfig(context.Background(), &nodev1.ApplyConfigRequest{
-			Config: withClusterSpec("{domain: lab.local}"), NodeCertificate: []byte(cert.Certificate), NodeKey: []byte(cert.Key),
+			Config: withClusterSpec("{nodeIP: {timeout: 99}}"), NodeCertificate: []byte(cert.Certificate), NodeKey: []byte(cert.Key),
 		})
 		if err != nil {
 			return nil, err
@@ -689,8 +689,8 @@ func TestApplyConfigActsOnTheLoopsWhenTheNodeCertificateFails(t *testing.T) {
 	if _, err := send(); err == nil || !strings.Contains(err.Error(), "record the node certificate") {
 		t.Fatalf("err = %v, want the node certificate's failure", err)
 	}
-	if c, _ := k8s.ReadCluster(kubernetesState(s).Cluster); c.Domain != "lab.local" {
-		t.Fatalf("domain = %q, want the cluster file written", c.Domain)
+	if c, _ := k8s.ReadCluster(kubernetesState(s).Cluster); c.NodeIP.Timeout != 99 {
+		t.Fatalf("nodeIP.timeout = %d, want the cluster file written", c.NodeIP.Timeout)
 	}
 	if !slices.Equal(*acted, []string{"kubernetes:restart"}) {
 		t.Errorf("acted on the loops %v, want them restarted for the new cluster", *acted)
@@ -797,6 +797,7 @@ func TestApplyConfigRefusesChangedFixedSettings(t *testing.T) {
 		"podCIDRs":     "{podCIDRs: {ipv4: 10.245.0.0/16}}",
 		"serviceCIDRs": "{serviceCIDRs: {ipv4: 10.97.0.0/16}}",
 		"dnsIPs":       "{dnsIPs: {ipv4: 10.96.0.53}}",
+		"domain":       "{domain: k8s.example.org}",
 	} {
 		t.Run(field, func(t *testing.T) {
 			s, r := clusterServer(t, k8s.KindWorker)
@@ -965,7 +966,7 @@ func TestApplyConfigRestartsTheControlPlaneLoop(t *testing.T) {
 			t.Fatal(err)
 		}
 		testwait.Eventually(t, "the loop after the first config", func() bool { return len(seen()) == 3 })
-		if _, err := sendConfig(s, strings.Replace(config, `:6443", `, `:6443", domain: lab.local, `, 1)); err != nil {
+		if _, err := sendConfig(s, strings.Replace(config, `:6443", `, `:6443", nodeIP: {timeout: 99}, `, 1)); err != nil {
 			t.Fatal(err)
 		}
 		testwait.Eventually(t, "the loop after the changed cluster", func() bool { return len(seen()) == 5 })

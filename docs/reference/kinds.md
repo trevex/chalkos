@@ -102,14 +102,14 @@ The Kubernetes cluster the node belongs to: its API server's endpoint, its addre
 
 `apiVersion: kubernetes.chalkos.dev/v1alpha1`
 
-A node's config holds at most one. It has 5 [change rules](builtins.md#rules-cluster).
+A node's config holds at most one. It has 6 [change rules](builtins.md#rules-cluster).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `spec.allowSchedulingOnControlPlanes` | boolean | `false` | Whether workloads run on control-plane nodes, which otherwise register with the taint `node-role.kubernetes.io/control-plane:NoSchedule`; it is fixed once the node holds a Kubernetes share. |
 | `spec.dnsIPs.ipv4` | IP address or null | `null` | Service address of the cluster DNS in the family's service range; null is its 10th address. Pods use the primary family's. |
 | `spec.dnsIPs.ipv6` | IP address or null | `null` | Service address of the cluster DNS in the family's service range; null is its 10th address. Pods use the primary family's. |
-| `spec.domain` | string | `"cluster.local"` | DNS domain of the cluster. |
+| `spec.domain` | string | `"cluster.local"` | DNS domain of the cluster, a lower-case DNS name without a trailing dot; it is fixed once the node holds a Kubernetes share. |
 | `spec.endpoint` | string | required | URL of the cluster's Kubernetes API server, which every node of the cluster names alike. |
 | `spec.extraArgs.etcd` | map of string | `{}` | Extra flags of etcd, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused. |
 | `spec.extraArgs.kube-apiserver` | map of string | `{}` | Extra flags of the API server, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused. Every flag chalkos sets on the API server is protected except `kubelet-preferred-address-types`, `profiling` and `tls-min-version`. `enable-admission-plugins` adds to chalkos's plugins, and `disable-admission-plugins` must not name `NodeRestriction` or `ValidatingAdmissionPolicy`. |
