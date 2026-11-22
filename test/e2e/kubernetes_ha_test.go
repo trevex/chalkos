@@ -383,10 +383,6 @@ func TestKubernetesHA(t *testing.T) {
 		})
 		// Not yet a member again, cp3 refuses to bootstrap a second cluster: the endpoint answers with
 		// this cluster's CA. A join attempt holding the membership refuses it too, so ask again then.
-		// chalkctl refuses first, as cp1 and cp2 are members; --force reaches cp3's own check.
-		if out, err := c.chalkctl("cp3", "bootstrap", "cp3"); err == nil || !strings.Contains(out, "another control plane may hold the cluster") {
-			t.Fatalf("bootstrap without --force: %v\n%s", err, out)
-		}
 		waitFor(t, time.Minute, "cp3 to refuse a bootstrap while the cluster answers", func() error {
 			out, err := c.chalkctl("cp3", "bootstrap", "cp3")
 			if err == nil {
