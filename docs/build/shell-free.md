@@ -15,9 +15,12 @@ nixos-init sets the system up in the initrd in place of NixOS's bash activation,
 the system again, and nodes have no logins. No image has `/bin/sh` or `/usr/bin/env`. A shell on a
 node would serve no unit, and an attacker who gets a foothold reaches for it first.
 
-When bash, bash-interactive, dash, busybox, mksh or zsh is in the
-closure of the image's system, or in what the initrd's store paths reference, the build fails and
-names each shell with the store paths that reference it:
+When a shell is in the closure of the image's system, its extra dependencies, such as the links
+below `/usr`, or what the initrd's store paths reference, the build fails and names each shell with
+the store paths that reference it. The build looks for the packages bash, bash-interactive, dash,
+busybox, toybox, mksh, oksh, loksh, ksh, yash, zsh, fish, tcsh and nushell, their static builds,
+and programs of any package named sh, ash, bash, dash, ksh, mksh, oksh, yash, zsh, fish, csh, tcsh,
+nu, busybox or toybox:
 
 ```text
 error: the image's system holds a shell, which a node never runs:
@@ -77,7 +80,7 @@ the list:
 
 ```sh
 nix build .#node-metal.sbom -o node-metal.spdx.json
-jq -r '.packages[1:][] | "\(.name) \(.versionInfo)"' node-metal.spdx.json | grep -E '^(bash|dash|busybox|mksh|zsh) '
+jq -r '.packages[1:][] | "\(.name) \(.versionInfo)"' node-metal.spdx.json | grep -E '^(bash|bash-interactive|dash|busybox|toybox|mksh|oksh|loksh|ksh|yash|zsh|fish|tcsh|nushell) '
 ```
 
 Take `chalkos.shell.allow` out again once the shell is gone.

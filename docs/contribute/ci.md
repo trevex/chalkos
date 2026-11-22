@@ -180,9 +180,13 @@ and matches the packages of its runtime closure against the CVEs of the National
 Database with [vulnix](https://github.com/nix-community/vulnix). The run's summary lists the
 number of matches per image and each matched package with its CVEs and highest CVSS v3 score,
 and the artifact `vulnix` holds vulnix's JSON report per image. The job fails only when vulnix
-cannot scan, and opens no issue for a match: a CVE in a nixpkgs package is fixed by
-the weekly update of nixpkgs, as [The weekly flake update](dependencies.md#the-weekly-flake-update)
-describes.
+cannot scan: a CVE in a nixpkgs package is fixed by the weekly update of nixpkgs, as
+[The weekly flake update](dependencies.md#the-weekly-flake-update) describes. The job
+`vulnix-issue` then reads the reports and opens an issue labelled `security` for the matches with
+a CVSS v3 score of 7 or more, or comments on the open one when a match is new to it, as
+[Security](../get-started/security.md#how-chalkos-scans-for-vulnerabilities) describes. The job
+holds `issues: write` and runs no Nix action, unlike the scan. `.github/scripts/vulnix-issue.sh`
+finds the new matches, and `.github/scripts/test.sh` tests it.
 
 vulnix matches packages by name and version, so a match may not apply, for example when nixpkgs
 patches the fix into a package without changing its version. Add such a match to

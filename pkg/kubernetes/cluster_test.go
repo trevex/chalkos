@@ -175,12 +175,18 @@ func TestClusterValidate(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, edit := range map[string]func(c *Cluster){
-		"kind":         func(c *Cluster) { c.Kind = "etcd" },
-		"endpoint":     func(c *Cluster) { c.Endpoint = "http://10.0.0.10:6443" },
-		"domain":       func(c *Cluster) { c.Domain = "" },
-		"validSubnets": func(c *Cluster) { c.NodeIP.ValidSubnets = []string{"10.0.0.0"} },
-		"timeout":      func(c *Cluster) { c.NodeIP.Timeout = -1 },
-		"flannel MTU":  func(c *Cluster) { c.Flannel, c.Images.Flannel = &Flannel{MTU: -1}, flannelImage },
+		"kind":     func(c *Cluster) { c.Kind = "etcd" },
+		"endpoint": func(c *Cluster) { c.Endpoint = "http://10.0.0.10:6443" },
+		"domain":   func(c *Cluster) { c.Domain = "" },
+		// CoreDNS's Corefile, the issuer and the certificate take the domain as written.
+		"upper-case domain":          func(c *Cluster) { c.Domain = "Cluster.local" },
+		"domain with the root's dot": func(c *Cluster) { c.Domain = "cluster.local." },
+		"domain with a space":        func(c *Cluster) { c.Domain = "a b" },
+		"domain with a brace":        func(c *Cluster) { c.Domain = "a}" },
+		"domain with an underscore":  func(c *Cluster) { c.Domain = "a_b.local" },
+		"validSubnets":               func(c *Cluster) { c.NodeIP.ValidSubnets = []string{"10.0.0.0"} },
+		"timeout":                    func(c *Cluster) { c.NodeIP.Timeout = -1 },
+		"flannel MTU":                func(c *Cluster) { c.Flannel, c.Images.Flannel = &Flannel{MTU: -1}, flannelImage },
 		// Pods get 50 less than flannel's MTU, which must leave them IPv4's minimum of 576, or
 		// IPv6's of 1280 with IPv6 in use (clusterJSON lists no families, so IPv4 alone).
 		"flannel MTU below IPv4's minimum": func(c *Cluster) { c.Flannel, c.Images.Flannel = &Flannel{MTU: 625}, flannelImage },
@@ -251,7 +257,12 @@ func TestClusterValidateRefusesProtectedFlags(t *testing.T) {
 			t.Errorf("%s: err = %v, want %s", name, err, want)
 		}
 	}
-	for _, name := range []string{"anonymous-auth", "authentication-config", "authorization-mode", "enable-bootstrap-token-auth", "enable_bootstrap-token_auth"} {
+	// The API server's flags chalkos sets, and anonymous-auth, which it leaves out on purpose.
+	for _, name := range []string{
+		"anonymous-auth", "authentication-config", "authorization-mode", "enable-bootstrap-token-auth", "enable_bootstrap-token_auth",
+		"client-ca-file", "client_ca_file", "requestheader-client-ca-file", "requestheader-allowed-names",
+		"kubelet-certificate-authority", "service-account-key-file", "encryption-provider-config", "allow-privileged",
+	} {
 		c := valid
 		c.ExtraArgs = map[string]map[string]string{"kube-apiserver": {name: "x"}}
 		if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "kube-apiserver --"+name+" is set by chalkos") {
@@ -307,9 +318,29 @@ func TestClusterValidateRefusesProtectedFlags(t *testing.T) {
 	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "chalkos sets no other authenticator") || !strings.Contains(err.Error(), "RBAC") {
 		t.Errorf("oidc-issuer-url: err = %v, want the missing authenticator and RBAC named", err)
 	}
-	// Other flags, and the protected flags of other components, are the cluster's.
+	// NodeRestriction keeps kubelets to their own Node, and the revoked nodes' policy needs
+	// ValidatingAdmissionPolicy.
+	for _, list := range []string{"NodeRestriction", "PodSecurity, NodeRestriction", "ValidatingAdmissionPolicy"} {
+		for _, name := range []string{"disable-admission-plugins", "disable_admission_plugins"} {
+			c := valid
+			c.ExtraArgs = map[string]map[string]string{"kube-apiserver": {name: list}}
+			if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "which chalkos needs") {
+				t.Errorf("%s=%s: err = %v", name, list, err)
+			}
+		}
+	}
+	// Other flags, the overridable ones, and the protected flags of other components, are the
+	// cluster's.
 	c = valid
-	c.ExtraArgs = map[string]map[string]string{"kubelet": {"v": "2", "max-pods": "50", "max_open_files": "100"}, "kube-scheduler": {"config": "/x"}}
+	c.ExtraArgs = map[string]map[string]string{
+		"kubelet":        {"v": "2", "max-pods": "50", "max_open_files": "100"},
+		"kube-scheduler": {"config": "/x"},
+		"kube-apiserver": {
+			"v": "2", "audit-log-maxage": "30", "feature-gates": "A=true", "enable-admission-plugins": "PodSecurity",
+			"disable-admission-plugins": "DefaultStorageClass", "profiling": "true", "tls-min-version": "VersionTLS13",
+			"kubelet-preferred-address-types": "InternalIP",
+		},
+	}
 	if err := c.Validate(); err != nil {
 		t.Errorf("accepted flags refused: %v", err)
 	}

@@ -5,19 +5,27 @@ package kubernetes
 
 const bootstrapLong = `Initialises the cluster on one control plane: the node starts etcd as its first member, starts
 the Kubernetes control-plane components and applies chalkos's add-ons and the objects of its Addon
-documents. chalkctl waits until they are applied, up to --timeout. The node refuses when it is
-bootstrapped already or holds etcd data, so a second cluster is never initialised; the other
-control planes join the first. The command needs an admin client file or the secrets file.`
+documents. chalkctl waits until they are applied, up to --timeout. The other control planes join
+the first.
+
+With an inventory, chalkctl first asks the inventory's other control planes for their status and
+refuses while one is an etcd member, is joining or does not answer. --force skips this check, as
+when recovering a cluster whose other control planes are lost. The node itself refuses when it
+is bootstrapped already or holds etcd data, and when an API server answers at the cluster
+endpoint, with a certificate of the cluster's CA or of another CA, so a second cluster is not
+initialised behind the endpoint. The command needs an admin client file or the secrets file.`
 
 const bootstrapExample = `  chalkctl bootstrap cp1`
 
 const kubeconfigLong = `Writes a kubeconfig with a client certificate for the Kubernetes API server, issued from the
 secrets file for --name in the group chalkos:cluster-admins, which is bound to cluster-admin,
-and valid for --ttl. The file holds the certificate's private key and is written with mode
-0600. --server points clients at another URL than the cluster endpoint (a forwarded port, for
-example), while they still verify the API server's certificate for the endpoint. The
-kubeconfig's cluster, user and context are named after the inventory's metadata.name, or after
---context. The command needs the secrets file.`
+and valid for --ttl, a day by default. The file holds the certificate's private key and is
+written with mode 0600. Write a new one from the secrets file when it expires; pass a longer
+--ttl for a kubeconfig that must outlast a day, knowing that a leaked one grants cluster-admin
+until it expires or the Kubernetes CA rotates. --server points clients at another URL than the
+cluster endpoint (a forwarded port, for example), while they still verify the API server's
+certificate for the endpoint. The kubeconfig's cluster, user and context are named after the
+inventory's metadata.name, or after --context. The command needs the secrets file.`
 
 const kubeconfigExample = `  chalkctl kubeconfig --secrets secrets.age --out lab.kubeconfig
 

@@ -148,7 +148,7 @@ func (k *side) serveControlPlane(ctx context.Context, c k8s.Cluster, cfg *rest.C
 		err := kapply.WaitReady(ctx, cfg)
 		switch {
 		case err == nil:
-			k.hooks.Approve(ctx, cfg)
+			k.hooks.Approve(ctx, c, cfg)
 		case ctx.Err() == nil:
 			log.Printf("kubernetes: approve kubelet serving certificates: %v", err)
 		}
@@ -171,14 +171,14 @@ func (k *side) serveControlPlane(ctx context.Context, c k8s.Cluster, cfg *rest.C
 	return ctx.Err()
 }
 
-// approveServing approves kubelet serving certificates until ctx ends.
-func approveServing(ctx context.Context, cfg *rest.Config) {
+// approveServing approves kubelet serving certificates of cluster c until ctx ends.
+func approveServing(ctx context.Context, c k8s.Cluster, cfg *rest.Config) {
 	client, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
 		log.Printf("kubernetes: approve kubelet serving certificates: %v", err)
 		return
 	}
-	(&kapply.Approver{Client: client}).Run(ctx, 10*time.Second)
+	(&kapply.Approver{Client: client, Cluster: c}).Run(ctx, 10*time.Second)
 }
 
 func (k *side) applyOnce(ctx context.Context, c k8s.Cluster, cfg *rest.Config) (int, error) {

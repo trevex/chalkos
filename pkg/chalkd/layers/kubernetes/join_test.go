@@ -2,8 +2,11 @@ package kubernetes
 
 import (
 	"context"
+	"encoding/pem"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -23,6 +26,7 @@ import (
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd/etcdtest"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
+	"github.com/trevex/chalkos/pkg/pki"
 )
 
 // joinPeerURL is where the joining node's etcd listens for its peers: the node's address in
@@ -197,7 +201,7 @@ func TestJoinWaitsForCluster(t *testing.T) {
 	}
 	k.startLoops()
 	testwait.Eventually(t, "the join to ask for the cluster", func() bool { return asked.Load() > 1 })
-	if got := kubernetestest.Status(t, s).State; got != "waiting for bootstrap or for the cluster at https://192.168.100.11:6443" {
+	if got := kubernetestest.Status(t, s).State; got != "waiting for the cluster at https://192.168.100.11:6443; bootstrap only the first control plane of a new cluster" {
 		t.Errorf("state %q", got)
 	}
 	if exists(k.state.Pin()) {
@@ -527,4 +531,46 @@ func TestJoinReportsPromoteTimeout(t *testing.T) {
 	testwait.Eventually(t, "the timeout's state", func() bool {
 		return strings.Contains(kubernetestest.Status(t, s).State, "did not catch up with the leader within 300ms; trying again")
 	})
+}
+
+// clusterAnswers tells an API server of the share's CA from one of another CA, which refuses a
+// bootstrap, and from no answer, which the first bootstrap behind a VIP no node holds needs.
+func TestClusterAnswers(t *testing.T) {
+	srv := httptest.NewTLSServer(http.NotFoundHandler())
+	defer srv.Close()
+	own := kpki.Share{CA: pki.CertKey{Certificate: string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw}))}}
+	other, err := kpki.ParseShare(kubernetestest.Share(t, k8s.KindControlPlane, "n1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed := httptest.NewUnstartedServer(nil)
+	closedURL := "https://" + closed.Listener.Addr().String()
+	closed.Listener.Close()
+	ctx := context.Background()
+	if answers, err := clusterAnswers(ctx, k8s.Cluster{Endpoint: srv.URL}, own); !answers || err != nil {
+		t.Errorf("an API server of the share's CA: %v, %v; want true", answers, err)
+	}
+	answers, err := clusterAnswers(ctx, k8s.Cluster{Endpoint: srv.URL}, other)
+	if _, ok := errors.AsType[foreignCAError](err); answers || !ok || !strings.Contains(err.Error(), "an API server of another CA answers at "+srv.URL) {
+		t.Errorf("an API server of another CA: %v, %v; want a refusal", answers, err)
+	}
+	if answers, err := clusterAnswers(ctx, k8s.Cluster{Endpoint: closedURL}, other); answers || err != nil {
+		t.Errorf("no API server: %v, %v; want false", answers, err)
+	}
+}
+
+// A bootstrap refuses while an API server of another CA answers at the endpoint.
+func TestBootstrapRefusedWhileAnotherCAAnswers(t *testing.T) {
+	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
+	k := s.k
+	k.hooks.ClusterAnswers = func(_ context.Context, c k8s.Cluster, _ kpki.Share) (bool, error) {
+		return false, foreignCAError{endpoint: c.Endpoint, err: errors.New("x509: certificate signed by unknown authority")}
+	}
+	_, err := kubernetestest.Bootstrap(context.Background(), s)
+	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "an API server of another CA answers at https://192.168.100.11:6443") {
+		t.Errorf("bootstrap: %v", err)
+	}
+	if exists(k.state.Pin()) || exists(k.state.BootstrappedMarker()) {
+		t.Error("a refused bootstrap pinned or marked the node")
+	}
 }

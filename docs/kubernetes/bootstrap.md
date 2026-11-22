@@ -40,7 +40,7 @@ An installed control plane cannot tell whether it should start the cluster or jo
 [`chalkctl status`](../reference/cli/chalkctl_status.md) shows it in the Kubernetes line:
 
 ```text
-kubernetes controlplane: waiting for bootstrap or for the cluster at https://[fdc8:a1b2:c3d4:ff::10]:6443
+kubernetes controlplane: waiting for the cluster at https://[fdc8:a1b2:c3d4:ff::10]:6443; bootstrap only the first control plane of a new cluster
 ```
 
 The URL is the cluster endpoint, here the VIP. A worker reads `joined` once it has
@@ -115,17 +115,18 @@ endpoint, with a client certificate it issues from the secrets file:
 
 ```console
 $ chalkctl kubeconfig --secrets=secrets.age
-wrote kubeconfig; its certificate is valid for 8760h0m0s
+wrote kubeconfig; its certificate is valid for 24h0m0s
 ```
 
-The defaults write `./kubeconfig`, valid for a year, for the user `admin`. The file holds the
-certificate's private key and is written with mode 0600. chalkctl refuses to replace an existing
-file unless `--force` is given. Other flags change what it writes:
+The defaults write `./kubeconfig`, valid for a day, for the user `admin`. Write a new one from the
+secrets file when it expires, or pass a longer `--ttl` for a kubeconfig that must last. The file
+holds the certificate's private key and is written with mode 0600. chalkctl refuses to replace an
+existing file unless `--force` is given. Other flags change what it writes:
 
 | Flag | Default | Sets |
 | --- | --- | --- |
 | `--out` | `kubeconfig` | The file to write; `-` writes to standard output. |
-| `--ttl` | `8760h` | How long the certificate is valid. |
+| `--ttl` | `24h` | How long the certificate is valid. |
 | `--name` | `admin` | The user name in the certificate, which the API server's audit log records. |
 | `--context` | the inventory's `metadata.name` | The name of the kubeconfig's cluster, user and context. |
 | `--server` | the cluster endpoint | Another URL to reach the API server at, such as a forwarded port. The certificate is still verified for the endpoint. |
@@ -180,9 +181,11 @@ minute, until flannel runs on it.
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| A control plane stays at `waiting for bootstrap or for the cluster at ...` after the bootstrap | It cannot reach the API server at the endpoint. | Check that the endpoint reaches a bootstrapped control plane on port 6443. |
+| A control plane stays at `waiting for the cluster at ...; bootstrap only the first control plane of a new cluster` after the bootstrap | It cannot reach the API server at the endpoint. | Check that the endpoint reaches a bootstrapped control plane on port 6443. |
 | A worker's `node ready` stays `unknown` | Its kubelet cannot register at the endpoint. | Check `chalkctl logs <node> --unit=kubelet.service`. |
 | The bootstrap times out | The control plane is still pulling its images. | Wait, and watch `chalkctl status node1`. |
+| `chalkctl bootstrap` fails with `another control plane may hold the cluster` | Another control plane of the inventory is an etcd member or is joining. A control plane that does not answer gets a warning instead. | Bootstrap only the first control plane of a new cluster. Pass `--force` only to recover a cluster whose other control planes are lost. |
+| The bootstrap fails with `an API server of another CA answers at ...` | The node was installed from another secrets file than the cluster at the endpoint, or another cluster uses the endpoint. | Reinstall the node from the cluster's secrets file, or give the new cluster an endpoint of its own. |
 | `chalkctl kubeconfig` fails with `no Cluster document of the cluster ... names an endpoint` | The inventory's files give no node a `Cluster` document. | Add the `Cluster` document to the files every node gets. |
 
 [Troubleshoot Kubernetes](troubleshooting.md) covers further symptoms.

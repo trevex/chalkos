@@ -3,6 +3,7 @@ package kubernetes
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"log"
@@ -43,7 +44,7 @@ func (e waitingError) Unwrap() error { return e.err }
 // waitingForCluster is the state of a control-plane node that is neither bootstrapped nor
 // finds a cluster to join at the endpoint.
 func waitingForCluster(c k8s.Cluster) string {
-	return "waiting for bootstrap or for the cluster at " + c.Endpoint
+	return "waiting for the cluster at " + c.Endpoint + "; bootstrap only the first control plane of a new cluster"
 }
 
 // startJoin runs the join's loop unless it runs already.
@@ -300,8 +301,11 @@ func (k *side) etcdEndpoints(ctx context.Context, c k8s.Cluster, share kpki.Shar
 }
 
 // clusterAnswers reports whether the API server at the endpoint presents a certificate of the
-// share's CA, as the cluster's API servers do. It fails when it cannot tell: an endpoint or a CA
-// bundle it cannot use would otherwise read as no cluster.
+// share's CA, as the cluster's API servers do. A refused connection, a timeout or a closed
+// connection read as no cluster, which the first bootstrap behind a VIP no node holds yet needs. A
+// certificate the share's CA does not verify is an API server of another CA, as with a node
+// installed from another secrets file, and returns a foreignCAError. It fails when it cannot tell:
+// an endpoint or a CA bundle it cannot use would otherwise read as no cluster.
 func clusterAnswers(ctx context.Context, c k8s.Cluster, share kpki.Share) (bool, error) {
 	u, err := url.Parse(c.Endpoint)
 	if err != nil {
@@ -320,12 +324,31 @@ func clusterAnswers(ctx context.Context, c k8s.Cluster, share kpki.Share) (bool,
 		Config:    &tls.Config{RootCAs: roots, ServerName: u.Hostname(), MinVersion: tls.VersionTLS12},
 	}
 	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(u.Hostname(), port))
+	if _, ok := errors.AsType[*tls.CertificateVerificationError](err); ok {
+		return false, foreignCAError{endpoint: c.Endpoint, err: err}
+	}
+	if _, ok := errors.AsType[x509.UnknownAuthorityError](err); ok {
+		return false, foreignCAError{endpoint: c.Endpoint, err: err}
+	}
 	if err != nil {
 		return false, nil
 	}
 	conn.Close()
 	return true, nil
 }
+
+// foreignCAError means an API server answers at the endpoint with a certificate the share's CA
+// does not verify.
+type foreignCAError struct {
+	endpoint string
+	err      error
+}
+
+func (e foreignCAError) Error() string {
+	return fmt.Sprintf("an API server of another CA answers at %s (%v)", e.endpoint, e.err)
+}
+
+func (e foreignCAError) Unwrap() error { return e.err }
 
 // mayJoin refuses joining a node that is bootstrapped or left etcd.
 func (k *side) mayJoin() error {

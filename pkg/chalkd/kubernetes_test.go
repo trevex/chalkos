@@ -153,7 +153,7 @@ func TestStatusKubernetes(t *testing.T) {
 		s    *Server
 		want *kubernetesv1.StatusResponse
 	}{
-		"waiting":               {waiting, &kubernetesv1.StatusResponse{Phase: kubernetesv1.Phase_PHASE_WAITING, Kind: "controlplane", State: "waiting for bootstrap or for the cluster at https://192.168.100.11:6443"}},
+		"waiting":               {waiting, &kubernetesv1.StatusResponse{Phase: kubernetesv1.Phase_PHASE_WAITING, Kind: "controlplane", State: "waiting for the cluster at https://192.168.100.11:6443; bootstrap only the first control plane of a new cluster"}},
 		"bootstrapped":          {bootstrapped, &kubernetesv1.StatusResponse{Phase: kubernetesv1.Phase_PHASE_BOOTSTRAPPED, Kind: "controlplane", State: "bootstrapped", NodeReady: "True"}},
 		"no share":              {noShare, &kubernetesv1.StatusResponse{Phase: kubernetesv1.Phase_PHASE_PREPARING, Kind: "worker", State: "no share"}},
 		"no address":            {noAddress, &kubernetesv1.StatusResponse{Phase: kubernetesv1.Phase_PHASE_PREPARING, Kind: "worker", State: "preparation failed: no node address matches the default filter (the node has no addresses)"}},

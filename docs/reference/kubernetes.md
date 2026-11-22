@@ -23,15 +23,32 @@ objects the control planes apply and the states of the Kubernetes line.
 
 ## Protected API server flags
 
-`extraArgs.kube-apiserver` of the `Cluster` document refuses these flags, also spelt with `_` for
-`-`. They decide who may do what.
+`extraArgs.kube-apiserver` of the `Cluster` document refuses every flag chalkos sets on the API
+server, also spelt with `_` for `-`. These flags set who may do what, which certificates and keys
+the API server trusts, where it finds etcd and the kubelets, and its service range.
 
 | Flag | chalkos sets |
 | --- | --- |
-| `anonymous-auth` | Anonymous requests reach only `/livez`, `/readyz` and `/healthz`, through the authentication configuration |
+| `anonymous-auth` | Left out: anonymous requests reach only `/livez`, `/readyz` and `/healthz`, through the authentication configuration |
 | `authentication-config` | The API server's authentication configuration, which chalkos writes |
 | `authorization-mode` | `Node,RBAC` |
 | `enable-bootstrap-token-auth` | `false` |
+| `client-ca-file`, `kubelet-certificate-authority` | The Kubernetes CA |
+| `requestheader-client-ca-file`, `requestheader-allowed-names`, `requestheader-*-headers`, `requestheader-extra-headers-prefix` | The front proxy CA and its client |
+| `service-account-issuer`, `service-account-key-file`, `service-account-signing-key-file` | The issuer below the cluster domain and the service account key |
+| `encryption-provider-config` | The encryption of Secrets in etcd |
+| `advertise-address`, `secure-port`, `service-cluster-ip-range`, `allow-privileged` | The node's address, port 6443, the service range and `true` |
+| `etcd-*`, `kubelet-client-*`, `proxy-client-*`, `tls-cert-file`, `tls-private-key-file` | The node's etcd member and the API server's certificates |
+
+Three flags chalkos sets take your value: `kubelet-preferred-address-types`, `profiling` and
+`tls-min-version`. Every flag chalkos does not set, such as `v`, `audit-log-path` or
+`feature-gates`, passes as well.
+
+`enable-admission-plugins` adds its plugins to chalkos's `NodeRestriction`, so
+`enable-admission-plugins: PodSecurity` runs the API server with
+`--enable-admission-plugins=NodeRestriction,PodSecurity`. `disable-admission-plugins` must not name
+`NodeRestriction`, which keeps each kubelet to its own Node and pods, or
+`ValidatingAdmissionPolicy`, which runs the revoked nodes' policy.
 
 ## Protected kubelet flags
 
@@ -100,7 +117,7 @@ The Kubernetes line of `chalkctl status` names the node's kind and one of these 
 | --- | --- |
 | `no share` | The node holds no Kubernetes share yet; it gets one at install or with `chalkctl config apply --kubernetes-share` |
 | `preparing` | The preparation of the node's addresses, certificates and kubelet flags runs |
-| `waiting for bootstrap or for the cluster at <endpoint>` | A control plane that found no cluster to join yet |
+| `waiting for the cluster at <endpoint>; bootstrap only the first control plane of a new cluster` | A control plane that found no cluster to join yet |
 | `joining the cluster at <endpoint>: <step>` | A join that runs, with its step or its last error |
 | `bootstrapped` | A control plane that is an etcd voter, by bootstrap or join |
 | `bootstrapped: <problem>` | A control plane whose etcd member belongs to another cluster than the other control planes' members |

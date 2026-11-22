@@ -25,6 +25,10 @@ call every method of chalkd but the node's own renewal, and push, delete and col
 the cluster registry. See
 [chalkd checks the role of every request](../../how-it-works/node/security.md#chalkd-checks-the-role-of-every-request).
 
+The certificate is valid for --ttl, by default 30 days for an admin, 90 days for an operator and
+a year for a reader. Issue a new file from the secrets file when it expires; chalkctl warns in
+the last third of its lifetime.
+
 The command needs the secrets file and no inventory.
 
 ## Flags
@@ -37,7 +41,7 @@ The command needs the secrets file and no inventory.
 | `--out`{ #flag-out } | string | ~/.config/chalkos/config | File to write. |
 | `--role`{ #flag-role } | string | required | The role the certificate grants: admin, operator or reader. |
 | `--secrets`{ #flag-secrets } | string | — | Cluster secrets path (.age, .enc.*, or plaintext), provider URI, or - for standard input. |
-| `--ttl`{ #flag-ttl } | duration | `8760h0m0s` | Validity of the certificate. |
+| `--ttl`{ #flag-ttl } | duration | 720h for an admin, 2160h for an operator, 8760h for a reader | Validity of the certificate. |
 
 ## Examples
 

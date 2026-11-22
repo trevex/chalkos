@@ -45,7 +45,7 @@ func kubeconfigCommand(h layer.Host) *cobra.Command {
 	fs := cmd.Flags()
 	f.cluster.Register(fs)
 	f.secrets.Register(fs)
-	fs.DurationVar(&f.ttl, "ttl", 8760*time.Hour, "validity of the admin certificate")
+	fs.DurationVar(&f.ttl, "ttl", 24*time.Hour, "validity of the admin certificate")
 	fs.StringVar(&f.out, "out", "kubeconfig", "file to write, - for standard output")
 	fs.BoolVar(&f.force, "force", false, "replace an existing file")
 	fs.StringVar(&f.server, "server", "", "URL clients reach the API server at, when it differs from the cluster endpoint; the certificate is still verified for the endpoint")

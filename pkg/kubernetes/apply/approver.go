@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/netip"
 	"slices"
 	"strings"
 	"sync"
@@ -18,14 +19,20 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
+	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
 )
 
 // Approvable returns nil when a kubelet serving certificate request may be approved: a node
-// asks for itself, in its own name, for addresses its Node object lists, and for server use
-// only. Otherwise it says why not.
-func Approvable(csr *certificatesv1.CertificateSigningRequest, node *corev1.Node) error {
+// asks for itself, in its own name, for server use only, and for addresses of its own. Otherwise
+// it says why not. An address of its own is one its Node object lists and no other Node in nodes
+// lists, outside the cluster's pod and service ranges and none of its virtual addresses; a name
+// of its own is the node's name or the host name its Node object lists, outside the cluster's
+// domain, below no .svc and no kubernetes service name. The cluster's endpoint is refused as
+// well, unless it is an address and the cluster has no virtual address: then it is a control
+// plane's own address, which that node's certificate holds.
+func Approvable(csr *certificatesv1.CertificateSigningRequest, node *corev1.Node, nodes []corev1.Node, c k8s.Cluster) error {
 	if csr.Spec.SignerName != certificatesv1.KubeletServingSignerName {
 		return fmt.Errorf("signer %s is not the kubelet serving signer", csr.Spec.SignerName)
 	}
@@ -66,26 +73,83 @@ func Approvable(csr *certificatesv1.CertificateSigningRequest, node *corev1.Node
 	if !slices.Contains(csr.Spec.Usages, certificatesv1.UsageServerAuth) {
 		return errors.New("the request does not ask for server authentication")
 	}
-	var ips, names []string
-	for _, a := range node.Status.Addresses {
-		switch a.Type {
-		case corev1.NodeInternalIP, corev1.NodeExternalIP:
-			ips = append(ips, a.Address)
-		case corev1.NodeHostName, corev1.NodeInternalDNS, corev1.NodeExternalDNS:
-			names = append(names, a.Address)
+	ips, names := nodeAddresses(node)
+	names = append(names, node.Name)
+	// What other nodes list, and what stands for the cluster itself, no node may hold.
+	taken := map[string]string{}
+	for i := range nodes {
+		if nodes[i].Name == name {
+			continue
+		}
+		otherIPs, otherNames := nodeAddresses(&nodes[i])
+		for _, a := range append(append(otherIPs, otherNames...), nodes[i].Name) {
+			taken[a] = "node " + nodes[i].Name
 		}
 	}
-	for _, ip := range req.IPAddresses {
+	for _, ip := range c.VIPAddresses() {
+		taken[ip.String()] = "the cluster's virtual addresses"
+	}
+	host := c.EndpointHost()
+	if _, err := netip.ParseAddr(host); err != nil || len(c.VIP.Addresses) > 0 {
+		taken[strings.ToLower(host)] = "the cluster's endpoint"
+	}
+	ranges := append(c.PodCIDRList(), c.ServiceCIDRList()...)
+	for _, raw := range req.IPAddresses {
+		ip, _ := netip.AddrFromSlice(raw)
+		ip = ip.Unmap()
 		if !slices.Contains(ips, ip.String()) {
 			return fmt.Errorf("node %s does not report the address %s", name, ip)
+		}
+		if who, ok := taken[ip.String()]; ok {
+			return fmt.Errorf("the address %s belongs to %s", ip, who)
+		}
+		for _, r := range ranges {
+			if r.Contains(ip) {
+				return fmt.Errorf("the address %s is in the cluster's range %s", ip, r)
+			}
 		}
 	}
 	for _, n := range req.DNSNames {
 		if !slices.Contains(names, n) {
-			return fmt.Errorf("node %s does not report the name %s", name, n)
+			return fmt.Errorf("the name %s is neither the name nor the host name of node %s", n, name)
+		}
+		if why := clusterName(strings.ToLower(n), c.Domain); why != "" {
+			return fmt.Errorf("the name %s is %s", n, why)
+		}
+		if who, ok := taken[strings.ToLower(n)]; ok {
+			return fmt.Errorf("the name %s belongs to %s", n, who)
 		}
 	}
 	return nil
+}
+
+// nodeAddresses returns the addresses and the host names node's Node object lists.
+func nodeAddresses(node *corev1.Node) (ips, names []string) {
+	for _, a := range node.Status.Addresses {
+		switch a.Type {
+		case corev1.NodeInternalIP, corev1.NodeExternalIP:
+			if ip, err := netip.ParseAddr(a.Address); err == nil {
+				ips = append(ips, ip.Unmap().String())
+			}
+		case corev1.NodeHostName:
+			names = append(names, a.Address)
+		}
+	}
+	return ips, names
+}
+
+// clusterName says why the lower-case name n stands for the cluster or a service in it, or
+// returns "" when it does not.
+func clusterName(n, domain string) string {
+	switch {
+	case n == domain || strings.HasSuffix(n, "."+domain):
+		return "in the cluster's domain " + domain
+	case n == "svc" || strings.HasSuffix(n, ".svc") || strings.Contains(n, ".svc."):
+		return "below .svc"
+	case n == "kubernetes" || strings.HasPrefix(n, "kubernetes."):
+		return "the kubernetes service's"
+	}
+	return ""
 }
 
 // Approver approves kubelet serving certificate requests that Approvable accepts and leaves
@@ -93,6 +157,9 @@ func Approvable(csr *certificatesv1.CertificateSigningRequest, node *corev1.Node
 // admission policy in step with their ConfigMap.
 type Approver struct {
 	Client kubernetes.Interface
+	// Cluster is the cluster whose ranges, virtual addresses, endpoint and domain no node's
+	// serving certificate may hold.
+	Cluster k8s.Cluster
 	// Revoked returns the revoked nodes; nil reads them through Client. Tests replace it.
 	Revoked func(context.Context) (revoked.List, error)
 	// refused remembers the requests already logged as refused.
@@ -137,6 +204,14 @@ func (a *Approver) Once(ctx context.Context) error {
 		}
 		return revoked.Load(ctx, a.Client)
 	})
+	// So are the Nodes, whose addresses a request must not name unless they are its own node's.
+	nodes := sync.OnceValues(func() ([]corev1.Node, error) {
+		list, err := a.Client.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return nil, err
+		}
+		return list.Items, nil
+	})
 	exists := map[string]bool{}
 	var errs []error
 	// Requests left pending because the revoked nodes could not be read share one error.
@@ -144,7 +219,7 @@ func (a *Approver) Once(ctx context.Context) error {
 	for i := range list.Items {
 		csr := &list.Items[i]
 		exists[csr.Name] = true
-		err := a.review(ctx, csr, revokedNodes)
+		err := a.review(ctx, csr, revokedNodes, nodes)
 		_, pending := errors.AsType[unreadRevoked](err)
 		switch {
 		case pending:
@@ -167,11 +242,12 @@ func (a *Approver) Once(ctx context.Context) error {
 
 // review approves one request if Approvable accepts it and its node is not revoked. While the
 // revoked nodes cannot be read, it leaves the request pending and returns unreadRevoked.
-func (a *Approver) review(ctx context.Context, csr *certificatesv1.CertificateSigningRequest, revokedNodes func() (revoked.List, error)) error {
+func (a *Approver) review(ctx context.Context, csr *certificatesv1.CertificateSigningRequest, revokedNodes func() (revoked.List, error), nodes func() ([]corev1.Node, error)) error {
 	if csr.Spec.SignerName != certificatesv1.KubeletServingSignerName || decided(csr) {
 		return nil
 	}
 	var node *corev1.Node
+	var all []corev1.Node
 	if name, ok := strings.CutPrefix(csr.Spec.Username, kpki.NodeUserPrefix); ok && name != "" {
 		list, err := revokedNodes()
 		if err != nil {
@@ -188,8 +264,11 @@ func (a *Approver) review(ctx context.Context, csr *certificatesv1.CertificateSi
 		case !apierrors.IsNotFound(err):
 			return fmt.Errorf("read node %s: %w", name, err)
 		}
+		if all, err = nodes(); err != nil {
+			return fmt.Errorf("list the nodes: %w", err)
+		}
 	}
-	if err := Approvable(csr, node); err != nil {
+	if err := Approvable(csr, node, all, a.Cluster); err != nil {
 		a.leavePending(csr, err)
 		return nil
 	}
@@ -197,7 +276,7 @@ func (a *Approver) review(ctx context.Context, csr *certificatesv1.CertificateSi
 		Type:           certificatesv1.CertificateApproved,
 		Status:         corev1.ConditionTrue,
 		Reason:         "ChalkdApproved",
-		Message:        "The node's name and addresses match its Node object.",
+		Message:        "The node's name and addresses are its own.",
 		LastUpdateTime: metav1.Now(),
 	})
 	if _, err := a.Client.CertificatesV1().CertificateSigningRequests().UpdateApproval(ctx, csr.Name, csr, metav1.UpdateOptions{}); err != nil {

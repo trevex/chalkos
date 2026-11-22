@@ -19,9 +19,13 @@ documents, with the systemd-repart definitions of VAR and the volumes:
   `10-<volume>.conf` on that disk.
 - Each disk's seed is `storage.UUIDOf` of the node's name and the disk's.
 
-A `Volume`'s `repart` field passes further repart.d keys through. `reservedRepartKeys` lists the
-keys the typed fields set, which are refused there: `Type`, `Label`, `Encrypt`, `Format`,
-`SizeMinBytes`, `SizeMaxBytes` and `MountPoint`.
+A `Volume`'s `repart` field passes further repart.d keys through, from the allowlist
+`repartKeys`: keys that place or size the partition or set its GPT fields and take nothing from the
+host. systemd-repart runs the definitions as root in the initrd, after STATE is open, so any other
+key, such as one that copies files or blocks or makes directories, is refused, as the installer
+refuses one in the system region's definitions. `typedRepartKeys` lists the keys the typed fields
+set, which are refused with a message of their own: `Type`, `Label`, `Encrypt`, `TPM2PCRs`,
+`Format`, `SizeMinBytes`, `SizeMaxBytes` and `MountPoint`.
 
 ## pkg/storage/node runs systemd-repart
 

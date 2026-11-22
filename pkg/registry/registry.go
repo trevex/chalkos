@@ -1,7 +1,8 @@
 // Package registry is chalkos's OCI registry: distribution's registry handlers with its
-// filesystem storage, served over TLS with the node certificate. Anyone reads; a client
-// certificate of the admin role writes and deletes, and collects garbage, which runs on request
-// alone: nothing deletes an image on its own.
+// filesystem storage, served over TLS with the node certificate. A certificate of the OS CA reads,
+// a node's or a client's of any role; one of the admin role writes and deletes, and collects
+// garbage, which runs on request alone: nothing deletes an image on its own. A Unix socket on the
+// node serves reads without a certificate, to whoever its file mode lets connect.
 package registry
 
 import (
@@ -72,7 +73,7 @@ type Server struct {
 	writes     sync.RWMutex
 	collecting atomic.Bool
 	cert       tls.Certificate
-	// roots are the OS CAs every write's client certificate is verified against again.
+	// roots are the OS CAs every request's client certificate is verified against again.
 	roots atomic.Pointer[x509.CertPool]
 }
 
@@ -116,7 +117,8 @@ func New(ctx context.Context, c Config) (*Server, error) {
 }
 
 // TLSConfig serves the node certificate over HTTP/2 or HTTP/1.1 and verifies a client
-// certificate when a client gives one.
+// certificate when a client gives one. A client without one completes the handshake, and
+// ServeHTTP refuses its requests with an answer that says why.
 func (s *Server) TLSConfig() *tls.Config {
 	return &tls.Config{
 		MinVersion:   tls.VersionTLS13,
@@ -132,14 +134,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.serveCollect(w, r)
 		return
 	}
-	if r.Method == http.MethodGet || r.Method == http.MethodHead {
-		// Reads are anonymous. containerd sends a host's Registry credentials to its mirror
-		// endpoints, which mean nothing here.
-		r.Header.Del("Authorization")
-		s.app.ServeHTTP(w, r)
+	if read(r) {
+		if status, err := s.client(w, r, "reading", pki.RoleReader); err != nil {
+			writeError(w, status, "DENIED", err.Error())
+			return
+		}
+		s.serveRead(w, r)
 		return
 	}
-	if status, err := s.admin(w, r); err != nil {
+	if status, err := s.client(w, r, "writing to", pki.RoleAdmin); err != nil {
 		writeError(w, status, "DENIED", err.Error())
 		return
 	}
@@ -152,26 +155,55 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.app.ServeHTTP(w, r)
 }
 
-// admin refuses a request without a client certificate of the admin role. It verifies the
-// certificate again, against the OS CAs and at the time of the request, as chalkd does: the
-// handshake's verification would otherwise last as long as the client keeps the connection. On a
-// failure the connection closes, so the client's next one takes a new handshake. pki.ClientRole
-// makes a certificate of the node CA a node's, whatever its Organization, so no node writes.
-func (s *Server) admin(w http.ResponseWriter, r *http.Request) (int, error) {
-	const need = "writing to the registry needs a client certificate of the admin role"
+// read is whether r only reads: a GET or a HEAD.
+func read(r *http.Request) bool {
+	return r.Method == http.MethodGet || r.Method == http.MethodHead
+}
+
+// serveRead serves a read. containerd sends a host's Registry credentials to its mirror
+// endpoints, which mean nothing here.
+func (s *Server) serveRead(w http.ResponseWriter, r *http.Request) {
+	r.Header.Del("Authorization")
+	s.app.ServeHTTP(w, r)
+}
+
+// client refuses a request, which does what, without a certificate of the OS CA that grants
+// need: pki.RoleReader takes a node's or a client's of any role, pki.RoleAdmin a client's of the
+// admin role alone. It verifies the certificate again, against the OS CAs and at the time of the
+// request, as chalkd does: the handshake's verification would otherwise last as long as the
+// client keeps the connection. On a failure the connection closes, so the client's next one takes
+// a new handshake. pki.ClientRole makes a certificate of the node CA a node's, whatever its
+// Organization, so no node writes.
+func (s *Server) client(w http.ResponseWriter, r *http.Request, what string, need pki.Role) (int, error) {
+	needs := what + " the registry needs a client certificate of the admin role"
+	if need == pki.RoleReader {
+		needs = what + " the registry needs a certificate of the OS CA, a node's or a client file's"
+	}
 	if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
-		return http.StatusUnauthorized, errors.New(need)
+		return http.StatusUnauthorized, errors.New(needs)
 	}
 	chains, err := pki.VerifyClient(r.TLS.PeerCertificates, s.roots.Load(), time.Now())
 	if err != nil {
 		w.Header().Set("Connection", "close")
-		return http.StatusUnauthorized, fmt.Errorf("%s; this one does not verify: %w", need, err)
+		return http.StatusUnauthorized, fmt.Errorf("%s; this one does not verify: %w", needs, err)
 	}
 	role, ok := pki.ClientRole(chains)
-	if !ok || !role.Allows(pki.RoleAdmin) {
-		return http.StatusForbidden, fmt.Errorf("%s, not of %q", need, role)
+	if !ok || !(role.Allows(need) || need == pki.RoleReader && role == pki.RoleNode) {
+		return http.StatusForbidden, fmt.Errorf("%s, not of %q", needs, role)
 	}
 	return 0, nil
+}
+
+// Local serves the reads of a Unix socket on the node without a certificate: the socket's file
+// mode decides who connects. It refuses every write.
+func (s *Server) Local() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !read(r) {
+			writeError(w, http.StatusMethodNotAllowed, "UNSUPPORTED", "the registry's socket serves reads alone; write over TLS with a client certificate of the admin role")
+			return
+		}
+		s.serveRead(w, r)
+	})
 }
 
 // idleBody ends a write whose client sends nothing for WriteIdle, which releases the collection
@@ -191,7 +223,7 @@ func (s *Server) serveCollect(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "UNSUPPORTED", "collect garbage with POST")
 		return
 	}
-	if status, err := s.admin(w, r); err != nil {
+	if status, err := s.client(w, r, "writing to", pki.RoleAdmin); err != nil {
 		writeError(w, status, "DENIED", err.Error())
 		return
 	}

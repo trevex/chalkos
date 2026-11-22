@@ -29,10 +29,11 @@
   postUpdateOptions: ['gomodTidy', 'gomodUpdateImportPaths'],
   // An update that fixes a known vulnerability, from the repository's Dependabot alerts or the
   // OSV database, comes at any time in a pull request of its own, outside the groups below,
-  // labelled security.
+  // labelled security, without waiting for the release age.
   vulnerabilityAlerts: {
     addLabels: ['security'],
     schedule: ['at any time'],
+    minimumReleaseAge: null,
   },
   osvVulnerabilityAlerts: true,
   // Automerge enables GitHub's auto-merge, which waits for the checks branch protection requires.
@@ -91,16 +92,25 @@
       semanticCommitType: 'deps',
     },
     {
+      // A Go module's release waits seven days before Renovate proposes it, like an action's.
+      matchManagers: ['gomod'],
+      minimumReleaseAge: '7 days',
+    },
+    {
       // Actions' patch and minor releases and digests in one pull request, merged once CI
-      // passes; a major release gets a pull request of its own, merged by hand.
+      // passes; a major release gets a pull request of its own, merged by hand. A release waits
+      // seven days before Renovate proposes it, time for a compromised one to be found and
+      // pulled.
       matchManagers: ['github-actions'],
       semanticCommitType: 'ci',
       semanticCommitScope: 'deps',
+      minimumReleaseAge: '7 days',
     },
     {
       matchDepNames: ['Mic92/hestia'],
       semanticCommitType: 'ci',
       semanticCommitScope: 'deps',
+      minimumReleaseAge: '7 days',
     },
     {
       matchManagers: ['github-actions', 'custom.regex'],
@@ -109,6 +119,28 @@
       groupName: 'the GitHub Actions',
       groupSlug: 'github-actions',
       automerge: true,
+    },
+    {
+      // The actions of the release jobs that hold id-token: write, which can sign as the release
+      // workflow: those of the nix composite, cosign's installer, the attest actions and the
+      // first-party actions beside them. Their updates get a pull request of their own, which a
+      // maintainer merges after reading the diff.
+      matchManagers: ['github-actions', 'custom.regex'],
+      matchDepNames: [
+        'cachix/install-nix-action',
+        'cachix/cachix-action',
+        'Mic92/hestia',
+        'sigstore/cosign-installer',
+        'actions/checkout',
+        'actions/upload-artifact',
+        'actions/download-artifact',
+        'actions/attest',
+        'actions/attest-build-provenance',
+      ],
+      matchUpdateTypes: ['minor', 'patch', 'digest', 'pin', 'pinDigest'],
+      groupName: "the release jobs' actions",
+      groupSlug: 'github-actions-release',
+      automerge: false,
     },
     {
       // The Kubernetes modules, which follow the newest Kubernetes minor, with etcd's.

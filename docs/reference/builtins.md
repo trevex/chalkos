@@ -280,7 +280,8 @@ cel.bind(names, cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in config && "N
 | 2 | — | The service range of each family both configs have stays once the node holds a Kubernetes share. | `refuse` | after the table | after the table |
 | 3 | — | The cluster DNS's address of each family both configs have, by default the 10th of its service range, stays once the node holds a Kubernetes share. | `refuse` | after the table | after the table |
 | 4 | `spec.allowSchedulingOnControlPlanes` | Whether workloads run on control planes stays once the node holds a Kubernetes share. | `refuse` | `facts.share == null || self == oldSelf` | the config changes allowSchedulingOnControlPlanes; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; add or remove the node-role.kubernetes.io/control-plane:NoSchedule taint with kubectl taint instead, or reinstall the node |
-| 5 | `spec.ipFamilies` | The cluster's address families stay once the node holds a Kubernetes share. | `refuse` | `facts.share == null || self == oldSelf` | after the table |
+| 5 | `spec.domain` | The cluster's domain stays once the node holds a Kubernetes share. | `refuse` | `facts.share == null || self == oldSelf` | after the table |
+| 6 | `spec.ipFamilies` | The cluster's address families stay once the node holds a Kubernetes share. | `refuse` | `facts.share == null || self == oldSelf` | after the table |
 
 Expression of rule 1:
 
@@ -331,6 +332,12 @@ cel.bind(was, oldDocuments.map(o, oldDocuments[o].spec)[0], cel.bind(gets, docum
 ```
 
 Message of rule 5:
+
+```text
+"the config changes the cluster's domain from " + oldSelf + " to " + self + "; it is fixed once the cluster exists, so keep it, or reinstall the node into a new cluster"
+```
+
+Message of rule 6:
 
 ```text
 "the config changes the cluster's ipFamilies from " + oldSelf.join(", ") + " to " + self.join(", ") + "; they are fixed once the cluster exists, so keep them, or reinstall the node into a new cluster"
@@ -1732,7 +1739,7 @@ The diagnostics images with Kubernetes add.
 | `bgp-neighbor`{ #diagnostic-bgp-neighbor } | One BGP session in detail, as show bgp neighbors prints it: its state, timers, capabilities and routes. Runs `vtysh -c show bgp vrf {vrf} neighbors {peer}`. | `peer`, pattern `^([0-9A-Fa-f:.]+|[A-Za-z0-9_.:@-]{1,15})$`; `vrf`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, default `default` | reader | — |
 | `bgp-route`{ #diagnostic-bgp-route } | One VRF's BGP paths to a prefix, as show bgp prints them: each path's AS path, next hop and attributes, and the best. Runs `vtysh -c show bgp vrf {vrf} {family} unicast {prefix}`. | `prefix`, prefix; `vrf`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, default `default`; `family`, enum of `ipv4` or `ipv6`, default `ipv6` | reader | — |
 | `bgp-summary`{ #diagnostic-bgp-summary } | One VRF's BGP sessions of each address family, as show bgp summary prints them. Runs `vtysh -c show bgp vrf {vrf} summary`. | `vrf`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, default `default` | reader | — |
-| `cluster-registry`{ #diagnostic-cluster-registry } | Lists the repositories of the cluster registry the node serves, as its catalog does, or says why it does not answer. Runs `chalkos-registry catalog {port}`. | `port`, int from 1024 to 65535, default `5000` | reader | — |
+| `cluster-registry`{ #diagnostic-cluster-registry } | Lists the repositories of the cluster registry the node serves, as its catalog does, or says why it does not answer. Runs `chalkos-registry catalog /run/chalkos-registry/registry.sock`. | — | reader | — |
 
 ### Router images { #diagnostics-router-images }
 

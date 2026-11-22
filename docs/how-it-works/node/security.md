@@ -147,8 +147,9 @@ chalkctl gen secrets --recipient=<age-public-key>
 
 A client file holds one certificate of one role, its key and the OS CA certificates. It lets
 someone operate the cluster without the secrets file, limited to the role.
-[`chalkctl client new`](../../reference/cli/chalkctl_client_new.md) issues it, valid for one year
-unless `--ttl` says otherwise, and writes it to `~/.config/chalkos/config` with mode 0600:
+[`chalkctl client new`](../../reference/cli/chalkctl_client_new.md) issues it, valid for 30 days for
+an admin, 90 days for an operator and a year for a reader unless `--ttl` says otherwise, and
+writes it to `~/.config/chalkos/config` with mode 0600:
 
 ```sh
 chalkctl client new --name=grafana --role=reader --ttl=720h --out=grafana.json
@@ -349,8 +350,9 @@ runs no console, and chalkd serves no console socket.
   built with [`osCA`](../../reference/mkimages.md#osca).
 - There is no certificate revocation list. A leaked client file or kubeconfig stays valid until it
   expires or its CA is rotated, as [Certificates](certificates.md#access-is-revoked-by-rotating-its-ca)
-  explains. With the Kubernetes layer, revoking a node shuts out that node alone, with the gaps
-  listed under [Revocation leaves reads and the certificates valid](../kubernetes/certificates.md#revocation-leaves-reads-and-the-certificates-valid).
+  explains. The default lifetimes keep that time short for the files that grant the most: a day
+  for a kubeconfig and 30 days for an admin client file. With the Kubernetes layer, revoking a
+  node shuts out that node alone, with the gaps listed under [Revocation leaves reads and the certificates valid](../kubernetes/certificates.md#revocation-leaves-reads-and-the-certificates-valid).
 - The console asks nobody for a credential. Anyone at the machine's keyboard, or with its BMC,
   reads what the console shows and uses its actions, unless the image turns the actions off.
 - The TPM unseals without a PIN for every boot under the same Secure Boot state, so a machine

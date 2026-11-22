@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -101,7 +102,7 @@ func renewed(t *testing.T, what, addr string, before *x509.Certificate, timeout 
 // renewals renews w1's node certificate through cp1 and cp1's own certificates in place: the
 // test image renews them whenever config is delivered. Unless online, cp1's cluster registry,
 // at registryPort, then serves cp1's renewed node certificate: systemd starts it again when chalkd
-// replaces the file.
+// replaces the file. w1 then pulls from it with its renewed node certificate.
 func renewals(t *testing.T, ctx context.Context, cs kubernetes.Interface, nodes map[string]*node, apiPort, registryPort int, online bool) {
 	t.Helper()
 	w1, cp1 := nodes["w1"], nodes["cp1"]
@@ -152,6 +153,16 @@ func renewals(t *testing.T, ctx context.Context, cs kubernetes.Interface, nodes 
 	})
 	t.Logf("the control plane answered with renewed certificates after %v", time.Since(start).Round(time.Second))
 	waitFor(t, 5*time.Minute, "both nodes Ready after the renewal", func() error { return nodesReady(ctx, cs, "cp1", "w1") })
+	// containerd on w1 presents its renewed node certificate to the cluster registry, which it
+	// reads again for every pull: a tag w1 has not pulled makes it resolve the manifest there.
+	if !online {
+		image := clusterRegistryRepo + ":renewed"
+		connect := "192.168.100.11=127.0.0.1:" + strconv.Itoa(registryPort)
+		if out, err := chalkctlContext(ctx, t, nil, "base", "registry", "push", ociArchive(t, busyboxLayout(t)), image, "--connect-to", connect); err != nil {
+			t.Fatalf("registry push after the renewal: %v\n%s", err, out)
+		}
+		podSucceeds(t, ctx, cs, "cluster-registry-renewed", image)
+	}
 	// The controller-manager and the scheduler restarted with the renewed kubeconfigs and took
 	// the lead again: a restarted process holds the lease under a new identity. The clocks agree,
 	// as chrony follows the test's NTP server.

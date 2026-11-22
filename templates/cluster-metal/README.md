@@ -15,7 +15,8 @@ The files:
   `chalkos.lib.mkImages`.
 - `chalkos.yaml` is the inventory: the nodes, the address chalkctl reaches each at, the image
   they run and their config files.
-- `cluster/cluster.yaml` holds the Kubernetes cluster every node shares, with its VIP.
+- `cluster/cluster.yaml` holds the Kubernetes cluster every node shares, with its VIP, and the
+  network flannel takes its VXLAN from.
 - `nodes/cp1.yaml` to `nodes/cp3.yaml` hold each node's disk, MAC address and static address.
 
 ```sh

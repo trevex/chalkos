@@ -86,7 +86,7 @@ At the first pause:
 
     ```console
     $ chalkctl kubeconfig --secrets secrets.age --out admin.kubeconfig
-    wrote admin.kubeconfig; its certificate is valid for 8760h0m0s
+    wrote admin.kubeconfig; its certificate is valid for 24h0m0s
     ```
 
 Then resume. The switch makes the new CAs issue on each control plane in turn. The refresh gives

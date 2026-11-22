@@ -102,17 +102,17 @@ The Kubernetes cluster the node belongs to: its API server's endpoint, its addre
 
 `apiVersion: kubernetes.chalkos.dev/v1alpha1`
 
-A node's config holds at most one. It has 5 [change rules](builtins.md#rules-cluster).
+A node's config holds at most one. It has 6 [change rules](builtins.md#rules-cluster).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `spec.allowSchedulingOnControlPlanes` | boolean | `false` | Whether workloads run on control-plane nodes, which otherwise register with the taint `node-role.kubernetes.io/control-plane:NoSchedule`; it is fixed once the node holds a Kubernetes share. |
 | `spec.dnsIPs.ipv4` | IP address or null | `null` | Service address of the cluster DNS in the family's service range; null is its 10th address. Pods use the primary family's. |
 | `spec.dnsIPs.ipv6` | IP address or null | `null` | Service address of the cluster DNS in the family's service range; null is its 10th address. Pods use the primary family's. |
-| `spec.domain` | string | `"cluster.local"` | DNS domain of the cluster. |
+| `spec.domain` | string | `"cluster.local"` | DNS domain of the cluster, a lower-case DNS name without a trailing dot; it is fixed once the node holds a Kubernetes share. |
 | `spec.endpoint` | string | required | URL of the cluster's Kubernetes API server, which every node of the cluster names alike. |
 | `spec.extraArgs.etcd` | map of string | `{}` | Extra flags of etcd, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused. |
-| `spec.extraArgs.kube-apiserver` | map of string | `{}` | Extra flags of the API server, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused. |
+| `spec.extraArgs.kube-apiserver` | map of string | `{}` | Extra flags of the API server, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused. Every flag chalkos sets on the API server is protected except `kubelet-preferred-address-types`, `profiling` and `tls-min-version`. `enable-admission-plugins` adds to chalkos's plugins, and `disable-admission-plugins` must not name `NodeRestriction` or `ValidatingAdmissionPolicy`. |
 | `spec.extraArgs.kube-controller-manager` | map of string | `{}` | Extra flags of the controller-manager, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused. |
 | `spec.extraArgs.kube-scheduler` | map of string | `{}` | Extra flags of the scheduler, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused. |
 | `spec.images` | object | required |  |
@@ -826,7 +826,7 @@ A node's config may hold several, each with a name of its own. It has 7 [change 
 | `spec.exec` | boolean | `false` | Whether programs on the volume may run. Volumes are mounted `nosuid,nodev,noexec`; `true` mounts the volume `exec,nosuid,nodev`. A volume mounted at one of the image's exec paths, such as `/var/lib/containerd` on a Kubernetes image, takes that path's options instead. Changing it mounts the volume again. |
 | `spec.format` | one of `ext4`, `xfs`, `btrfs`, `swap`, `raw` | `"ext4"` | File system of the volume; `raw` leaves a raw block device, which has no mountPoint. |
 | `spec.mountPoint` | string or null | `null` | Where the volume is mounted; null leaves it unmounted. Unique among the Volume documents. |
-| `spec.repart` | map of string | `{}` | Extra repart.d keys of the volume's partition. Type, Label, Encrypt, Format, SizeMinBytes, SizeMaxBytes and MountPoint come from the typed options. |
+| `spec.repart` | map of string | `{}` | Extra repart.d keys of the volume's partition: Priority, Weight, PaddingWeight, PaddingMinBytes, PaddingMaxBytes, GrowFileSystem, NoAuto, ReadOnly, Flags, UUID, and FactoryReset set to `no`. Type, Label, Encrypt, TPM2PCRs, Format, SizeMinBytes, SizeMaxBytes and MountPoint come from the typed options. Any other key is refused, such as CopyFiles and CopyBlocks, which copy from the host. |
 | `spec.size` | string or null | `null` | Size of the volume, such as `100G`, with at most 18 digits without a suffix, and 15, 12, 9, 6 or 3 with K, M, G, T or P; null fills the remaining space on its disk. |
 
 ## time.chalkos.dev { #time-chalkos-dev }

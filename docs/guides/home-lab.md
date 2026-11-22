@@ -699,7 +699,7 @@ that it waits:
 ```console
 $ chalkctl status node1 --secrets=secrets.age
 ...
-kubernetes controlplane: waiting for bootstrap or for the cluster at https://[fdc8:a1b2:c3d4:ff::10]:6443
+kubernetes controlplane: waiting for the cluster at https://[fdc8:a1b2:c3d4:ff::10]:6443; bootstrap only the first control plane of a new cluster
 ...
 ```
 
@@ -714,7 +714,7 @@ $ chalkctl bootstrap node1 --secrets=secrets.age
 bootstrapping node1; the control plane pulls its images and starts
 node1 is bootstrapped; applied 19 objects
 $ chalkctl kubeconfig --secrets=secrets.age
-wrote kubeconfig; its certificate is valid for 8760h0m0s
+wrote kubeconfig; its certificate is valid for 24h0m0s
 ```
 
 The bootstrap starts etcd and the control plane on node1. node1 then wins the election for the VIP,

@@ -316,6 +316,21 @@ or the subnets it picks its addresses from, lie outside the ranges. A node that 
 at boot checks the picked ones against the ranges again, and refuses to prepare Kubernetes when one
 lies outside.
 
+The default, no `vxlanSourceSubnets`, takes VXLAN from any host that reaches a node's address.
+`chalkctl validate` warns about it and suggests ranges that cover the addresses the inventory
+gives the nodes: the network of each node's static address, a fixed address alone when no static
+network holds it, and the subnets a node picks its address from. For nodes on `192.168.1.0/24`
+the warning ends with `such as vxlanSourceSubnets: [192.168.1.0/24]`. A Flannel document with the
+ranges silences it:
+
+```yaml
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Flannel
+metadata: {name: default}
+spec:
+  vxlanSourceSubnets: [192.168.1.0/24]
+```
+
 ## kube-proxy and CoreDNS give pods services and names
 
 chalkd applies kube-proxy as a DaemonSet in nftables mode, the mode the node's firewall and flannel

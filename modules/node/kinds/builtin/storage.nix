@@ -302,7 +302,7 @@ in
         repart = mkOption {
           type = types.attrsOf types.str;
           default = { };
-          description = "Extra repart.d keys of the volume's partition. Type, Label, Encrypt, Format, SizeMinBytes, SizeMaxBytes and MountPoint come from the typed options.";
+          description = "Extra repart.d keys of the volume's partition: Priority, Weight, PaddingWeight, PaddingMinBytes, PaddingMaxBytes, GrowFileSystem, NoAuto, ReadOnly, Flags, UUID, and FactoryReset set to `no`. Type, Label, Encrypt, TPM2PCRs, Format, SizeMinBytes, SizeMaxBytes and MountPoint come from the typed options. Any other key is refused, such as CopyFiles and CopyBlocks, which copy from the host.";
         };
       };
     };

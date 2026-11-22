@@ -34,7 +34,8 @@ func (a *app) validateCommand() *cobra.Command {
 
 // validate checks the config of the nodes named, or of every node, and names each invalid one. The
 // compiled layers check the nodes together first, as every command does on loading the inventory. A
-// config that leaves the node's secrets unencrypted draws a warning.
+// config that leaves the node's secrets unencrypted draws a warning, and so does what a compiled
+// layer warns about the nodes together.
 func (a *app) validate(ctx context.Context, f validateFlags, names []string) error {
 	path := cmp.Or(f.cluster.Path(), inventory.DefaultFile)
 	c, err := readInventory(ctx, path)
@@ -70,6 +71,11 @@ func (a *app) validate(ctx context.Context, f validateFlags, names []string) err
 		}
 		fmt.Fprintln(a.stdout, line)
 		for _, w := range warnings {
+			fmt.Fprintln(a.stderr, "warning: "+w)
+		}
+	}
+	for _, p := range compiled[layer.InventoryWarnings]() {
+		for _, w := range p.InventoryWarnings(c) {
 			fmt.Fprintln(a.stderr, "warning: "+w)
 		}
 	}

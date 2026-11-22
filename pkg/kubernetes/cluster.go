@@ -9,7 +9,9 @@ import (
 	"net/url"
 	"os"
 	"slices"
+	"strings"
 
+	"github.com/trevex/chalkos/pkg/dns"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 )
 
@@ -154,8 +156,10 @@ func (c Cluster) Validate() error {
 	if c.Kind != KindControlPlane && c.Kind != KindWorker {
 		return fmt.Errorf("unknown kind %q", c.Kind)
 	}
-	if c.Domain == "" {
-		return errors.New("no cluster domain")
+	// CoreDNS's Corefile, the service account issuer and the API server's certificate take the
+	// domain as written.
+	if !dns.IsName(c.Domain) || strings.Contains(c.Domain, "_") {
+		return fmt.Errorf("the cluster domain %q is not a lower-case DNS name without a trailing dot", c.Domain)
 	}
 	if _, err := nodeip.ParseFilter(c.NodeIP.ValidSubnets); err != nil {
 		return fmt.Errorf("nodeIP: %w", err)

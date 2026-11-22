@@ -101,9 +101,15 @@ func controlPlane(ctx context.Context, r tool.Runner, runDir, etcdDir, mark stri
 	return err
 }
 
-// osCAs holds the OS CAs a node trusts: STATE's chalkd/ca.crt. The cluster registry's endpoints
-// serve node certificates, which they verify.
-const osCAs = "/state/chalkd/ca.crt"
+// osCAs holds the OS CAs a node trusts, STATE's chalkd/ca.crt, and nodePEM the node
+// certificate's chain and key. The cluster registry's endpoints serve node certificates, which
+// containerd verifies by osCAs, and read only for a certificate of the OS CA, for which
+// containerd presents nodePEM. containerd reads both files again for every pull, so a renewed
+// node certificate takes effect at the next pull without a restart.
+const (
+	osCAs   = "/state/chalkd/ca.crt"
+	nodePEM = "/state/chalkd/node.pem"
+)
 
 // registryHosts returns containerd's hosts.toml of each registry the node's Mirror, Registry and
 // ClusterRegistry documents below runDir name, by its directory below containerd's config_path.
@@ -125,7 +131,7 @@ func registryHosts(runDir string) (map[string]string, error) {
 	if ok {
 		for host, urls := range cluster.MirrorURLs(clusterregistry.Addrs(config.StaticAddresses(docs))) {
 			for _, u := range urls {
-				first[host] = append(first[host], config.HostEndpoint{URL: u, OverridePath: true, CA: osCAs})
+				first[host] = append(first[host], config.HostEndpoint{URL: u, OverridePath: true, CA: osCAs, Client: nodePEM})
 			}
 		}
 	}

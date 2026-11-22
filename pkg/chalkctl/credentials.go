@@ -87,9 +87,11 @@ func (a *app) loadSecretCredentials(ctx context.Context, s layer.SecretsFlags) (
 	return secretCredentials(secrets)
 }
 
-// configExpiryWarning is how long before its certificate expires chalkctl warns about a client
-// file.
-const configExpiryWarning = 30 * 24 * time.Hour
+// expiresSoon is whether a client file's certificate is in the last third of its lifetime, when
+// chalkctl warns that it expires.
+func expiresSoon(leaf *x509.Certificate, now time.Time) bool {
+	return leaf.NotAfter.Sub(now) < leaf.NotAfter.Sub(leaf.NotBefore)/3
+}
 
 // loadCredentials picks the credentials of the commands a client file may run: --config's client
 // file or --secrets's secrets file, not both; else $CHALKOSCONFIG's client file, else
@@ -119,7 +121,7 @@ func defaultConfigPath(home string) string {
 }
 
 // configCredentials reads a client file, refuses it once its certificate expired and warns in
-// the last 30 days before.
+// the last third of its lifetime.
 func (a *app) configCredentials(path string) (*credentials, error) {
 	c, err := client.ReadConfig(path)
 	if err != nil {
@@ -134,7 +136,7 @@ func (a *app) configCredentials(path string) (*credentials, error) {
 	switch {
 	case !now.Before(leaf.NotAfter):
 		return nil, fmt.Errorf("the certificate of %s expired on %s; issue a new one with chalkctl client new", path, expires)
-	case leaf.NotAfter.Sub(now) < configExpiryWarning:
+	case expiresSoon(leaf, now):
 		fmt.Fprintf(a.stderr, "chalkctl: warning: the certificate of %s expires on %s; issue a new one with chalkctl client new\n", path, expires)
 	}
 	cert, err := c.TLSCertificate()
@@ -142,6 +144,15 @@ func (a *app) configCredentials(path string) (*credentials, error) {
 		return nil, err
 	}
 	return &credentials{config: &c, configPath: path, cert: cert, osCA: c.OSCA}, nil
+}
+
+// clientValidity is how long the certificate of a client file lives by default, by role: the
+// file is issued again from the secrets file at any time, so the more a role may do, the
+// shorter. A reader's lasts a year, for dashboards.
+var clientValidity = map[pki.Role]time.Duration{
+	pki.RoleAdmin:    30 * 24 * time.Hour,
+	pki.RoleOperator: 90 * 24 * time.Hour,
+	pki.RoleReader:   365 * 24 * time.Hour,
 }
 
 type clientNewFlags struct {
@@ -166,7 +177,7 @@ func (a *app) clientNewCommand() *cobra.Command {
 	fs.StringVar(&f.role, "role", "", "the role the certificate grants: admin, operator or reader")
 	cmd.MarkFlagRequired("name")
 	cmd.MarkFlagRequired("role")
-	fs.DurationVar(&f.ttl, "ttl", 8760*time.Hour, "validity of the certificate")
+	fs.DurationVar(&f.ttl, "ttl", 0, "validity of the certificate (default 720h for an admin, 2160h for an operator, 8760h for a reader)")
 	fs.StringVar(&f.out, "out", "", "file to write (default ~/.config/chalkos/config)")
 	fs.BoolVar(&f.force, "force", false, "replace an existing file")
 	return cmd
@@ -182,7 +193,11 @@ func (a *app) clientNew(ctx context.Context, f clientNewFlags) error {
 	if err != nil {
 		return err
 	}
-	config, err := client.NewConfig(f.name, pki.Role(f.role), secrets.ClientCA(), secrets.OSCABundle(), f.ttl, time.Now())
+	ttl := f.ttl
+	if ttl == 0 {
+		ttl = clientValidity[pki.Role(f.role)]
+	}
+	config, err := client.NewConfig(f.name, pki.Role(f.role), secrets.ClientCA(), secrets.OSCABundle(), ttl, time.Now())
 	if err != nil {
 		return err
 	}

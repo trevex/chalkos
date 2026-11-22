@@ -51,7 +51,7 @@ document. Its fields fall into groups:
 | --- | --- | --- |
 | `endpoint` | The URL of the API server, the cluster endpoint | required |
 | `images` | The images of the control plane, kube-proxy, CoreDNS, the pod sandbox and flannel | required |
-| `domain` | The cluster's DNS domain | `cluster.local` |
+| `domain` | The cluster's DNS domain, a lower-case DNS name without a trailing dot; fixed once the cluster exists | `cluster.local` |
 | `ipFamilies`, `podCIDRs`, `serviceCIDRs`, `dnsIPs` | The address families, their pod and service ranges and the cluster DNS address of each; fixed once the cluster exists | IPv4, `10.244.0.0/16`, `10.96.0.0/12`, the 10th address of the service range |
 | `nodeCIDRMaskSizes` | The prefix length of each node's part of the pod range | 24 for IPv4, 64 for IPv6 |
 | `nodeIP` | The subnets nodes without a fixed address pick theirs from, and how long a node waits for it at boot | any global unicast address, 300 seconds |
@@ -257,14 +257,18 @@ spec:
   --8<-- "examples/homelab/cluster/cluster.yaml:images"
 ```
 
-The components take the flags on every control plane. A flag chalkos also sets takes your value.
+The components take the flags on every control plane. A flag chalkos also sets takes your value,
+unless chalkos protects it.
 A flag's name holds letters, digits, `_`, `.` and `-`, and starts with a letter or digit.
 [The control plane](../how-it-works/kubernetes/control-plane.md#the-flags-follow-kubeadm-with-a-few-access-choices)
 explains the flags chalkos sets.
 
-The API server's flags that decide who may do what are refused, also when spelt with `_` for `-`:
-`anonymous-auth`, `authentication-config`, `authorization-mode` and
-`enable-bootstrap-token-auth`. `chalkctl validate` names the flag:
+The API server flags chalkos sets are refused, also when spelt with `_` for `-`, apart from
+`kubelet-preferred-address-types`, `profiling` and `tls-min-version`.
+[Protected API server flags](../reference/kubernetes.md#protected-api-server-flags) lists them.
+`enable-admission-plugins` adds its plugins to chalkos's `NodeRestriction`, and
+`disable-admission-plugins` must not name `NodeRestriction` or `ValidatingAdmissionPolicy`.
+`chalkctl validate` names the flag:
 
 ```text
 node node1: the Kubernetes cluster the documents give: Cluster "default": extraArgs: kube-apiserver --authentication-config is set by chalkos and cannot be overridden
@@ -277,7 +281,7 @@ lists them.
 The error names the flag, the flag it conflicts with and what to do instead:
 
 ```text
-node node1: the Kubernetes cluster the documents give: Cluster "default": extraArgs: kube-apiserver --admission-control conflicts with --enable-admission-plugins: chalkos sets --enable-admission-plugins, and the API server refuses this flag next to it; give the plugins in enable-admission-plugins and disable-admission-plugins
+node node1: the Kubernetes cluster the documents give: Cluster "default": extraArgs: kube-apiserver --admission-control conflicts with --enable-admission-plugins: chalkos sets --enable-admission-plugins, and the API server refuses this flag next to it; give further plugins in enable-admission-plugins, which adds them to chalkos's
 ```
 
 From the node, the control plane's pods mount the certificates and kubeconfigs chalkd writes, and
@@ -429,7 +433,8 @@ A changed `Addon` document restarts nothing: the control planes apply its object
 [Built-ins](../reference/builtins.md#effects-kubernetes) lists these effects.
 
 A node that holds a Kubernetes share refuses a config that changes `ipFamilies`, `podCIDRs`,
-`serviceCIDRs` or `dnsIPs`, or the node's `type`, and names what the change takes.
+`serviceCIDRs`, `dnsIPs` or `domain`, or the node's `type`, and names what the change takes. The
+service account issuer and every service's DNS name follow the domain.
 
 ## Check that it worked
 

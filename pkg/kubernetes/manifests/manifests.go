@@ -195,8 +195,7 @@ func StaticPods(c kubernetes.Cluster, n kubernetes.Node, pkiDir string, files ma
 // flags turns the component's flags, with the cluster's extra flags for it on top, into
 // arguments in name order.
 func flags(c kubernetes.Cluster, component string, base map[string]string) []string {
-	merged := maps.Clone(base)
-	maps.Copy(merged, c.ExtraArgs[component])
+	merged := kubernetes.MergeFlags(component, base, c.ExtraArgs[component])
 	args := []string{component}
 	for _, k := range slices.Sorted(maps.Keys(merged)) {
 		args = append(args, "--"+k+"="+merged[k])

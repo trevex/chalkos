@@ -174,7 +174,7 @@ Each node reboots into its image and waits, because it cannot tell whether it sh
 cluster or join one. [`chalkctl status`](../reference/cli/chalkctl_status.md) shows it:
 
 ```text
-kubernetes controlplane: waiting for bootstrap or for the cluster at https://192.168.123.10:6443
+kubernetes controlplane: waiting for the cluster at https://192.168.123.10:6443; bootstrap only the first control plane of a new cluster
 ```
 
 Bootstrap exactly one of them:

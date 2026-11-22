@@ -214,7 +214,7 @@ installing w1 in place
 w1 is installed and reboots
 chalkctl recovery-key w1 prints the key that unlocks it when its TPM fails
 waiting for cp1 to wait for its bootstrap
-cp1: kubernetes controlplane: waiting for bootstrap or for the cluster at https://192.168.123.11:6443
+cp1: kubernetes controlplane: waiting for the cluster at https://192.168.123.11:6443; bootstrap only the first control plane of a new cluster
 bootstrapping cp1; the control plane pulls its images and starts
 cp1 is bootstrapped; applied 19 objects
 wrote /home/alice/.local/state/chalklab/lab/kubeconfig; its certificate is valid for 8760h0m0s

@@ -318,7 +318,8 @@ in
   # their systems or what their initrds' store paths reference. The feature images carry the
   # Kubernetes features that are off by default. The worker's NixOS firewall stays on: NixOS's
   # bashless profile, which chalkos does not import, would turn it off. The router runs a
-  # firewall of its own.
+  # firewall of its own. The Longhorn feature image's build fails with a host tool that is a
+  # shell script, whose shell only the links below /usr reference, and with one named sh.
   no-shell =
     let
       release = self.releaseImages.${pkgs.stdenv.hostPlatform.system};
@@ -337,9 +338,35 @@ in
         c
       ) release
       // lib.mapAttrs (_: image: image.nixos.config) checkLib.featureImages;
+      # The Longhorn feature image's builds with a host tool that must fail them: the test worker
+      # allows a shell.
+      refused =
+        lib.mapAttrs
+          (
+            _: tool:
+            pkgs.testers.testBuildFailure
+              (checkLib.featureImages.longhorn.nixos.extendModules {
+                modules = [ { chalkos.kubernetes.hostTools.foo = tool; } ];
+              }).config.system.build.toplevel
+          )
+          {
+            shellScript = "${pkgs.writeShellScript "foo" "true"}";
+            programNamedSh = "${
+              pkgs.writeTextFile {
+                name = "chalkos-not-a-shell";
+                text = "";
+                executable = true;
+                destination = "/bin/sh";
+              }
+            }/bin/sh";
+          };
     in
-    pkgs.runCommand "chalkos-no-shell" { nativeBuildInputs = [ pkgs.jq ]; } ''
+    pkgs.runCommand "chalkos-no-shell" ({ nativeBuildInputs = [ pkgs.jq ]; } // refused) ''
       fail() { echo "error: $*" >&2; exit 1; }
+      grep -q "the image's extra dependencies holds a shell" $shellScript/testBuildFailure.log \
+        || fail "the Kubernetes image builds with a host tool that is a shell script"
+      grep -q "holds programs named after a shell" $programNamedSh/testBuildFailure.log \
+        || fail "the Kubernetes image builds with a host tool named sh"
       ${lib.concatStrings (
         lib.mapAttrsToList (name: c: ''
           top=${c.system.build.toplevel}
@@ -445,6 +472,10 @@ in
         "nixos-system-nixos/init" = allowed."nixos-init/bin/nixos-init";
         "cni-plugins-chalkos/bin/portmap" = "a string of Go's tables, which no code executes";
         "chalkd/bin/chalkd" = "the command of flannel's container, which runs in the container";
+        "nvidia-driver-root/bin/nvidia-smi" =
+          "NVIDIA's closed driver, which the GPU operator's containers run from the driver root; on the node, which has no /bin/sh, such a call fails instead of running a shell";
+        "nvidia-driver-root/lib64/libcudadebugger.so*" = allowed."nvidia-driver-root/bin/nvidia-smi";
+        "nvidia-driver-root/lib64/libnvidia-nvvm.so*" = allowed."nvidia-driver-root/bin/nvidia-smi";
         "open-iscsi-chalkos/bin/*" =
           "runs iscsid.conf's iscsid.startup when iscsid does not answer, which the image's iscsid.conf leaves unset";
       };

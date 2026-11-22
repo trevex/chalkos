@@ -549,7 +549,7 @@ func TestApproverRunsWhileObjectsFail(t *testing.T) {
 		t.Fatal(err)
 	}
 	approving := make(chan struct{})
-	k.hooks.Approve = func(ctx context.Context, _ *rest.Config) {
+	k.hooks.Approve = func(ctx context.Context, _ k8s.Cluster, _ *rest.Config) {
 		close(approving)
 		<-ctx.Done()
 	}

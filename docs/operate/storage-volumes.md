@@ -199,8 +199,13 @@ password, or none. A node whose fallback is a password needs it for each new enc
 chalkctl asks for it on the terminal, or reads it from the file `--password-file` names.
 
 `repart` passes further keys to the volume's systemd-repart definition, such as
-`repart: {Weight: "2000"}`. A key that the typed options set, such as `Format` or `MountPoint`, is
-refused. The message reads `repart must not set Format; it comes from the typed options`. chalkd
+`repart: {Weight: "2000"}`. It takes the keys that place or size the partition or set its GPT
+fields: `Priority`, `Weight`, `PaddingWeight`, `PaddingMinBytes`, `PaddingMaxBytes`,
+`GrowFileSystem`, `NoAuto`, `ReadOnly`, `Flags`, `UUID`, and `FactoryReset` set to `no`.
+systemd-repart runs the definitions as root in the initrd, after STATE is open, so any other key is
+refused, such as `CopyFiles` or `CopyBlocks`, which would copy the node's files or another disk
+onto the volume. A key that the typed options set, such as `Format` or `MountPoint`, is refused
+too. The message reads `repart must not set Format; it comes from the typed options`. chalkd
 does not compare the other keys when they change, so a changed key on an existing volume does what
 systemd-repart does with it on an existing partition, which for most keys is nothing.
 

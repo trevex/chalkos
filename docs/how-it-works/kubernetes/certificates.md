@@ -91,7 +91,22 @@ these hold:
 
 - the node asks for its own name;
 - the certificate is for server use only;
-- its addresses are ones the node's Node object lists.
+- its addresses are ones the node's Node object lists as internal or external IPs;
+- its DNS names are the node's name or the host name its Node object lists.
+
+A kubelet writes its Node object's addresses itself, so chalkd also refuses a request that names
+an address or a name standing for the cluster or for another node:
+
+- an address in the cluster's pod or service ranges;
+- a VIP of the cluster;
+- the cluster endpoint's host, a name or an address. An endpoint address is allowed when the
+  cluster has no VIP: it is then the address of a control plane, whose own certificate holds it;
+- the cluster domain and every name below it, every name below `.svc`, and `kubernetes` and the
+  names below it, such as `kubernetes.default`;
+- an address or a name that another Node object lists.
+
+The check proves that no other node and no cluster service claims the address. It does not prove
+that the node owns the address: a node can still claim an unused address of its network.
 
 chalkd leaves every other request pending. The approver runs from the moment the API server is
 ready, beside the apply of the add-ons. Both kubelet certificates live in `/var/lib/kubelet/pki`
@@ -110,8 +125,8 @@ chalkctl config apply <node> --kubernetes-share
 
 [`chalkctl kubeconfig`](../../reference/cli/chalkctl_kubeconfig.md) writes an admin kubeconfig from
 the secrets file, for the cluster endpoint. Its client certificate is in the group
-`chalkos:cluster-admins`, which chalkd's RBAC add-on binds to `cluster-admin`. It is valid for one
-year unless `--ttl` says otherwise. The group is used instead of `system:masters` because RBAC can
+`chalkos:cluster-admins`, which chalkd's RBAC add-on binds to `cluster-admin`. It is valid for a
+day unless `--ttl` says otherwise. The group is used instead of `system:masters` because RBAC can
 take a group's access away, which it cannot do for `system:masters`.
 [Get a kubeconfig](../../kubernetes/bootstrap.md#get-a-kubeconfig) describes its flags.
 
@@ -142,7 +157,7 @@ working through the rotation and after it. They still trust the old CA after the
 holds the old CA's key could pose as the API server to them, until they are issued again.
 
 Rotating `kubernetes-ca` is also how a leaked kubeconfig is revoked, and it retires every other
-kubeconfig of the old CA. Short `--ttl` values on kubeconfigs limit how long a leak matters.
+kubeconfig of the old CA. The default validity of a day limits how long a leak matters.
 [Rotate the Kubernetes CAs and keys](../../kubernetes/rotate-kubernetes-cas.md) gives the steps.
 
 ## Revoking a node cuts off its writes and renewals
@@ -234,6 +249,8 @@ lists for every node, it leaves these:
   allows. Unrevoking names once the CAs were rotated keeps the list short.
 - Every rotation skips a revoked node left in the inventory, and other commands still reach it
   until it is removed from the inventory.
+- The cluster registry checks no revocation list, so a revoked node's certificate still pulls
+  from it until the certificate expires or `os-ca` rotates.
 
 ## The cluster registry serves the node certificate
 
@@ -250,8 +267,12 @@ certificate. containerd passes over the endpoint to the next one while it restar
 
 The registry takes a client certificate when the client offers one, and checks it per request:
 
-- A pull, any GET or HEAD request, needs none. The registry drops an `Authorization` header from
-  it, so credentials containerd sends along mean nothing there.
+- A pull, any GET or HEAD request, the catalog included, needs a certificate of the OS CA: a
+  node's or a client file's of any role. containerd presents the node certificate, which the
+  `hosts.toml` of each mirrored host names as `client` beside the OS CAs as `ca`, and reads both
+  files again for every pull, so a renewed node certificate takes effect at the next pull
+  without a restart of containerd. The registry drops an `Authorization` header from a read, so
+  credentials containerd sends along mean nothing there.
 - Every other request needs a client certificate of the admin role: a push, a delete, and
   garbage collection through `POST /chalkos/v1/gc`. The registry verifies the certificate against
   the OS CAs again at the time of each request, after the handshake did, and reads its role as
@@ -259,10 +280,12 @@ The registry takes a client certificate when the client offers one, and checks i
   writes.
 
 A client certificate that does not verify against the OS CAs fails the TLS handshake, before any
-request. A write without a certificate, or with one that no longer verifies when the request comes,
-such as one that expired on a kept connection, gets 401; a certificate of another role gets 403.
-Each answer's message starts with
-`writing to the registry needs a client certificate of the admin role`. `chalkctl registry push`,
+request. A request without a certificate, or with one that no longer verifies when the request
+comes, such as one that expired on a kept connection, gets 401; a write with a certificate of
+another role gets 403. The message of a refused read starts with
+`reading the registry needs a certificate of the OS CA`, that of a refused write with
+`writing to the registry needs a client certificate of the admin role`. `chalkctl registry list`
+reads with the client file or the secrets file like any other command. `chalkctl registry push`,
 `delete` and `gc` authenticate with the one-hour admin certificate chalkctl issues from the secrets
 file, or with an admin client file.
 
@@ -271,8 +294,9 @@ file, or with an admin client file.
 - Nothing revokes a single kubeconfig. It works until its certificate expires or the Kubernetes CA
   is rotated.
 - The approver of kubelet serving certificates checks a request against the addresses the Node
-  object lists. A kubelet reports those addresses itself, so the check stops a node from claiming
-  another node's name, not from claiming an address it does not own.
+  object lists. A kubelet reports those addresses itself. The approver refuses the cluster's
+  addresses and names and those of the other nodes, but a node can still claim an unused address
+  of its network.
 - A control plane holds every Kubernetes CA key. Taking one over gives full access to the
   cluster's Kubernetes.
 

@@ -36,8 +36,10 @@ may do and where the file goes, and
 [Pass the secrets file or a client file](workstation.md#pass-the-secrets-file-or-a-client-file)
 lists the role each command needs.
 
-The certificate is valid for a year unless `--ttl` gives another validity. chalkctl warns during a
-client file's last 30 days. Hand the file over as you would a private key, because it holds one.
+The certificate is valid for 30 days with the admin role, 90 days with the operator role and a
+year with the reader role, unless `--ttl` gives another validity. chalkctl warns during the last
+third of a client file's lifetime. Hand the file over as you would a private key, because it
+holds one.
 
 ## Take access away
 

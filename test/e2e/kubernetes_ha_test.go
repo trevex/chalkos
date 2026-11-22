@@ -230,7 +230,7 @@ func TestKubernetesHA(t *testing.T) {
 	var cs kubernetes.Interface
 	if !c.phase("bootstrap", func(t *testing.T) {
 		waitFor(t, 5*time.Minute, "cp1 to wait for bootstrap or the cluster", func() error {
-			if got := c.kubernetes("cp1"); got != "kubernetes controlplane: waiting for bootstrap or for the cluster at https://[fd00:100::10]:6443" {
+			if got := c.kubernetes("cp1"); got != "kubernetes controlplane: waiting for the cluster at https://[fd00:100::10]:6443; bootstrap only the first control plane of a new cluster" {
 				return fmt.Errorf("status %q", got)
 			}
 			return nil

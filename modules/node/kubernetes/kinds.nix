@@ -54,11 +54,11 @@ let
       };
     };
   flags =
-    component:
+    component: note:
     mkOption {
       type = types.attrsOf types.str;
       default = { };
-      description = "Extra flags of ${component}, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused.";
+      description = "Extra flags of ${component}, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused.${note}";
     };
   taint = types.submodule {
     options = {
@@ -192,7 +192,7 @@ in
               })
             ];
           };
-          kubeletExtraArgs = flags "the kubelet";
+          kubeletExtraArgs = flags "the kubelet" "";
           nodeIP = {
             addresses = mkOption {
               type = types.nullOr (types.listOf address);
@@ -245,10 +245,20 @@ in
             type = types.strMatching "https://.+";
             description = "URL of the cluster's Kubernetes API server, which every node of the cluster names alike.";
           };
-          domain = mkOption {
-            type = types.nonEmptyStr;
+          domain = chalkosLib.mkOption {
+            # CoreDNS's Corefile, the service account issuer and the API server's certificate
+            # take the domain as written, so it is a lower-case name without the root's dot.
+            type = types.strMatching "([a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?[.])*[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?";
             default = "cluster.local";
-            description = "DNS domain of the cluster.";
+            description = "DNS domain of the cluster, a lower-case DNS name without a trailing dot; it is fixed once the node holds a Kubernetes share.";
+            # The service account issuer and every service's name follow the domain.
+            rules = [
+              {
+                description = "The cluster's domain stays once the node holds a Kubernetes share.";
+                rule = "facts.share == null || self == oldSelf";
+                messageExpression = ''"the config changes the cluster's domain from " + oldSelf + " to " + self + "; it is fixed once the cluster exists, so keep it, or reinstall the node into a new cluster"'';
+              }
+            ];
           };
           allowSchedulingOnControlPlanes = chalkosLib.mkOption {
             type = types.bool;
@@ -379,10 +389,10 @@ in
             };
           };
           extraArgs = {
-            etcd = flags "etcd";
-            kube-apiserver = flags "the API server";
-            kube-controller-manager = flags "the controller-manager";
-            kube-scheduler = flags "the scheduler";
+            etcd = flags "etcd" "";
+            kube-apiserver = flags "the API server" " Every flag chalkos sets on the API server is protected except `kubelet-preferred-address-types`, `profiling` and `tls-min-version`. `enable-admission-plugins` adds to chalkos's plugins, and `disable-admission-plugins` must not name `NodeRestriction` or `ValidatingAdmissionPolicy`.";
+            kube-controller-manager = flags "the controller-manager" "";
+            kube-scheduler = flags "the scheduler" "";
           };
         };
       };

@@ -44,6 +44,20 @@ spec:
   endpoint: https://10.0.0.10:6443
   images: ` + kubernetestest.Images + "\n"
 
+// testFlannelYAML is a Flannel document that takes VXLAN from n1's network alone.
+const testFlannelYAML = "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Flannel\nmetadata: {name: default}\nspec: {vxlanSourceSubnets: [10.0.0.0/24]}\n"
+
+// closeVXLAN adds testFlannelYAML to the cluster.yaml in dir, so validate warns of no open VXLAN.
+func closeVXLAN(t *testing.T, dir string) {
+	t.Helper()
+	path := filepath.Join(dir, "cluster.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, path, string(data)+testFlannelYAML)
+}
+
 // n1's documents: its system disk of serial chalk-target and its static address.
 const (
 	n1SystemDisk = "apiVersion: storage.chalkos.dev/v1alpha1\nkind: SystemDisk\nmetadata: {name: system}\nspec: {disk: {serial: chalk-target}}\n"
@@ -157,6 +171,7 @@ func TestValidateWarnsOfUnencryptedState(t *testing.T) {
 	ta.withoutSecrets(t)
 	unencrypted := strings.Replace(n1SystemDisk, "spec: {disk: {serial: chalk-target}}", "spec: {disk: {serial: chalk-target}, encryption: {mode: none}}", 1)
 	path := writeInventory(t, ta.dir, unencrypted, n1Network)
+	closeVXLAN(t, ta.dir)
 	if err := ta.run(context.Background(), []string{"validate", "--inventory", path}); err != nil {
 		t.Fatal(err)
 	}
@@ -168,11 +183,36 @@ func TestValidateWarnsOfUnencryptedState(t *testing.T) {
 	}
 	ta.stderr.Reset()
 	path = writeInventory(t, ta.dir)
+	closeVXLAN(t, ta.dir)
 	if err := ta.run(context.Background(), []string{"validate", "--inventory", path}); err != nil {
 		t.Fatal(err)
 	}
 	if ta.stderr.Len() != 0 {
 		t.Errorf("stderr = %q for an encrypted STATE, want nothing", ta.stderr)
+	}
+}
+
+// TestValidateWarnsOfOpenVXLAN warns of flannel's VXLAN taken from any source and suggests the
+// network of n1's static address; a Flannel document with vxlanSourceSubnets draws no warning.
+func TestValidateWarnsOfOpenVXLAN(t *testing.T) {
+	ta := newTestApp(t)
+	ta.withoutSecrets(t)
+	path := writeInventory(t, ta.dir)
+	if err := ta.run(context.Background(), []string{"validate", "--inventory", path}); err != nil {
+		t.Fatal(err)
+	}
+	if want := "warning: Flannel: vxlanSourceSubnets is empty, so every node takes flannel's VXLAN from any source, " +
+		"and any host that reaches a node can send it pod traffic from forged pod addresses; set it to the networks of the " +
+		"nodes' addresses, such as vxlanSourceSubnets: [10.0.0.0/24], which covers the addresses the inventory gives\n"; ta.stderr.String() != want {
+		t.Errorf("stderr = %q, want %q", ta.stderr, want)
+	}
+	ta.stderr.Reset()
+	closeVXLAN(t, ta.dir)
+	if err := ta.run(context.Background(), []string{"validate", "--inventory", path}); err != nil {
+		t.Fatal(err)
+	}
+	if ta.stderr.Len() != 0 {
+		t.Errorf("stderr = %q with vxlanSourceSubnets, want nothing", ta.stderr)
 	}
 }
 

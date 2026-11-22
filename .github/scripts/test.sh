@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tests dco.sh and pr-title.sh: dco.sh on the commits of a repository made for the test, and
-# pr-title.sh on titles that pass and titles that fail. The workflows check runs it.
+# Tests dco.sh, pr-title.sh and vulnix-issue.sh: dco.sh on the commits of a repository made for
+# the test, pr-title.sh on titles that pass and titles that fail, and vulnix-issue.sh on reports
+# made for the test. The workflows check runs it.
 set -euo pipefail
 
 scripts=$(cd "$(dirname "$0")" && pwd)
@@ -121,6 +122,43 @@ for title in \
   "feat!(chalkctl): add a kind"; do
   expect fail "the title '$title'" bash "$scripts/pr-title.sh" "$title"
 done
+
+# vulnix-issue.sh on reports made for the test: a high-score match is new until the previous body
+# lists it, and a low score, a match without a score or a whitelisted CVE never counts.
+vulnix=$(mktemp -d)
+mkdir "$vulnix/reports"
+cat >"$vulnix/reports/node-kvm.json" <<'JSON'
+[
+ {"name": "systemd-259.1", "pname": "systemd", "version": "259.1",
+  "affected_by": ["CVE-2026-0001", "CVE-2026-0002", "CVE-2026-0003"], "whitelisted": ["CVE-2026-0009"],
+  "cvssv3_basescore": {"CVE-2026-0001": 9.8, "CVE-2026-0002": 5.3, "CVE-2026-0009": 9.1}}
+]
+JSON
+# vulnix_issue PREVIOUS: vulnix-issue.sh on the reports with PREVIOUS as the last body, which
+# writes the body to body.md and the new rows to new.md.
+vulnix_issue() {
+  bash "$scripts/vulnix-issue.sh" "$vulnix/reports" "$1" "$vulnix/new.md" >"$vulnix/body.md"
+}
+row='| node-kvm | systemd | CVE-2026-0001 | 9.8 |'
+: >"$vulnix/empty.md"
+vulnix_issue "$vulnix/empty.md"
+expect pass "a high-score match is new without a previous issue" grep -qxF -- "$row" "$vulnix/new.md"
+expect pass "the new match is the only one" test "$(wc -l <"$vulnix/new.md")" = 1
+expect pass "the body lists the match" grep -qxF -- "$row" "$vulnix/body.md"
+expect fail "the body leaves out a low score" grep -qF CVE-2026-0002 "$vulnix/body.md"
+expect fail "the body leaves out a match without a score" grep -qF CVE-2026-0003 "$vulnix/body.md"
+expect fail "the body leaves out a whitelisted CVE" grep -qF CVE-2026-0009 "$vulnix/body.md"
+cp "$vulnix/body.md" "$vulnix/previous.md"
+vulnix_issue "$vulnix/previous.md"
+expect pass "a match the previous issue lists is not new" test ! -s "$vulnix/new.md"
+sed 's/| 9.8 |/| 9.9 |/' "$vulnix/previous.md" >"$vulnix/rescored.md"
+vulnix_issue "$vulnix/rescored.md"
+expect pass "a changed score does not make a match new" test ! -s "$vulnix/new.md"
+cp "$vulnix/reports/node-kvm.json" "$vulnix/reports/router-kvm.json"
+vulnix_issue "$vulnix/previous.md"
+expect pass "the same match in another image is new" grep -qxF -- '| router-kvm | systemd | CVE-2026-0001 | 9.8 |' "$vulnix/new.md"
+expect pass "the match the previous issue lists stays old" test "$(wc -l <"$vulnix/new.md")" = 1
+rm -rf "$vulnix"
 
 if [ "$failures" != 0 ]; then
   echo "$failures cases failed" >&2

@@ -1278,6 +1278,26 @@ lib.runTests {
       ]).chalkos.kinds.Demo.spec.x.type;
     expected = null;
   };
+  # The cluster domain is a lower-case DNS name without the root's dot: CoreDNS's Corefile, the
+  # service account issuer and the API server's certificate take it as written.
+  testClusterDomain = {
+    expr = lib.genAttrs [
+      "cluster.local"
+      "k8s.example.org"
+      "Cluster.local"
+      "cluster.local."
+      "a b"
+      "a}"
+    ] kubernetesImage.chalkos.kinds.Cluster.spec.domain.type.check;
+    expected = {
+      "cluster.local" = true;
+      "k8s.example.org" = true;
+      "Cluster.local" = false;
+      "cluster.local." = false;
+      "a b" = false;
+      "a}" = false;
+    };
+  };
   testBuiltinSchemasMatchFixtures = {
     expr = map builtinSchema [
       "Host"
@@ -1798,8 +1818,9 @@ lib.runTests {
       file = "/run/bird/why";
     };
   };
-  # An output's dir is a clean path below /run, out of chalkos's own directories but its own and
-  # out of every other output's dir, since chalkd replaces whatever it holds with a link.
+  # An output's dir is a clean path below /run, out of the directories systemd, NixOS and chalkd
+  # keep their state in but networkd's, out of chalkos's own directories but its own and out of
+  # every other output's dir, since chalkd replaces what it holds with a link.
   testOutputDirs =
     let
       dirs =
@@ -1815,6 +1836,9 @@ lib.runTests {
     {
       expr = {
         systemd = accepted { a = "/run/systemd/resolved.conf.d"; };
+        chalkd = accepted { a = "/run/chalkd"; };
+        credentials = accepted { a = "/run/credentials/bird.service"; };
+        currentSystem = accepted { a = "/run/current-system"; };
         # The built-in output networkd's.
         networkd = accepted { a = "/run/systemd/network"; };
         own = accepted { a = "/run/chalkos/outputs/a/sub"; };
@@ -1838,7 +1862,10 @@ lib.runTests {
         };
       };
       expected = {
-        systemd = true;
+        systemd = false;
+        chalkd = false;
+        credentials = false;
+        currentSystem = false;
         networkd = false;
         own = true;
         etc = false;

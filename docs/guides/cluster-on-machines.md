@@ -132,7 +132,7 @@ Run every later command in `cluster`. The files explain themselves in comments:
 | --- | --- |
 | `flake.nix` | Your own image `node-metal` with the Kubernetes layer, the installer, and the development shell. |
 | `chalkos.yaml` | The inventory: the three nodes, the address chalkctl reaches each at, their image and files. |
-| `cluster/cluster.yaml` | The Kubernetes cluster all three nodes share, with its VIP and its pinned images. |
+| `cluster/cluster.yaml` | The Kubernetes cluster all three nodes share, with its VIP and its pinned images, and the network flannel takes its VXLAN from. |
 | `nodes/cp1.yaml` to `nodes/cp3.yaml` | Each node's disk, MAC address and static address. |
 
 ### Get the tools
@@ -198,7 +198,8 @@ grep -rlF 192.168.1. --exclude-dir=.git . | xargs sed -i 's/192\.168\.1\./192.16
 Check the result in three places, and change what differs on your network:
 
 - `chalkos.yaml` names the address chalkctl reaches each node at.
-- `cluster/cluster.yaml` names the VIP in `vip.addresses` and in the `endpoint`.
+- `cluster/cluster.yaml` names the VIP in `vip.addresses` and in the `endpoint`, and the nodes'
+  network in the Flannel document's `vxlanSourceSubnets`.
 - Each node's `Network` document in `nodes/` gives its static address, the prefix length, the
   gateway and the DNS server. The address must be the one `chalkos.yaml` names for the node.
 
@@ -469,7 +470,7 @@ Then write a kubeconfig:
 
 ```console
 $ chalkctl kubeconfig --secrets=secrets.age
-wrote kubeconfig; its certificate is valid for 8760h0m0s
+wrote kubeconfig; its certificate is valid for 24h0m0s
 ```
 
 The bootstrap starts etcd and the control plane on cp1. cp1 then wins the election for the VIP and

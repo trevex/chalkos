@@ -110,12 +110,16 @@ func (te *testEndpoints) at(t *testing.T, e, path string) name.Reference {
 	return ref(t, te.regs[netip.MustParseAddr(e)].Host+"/"+path)
 }
 
-// digestAt is the digest the endpoint's registry serves for path, read anonymously; ok is false
+// digestAt is the digest the endpoint's registry serves for path, read as a reader; ok is false
 // when it serves none.
 func (te *testEndpoints) digestAt(t *testing.T, e, path string) (d v1.Hash, ok bool) {
 	t.Helper()
+	reader, err := pki.IssueClient(te.osCA, "reader", pki.RoleReader, time.Hour, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
 	reg := te.regs[netip.MustParseAddr(e)]
-	desc, err := remote.Head(te.at(t, e, path), remote.WithTransport(reg.Transport(t, nil)))
+	desc, err := remote.Head(te.at(t, e, path), remote.WithTransport(reg.Transport(t, &reader)))
 	if err != nil {
 		return v1.Hash{}, false
 	}
@@ -383,7 +387,7 @@ func TestPushIndexFromRegistry(t *testing.T) {
 	if err := remote.WriteIndex(ref(t, src.Host+"/ghcr.io/a/b:1"), idx, remote.WithTransport(src.Transport(t, &admin))); err != nil {
 		t.Fatal(err)
 	}
-	img, cleanup, err := openSource(context.Background(), src.Host+"/ghcr.io/a/b:1", remote.WithTransport(src.Transport(t, nil)))
+	img, cleanup, err := openSource(context.Background(), src.Host+"/ghcr.io/a/b:1", remote.WithTransport(src.Transport(t, &admin)))
 	if err != nil {
 		t.Fatal(err)
 	}

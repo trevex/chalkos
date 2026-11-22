@@ -69,7 +69,7 @@ Two other preparation failures name the address too:
 The Kubernetes line reads:
 
 ```text
-kubernetes controlplane: waiting for bootstrap or for the cluster at https://10.0.0.11:6443
+kubernetes controlplane: waiting for the cluster at https://10.0.0.11:6443; bootstrap only the first control plane of a new cluster
 ```
 
 Every control plane reads this before the cluster exists. Run
@@ -112,11 +112,15 @@ next section describes.
 ## Kubelet certificate requests stay pending
 
 Each kubelet requests a serving certificate through a CertificateSigningRequest. chalkd on every
-control plane approves a request that meets three conditions:
+control plane approves a request that meets these conditions:
 
 - The node asks for its own name.
 - The request is for server use only.
-- It names only addresses and names that the node's Node object reports.
+- It names only addresses that the node's Node object reports, and as DNS names only the node's
+  name and host name.
+- It names no address or name of the cluster, such as a VIP, a service address or
+  `kubernetes.default.svc`, and none that another Node object reports.
+  [Certificates](../how-it-works/kubernetes/certificates.md) lists them.
 
 chalkd leaves every other request pending. List the requests:
 

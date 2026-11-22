@@ -77,6 +77,7 @@ in
     inputs = api.networkdKinds;
     render = lib.mkDefault "${lib.getExe pkgs.chalkos.chalkos-render} networkd ${schemas}";
     dir = "/run/systemd/network";
+    replace = true;
   };
   chalkos.tests = chalkosLib.internal.exampleTests "networkd" ../examples/networkd;
   # networkd reloads on systemctl reload as on networkctl reload. Its reload reads the .netdev and

@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
@@ -237,6 +238,14 @@ func TestKubeconfig(t *testing.T) {
 	}
 	if info, err := os.Stat(filepath.Dir(nested)); err != nil || info.Mode().Perm() != 0o700 {
 		t.Errorf("the new directory: %v, %v; want mode 0700", info, err)
+	}
+	// Without --ttl the certificate lasts a day.
+	cert, err = pki.ParseCertificate(readKubeconfig(t, nested).Users[0].User.Certificate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := time.Until(cert.NotAfter).Round(time.Hour); got != 24*time.Hour {
+		t.Errorf("the default admin certificate lasts %v, want 24h", got)
 	}
 }
 

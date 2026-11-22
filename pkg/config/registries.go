@@ -140,11 +140,12 @@ func (r Registries) Endpoints(host string) []string {
 
 // HostEndpoint is an endpoint containerd tries for a registry before the endpoints of its
 // Mirror: its URL, whose path is the registry API's root when OverridePath is set rather than
-// the prefix of /v2, and the file of the CAs containerd verifies it by, empty for the system's.
+// the prefix of /v2, the file of the CAs containerd verifies it by, empty for the system's, and
+// the file of the client certificate's chain and key containerd presents to it, empty for none.
 type HostEndpoint struct {
 	URL          string
 	OverridePath bool
-	CA           string
+	CA, Client   string
 }
 
 // HostsTOML returns containerd's hosts.toml of each registry that first, a Mirror or a Registry
@@ -187,6 +188,9 @@ func (r Registries) HostsTOML(first map[string][]HostEndpoint) map[string]string
 			}
 			if e.CA != "" {
 				fmt.Fprintf(&b, "  ca = %q\n", e.CA)
+			}
+			if e.Client != "" {
+				fmt.Fprintf(&b, "  client = %q\n", e.Client)
 			}
 		}
 		out[dir] = b.String()

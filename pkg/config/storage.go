@@ -9,7 +9,15 @@ import (
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
-var reservedRepartKeys = []string{"Type", "Label", "Encrypt", "Format", "SizeMinBytes", "SizeMaxBytes", "MountPoint"}
+// typedRepartKeys are the keys of a volume's definition that its typed options set.
+var typedRepartKeys = []string{"Type", "Label", "Encrypt", "TPM2PCRs", "Format", "SizeMinBytes", "SizeMaxBytes", "MountPoint"}
+
+// repartKeys are the keys of repart's [Partition] section a Volume's spec.repart may set: those
+// that place or size the partition or set its GPT fields, and take nothing from the host.
+// systemd-repart runs the definitions as root in the initrd, with STATE open, so any key not
+// listed, such as one that copies files or blocks from the host or makes directories, is refused.
+// FactoryReset may be no alone.
+var repartKeys = []string{"Priority", "Weight", "PaddingWeight", "PaddingMinBytes", "PaddingMaxBytes", "GrowFileSystem", "NoAuto", "ReadOnly", "Flags", "UUID", "FactoryReset"}
 
 // definition renders a repart.d definition as installed nodes hold it: keys in name
 // order, the typed ones replacing the passthrough, and = in a key escaped.
@@ -155,15 +163,20 @@ func storageErrors(system storage.Ref, sys systemDiskSpec, vols []namedVolume) e
 		if v.ref != nil && *v.ref == system {
 			add("%s: disk is the system disk; leave disk out to place the volume there", at)
 		}
-		repartKeys := slices.Sorted(maps.Keys(v.spec.Repart))
-		for _, k := range repartKeys {
-			if slices.Contains(reservedRepartKeys, k) {
+		keys := slices.Sorted(maps.Keys(v.spec.Repart))
+		for _, k := range keys {
+			switch {
+			case slices.Contains(typedRepartKeys, k):
 				add("%s: repart must not set %s; it comes from the typed options", at, k)
+			case !slices.Contains(repartKeys, k):
+				add("%s: repart sets %s, which a volume's definition may not; it may set %s", at, k, strings.Join(repartKeys, ", "))
+			case k == "FactoryReset" && v.spec.Repart[k] != "no":
+				add("%s: repart sets FactoryReset to %q, which a volume's definition may set to no alone", at, v.spec.Repart[k])
 			}
 		}
 		// A line break would end the key=value line and let the rest set keys or sections the
 		// typed options own.
-		for _, k := range repartKeys {
+		for _, k := range keys {
 			if strings.ContainsAny(k+v.spec.Repart[k], "\n\r") {
 				add("%s: repart %q: a key or value cannot contain a line break", at, k)
 			}

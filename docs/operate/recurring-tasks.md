@@ -27,12 +27,12 @@ You need the cluster's secrets file and a workstation set up as
 
 `chalkctl status <node>` lists each certificate the node holds with its expiry, and adds a note
 when something needs doing, such as `node CA expires <date>; run chalkctl rotate node-ca`.
-chalkctl itself warns about a client file in its last 30 days.
+chalkctl itself warns about a client file in the last third of its lifetime.
 
 | What | Lifetime | Renewed by | What you do |
 | --- | --- | --- | --- |
-| Client file | 1 year, or `--ttl` | nobody | Issue a new one before it expires. |
-| Admin kubeconfig | 1 year, or `--ttl` | nobody | Write a new one with `chalkctl kubeconfig`. |
+| Client file | 30 days (admin), 90 days (operator), 1 year (reader), or `--ttl` | nobody | Issue a new one before it expires. |
+| Admin kubeconfig | 1 day, or `--ttl` | nobody | Write a new one with `chalkctl kubeconfig`. |
 | Node certificate | 1 year | chalkd, on a node with Kubernetes | Run `chalkctl node renew <node>` on a node without Kubernetes. |
 | Control plane and kubelet certificates | 1 year | the control plane and the kubelet | Nothing, unless status adds a note. |
 | Node CA | 5 years | nobody | Rotate it in its last 18 months. |

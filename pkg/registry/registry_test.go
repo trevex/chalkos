@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
@@ -28,7 +30,8 @@ func init() {
 // testRegistry is a registry and a client of each kind: "anyone" presents no certificate,
 // "admin" and "reader" client certificates of those roles, "node" the registry's own node
 // certificate, and "node admin" a certificate of the node CA whose Organization says admin.
-// "e2e" is anyone with Basic credentials, as containerd sends a host's Registry's.
+// "e2e" is a node with Basic credentials, as containerd sends a host's Registry's, and "basic"
+// is Basic credentials without a certificate.
 type testRegistry struct {
 	*registrytest.Registry
 	osCA    pki.CertKey
@@ -94,7 +97,11 @@ func (r *testRegistry) do(t *testing.T, method, path, who string, out any) int {
 	}
 	req.Header.Set("Accept", "application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json")
 	client := r.clients[who]
-	if who == "e2e" {
+	switch who {
+	case "e2e":
+		client = r.clients["node"]
+		req.SetBasicAuth("e2e", "s3cret")
+	case "basic":
 		client = r.clients["anyone"]
 		req.SetBasicAuth("e2e", "s3cret")
 	}
@@ -111,9 +118,11 @@ func (r *testRegistry) do(t *testing.T, method, path, who string, out any) int {
 	return resp.StatusCode
 }
 
-// TestRegistry serves anyone's reads, also with Basic credentials, which containerd sends for a
-// host's Registry, and the admin's writes and deletes; a reader, a node's certificate, one of the
-// node CA that claims the admin role, and a client without one cannot write.
+// TestRegistry serves the reads of a node's certificate, also with Basic credentials, which
+// containerd sends for a host's Registry, and of every client role, and the admin's writes and
+// deletes; a reader, a node's certificate, one of the node CA that claims the admin role, and a
+// client without one cannot write. A client without a certificate reads nothing, Basic
+// credentials or not.
 func TestRegistry(t *testing.T) {
 	r := startRegistry(t)
 	img, err := random.Image(1024, 2)
@@ -123,11 +132,12 @@ func TestRegistry(t *testing.T) {
 	ref := r.ref(t, "docker.io/library/busybox:1.37.0")
 	for _, who := range []string{"anyone", "reader", "node", "node admin"} {
 		err := remote.Write(ref, img, remote.WithTransport(r.clients[who]))
-		if err == nil || !strings.Contains(err.Error(), "admin role") {
+		// Without a certificate, the push's first read is refused already.
+		if err == nil || !strings.Contains(err.Error(), "admin role") && !(who == "anyone" && strings.Contains(err.Error(), "401")) {
 			t.Errorf("%s pushed, or was refused for another reason: %v", who, err)
 		}
 	}
-	for who, want := range map[string]int{"anyone": http.StatusUnauthorized, "reader": http.StatusForbidden, "node": http.StatusForbidden, "node admin": http.StatusForbidden, "e2e": http.StatusUnauthorized} {
+	for who, want := range map[string]int{"anyone": http.StatusUnauthorized, "reader": http.StatusForbidden, "node": http.StatusForbidden, "node admin": http.StatusForbidden, "e2e": http.StatusForbidden, "basic": http.StatusUnauthorized} {
 		if got := r.status(t, http.MethodPost, "/v2/docker.io/library/busybox/blobs/uploads/", who); got != want {
 			t.Errorf("an upload as %s: %d, want %d", who, got, want)
 		}
@@ -140,7 +150,7 @@ func TestRegistry(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, auth := range []authn.Authenticator{authn.Anonymous, &authn.Basic{Username: "e2e", Password: "s3cret"}} {
-		got, err := remote.Image(ref, remote.WithTransport(r.clients["anyone"]), remote.WithAuth(auth))
+		got, err := remote.Image(ref, remote.WithTransport(r.clients["node"]), remote.WithAuth(auth))
 		if err != nil {
 			t.Fatalf("a pull with %T: %v", auth, err)
 		}
@@ -152,9 +162,23 @@ func TestRegistry(t *testing.T) {
 	if got := r.status(t, http.MethodGet, "/v2/docker.io/library/busybox/manifests/1.37.0", "e2e"); got != http.StatusOK {
 		t.Errorf("a read with Basic credentials: %d, want 200", got)
 	}
-	repos, err := remote.Catalog(context.Background(), ref.Context().Registry, remote.WithTransport(r.clients["anyone"]))
-	if err != nil || !slices.Equal(repos, []string{"docker.io/library/busybox"}) {
-		t.Errorf("the catalog: %v, %v", repos, err)
+	for _, who := range []string{"node", "reader", "admin"} {
+		repos, err := remote.Catalog(context.Background(), ref.Context().Registry, remote.WithTransport(r.clients[who]))
+		if err != nil || !slices.Equal(repos, []string{"docker.io/library/busybox"}) {
+			t.Errorf("the catalog as %s: %v, %v", who, repos, err)
+		}
+	}
+	for _, who := range []string{"anyone", "basic"} {
+		for _, path := range []string{"/v2/", "/v2/_catalog", "/v2/docker.io/library/busybox/manifests/1.37.0", "/v2/docker.io/library/busybox/tags/list"} {
+			for _, method := range []string{http.MethodGet, http.MethodHead} {
+				if got := r.status(t, method, path, who); got != http.StatusUnauthorized {
+					t.Errorf("%s %s as %s: %d, want 401", method, path, who, got)
+				}
+			}
+		}
+	}
+	if _, err := remote.Image(ref, remote.WithTransport(r.clients["anyone"])); err == nil || !strings.Contains(err.Error(), "a node's or a client file's") {
+		t.Errorf("a pull without a certificate: %v, want a refusal that names the certificate it needs", err)
 	}
 	if err := remote.Delete(ref, remote.WithTransport(r.clients["reader"])); err == nil {
 		t.Error("a reader deleted")
@@ -162,17 +186,17 @@ func TestRegistry(t *testing.T) {
 	if err := remote.Delete(ref, remote.WithTransport(r.clients["admin"])); err != nil {
 		t.Fatalf("the admin's delete of the tag: %v", err)
 	}
-	if _, err := remote.Head(ref, remote.WithTransport(r.clients["anyone"])); err == nil {
+	if _, err := remote.Head(ref, remote.WithTransport(r.clients["reader"])); err == nil {
 		t.Error("the deleted tag still resolves")
 	}
 	byDigest := r.ref(t, "docker.io/library/busybox@"+want.String())
-	if _, err := remote.Head(byDigest, remote.WithTransport(r.clients["anyone"])); err != nil {
+	if _, err := remote.Head(byDigest, remote.WithTransport(r.clients["reader"])); err != nil {
 		t.Errorf("the manifest of the deleted tag: %v", err)
 	}
 	if err := remote.Delete(byDigest, remote.WithTransport(r.clients["admin"])); err != nil {
 		t.Errorf("the admin's delete by digest: %v", err)
 	}
-	if _, err := remote.Head(byDigest, remote.WithTransport(r.clients["anyone"])); err == nil {
+	if _, err := remote.Head(byDigest, remote.WithTransport(r.clients["reader"])); err == nil {
 		t.Error("the deleted manifest still resolves")
 	}
 }
@@ -182,7 +206,7 @@ func TestRegistry(t *testing.T) {
 // the freed blobs again.
 func TestCollect(t *testing.T) {
 	r := startRegistry(t)
-	admin, anyone := remote.WithTransport(r.clients["admin"]), remote.WithTransport(r.clients["anyone"])
+	admin, node := remote.WithTransport(r.clients["admin"]), remote.WithTransport(r.clients["node"])
 	kept, err := random.Image(1024, 1)
 	if err != nil {
 		t.Fatal(err)
@@ -208,7 +232,7 @@ func TestCollect(t *testing.T) {
 	if err != nil || freed < 4096*2 {
 		t.Fatalf("Collect = %d, %v; want the deleted image's layers freed", freed, err)
 	}
-	if _, err := remote.Image(untagged, anyone); err != nil {
+	if _, err := remote.Image(untagged, node); err != nil {
 		t.Errorf("an untagged manifest is gone: %v", err)
 	}
 	if freed, err := r.Collect(context.Background()); err != nil || freed != 0 {
@@ -219,7 +243,7 @@ func TestCollect(t *testing.T) {
 	if got := r.status(t, http.MethodPost, "/v2/docker.io/library/gone/blobs/uploads/", "admin"); got != http.StatusServiceUnavailable {
 		t.Errorf("a write during a collection: %d, want 503", got)
 	}
-	if _, err := remote.Image(untagged, anyone); err != nil {
+	if _, err := remote.Image(untagged, node); err != nil {
 		t.Errorf("a read during a collection: %v", err)
 	}
 	if _, err := r.Collect(context.Background()); !errors.Is(err, registry.ErrCollecting) {
@@ -229,7 +253,7 @@ func TestCollect(t *testing.T) {
 	if err := remote.Write(ref, gone, admin); err != nil {
 		t.Fatalf("a push after the collection: %v", err)
 	}
-	pulled, err := remote.Image(ref, anyone)
+	pulled, err := remote.Image(ref, node)
 	if err != nil {
 		t.Fatalf("the image pushed again: %v", err)
 	}
@@ -260,7 +284,11 @@ func TestRegistryOnIPv6(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if repos, err := remote.Catalog(context.Background(), registryName, remote.WithTransport(reg.Transport(t, nil))); err != nil || len(repos) != 0 {
+	reader, err := pki.IssueClient(osCA, "reader", pki.RoleReader, time.Hour, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repos, err := remote.Catalog(context.Background(), registryName, remote.WithTransport(reg.Transport(t, &reader))); err != nil || len(repos) != 0 {
 		t.Errorf("the catalog: %v, %v", repos, err)
 	}
 }
@@ -300,5 +328,36 @@ func TestCollectOverHTTP(t *testing.T) {
 	var res registry.GCResult
 	if code := r.do(t, http.MethodPost, registry.GCPath, "admin", &res); code != http.StatusOK || res.FreedBytes < 2048 {
 		t.Errorf("the admin's collection: %d, %+v", code, res)
+	}
+}
+
+// TestLocal serves reads without a certificate, as the node's socket does, and refuses writes.
+func TestLocal(t *testing.T) {
+	r := startRegistry(t)
+	img, err := random.Image(1024, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := remote.Write(r.ref(t, "docker.io/library/local:1"), img, remote.WithTransport(r.clients["admin"])); err != nil {
+		t.Fatal(err)
+	}
+	local := httptest.NewServer(r.Local())
+	defer local.Close()
+	resp, err := http.Get(local.URL + "/v2/_catalog")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), "docker.io/library/local") {
+		t.Errorf("the catalog over the socket: %d %s", resp.StatusCode, body)
+	}
+	resp, err = http.Post(local.URL+"/v2/docker.io/library/local/blobs/uploads/", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("an upload over the socket: %d, want 405", resp.StatusCode)
 	}
 }
