@@ -153,7 +153,7 @@ in
       description = "Open-iSCSI";
       wantedBy = [ "multi-user.target" ];
       after = [
-        "network-online.target"
+        "network.target"
         "systemd-tmpfiles-setup.service"
       ];
       before = [ "remote-fs-pre.target" ];
