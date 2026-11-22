@@ -143,6 +143,48 @@ func modulePolicy(t *testing.T, ctx context.Context, cs kubernetes.Interface, no
 	}
 }
 
+// longhornScript checks what the longhorn feature gives w1, as Longhorn uses it. Longhorn runs
+// iscsiadm in the mount and network namespaces of the processes named iscsid, which must be the
+// host's, and finds it through its PATH; a discovery that reaches no target shows that iscsiadm
+// got the node's initiator name from iscsid. Longhorn runs fstrim, cryptsetup and dmsetup in the
+// host's mount namespace, and its CSI plugin mounts RWX volumes there with mount, which runs
+// mount.nfs4: the mount of a server that does not listen fails in mount.nfs4.
+const longhornScript = `
+set -u
+fail() { echo "$*"; exit 1; }
+pids=$(pidof iscsid) || fail "iscsid does not run"
+for p in $pids; do
+  for ns in mnt net; do
+    [ "$(readlink /proc/$p/ns/$ns)" = "$(readlink /proc/1/ns/$ns)" ] || fail "iscsid ($p) has a $ns namespace of its own"
+  done
+  nsenter -t $p -m -n iscsiadm --version || fail "iscsiadm does not run in iscsid's namespaces"
+  nsenter -t $p -m -n iscsiadm -m iface >/dev/null || fail "iscsiadm -m iface fails in iscsid's namespaces"
+done
+grep -qx 'InitiatorName=iqn.2026-11.dev.chalkos:[0-9a-f]\{32\}' /proc/1/root/etc/iscsi/initiatorname.iscsi \
+  || fail "the initiator name is $(cat /proc/1/root/etc/iscsi/initiatorname.iscsi 2>&1)"
+if out=$(nsenter -t $p -m -n iscsiadm -m discovery -t sendtargets -p 127.0.0.1:3260 2>&1); then
+  fail "the discovery of 127.0.0.1 found targets: $out"
+fi
+case "$out" in *"cannot make connection to 127.0.0.1"*) ;; *) fail "iscsiadm's discovery did not reach iscsid: $out" ;; esac
+for tool in fstrim cryptsetup dmsetup; do
+  for dir in /usr/bin /usr/sbin; do
+    nsenter -t 1 -m $dir/$tool --version >/dev/null || fail "$dir/$tool does not run in the host's mount namespace"
+  done
+  nsenter -t 1 -m $tool --version >/dev/null || fail "$tool is not on the PATH in the host's mount namespace"
+done
+mkdir -p /proc/1/root/run/chalktest-nfs
+if out=$(nsenter -t 1 -m -n -u mount -t nfs4 -o retry=0 127.0.0.1:/chalktest /run/chalktest-nfs 2>&1); then
+  fail "mount mounted 127.0.0.1:/chalktest"
+fi
+case "$out" in *"mount.nfs4: "*) ;; *) fail "mount did not run mount.nfs4: $out" ;; esac
+`
+
+// longhornTools checks w1's Longhorn host integration.
+func longhornTools(t *testing.T, ctx context.Context, cs kubernetes.Interface) {
+	t.Helper()
+	hostPod(t, ctx, cs, "longhorn-tools", longhornScript, nil)
+}
+
 // modulePolicyTampered has w1's host switch IPE to permissive and back, and waits for chalkctl
 // status to report the policy as tampered. It runs last: w1 stays tampered until it reboots.
 func modulePolicyTampered(t *testing.T, ctx context.Context, cs kubernetes.Interface, nodes map[string]*node) {

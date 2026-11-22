@@ -16,6 +16,7 @@ let
     k8s = [
       self.nixosModules.kubernetes
       ../../modules/testing/module-load.nix
+      { chalkos.kubernetes.longhorn.enable = true; }
     ];
     router = [
       self.nixosModules.router

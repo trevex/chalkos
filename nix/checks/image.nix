@@ -311,11 +311,12 @@ in
       touch $out
     '';
 
-  # The worker, the router and the release images have no /bin/sh and no shell on the system path:
-  # nixos-init, which sets the system up in the initrd, is given no sh or env binary to link, and
-  # the system has no bash activation script. The release images build with neither the debug
-  # tools nor chalkos.shell.allow, so their builds hold that no shell is in their systems or
-  # what their initrds' store paths reference. The worker's NixOS firewall stays on: NixOS's
+  # The worker, the router, the release images and the feature images have no /bin/sh and no shell
+  # on the system path: nixos-init, which sets the system up in the initrd, is given no sh or env
+  # binary to link, and the system has no bash activation script. The release images build with
+  # neither the debug tools nor chalkos.shell.allow, so their builds hold that no shell is in
+  # their systems or what their initrds' store paths reference. The feature images carry the
+  # Kubernetes features that are off by default. The worker's NixOS firewall stays on: NixOS's
   # bashless profile, which chalkos does not import, would turn it off. The router runs a
   # firewall of its own.
   no-shell =
@@ -334,7 +335,8 @@ in
           !c.chalkos.debug.tools && !c.chalkos.shell.allow
         ) "no-shell: the release image ${name} allows a shell";
         c
-      ) release;
+      ) release
+      // lib.mapAttrs (_: image: image.nixos.config) checkLib.featureImages;
     in
     pkgs.runCommand "chalkos-no-shell" { nativeBuildInputs = [ pkgs.jq ]; } ''
       fail() { echo "error: $*" >&2; exit 1; }
@@ -356,9 +358,9 @@ in
       touch $out
     '';
 
-  # The release images' ELF files that may run a shell: those that import system, popen or
-  # wordexp, which glibc runs /bin/sh for, and those that hold /bin/sh as a string, as Go and
-  # execl do. Each must be on the allow-list, by its package's name without the version and its
+  # The release and feature images' ELF files that may run a shell: those that import system,
+  # popen or wordexp, which glibc runs /bin/sh for, and those that hold /bin/sh as a string, as Go
+  # and execl do. Each must be on the allow-list, by its package's name without the version and its
   # path below the package, such as frr/bin/vtysh, or a glob of those, with the reason it never
   # runs a shell on a node. A new caller, as FRR's watchfrr was, fails the check: run it without
   # the shell, drop it from the image or add it here with its reason. The scan covers each
@@ -390,7 +392,7 @@ in
             toplevel
             chalkosInitrdSources
           ]
-        ) images;
+        ) (images ++ lib.attrValues checkLib.featureImages);
       };
       allowed = {
         "glibc/lib/libc.so.6" = "implements system, popen and wordexp";
@@ -443,6 +445,8 @@ in
         "nixos-system-nixos/init" = allowed."nixos-init/bin/nixos-init";
         "cni-plugins-chalkos/bin/portmap" = "a string of Go's tables, which no code executes";
         "chalkd/bin/chalkd" = "the command of flannel's container, which runs in the container";
+        "open-iscsi-chalkos/bin/*" =
+          "runs iscsid.conf's iscsid.startup when iscsid does not answer, which the image's iscsid.conf leaves unset";
       };
     in
     pkgs.runCommand "chalkos-no-shell-calls" { nativeBuildInputs = [ pkgs.pax-utils ]; } ''
@@ -498,6 +502,7 @@ in
         chalkd = "mounts volumes and the ESP, which the host must see";
         chalkos-nat64 = "ip netns add mounts each instance's namespace on /run/netns";
         containerd = "mounts the containers' file systems, which run from its exec path";
+        iscsid = "Longhorn runs iscsiadm in its mount and network namespaces, which must be the host's";
         kubelet = "mounts the pods' volumes, whose programs run from its exec path";
         systemd-networkd = "systemd's; the router gives it credentials alone";
         systemd-sysctl = "systemd's; the router orders it alone";
