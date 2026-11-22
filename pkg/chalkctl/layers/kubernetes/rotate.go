@@ -95,7 +95,8 @@ func expectations(s clustersecrets.Secrets, kind clustersecrets.RotationKind, no
 		if controlPlane {
 			cas = append(cas,
 				struct{ name, bundle, issuing string }{kpki.NameFrontProxyCA, k.FrontProxyCABundle(), k.FrontProxyCA.Certificate},
-				struct{ name, bundle, issuing string }{kpki.NameEtcdCA, k.EtcdCABundle(), k.EtcdCA.Certificate})
+				struct{ name, bundle, issuing string }{kpki.NameEtcdCA, k.EtcdCABundle(), k.EtcdCA.Certificate},
+				struct{ name, bundle, issuing string }{kpki.NameKubeletServingCA, k.KubeletServingCABundle(), k.KubeletServingCA.Certificate})
 		}
 		for _, ca := range cas {
 			values, err := pki.Fingerprints(ca.bundle)
@@ -292,11 +293,16 @@ func workersTrust(ctx context.Context, r layer.Rotating, workers []string) error
 	})
 }
 
-// refreshKubernetesCA gives workers kubelet client certificates of the new CA, which control
-// planes issued themselves at the switch, and has every kubelet request a serving certificate,
-// which the controller-manager signs with the new CA now that every control plane switched.
+// refreshKubernetesCA gives workers kubelet client certificates of the new Kubernetes CA, which
+// control planes issued themselves at the switch, and has every kubelet request a serving
+// certificate, which the controller-manager signs with the new kubelet serving CA now that every
+// control plane switched.
 func refreshKubernetesCA(ctx context.Context, r layer.Rotating, workers []string) error {
 	ca, err := layer.FingerprintOf(r.Secrets().Kubernetes.CA.Certificate)
+	if err != nil {
+		return err
+	}
+	servingCA, err := layer.FingerprintOf(r.Secrets().Kubernetes.KubeletServingCA.Certificate)
 	if err != nil {
 		return err
 	}
@@ -320,7 +326,7 @@ func refreshKubernetesCA(ctx context.Context, r layer.Rotating, workers []string
 		}
 		return layer.Converge(ctx, r, name, "for a kubelet serving certificate of the new CA",
 			"%s's kubelet serves a certificate of the new CA", "%s's kubelet serves a certificate of the new CA already", renew,
-			func(st *nodev1.StatusResponse) error { return layer.IssuedBy(st, kpki.NameKubeletServing, ca) })
+			func(st *nodev1.StatusResponse) error { return layer.IssuedBy(st, kpki.NameKubeletServing, servingCA) })
 	})
 }
 

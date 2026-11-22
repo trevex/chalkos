@@ -372,6 +372,7 @@ certificates:
   Kubernetes CA             expires 2036-11-17
   front-proxy CA            expires 2036-11-17
   etcd CA                   expires 2036-11-17
+  kubelet serving CA        expires 2036-11-17
   Kubernetes control plane  expires 2027-11-20
   kubelet client            expires 2027-11-20
   kubelet serving           expires 2027-11-20
@@ -380,6 +381,7 @@ trust:
   Kubernetes CA         1009654922c03a67 (issues)
   front-proxy CA        d95d4b468256d81c (issues)
   etcd CA               6786b86a968b7915 (issues)
+  kubelet serving CA    3b7e0c95f21ad648 (issues)
   service-account keys  82d761319337ac88 (issues)
   encryption keys       a00b68962c54931d (issues)
 time: synchronised to 192.53.103.108, offset +0.000005 s
@@ -593,11 +595,12 @@ networkd          195ac3c4ec51  rendered
 kubernetes worker: joined, node ready: True
 kubernetes versions: API server 1.37.2, kubelet 1.37.2
 certificates:
-  node             expires 2027-11-20
-  OS CA            expires 2036-11-17
-  Kubernetes CA    expires 2036-11-17
-  kubelet client   expires 2027-11-20
-  kubelet serving  expires 2027-11-20
+  node                expires 2027-11-20
+  OS CA               expires 2036-11-17
+  Kubernetes CA       expires 2036-11-17
+  kubelet serving CA  expires 2036-11-17
+  kubelet client      expires 2027-11-20
+  kubelet serving     expires 2027-11-20
 trust:
   OS CA          fe3339dfcf022d78
   Kubernetes CA  1009654922c03a67

@@ -46,7 +46,7 @@ func trusted(t *testing.T, s Secrets, kind RotationKind) []string {
 	case RotateOSCA:
 		certs(s.OSCABundle())
 	case RotateKubernetesCA:
-		certs(k.CABundle(), k.FrontProxyCABundle(), k.EtcdCABundle())
+		certs(k.CABundle(), k.FrontProxyCABundle(), k.EtcdCABundle(), k.KubeletServingCABundle())
 	case RotateServiceAccountKey:
 		pubs, err := k.ServiceAccountPublicKeys()
 		if err != nil {
@@ -217,14 +217,14 @@ func TestNodeCARotation(t *testing.T) {
 	}
 }
 
-// firstOfEach returns the issuing values: for the Kubernetes CAs the first of each of the three
+// firstOfEach returns the issuing values: for the Kubernetes CAs the first of each of the four
 // bundles, which hold the same number of values; for the others the first.
 func firstOfEach(values []string, kind RotationKind) []string {
 	if kind != RotateKubernetesCA {
 		return values[:1]
 	}
-	n := len(values) / 3
-	return []string{values[0], values[n], values[2*n]}
+	n := len(values) / 4
+	return []string{values[0], values[n], values[2*n], values[3*n]}
 }
 
 func sameSet(a, b []string) bool {
@@ -396,7 +396,8 @@ func TestValidateRefusesInconsistentRotations(t *testing.T) {
 		"a new OS CA in a rotation of the Kubernetes CAs": func(s *Secrets) {
 			k := other.Kubernetes
 			s.Kubernetes.Accepted.CA, s.Kubernetes.Accepted.FrontProxyCA, s.Kubernetes.Accepted.EtcdCA = []string{k.CA.Certificate}, []string{k.FrontProxyCA.Certificate}, []string{k.EtcdCA.Certificate}
-			s.Rotation = &Rotation{Kind: RotateKubernetesCA, Phase: PhaseAccept, New: &NewValues{CA: &k.CA, FrontProxyCA: &k.FrontProxyCA, EtcdCA: &k.EtcdCA, OSCA: &other.OSCA}}
+			s.Kubernetes.Accepted.KubeletServingCA = []string{k.KubeletServingCA.Certificate}
+			s.Rotation = &Rotation{Kind: RotateKubernetesCA, Phase: PhaseAccept, New: &NewValues{CA: &k.CA, FrontProxyCA: &k.FrontProxyCA, EtcdCA: &k.EtcdCA, KubeletServingCA: &k.KubeletServingCA, OSCA: &other.OSCA}}
 		},
 		"a node CA's rotation without the new node CA": func(s *Secrets) {
 			s.Rotation = &Rotation{Kind: RotateNodeCA, Phase: PhaseAccept, New: &NewValues{}}
@@ -414,6 +415,7 @@ func TestValidateRefusesInconsistentRotations(t *testing.T) {
 		"two accepted Kubernetes CAs": func(s *Secrets) {
 			k := other.Kubernetes
 			s.Kubernetes.Accepted.CA, s.Kubernetes.Accepted.FrontProxyCA, s.Kubernetes.Accepted.EtcdCA = []string{k.CA.Certificate, generate(t).Kubernetes.CA.Certificate}, []string{k.FrontProxyCA.Certificate}, []string{k.EtcdCA.Certificate}
+			s.Kubernetes.Accepted.KubeletServingCA = []string{k.KubeletServingCA.Certificate}
 			s.Rotation = &Rotation{Kind: RotateKubernetesCA, Phase: PhaseRefresh, Switched: now}
 		},
 		"the Kubernetes CA accepted without the front-proxy and etcd CAs": func(s *Secrets) {
@@ -427,6 +429,7 @@ func TestValidateRefusesInconsistentRotations(t *testing.T) {
 		"an accepted Kubernetes CA that is no root": func(s *Secrets) {
 			k := other.Kubernetes
 			s.Kubernetes.Accepted.CA, s.Kubernetes.Accepted.FrontProxyCA, s.Kubernetes.Accepted.EtcdCA = []string{other.NodeCA.Certificate}, []string{k.FrontProxyCA.Certificate}, []string{k.EtcdCA.Certificate}
+			s.Kubernetes.Accepted.KubeletServingCA = []string{k.KubeletServingCA.Certificate}
 			s.Rotation = &Rotation{Kind: RotateKubernetesCA, Phase: PhaseRefresh, Switched: now}
 		},
 		"an encryption key name with a control character": func(s *Secrets) {

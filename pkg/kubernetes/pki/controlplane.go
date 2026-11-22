@@ -31,9 +31,11 @@ const (
 
 // Files of the control plane's certificates, keys and kubeconfigs, by path relative to the
 // directory the static pods mount.
-// The CA files ca.crt, front-proxy-ca.crt and etcd/ca.crt hold every CA the components trust,
-// the one that issues first; ca-signing.crt holds the issuing Kubernetes CA alone, with which the
-// controller-manager signs, and sa.pub every service-account public key the API server accepts.
+// The CA files ca.crt, front-proxy-ca.crt, kubelet-serving-ca.crt and etcd/ca.crt hold every CA
+// the components trust, the one that issues first; ca-signing.crt and
+// kubelet-serving-ca-signing.crt hold the issuing Kubernetes and kubelet serving CAs alone, with
+// which the controller-manager signs, and sa.pub every service-account public key the API server
+// accepts.
 const (
 	FileCA                      = "ca.crt"
 	FileCASigning               = "ca-signing.crt"
@@ -41,6 +43,9 @@ const (
 	FileFrontProxyCA            = "front-proxy-ca.crt"
 	FileFrontProxyClient        = "front-proxy-client.crt"
 	FileFrontProxyClientKey     = "front-proxy-client.key"
+	FileKubeletServingCA        = "kubelet-serving-ca.crt"
+	FileKubeletServingCASigning = "kubelet-serving-ca-signing.crt"
+	FileKubeletServingCAKey     = "kubelet-serving-ca.key"
 	FileAPIServer               = "apiserver.crt"
 	FileAPIServerKey            = "apiserver.key"
 	FileAPIServerKubeletClient  = "apiserver-kubelet-client.crt"
@@ -87,11 +92,14 @@ func ControlPlane(s Share, c kubernetes.Cluster, n kubernetes.Node, now time.Tim
 	etcdNames := []string{"localhost", n.Name}
 
 	files := map[string][]byte{
-		FileCA:           []byte(s.CABundle()),
-		FileCASigning:    []byte(s.CA.Certificate),
-		FileCAKey:        []byte(s.CA.Key),
-		FileFrontProxyCA: []byte(s.FrontProxyCABundle()),
-		FileEtcdCA:       []byte(s.EtcdCABundle()),
+		FileCA:                      []byte(s.CABundle()),
+		FileCASigning:               []byte(s.CA.Certificate),
+		FileCAKey:                   []byte(s.CA.Key),
+		FileFrontProxyCA:            []byte(s.FrontProxyCABundle()),
+		FileEtcdCA:                  []byte(s.EtcdCABundle()),
+		FileKubeletServingCA:        []byte(s.KubeletServingCABundle()),
+		FileKubeletServingCASigning: []byte(s.KubeletServingCA.Certificate),
+		FileKubeletServingCAKey:     []byte(s.KubeletServingCA.Key),
 	}
 	leaves := []struct {
 		cert, key string

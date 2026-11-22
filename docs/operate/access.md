@@ -141,7 +141,7 @@ on the Kubernetes layer:
 | --- | --- | --- |
 | `os-ca` | The OS CA and the node CA, and every node certificate | Every client file issued before, and the node certificates of nodes outside the rotation |
 | `node-ca` | The node CA, and every node certificate | Nothing |
-| `kubernetes-ca` (Kubernetes) | The Kubernetes, front-proxy and etcd CAs, and every certificate they issued | Every kubeconfig issued before |
+| `kubernetes-ca` (Kubernetes) | The Kubernetes, front-proxy, etcd and kubelet serving CAs, and every certificate they issued | Every kubeconfig issued before |
 | `service-account-key` (Kubernetes) | The key that signs service-account tokens | Tokens signed with the old key |
 | `encryption-key` (Kubernetes) | The key that encrypts Secrets in etcd | Nothing; old data is encrypted again |
 

@@ -33,7 +33,8 @@ the API server trusts, where it finds etcd and the kubelets, and its service ran
 | `authentication-config` | The API server's authentication configuration, which chalkos writes |
 | `authorization-mode` | `Node,RBAC` |
 | `enable-bootstrap-token-auth` | `false` |
-| `client-ca-file`, `kubelet-certificate-authority` | The Kubernetes CA |
+| `client-ca-file` | The Kubernetes CA |
+| `kubelet-certificate-authority` | The kubelet serving CA |
 | `requestheader-client-ca-file`, `requestheader-allowed-names`, `requestheader-*-headers`, `requestheader-extra-headers-prefix` | The front proxy CA and its client |
 | `service-account-issuer`, `service-account-key-file`, `service-account-signing-key-file` | The issuer below the cluster domain and the service account key |
 | `encryption-provider-config` | The encryption of Secrets in etcd |

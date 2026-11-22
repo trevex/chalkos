@@ -112,6 +112,10 @@ func ValidateFlags(component string, flags map[string]string) error {
 	protected := map[string]func(string) bool{
 		"kube-apiserver": protectedAPIServerFlag,
 		"kubelet":        func(name string) bool { return slices.Contains(protectedKubeletFlags, name) },
+		// The signers chalkos names; the certificates they issue stay tunable.
+		"kube-controller-manager": func(name string) bool {
+			return strings.HasPrefix(name, "cluster-signing-") && name != "cluster-signing-duration"
+		},
 	}
 	for _, name := range slices.Sorted(maps.Keys(flags)) {
 		if !flagNamePattern.MatchString(name) {

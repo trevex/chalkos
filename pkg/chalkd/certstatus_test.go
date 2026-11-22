@@ -45,7 +45,7 @@ func TestStatusCertificatesOfAControlPlane(t *testing.T) {
 	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
 	withNodeCertificate(t, s)
 	st := status(t, s)
-	want := []string{"node", "OS CA", "node CA", "Kubernetes CA", "front-proxy CA", "etcd CA", "Kubernetes control plane", "kubelet client"}
+	want := []string{"node", "OS CA", "node CA", "Kubernetes CA", "front-proxy CA", "etcd CA", "kubelet serving CA", "Kubernetes control plane", "kubelet client"}
 	if got := certificateNames(st.Certificates); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("certificates %v, want %v", got, want)
 	}
@@ -74,7 +74,7 @@ func TestStatusCertificatesOfAControlPlane(t *testing.T) {
 func TestStatusCertificatesOfAWorker(t *testing.T) {
 	s, _ := kubernetesServer(t, k8s.KindWorker, true)
 	withNodeCertificate(t, s)
-	want := []string{"node", "OS CA", "Kubernetes CA", "kubelet client"}
+	want := []string{"node", "OS CA", "Kubernetes CA", "kubelet serving CA", "kubelet client"}
 	if got := certificateNames(status(t, s).Certificates); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("certificates %v, want %v", got, want)
 	}

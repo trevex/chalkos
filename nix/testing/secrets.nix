@@ -11,6 +11,7 @@ pkgs.runCommand "chalkos-test-secrets"
     mkdir -p $out
     cp $secrets $out/secrets.json
     jq '{version, osCA: {certificate: .osCA.certificate}, nodeCA: {certificate: .nodeCA.certificate},
-      kubernetes: (.kubernetes | {ca: {certificate: .ca.certificate}, frontProxyCA: {certificate: .frontProxyCA.certificate}, etcdCA: {certificate: .etcdCA.certificate}})}' \
+      kubernetes: (.kubernetes | {ca: {certificate: .ca.certificate}, frontProxyCA: {certificate: .frontProxyCA.certificate}, etcdCA: {certificate: .etcdCA.certificate},
+        kubeletServingCA: {certificate: .kubeletServingCA.certificate}})}' \
       $secrets > $out/secrets.pub.json
   ''

@@ -58,6 +58,8 @@ func (k *side) trust() []*nodev1.TrustStatus {
 		{kpki.NameKubernetesCA, kpki.FileCA, kpki.FileAPIServer},
 		{kpki.NameFrontProxyCA, kpki.FileFrontProxyCA, kpki.FileFrontProxyClient},
 		{kpki.NameEtcdCA, kpki.FileEtcdCA, kpki.FileEtcdServer},
+		// The controller-manager signs serving certificates with the CA of the signing file.
+		{kpki.NameKubeletServingCA, kpki.FileKubeletServingCA, kpki.FileKubeletServingCASigning},
 	} {
 		data, err := os.ReadFile(file(ca.bundle))
 		if err != nil {
@@ -123,7 +125,7 @@ func (k *side) certificates(now time.Time) []*nodev1.CertificateStatus {
 	}
 	// The CAs that may have issued the node's Kubernetes certificates.
 	var issuers []*x509.Certificate
-	for _, bundle := range []string{share.CABundle(), share.FrontProxyCABundle(), share.EtcdCABundle()} {
+	for _, bundle := range []string{share.CABundle(), share.FrontProxyCABundle(), share.EtcdCABundle(), share.KubeletServingCABundle()} {
 		if certs, err := pki.ParseBundle(bundle); err == nil {
 			issuers = append(issuers, certs...)
 		}
@@ -141,6 +143,7 @@ func (k *side) certificates(now time.Time) []*nodev1.CertificateStatus {
 		{kpki.NameKubernetesCA, &share.CA, layer.CAWarning, ""},
 		{kpki.NameFrontProxyCA, share.FrontProxyCA, layer.CAWarning, ""},
 		{kpki.NameEtcdCA, share.EtcdCA, layer.CAWarning, ""},
+		{kpki.NameKubeletServingCA, share.KubeletServingCA, layer.CAWarning, ""},
 	}
 	for _, ca := range cas {
 		if ca.ca == nil {

@@ -41,7 +41,7 @@ worker, `w1`. The lab's secrets file and kubeconfig had other names; the output 
 
 | Kind | What it replaces | What stops working after the finish |
 | --- | --- | --- |
-| `kubernetes-ca` | The Kubernetes CA, the front-proxy CA and the etcd CA, and every certificate they issued | Kubeconfigs issued before the rotation |
+| `kubernetes-ca` | The Kubernetes CA, the front-proxy CA, the etcd CA and the kubelet serving CA, and every certificate they issued | Kubeconfigs issued before the rotation |
 | `service-account-key` | The key that signs service-account tokens | Tokens signed with the old key |
 | `encryption-key` | The key that encrypts Secrets in etcd | Nothing; etcd holds every object under the new key |
 
@@ -60,7 +60,7 @@ flowchart TD
     start["chalkctl rotate kubernetes-ca"] --> accept["Accept: every node trusts both CAs; add-ons restart"]
     accept --> pause1(["Pause: restart your workloads, issue kubeconfigs"])
     pause1 -->|--resume| switch["Switch: the new CAs issue"]
-    switch --> refresh["Refresh: kubelets get certificates of the new CA"]
+    switch --> refresh["Refresh: kubelets get certificates of the new CAs"]
     refresh --> pause2(["Pause: issue kubeconfigs for whoever has none"])
     pause2 -->|--finish| finish["Finish: every node trusts the new CAs alone"]
     finish --> reissue(["Issue the kubeconfigs once more"])
@@ -72,7 +72,7 @@ once, before the finish.
 
 ## Rotate the Kubernetes CAs
 
-`kubernetes-ca` replaces the cluster's three Kubernetes CAs together. Start it with
+`kubernetes-ca` replaces the cluster's four Kubernetes CAs together. Start it with
 `chalkctl rotate kubernetes-ca --secrets secrets.age`, as at the top of this page. The accept
 phase gives control planes and workers both CAs and restarts chalkos's add-ons and the workloads of
 the [`Addon`](../reference/kinds.md#addon) documents.
@@ -90,8 +90,9 @@ At the first pause:
     ```
 
 Then resume. The switch makes the new CAs issue on each control plane in turn. The refresh gives
-each worker a kubelet client certificate of the new CA and has every kubelet request a new serving
-certificate. Control planes issued their kubelet client certificates themselves at the switch:
+each worker a kubelet client certificate of the new Kubernetes CA and has every kubelet request a
+new serving certificate, which the new kubelet serving CA signs. Control planes issued their
+kubelet client certificates themselves at the switch:
 
 ```console
 $ chalkctl rotate kubernetes-ca --resume --secrets secrets.age
@@ -230,6 +231,7 @@ trust:
   Kubernetes CA         3270541c2d2b460a (issues), b581fa7b6e202356
   front-proxy CA        966815dd53bd5ed8 (issues), a8d3e9f6a3923e87
   etcd CA               ad80f5a0ec48c4fe (issues), ff754e941c6c7965
+  kubelet serving CA    5d0c3e9a71b2f846 (issues), c41a7be09d3f2e58
   service-account keys  8cfdc26cc2babeb1 (issues)
   encryption keys       8714c84f8a9b42ba (issues)
 ...
