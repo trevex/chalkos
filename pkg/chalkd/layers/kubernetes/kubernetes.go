@@ -97,8 +97,9 @@ type Hooks struct {
 	CheckControlPlane func(ctx context.Context, c k8s.Cluster, share kpki.Share) error
 	// APIClient returns a client for the node's own API server.
 	APIClient func(c k8s.Cluster, share kpki.Share) (kubernetes.Interface, error)
-	// Approve approves kubelet serving certificates with the API server at cfg until ctx ends.
-	Approve func(ctx context.Context, cfg *rest.Config)
+	// Approve approves kubelet serving certificates of cluster c with the API server at cfg until
+	// ctx ends.
+	Approve func(ctx context.Context, c k8s.Cluster, cfg *rest.Config)
 	// RevokedNodes returns the nodes revoked in the cluster, whose node certificates a control
 	// plane does not renew, read through the node's own API server.
 	RevokedNodes func(ctx context.Context) (revoked.List, error)

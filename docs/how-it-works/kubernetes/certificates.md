@@ -91,7 +91,22 @@ these hold:
 
 - the node asks for its own name;
 - the certificate is for server use only;
-- its addresses are ones the node's Node object lists.
+- its addresses are ones the node's Node object lists as internal or external IPs;
+- its DNS names are the node's name or the host name its Node object lists.
+
+A kubelet writes its Node object's addresses itself, so chalkd also refuses a request that names
+an address or a name standing for the cluster or for another node:
+
+- an address in the cluster's pod or service ranges;
+- a VIP of the cluster;
+- the cluster endpoint's host, a name or an address. An endpoint address is allowed when the
+  cluster has no VIP: it is then the address of a control plane, whose own certificate holds it;
+- the cluster domain and every name below it, every name below `.svc`, and `kubernetes` and the
+  names below it, such as `kubernetes.default`;
+- an address or a name that another Node object lists.
+
+The check proves that no other node and no cluster service claims the address. It does not prove
+that the node owns the address: a node can still claim an unused address of its network.
 
 chalkd leaves every other request pending. The approver runs from the moment the API server is
 ready, beside the apply of the add-ons. Both kubelet certificates live in `/var/lib/kubelet/pki`
@@ -271,8 +286,9 @@ file, or with an admin client file.
 - Nothing revokes a single kubeconfig. It works until its certificate expires or the Kubernetes CA
   is rotated.
 - The approver of kubelet serving certificates checks a request against the addresses the Node
-  object lists. A kubelet reports those addresses itself, so the check stops a node from claiming
-  another node's name, not from claiming an address it does not own.
+  object lists. A kubelet reports those addresses itself. The approver refuses the cluster's
+  addresses and names and those of the other nodes, but a node can still claim an unused address
+  of its network.
 - A control plane holds every Kubernetes CA key. Taking one over gives full access to the
   cluster's Kubernetes.
 

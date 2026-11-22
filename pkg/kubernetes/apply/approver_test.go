@@ -12,6 +12,7 @@ import (
 	"errors"
 	"log"
 	"net"
+	"net/netip"
 	"net/url"
 	"os"
 	"strings"
@@ -26,6 +27,7 @@ import (
 	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/trevex/chalkos/pkg/internal/testwait"
+	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
 )
 
@@ -104,33 +106,90 @@ var w1 = testNode("w1",
 	corev1.NodeAddress{Type: corev1.NodeHostName, Address: "w1"},
 )
 
+var cp1 = testNode("cp1",
+	corev1.NodeAddress{Type: corev1.NodeInternalIP, Address: "192.168.100.11"},
+	corev1.NodeAddress{Type: corev1.NodeHostName, Address: "cp1"},
+)
+
+// testCluster has the virtual address 192.168.100.10 at its endpoint.
+var testCluster = k8s.Cluster{
+	Kind:         k8s.KindControlPlane,
+	Endpoint:     "https://192.168.100.10:6443",
+	Domain:       "cluster.local",
+	PodCIDRs:     k8s.ByFamily[netip.Prefix]{IPv4: netip.MustParsePrefix("10.244.0.0/16")},
+	ServiceCIDRs: k8s.ByFamily[netip.Prefix]{IPv4: netip.MustParsePrefix("10.96.0.0/12")},
+	VIP:          k8s.VIP{Addresses: []netip.Addr{netip.MustParseAddr("192.168.100.10")}, Mode: k8s.VIPModeL2},
+}
+
+// withAddresses returns node w1 listing the addresses besides its own.
+func withAddresses(addresses ...corev1.NodeAddress) *corev1.Node {
+	n := w1.DeepCopy()
+	n.Status.Addresses = append(n.Status.Addresses, addresses...)
+	return n
+}
+
 func TestApprovable(t *testing.T) {
-	if err := Approvable(request{}.csr(t, "ok"), w1); err != nil {
+	nodes := []corev1.Node{*w1, *cp1}
+	if err := Approvable(request{}.csr(t, "ok"), w1, nodes, testCluster); err != nil {
 		t.Fatalf("a matching request was refused: %v", err)
 	}
+	ip := func(a string) corev1.NodeAddress { return corev1.NodeAddress{Type: corev1.NodeInternalIP, Address: a} }
+	hostname := func(a string) corev1.NodeAddress { return corev1.NodeAddress{Type: corev1.NodeHostName, Address: a} }
 	for name, tc := range map[string]struct {
-		req  request
-		node *corev1.Node
+		req     request
+		node    *corev1.Node
+		cluster k8s.Cluster
 	}{
-		"no Node object":          {request{}, nil},
-		"another node's name":     {request{username: "system:node:cp1", cn: "system:node:cp1"}, w1},
-		"subject of another node": {request{cn: "system:node:cp1"}, w1},
-		"not a node":              {request{username: "admin", groups: []string{"chalkos:cluster-admins"}}, w1},
-		"node user without group": {request{groups: []string{"system:authenticated"}}, w1},
-		"wrong organization":      {request{org: []string{"system:masters"}}, w1},
-		"address of another node": {request{ips: []string{"192.168.100.11"}}, w1},
-		"name the node lacks":     {request{names: []string{"w1", "kubernetes"}}, w1},
-		"URI":                     {request{uris: []string{"spiffe://cluster/w1"}}, w1},
-		"no address":              {request{ips: []string{}, names: []string{}}, w1},
-		"client usage":            {request{usages: []certificatesv1.KeyUsage{certificatesv1.UsageDigitalSignature, certificatesv1.UsageServerAuth, certificatesv1.UsageClientAuth}}, w1},
-		"no server usage":         {request{usages: []certificatesv1.KeyUsage{certificatesv1.UsageDigitalSignature}}, w1},
-		"another signer":          {request{signer: certificatesv1.KubeAPIServerClientKubeletSignerName}, w1},
-		"address the node lacks":  {request{}, testNode("w1", corev1.NodeAddress{Type: corev1.NodeHostName, Address: "w1"})},
+		"no Node object":          {request{}, nil, testCluster},
+		"another node's name":     {request{username: "system:node:cp1", cn: "system:node:cp1"}, w1, testCluster},
+		"subject of another node": {request{cn: "system:node:cp1"}, w1, testCluster},
+		"not a node":              {request{username: "admin", groups: []string{"chalkos:cluster-admins"}}, w1, testCluster},
+		"node user without group": {request{groups: []string{"system:authenticated"}}, w1, testCluster},
+		"wrong organization":      {request{org: []string{"system:masters"}}, w1, testCluster},
+		"address of another node": {request{ips: []string{"192.168.100.11"}}, w1, testCluster},
+		"name the node lacks":     {request{names: []string{"w1", "kubernetes"}}, w1, testCluster},
+		"URI":                     {request{uris: []string{"spiffe://cluster/w1"}}, w1, testCluster},
+		"no address":              {request{ips: []string{}, names: []string{}}, w1, testCluster},
+		"client usage":            {request{usages: []certificatesv1.KeyUsage{certificatesv1.UsageDigitalSignature, certificatesv1.UsageServerAuth, certificatesv1.UsageClientAuth}}, w1, testCluster},
+		"no server usage":         {request{usages: []certificatesv1.KeyUsage{certificatesv1.UsageDigitalSignature}}, w1, testCluster},
+		"another signer":          {request{signer: certificatesv1.KubeAPIServerClientKubeletSignerName}, w1, testCluster},
+		"address the node lacks":  {request{}, testNode("w1", corev1.NodeAddress{Type: corev1.NodeHostName, Address: "w1"}), testCluster},
+		// The node lists each of these itself, which the kubelet can do.
+		"VIP":                       {request{ips: []string{"192.168.100.10"}}, withAddresses(ip("192.168.100.10")), testCluster},
+		"service IP":                {request{ips: []string{"10.96.0.1"}}, withAddresses(ip("10.96.0.1")), testCluster},
+		"pod IP":                    {request{ips: []string{"10.244.1.5"}}, withAddresses(ip("10.244.1.5")), testCluster},
+		"another node's own":        {request{ips: []string{"192.168.100.11"}}, withAddresses(ip("192.168.100.11")), testCluster},
+		"another node's host name":  {request{names: []string{"cp1"}}, withAddresses(hostname("cp1")), testCluster},
+		"cluster domain":            {request{names: []string{"kubernetes.default.svc.cluster.local"}}, withAddresses(hostname("kubernetes.default.svc.cluster.local")), testCluster},
+		"below the domain":          {request{names: []string{"x.cluster.local"}}, withAddresses(hostname("x.cluster.local")), testCluster},
+		"below .svc":                {request{names: []string{"api.default.svc"}}, withAddresses(hostname("api.default.svc")), testCluster},
+		"kubernetes service":        {request{names: []string{"kubernetes.default"}}, withAddresses(hostname("kubernetes.default")), testCluster},
+		"upper-case kubernetes":     {request{names: []string{"Kubernetes"}}, withAddresses(hostname("Kubernetes")), testCluster},
+		"foreign DNS name":          {request{names: []string{"api.example.org"}}, withAddresses(corev1.NodeAddress{Type: corev1.NodeExternalDNS, Address: "api.example.org"}), testCluster},
+		"endpoint name":             {request{names: []string{"api.example.org"}}, withAddresses(hostname("api.example.org")), withEndpoint("https://api.example.org:6443")},
+		"endpoint address with VIP": {request{ips: []string{"192.168.100.10"}}, withAddresses(ip("192.168.100.10")), withEndpoint("https://192.168.100.10:6443")},
 	} {
-		if err := Approvable(tc.req.csr(t, name), tc.node); err == nil {
+		if err := Approvable(tc.req.csr(t, name), tc.node, nodes, tc.cluster); err == nil {
 			t.Errorf("%s: approvable", name)
 		}
 	}
+}
+
+// Without a virtual address, the endpoint is a control plane's own address, which its serving
+// certificate holds.
+func TestApprovableEndpointWithoutVIP(t *testing.T) {
+	c := testCluster
+	c.VIP = k8s.VIP{}
+	c.Endpoint = "https://192.168.100.12:6443"
+	if err := Approvable(request{}.csr(t, "ok"), w1, []corev1.Node{*w1, *cp1}, c); err != nil {
+		t.Errorf("refused the endpoint's own control plane: %v", err)
+	}
+}
+
+func withEndpoint(endpoint string) k8s.Cluster {
+	c := testCluster
+	c.Endpoint = endpoint
+	return c
 }
 
 func TestApproverApprovesOnlyMatchingRequests(t *testing.T) {
@@ -138,7 +197,7 @@ func TestApproverApprovesOnlyMatchingRequests(t *testing.T) {
 	spoofed := request{ips: []string{"192.168.100.11"}}.csr(t, "spoofed")
 	client := request{signer: certificatesv1.KubeAPIServerClientKubeletSignerName}.csr(t, "client")
 	cs := fake.NewClientset(w1, good, spoofed, client)
-	a := &Approver{Client: cs}
+	a := &Approver{Client: cs, Cluster: testCluster}
 	if err := a.Once(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +239,7 @@ func TestApproverContinuesPastFailingRequest(t *testing.T) {
 		}
 		return false, nil, nil
 	})
-	err := (&Approver{Client: cs}).Once(context.Background())
+	err := (&Approver{Client: cs, Cluster: testCluster}).Once(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "a-fails") || !strings.Contains(err.Error(), "b-fails") {
 		t.Errorf("err = %v, want both failures", err)
 	}
@@ -198,7 +257,7 @@ func TestApproverContinuesPastFailingRequest(t *testing.T) {
 func TestApproverForgetsDeletedRequests(t *testing.T) {
 	spoofed := request{ips: []string{"192.168.100.11"}}.csr(t, "spoofed")
 	cs := fake.NewClientset(w1, spoofed)
-	a := &Approver{Client: cs}
+	a := &Approver{Client: cs, Cluster: testCluster}
 	if err := a.Once(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +316,7 @@ func TestApproverLeavesRevokedNodesPending(t *testing.T) {
 			var logs bytes.Buffer
 			log.SetOutput(&logs)
 			t.Cleanup(func() { log.SetOutput(os.Stderr) })
-			a := &Approver{Client: cs, Revoked: func(context.Context) (revoked.List, error) { return tc.list, tc.err }}
+			a := &Approver{Client: cs, Cluster: testCluster, Revoked: func(context.Context) (revoked.List, error) { return tc.list, tc.err }}
 			err := a.Once(context.Background())
 			if (err != nil) != (tc.err != nil) || (err != nil && strings.Count(err.Error(), "timeout") != 1) {
 				t.Errorf("err = %v, want %v once", err, tc.err)
@@ -290,7 +349,7 @@ func TestApproverReadsRevokedNodesFromTheCluster(t *testing.T) {
 		Data:       map[string]string{"w1": "2026-10-23T10:00:00Z"},
 	}
 	cs := fake.NewClientset(w1, cm, request{}.csr(t, "w1-serving"))
-	if err := (&Approver{Client: cs}).Once(context.Background()); err != nil {
+	if err := (&Approver{Client: cs, Cluster: testCluster}).Once(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	got, err := cs.CertificatesV1().CertificateSigningRequests().Get(context.Background(), "w1-serving", metav1.GetOptions{})
@@ -316,7 +375,7 @@ func TestApproverEnforcesRevokedNodes(t *testing.T) {
 		}
 		return false, nil, nil
 	})
-	a := &Approver{Client: cs}
+	a := &Approver{Client: cs, Cluster: testCluster}
 	if err := a.Enforce(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -367,7 +426,7 @@ func TestApproverRunEnforcesRevokedNodes(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
-		(&Approver{Client: cs}).Run(ctx, 10*time.Millisecond)
+		(&Approver{Client: cs, Cluster: testCluster}).Run(ctx, 10*time.Millisecond)
 		close(done)
 	}()
 	defer func() {
