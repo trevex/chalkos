@@ -186,6 +186,15 @@ refuses. Both hold certificates and hashes of binaries. A chalkos image boots un
 when its signer's certificate is in db and nothing of it is in dbx. See
 [The image](../how-it-works/node/image.md#the-uki-is-checked-against-db-and-dbx-before-anything-runs-it).
 
+## Delivery { #delivery }
+<!-- abbr: deliveries, Deliveries -->
+
+The transfer of a node's whole [config](#config) to its chalkd, which checks it and applies it or
+refuses it as one. [`chalkctl config apply`](cli/chalkctl_config_apply.md) delivers a config, and
+so does an upgrade with the secrets file or an admin client file. A delivery passes the change
+rules, the [validators](#validator), the [outputs](#output) and the [effects](#effect) in that
+order. See [The config pipeline](../how-it-works/node/config-pipeline.md).
+
 ## Diagnostic { #diagnostic }
 <!-- abbr: Diagnostics, diagnostics -->
 
@@ -227,6 +236,14 @@ it adds itself as a learner, and every later boot waits for exactly them;
 [`chalkctl etcd leave`](cli/chalkctl_etcd_leave.md) undoes both. See [The control
 plane](../how-it-works/kubernetes/control-plane.md).
 
+## Exec path { #exec-path }
+<!-- abbr: exec paths, Exec paths -->
+
+A directory that a [layer](#layer) lets programs run from, although its file system is mounted
+`noexec`, such as `/var/lib/kubelet` with the Kubernetes layer. Apart from the store, the exec
+paths and [volumes](#volume) with `spec.exec`, a node runs no program from any file system. See
+[Programs run from the store alone](../how-it-works/node/security.md#programs-run-from-the-store-alone).
+
 ## Extension { #extension }
 <!-- abbr: extensions, Extensions -->
 
@@ -254,6 +271,32 @@ It holds the node's [recovery key](#recovery-key) by default, or a password, or 
 none, as `spec.encryption.fallback` of the node's [`SystemDisk`](kinds.md#systemdisk) chooses.
 See
 [Storage and encryption](../how-it-works/node/storage.md).
+
+## Feature { #feature }
+<!-- abbr: nolower, Features, router feature, router features -->
+
+A part of a [layer](#layer) that an image keeps or leaves out with an image option of its own,
+such as [`chalkos.router.bgp.enable`](image-options.md#chalkosrouterbgpenable) or
+[`chalkos.kubernetes.longhorn.enable`](image-options.md#chalkoskuberneteslonghornenable). An image
+without a feature carries none of its software and refuses the documents of its kinds. Most
+features are on by default. See
+[Leave router features out](../build/images-and-platforms.md#leave-router-features-out) and
+[Storage and GPU workloads](../kubernetes/storage-and-gpu.md).
+
+## Firewall policy { #firewall-policy }
+<!-- abbr: firewall policies, Firewall policies -->
+
+A `FirewallPolicy` document: what a router's firewall does with new connections from one
+[firewall zone](#firewall-zone) to another, or to the router itself, as rules in order and a
+default. Once one policy goes between zones, the router forwards only what a policy accepts. See
+[Filter and translate traffic](../router/firewall-and-nat.md).
+
+## Firewall zone { #firewall-zone }
+<!-- abbr: firewall zones, Firewall zones -->
+
+A `FirewallZone` document: a named set of a router's interfaces and [VRFs](#vrf) whose
+connections the [firewall policies](#firewall-policy) treat alike. The zone `local` is the router
+itself and has no document. See [Filter and translate traffic](../router/firewall-and-nat.md).
 
 ## Generation { #generation }
 
@@ -395,9 +438,19 @@ A named set of kernel modules an [image](#image) carries. Modules declare groups
 [`chalkos.kernel.groups`](image-options.md#chalkoskernelgroups), and an image's groups are listed
 in [`chalkos.kernel.moduleGroups`](image-options.md#chalkoskernelmodulegroups). Every image
 carries the base groups `storage`, `network`, `virtualisation`, `filesystems`, `firewall` and
-`platform`. An image with Kubernetes adds `kubernetes`. `gpu`, `sound`, `media`, `wireless`,
+`platform`. An image with Kubernetes adds `kubernetes`, and `kubevirt` while its `kubevirt`
+feature is on. `gpu`, `sound`, `media`, `wireless`,
 `infiniband`, `can` and `industrial` are added in an image's modules. See
 [The image](../how-it-works/node/image.md).
+
+## Module policy { #module-policy }
+<!-- abbr: module policies -->
+
+The IPE policy each [image](#image) carries, which lets the kernel load modules from the image's
+[store](#store) and initrd alone. `chalkbuild sign` signs it with the [db](#db-and-dbx) key, and a
+node that enforces [Secure Boot](#secure-boot) loads it in the initrd. `chalkctl status` reports
+whether the kernel enforces it. See
+[Kernel modules load from the image alone](../how-it-works/node/security.md#kernel-modules-load-from-the-image-alone).
 
 ## Node { #node }
 <!-- abbr: none -->
@@ -578,6 +631,14 @@ tree. They are labelled `store_<hash16>` and `store-verity_<hash16>`
 from the first 16 hex characters of its [root hash](#root-hash), or `_empty`. A node has two, A
 and B. See [The image](../how-it-works/node/image.md).
 
+## Staged image { #staged-image }
+<!-- abbr: staged images, Staged images -->
+
+An image that an [upgrade](#upgrade) wrote to a node's inactive [slot](#slot) without making it
+boot next, as `chalkctl upgrade --until stage` does. `chalkctl node activate` makes it boot next,
+and `chalkctl config apply --staged` delivers the config it boots with. See
+[A staged image and the next upgrade take config of their own](../how-it-works/node/config.md#a-staged-image-and-the-next-upgrade-take-config-of-their-own).
+
 ## STATE { #state }
 
 A small partition that holds a node's config, certificates and keys. It is 128 MiB, encrypted and
@@ -650,6 +711,13 @@ A partition beyond [VAR](#var), declared by a [`Volume`](kinds.md#volume) docume
 config. It sits on the system disk or a disk of its own,
 encrypted or not, formatted and mounted or left raw. See
 [Storage and encryption](../how-it-works/node/storage.md).
+
+## VRF { #vrf }
+<!-- abbr: nolower, VRFs -->
+
+A routing table of its own for a set of a router's links, declared by a `VRF` document. The
+router routes a packet that arrives on a VRF's link by that table alone, so two VRFs may use the
+same addresses. See [Separate routing with VRFs](../router/vrfs.md).
 
 ## Worker { #worker }
 <!-- abbr: workers, Workers -->

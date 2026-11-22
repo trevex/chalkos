@@ -17,16 +17,16 @@ In short:
 rm -rf images/node-metal-signed
 chalkbuild sign --key keys/db.key --cert keys/db.crt images/node-metal images/node-metal-signed
 chalkctl validate
-chalkctl upgrade --nodes cp3 --secrets secrets.age
-chalkctl upgrade --secrets secrets.age
-chalkctl status cp3 --secrets secrets.age
+chalkctl upgrade --nodes cp3 --secrets=secrets.age
+chalkctl upgrade --secrets=secrets.age
+chalkctl status cp3
 ```
 
 A new chalkos release arrives in one of two ways. With the published images, the release publishes
 new ones, and the inventory names the new image's digest. With images of your own, the image author
 updates the `chalkos` input in the flake's `flake.lock` and builds the images again. Either way,
 take chalkctl from the same release, as
-[Set up your workstation](workstation.md#get-chalkctl-from-the-chalkos-flake) describes.
+[Set up your workstation](workstation.md#get-chalkctl) describes.
 
 ## Before you begin
 

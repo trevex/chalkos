@@ -43,30 +43,21 @@ Secure Boot and a TPM. It needs an x86-64 Linux machine with Nix and flakes, acc
 
 <!-- x-release-please-start-version -->
 ```sh
-mkdir lab && cd lab
-nix flake init -t github:trevex/chalkos/v0.6.0#lab
-git init && git add .
-nix develop
-chalkctl gen secrets --plaintext
-git add . && git commit -m "A chalkos lab"
-nix build .#node-kvm -o images/node-kvm
-chalklab create --secrets secrets.json
+mkdir lab && cd lab && nix flake init -t github:trevex/chalkos/v0.6.0#lab
+nix develop -c chalkctl gen secrets --plaintext
+nix develop -c chalklab create --secrets=secrets.json
 ```
 <!-- x-release-please-end -->
 
-`nix build` builds the nodes' image. `chalklab create` starts the virtual machines, installs
-the nodes, bootstraps the cluster and prints how to reach it with kubectl and chalkctl.
-`chalklab destroy` removes the lab. The [quick start](https://trevex.github.io/chalkos/get-started/quick-start-kubernetes/) walks
-through it, including an upgrade.
+`chalklab create` pulls the release's image, starts the virtual machines, installs the nodes,
+bootstraps the cluster and prints how to reach it with kubectl and chalkctl. `chalklab destroy`
+removes the lab. The [quick start](https://trevex.github.io/chalkos/get-started/quick-start-kubernetes/)
+walks through it, including a build of your own image and an upgrade.
 
 ## Development
 
-`nix develop` gives the tools. `nix flake check` runs every check, including the end-to-end tests
-in QEMU, which boot VMs and need `/dev/kvm`. Contributors usually build single checks instead, as
-[Testing](https://trevex.github.io/chalkos/contribute/testing/) describes. The documentation is
-built with `nix build .#docs`, served while it is edited with `nix run .#docs-serve`, and its
-generated reference pages are written with `nix run .#docgen`. The
-[contributing guide](https://trevex.github.io/chalkos/contribute/) has the details.
+[CONTRIBUTING.md](CONTRIBUTING.md) sets up the development shell, runs the tests and says how to
+commit a change.
 
 ## Security
 

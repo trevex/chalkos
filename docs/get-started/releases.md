@@ -176,8 +176,9 @@ zstd -d chalkos-installer.raw.zst
 ```
 
 [Install a node](../operate/install.md) boots a machine from the installer. The release's installer
-has no OS CA, so it accepts any client until it installs a node; a cluster that needs one builds
-its own installer with `mkImages`.
+has no OS CA; a cluster that needs one builds its own installer with `mkImages`.
+
+--8<-- "docs/includes/no-os-ca.md"
 
 ## Fetch and verify an SBOM
 

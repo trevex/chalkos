@@ -13,9 +13,8 @@ credential each command needs.
 
 ## Before you begin
 
-You need an x86-64 Linux machine. To get chalkctl from the chalkos flake, the machine needs Nix
-with flakes enabled. A machine without Nix can run a copy of the program, which needs no other
-program.
+You need an x86-64 Linux machine with curl and cosign to download and check chalkctl, or Nix with
+flakes enabled to run it from the chalkos flake.
 
 [Manage secrets](secrets.md) covers the keys you need to encrypt and back up the cluster's secrets.
 
@@ -41,24 +40,59 @@ template or an example with `nix build`.
       [Leave router features out](../build/images-and-platforms.md#leave-router-features-out)
       lists.
 
-## Get chalkctl from the chalkos flake
+## Get chalkctl
 
-chalkctl is the package `chalkctl` of the chalkos flake, built for `x86_64-linux`. Take it from the
-chalkos release your images are built from, because before 1.0 its commands and node API change
-between releases. Run it from a shell that has it on the `PATH`:
+Take chalkctl from the chalkos release your images come from, because before 1.0 its commands and
+node API change between releases. In the commands below, `<tag>` is that release, such as
+`v0.6.0`: the release of the published images, or the one the image author's `flake.nix` names in
+its `chalkos` input.
+
+### Download it from the release
+
+Each release publishes chalkctl as `chalkctl-linux-amd64`, a static program that runs no other
+program. Download it, the checksums and the signature bundles, and check the program against
+`SHA256SUMS`:
+
+```sh
+release=https://github.com/trevex/chalkos/releases/download/<tag>
+curl -fL -O "$release/chalkctl-linux-amd64" -O "$release/chalkctl-linux-amd64.sigstore.json" \
+  -O "$release/SHA256SUMS" -O "$release/SHA256SUMS.sigstore.json"
+sha256sum --check --ignore-missing SHA256SUMS
+```
+
+`sha256sum` prints `chalkctl-linux-amd64: OK`. Check with cosign that the release workflow signed
+the checksums and the program:
+
+```sh
+for file in SHA256SUMS chalkctl-linux-amd64; do
+  cosign verify-blob "$file" --bundle "$file.sigstore.json" \
+    --certificate-identity https://github.com/trevex/chalkos/.github/workflows/release.yml@refs/heads/main \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com
+done
+```
+
+Install the program as `chalkctl` on the `PATH`:
+
+```sh
+install -m 0755 chalkctl-linux-amd64 ~/.local/bin/chalkctl
+chalkctl version
+```
+
+[Download chalkctl and the installer](../get-started/releases.md#download-chalkctl-and-the-installer)
+also verifies the program's build attestation and downloads chalkbuild and the installer.
+
+### Run it from the chalkos flake
+
+With Nix, chalkctl is the package `chalkctl` of the chalkos flake, built for `x86_64-linux`. Run
+it from a shell that has it on the `PATH`:
 
 ```sh
 nix shell github:trevex/chalkos/<tag>#chalkctl
 chalkctl --help
 ```
 
-`<tag>` is the release that the image author's `flake.nix` names in its `chalkos` input, such as
-`v0.1.0`. A cluster's flake can add chalkctl to its development shell instead, as the lab
-template does, so that `nix develop` gives the chalkctl of the pinned release.
-
-To run chalkctl on a machine without Nix, download the program from the release, as
-[Download chalkctl and the installer](../get-started/releases.md#download-chalkctl-and-the-installer)
-shows.
+A cluster's flake can add chalkctl to its development shell instead, as the lab template does, so
+that `nix develop` gives the chalkctl of the pinned release.
 
 ## Lay out the repository
 
@@ -86,8 +120,7 @@ cluster/
 
 A larger cluster adds directories of its own. The
 [homelab example](https://github.com/trevex/chalkos/tree/main/examples/homelab) gives its router
-and its Kubernetes nodes separate directories and images, and keeps its NixOS extensions in
-`extensions/`.
+and its Kubernetes nodes separate directories and images.
 
 The inventory, `chalkos.yaml`, names the cluster's nodes, the address chalkctl reaches each at,
 the image each runs and the config files each gets:
@@ -111,8 +144,19 @@ may be committed too, as the next section explains.
 
 ## Generate the cluster's secrets with age
 
-[Manage secrets](secrets.md#generate-the-clusters-secrets-with-age) shows how to create the
-bundle and its public half. It also covers [generation with SOPS](secrets.md#generate-the-clusters-secrets-with-sops).
+[`chalkctl gen secrets`](../reference/cli/chalkctl_gen_secrets.md) writes the secrets file,
+encrypted with age to each recipient, and its public half, `secrets.pub.json`:
+
+```console
+$ chalkctl gen secrets --recipient "$(cat ~/.ssh/id_ed25519.pub)"
+encrypted secrets.age to ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKMcR1DCFPGSdWXphQ3We8UmkMp2KdufUzVxxC6Hvo9k alice@workstation
+wrote secrets.age and secrets.pub.json
+```
+
+[Manage secrets](secrets.md#generate-the-clusters-secrets-with-age) adds an offline backup
+recipient, covers [generation with SOPS](secrets.md#generate-the-clusters-secrets-with-sops),
+and shows how to keep the services' own secrets in
+[`Secret` documents](secrets.md#keep-the-services-secrets-in-secret-documents).
 
 ## Build the images with the cluster's OS CA
 
@@ -124,16 +168,11 @@ CA, so nobody else can install an image on a machine that waits for its install.
 describes the argument, and [Your first image flake](../build/first-image.md) shows the flake that
 takes it.
 
-Images built without `osCA` accept any client until they are installed, as an admin. Anyone on
-the machine's network may then install it, reboot it and run every diagnostic on it, those for
-operators such as `nft-ruleset` included. The templates name `osCA` already. The homelab's flake
+--8<-- "docs/includes/no-os-ca.md"
+
+The templates name `osCA` already. The homelab's flake
 leaves it out, so that it builds before any cluster has secrets, and
 [Build a home lab](../guides/home-lab.md#generate-the-clusters-secrets) adds it.
-
-## Keep the services' secrets in Secret documents
-
-[Manage secrets](secrets.md#keep-the-services-secrets-in-secret-documents) shows how to
-write `Secret` documents and source their values.
 
 ## Choose a role for each client file
 

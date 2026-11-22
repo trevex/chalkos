@@ -31,7 +31,7 @@ order of the work and links to them where the details matter.
 
 You need:
 
-- a ChalkOS checkout and the homelab example in a git repository of its own, with the flake's shell, as
+- a chalkos checkout and the homelab example in a git repository of its own, with the flake's shell, as
   [Prepare the files](home-lab.md#prepare-the-files) and [Get the tools](home-lab.md#get-the-tools)
   of the home lab set it up. Run every command of this page in that shell, in the repository;
 - some Nix: NixOS modules, options and `let` bindings;
@@ -45,7 +45,7 @@ The steps up to [Try it on a node](#try-it-on-a-node) need no node: they run in 
 ## Start from an empty module
 
 Keep a copy of the finished extension nearby while you build your own. These commands assume
-you made the homelab beside the ChalkOS checkout as shown in the home lab guide.
+you made the homelab beside the chalkos checkout as shown in the home lab guide.
 
 ```sh
 cp -r ../chalkos/examples/bgp-extension/extensions extensions.done

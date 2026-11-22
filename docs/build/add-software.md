@@ -112,6 +112,11 @@ Replace `node-metal` with the name of the node's image.
 
 ## Add a module group or single modules
 
+A node loads kernel modules from its image alone. No container can load one, and on a node that
+enforces Secure Boot the kernel refuses every module from outside the image's store and initrd, as
+[Kernel modules load from the image alone](../how-it-works/node/security.md#kernel-modules-load-from-the-image-alone)
+explains. A module that a device or a workload needs goes into the image.
+
 [`chalkos.kernel.moduleGroups`](../reference/image-options.md#chalkoskernelmodulegroups) selects whole
 directories of the kernel's tree, so a group follows a kernel update with its subsystem's new
 drivers. Every image carries the base groups:
@@ -127,8 +132,11 @@ drivers. Every image carries the base groups:
 
 The base groups keep about a third of the kernel's 7,300 modules, about 45 MiB of the full tree's
 145 MiB. An image with Kubernetes adds the `kubernetes` group, which holds SCTP and Open vSwitch
-for the cluster's pod network. The further groups are `gpu`, `sound`, `media`, `wireless`,
-`infiniband`, `can` and `industrial`. Your own modules can declare more groups in
+for the cluster's pod network, and the `kubevirt` group of its `kubevirt` feature, which holds
+KVM, vhost, VFIO and UIO for KubeVirt's virtual machines. The Kubernetes features for Ceph,
+Longhorn and NVIDIA's GPU driver add their modules too, as
+[Storage and GPU workloads](../kubernetes/storage-and-gpu.md) describes. The further groups are
+`gpu`, `sound`, `media`, `wireless`, `infiniband`, `can` and `industrial`. Your own modules can declare more groups in
 [`chalkos.kernel.groups`](../reference/image-options.md#chalkoskernelgroups). Add a group or
 single modules in the modules of the image whose nodes need them, here an image `gpu-metal`:
 

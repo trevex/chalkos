@@ -71,9 +71,8 @@ The steps that differ between the two paths show a tab for each. Pick one before
   installer. Both carry the cluster's OS CA, and you can sign both for Secure Boot. Build your own
   when the cluster needs Secure Boot, an extension, a package or an option of its own.
 
-Without an OS CA, a machine that waits in the installer accepts any client until you install it,
-so another machine on the network could install it first. On a network that only you use, that
-does not matter; on a shared network, build your own.
+--8<-- "docs/includes/no-os-ca.md"
+
 [Published images or your own](../get-started/decisions.md#published-images-or-your-own) explains
 the choice.
 

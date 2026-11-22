@@ -6,7 +6,8 @@ description: "Build, customise, sign and publish chalkos images"
 # Build images
 
 These pages are for image authors who build a cluster's images in Nix with
-`chalkos.lib.mkImages`. They assume some Nix and NixOS modules, and no earlier knowledge of chalkos.
+`chalkos.lib.mkImages`. They assume some Nix and NixOS modules, and the
+[Kubernetes quick start](../get-started/quick-start-kubernetes.md).
 
 Start here: [Your first image flake](first-image.md), then
 [Images and platforms](images-and-platforms.md), then

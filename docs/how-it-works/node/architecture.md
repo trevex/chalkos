@@ -192,8 +192,8 @@ explains. [Roles and credentials](../../reference/access.md) lists what each rol
 
 ## Limits
 
-- An image without an OS CA accepts any client in maintenance mode, so anyone on the machine's
-  network can install it. mkImages' `osCA` closes that.
+--8<-- "docs/includes/no-os-ca.md"
+
 - [How a node works](overview.md#what-chalkos-does-not-do) lists what chalkos leaves to the
   operator, such as enrolling Secure Boot keys.
 

@@ -49,9 +49,11 @@ chalkctl image pull ghcr.io/trevex/chalkos/kubernetes-1.37-kvm:<tag>@sha256:<dig
 ```
 
 Then skip the `nix build` below and sign the pulled directory as you would a build. The published
-image carries no OS CA, so the VM accepts any client in maintenance mode until you install it, as
+image carries no OS CA, as
 [Published images or your own](../get-started/decisions.md#published-images-or-your-own)
 explains.
+
+--8<-- "docs/includes/no-os-ca.md"
 
 Name the signed copy of the `kvm` image in the inventory's `spec.images`. `spec.all.imageName`
 gives it to every node that names no image of its own or through a group:

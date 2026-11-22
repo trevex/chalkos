@@ -124,6 +124,13 @@ The template reads the input as `.node.name` and `.documents.<Kind>`.
 [Template functions](../reference/extension-runtime.md#template-functions) lists the functions it
 has besides Go's own, such as `quote` and `refuse`, and how it prints a missing key.
 
+`text/template` prints a value as it is and escapes nothing for the file's format. A field of type
+`lib.types.str` with a line break can then add lines of its own to the rendered file, such as a
+directive of the service's config. Constrain each field that lands in a file in its schema, for
+example with `lib.types.strMatching`, as the BGP extension does for interface names, or print it
+with `quote` or `json`, which escape quotes and line breaks. `hardware.env.tmpl` quotes every
+value.
+
 ## Render one file with jq
 
 `chalkosLib.render.jq` runs a jq program on the input and writes its result into one file, named

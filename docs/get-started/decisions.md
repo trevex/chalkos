@@ -13,8 +13,8 @@ skip this page for a lab.
 | --- | --- | --- |
 | Published images or your own | Published, unless the cluster needs something of its own | An upgrade moves the nodes to the other kind of image. |
 | Secure Boot or not | Secure Boot | Turning it on for an installed node changes PCR 7, so the node's next boot asks for its recovery key. |
-| One or three control planes | Three | A cluster can grow from one to three; the endpoint should allow for it. |
-| VIP announced on layer 2 or routed | Layer 2 | The mode changes with a config delivery; moving the endpoint means reissuing every kubeconfig. |
+| One or three control planes, with Kubernetes | Three | A cluster can grow from one to three; the endpoint should allow for it. |
+| VIP announced on layer 2 or routed, with Kubernetes | Layer 2 | The mode changes with a config delivery; moving the endpoint means reissuing every kubeconfig. |
 | Secrets file encrypted with age or plaintext | age | A rotation can write a plaintext file encrypted to a new `.age` file. |
 | Metal or VM | The machines you have | A node's platform changes only with a reinstall. |
 
@@ -32,11 +32,10 @@ and release your own images when the cluster needs one of these:
 - Secure Boot with your own keys, which sign the images and the installer;
 - an extension, a package, a driver or an option of your own.
 
-A published image carries no OS CA, so a machine that boots it in maintenance mode accepts any
-client until it is installed. Another machine on the network could install it first, with a config
-of its own. On a lab's private network that does not matter. On a shared network, think twice. The
-install gives a node its cluster's OS CA, so an installed node accepts only the cluster's clients,
-whichever image it runs.
+A published image carries no OS CA. An installed node holds its cluster's OS CA, whichever image it
+runs.
+
+--8<-- "docs/includes/no-os-ca.md"
 
 A published image carries no Secure Boot signature either, and firmware that enforces Secure Boot
 refuses to boot it.
