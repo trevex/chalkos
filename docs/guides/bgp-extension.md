@@ -31,7 +31,7 @@ order of the work and links to them where the details matter.
 
 You need:
 
-- a ChalkOS checkout and the homelab example in a git repository of its own, with the flake's shell, as
+- a chalkos checkout and the homelab example in a git repository of its own, with the flake's shell, as
   [Prepare the files](home-lab.md#prepare-the-files) and [Get the tools](home-lab.md#get-the-tools)
   of the home lab set it up. Run every command of this page in that shell, in the repository;
 - some Nix: NixOS modules, options and `let` bindings;
@@ -45,7 +45,7 @@ The steps up to [Try it on a node](#try-it-on-a-node) need no node: they run in 
 ## Start from an empty module
 
 Keep a copy of the finished extension nearby while you build your own. These commands assume
-you made the homelab beside the ChalkOS checkout as shown in the home lab guide.
+you made the homelab beside the chalkos checkout as shown in the home lab guide.
 
 ```sh
 cp -r ../chalkos/examples/bgp-extension/extensions extensions.done
@@ -60,18 +60,10 @@ Add this entry to `images` in the homelab's `flake.nix`. It builds `node-bird-me
 ```
 
 Add `node-bird-metal` to the list inherited from `images` in `packages.${system}`. Create
-`extensions/default.nix` to import the extension. The extension's credentials unit and its
-output's check are bash scripts, so the file lets a shell into the image;
-[Keep an image shell-free](../build/shell-free.md) shows programs that need none.
+`extensions/default.nix` to import the extension:
 
 ```nix title="extensions/default.nix"
-# The guide's BGP extension, bird with its Speaker and Peer kinds and the config rendered from
-# them, which the image node-bird-metal carries in place of the built-in speaker. Its credentials
-# unit and its output's check are bash scripts, so the image carries a shell.
-{
-  imports = [ ./bgp.nix ];
-  chalkos.shell.allow = true;
-}
+--8<-- "examples/bgp-extension/extensions/default.nix"
 ```
 
 `extensions/bgp.nix` starts with the module's arguments and two types the kinds use:
@@ -297,8 +289,16 @@ Then declare the output in the body:
 ```
 
 The check is a program, which chalkd runs without a shell. bird needs a constant for each password
-line, so this check is a script of the module's own that defines them before it runs `bird -p`. A
-check that only runs a program on the files needs no script:
+line, so the check gives `bird -p` a config that defines them and then includes `bird.conf`.
+Create `extensions/bird-conf-check.jq`, which writes that config from the rendered file:
+
+```text title="extensions/bird-conf-check.jq"
+--8<-- "examples/bgp-extension/extensions/bird-conf-check.jq"
+```
+
+The check is a script for execline, a language without a shell: it pipes jq's output into bird,
+which reads the config from standard input. A check that only runs a program on the files needs
+no script:
 `chalkosLib.check.run [ "${bird}/bin/bird" "-p" "-c" "$OUT/bird.conf" ]` would do for a config
 without passwords.
 
@@ -412,6 +412,13 @@ turns the sessions' password into bird constants. Add it to the `let` bindings:
 
 ```nix
 --8<-- "examples/bgp-extension/extensions/bgp.nix:credentials"
+```
+
+Create `extensions/bird-credentials.rs`, the program. `pkgs.writers.writeRustBin` compiles it
+when the image builds, and a compiled program needs no shell:
+
+```rust title="extensions/bird-credentials.rs"
+--8<-- "examples/bgp-extension/extensions/bird-credentials.rs"
 ```
 
 `bird-credentials` runs before bird starts and on each reload. It reads each `secret_*` file in
@@ -670,15 +677,15 @@ printed.
 
 ### An output fails
 
-`chalkctl status node1 --secrets=secrets.age` lists the outputs, `bird-conf` among them, each with
+`chalkctl status node1` lists the outputs, `bird-conf` among them, each with
 the hash of the files the node serves and its state. `failed:` names the last failure. The refusal
 names the output and the exit status alone, as in the tests. The render ran as a transient unit,
 `chalkos-render-<n>.service`, which chalkd's journal names beside the failure, and that unit's
 journal holds what the renderer or the check printed:
 
 ```sh
-chalkctl logs node1 --secrets=secrets.age --unit=chalkd.service
-chalkctl logs node1 --secrets=secrets.age --unit=chalkos-render-<n>.service
+chalkctl logs node1 --unit=chalkd.service
+chalkctl logs node1 --unit=chalkos-render-<n>.service
 ```
 
 A node renders every output again at boot, from the config it boots with. A renderer reads its
@@ -690,7 +697,7 @@ documents renders the same `bird.conf` the node serves.
 bird's journal shows its start, each reload and the errors of `bird-credentials`:
 
 ```sh
-chalkctl logs node1 --secrets=secrets.age --unit=bird.service
+chalkctl logs node1 --unit=bird.service
 ```
 
 `bird takes no password with a quote or a line break` needs another value in the `Secret`.
@@ -703,7 +710,7 @@ new entries while you deliver a change, so a reload shows as it happens.
 The diagnostic shows bird's sessions, each named after its `Peer` and interface:
 
 ```console
-$ chalkctl node diag node1 --secrets=secrets.age bird-protocols
+$ chalkctl node diag node1 bird-protocols
 ...
 Name           Proto      Table      State  Since         Info
 ...
@@ -717,9 +724,9 @@ their addresses, `neighbours` that the router answers on the port, and `routes` 
 has a default route with protocol `ra`:
 
 ```sh
-chalkctl node diag node1 --secrets=secrets.age addresses
-chalkctl node diag node1 --secrets=secrets.age neighbours
-chalkctl node diag node1 --secrets=secrets.age routes family=inet6
+chalkctl node diag node1 addresses
+chalkctl node diag node1 neighbours
+chalkctl node diag node1 routes family=inet6
 ```
 
 The kernel drops TCP segments whose MD5 signature does not match, so a wrong password logs nothing

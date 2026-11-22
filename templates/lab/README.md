@@ -30,7 +30,7 @@ git add . && git commit -m "A chalkos lab"
 # Check the nodes' config against the image the inventory names.
 chalkctl validate
 # Pull the image, start the VMs, install and bootstrap the cluster.
-chalklab create --secrets secrets.json
+chalklab create --secrets=secrets.json
 ```
 
 `chalklab create` resolves the image's tag to its digest, pulls the image into the lab's state
@@ -53,7 +53,7 @@ delivering config needs the secrets file:
 
 ```sh
 chalkctl validate
-chalkctl config apply w1 --secrets secrets.json
+chalkctl config apply w1 --secrets=secrets.json
 ```
 
 To run an image of your own, with other modules or packages, change the `node-kvm` image in
@@ -64,7 +64,7 @@ To run an image of your own, with other modules or packages, change the `node-kv
 nix build .#node-kvm -o images/node-kvm
 chalkctl validate
 chalklab destroy
-chalklab create --secrets secrets.json
+chalklab create --secrets=secrets.json
 ```
 
 Once the lab runs your build, upgrade it after a change to `flake.nix`: commit, build the image

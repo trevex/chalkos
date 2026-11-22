@@ -12,7 +12,8 @@ FRR's config.
 
 ## Before you begin
 
-You need a router set up as [Set up a router](set-up.md) describes, and the secrets file. Its
+You need a router set up as [Set up a router](set-up.md) describes, the secrets file and an
+operator client file. Its
 image must carry FRR. Router images do unless their modules set the image option
 [`chalkos.router.bgp.enable`](../reference/image-options.md#chalkosrouterbgpenable) to `false`.
 An image without FRR does not accept the BGP kinds: `chalkctl validate` reports that it
@@ -354,7 +355,7 @@ chalkctl: r1: the config is refused: BGPPeer/fabric: spec.families: the ipv6 fam
 communities `noAdvertise` and `4200000000:0:1`. Among the other IPv6 routes, it shows:
 
 ```sh
-chalkctl node routes r1 ::/0 --secrets secrets.age
+chalkctl node routes r1 ::/0
 ```
 
 ```text
@@ -385,14 +386,14 @@ Validate the files and deliver them:
 
 ```sh
 chalkctl validate
-chalkctl config apply r1 --secrets secrets.age
+chalkctl config apply r1 --secrets=secrets.age
 ```
 
 A delivery reloads FRR, which applies the changes and keeps the sessions they leave alone.
 `chalkctl status` lists the router's sessions under `bgp:`:
 
 ```sh
-chalkctl status r1 --secrets secrets.age
+chalkctl status r1
 ```
 
 ```text
@@ -418,7 +419,7 @@ edges of AS 64512. Each edge originates a default route and announces 2001:db8:f
 `r2` announces its own 2001:db8:2::/48:
 
 ```sh
-chalkctl node routes r2 ::/0 --secrets secrets.age
+chalkctl node routes r2 ::/0
 ```
 
 ```text
@@ -444,9 +445,9 @@ The diagnostics `bgp-summary`, `bgp-neighbor`, `bgp-route` and `bfd-peers` print
 of the sessions, one session, the paths to a prefix and the BFD sessions:
 
 ```sh
-chalkctl node diag r1 --secrets secrets.age bgp-neighbor peer=eth1
-chalkctl node diag r1 --secrets secrets.age bgp-route prefix=::/0
-chalkctl node diag r1 --secrets secrets.age bgp-route family=ipv4 prefix=192.0.2.0/24
+chalkctl node diag r1 bgp-neighbor peer=eth1
+chalkctl node diag r1 bgp-route prefix=::/0
+chalkctl node diag r1 bgp-route family=ipv4 prefix=192.0.2.0/24
 ```
 
 `bgp-route` asks for IPv6 unless `family` says `ipv4`, and each asks the default VRF unless

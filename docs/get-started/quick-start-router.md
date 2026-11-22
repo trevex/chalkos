@@ -141,7 +141,7 @@ bootstrap:
 
 <!-- x-release-please-start-version -->
 ```console
-$ chalklab create --secrets secrets.json
+$ chalklab create --secrets=secrets.json
 creating the lab's Secure Boot keys in /home/alice/.local/state/chalklab/router-lab/keys
 pulled ghcr.io/trevex/chalkos/router-kvm:v0.6.0 as ghcr.io/trevex/chalkos/router-kvm@sha256:<digest>
 copying the image of client from /home/alice/.local/state/chalklab/router-lab/images/sha256-<digest>
@@ -294,7 +294,7 @@ nothing. Delivering config needs the secrets file:
 $ chalkctl validate
 client: valid for the image router-kvm at ghcr.io/trevex/chalkos/router-kvm@sha256:150c8610ee376be69a88dbae719950253c82f67a701c76f265111e9b4e7edaeb (router-kvm on kvm, root hash b5558bdbabdd), config 94f1f34ad29ff7bc1f152158df4504bbf4576fc6d9c230a5ee9fd77bed47dc10
 router: valid for the image router-kvm at ghcr.io/trevex/chalkos/router-kvm@sha256:150c8610ee376be69a88dbae719950253c82f67a701c76f265111e9b4e7edaeb (router-kvm on kvm, root hash b5558bdbabdd), config 891df0f1c1918a7506943eaa311ac4269b46821338424da6e4122fe2ea7cab26
-$ chalkctl config apply router --secrets secrets.json --diff
+$ chalkctl config apply router --secrets=secrets.json --diff
 router: config 0 added, 0 removed, 1 changed
 ~ Router "router"
     spec.management.interfaces[1]: (none) → "enp0s3"
@@ -304,7 +304,7 @@ A wrong management interface cuts chalkctl off from the router. Deliver the chan
 so that the router rolls it back by itself unless chalkctl reaches it again and confirms it:
 
 ```console
-$ chalkctl config apply router --secrets secrets.json --try 2m
+$ chalkctl config apply router --secrets=secrets.json --try 2m
 router: config 0 added, 0 removed, 1 changed
 router: delivering config 891df0f1c1918a7506943eaa311ac4269b46821338424da6e4122fe2ea7cab26 on trial until 2026-11-16T12:37:41Z
 router runs config 891df0f1c1918a7506943eaa311ac4269b46821338424da6e4122fe2ea7cab26 on trial; it rolls back to config e3befdf104b789da4dd4f9c58b263905755e3428e7b9e9d560a75552e161b87e by itself unless confirmed within 2m0s
@@ -339,7 +339,7 @@ Clear the variables, which name the removed lab's files:
 unset CHALKOSCONFIG CHALKOSINVENTORY
 ```
 
-The files stay, so `chalklab create --secrets secrets.json` makes the same lab again, and pulls
+The files stay, so `chalklab create --secrets=secrets.json` makes the same lab again, and pulls
 the image once more.
 
 ## What next

@@ -19,7 +19,7 @@ nix build .#installer -o installer
 chalkbuild sign --key keys/db.key --cert keys/db.crt installer installer-signed
 chalkctl disks --address=<address> --fingerprint=<fingerprint> --secrets=secrets.age
 chalkctl install cp1 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint>
-chalkctl status cp1 --secrets=secrets.age
+chalkctl status cp1
 ```
 
 With the published images of a chalkos release, the release's installer takes the place of the
@@ -29,16 +29,18 @@ first two commands.
 
 You need a workstation set up as [Set up your workstation](workstation.md) describes: chalkctl,
 the repository with the inventory, the nodes' config files, the node's image as
-[Choose where the image comes from](#choose-where-the-image-comes-from) describes, and the secrets
-file `secrets.age`. `chalkctl validate` accepts every node's config.
+[Choose where the image comes from](#choose-where-the-image-comes-from) describes, the secrets
+file `secrets.age` and a client file. `chalkctl validate` accepts every node's config.
 
 Images and an installer of your own carry the cluster's OS CA, as
 [Build the images with the cluster's OS CA](workstation.md#build-the-images-with-the-clusters-os-ca)
 describes. A machine in maintenance mode then accepts only a chalkctl that holds the secrets file
 or a client file of this cluster. The published images of a chalkos release and its installer
-carry none, so until the install the machine accepts any client, as
+carry none, as
 [Published images or your own](../get-started/decisions.md#published-images-or-your-own)
 explains.
+
+--8<-- "docs/includes/no-os-ca.md"
 
 [Decisions before you install](../get-started/decisions.md) lists the choices to make before the
 first install, such as whether the machines enforce Secure Boot.
@@ -373,7 +375,7 @@ volumes, certificates and failed units, as
 [Status, logs and the console](status-and-logs.md) explains:
 
 ```sh
-chalkctl status cp1 --secrets=secrets.age
+chalkctl status cp1
 ```
 
 The node shows its volumes as mounted and no failed units.

@@ -337,8 +337,11 @@ carry its OS CA, so chalkd in maintenance mode accepts only clients with a certi
 chalkos reads version 3 of the file only. The evaluation fails on another version and says to
 generate new secrets.
 
-Left `null`, images accept any client until they are installed. That suits a lab on a private
-network and nothing else. The OS CA is the only cluster value an image carries, so images built
+Left `null`, images carry no OS CA.
+
+--8<-- "docs/includes/no-os-ca.md"
+
+The OS CA is the only cluster value an image carries, so images built
 with one serve that cluster alone, and images built without one serve any.
 
 No module reads the secrets file itself. chalkctl reads it where `--secrets` names it. The lab

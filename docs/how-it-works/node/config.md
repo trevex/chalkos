@@ -302,7 +302,7 @@ chalkctl delivers a node's config at install, with each [upgrade](upgrades.md) a
 [`chalkctl config apply`](../../reference/cli/chalkctl_config_apply.md):
 
 ```sh
-chalkctl config apply w1 --secrets secrets.age
+chalkctl config apply w1 --secrets=secrets.age
 ```
 
 Install and `config apply` need the secrets file, because the node's certificates and secrets
@@ -460,7 +460,7 @@ that the node would hold the config pending and stores nothing. A dry run withou
 pending config the delivery would replace. The delivery itself reports the replacement:
 
 ```console
-$ chalkctl config apply node1 --secrets secrets.age
+$ chalkctl config apply node1 --secrets=secrets.age
 node1: config 1 added, 0 removed, 0 changed
 node1 runs config <version>
 node1 holds config <version> pending, unchecked, in place of its pending config; the next upgrade checks it against its image

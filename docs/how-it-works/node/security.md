@@ -338,19 +338,19 @@ runs no console, and chalkd serves no console socket.
 
 ## Limits
 
+--8<-- "docs/includes/no-os-ca.md"
+
 - chalkos enrols Secure Boot keys only in firmware in Setup Mode, with `chalkctl secureboot
   enroll` before the install; chalkctl signs the updates, so no node holds a key. Other firmware
   gets the operator's db certificate in its setup or through a BMC, as the
   [signing guide](../../build/sign-images.md) shows, and chalklab enrols its own keys in its virtual
   machines. chalkos changes no Secure Boot variable on an installed node. Installing does not check
   that Secure Boot is on.
-- An installer or image built without `osCA` accepts any client in maintenance mode, so anyone on
-  its network can enrol a platform key of their own in firmware in Setup Mode, with `--force` if
-  their keys do not start the installer. The firmware then trusts only what they sign; clearing the
-  keys in the firmware setup undoes it. On a network other people can reach, boot an installer
-  built with [`osCA`](../../reference/mkimages.md#osca).
+- A platform key that someone enrolled through an installer without an OS CA, with `--force` if
+  their keys do not start the installer, leaves the firmware trusting only what they sign.
+  Clearing the keys in the firmware setup undoes it.
 - There is no certificate revocation list. A leaked client file or kubeconfig stays valid until it
-  expires or its CA is rotated, as [Certificates](certificates.md#access-is-revoked-by-rotating-its-ca)
+  expires or its CA is rotated, as [Certificates](certificates.md#a-client-file-is-revoked-by-rotating-its-ca)
   explains. The default lifetimes keep that time short for the files that grant the most: a day
   for a kubeconfig and 30 days for an admin client file. With the Kubernetes layer, revoking a
   node shuts out that node alone, with the gaps listed under [Revocation leaves reads and the certificates valid](../kubernetes/certificates.md#revocation-leaves-reads-and-the-certificates-valid).

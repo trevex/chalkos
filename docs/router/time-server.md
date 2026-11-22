@@ -12,7 +12,8 @@ the time servers of its own `TimeSync`, as every node does, and passes that time
 
 ## Before you begin
 
-You need a router set up as [Set up a router](set-up.md) describes, and the secrets file. Its
+You need a router set up as [Set up a router](set-up.md) describes, the secrets file and an
+operator client file. Its
 image must accept the kind `TimeServer`. Router images do unless their modules set the image
 option [`chalkos.router.ntp.enable`](../reference/image-options.md#chalkosrouterntpenable) to
 `false`. An image without the time server refuses the kind: `chalkctl validate` reports that it
@@ -98,7 +99,7 @@ Validate the files and deliver them:
 
 ```sh
 chalkctl validate
-chalkctl config apply r1 --secrets secrets.age
+chalkctl config apply r1 --secrets=secrets.age
 ```
 
 The delivery opens the port and restarts chronyd, which reads the time server's config when it
@@ -109,7 +110,7 @@ A node that follows the router shows the router's address on the line `time:` of
 In the router test's lab, the node `k1` follows `r1` at `fd00:300::1`:
 
 ```sh
-chalkctl status k1 --secrets secrets.age
+chalkctl status k1
 ```
 
 ```text
@@ -121,7 +122,7 @@ them, followed by chrony's counts of the packets it received and dropped, as
 `chronyc serverstats` prints them. `r1` of the same lab printed:
 
 ```sh
-chalkctl node diag r1 --secrets secrets.age ntp-clients
+chalkctl node diag r1 ntp-clients
 ```
 
 ```text

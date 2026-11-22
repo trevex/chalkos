@@ -191,7 +191,7 @@ Files issued during a rotation still trust the old OS CA when they verify the no
 finish, so whoever holds the old CA's key could pose as a node to them until they are issued
 again.
 
-## Access is revoked by rotating its CA
+## A client file is revoked by rotating its CA
 
 chalkos keeps no list of revoked certificates, so a certificate stays valid until it expires or
 its CA is removed. A leaked client file is revoked by rotating `os-ca`, which also retires every
@@ -211,7 +211,8 @@ an `os-ca` rotation retires the certificates of the old node CA.
 
 ## Limits
 
-- There is no revocation of a single certificate. Revoking one revokes all of its CA.
+- There is no revocation of a single certificate. Rotating a CA revokes every certificate it issued.
+  With the Kubernetes layer, `chalkctl node revoke` shuts out one node by name.
 - The CAs are not renewed automatically. A CA in its last year shows in the status, the node CA
   in its last 18 months, and a rotation replaces it.
 - Nodes whose image runs no Kubernetes renew their node certificates only through

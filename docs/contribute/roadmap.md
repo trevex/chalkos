@@ -29,38 +29,12 @@ today:
 
 Each item says what chalkos does today and what the plan changes.
 
-### Secure Boot key enrolment
-
-Today [`chalkctl secureboot new`](../reference/cli/chalkctl_secureboot_new.md) creates an
-operator's PK, KEK and db keys, and
-[`chalkctl secureboot enroll`](../reference/cli/chalkctl_secureboot_enroll.md) enrols them in
-firmware that is in Setup Mode, from the installer or a node's image in maintenance mode. chalkctl
-signs the variable updates, so a node never holds a key that could sign for the firmware. Firmware
-that is not in Setup Mode gets its db certificate out of band, in the firmware's setup or through a
-BMC. chalklab enrols its own lab keys into its VMs' firmware.
-
-chalkos writes no Secure Boot variables on an installed node: it applies no dbx updates and changes
-no keys there. Such a change alters PCR 7, so the node's next boot asks for its recovery key. No
-plan covers that yet, and no setting makes a node refuse to install without Secure Boot.
-
-### OCI publishing and pulls
-
-Today chalkbuild publishes an image as an OCI artefact, and `chalkctl install` on the installer
-and `chalkctl upgrade` both have the node pull an image the inventory names in a registry,
-through the endpoints of a [`Mirror`](../reference/kinds.md#mirror) when the node has one, and
-authenticated by a [`Registry`](../reference/kinds.md#registry) document for each host. The same
-`Registry` documents give the kubelet the credentials of pods' container images, without
-`imagePullSecrets`. An air-gapped Kubernetes cluster pulls its container images from the
-[cluster registry](../kubernetes/cluster-registry.md) on its control planes, which
-`chalkctl registry push` fills endpoint by endpoint. The plan adds a check of a signature of the
-artefact itself.
-
 ### An in-cluster upgrade controller
 
 Today [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) rolls an upgrade through a
 cluster from an operator's machine. The plan adds a controller in the cluster, driven by a
 `NodeUpgrade` resource, that upgrades nodes through chalkd with an
-operator certificate, using the OCI pulls above.
+operator certificate, with the nodes pulling the images from a registry.
 
 ### Boot loader updates
 
@@ -110,9 +84,16 @@ These limits hold in the current code, grouped by area.
   operator can install any image and it unseals STATE and
   VAR; [Security model](../how-it-works/node/security.md)
   explains the consequence.
-- Single certificates are not revoked. Access is revoked by rotating the CA that issued it with
-  [`chalkctl rotate`](../reference/cli/chalkctl_rotate.md), and
-  rotations run when an admin starts them, not on a schedule.
+- Single certificates are not revoked. A client file stays valid until it expires or the OS CA is
+  rotated with [`chalkctl rotate`](../reference/cli/chalkctl_rotate.md), which retires every
+  client file of the old OS CA. With the Kubernetes layer,
+  [`chalkctl node revoke`](../reference/cli/chalkctl_node_revoke.md) shuts out one node by name.
+  Rotations run when an admin starts them, not on a schedule.
+- chalkos writes no Secure Boot variable on an installed node: it applies no dbx updates and
+  changes no keys there. Such a change alters PCR 7, so the node's next boot asks for its recovery
+  key. No setting makes a node refuse to install without Secure Boot.
+- A node pulls an image from a registry by its digest and checks no signature of the OCI artefact
+  itself.
 
 ### Upgrades
 

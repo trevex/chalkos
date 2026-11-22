@@ -4,6 +4,10 @@
 // plugins, those whose layers the image carries; each hook says which plugins chalkd asks. A layer
 // that writes what it derives from the running config implements nodeconfig.Layer, which the
 // config loader asks of the active plugins at boot and after each delivery.
+//
+// An image carries one layer at most, which modules/node/layers.nix asserts, so at most one plugin
+// is active. The Registry and the hooks take lists of plugins regardless; a hook asked of every
+// compiled plugin concerns another image, which carries one layer at most as well.
 package layer
 
 import (

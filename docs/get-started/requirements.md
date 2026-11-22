@@ -104,7 +104,7 @@ program. To run chalkctl on a machine without Nix, an air-gapped one included, c
 `bin/chalkctl` there. Each release publishes the same
 program as `chalkctl-linux-amd64`, as [Releases](releases.md#download-chalkctl-and-the-installer)
 shows. The release's programs, chalkctl and chalkbuild, need no external tools: chalkbuild signs
-images for Secure Boot itself. [Set up your workstation](../operate/workstation.md#get-chalkctl-from-the-chalkos-flake) shows how
+images for Secure Boot itself. [Set up your workstation](../operate/workstation.md#run-it-from-the-chalkos-flake) shows how
 to take chalkctl from the flake.
 
 ## Lab host

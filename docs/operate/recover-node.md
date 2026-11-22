@@ -64,7 +64,7 @@ reset the machine. Only then does the boot loader try the new image again or fal
 Print the node's recovery key on the workstation:
 
 ```sh
-chalkctl recovery-key w1 --secrets secrets.age
+chalkctl recovery-key w1 --secrets=secrets.age
 ```
 
 The key is eight groups of eight letters, separated by dashes. Type it at each prompt, and the
@@ -123,7 +123,7 @@ The node's OS CAs, node certificate, storage and layer payloads stay as they are
 rollback.
 
 A config change that might cut chalkctl off from the node, such as a firewall change, goes on trial
-with `chalkctl config apply w1 --secrets secrets.age --try 5m`. The node rolls it back by itself
+with `chalkctl config apply w1 --secrets=secrets.age --try 5m`. The node rolls it back by itself
 unless chalkctl confirms it over a new connection, and a reboot during the trial boots the config
 from before it. [Try a config change](change-config.md#try-a-config-change) describes it.
 
@@ -152,7 +152,7 @@ certificates:
 expired:
 
 ```console
-$ chalkctl node renew w1 --secrets secrets.age
+$ chalkctl node renew w1 --secrets=secrets.age
 w1 serves a new node certificate; it expires <time>
 ```
 

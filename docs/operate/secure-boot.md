@@ -37,7 +37,7 @@ describes, and note its address and fingerprint. Then run
 
 ```console
 $ chalkctl secureboot enroll --keys keys --address 192.168.1.50 \
-    --fingerprint <fingerprint> --secrets secrets.age
+    --fingerprint <fingerprint> --secrets=secrets.age
 db before: empty
 db after:
   CN=<cluster> Secure Boot db
@@ -112,7 +112,7 @@ digests after it:
 
 ```console
 $ chalkctl secureboot enroll --keys keys --option-roms --address 192.168.1.50 \
-    --fingerprint <fingerprint> --secrets secrets.age
+    --fingerprint <fingerprint> --secrets=secrets.age
 option ROMs the firmware measured:
   sha256:<digest> PciRoot(0x0)/Pci(0x3,0x0)/Offset(0x10a00,0x2f9ff)
 db before: empty

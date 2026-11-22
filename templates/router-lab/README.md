@@ -35,7 +35,7 @@ git add . && git commit -m "A chalkos router lab"
 # Check the nodes' config against the image the inventory names.
 chalkctl validate
 # Pull the image, start the VMs and install the nodes.
-chalklab create --secrets secrets.json
+chalklab create --secrets=secrets.json
 ```
 
 `chalklab create` resolves the image's tag to its digest, pulls the image into the lab's state
@@ -53,7 +53,7 @@ that the router rolls it back when chalkctl loses it:
 
 ```sh
 chalkctl validate
-chalkctl config apply router --secrets secrets.json --try 2m
+chalkctl config apply router --secrets=secrets.json --try 2m
 ```
 
 To run images of your own, change them in `flake.nix` and commit, point the router image's source
@@ -67,5 +67,5 @@ nix build .#router-kvm -o images/router-kvm
 nix build .#client-kvm -o images/client-kvm
 chalkctl validate
 chalklab destroy
-chalklab create --secrets secrets.json
+chalklab create --secrets=secrets.json
 ```

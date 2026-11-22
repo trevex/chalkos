@@ -95,7 +95,7 @@ starts the registry at its first boot. A running cluster gets it with `chalkctl 
 every Kubernetes node:
 
 ```sh
-chalkctl config apply node1 node2 node3 --secrets secrets.age
+chalkctl config apply node1 node2 node3 --secrets=secrets.age
 ```
 
 The delivery rewrites containerd's mirrors on every node and starts the registry on serving nodes.
@@ -185,7 +185,7 @@ every image of `spec.images` from the directories above:
 ```sh
 for ref in $(yq 'select(.kind == "Cluster") | .spec.images[]' cluster/cluster.yaml); do
   repo=${ref%%@*}; name=${repo##*/}; name=${name%%:*}
-  chalkctl registry push "images/oci/$name" "$ref" --secrets secrets.age
+  chalkctl registry push "images/oci/$name" "$ref" --secrets=secrets.age
 done
 ```
 
@@ -218,7 +218,7 @@ so it takes several times the space of one image.
 Name a workload's image as the pod names it, with its registry host:
 
 ```sh
-chalkctl registry push busybox.tar docker.io/library/busybox:1.37.0 --secrets secrets.age
+chalkctl registry push busybox.tar docker.io/library/busybox:1.37.0 --secrets=secrets.age
 ```
 
 A pod that runs `busybox:1.37.0` or `docker.io/library/busybox:1.37.0` then pulls it from the

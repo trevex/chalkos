@@ -27,7 +27,7 @@ operator's. The boot and the serial console need the machine's BMC, a screen, or
 image with the inventory. A healthy `node1` reads:
 
 ```console
-$ chalkctl status node1 --secrets secrets.age
+$ chalkctl status node1
 config <version> (the inventory's)
 platform metal (the inventory's)
 image <image>, booted from chalkos_1.efi
@@ -375,7 +375,7 @@ chalkd runs it on the node and sends back what it prints, so a node without a lo
 its addresses, routes and firewall. Without a diagnostic, `chalkctl node diag` lists them:
 
 ```console
-$ chalkctl node diag node1 --secrets secrets.age
+$ chalkctl node diag node1
 DIAGNOSTIC            ROLE      DESCRIPTION
 addresses             reader    The addresses of the node's interfaces, as ip -json address show prints them.
 bfd-peers             reader    One VRF's BFD sessions and their state, as show bfd peers prints them.
@@ -451,9 +451,9 @@ A node in maintenance mode answers `chalkctl node diag` too, with `--fingerprint
 chalkctl node diag node1 --insecure tcp-connect address=2001:db8::5000 port=443
 ```
 
-An image built without an OS CA accepts any client in maintenance mode and treats it as an admin.
-A caller without a certificate may then run every diagnostic, `nft-ruleset` and the other
-operator diagnostics included. It may call Install and Reboot as well. An image with the OS CA
+--8<-- "docs/includes/no-os-ca.md"
+
+An image with the OS CA
 takes only the client files of its cluster in maintenance mode, each with its own role.
 
 ## Watch the serial console

@@ -93,6 +93,17 @@ Show the thing before the rules about it: a YAML document before its field table
 its output before its flags, a whole Nix file before the options it sets. Examples are real: output comes from a run, and documents pass the checks. The mechanics of
 code blocks and placeholders are in [Writing documentation](writing-docs.md#code-blocks).
 
+## Credentials in examples
+
+An example runs with the credential an operator uses every day. Pass the secrets file only to
+the commands that need it: `chalkctl install`, `config apply`, `client new`, `recovery-key`,
+`node renew`, `rotate` and `kubeconfig`. Write it as `--secrets=secrets.age`. Leave the flag off
+the commands a client file runs, which find one by themselves, as
+[Set up your workstation](../operate/workstation.md#pass-the-secrets-file-or-a-client-file)
+describes. Keep it where the step needs more than an operator file, such as `chalkctl bootstrap`
+or an upgrade that delivers config. The `docs` check refuses `--secrets` on the commands that
+only read.
+
 ## Diagrams
 
 Use a Mermaid diagram for a flow, a state machine or a layout. Give each one a sentence that

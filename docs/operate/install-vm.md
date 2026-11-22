@@ -18,7 +18,7 @@ nix build .#node-kvm -o images/node-kvm
 chalkbuild sign --key keys/db.key --cert keys/db.crt images/node-kvm images/node-kvm-signed
 cp --sparse=always images/node-kvm-signed/chalkos.raw node.raw
 chalkctl install vm1 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint>
-chalkctl status vm1 --secrets=secrets.age
+chalkctl status vm1
 ```
 
 ## Before you begin
@@ -49,9 +49,11 @@ chalkctl image pull ghcr.io/trevex/chalkos/kubernetes-1.37-kvm:<tag>@sha256:<dig
 ```
 
 Then skip the `nix build` below and sign the pulled directory as you would a build. The published
-image carries no OS CA, so the VM accepts any client in maintenance mode until you install it, as
+image carries no OS CA, as
 [Published images or your own](../get-started/decisions.md#published-images-or-your-own)
 explains.
+
+--8<-- "docs/includes/no-os-ca.md"
 
 Name the signed copy of the `kvm` image in the inventory's `spec.images`. `spec.all.imageName`
 gives it to every node that names no image of its own or through a group:
@@ -321,7 +323,7 @@ made from the same image share one.
 volumes, certificates and failed units:
 
 ```sh
-chalkctl status vm1 --secrets=secrets.age
+chalkctl status vm1
 ```
 
 The hypervisor also sees the guest agent. Under libvirt, `virsh domifaddr` lists the addresses the

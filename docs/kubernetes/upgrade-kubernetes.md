@@ -106,7 +106,7 @@ images:
 Then deliver the config to every node of the cluster in one command:
 
 ```sh
-chalkctl config apply cp1 cp2 cp3 w1 --secrets secrets.age
+chalkctl config apply cp1 cp2 cp3 w1 --secrets=secrets.age
 ```
 
 The config changes the API server's version, so chalkctl orders the run. It checks the versions
@@ -193,10 +193,10 @@ leaves the trial open. `chalkctl config confirm` confirms it once its static pod
 new images, and the same `--until deliver` command then goes on with the next control plane:
 
 ```sh
-chalkctl config apply cp1 cp2 cp3 w1 --secrets secrets.age --until deliver
+chalkctl config apply cp1 cp2 cp3 w1 --secrets=secrets.age --until deliver
 kubectl get pods -n kube-system -o wide
-chalkctl config confirm cp1 --secrets secrets.age
-chalkctl config apply cp1 cp2 cp3 w1 --secrets secrets.age --until deliver
+chalkctl config confirm cp1 --secrets=secrets.age
+chalkctl config apply cp1 cp2 cp3 w1 --secrets=secrets.age --until deliver
 ```
 
 While a trial is open, the run refuses to go on, and `chalkctl config rollback cp1` rolls

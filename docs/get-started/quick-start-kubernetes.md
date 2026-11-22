@@ -189,7 +189,7 @@ image into the lab's state once, and copies it for each node:
 
 <!-- x-release-please-start-version -->
 ```console
-$ chalklab create --secrets secrets.json
+$ chalklab create --secrets=secrets.json
 creating the lab's Secure Boot keys in /home/alice/.local/state/chalklab/lab/keys
 pulled ghcr.io/trevex/chalkos/kubernetes-1.37-kvm:v0.6.0 as ghcr.io/trevex/chalkos/kubernetes-1.37-kvm@sha256:<digest>
 copying the image of cp1 from /home/alice/.local/state/chalklab/lab/images/sha256-<digest>
@@ -461,11 +461,11 @@ the secrets file, which `--secrets` names; a client file does not suffice:
 $ chalkctl validate
 cp1: valid for the image node-kvm at ghcr.io/trevex/chalkos/kubernetes-1.37-kvm@sha256:ea0dc23d410fb3f125b8c762cc7536c76ea7c1244384825ae976c4787e731830 (kubernetes-kvm on kvm, root hash c628af2ea405), config e5abd9da9d767c5d2d79a158766cde278a333fdc6c4fbc8891e7692eff99868f
 w1: valid for the image node-kvm at ghcr.io/trevex/chalkos/kubernetes-1.37-kvm@sha256:ea0dc23d410fb3f125b8c762cc7536c76ea7c1244384825ae976c4787e731830 (kubernetes-kvm on kvm, root hash c628af2ea405), config b8b41769a31866ce5c70011cfa1826b0668f39e9b2eac69d7fc0f847bae277fd
-$ chalkctl config apply cp1 --secrets secrets.json
+$ chalkctl config apply cp1 --secrets=secrets.json
 cp1: config 1 added, 0 removed, 0 changed
 restarted chalkos-chrony-dhcp.service
 cp1 runs config e5abd9da9d767c5d2d79a158766cde278a333fdc6c4fbc8891e7692eff99868f
-$ chalkctl config apply w1 --secrets secrets.json
+$ chalkctl config apply w1 --secrets=secrets.json
 w1: config 1 added, 0 removed, 0 changed
 restarted chalkos-chrony-dhcp.service
 w1 runs config b8b41769a31866ce5c70011cfa1826b0668f39e9b2eac69d7fc0f847bae277fd
@@ -660,7 +660,7 @@ reads another cluster:
 unset KUBECONFIG CHALKOSCONFIG CHALKOSINVENTORY
 ```
 
-The files and your build stay, so `chalklab create --secrets secrets.json` makes the same cluster
+The files and your build stay, so `chalklab create --secrets=secrets.json` makes the same cluster
 again, and pulls the image the inventory names once more. A lab you keep stays on disk across a reboot of your
 machine, but its virtual machines do
 not start by themselves; `chalklab start` starts them again with their disks, TPM state and

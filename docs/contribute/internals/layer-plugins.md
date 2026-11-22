@@ -40,6 +40,11 @@ and the active ones:
   upgrade or an install writes, the identity an upgrade's slot keeps, and the payloads the
   installer takes.
 
+An image carries one layer at most: the evaluation of an image that lists two fails in
+`modules/node/layers.nix`. So at most one plugin is active on a node, although `Registry` and the
+hooks take a list of them. The hooks chalkd asks of every compiled plugin concern another image,
+which carries one layer at most as well.
+
 The comment of each hook in `pkg/chalkd/layer/layer.go` names the plugins chalkd asks. The plugins
 live in `pkg/chalkd/layers/kubernetes` and `pkg/chalkd/layers/router`.
 

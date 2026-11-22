@@ -53,10 +53,10 @@ The module has four parts:
 - `chalkos.outputs.hardware` renders `hardware.env` from the node's `Hardware` documents with the
   template.
 - `chalkos.effects.hardware-info` restarts the unit when the output's files change.
-- `systemd.services.hardware-info` reads the rendered file as its environment and prints one line.
-  The `-` before the path lets the unit start on a node without the file. The unit is a bash
-  script, which the image takes only with `chalkos.shell.allow`;
-  [Keep an image shell-free](shell-free.md) shows units that need no shell.
+- `systemd.services.hardware-info` reads the rendered file as its environment and prints one line
+  with `echo`. The `-` before the path lets the unit start on a node without the file, and
+  `Environment` gives the values it prints then. systemd expands the variables in `ExecStart`
+  itself, so the unit needs no shell, as [Keep an image shell-free](shell-free.md) explains.
 
 Add the module to the image `node-kvm` in `flake.nix`:
 
@@ -266,7 +266,7 @@ The tests change nothing in the image, so `images/node-kvm` is still current. Cr
 [`chalklab create`](../reference/cli/chalklab_create.md), as the quick start does:
 
 ```console
-$ chalklab create --secrets secrets.json
+$ chalklab create --secrets=secrets.json
 creating the lab's Secure Boot keys in /home/alice/.local/state/chalklab/lab/keys
 copying the image of cp1 from /home/alice/lab/images/node-kvm
 copying the image of w1 from /home/alice/lab/images/node-kvm
@@ -291,16 +291,16 @@ $ export CHALKOSCONFIG=~/.local/state/chalklab/lab/chalkctl.json
 $ export CHALKOSINVENTORY=~/.local/state/chalklab/lab/chalkos.yaml
 $ chalkctl logs w1 --unit=hardware-info.service
 2026-11-16T10:54:36+00:00 w1 systemd[1]: Starting hardware-info.service...
-2026-11-16T10:54:36+00:00 w1 9ci6jmda4j998yhh2wvridqpdga1jw23-hardware-info[508]: hardware: Supermicro SYS-E300-9D
+2026-11-16T10:54:36+00:00 w1 echo[508]: hardware: Supermicro SYS-E300-9D
 2026-11-16T10:54:36+00:00 w1 systemd[1]: Finished hardware-info.service.
 $ chalkctl logs cp1 --unit=hardware-info.service
 2026-11-16T10:54:17+00:00 cp1 systemd[1]: Starting hardware-info.service...
-2026-11-16T10:54:18+00:00 cp1 9ci6jmda4j998yhh2wvridqpdga1jw23-hardware-info[522]: hardware: unknown unknown
+2026-11-16T10:54:18+00:00 cp1 echo[522]: hardware: unknown unknown
 2026-11-16T10:54:18+00:00 cp1 systemd[1]: Finished hardware-info.service.
 ```
 
-w1 logs its document. cp1 has none, so its `hardware.env` is empty and the unit prints its
-fallback.
+w1 logs its document. cp1 has none, so its `hardware.env` is empty and the unit prints the
+values of its `Environment`.
 
 ## Change the document on w1
 
@@ -321,7 +321,7 @@ file:
 $ chalkctl validate
 cp1: valid for the image node-kvm (node-kvm on kvm, root hash 5425995f5799), config cff86e2957830b9ec4a10a6f6966660695c5a332fca12103d59f79ab4c1ccc15
 w1: valid for the image node-kvm (node-kvm on kvm, root hash 5425995f5799), config 9307d1da8a3a17a8e611ded2cdbdd577692950cc6eb963ce1712ecf656a25416
-$ chalkctl config apply w1 --secrets secrets.json
+$ chalkctl config apply w1 --secrets=secrets.json
 w1: config 0 added, 0 removed, 1 changed
 restarted hardware-info.service
 w1 runs config 9307d1da8a3a17a8e611ded2cdbdd577692950cc6eb963ce1712ecf656a25416
@@ -334,7 +334,7 @@ needed. The unit's journal shows the new line:
 $ chalkctl logs w1 --unit=hardware-info.service
 ...
 2026-11-16T10:55:02+00:00 w1 systemd[1]: Starting hardware-info.service...
-2026-11-16T10:55:02+00:00 w1 9ci6jmda4j998yhh2wvridqpdga1jw23-hardware-info[1173]: hardware: Supermicro SYS-E300-9D, asset tag LAB-0001
+2026-11-16T10:55:02+00:00 w1 echo[1173]: hardware: Supermicro SYS-E300-9D LAB-0001
 2026-11-16T10:55:02+00:00 w1 systemd[1]: Finished hardware-info.service.
 ```
 

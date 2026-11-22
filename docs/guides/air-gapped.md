@@ -54,7 +54,9 @@ router.
 - The workstation inside the air gap has chalkctl, kubectl and yq. Copy chalkctl's
   program as [Requirements](../get-started/requirements.md#workstation) describes.
 - The workstation inside the air gap holds the age identity or SSH key that `secrets.age` is
-  encrypted to, as [Requirements](../get-started/requirements.md#workstation) lists.
+  encrypted to, as [Requirements](../get-started/requirements.md#workstation) lists. It also holds
+  a client file of the cluster, as [Issue your client file](cluster-on-machines.md#issue-your-client-file)
+  shows.
 - A time server answers NTP inside the air gap, such as a clock with a GPS receiver or a chalkos
   router with a `TimeServer`, as [Serve time with NTP](../router/time-server.md) and the
   [home lab's router](home-lab.md#run-the-lab-without-internet-access-optional) show. A server
@@ -223,7 +225,7 @@ Push every image of the `Cluster` document to every endpoint, from the layouts y
 ```sh
 for ref in $(yq 'select(.kind == "Cluster") | .spec.images[]' cluster/cluster.yaml); do
   repo=${ref%%@*}; name=${repo##*/}; name=${name%%:*}
-  chalkctl registry push "images/oci/$name" "$ref" --secrets secrets.age
+  chalkctl registry push "images/oci/$name" "$ref" --secrets=secrets.age
 done
 ```
 
@@ -231,7 +233,7 @@ chalkctl refuses a layout whose digest is not the one the reference pins, so a c
 reaches the registry. Check that every endpoint holds every image:
 
 ```sh
-chalkctl registry list --secrets secrets.age
+chalkctl registry list
 ```
 
 Every line ends in `all`. Then bootstrap the cluster and write a kubeconfig, as

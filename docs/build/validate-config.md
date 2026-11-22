@@ -111,14 +111,14 @@ but the validators run before the renderers, so the operator sees the validator'
 ## Validate with any program of the store
 
 `program` also takes a package or a command line of the store, to which chalkd appends `validate`
-and the validator's name. A script made by `pkgs.writeShellScript` reads the input from standard
-input and prints the report with `echo` or `jq`. The script brings bash into the image, which then
-needs [`chalkos.shell.allow`](../reference/image-options.md#chalkosshellallow);
-[Keep an image shell-free](shell-free.md) shows programs that need no shell.
+and the validator's name. A script for execline runs jq on the input without a shell. Its `-P`
+leaves the arguments chalkd appends unused, and jq reads the input from standard input and prints
+the report:
 
 ```nix
-chalkos.validators.hardware-rack.program = pkgs.writeShellScript "hardware-rack" ''
-  exec ${lib.getExe pkgs.jq} -c -f ${./hardware-rack.jq}
+chalkos.validators.hardware-rack.program = pkgs.writeScript "hardware-rack" ''
+  #!${pkgs.execline}/bin/execlineb -P
+  ${lib.getExe pkgs.jq} -c -f ${./hardware-rack.jq}
 '';
 ```
 

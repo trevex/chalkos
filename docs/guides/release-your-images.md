@@ -249,8 +249,8 @@ Then upgrade one node and the rest, as [Upgrade nodes](../operate/upgrade.md#upg
 describes:
 
 ```sh
-chalkctl upgrade --nodes cp3 --secrets secrets.age
-chalkctl upgrade --secrets secrets.age
+chalkctl upgrade --nodes cp3 --secrets=secrets.age
+chalkctl upgrade --secrets=secrets.age
 ```
 
 A new machine installs the same image: `chalkctl install` sends the installer the reference, and

@@ -166,8 +166,9 @@ recovers is reinstalled from the installer.
 
 ## Rotation replaces a CA across the cluster
 
-A certificate stays valid until it expires or its CA is removed, so removing the CA is how
-access is revoked. `chalkctl rotate` replaces a CA or key across the cluster in four phases. Each
+A certificate stays valid until it expires or its CA is removed, so removing the CA is how a
+client file is revoked. With the Kubernetes layer, `chalkctl node revoke` shuts out one node by
+name instead. `chalkctl rotate` replaces a CA or key across the cluster in four phases. Each
 node confirms a phase before the next one starts, so no node ever presents a certificate that
 another node does not trust yet. Renewal needs no rotation: it issues a node a new certificate
 from the same CA before the old one expires. [Certificates](certificates.md) explains renewal,
@@ -195,6 +196,6 @@ rotation and revocation.
 - chalkctl never builds or signs images and never runs Nix.
 - Nothing revokes a single client certificate or kubeconfig. One works until it expires or its CA
   is rotated out, as
-  [Access is revoked by rotating its CA](certificates.md#access-is-revoked-by-rotating-its-ca)
+  [A client file is revoked by rotating its CA](certificates.md#a-client-file-is-revoked-by-rotating-its-ca)
   explains. With the Kubernetes layer, `chalkctl node revoke` shuts out a node's writes and renewals
   by name.

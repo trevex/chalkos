@@ -124,6 +124,13 @@ The template reads the input as `.node.name` and `.documents.<Kind>`.
 [Template functions](../reference/extension-runtime.md#template-functions) lists the functions it
 has besides Go's own, such as `quote` and `refuse`, and how it prints a missing key.
 
+`text/template` prints a value as it is and escapes nothing for the file's format. A field of type
+`lib.types.str` with a line break can then add lines of its own to the rendered file, such as a
+directive of the service's config. Constrain each field that lands in a file in its schema, for
+example with `lib.types.strMatching`, as the BGP extension does for interface names, or print it
+with `quote` or `json`, which escape quotes and line breaks. `hardware.env.tmpl` quotes every
+value.
+
 ## Render one file with jq
 
 `chalkosLib.render.jq` runs a jq program on the input and writes its result into one file, named
@@ -172,20 +179,25 @@ the same documents below `/run/chalkos/config` without an output.
 
 `render` also takes a command: a program of the image's store, with its arguments, or a package
 that is such a program. chalkd splits the command on spaces and runs it without a shell, so the
-command cannot redirect output or expand `$OUT`. A script from `pkgs.writeShellScript` does both,
-but brings bash into the image, which then needs
-[`chalkos.shell.allow`](../reference/image-options.md#chalkosshellallow);
-[Keep an image shell-free](shell-free.md) shows programs that need no shell. This one writes the
-servers as YAML with yq:
+command cannot redirect output or expand `$OUT`. A script for execline, a language without a
+shell, does both and keeps the image free of a shell, as
+[Keep an image shell-free](shell-free.md#write-small-programs-without-a-shell) shows. This one
+writes the servers as YAML with yq:
 
 ```nix
 chalkos.outputs.hardware-yaml = {
   inputs = [ "Hardware" ];
-  render = pkgs.writeShellScript "render-hardware-yaml" ''
-    ${lib.getExe pkgs.yq-go} -P -o yaml '.documents.Hardware | map({"vendor": .spec.vendor, "model": .spec.model})' >"$OUT/hardware.yaml"
+  render = pkgs.writeScript "render-hardware-yaml" ''
+    #!${pkgs.execline}/bin/execlineb -P
+    importas -i out OUT
+    redirfd -w 1 ''${out}/hardware.yaml
+    ${lib.getExe pkgs.yq-go} -P -o yaml ".documents.Hardware | map({\"vendor\": .spec.vendor, \"model\": .spec.model})"
   '';
 };
 ```
+
+`importas` reads `$OUT` into the variable `out`, and `redirfd` sends yq's standard output to the
+file. yq reads the input from standard input. For the `Hardware` above, the file reads:
 
 ```yaml title="hardware.yaml"
 - vendor: Supermicro
@@ -224,8 +236,7 @@ A template refuses with `refuse`. These lines refuse a `Hardware` document on a 
 {{- end }}
 ```
 
-A program that `render` names prints the report itself, and a script made by
-`pkgs.writeShellScript` can print it with `echo` or `jq`. A jq renderer cannot refuse, and a check
+A program that `render` names prints the report itself, such as with jq. A jq renderer cannot refuse, and a check
 refuses by failing, as [Check the rendered files](#check-the-rendered-files) shows.
 
 A check of the documents that needs no rendered file fits a validator better, which

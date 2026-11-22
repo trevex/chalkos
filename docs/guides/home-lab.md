@@ -179,7 +179,8 @@ wrote secrets.age and secrets.pub.json
 
 The `age1` recipient here stands for your offline backup
 key's public key. Then give the images and the installer the cluster's OS CA, so
-that a machine waiting for its install accepts only a chalkctl that holds this cluster's secrets.
+that a machine waiting for its install accepts only a chalkctl that holds this cluster's secrets
+file or one of its client files.
 Add the line to the arguments of `chalkos.lib.mkImages` in `flake.nix`:
 
 ```nix
@@ -188,6 +189,21 @@ osCA = ./secrets.pub.json;
 
 Without it, any machine on your home network could install the router while it waits in the
 installer.
+
+### Issue your client file
+
+The secrets file holds the OS CA's key, so keep it for the commands that need it. Issue yourself
+a client file with the operator role for the others, such as `chalkctl status` and
+`chalkctl node diag`:
+
+```console
+$ chalkctl client new --name=alice --role=operator --secrets=secrets.age
+wrote /home/alice/.config/chalkos/config for alice with the operator role; its certificate expires on 2027-02-20
+```
+
+A command that takes a client file reads it from `~/.config/chalkos/config` when you pass no
+`--secrets`. The commands that install a node, deliver its config, bootstrap the cluster, write a
+kubeconfig or upgrade with config take `--secrets=secrets.age`.
 
 ### Choose your own prefix
 
@@ -374,7 +390,7 @@ When the router's network cards carry option ROMs, the node refuses the keys and
 List the disks:
 
 ```console
-$ chalkctl disks router --fingerprint=<fingerprint> --secrets=secrets.age
+$ chalkctl disks router --fingerprint=<fingerprint>
 DEVICE            SIZE    TYPE  MODEL                    SERIAL          WWN                   USE
 /dev/nvme0n1      476.9G  nvme  Samsung SSD 980 512GB    S64DNF0R812345  eui.002538b811b2c3d4
 ...
@@ -392,7 +408,7 @@ The diagnostic `addresses` lists the ports, and the jq filter of
 "Get the tools" puts each on a line:
 
 ```console
-$ chalkctl node diag router --fingerprint=<fingerprint> --secrets=secrets.age addresses \
+$ chalkctl node diag router --fingerprint=<fingerprint> addresses \
   | jq -r "$ports"
 lo	00:00:00:00:00:00	UNKNOWN
 enp1s0	02:00:00:00:01:01	UP	192.168.1.57
@@ -486,7 +502,7 @@ the USB stick once the console's header shows `normal`, and put the reserved add
 `chalkctl status` reaches the router at its address in the inventory:
 
 ```console
-$ chalkctl status router --secrets=secrets.age
+$ chalkctl status router
 ...
 bgp: no sessions
 nat64:
@@ -501,7 +517,7 @@ node runs. The `addresses` diagnostic shows the renamed ports, `wan` with the re
 `fabric` with its two addresses, `fdc8:a1b2:c3d4:1::1` and `::2`:
 
 ```console
-$ chalkctl node diag router --secrets=secrets.age addresses | jq -r "$ports"
+$ chalkctl node diag router addresses | jq -r "$ports"
 lo	00:00:00:00:00:00	UNKNOWN
 wan	02:00:00:00:01:01	UP	192.168.1.2
 fabric	02:00:00:00:01:02	UP	fdc8:a1b2:c3d4:1::2 fdc8:a1b2:c3d4:1::1
@@ -550,7 +566,7 @@ handshake. The public keys are the example's; yours are those of `router.pub` an
 `workstation.pub`:
 
 ```console
-$ chalkctl node diag router --secrets=secrets.age wireguard interface=wg0
+$ chalkctl node diag router wireguard interface=wg0
 interface: wg0
   public key: N1efwZV4rLKHLJQIeOXqOmCOlJVUhEnnXMOqRPH2L0k=
   private key: (hidden)
@@ -598,7 +614,7 @@ YAML needs for an IPv6 address; the workstation reaches it over the tunnel:
     address and its address of the fabric:
 
     ```sh
-    chalkctl node diag router --secrets=secrets.age neighbours \
+    chalkctl node diag router neighbours \
       | jq -r '.[] | select(.dev == "fabric" and (.dst | startswith("fe80::")))
           | [.lladdr, (.dst | sub("^fe80::"; "fdc8:a1b2:c3d4:1:"))] | @tsv'
     ```
@@ -616,7 +632,7 @@ YAML needs for an IPv6 address; the workstation reaches it over the tunnel:
     address before you use it:
 
     ```sh
-    chalkctl node diag router --secrets=secrets.age tcp-connect \
+    chalkctl node diag router tcp-connect \
       address=fdc8:a1b2:c3d4:1:0:ff:fe00:1101 port=50000
     ```
 
@@ -632,11 +648,11 @@ the new fingerprint.
 List the disks and the ports:
 
 ```console
-$ chalkctl disks node1 --fingerprint=<fingerprint> --secrets=secrets.age
+$ chalkctl disks node1 --fingerprint=<fingerprint>
 DEVICE            SIZE    TYPE  MODEL                    SERIAL          WWN                   USE
 /dev/nvme0n1      931.5G  nvme  WD Blue SN580 1TB        24131D801234    eui.e8238fa6bf530001
 ...
-$ chalkctl node diag node1 --fingerprint=<fingerprint> --secrets=secrets.age addresses \
+$ chalkctl node diag node1 --fingerprint=<fingerprint> addresses \
   | jq -r "$ports"
 lo	00:00:00:00:00:00	UNKNOWN
 enp1s0	02:00:00:00:11:01	UP	fdc8:a1b2:c3d4:1:0:ff:fe00:1101
@@ -697,7 +713,7 @@ Until the bootstrap, its status shows
 that it waits:
 
 ```console
-$ chalkctl status node1 --secrets=secrets.age
+$ chalkctl status node1
 ...
 kubernetes controlplane: waiting for the cluster at https://[fdc8:a1b2:c3d4:ff::10]:6443; bootstrap only the first control plane of a new cluster
 ...
@@ -742,13 +758,13 @@ resolver, the router's, for the name `ipv4only.arpa`, which has IPv4 addresses a
 with addresses in the NAT64's prefix:
 
 ```console
-$ chalkctl node diag node1 --secrets=secrets.age dns-query name=ipv4only.arpa type=AAAA
+$ chalkctl node diag node1 dns-query name=ipv4only.arpa type=AAAA
 ...
 ;; ANSWER SECTION:
 ipv4only.arpa.	3600	IN	AAAA	64:ff9b::c000:ab
 ipv4only.arpa.	3600	IN	AAAA	64:ff9b::c000:aa
 ...
-$ chalkctl node diag node1 --secrets=secrets.age tcp-connect address=64:ff9b::101:101 port=443
+$ chalkctl node diag node1 tcp-connect address=64:ff9b::101:101 port=443
 connected to 64:ff9b::101:101 port 443
 ```
 
@@ -773,15 +789,15 @@ state. The IPv4 section shows both sessions as `NoNeg`, because the router's pee
 IPv6 alone. `bfd-peers` shows the BFD session that watches each:
 
 ```sh
-chalkctl node diag node1 --secrets=secrets.age bgp-summary
-chalkctl node diag node1 --secrets=secrets.age bfd-peers
+chalkctl node diag node1 bgp-summary
+chalkctl node diag node1 bfd-peers
 ```
 
 The router accepts a session from every address of the fabric, and `chalkctl status` lists the six
 under its peer `nodes`, each with the address of a node's port:
 
 ```console
-$ chalkctl status router --secrets=secrets.age
+$ chalkctl status router
 ...
 bgp:
   VRF      PEER   NEIGHBOR                         STATE        UPTIME  RECEIVED  SENT  BFD
@@ -799,7 +815,7 @@ shows 2 routes received. The router sends zero BGP routes. The routes to the
 nodes' addresses have two next hops each, one per port:
 
 ```console
-$ chalkctl node routes router fdc8:a1b2:c3d4:ff::/64 --secrets=secrets.age
+$ chalkctl node routes router fdc8:a1b2:c3d4:ff::/64
 DESTINATION                TYPE     PROTOCOL  TABLE  METRIC  NEXT HOPS
 fdc8:a1b2:c3d4:ff::10/128  unicast  bgp       254    20      fe80::ff:fe00:1101 on fabric (weight 1), fe80::ff:fe00:1102 on fabric (weight 1)
 fdc8:a1b2:c3d4:ff::11/128  unicast  bgp       254    20      fe80::ff:fe00:1101 on fabric (weight 1), fe80::ff:fe00:1102 on fabric (weight 1)
@@ -824,7 +840,7 @@ most. Plug the cable back in, and the session comes back within seconds.
 `chalkctl status` shows which control plane holds the VIP:
 
 ```console
-$ chalkctl status node1 --secrets=secrets.age
+$ chalkctl status node1
 ...
 kubernetes controlplane: bootstrapped, node ready: True, vip holder, control plane current
 ...
@@ -833,7 +849,7 @@ kubernetes controlplane: bootstrapped, node ready: True, vip holder, control pla
 The other two show `vip standby`. Reboot the holder:
 
 ```sh
-chalkctl node reboot node1 --secrets=secrets.age
+chalkctl node reboot node1
 ```
 
 chalkctl drains node1 and keeps etcd's quorum while it reboots. Another control plane wins the
@@ -1028,7 +1044,7 @@ fdc8:a1b2:c3d4:ff::13: pushed [fdc8:a1b2:c3d4:ff::13]:5000/registry.k8s.io/kube-
 Check that every endpoint holds every image:
 
 ```console
-$ chalkctl registry list --secrets=secrets.age
+$ chalkctl registry list
 REPOSITORY                               TAG      DIGEST               ENDPOINTS
 docker.io/library/busybox                1.37.0   sha256:a7dbc319b143  all
 ghcr.io/flannel-io/flannel               v0.28.9  sha256:708a2c9c1cfb  all
@@ -1057,11 +1073,11 @@ Check that the fabric no longer reaches the internet. The `tcp-connect` diagnost
 and `chalkctl status router` shows no `nat64:` table:
 
 ```sh
-chalkctl node diag node1 --secrets=secrets.age tcp-connect address=64:ff9b::101:101 port=443
-chalkctl status router --secrets=secrets.age
+chalkctl node diag node1 tcp-connect address=64:ff9b::101:101 port=443
+chalkctl status router
 ```
 
-`chalkctl status node1 --secrets=secrets.age` prints a line `time:` that names
+`chalkctl status node1` prints a line `time:` that names
 `fdc8:a1b2:c3d4:1::1`, the router, as the server the node's clock follows.
 
 A pod whose image is not in the registry stays in `ImagePullBackOff`. Copy and push its image as
@@ -1088,7 +1104,7 @@ from the registries themselves. The pushed images stay on the control planes, in
 If the nodes still take their default route over BGP, apply the new `bgp/fabric.yaml` to the nodes
 one at a time while the router still sends a BGP default. Try the node config with
 `chalkctl config apply node1 --secrets=secrets.age --try 5m --no-confirm`. Use
-`chalkctl node diag node1 --secrets=secrets.age routes family=inet6` to check for an IPv6
+`chalkctl node diag node1 routes family=inet6` to check for an IPv6
 default route with protocol `ra` on each connected fabric port. Check management and internet
 access before keeping the trial with `chalkctl config confirm node1 --secrets=secrets.age`.
 After every node uses an advertised gateway, apply the router config to stop announcing the BGP
@@ -1116,7 +1132,7 @@ The router's `neighbours` diagnostic lists them, as the tip "Find the installer 
 the router" in [Install the nodes](#install-the-nodes) shows; pass one with `--address`:
 
 ```sh
-chalkctl node diag node1 --secrets=secrets.age \
+chalkctl node diag node1 \
   --address=fdc8:a1b2:c3d4:1:0:ff:fe00:1101 bgp-summary
 ```
 
