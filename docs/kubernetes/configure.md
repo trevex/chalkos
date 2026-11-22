@@ -268,6 +268,8 @@ The API server flags chalkos sets are refused, also when spelt with `_` for `-`,
 [Protected API server flags](../reference/kubernetes.md#protected-api-server-flags) lists them.
 `enable-admission-plugins` adds its plugins to chalkos's `NodeRestriction`, and
 `disable-admission-plugins` must not name `NodeRestriction` or `ValidatingAdmissionPolicy`.
+The controller-manager's `cluster-signing-*` flags, which name the CAs that sign certificates, are
+refused too, apart from `cluster-signing-duration`.
 `chalkctl validate` names the flag:
 
 ```text

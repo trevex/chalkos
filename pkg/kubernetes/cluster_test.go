@@ -257,6 +257,18 @@ func TestClusterValidateRefusesProtectedFlags(t *testing.T) {
 			t.Errorf("%s: err = %v, want %s", name, err, want)
 		}
 	}
+	for _, name := range []string{"cluster-signing-cert-file", "cluster_signing_key_file", "cluster-signing-kubelet-serving-cert-file"} {
+		c := valid
+		c.ExtraArgs = map[string]map[string]string{"kube-controller-manager": {name: "x"}}
+		if want := "extraArgs: kube-controller-manager --" + name + " is set by chalkos and cannot be overridden"; c.Validate() == nil || !strings.HasPrefix(c.Validate().Error(), want) {
+			t.Errorf("%s: err = %v, want %s", name, c.Validate(), want)
+		}
+	}
+	duration := valid
+	duration.ExtraArgs = map[string]map[string]string{"kube-controller-manager": {"cluster-signing-duration": "24h"}}
+	if err := duration.Validate(); err != nil {
+		t.Errorf("cluster-signing-duration: %v", err)
+	}
 	// The API server's flags chalkos sets, and anonymous-auth, which it leaves out on purpose.
 	for _, name := range []string{
 		"anonymous-auth", "authentication-config", "authorization-mode", "enable-bootstrap-token-auth", "enable_bootstrap-token_auth",
