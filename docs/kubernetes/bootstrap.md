@@ -115,17 +115,18 @@ endpoint, with a client certificate it issues from the secrets file:
 
 ```console
 $ chalkctl kubeconfig --secrets=secrets.age
-wrote kubeconfig; its certificate is valid for 8760h0m0s
+wrote kubeconfig; its certificate is valid for 24h0m0s
 ```
 
-The defaults write `./kubeconfig`, valid for a year, for the user `admin`. The file holds the
-certificate's private key and is written with mode 0600. chalkctl refuses to replace an existing
-file unless `--force` is given. Other flags change what it writes:
+The defaults write `./kubeconfig`, valid for a day, for the user `admin`. Write a new one from the
+secrets file when it expires, or pass a longer `--ttl` for a kubeconfig that must last. The file
+holds the certificate's private key and is written with mode 0600. chalkctl refuses to replace an
+existing file unless `--force` is given. Other flags change what it writes:
 
 | Flag | Default | Sets |
 | --- | --- | --- |
 | `--out` | `kubeconfig` | The file to write; `-` writes to standard output. |
-| `--ttl` | `8760h` | How long the certificate is valid. |
+| `--ttl` | `24h` | How long the certificate is valid. |
 | `--name` | `admin` | The user name in the certificate, which the API server's audit log records. |
 | `--context` | the inventory's `metadata.name` | The name of the kubeconfig's cluster, user and context. |
 | `--server` | the cluster endpoint | Another URL to reach the API server at, such as a forwarded port. The certificate is still verified for the endpoint. |

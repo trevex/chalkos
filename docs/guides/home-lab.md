@@ -714,7 +714,7 @@ $ chalkctl bootstrap node1 --secrets=secrets.age
 bootstrapping node1; the control plane pulls its images and starts
 node1 is bootstrapped; applied 19 objects
 $ chalkctl kubeconfig --secrets=secrets.age
-wrote kubeconfig; its certificate is valid for 8760h0m0s
+wrote kubeconfig; its certificate is valid for 24h0m0s
 ```
 
 The bootstrap starts etcd and the control plane on node1. node1 then wins the election for the VIP,

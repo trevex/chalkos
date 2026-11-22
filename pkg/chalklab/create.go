@@ -44,6 +44,10 @@ const (
 	clientFile     = "chalkctl.json"
 )
 
+// labValidity is how long the lab's client file and kubeconfig last: as long as a lab may run,
+// beyond chalkctl's shorter defaults, since a lab is a test cluster on the workstation that runs it.
+const labValidity = "8760h"
+
 type createFlags struct {
 	lab, secrets  string
 	guestForwards []string
@@ -478,11 +482,12 @@ var maintenanceRE = regexp.MustCompile(`maintenance mode.*certificate fingerprin
 
 // setUp writes an admin client file, installs every node, bootstraps the first control plane and
 // writes a kubeconfig that reaches the lab through its forwarded ports. Polls use the client file,
-// so an encrypted secrets file is decrypted once per command rather than per poll.
+// so an encrypted secrets file is decrypted once per command rather than per poll. Both files
+// last labValidity.
 func (a *app) setUp(ctx context.Context, f createFlags, l *lab.Lab) error {
 	inventory := filepath.Join(l.Dir, inventoryFile)
 	cluster := []string{"--inventory", inventory, "--secrets", f.secrets}
-	if err := a.chalkctl(ctx, a.stdout, "client", "new", "--name", "chalklab", "--role", "admin", "--out", filepath.Join(l.Dir, clientFile), "--secrets", f.secrets); err != nil {
+	if err := a.chalkctl(ctx, a.stdout, "client", "new", "--name", "chalklab", "--role", "admin", "--ttl", labValidity, "--out", filepath.Join(l.Dir, clientFile), "--secrets", f.secrets); err != nil {
 		return err
 	}
 	for _, n := range l.Nodes {
@@ -517,7 +522,7 @@ func (a *app) setUp(ctx context.Context, f createFlags, l *lab.Lab) error {
 		if err := a.chalkctl(ctx, a.stdout, append([]string{"bootstrap", cp.Name}, cluster...)...); err != nil {
 			return err
 		}
-		if err := a.chalkctl(ctx, a.stdout, append([]string{"kubeconfig", "--out", filepath.Join(l.Dir, kubeconfigFile), "--server", "https://127.0.0.1:" + strconv.Itoa(cp.APIPort)}, cluster...)...); err != nil {
+		if err := a.chalkctl(ctx, a.stdout, append([]string{"kubeconfig", "--ttl", labValidity, "--out", filepath.Join(l.Dir, kubeconfigFile), "--server", "https://127.0.0.1:" + strconv.Itoa(cp.APIPort)}, cluster...)...); err != nil {
 			return err
 		}
 	}

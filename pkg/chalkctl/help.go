@@ -133,6 +133,10 @@ call every method of chalkd but the node's own renewal, and push, delete and col
 the cluster registry. See
 https://trevex.github.io/chalkos/how-it-works/node/security/#chalkd-checks-the-role-of-every-request.
 
+The certificate is valid for --ttl, by default 30 days for an admin, 90 days for an operator and
+a year for a reader. Issue a new file from the secrets file when it expires; chalkctl warns in
+the last third of its lifetime.
+
 The command needs the secrets file and no inventory.`
 
 const clientNewExample = `  # A reader's client file for a dashboard.

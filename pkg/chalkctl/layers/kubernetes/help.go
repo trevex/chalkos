@@ -19,11 +19,13 @@ const bootstrapExample = `  chalkctl bootstrap cp1`
 
 const kubeconfigLong = `Writes a kubeconfig with a client certificate for the Kubernetes API server, issued from the
 secrets file for --name in the group chalkos:cluster-admins, which is bound to cluster-admin,
-and valid for --ttl. The file holds the certificate's private key and is written with mode
-0600. --server points clients at another URL than the cluster endpoint (a forwarded port, for
-example), while they still verify the API server's certificate for the endpoint. The
-kubeconfig's cluster, user and context are named after the inventory's metadata.name, or after
---context. The command needs the secrets file.`
+and valid for --ttl, a day by default. The file holds the certificate's private key and is
+written with mode 0600. Write a new one from the secrets file when it expires; pass a longer
+--ttl for a kubeconfig that must outlast a day, knowing that a leaked one grants cluster-admin
+until it expires or the Kubernetes CA rotates. --server points clients at another URL than the
+cluster endpoint (a forwarded port, for example), while they still verify the API server's
+certificate for the endpoint. The kubeconfig's cluster, user and context are named after the
+inventory's metadata.name, or after --context. The command needs the secrets file.`
 
 const kubeconfigExample = `  chalkctl kubeconfig --secrets secrets.age --out lab.kubeconfig
 

@@ -86,6 +86,21 @@ func TestConfigNew(t *testing.T) {
 	if c, err := client.ReadConfig(defaultConfigPath(ta.home)); err != nil || c.Name != "bob" {
 		t.Errorf("default client file: %v, %v", c, err)
 	}
+	// Without --ttl the certificate lasts as long as its role's default.
+	for role, want := range map[string]time.Duration{"admin": 30 * 24 * time.Hour, "operator": 90 * 24 * time.Hour, "reader": 365 * 24 * time.Hour} {
+		out := filepath.Join(ta.dir, role+".json")
+		if err := ta.run(context.Background(), []string{"client", "new", "--name", "carol", "--role", role, "--out", out}); err != nil {
+			t.Fatal(err)
+		}
+		c, err := client.ReadConfig(out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		leaf, _ := c.Leaf()
+		if got := time.Until(leaf.NotAfter).Round(time.Hour); got != want {
+			t.Errorf("the default certificate of the %s role lasts %v, want %v", role, got, want)
+		}
+	}
 	for _, bad := range [][]string{{"--name", "x", "--role", "root"}, {"--role", "reader"}, {"--name", "x", "--role", "node"}} {
 		args := append([]string{"client", "new", "--out", filepath.Join(ta.dir, "bad.json")}, bad...)
 		if err := ta.run(context.Background(), args); err == nil {
@@ -164,15 +179,46 @@ func TestClientFileExpiry(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"status", "n1", "--config", soon}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(ta.stderr.String(), "warning: the certificate of "+soon+" expires on") || !strings.Contains(ta.stderr.String(), "chalkctl client new") {
-		t.Errorf("stderr = %q, want a warning naming chalkctl client new", ta.stderr)
+	if strings.Contains(ta.stderr.String(), "warning") {
+		t.Errorf("stderr = %q, want no warning for a certificate in the first third of its lifetime", ta.stderr)
 	}
 
 	old := newTestAppAt(t, time.Now().Add(-48*time.Hour))
+	oldNode, _ := installedNode(t, old, nil)
+	oldAddr := old.startNode(t, oldNode)
+	// A 30-hour certificate with 9 hours left is in the last third of its lifetime.
+	soon = old.writeConfig(t, "alice", pki.RoleReader, 30*time.Hour, time.Now().Add(-21*time.Hour))
+	if err := old.run(context.Background(), old.args([]string{"status", "n1", "--config", soon}, oldAddr)); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(old.stderr.String(), "warning: the certificate of "+soon+" expires on") || !strings.Contains(old.stderr.String(), "chalkctl client new") {
+		t.Errorf("stderr = %q, want a warning naming chalkctl client new", old.stderr)
+	}
+
 	expired := old.writeConfig(t, "carol", pki.RoleReader, time.Hour, time.Now().Add(-47*time.Hour))
 	err := old.run(context.Background(), old.args([]string{"status", "n1", "--config", expired}, addr))
 	if err == nil || !strings.Contains(err.Error(), "the certificate of "+expired+" expired on") || !strings.Contains(err.Error(), "issue a new one with chalkctl client new") {
 		t.Errorf("err = %v, want the expired client file named", err)
+	}
+}
+
+// TestExpiresSoon warns in the last third of a certificate's lifetime: the last 8 hours of a day's,
+// the last 4 months of a year's.
+func TestExpiresSoon(t *testing.T) {
+	issued := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for _, c := range []struct {
+		validity, age time.Duration
+		want          bool
+	}{
+		{24 * time.Hour, 15 * time.Hour, false},
+		{24 * time.Hour, 17 * time.Hour, true},
+		{365 * 24 * time.Hour, 240 * 24 * time.Hour, false},
+		{365 * 24 * time.Hour, 245 * 24 * time.Hour, true},
+	} {
+		leaf := &x509.Certificate{NotBefore: issued, NotAfter: issued.Add(c.validity)}
+		if got := expiresSoon(leaf, issued.Add(c.age)); got != c.want {
+			t.Errorf("expiresSoon of a %v certificate after %v = %v, want %v", c.validity, c.age, got, c.want)
+		}
 	}
 }
 

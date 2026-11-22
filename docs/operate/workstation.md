@@ -143,10 +143,13 @@ secrets file:
 
 ```console
 $ chalkctl client new --name alice --role operator --secrets secrets.age
-wrote /home/alice/.config/chalkos/config for alice with the operator role; its certificate expires on 2027-10-23
+wrote /home/alice/.config/chalkos/config for alice with the operator role; its certificate expires on 2027-01-21
 ```
 
-The certificate is valid for a year unless `--ttl` gives another validity, such as `--ttl 720h`.
+The certificate is valid for 30 days with the admin role, 90 days with the operator role and a
+year with the reader role, unless `--ttl` gives another validity, such as `--ttl 720h`. Issue a
+new file from the secrets file when it expires; chalkctl warns during the last third of its
+lifetime.
 Without `--out`, the file goes to `~/.config/chalkos/config` with mode 0600. Give each person a
 file of their own, with the least role their work needs:
 

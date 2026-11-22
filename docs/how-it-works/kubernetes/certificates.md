@@ -125,8 +125,8 @@ chalkctl config apply <node> --kubernetes-share
 
 [`chalkctl kubeconfig`](../../reference/cli/chalkctl_kubeconfig.md) writes an admin kubeconfig from
 the secrets file, for the cluster endpoint. Its client certificate is in the group
-`chalkos:cluster-admins`, which chalkd's RBAC add-on binds to `cluster-admin`. It is valid for one
-year unless `--ttl` says otherwise. The group is used instead of `system:masters` because RBAC can
+`chalkos:cluster-admins`, which chalkd's RBAC add-on binds to `cluster-admin`. It is valid for a
+day unless `--ttl` says otherwise. The group is used instead of `system:masters` because RBAC can
 take a group's access away, which it cannot do for `system:masters`.
 [Get a kubeconfig](../../kubernetes/bootstrap.md#get-a-kubeconfig) describes its flags.
 
@@ -157,7 +157,7 @@ working through the rotation and after it. They still trust the old CA after the
 holds the old CA's key could pose as the API server to them, until they are issued again.
 
 Rotating `kubernetes-ca` is also how a leaked kubeconfig is revoked, and it retires every other
-kubeconfig of the old CA. Short `--ttl` values on kubeconfigs limit how long a leak matters.
+kubeconfig of the old CA. The default validity of a day limits how long a leak matters.
 [Rotate the Kubernetes CAs and keys](../../kubernetes/rotate-kubernetes-cas.md) gives the steps.
 
 ## Revoking a node cuts off its writes and renewals
