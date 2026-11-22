@@ -32,6 +32,7 @@ openssl x509 -req -in "$work/node-ca.csr" -CA "$work/ca.crt" -CAkey "$work/ca.ke
 ca kubernetes "chalkos Kubernetes CA" 0
 ca front-proxy "chalkos front-proxy CA" 0
 ca etcd "chalkos etcd CA" 0
+ca kubelet-serving "chalkos kubelet serving CA" 0
 key sa.key
 
 jq -n \
@@ -41,11 +42,13 @@ jq -n \
   --rawfile k8sCert "$work/kubernetes.crt" --rawfile k8sKey "$work/kubernetes.key" \
   --rawfile frontCert "$work/front-proxy.crt" --rawfile frontKey "$work/front-proxy.key" \
   --rawfile etcdCert "$work/etcd.crt" --rawfile etcdKey "$work/etcd.key" \
+  --rawfile servingCert "$work/kubelet-serving.crt" --rawfile servingKey "$work/kubelet-serving.key" \
   --rawfile sa "$work/sa.key" \
   --arg encryption "$(openssl rand -base64 32)" \
   '{version: 3, osCA: {certificate: $caCert, key: $caKey}, nodeCA: {certificate: $nodeCACert, key: $nodeCAKey}, recoverySecret: $recovery,
     kubernetes: {ca: {certificate: $k8sCert, key: $k8sKey}, frontProxyCA: {certificate: $frontCert, key: $frontKey},
-      etcdCA: {certificate: $etcdCert, key: $etcdKey}, serviceAccountKey: $sa, encryptionKey: $encryption, encryptionKeyName: "chalkos"}}' \
+      etcdCA: {certificate: $etcdCert, key: $etcdKey}, kubeletServingCA: {certificate: $servingCert, key: $servingKey},
+      serviceAccountKey: $sa, encryptionKey: $encryption, encryptionKeyName: "chalkos"}}' \
   >secrets.json
 
 # The Secure Boot keys, RSA 2048 as firmware takes them.

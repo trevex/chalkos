@@ -32,7 +32,8 @@ func TestRotateOneAtATime(t *testing.T) {
 }
 
 // TestRotateKubernetesCA checks the Kubernetes CAs' rotation: the pause after the accept phase,
-// the addons restarted, control planes before workers, and kubelets' certificates of the new CA.
+// the addons restarted, control planes before workers, and kubelets' certificates of the new CAs:
+// client certificates of the Kubernetes CA, serving certificates of the kubelet serving CA.
 func TestRotateKubernetesCA(t *testing.T) {
 	l := newRotationLab(t)
 	if err := l.rotate("kubernetes-ca"); err != nil {
@@ -63,15 +64,16 @@ func TestRotateKubernetesCA(t *testing.T) {
 		}
 	}
 	s := l.secrets()
-	ca := fingerprint(t, s.Kubernetes.CA.Certificate)
+	ca, servingCA := fingerprint(t, s.Kubernetes.CA.Certificate), fingerprint(t, s.Kubernetes.KubeletServingCA.Certificate)
 	for name, n := range l.nodes {
 		if n.kind == "" {
 			continue
 		}
-		if n.kubeletServing != ca || n.kubeletClient != ca {
+		if n.kubeletServing != servingCA || n.kubeletClient != ca {
 			t.Errorf("%s's kubelet has certificates of another CA", name)
 		}
-		if n.kind == kubernetes.KindControlPlane && n.share.CA.Certificate != s.Kubernetes.CA.Certificate {
+		if n.kind == kubernetes.KindControlPlane && (n.share.CA.Certificate != s.Kubernetes.CA.Certificate ||
+			n.share.KubeletServingCA.Certificate != s.Kubernetes.KubeletServingCA.Certificate) {
 			t.Errorf("%s does not issue with the new CA", name)
 		}
 	}

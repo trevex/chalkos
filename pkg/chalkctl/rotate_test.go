@@ -46,7 +46,7 @@ type fakeNode struct {
 	mu    sync.Mutex
 	share *kpki.Share
 	// kubeletClient and kubeletServing are the fingerprints of the CAs that issued the kubelet's
-	// certificates.
+	// certificates: the Kubernetes CA and the kubelet serving CA.
 	kubeletClient, kubeletServing string
 	// down makes the node refuse every call as unreachable.
 	down bool
@@ -143,7 +143,8 @@ func (n *fakeNode) status() (*nodev1.StatusResponse, *kubernetesv1.StatusRespons
 		if cp {
 			bundles = append(bundles,
 				struct{ name, bundle, issuing string }{"front-proxy CA", s.FrontProxyCABundle(), s.FrontProxyCA.Certificate},
-				struct{ name, bundle, issuing string }{"etcd CA", s.EtcdCABundle(), s.EtcdCA.Certificate})
+				struct{ name, bundle, issuing string }{"etcd CA", s.EtcdCABundle(), s.EtcdCA.Certificate},
+				struct{ name, bundle, issuing string }{"kubelet serving CA", s.KubeletServingCABundle(), s.KubeletServingCA.Certificate})
 		}
 		for _, b := range bundles {
 			fps, _ := pki.Fingerprints(b.bundle)
@@ -249,7 +250,7 @@ func (n fakeKubernetes) RotationStep(ctx context.Context, req *kubernetesv1.Rota
 	l := n.lab
 	switch req.Step {
 	case kubernetesv1.RotationStep_ROTATION_STEP_RENEW_KUBELET_SERVING:
-		n.kubeletServing = fingerprint(l.t, n.share.CA.Certificate)
+		n.kubeletServing = fingerprint(l.t, n.share.KubeletServingCA.Certificate)
 	case kubernetesv1.RotationStep_ROTATION_STEP_RESTART_ADDONS:
 		resp.Restarted = []string{"kube-system/Deployment/coredns", "apps/DaemonSet/on-delete"}
 		resp.NotWaited = []string{"apps/DaemonSet/on-delete"}
@@ -418,7 +419,7 @@ func newRotationLabOf(t *testing.T, nodes []testNode) *rotationLab {
 			}
 			n.share = &share
 			n.kubeletClient = fingerprint(t, ta.secrets.Kubernetes.CA.Certificate)
-			n.kubeletServing = n.kubeletClient
+			n.kubeletServing = fingerprint(t, ta.secrets.Kubernetes.KubeletServingCA.Certificate)
 		}
 		mux := http.NewServeMux()
 		server := connect.NewServer()

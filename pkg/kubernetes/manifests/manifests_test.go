@@ -37,6 +37,7 @@ func testFiles() map[string][]byte {
 		kpki.FileAPIServerEtcdClient, kpki.FileAPIServerEtcdClientKey, kpki.FileServiceAccountKey, kpki.FileServiceAccountPub,
 		kpki.FileEncryptionConfig, kpki.FileAuthenticationConfig, kpki.FileControllerManagerConfig, kpki.FileSchedulerConfig,
 		kpki.FileEtcdCA, kpki.FileEtcdServer, kpki.FileEtcdServerKey, kpki.FileEtcdPeer, kpki.FileEtcdPeerKey,
+		kpki.FileKubeletServingCA, kpki.FileKubeletServingCASigning, kpki.FileKubeletServingCAKey,
 	} {
 		files[name] = []byte("content of " + name)
 	}
@@ -189,9 +190,11 @@ func TestCertificatesHashFollowsBundles(t *testing.T) {
 		t.Fatal(err)
 	}
 	for file, pods := range map[string][]string{
-		kpki.FileCA:           {"kube-apiserver.json", "kube-controller-manager.json"},
-		kpki.FileFrontProxyCA: {"kube-apiserver.json"},
-		kpki.FileEtcdCA:       {"etcd.json", "kube-apiserver.json"},
+		kpki.FileCA:                  {"kube-apiserver.json", "kube-controller-manager.json"},
+		kpki.FileFrontProxyCA:        {"kube-apiserver.json"},
+		kpki.FileEtcdCA:              {"etcd.json", "kube-apiserver.json"},
+		kpki.FileKubeletServingCA:    {"kube-apiserver.json"},
+		kpki.FileKubeletServingCAKey: {"kube-controller-manager.json"},
 	} {
 		files := testFiles()
 		files[file] = append(files[file], []byte("\nanother CA")...)

@@ -42,8 +42,8 @@ func fingerprints(t *testing.T, bundle string) []string {
 }
 
 // TestSharesCarryWhatIsAccepted checks that control-plane shares carry every accepted value and
-// worker shares the Kubernetes CAs alone, that both read back, and that their bundles put the
-// issuing value first.
+// worker shares the Kubernetes and kubelet serving CAs alone, that both read back, and that their
+// bundles put the issuing value first.
 func TestSharesCarryWhatIsAccepted(t *testing.T) {
 	accepting, switched := rotating(t, clustersecrets.RotateKubernetesCA)
 	for name, s := range map[string]*clustersecrets.Secrets{"accepting": accepting, "switched": switched} {
@@ -67,6 +67,9 @@ func TestSharesCarryWhatIsAccepted(t *testing.T) {
 			}
 			if got := fingerprints(t, read.CABundle()); !slices.Equal(got, fingerprints(t, k.CABundle())) || len(got) != 2 {
 				t.Errorf("%s %s: Kubernetes CAs %v", name, kind, got)
+			}
+			if got := fingerprints(t, read.KubeletServingCABundle()); !slices.Equal(got, fingerprints(t, k.KubeletServingCABundle())) || len(got) != 2 {
+				t.Errorf("%s %s: kubelet serving CAs %v", name, kind, got)
 			}
 		}
 		if !slices.Equal(fingerprints(t, cp.EtcdCABundle()), fingerprints(t, k.EtcdCABundle())) || !slices.Equal(fingerprints(t, cp.FrontProxyCABundle()), fingerprints(t, k.FrontProxyCABundle())) {
@@ -147,7 +150,7 @@ func TestShareRefusesWhatItMustNotAccept(t *testing.T) {
 
 // TestControlPlaneFilesHoldBundles checks that the control plane's components get every CA and
 // key accepted, the issuing one first, while their certificates come from the issuing CAs and
-// the controller-manager signs with the issuing CA alone.
+// the controller-manager signs with the issuing CAs alone.
 func TestControlPlaneFilesHoldBundles(t *testing.T) {
 	accepting, switched := rotating(t, clustersecrets.RotateKubernetesCA)
 	for name, s := range map[string]*clustersecrets.Secrets{"accepting": accepting, "switched": switched} {
@@ -157,13 +160,14 @@ func TestControlPlaneFilesHoldBundles(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for file, bundle := range map[string]string{FileCA: k.CABundle(), FileFrontProxyCA: k.FrontProxyCABundle(), FileEtcdCA: k.EtcdCABundle()} {
+		for file, bundle := range map[string]string{FileCA: k.CABundle(), FileFrontProxyCA: k.FrontProxyCABundle(), FileEtcdCA: k.EtcdCABundle(), FileKubeletServingCA: k.KubeletServingCABundle()} {
 			if got := fingerprints(t, string(files[file])); !slices.Equal(got, fingerprints(t, bundle)) || len(got) != 2 {
 				t.Errorf("%s: %s holds %v", name, file, got)
 			}
 		}
-		if string(files[FileCASigning]) != k.CA.Certificate {
-			t.Errorf("%s: the controller-manager does not sign with the issuing CA alone", name)
+		if string(files[FileCASigning]) != k.CA.Certificate || string(files[FileKubeletServingCASigning]) != k.KubeletServingCA.Certificate ||
+			string(files[FileKubeletServingCAKey]) != k.KubeletServingCA.Key {
+			t.Errorf("%s: the controller-manager does not sign with the issuing CAs alone", name)
 		}
 		for file, ca := range map[string]pki.CertKey{FileAPIServer: k.CA, FileEtcdServer: k.EtcdCA, FileFrontProxyClient: k.FrontProxyCA} {
 			issuer, _ := pki.ParseCertificate([]byte(ca.Certificate))

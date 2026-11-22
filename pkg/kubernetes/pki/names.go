@@ -9,6 +9,8 @@ const (
 	NameFrontProxyCA = "front-proxy CA"
 	// NameEtcdCA is etcd's CA.
 	NameEtcdCA = "etcd CA"
+	// NameKubeletServingCA is the CA of the kubelets' serving certificates.
+	NameKubeletServingCA = "kubelet serving CA"
 	// NameControlPlane is the control plane's leaf certificates, by the one that expires first.
 	NameControlPlane = "Kubernetes control plane"
 	// NameKubeletClient is the kubelet's client certificate.

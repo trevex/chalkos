@@ -262,10 +262,11 @@ func TestStatusReportsKubernetesTrust(t *testing.T) {
 	k := secrets.Kubernetes
 	ca, _ := pki.ParseCertificate([]byte(k.CA.Certificate))
 	for name, want := range map[string][]string{
-		"Kubernetes CA":   {pki.Fingerprint(ca.Raw)},
-		"front-proxy CA":  nil,
-		"etcd CA":         nil,
-		"encryption keys": {k.EncryptionKeys()[0].Fingerprint(), k.EncryptionKeys()[1].Fingerprint()},
+		"Kubernetes CA":      {pki.Fingerprint(ca.Raw)},
+		"front-proxy CA":     nil,
+		"etcd CA":            nil,
+		"kubelet serving CA": nil,
+		"encryption keys":    {k.EncryptionKeys()[0].Fingerprint(), k.EncryptionKeys()[1].Fingerprint()},
 	} {
 		tr := trust[name]
 		if tr == nil || len(tr.Fingerprints) == 0 || tr.Issuing != tr.Fingerprints[0] {

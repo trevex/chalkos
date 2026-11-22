@@ -50,7 +50,7 @@ func TestShareByKind(t *testing.T) {
 	if cp.NodeCA == nil || *cp.NodeCA != secrets.NodeCA {
 		t.Error("the control-plane share lacks the node CA")
 	}
-	if cp.CA != k.CA || *cp.EtcdCA != k.EtcdCA || *cp.FrontProxyCA != k.FrontProxyCA || cp.ServiceAccountKey != k.ServiceAccountKey ||
+	if cp.CA != k.CA || *cp.EtcdCA != k.EtcdCA || *cp.FrontProxyCA != k.FrontProxyCA || *cp.KubeletServingCA != k.KubeletServingCA || cp.ServiceAccountKey != k.ServiceAccountKey ||
 		string(cp.EncryptionKey) != string(k.EncryptionKey) || cp.Kubelet != nil {
 		t.Error("the control-plane share lacks a secret of the control plane")
 	}
@@ -61,6 +61,9 @@ func TestShareByKind(t *testing.T) {
 	}
 	if w.CA.Key != "" || w.FrontProxyCA != nil || w.EtcdCA != nil || w.NodeCA != nil || w.ServiceAccountKey != "" || w.EncryptionKey != nil {
 		t.Errorf("the worker share holds a control-plane secret: %+v", w.Kind)
+	}
+	if w.KubeletServingCA == nil || *w.KubeletServingCA != (pki.CertKey{Certificate: k.KubeletServingCA.Certificate}) {
+		t.Error("the worker share does not hold the kubelet serving CA's certificate alone")
 	}
 	cert, _, err := w.Kubelet.Parse()
 	if err != nil {
@@ -125,6 +128,10 @@ func TestShareValidateRefuses(t *testing.T) {
 		"worker, foreign kubelet":                            func() Share { s := w; s.Kubelet = foreign.Kubelet; return s },
 		"worker, admin as kubelet":                           func() Share { s := w; s.Kubelet = &admin; return s },
 		"worker with an SA key":                              func() Share { s := w; s.ServiceAccountKey = k.ServiceAccountKey; return s },
+		"control plane, no kubelet serving CA":               func() Share { s := cp; s.KubeletServingCA = nil; return s },
+		"worker, no kubelet serving CA":                      func() Share { s := w; s.KubeletServingCA = nil; return s },
+		"worker with the kubelet serving CA's key":           func() Share { s := w; ca := k.KubeletServingCA; s.KubeletServingCA = &ca; return s },
+		"worker, a leaf as kubelet serving CA":               func() Share { s := w; s.KubeletServingCA = &pki.CertKey{Certificate: admin.Certificate}; return s },
 		"worker, text before the CA":                         func() Share { s := w; s.CA.Certificate = "note\n" + s.CA.Certificate; return s },
 		"worker, text after the CA":                          func() Share { s := w; s.CA.Certificate += "note\n"; return s },
 		"worker, two CAs":                                    func() Share { s := w; s.CA.Certificate += other.CA.Certificate; return s },
@@ -253,6 +260,7 @@ func TestControlPlaneShareRejectsSharedCAs(t *testing.T) {
 		{"etcd CA is the Kubernetes CA", "kubernetes.ca", "kubernetes.etcdCA", func(s *Share) { ca := s.CA; s.EtcdCA = &ca }},
 		{"front-proxy CA is the Kubernetes CA", "kubernetes.ca", "kubernetes.frontProxyCA", func(s *Share) { ca := s.CA; s.FrontProxyCA = &ca }},
 		{"etcd CA is the front-proxy CA", "kubernetes.frontProxyCA", "kubernetes.etcdCA", func(s *Share) { ca := *s.FrontProxyCA; s.EtcdCA = &ca }},
+		{"kubelet serving CA is the Kubernetes CA", "kubernetes.ca", "kubernetes.kubeletServingCA", func(s *Share) { ca := s.CA; s.KubeletServingCA = &ca }},
 	} {
 		s := ControlPlaneShare(k, pkitest.NodeCA(t, now))
 		tc.edit(&s)

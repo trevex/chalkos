@@ -34,6 +34,10 @@ type Share struct {
 	// CA is the Kubernetes CA: with its key on control-plane nodes, the certificate alone on
 	// workers.
 	CA pki.CertKey `json:"ca"`
+	// KubeletServingCA is the kubelet serving CA: with its key on control-plane nodes, the
+	// certificate alone on workers, whose status names it as the issuer of their kubelets' serving
+	// certificates.
+	KubeletServingCA *pki.CertKey `json:"kubeletServingCA,omitempty"`
 	// The rest of the control plane's secrets.
 	FrontProxyCA      *pki.CertKey `json:"frontProxyCA,omitempty"`
 	EtcdCA            *pki.CertKey `json:"etcdCA,omitempty"`
@@ -54,12 +58,13 @@ type Share struct {
 // ControlPlaneShare is what a control-plane node receives: every Kubernetes CA with its key, the
 // keys, the node CA, and what is accepted besides them.
 func ControlPlaneShare(k *clustersecrets.KubernetesSecrets, nodeCA pki.CertKey) Share {
-	front, etcd := k.FrontProxyCA, k.EtcdCA
+	front, etcd, serving := k.FrontProxyCA, k.EtcdCA, k.KubeletServingCA
 	s := Share{
 		Kind:              kubernetes.KindControlPlane,
 		CA:                k.CA,
 		FrontProxyCA:      &front,
 		EtcdCA:            &etcd,
+		KubeletServingCA:  &serving,
 		ServiceAccountKey: k.ServiceAccountKey,
 		EncryptionKey:     k.EncryptionKey,
 		EncryptionKeyName: k.EncryptionKeyName,
@@ -71,22 +76,24 @@ func ControlPlaneShare(k *clustersecrets.KubernetesSecrets, nodeCA pki.CertKey) 
 	return s
 }
 
-// WorkerShare is what a worker receives: the CA certificate, those accepted besides it, and a
-// kubelet client certificate for the node, issued now.
+// WorkerShare is what a worker receives: the certificates of the Kubernetes CA and the kubelet
+// serving CA, those accepted besides them, and a kubelet client certificate for the node, issued
+// now.
 func WorkerShare(k *clustersecrets.KubernetesSecrets, node string, now time.Time) (Share, error) {
 	kubelet, err := IssueKubeletClient(k.CA, node, now)
 	if err != nil {
 		return Share{}, err
 	}
-	s := Share{Kind: kubernetes.KindWorker, CA: pki.CertKey{Certificate: k.CA.Certificate}, Kubelet: &kubelet}
-	if len(k.Accepted.CA) > 0 {
-		s.Accepted = &clustersecrets.KubernetesAccepted{CA: k.Accepted.CA}
+	serving := pki.CertKey{Certificate: k.KubeletServingCA.Certificate}
+	s := Share{Kind: kubernetes.KindWorker, CA: pki.CertKey{Certificate: k.CA.Certificate}, KubeletServingCA: &serving, Kubelet: &kubelet}
+	if len(k.Accepted.CA)+len(k.Accepted.KubeletServingCA) > 0 {
+		s.Accepted = &clustersecrets.KubernetesAccepted{CA: k.Accepted.CA, KubeletServingCA: k.Accepted.KubeletServingCA}
 	}
 	return s, nil
 }
 
 func isZero(a clustersecrets.KubernetesAccepted) bool {
-	return len(a.CA)+len(a.FrontProxyCA)+len(a.EtcdCA)+len(a.ServiceAccountKeys)+len(a.EncryptionKeys) == 0
+	return len(a.CA)+len(a.FrontProxyCA)+len(a.EtcdCA)+len(a.KubeletServingCA)+len(a.ServiceAccountKeys)+len(a.EncryptionKeys) == 0
 }
 
 // secrets returns the share as the Kubernetes secrets it holds, without the CAs and keys it
@@ -99,19 +106,25 @@ func (s Share) secrets() clustersecrets.KubernetesSecrets {
 	if s.EtcdCA != nil {
 		k.EtcdCA = *s.EtcdCA
 	}
+	if s.KubeletServingCA != nil {
+		k.KubeletServingCA = *s.KubeletServingCA
+	}
 	if s.Accepted != nil {
 		k.Accepted = *s.Accepted
 	}
 	return k
 }
 
-// CABundle is the Kubernetes CAs the node trusts, the one that issues first; FrontProxyCABundle
-// and EtcdCABundle are the front-proxy and etcd CAs a control plane trusts.
+// CABundle is the Kubernetes CAs the node trusts, the one that issues first; FrontProxyCABundle,
+// EtcdCABundle and KubeletServingCABundle are the front-proxy, etcd and kubelet serving CAs a
+// control plane trusts.
 func (s Share) CABundle() string { return s.secrets().CABundle() }
 
 func (s Share) FrontProxyCABundle() string { return s.secrets().FrontProxyCABundle() }
 
 func (s Share) EtcdCABundle() string { return s.secrets().EtcdCABundle() }
+
+func (s Share) KubeletServingCABundle() string { return s.secrets().KubeletServingCABundle() }
 
 // ServiceAccountPublicKeys are the public keys the API server accepts tokens of, the signing
 // key's first.
@@ -163,8 +176,8 @@ func ParseShare(data []byte) (Share, error) {
 func (s Share) Validate() error {
 	switch s.Kind {
 	case kubernetes.KindControlPlane:
-		if s.FrontProxyCA == nil || s.EtcdCA == nil || s.NodeCA == nil || s.Kubelet != nil {
-			return errors.New("a control-plane share holds the front-proxy, etcd and node CAs and no kubelet certificate")
+		if s.FrontProxyCA == nil || s.EtcdCA == nil || s.KubeletServingCA == nil || s.NodeCA == nil || s.Kubelet != nil {
+			return errors.New("a control-plane share holds the front-proxy, etcd, kubelet serving and node CAs and no kubelet certificate")
 		}
 		k := s.secrets()
 		if err := k.Validate(); err != nil {
@@ -184,7 +197,7 @@ func (s Share) Validate() error {
 			return errors.New("a worker share holds no CA key, node CA, service account key or encryption key")
 		}
 		if a := s.Accepted; a != nil && (len(a.FrontProxyCA)+len(a.EtcdCA)+len(a.ServiceAccountKeys)+len(a.EncryptionKeys) > 0) {
-			return errors.New("a worker share accepts Kubernetes CAs alone")
+			return errors.New("a worker share accepts the Kubernetes and kubelet serving CAs alone")
 		}
 		if err := s.validateAccepted(); err != nil {
 			return err
@@ -192,6 +205,12 @@ func (s Share) Validate() error {
 		ca, err := pki.ParseOneCertificate(s.CA.Certificate)
 		if err != nil {
 			return fmt.Errorf("Kubernetes share: ca: %w", err)
+		}
+		if s.KubeletServingCA == nil || s.KubeletServingCA.Key != "" {
+			return errors.New("a worker share holds the kubelet serving CA's certificate without its key")
+		}
+		if err := pki.ValidateRoot(s.KubeletServingCA.Certificate); err != nil {
+			return fmt.Errorf("Kubernetes share: kubeletServingCA: %w", err)
 		}
 		if s.Kubelet == nil {
 			return errors.New("a worker share holds a kubelet client certificate")
@@ -245,13 +264,16 @@ func (s Share) validateAccepted() error {
 	if s.FrontProxyCA != nil {
 		cas = append(cas, pki.NamedCA{Name: "frontProxyCA", CA: *s.FrontProxyCA}, pki.NamedCA{Name: "etcdCA", CA: *s.EtcdCA})
 	}
+	if s.KubeletServingCA != nil {
+		cas = append(cas, pki.NamedCA{Name: "kubeletServingCA", CA: *s.KubeletServingCA})
+	}
 	if s.NodeCA != nil {
 		cas = append(cas, pki.NamedCA{Name: "nodeCA", CA: *s.NodeCA})
 	}
 	for _, list := range []struct {
 		name  string
 		certs []string
-	}{{"accepted.ca", k.Accepted.CA}, {"accepted.frontProxyCA", k.Accepted.FrontProxyCA}, {"accepted.etcdCA", k.Accepted.EtcdCA}} {
+	}{{"accepted.ca", k.Accepted.CA}, {"accepted.frontProxyCA", k.Accepted.FrontProxyCA}, {"accepted.etcdCA", k.Accepted.EtcdCA}, {"accepted.kubeletServingCA", k.Accepted.KubeletServingCA}} {
 		for i, c := range list.certs {
 			cas = append(cas, pki.NamedCA{Name: fmt.Sprintf("%s[%d]", list.name, i), CA: pki.CertKey{Certificate: c}})
 		}
