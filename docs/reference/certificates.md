@@ -23,9 +23,10 @@ on the Kubernetes layer.
 | --- | --- | --- | --- | --- |
 | OS CA | 10 years | Client certificates and the node CA; path length 1 | The secrets file; its certificate is on every installed node and in every image built with `osCA` | in its last year |
 | Node CA | 5 years | Node certificates, for TLS servers and clients only; path length 0 | The secrets file and every control plane | in its last 18 months |
-| Kubernetes CA | 10 years | The certificates of the API server, the controllers, chalkd and the kubelets, and admin kubeconfigs | The secrets file and every control plane; workers get its certificate | in its last year |
+| Kubernetes CA | 10 years | The certificates of the API server, the controllers and chalkd, the kubelets' client certificates, and admin kubeconfigs | The secrets file and every control plane; workers get its certificate | in its last year |
 | Front-proxy CA | 10 years | The certificate the API server presents to aggregated API servers | The secrets file and every control plane | in its last year |
 | etcd CA | 10 years | etcd's server and peer certificates and those of its clients | The secrets file and every control plane | in its last year |
+| Kubelet serving CA | 10 years | The kubelets' serving certificates, which the API server alone trusts | The secrets file and every control plane; workers get its certificate | in its last year |
 | Service-account key | No expiry | Signs service-account tokens, with ES256 | The secrets file and every control plane | never |
 | Encryption key | No expiry | Encrypts Secrets in etcd, with secretbox | The secrets file and every control plane | never |
 
@@ -41,7 +42,7 @@ The secrets file also holds the recovery secret, from which each node's recovery
 | Control plane certificates | the control plane, from its Kubernetes share | 1 year | at every boot, and once two thirds of the lifetime of the first to expire have passed | `/run/chalkos/kubernetes/pki`, a tmpfs |
 | chalkd's clients of the API server and etcd | chalkd on a control plane | 1 hour | at half their lifetime | memory |
 | Kubelet client certificate | a worker's share at install; a control plane at every boot; then the controller-manager | 1 year | by the kubelet, once 70 to 90% of its lifetime have passed | `/var/lib/kubelet/pki` on VAR |
-| Kubelet serving certificate | the controller-manager, on a request chalkd approves | 1 year | by the kubelet | `/var/lib/kubelet/pki` on VAR |
+| Kubelet serving certificate | the controller-manager, from the kubelet serving CA, on a request chalkd approves | 1 year | by the kubelet | `/var/lib/kubelet/pki` on VAR |
 | Admin kubeconfig | chalkctl kubeconfig | 1 year, or `--ttl` | by issuing a new kubeconfig | the kubeconfig |
 
 The control plane certificates are the API server's serving certificate, its clients of the

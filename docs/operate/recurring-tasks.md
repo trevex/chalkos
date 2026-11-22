@@ -37,7 +37,7 @@ chalkctl itself warns about a client file in the last third of its lifetime.
 | Control plane and kubelet certificates | 1 year | the control plane and the kubelet | Nothing, unless status adds a note. |
 | Node CA | 5 years | nobody | Rotate it in its last 18 months. |
 | OS CA | 10 years | nobody | Rotate it in its last year. |
-| Kubernetes, front-proxy and etcd CAs | 10 years | nobody | Rotate them in their last year. |
+| Kubernetes, front-proxy, etcd and kubelet serving CAs | 10 years | nobody | Rotate them in their last year. |
 | Secure Boot certificates | 20 years | nobody | Nothing: firmware does not check their validity. |
 
 [Certificates](../reference/certificates.md) lists every certificate, its renewal point and the
@@ -53,7 +53,7 @@ notes status shows.
 - Rotate the node CA with
   [Rotate the node CA before it expires](access.md#rotate-the-node-ca-before-it-expires), and the
   OS CA with [Rotate the OS CA](access.md#rotate-the-os-ca).
-- Rotate the Kubernetes, front-proxy and etcd CAs with
+- Rotate the Kubernetes, front-proxy, etcd and kubelet serving CAs with
   [Rotate the Kubernetes CAs and keys](../kubernetes/rotate-kubernetes-cas.md).
 
 Put the dates in a calendar when you install the cluster. A rotation runs in phases that every

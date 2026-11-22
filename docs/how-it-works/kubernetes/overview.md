@@ -75,12 +75,12 @@ type, because the share holds certificates for that type.
 ## The Kubernetes share holds the secrets of a node
 
 The Kubernetes share is the set of Kubernetes secrets a node receives at install, which chalkd
-keeps on STATE. On a control plane, it holds the cluster, front-proxy and etcd CAs with their keys,
-the service-account key, the encryption key and the node CA. On a worker, it holds the cluster CA
-certificate and a kubelet client certificate. A node without a Kubernetes share, which is not
-installed yet, runs no kubelet. `chalkctl config apply --kubernetes-share` gives an installed node
-a share. [Kubernetes certificates](certificates.md) describes what the control plane issues from
-it.
+keeps on STATE. On a control plane, it holds the cluster, front-proxy, etcd and kubelet serving
+CAs with their keys, the service-account key, the encryption key and the node CA. On a worker, it
+holds the certificates of the cluster CA and the kubelet serving CA, and a kubelet client
+certificate. A node without a Kubernetes share, which is not installed yet, runs no kubelet.
+`chalkctl config apply --kubernetes-share` gives an installed node a share.
+[Kubernetes certificates](certificates.md) describes what the control plane issues from it.
 
 ## Four kinds of document describe the cluster
 

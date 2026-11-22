@@ -33,10 +33,11 @@ intermediate of the OS CA that may issue only node certificates.
 
 !!! note "With the Kubernetes layer, the Kubernetes CAs are anchors too"
 
-    The Kubernetes, front-proxy and etcd CAs live in the secrets file, and a control plane holds
-    them in its Kubernetes share. They vouch for the control plane's certificates, the kubelets'
-    and admin kubeconfigs. Control planes hold their keys and issue their own certificates with
-    them, as [Kubernetes certificates](../kubernetes/certificates.md) describes.
+    The Kubernetes, front-proxy, etcd and kubelet serving CAs live in the secrets file, and a
+    control plane holds them in its Kubernetes share. They vouch for the control plane's
+    certificates, the kubelets' and admin kubeconfigs. Control planes hold their keys and issue
+    their own certificates with them, as [Kubernetes certificates](../kubernetes/certificates.md)
+    describes.
 
 ## Secure Boot limits a node to images the key holder signed
 

@@ -20,35 +20,45 @@ API server answers ready.
 
 ## The CAs and keys of a cluster come from the secrets file
 
-The secrets file holds three CAs and two keys for Kubernetes, beside the OS CA and the node CA
+The secrets file holds four CAs and two keys for Kubernetes, beside the OS CA and the node CA
 that [Certificates](../node/certificates.md) describes:
 
-- the Kubernetes CA, which issues the certificates of the API server, the controllers, chalkd and
-  the kubelets, and admin kubeconfigs;
+- the Kubernetes CA, which issues the certificates of the API server, the controllers and chalkd,
+  the kubelets' client certificates, and admin kubeconfigs;
 - the front-proxy CA, which issues the certificate the API server presents to aggregated API
   servers;
 - the etcd CA, which issues etcd's server and peer certificates and those of its clients;
+- the kubelet serving CA, which issues the kubelets' serving certificates. The API server alone
+  trusts it, when it connects to a kubelet;
 - the service-account key, which signs service-account tokens with ES256;
 - the encryption key, with which the API server encrypts Secrets in etcd, using secretbox.
 
 The CAs live ten years and the keys have no expiry. A control plane's share holds all of them
-with their keys. A worker's share holds the Kubernetes CA's certificate and a kubelet client
-certificate. [Certificates](../../reference/certificates.md) in the reference lists their
-lifetimes and the status notes about them.
+with their keys. A worker's share holds the certificates of the Kubernetes CA and of the kubelet
+serving CA, and a kubelet client certificate. The worker uses the kubelet serving CA's certificate
+only to name the issuer of its kubelet's serving certificate in its status.
+[Certificates](../../reference/certificates.md) in the reference lists their lifetimes and the
+status notes about them.
 
 The CAs that grant different access must not share a key, and the secrets file is refused when
 two of them do. An etcd CA that was also the Kubernetes CA would give every certificate the
-Kubernetes CA issues full access to etcd.
+Kubernetes CA issues full access to etcd. A kubelet serving CA that was also the Kubernetes CA
+would let a kubelet's serving certificate pass as the API server's.
+
+Kubeconfigs, the `kube-root-ca.crt` ConfigMap that pods read, and every other client of the API
+server trust the Kubernetes CA alone. A kubelet serving certificate, even one approved by mistake,
+therefore never verifies as the API server for the names it carries.
 
 The diagram shows what each Kubernetes CA issues.
 
 ```mermaid
 flowchart TD
     kca["Kubernetes CA"] --> cp["control plane: API server, controller-manager, scheduler, chalkd"]
-    kca --> kubelet["kubelet client and serving certificates"]
+    kca --> kubelet["kubelet client certificates"]
     kca --> admin["admin kubeconfigs"]
     fpca["front-proxy CA"] --> fp["front-proxy client"]
     etcdca["etcd CA"] --> etcd["etcd server, peer and client certificates"]
+    ksca["kubelet serving CA"] --> serving["kubelet serving certificates"]
 ```
 
 ## A control plane issues its certificates at every boot
@@ -86,8 +96,9 @@ through a certificate request. The controller-manager approves such a request fo
 renews its own, through the RBAC binding chalkd applies for it.
 
 Every kubelet also requests a serving certificate, which the API server checks when it fetches
-logs or runs `kubectl exec`. chalkd on the control planes approves such a request when all of
-these hold:
+logs or runs `kubectl exec`. The controller-manager signs it with the kubelet serving CA, and the
+API server verifies it against that CA's bundle, `kubelet-serving-ca.crt`, alone. chalkd on the
+control planes approves such a request when all of these hold:
 
 - the node asks for its own name;
 - the certificate is for server use only;
@@ -137,9 +148,9 @@ same four phases as the OS CA, accept, switch, refresh and finish, which
 [A rotation replaces a CA in four phases](../node/certificates.md#a-rotation-replaces-a-ca-in-four-phases)
 explains:
 
-- `kubernetes-ca` replaces the Kubernetes, front-proxy and etcd CAs. The kubelets request new
-  serving certificates. The
-  rotation pauses after the accept and the refresh phases.
+- `kubernetes-ca` replaces the Kubernetes, front-proxy, etcd and kubelet serving CAs. The kubelets
+  request new serving certificates, which the new kubelet serving CA signs. The rotation pauses
+  after the accept and the refresh phases.
 - `service-account-key` replaces the key that signs service-account tokens. It pauses after the
   refresh.
 - `encryption-key` replaces the key that encrypts Secrets in etcd. The refresh rewrites every
@@ -228,8 +239,8 @@ lists for every node, it leaves these:
   pod garbage collector deletes those pods, shortly after their Node is gone.
 - A control plane's disk holds the Kubernetes CA's key beside the node CA's. Rotating `os-ca` and
   `kubernetes-ca` cuts off a revoked control plane, or a stolen copy of its disk. A former control
-  plane's etcd and front-proxy certificates stay valid until the `kubernetes-ca` rotation has
-  finished.
+  plane's etcd and front-proxy certificates, and any kubelet serving certificate it signs with the
+  kubelet serving CA's key, stay valid until the `kubernetes-ca` rotation has finished.
 - A renewal already in flight when the revoke lands can still complete, and the node then holds a
   node certificate valid for a year. The policy still denies its kubelet's writes.
 - A cluster-admin can edit or delete the ConfigMap and the policy with kubectl. Renewals follow
@@ -296,7 +307,7 @@ file, or with an admin client file.
 - The approver of kubelet serving certificates checks a request against the addresses the Node
   object lists. A kubelet reports those addresses itself. The approver refuses the cluster's
   addresses and names and those of the other nodes, but a node can still claim an unused address
-  of its network.
+  of its network. Only the API server trusts such a certificate, when it connects to a kubelet.
 - A control plane holds every Kubernetes CA key. Taking one over gives full access to the
   cluster's Kubernetes.
 

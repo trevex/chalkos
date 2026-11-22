@@ -357,8 +357,9 @@ of the kinds it is [granted](#grant). See
 <!-- abbr: nolower -->
 
 The Kubernetes secrets a node receives at install. On a control plane, these are the cluster,
-front-proxy and etcd CAs with their keys, the service-account key, the encryption key and the
-node CA; on a worker, the cluster CA certificate and a kubelet client certificate. chalkd keeps it
+front-proxy, etcd and kubelet serving CAs with their keys, the service-account key, the encryption
+key and the node CA; on a worker, the certificates of the cluster CA and the kubelet serving CA,
+and a kubelet client certificate. chalkd keeps it
 on [STATE](#state). See
 [How Kubernetes runs on a node](../how-it-works/kubernetes/overview.md#the-kubernetes-share-holds-the-secrets-of-a-node).
 
