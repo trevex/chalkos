@@ -1143,6 +1143,8 @@ in
         filled = edge.environment.etc."frr/frr.conf".source;
         condition = frr.unitConfig.ConditionPathIsDirectory;
         reload = lib.length frr.serviceConfig.ExecReload;
+        # FRR starts on every router with config, without a marker of BGP.
+        marker = lib.any (s: s.unitConfig ? ConditionPathExists) ([ frr ] ++ lib.attrValues daemons);
         fillsAlike = frr.serviceConfig.ExecStart == lib.head frr.serviceConfig.ExecReload;
         fills = lib.hasInfix "/bin/chalkd frr-credentials " frr.serviceConfig.ExecStart;
         reloadsFilled =
@@ -1213,6 +1215,7 @@ in
         filled = "/run/frr/frr.conf";
         condition = "/run/chalkos/credentials/frr";
         reload = 2;
+        marker = false;
         fillsAlike = true;
         fills = true;
         reloadsFilled = true;
@@ -4308,9 +4311,9 @@ in
     };
   };
   # A Kubernetes image carries BGP unless it leaves the feature out. Without it, the image lacks
-  # BGP's kinds, output, effect and tests, FRR's units, user, groups, package, files and
-  # diagnostics, the BFD port and networkd's leave of zebra's routes; nothing else changes, and its
-  # build allocates the IDs of the same users and groups.
+  # BGP's kinds, outputs, effects and tests, FRR's units, user, groups, package, files and
+  # diagnostics, the firewall's rule for BFD's mark and networkd's leave of zebra's routes;
+  # nothing else changes, and its build allocates the IDs of the same users and groups.
   testKubernetesBGPOptional =
     let
       names = lib.attrNames;
@@ -4326,7 +4329,7 @@ in
         chalkd = map lib.getName c.systemd.services.chalkd.path;
         packages = map lib.getName c.environment.systemPackages;
         etc = names c.environment.etc;
-        udpPorts = map toString c.networking.firewall.allowedUDPPorts;
+        firewall = lib.splitString "\n" c.networking.firewall.extraInputRules;
         networkd = names (
           lib.filterAttrs (n: _: lib.hasPrefix "ManageForeign" n) c.systemd.network.config.networkConfig
         );
@@ -4347,9 +4350,16 @@ in
             "BGPPeer"
             "BGPSpeaker"
           ];
-          outputs = [ "bgp" ];
-          effects = [ "bgp" ];
+          outputs = [
+            "bfd-firewall"
+            "bgp"
+          ];
+          effects = [
+            "bgp"
+            "bgp-speaker"
+          ];
           tests = [
+            "kubernetes-bgp-add-speaker"
             "kubernetes-bgp-address"
             "kubernetes-bgp-address-interface"
             "kubernetes-bgp-address-two-interfaces"
@@ -4363,6 +4373,7 @@ in
             "kubernetes-bgp-no-router-id"
             "kubernetes-bgp-none"
             "kubernetes-bgp-peer-without-speaker"
+            "kubernetes-bgp-remove-speaker"
             "kubernetes-bgp-shared-unnumbered"
             "kubernetes-bgp-unconfigured-export"
             "kubernetes-bgp-unconfigured-peer-interface"
@@ -4392,7 +4403,7 @@ in
             "frr/frr.conf"
             "frr/vtysh.conf"
           ];
-          udpPorts = [ "3784" ];
+          firewall = [ "udp dport 3784 meta mark & 0x08000000 == 0x08000000 accept" ];
           networkd = [
             "ManageForeignNextHops"
             "ManageForeignRoutes"
@@ -4470,7 +4481,11 @@ in
     };
   # On a Kubernetes image FRR runs the output bgp's config, which vtysh checks, reloads when it
   # changes, loads the BGPPeers' passwords, and announces the node's addresses before the
-  # Kubernetes preparation picks them.
+  # Kubernetes preparation picks them. FRR's units start only on a node whose output bgp holds the
+  # marker of a BGPSpeaker, and a delivery that adds or removes the speaker restarts frr.service,
+  # which starts or stops FRR. frr.service loads the table that marks BFD from the BGPPeers, which
+  # nft checks, before it starts and on each reload, and deletes it when it stops; the firewall
+  # accepts BFD with the mark alone.
   testKubernetesBGP = {
     expr =
       let
@@ -4488,7 +4503,35 @@ in
         wantedBy = lib.sort lib.lessThan frr.wantedBy;
         prepareAfter = lib.elem "chalkos-node-addresses.target" w.systemd.services.chalkos-kubernetes.after;
         filled = w.environment.etc."frr/frr.conf".source;
-        condition = frr.unitConfig.ConditionPathIsDirectory;
+        conditions = lib.mapAttrs (_: s: lib.filterAttrs (n: _: lib.hasPrefix "Condition" n) s.unitConfig) (
+          lib.filterAttrs (n: _: n == "frr" || lib.hasPrefix "frr-" n) w.systemd.services
+        );
+        start = {
+          inherit (w.chalkos.effects.bgp-speaker) restart start after;
+          when = lib.hasInfix "BGPSpeaker" w.chalkos.effects.bgp-speaker.when;
+        };
+        reloadOn = w.chalkos.effects.bgp.outputs;
+        bfd =
+          let
+            load = "/bin/nft -f /run/chalkos/outputs/bfd-firewall/bfd.nft";
+            reload = lib.head frr.serviceConfig.ExecReload;
+          in
+          {
+            inherit (w.chalkos.outputs.bfd-firewall) inputs;
+            render = lib.hasSuffix " kubernetes-bfd 0x08000000" w.chalkos.outputs.bfd-firewall.render;
+            check = lib.hasInfix " check each bfd.nft /nix/store/" w.chalkos.outputs.bfd-firewall.check;
+            after = lib.elem "nftables.service" frr.after;
+            load =
+              lib.hasPrefix "+" frr.serviceConfig.ExecStartPre
+              && lib.hasSuffix load frr.serviceConfig.ExecStartPre;
+            reload = lib.hasPrefix "+" reload && lib.hasSuffix load reload;
+            reloads = lib.length frr.serviceConfig.ExecReload;
+            delete = lib.hasSuffix "/bin/nft delete table inet chalkos-bfd" frr.serviceConfig.ExecStopPost;
+            firewall = lib.filter (lib.hasInfix "3784") (
+              lib.splitString "\n" w.networking.firewall.extraInputRules
+            );
+            ports = w.networking.firewall.allowedUDPPorts;
+          };
       };
     expected = {
       option = true;
@@ -4508,7 +4551,48 @@ in
       ];
       prepareAfter = true;
       filled = "/run/frr/frr.conf";
-      condition = "/run/chalkos/credentials/frr";
+      conditions =
+        lib.genAttrs
+          [
+            "frr"
+            "frr-bfdd"
+            "frr-bgpd"
+            "frr-mgmtd"
+            "frr-staticd"
+            "frr-zebra"
+          ]
+          (_: {
+            ConditionPathIsDirectory = "/run/chalkos/credentials/frr";
+            ConditionPathExists = "/run/chalkos/outputs/bgp/speaker";
+          });
+      start = {
+        restart = [ "frr.service" ];
+        start = true;
+        after = [
+          "networkd"
+          "links"
+        ];
+        when = true;
+      };
+      reloadOn = [
+        "bgp"
+        "bfd-firewall"
+      ];
+      bfd = {
+        inputs = [
+          "BGPPeer"
+          "BGPSpeaker"
+        ];
+        render = true;
+        check = true;
+        after = true;
+        load = true;
+        reload = true;
+        reloads = 3;
+        delete = true;
+        firewall = [ "udp dport 3784 meta mark & 0x08000000 == 0x08000000 accept" ];
+        ports = [ ];
+      };
     };
   };
   # The cluster registry runs on the nodes with a rendered port, as its own user with pinned IDs

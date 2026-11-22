@@ -1,0 +1,13 @@
+table inet chalkos-bfd
+delete table inet chalkos-bfd
+table inet chalkos-bfd {
+  chain input {
+    type filter hook input priority filter - 1; policy accept;
+    meta mark & 0x08000000 == 0x08000000 meta mark set meta mark ^ 0x08000000
+    ip6 saddr 2001:db8::1 udp dport 3784 meta mark set meta mark | 0x08000000 comment "BGPPeer tor-v6"
+  }
+  chain clear {
+    type filter hook input priority filter + 1; policy accept;
+    meta mark & 0x08000000 == 0x08000000 meta mark set meta mark ^ 0x08000000
+  }
+}

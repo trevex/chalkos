@@ -8,7 +8,8 @@
     "hint": null,
     "kinds": [],
     "outputs": [
-      "bgp"
+      "bgp",
+      "bfd-firewall"
     ],
     "reload": [
       "frr.service"
@@ -17,6 +18,23 @@
     "run": "",
     "start": false,
     "when": ""
+  },
+  "bgp-speaker": {
+    "after": [
+      "networkd",
+      "links"
+    ],
+    "chalkd": "",
+    "hint": null,
+    "kinds": [],
+    "outputs": [],
+    "reload": [],
+    "restart": [
+      "frr.service"
+    ],
+    "run": "",
+    "start": true,
+    "when": "(size(((\"kubernetes.chalkos.dev/v1alpha1\" in config && \"BGPSpeaker\" in config[\"kubernetes.chalkos.dev/v1alpha1\"]) ? config[\"kubernetes.chalkos.dev/v1alpha1\"].BGPSpeaker : {})) > 0) != (size(((\"kubernetes.chalkos.dev/v1alpha1\" in oldConfig && \"BGPSpeaker\" in oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"]) ? oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"].BGPSpeaker : {})) > 0)"
   },
   "chalkd-cluster": {
     "after": [

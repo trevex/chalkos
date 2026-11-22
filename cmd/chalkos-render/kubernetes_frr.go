@@ -20,6 +20,13 @@ const (
 	bgpMaxPaths = 16
 	// bgpConnectRetry is the seconds between FRR's attempts to open a session.
 	bgpConnectRetry = 10
+	// speakerFile is the marker the output bgp holds when the node runs BGP, which FRR's units
+	// need to start.
+	speakerFile = "speaker"
+	// bfdFile is the firewall table of the output bfd-firewall.
+	bfdFile = "bfd.nft"
+	// bfdTable is the nftables table, of the inet family, that bfdFile loads.
+	bfdTable = "chalkos-bfd"
 )
 
 // bgpLists are the lists every speaker's frr.conf holds: the default routes an import of default
@@ -130,8 +137,9 @@ func decodeDocuments[T any](in map[string]any, kind string) ([]bgpDocument[T], e
 // renderKubernetesFRR writes frr.conf to out: a BGP instance of the BGPSpeaker's AS with a peer
 // group per BGPPeer, the connected routes of the speaker's export interfaces announced to every
 // peer, and the default routes each peer's import takes. A password is a placeholder,
-// @secret_<secret>.<key>@, that frr.service fills in from its credentials. Without a BGPSpeaker
-// the node runs no BGP.
+// @secret_<secret>.<key>@, that frr.service fills in from its credentials. With a BGPSpeaker it
+// also writes the empty file speaker, without which FRR does not start: a node without one runs
+// no BGP.
 func renderKubernetesFRR(in map[string]any, out string) error {
 	speakers, err := decodeDocuments[bgpSpeaker](in, "BGPSpeaker")
 	if err != nil {
@@ -151,7 +159,10 @@ func renderKubernetesFRR(in map[string]any, out string) error {
 	if err != nil {
 		return err
 	}
-	return writeFile(out, frrFile, []byte(text))
+	if err := writeFile(out, frrFile, []byte(text)); err != nil || len(speakers) == 0 {
+		return err
+	}
+	return writeFile(out, speakerFile, nil)
 }
 
 func kubernetesFRRConfig(node string, speakers []bgpDocument[bgpSpeaker], peers []bgpDocument[bgpPeer], nodes []bgpDocument[bgpNode]) (string, error) {
@@ -305,4 +316,56 @@ func bgpSessionOf(d bgpDocument[bgpPeer]) (bgpSession, error) {
 		s.password = c + "@"
 	}
 	return s, nil
+}
+
+// renderKubernetesBFD writes bfd.nft, the table that marks BFD's single-hop control packets, UDP
+// port 3784, with mark, which the NixOS firewall accepts: from each BGPPeer with bfd, by its
+// address, on its interface when it names one, or on its interfaces for unnumbered sessions.
+// Without a BGPSpeaker it writes nothing, as the node runs no FRR.
+func renderKubernetesBFD(mark string, in map[string]any, out string) error {
+	speakers, err := decodeDocuments[bgpSpeaker](in, "BGPSpeaker")
+	if err != nil || len(speakers) == 0 {
+		return err
+	}
+	peers, err := decodeDocuments[bgpPeer](in, "BGPPeer")
+	if err != nil {
+		return err
+	}
+	var rules []string
+	for _, p := range peers {
+		s, err := bgpSessionOf(p)
+		if err != nil {
+			return err
+		}
+		if !s.spec.BFD {
+			continue
+		}
+		var match []string
+		if len(s.spec.Interfaces) > 0 {
+			match = append(match, `iifname { "`+strings.Join(s.spec.Interfaces, `", "`)+`" }`)
+		}
+		switch {
+		case s.address.Is4():
+			match = append(match, "ip saddr "+s.address.String())
+		case s.address.Is6():
+			match = append(match, "ip6 saddr "+s.address.String())
+		}
+		rules = append(rules, fmt.Sprintf(`%s udp dport 3784 meta mark set meta mark | %s comment "BGPPeer %s"`, strings.Join(match, " "), mark, p.Metadata.Name))
+	}
+	return writeFile(out, bfdFile, []byte(markTable(bfdTable, mark, rules)))
+}
+
+// markTable is the nftables table, replaced in one transaction, whose rules set mark. Its input
+// chain runs before the firewall's and first clears the mark, so only its rules set it; its clear
+// chain runs after the firewall's, so the mark never outlives it.
+func markTable(table, mark string, rules []string) string {
+	clear := fmt.Sprintf("meta mark & %[1]s == %[1]s meta mark set meta mark ^ %[1]s", mark)
+	var b strings.Builder
+	fmt.Fprintf(&b, "table inet %[1]s\ndelete table inet %[1]s\ntable inet %[1]s {\n", table)
+	b.WriteString("  chain input {\n    type filter hook input priority filter - 1; policy accept;\n    " + clear + "\n")
+	for _, rule := range rules {
+		b.WriteString("    " + rule + "\n")
+	}
+	b.WriteString("  }\n  chain clear {\n    type filter hook input priority filter + 1; policy accept;\n    " + clear + "\n  }\n}\n")
+	return b.String()
 }

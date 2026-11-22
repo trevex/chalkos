@@ -1147,8 +1147,8 @@ Check, on the node:
   count of received prefixes. Compare the passwords of `router/secrets.yaml` and
   `bgp/secrets.yaml`, which must be the same.
 
-The router's firewall accepts BGP and BFD from the fabric by itself, and the nodes' image opens
-BFD's port.
+The router's firewall accepts BGP and BFD from the fabric by itself, and each node opens BFD's
+port to its `BGPPeer`s with `bfd`.
 
 ### A name does not resolve, or a connection to the internet fails
 

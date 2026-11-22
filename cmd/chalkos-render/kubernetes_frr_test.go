@@ -205,3 +205,54 @@ func TestKubernetesFRRGuards(t *testing.T) {
 		})
 	}
 }
+
+// A speaker leaves the marker FRR's units start on; a node without one gets none.
+func TestKubernetesFRRSpeakerMarker(t *testing.T) {
+	with := renderedFiles(t, []string{"kubernetes-frr"}, kubernetesInput(t, map[string]any{
+		"BGPSpeaker": speaker(map[string]any{"asn": 65001, "routerID": "0.0.0.11", "export": map[string]any{"interfaces": []string{"node0"}}}),
+	}))
+	if !strings.Contains(with, "# speaker\n") {
+		t.Errorf("a speaker's output lacks the marker:\n%s", with)
+	}
+	if without := renderedFiles(t, []string{"kubernetes-frr"}, kubernetesInput(t, map[string]any{})); strings.Contains(without, "# speaker\n") {
+		t.Errorf("an output without a speaker holds the marker:\n%s", without)
+	}
+}
+
+// The BFD table marks UDP 3784 from each peer with bfd alone: by address, on its interface, or on
+// its interfaces for unnumbered sessions. Without a speaker the output holds no table.
+func TestKubernetesBFD(t *testing.T) {
+	args := []string{"kubernetes-bfd", "0x08000000"}
+	got := renderedFiles(t, args, kubernetesInput(t, map[string]any{
+		"BGPSpeaker": speaker(map[string]any{"asn": 65001, "routerID": "0.0.0.11", "export": map[string]any{"interfaces": []string{"node0"}}}),
+		"BGPPeer": []any{
+			doc("fabric", map[string]any{"asn": 65000, "address": nil, "interfaces": []string{"fabric1", "fabric0"}, "password": nil, "bfd": true, "import": "default"}),
+			doc("bound", map[string]any{"asn": 65000, "address": "2001:db8::1", "interfaces": []string{"eth1"}, "password": nil, "bfd": true, "import": "default"}),
+			doc("remote", map[string]any{"asn": 65002, "address": "192.0.2.1", "interfaces": nil, "password": nil, "bfd": true, "import": "none"}),
+			doc("quiet", map[string]any{"asn": 65003, "address": "192.0.2.2", "interfaces": nil, "password": nil, "bfd": false, "import": "none"}),
+		},
+	}))
+	want := `# bfd.nft
+table inet chalkos-bfd
+delete table inet chalkos-bfd
+table inet chalkos-bfd {
+  chain input {
+    type filter hook input priority filter - 1; policy accept;
+    meta mark & 0x08000000 == 0x08000000 meta mark set meta mark ^ 0x08000000
+    iifname { "fabric1", "fabric0" } udp dport 3784 meta mark set meta mark | 0x08000000 comment "BGPPeer fabric"
+    iifname { "eth1" } ip6 saddr 2001:db8::1 udp dport 3784 meta mark set meta mark | 0x08000000 comment "BGPPeer bound"
+    ip saddr 192.0.2.1 udp dport 3784 meta mark set meta mark | 0x08000000 comment "BGPPeer remote"
+  }
+  chain clear {
+    type filter hook input priority filter + 1; policy accept;
+    meta mark & 0x08000000 == 0x08000000 meta mark set meta mark ^ 0x08000000
+  }
+}
+`
+	if got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+	if got := renderedFiles(t, args, kubernetesInput(t, map[string]any{})); got != "" {
+		t.Errorf("without a speaker:\n%s", got)
+	}
+}

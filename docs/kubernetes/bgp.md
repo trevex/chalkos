@@ -12,8 +12,9 @@ while the node holds it, and can take the default route its peers send. Use it w
 on a routed fabric instead of one layer-2 segment, when a node's address should stay reachable
 over whichever of its ports works, or when the VIP runs in the `routed` mode.
 
-Images with the Kubernetes layer carry the speaker by default. FRR runs no BGP until the node's
-config holds a `BGPSpeaker`.
+Images with the Kubernetes layer carry the speaker by default. FRR does not run until the node's
+config holds a `BGPSpeaker`, and the firewall opens BFD's port to the `BGPPeer`s with `bfd`
+alone.
 
 ## Before you begin
 
@@ -316,6 +317,10 @@ k1 systemd[1]: Reloaded frr.service - FRR's config and daemons.
 
 A reload that fails fails the delivery, with the config stored, and a restart of `frr.service`
 loads the config whole.
+
+A delivery that adds the node's first `BGPSpeaker`, or removes it, takes the effect `bgp-speaker`
+too, which restarts `frr.service` in place of the reload: FRR starts with the speaker and stops
+without it, which ends every session.
 [A delivery reloads FRR](../how-it-works/router/bgp.md#a-delivery-reloads-frr)
 explains the reload, which routers share.
 
@@ -344,9 +349,10 @@ which ends the sessions, and then with the new number.
 An image whose modules set
 [`chalkos.kubernetes.bgp.enable`](../reference/image-options.md#chalkoskubernetesbgpenable) to
 `false` carries no FRR. Its nodes refuse the kinds `BGPSpeaker` and `BGPPeer`, and it has no
-output or effect `bgp` and no diagnostics `bgp-summary`, `bgp-neighbor`, `bgp-route` or
-`bfd-peers`. Its firewall leaves BFD's port closed. Use such an image for nodes that need no BGP,
-or that run another routing daemon an extension adds.
+outputs `bgp` and `bfd-firewall`, no effects `bgp` and `bgp-speaker`, and no diagnostics
+`bgp-summary`, `bgp-neighbor`, `bgp-route` or `bfd-peers`. Its firewall leaves BFD's port closed.
+Use such an image for nodes that need no BGP, or that run another routing daemon an extension
+adds.
 [Write a BGP extension](../guides/bgp-extension.md)
 builds such an image with bird in place of FRR.
 

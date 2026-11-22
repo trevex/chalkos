@@ -28,7 +28,7 @@ filters with a table of its own, which [Router images](#router-images) describes
 | 10250 | TCP | kubelet | control planes and workers | the API server |
 | 30000–32767 | TCP | NodePort services | control planes and workers | clients of NodePort services |
 | 8472 | UDP | flannel's VXLAN | control planes and workers, with flannel | the other nodes |
-| 3784 | UDP | BFD, FRR's bfdd: single-hop control | control planes and workers whose image carries the BGP speaker | the BGP neighbours of a `BGPPeer` with `bfd` |
+| 3784 | UDP | BFD, FRR's bfdd: single-hop control | control planes and workers whose image carries the BGP speaker and whose config holds a `BGPSpeaker` | the BGP neighbours of a `BGPPeer` with `bfd`, from its address or on its interfaces |
 | 5000, or the `ClusterRegistry`'s `port` | TCP | chalkos-registry, the cluster registry: HTTPS with the node certificate; pulls for a certificate of the OS CA, a node's or a client file's, pushes, deletes and garbage collection for a client certificate of the admin role | nodes whose static address is one of the `ClusterRegistry`'s `endpoints`, every control plane among them | containerd on every Kubernetes node; chalkctl registry |
 
 Ports 2379 and 2380 accept only certificates of the cluster's etcd CA, but a control plane's
@@ -42,6 +42,14 @@ which `chalkos-registry.service` loads before the registry starts and deletes wh
 TCP to the port with the bit `0x04000000`, and the firewall accepts packets that carry it. The
 table clears the bit before it marks and after the firewall's chain, as the control plane's table
 does. A node that serves no endpoint runs no registry, loads no table and keeps the port closed.
+
+BFD's port is open only to the `BGPPeer`s with `bfd`: from a peer's `address`, on its interface
+when it names one, or on its `interfaces` for unnumbered sessions. The table `inet chalkos-bfd`,
+which `frr.service` loads before FRR starts and on each reload and deletes when it stops, marks
+UDP 3784 from those peers with the bit `0x08000000`, and the firewall accepts packets that carry
+it. The table clears the bit before it marks and after the firewall's chain, as the control
+plane's table does. A node whose config holds no `BGPSpeaker` runs no FRR, loads no table and
+keeps the port closed.
 
 ## VXLAN rule
 
@@ -88,7 +96,7 @@ connections from other machines. They are reachable from the node itself.
 | 10256 | TCP | kube-proxy's health, kube-proxy's default | every address | control planes and workers |
 | 10257 | TCP | kube-controller-manager | `127.0.0.1` | control planes |
 | 10259 | TCP | kube-scheduler | `127.0.0.1` | control planes |
-| 179 | TCP | BGP, FRR's bgpd; the node opens its sessions itself | every address | control planes and workers whose image carries the BGP speaker |
+| 179 | TCP | BGP, FRR's bgpd; the node opens its sessions itself | every address | control planes and workers whose image carries the BGP speaker and whose config holds a `BGPSpeaker` |
 
 CoreDNS answers on port 53 inside the pod network, at the cluster's DNS service addresses; it
 opens no port on the node.
@@ -108,10 +116,11 @@ table and leaves the others in place.
 
 | Table | Owner | Contents |
 | --- | --- | --- |
-| `inet nixos-fw` | NixOS firewall | The input policy: drop, except for the loopback interface, established and related connections, the open ports above, ICMP echo requests, ICMPv6 other than redirects and node information queries, DHCPv6 replies to link-local addresses, and the control plane's ports, VXLAN and the cluster registry's port carrying their marks. A reverse-path check in prerouting drops packets from a source address the node has no route back to. |
+| `inet nixos-fw` | NixOS firewall | The input policy: drop, except for the loopback interface, established and related connections, the open ports above, ICMP echo requests, ICMPv6 other than redirects and node information queries, DHCPv6 replies to link-local addresses, and the control plane's ports, VXLAN, the cluster registry's port and BFD carrying their marks. A reverse-path check in prerouting drops packets from a source address the node has no route back to. |
 | `inet chalkos-controlplane` | chalkos | On a control plane, the mark of the control plane's ports and its clearing. |
 | `inet chalkos-vxlan` | chalkos | The VXLAN mark, its clearing and the forward drop. |
 | `inet chalkos-registry` | chalkos | On a node that serves the cluster registry, the mark of its port and its clearing. |
+| `inet chalkos-bfd` | chalkos | On a node that runs FRR, the mark of BFD from the BGP peers with `bfd` and its clearing. |
 | `ip kube-proxy`, `ip6 kube-proxy` | kube-proxy | Service and NodePort translation, in kube-proxy's nftables mode. |
 | flannel's tables | flanneld | Masquerading of pod traffic, with `EnableNFTables`. |
 | the portmap plugin's table | CNI portmap plugin | Host ports of pods, with its nftables backend. |
@@ -122,12 +131,12 @@ flannel, the BGP speaker and the cluster registry:
 ```text
 chain input-allow {
    tcp dport { 10250, 50000, 30000-32767 } accept
-   udp dport { 3784 } accept
    meta l4proto . th dport @temp-ports accept
    icmp type echo-request  accept comment "allow ping"
    icmpv6 type != { nd-redirect, 139 } accept comment "Accept all ICMPv6 messages except redirects and node information queries (type 139).  See RFC 4890, section 4.4."
    ip6 daddr fe80::/64 udp dport 546 accept comment "DHCPv6 client"
    meta mark & 0x04000000 == 0x04000000 accept
+   udp dport 3784 meta mark & 0x08000000 == 0x08000000 accept
    tcp dport { 6443, 2379, 2380 } meta mark & 0x02000000 == 0x02000000 accept
    udp dport 8472 meta mark & 0x01000000 == 0x01000000 accept
 }
