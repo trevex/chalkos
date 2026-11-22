@@ -69,11 +69,13 @@ in
       "sbin/${name}" = program;
     }) config.chalkos.kubernetes.hostTools;
 
-    image.repart.partitions.${store} = lib.mkIf (links != { }) {
-      storePaths = [ tree ];
-      contents = lib.genAttrs (map (t: "/${t}") tops) (t: {
+    # The system references the tree, so the store partition, the SBOM and the shell checks hold its
+    # closure.
+    system.extraDependencies = lib.mkIf (links != { }) [ tree ];
+    image.repart.partitions.${store}.contents = lib.mkIf (links != { }) (
+      lib.genAttrs (map (t: "/${t}") tops) (t: {
         source = "${tree}${t}";
-      });
-    };
+      })
+    );
   };
 }

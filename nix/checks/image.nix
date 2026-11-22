@@ -318,7 +318,8 @@ in
   # their systems or what their initrds' store paths reference. The feature images carry the
   # Kubernetes features that are off by default. The worker's NixOS firewall stays on: NixOS's
   # bashless profile, which chalkos does not import, would turn it off. The router runs a
-  # firewall of its own.
+  # firewall of its own. The Longhorn feature image's build fails with a host tool that is a
+  # shell script, whose shell only the links below /usr reference, and with one named sh.
   no-shell =
     let
       release = self.releaseImages.${pkgs.stdenv.hostPlatform.system};
@@ -337,9 +338,35 @@ in
         c
       ) release
       // lib.mapAttrs (_: image: image.nixos.config) checkLib.featureImages;
+      # The Longhorn feature image's builds with a host tool that must fail them: the test worker
+      # allows a shell.
+      refused =
+        lib.mapAttrs
+          (
+            _: tool:
+            pkgs.testers.testBuildFailure
+              (checkLib.featureImages.longhorn.nixos.extendModules {
+                modules = [ { chalkos.kubernetes.hostTools.foo = tool; } ];
+              }).config.system.build.toplevel
+          )
+          {
+            shellScript = "${pkgs.writeShellScript "foo" "true"}";
+            programNamedSh = "${
+              pkgs.writeTextFile {
+                name = "chalkos-not-a-shell";
+                text = "";
+                executable = true;
+                destination = "/bin/sh";
+              }
+            }/bin/sh";
+          };
     in
-    pkgs.runCommand "chalkos-no-shell" { nativeBuildInputs = [ pkgs.jq ]; } ''
+    pkgs.runCommand "chalkos-no-shell" ({ nativeBuildInputs = [ pkgs.jq ]; } // refused) ''
       fail() { echo "error: $*" >&2; exit 1; }
+      grep -q "the image's extra dependencies holds a shell" $shellScript/testBuildFailure.log \
+        || fail "the Kubernetes image builds with a host tool that is a shell script"
+      grep -q "holds programs named after a shell" $programNamedSh/testBuildFailure.log \
+        || fail "the Kubernetes image builds with a host tool named sh"
       ${lib.concatStrings (
         lib.mapAttrsToList (name: c: ''
           top=${c.system.build.toplevel}

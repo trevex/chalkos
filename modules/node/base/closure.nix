@@ -10,16 +10,49 @@
   ...
 }:
 let
-  # The store paths of the shells a node must not carry, by their names: bash-5.3p15 and
-  # bash-interactive-5.3p15, not bash-completion. nixpkgs splices each regex into a bash test
-  # unquoted, so none holds parentheses or a bar.
-  shells = map (name: "^${builtins.storeDir}/[0-9a-z]+-${name}-[0-9]") [
+  # The store paths of the shells a node must not carry, by their names: bash-5.3p15,
+  # bash-interactive-5.3p15 and the static busybox-static-x86_64-unknown-linux-musl-1.37.0, not
+  # bash-completion. nixpkgs splices each regex into a bash test unquoted, so none holds
+  # parentheses or a bar.
+  shells =
+    lib.concatMap
+      (name: [
+        "^${builtins.storeDir}/[0-9a-z]+-${name}-[0-9]"
+        "^${builtins.storeDir}/[0-9a-z]+-${name}-static-"
+      ])
+      [
+        "bash"
+        "bash-interactive"
+        "dash"
+        "busybox"
+        "toybox"
+        "mksh"
+        "oksh"
+        "loksh"
+        "ksh"
+        "yash"
+        "zsh"
+        "fish"
+        "tcsh"
+        "nushell"
+      ];
+  # The file names of shells' programs, which a package of another name may carry.
+  shellPrograms = [
+    "sh"
+    "ash"
     "bash"
-    "bash-interactive"
     "dash"
-    "busybox"
+    "ksh"
     "mksh"
+    "oksh"
+    "yash"
     "zsh"
+    "fish"
+    "csh"
+    "tcsh"
+    "nu"
+    "busybox"
+    "toybox"
   ];
   shellsChecked = !config.chalkos.debug.tools && !config.chalkos.shell.allow;
   # What the initrd's store paths reference: make-initrd-ng copies a part of it into the
@@ -127,32 +160,50 @@ in
 
     system.build.chalkosInitrdSources = initrdSources;
     system.systemBuilderCommands = lib.mkMerge [
-      # A shell in the system or the initrd fails the build, before nixpkgs's check of the same
-      # regexes would, naming what references each shell's path. $closureInfo is the system's
-      # closure, which nixpkgs lists for its forbidden regexes, and empty in the copy of the
-      # system it lists it from.
+      # A shell in the system, its extra dependencies or the initrd fails the build, before
+      # nixpkgs's check of the same regexes would, naming what references each shell's path or
+      # each program named after a shell. $closureInfo is the system's closure without its extra
+      # dependencies, which nixpkgs lists for its forbidden regexes, and empty in the copy of the
+      # system it lists it from, which holds no extra dependencies either.
       (lib.mkIf shellsChecked (
         lib.mkBefore ''
           chalkosNoShell() {
-            local found shell
+            local found programs shell
             [ -n "$2" ] || return 0
-            found=$(grep -E ${lib.escapeShellArg (lib.concatStringsSep "|" shells)} "$2/store-paths") || return 0
-            echo "error: $1 holds a shell, which a node never runs:" >&2
-            for shell in $found; do
-              echo "  $shell, referenced by" >&2
-              awk -v shell="$shell" '
-                s == 0 { path = $0; s = 1; next }
-                s < 4 { s++; next }
-                s == 4 { n = $0; s = n > 0 ? 5 : 0; next }
-                $0 == shell && path ~ /-chalkos-initrd-sources$/ { print "    boot.initrd.systemd.storePaths, contents or initrdBin" }
-                $0 == shell && path != shell && path !~ /-chalkos-initrd-sources$/ { print "    " path }
-                { if (--n == 0) s = 0 }
-              ' "$2/registration" >&2
-            done
-            echo "Do without the shell, as chalkos's guide Keep an image shell-free shows, or set chalkos.shell.allow = true to keep it." >&2
-            exit 1
+            if found=$(grep -E ${lib.escapeShellArg (lib.concatStringsSep "|" shells)} "$2/store-paths"); then
+              echo "error: $1 holds a shell, which a node never runs:" >&2
+              for shell in $found; do
+                echo "  $shell, referenced by" >&2
+                awk -v shell="$shell" '
+                  s == 0 { path = $0; s = 1; next }
+                  s < 4 { s++; next }
+                  s == 4 { n = $0; s = n > 0 ? 5 : 0; next }
+                  $0 == shell && path ~ /-chalkos-initrd-sources$/ { print "    boot.initrd.systemd.storePaths, contents or initrdBin" }
+                  $0 == shell && path != shell && path !~ /-chalkos-initrd-sources$/ { print "    " path }
+                  { if (--n == 0) s = 0 }
+                ' "$2/registration" >&2
+              done
+              echo "Do without the shell, as chalkos's guide Keep an image shell-free shows, or set chalkos.shell.allow = true to keep it." >&2
+              exit 1
+            fi
+            tr '\n' '\0' <"$2/store-paths" >store-paths
+            programs=$(find -files0-from store-paths \( ${
+              lib.concatMapStringsSep " -o " (p: "-name ${p}") shellPrograms
+            } \) \( -type l -o -type f -perm -0100 \))
+            rm store-paths
+            if [ -n "$programs" ]; then
+              echo "error: $1 holds programs named after a shell, which a node never runs:" >&2
+              printf '  %s\n' $programs >&2
+              echo "Do without them, as chalkos's guide Keep an image shell-free shows, or set chalkos.shell.allow = true to keep them." >&2
+              exit 1
+            fi
           }
           chalkosNoShell "the image's system" "$closureInfo"
+          if [ -n "$closureInfo" ]; then
+            chalkosNoShell "the image's extra dependencies" ${
+              pkgs.closureInfo { rootPaths = config.system.extraDependencies; }
+            }
+          fi
           chalkosNoShell "the image's initrd" ${pkgs.closureInfo { rootPaths = [ initrdSources ]; }}
         ''
       ))

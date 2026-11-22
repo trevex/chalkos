@@ -3641,6 +3641,8 @@ lib.runTests {
             "${builtins.storeDir}/0123456789abcdfghijklmnpqrsvwxyz-bash-5.3p15"
             "${builtins.storeDir}/0123456789abcdfghijklmnpqrsvwxyz-bash-interactive-5.3p15-man"
             "${builtins.storeDir}/0123456789abcdfghijklmnpqrsvwxyz-busybox-1.37.0"
+            "${builtins.storeDir}/0123456789abcdfghijklmnpqrsvwxyz-busybox-static-1.0"
+            "${builtins.storeDir}/0123456789abcdfghijklmnpqrsvwxyz-toybox-0.8.13"
             "${builtins.storeDir}/0123456789abcdfghijklmnpqrsvwxyz-bash-completion-2.16.0"
           ];
         };
@@ -3669,9 +3671,13 @@ lib.runTests {
           true
           true
           true
+          true
+          true
           false
         ];
         noneForbidden = [
+          false
+          false
           false
           false
           false
@@ -4683,7 +4689,8 @@ lib.runTests {
   # Kubernetes images link /lib/modules to the image's module tree, whose files are its own, so
   # the hostPath mounts of ceph-csi, Cilium, Longhorn and the GPU operator read the modules
   # without the store; a router image has no such link. They put the host tools into /usr/bin and
-  # /usr/sbin of the store's file system, which is /usr on a node.
+  # /usr/sbin of the store's file system, which is /usr on a node, and the system references their
+  # links, so the store partition and the shell checks hold them.
   testKubernetesHostBase =
     let
       tools = worker [
@@ -4704,7 +4711,7 @@ lib.runTests {
         noTools = (store w).contents;
         tools = lib.attrNames (store tools).contents;
         usrIsStore = w.fileSystems."/nix/store".device;
-        stored = lib.any (p: lib.hasInfix "chalkos-usr-links" (toString p)) (store tools).storePaths;
+        stored = lib.any (p: lib.hasInfix "chalkos-usr-links" (toString p)) tools.system.extraDependencies;
       };
       expected = {
         libModules = {
