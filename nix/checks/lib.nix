@@ -25,7 +25,27 @@ let
         { chalkos.kubernetes.longhorn.enable = true; }
       ];
     };
+    nvidia-open = nvidiaImage "open";
+    nvidia-proprietary = nvidiaImage "proprietary";
   };
+  # A Kubernetes image with NVIDIA's driver of the kernel module type, its unfree packages
+  # allowed. Its build compiles the modules against the image's kernel.
+  nvidiaImage =
+    type:
+    self.lib.mkImage {
+      name = "feature-nvidia-${type}";
+      platform = "metal";
+      modules = [
+        self.nixosModules.kubernetes
+        {
+          nixpkgs.config.allowUnfree = true;
+          chalkos.kubernetes.nvidia = {
+            enable = true;
+            kernelModuleType = type;
+          };
+        }
+      ];
+    };
 
   # Whether every image, of an attribute set holding mkImage's results, that runs Kubernetes runs
   # the kubelet of the patch release modules/node/kubernetes/releases.nix pins for its minor; the
