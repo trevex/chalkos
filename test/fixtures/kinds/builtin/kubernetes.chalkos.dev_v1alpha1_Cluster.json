@@ -97,7 +97,7 @@
                 "type": "string"
               },
               "default": {},
-              "description": "Extra flags of the API server, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused.",
+              "description": "Extra flags of the API server, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused. Every flag chalkos sets on the API server is protected except `kubelet-preferred-address-types`, `profiling` and `tls-min-version`. `enable-admission-plugins` adds to chalkos's plugins, and `disable-admission-plugins` must not name `NodeRestriction` or `ValidatingAdmissionPolicy`.",
               "type": "object"
             },
             "kube-controller-manager": {

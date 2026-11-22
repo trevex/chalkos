@@ -54,11 +54,11 @@ let
       };
     };
   flags =
-    component:
+    component: note:
     mkOption {
       type = types.attrsOf types.str;
       default = { };
-      description = "Extra flags of ${component}, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused.";
+      description = "Extra flags of ${component}, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused.${note}";
     };
   taint = types.submodule {
     options = {
@@ -192,7 +192,7 @@ in
               })
             ];
           };
-          kubeletExtraArgs = flags "the kubelet";
+          kubeletExtraArgs = flags "the kubelet" "";
           nodeIP = {
             addresses = mkOption {
               type = types.nullOr (types.listOf address);
@@ -379,10 +379,10 @@ in
             };
           };
           extraArgs = {
-            etcd = flags "etcd";
-            kube-apiserver = flags "the API server";
-            kube-controller-manager = flags "the controller-manager";
-            kube-scheduler = flags "the scheduler";
+            etcd = flags "etcd" "";
+            kube-apiserver = flags "the API server" " Every flag chalkos sets on the API server is protected except `kubelet-preferred-address-types`, `profiling` and `tls-min-version`. `enable-admission-plugins` adds to chalkos's plugins, and `disable-admission-plugins` must not name `NodeRestriction` or `ValidatingAdmissionPolicy`.";
+            kube-controller-manager = flags "the controller-manager" "";
+            kube-scheduler = flags "the scheduler" "";
           };
         };
       };

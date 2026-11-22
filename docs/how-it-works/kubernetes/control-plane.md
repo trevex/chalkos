@@ -52,9 +52,10 @@ node's `Node` document does the same for its kubelet. Each is a map of flags nam
 leading dashes. A name holds letters, digits, `_`, `.` and `-`, and starts with a letter or digit.
 A kubelet flag's name and value hold no whitespace or backslash.
 
-chalkos refuses the flags that decide who may do what, and the kubelet flags that set where it
-finds its configuration, credentials and static pods. It also refuses the API server flags that
-conflict with its own. A refused flag stays refused when it is spelt with `_` for `-`, which the
+chalkos refuses the API server flags it sets, apart from three that tune it, and the kubelet flags
+that set where it finds its configuration, credentials and static pods. It also refuses the API
+server flags that conflict with its own. The API server's `enable-admission-plugins` adds to
+`NodeRestriction` instead of replacing it. A refused flag stays refused when it is spelt with `_` for `-`, which the
 components accept. [Kubernetes](../../reference/kubernetes.md#protected-api-server-flags) lists
 the refused and conflicting flags. [Configure Kubernetes](../../kubernetes/configure.md) shows how
 to add flags.

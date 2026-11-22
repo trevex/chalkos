@@ -206,3 +206,31 @@ func TestCertificatesHashFollowsBundles(t *testing.T) {
 		}
 	}
 }
+
+// The API server's enable-admission-plugins adds to chalkos's plugins, in either spelling.
+func TestExtraAdmissionPluginsKeepNodeRestriction(t *testing.T) {
+	for _, name := range []string{"enable-admission-plugins", "enable_admission_plugins"} {
+		c := testCluster()
+		c.ExtraArgs["kube-apiserver"] = map[string]string{name: "PodSecurity,NodeRestriction"}
+		pods, err := StaticPods(c, testNode, kubernetes.PKIDir, testFiles(), "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := commandFlags(t, pods["kube-apiserver.json"])["enable-admission-plugins"]; got != "NodeRestriction,PodSecurity" {
+			t.Errorf("%s: enable-admission-plugins=%s, want NodeRestriction,PodSecurity", name, got)
+		}
+	}
+}
+
+// kubernetes.APIServerFlags, which extra flags must not override, are the flags chalkos sets.
+func TestAPIServerFlagsAreChalkos(t *testing.T) {
+	c := testCluster()
+	c.ExtraArgs = nil
+	pods, err := StaticPods(c, testNode, kubernetes.PKIDir, testFiles(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := slices.Sorted(maps.Keys(commandFlags(t, pods["kube-apiserver.json"]))); !slices.Equal(got, kubernetes.APIServerFlags) {
+		t.Errorf("the API server's flags are %v, kubernetes.APIServerFlags %v", got, kubernetes.APIServerFlags)
+	}
+}

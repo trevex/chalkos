@@ -257,14 +257,18 @@ spec:
   --8<-- "examples/homelab/cluster/cluster.yaml:images"
 ```
 
-The components take the flags on every control plane. A flag chalkos also sets takes your value.
+The components take the flags on every control plane. A flag chalkos also sets takes your value,
+unless chalkos protects it.
 A flag's name holds letters, digits, `_`, `.` and `-`, and starts with a letter or digit.
 [The control plane](../how-it-works/kubernetes/control-plane.md#the-flags-follow-kubeadm-with-a-few-access-choices)
 explains the flags chalkos sets.
 
-The API server's flags that decide who may do what are refused, also when spelt with `_` for `-`:
-`anonymous-auth`, `authentication-config`, `authorization-mode` and
-`enable-bootstrap-token-auth`. `chalkctl validate` names the flag:
+The API server flags chalkos sets are refused, also when spelt with `_` for `-`, apart from
+`kubelet-preferred-address-types`, `profiling` and `tls-min-version`.
+[Protected API server flags](../reference/kubernetes.md#protected-api-server-flags) lists them.
+`enable-admission-plugins` adds its plugins to chalkos's `NodeRestriction`, and
+`disable-admission-plugins` must not name `NodeRestriction` or `ValidatingAdmissionPolicy`.
+`chalkctl validate` names the flag:
 
 ```text
 node node1: the Kubernetes cluster the documents give: Cluster "default": extraArgs: kube-apiserver --authentication-config is set by chalkos and cannot be overridden
@@ -277,7 +281,7 @@ lists them.
 The error names the flag, the flag it conflicts with and what to do instead:
 
 ```text
-node node1: the Kubernetes cluster the documents give: Cluster "default": extraArgs: kube-apiserver --admission-control conflicts with --enable-admission-plugins: chalkos sets --enable-admission-plugins, and the API server refuses this flag next to it; give the plugins in enable-admission-plugins and disable-admission-plugins
+node node1: the Kubernetes cluster the documents give: Cluster "default": extraArgs: kube-apiserver --admission-control conflicts with --enable-admission-plugins: chalkos sets --enable-admission-plugins, and the API server refuses this flag next to it; give further plugins in enable-admission-plugins, which adds them to chalkos's
 ```
 
 From the node, the control plane's pods mount the certificates and kubeconfigs chalkd writes, and
