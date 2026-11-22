@@ -29,7 +29,7 @@ filters with a table of its own, which [Router images](#router-images) describes
 | 30000–32767 | TCP | NodePort services | control planes and workers | clients of NodePort services |
 | 8472 | UDP | flannel's VXLAN | control planes and workers, with flannel | the other nodes |
 | 3784 | UDP | BFD, FRR's bfdd: single-hop control | control planes and workers whose image carries the BGP speaker | the BGP neighbours of a `BGPPeer` with `bfd` |
-| 5000, or the `ClusterRegistry`'s `port` | TCP | chalkos-registry, the cluster registry: HTTPS with the node certificate; pulls for anyone, pushes, deletes and garbage collection for a client certificate of the admin role | nodes whose static address is one of the `ClusterRegistry`'s `endpoints`, every control plane among them | containerd on every Kubernetes node; chalkctl registry |
+| 5000, or the `ClusterRegistry`'s `port` | TCP | chalkos-registry, the cluster registry: HTTPS with the node certificate; pulls for a certificate of the OS CA, a node's or a client file's, pushes, deletes and garbage collection for a client certificate of the admin role | nodes whose static address is one of the `ClusterRegistry`'s `endpoints`, every control plane among them | containerd on every Kubernetes node; chalkctl registry |
 
 Ports 2379 and 2380 accept only certificates of the cluster's etcd CA, but a control plane's
 firewall opens them to every source, not only to the other control planes' addresses.

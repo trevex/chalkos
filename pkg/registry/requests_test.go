@@ -129,8 +129,9 @@ func TestWritesDuringCollection(t *testing.T) {
 }
 
 // TestRequestsAtTheEdges answers requests of odd methods and paths: a method other than GET and
-// HEAD, in any spelling, is a write; the collection's path is matched exactly, and the path
-// cleaning of distribution's router redirects.
+// HEAD, in any spelling, is a write; a read without a certificate is refused whatever its path;
+// the collection's path is matched exactly, and the path cleaning of distribution's router
+// redirects.
 func TestRequestsAtTheEdges(t *testing.T) {
 	r := startRegistry(t)
 	for _, tc := range []struct {
@@ -141,7 +142,8 @@ func TestRequestsAtTheEdges(t *testing.T) {
 		{"get", "/v2/", "anyone", http.StatusUnauthorized},
 		{"PROPFIND", "/v2/", "anyone", http.StatusUnauthorized},
 		{"PROPFIND", "/v2/", "reader", http.StatusForbidden},
-		{http.MethodGet, "/v2/../chalkos/v1/gc", "anyone", http.StatusMovedPermanently},
+		{http.MethodGet, "/v2/../chalkos/v1/gc", "anyone", http.StatusUnauthorized},
+		{http.MethodGet, "/v2/../chalkos/v1/gc", "reader", http.StatusMovedPermanently},
 		{http.MethodPost, "/v2/../chalkos/v1/gc", "anyone", http.StatusUnauthorized},
 		{http.MethodPost, "/v2/../chalkos/v1/gc", "admin", http.StatusMovedPermanently},
 		{http.MethodPost, "/chalkos/v1/gc/", "anyone", http.StatusUnauthorized},
@@ -150,7 +152,8 @@ func TestRequestsAtTheEdges(t *testing.T) {
 		{http.MethodPost, "/chalkos/v1/gc?now=1", "reader", http.StatusForbidden},
 		{http.MethodPost, "/chalkos/v1/gc?now=1", "admin", http.StatusOK},
 		{http.MethodPost, "/CHALKOS/v1/gc", "admin", http.StatusNotFound},
-		{http.MethodGet, "/CHALKOS/v1/gc", "anyone", http.StatusNotFound},
+		{http.MethodGet, "/CHALKOS/v1/gc", "anyone", http.StatusUnauthorized},
+		{http.MethodGet, "/CHALKOS/v1/gc", "reader", http.StatusNotFound},
 	} {
 		if got := r.send(t, tc.method, tc.path, tc.who, nil).StatusCode; got != tc.want {
 			t.Errorf("%s %s as %s: %d, want %d", tc.method, tc.path, tc.who, got, tc.want)
@@ -158,8 +161,8 @@ func TestRequestsAtTheEdges(t *testing.T) {
 	}
 }
 
-// TestQuietLogsOfRequests logs nothing of the requests anyone can make that the registry
-// refuses: unknown images, invalid names and pages.
+// TestQuietLogsOfRequests logs nothing of the reads that the registry refuses: unknown images,
+// invalid names and pages, and reads without a certificate.
 func TestQuietLogsOfRequests(t *testing.T) {
 	r := startRegistry(t)
 	var out bytes.Buffer
@@ -174,8 +177,11 @@ func TestQuietLogsOfRequests(t *testing.T) {
 		"/v2/_catalog?n=-1",
 		"/v2/_catalog?n=100000",
 	} {
-		if got := r.send(t, http.MethodGet, path, "anyone", nil).StatusCode; got < 400 || got >= 500 {
+		if got := r.send(t, http.MethodGet, path, "reader", nil).StatusCode; got < 400 || got >= 500 {
 			t.Errorf("GET %s: %d, want a client error", path, got)
+		}
+		if got := r.send(t, http.MethodGet, path, "anyone", nil).StatusCode; got != http.StatusUnauthorized {
+			t.Errorf("GET %s without a certificate: %d, want 401", path, got)
 		}
 	}
 	if out.Len() != 0 {

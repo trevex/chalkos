@@ -1739,7 +1739,7 @@ The diagnostics images with Kubernetes add.
 | `bgp-neighbor`{ #diagnostic-bgp-neighbor } | One BGP session in detail, as show bgp neighbors prints it: its state, timers, capabilities and routes. Runs `vtysh -c show bgp vrf {vrf} neighbors {peer}`. | `peer`, pattern `^([0-9A-Fa-f:.]+|[A-Za-z0-9_.:@-]{1,15})$`; `vrf`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, default `default` | reader | — |
 | `bgp-route`{ #diagnostic-bgp-route } | One VRF's BGP paths to a prefix, as show bgp prints them: each path's AS path, next hop and attributes, and the best. Runs `vtysh -c show bgp vrf {vrf} {family} unicast {prefix}`. | `prefix`, prefix; `vrf`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, default `default`; `family`, enum of `ipv4` or `ipv6`, default `ipv6` | reader | — |
 | `bgp-summary`{ #diagnostic-bgp-summary } | One VRF's BGP sessions of each address family, as show bgp summary prints them. Runs `vtysh -c show bgp vrf {vrf} summary`. | `vrf`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, default `default` | reader | — |
-| `cluster-registry`{ #diagnostic-cluster-registry } | Lists the repositories of the cluster registry the node serves, as its catalog does, or says why it does not answer. Runs `chalkos-registry catalog {port}`. | `port`, int from 1024 to 65535, default `5000` | reader | — |
+| `cluster-registry`{ #diagnostic-cluster-registry } | Lists the repositories of the cluster registry the node serves, as its catalog does, or says why it does not answer. Runs `chalkos-registry catalog /run/chalkos-registry/registry.sock`. | — | reader | — |
 
 ### Router images { #diagnostics-router-images }
 

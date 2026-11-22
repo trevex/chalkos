@@ -397,7 +397,8 @@ $ chalkctl node diag cp1 cluster-registry
 {"repositories":["cluster-registry.chalkos.test/e2e/busybox"]}
 ```
 
-`port=<port>` passes a port other than 5000. A pod that runs a pushed image on a node that has no
+The diagnostic reads the registry over its Unix socket on the node, which only the registry's
+group reaches, so it works on any port. A pod that runs a pushed image on a node that has no
 route to the image's host shows that the node pulled it from the cluster registry.
 
 ## If something goes wrong
@@ -415,6 +416,9 @@ route to the image's host shows that the node pulled it from the cluster registr
   [Ports and firewall](../reference/ports-and-firewall.md) lists.
 - `registry push needs the admin role; the reader role may not`: chalkctl authenticated with a
   reader client file. Use an admin client file or the secrets.
+- `reading the registry needs a certificate of the OS CA, a node's or a client file's`: a client
+  without such a certificate, such as `curl` or a container tool of the workstation, read the
+  registry. Read it with `chalkctl registry list` or the diagnostic `cluster-registry` instead.
 - `the ClusterRegistry mirrors <hosts>, not <host>, so containerd never pulls <reference> from it; add <host> to its mirrors`:
   the reference's host is not mirrored. Add it to `mirrors` and apply the config to every node.
 - `<reference> names the digest <digest>, but the source's image is <other>; push a source of that digest, such as the image in its registry by that reference, since docker save and rebuilt images get other digests`:

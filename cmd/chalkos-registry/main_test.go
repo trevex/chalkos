@@ -9,7 +9,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -19,7 +18,7 @@ import (
 )
 
 // TestRun tells systemd the registry is ready once its port takes TLS handshakes, serves the
-// catalog the diagnostic prints, and ends without an error when its context ends.
+// catalog the diagnostic prints on its socket, and ends without an error when its context ends.
 func TestRun(t *testing.T) {
 	now := time.Now()
 	osCA, err := pki.NewOSCA(now)
@@ -56,11 +55,22 @@ func TestRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	port := strconv.Itoa(l.Addr().(*net.TCPAddr).Port)
+	registrySocket := filepath.Join(dir, "registry.sock")
+	// A socket a stopped registry left behind is replaced.
+	if err := os.WriteFile(registrySocket, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	local, err := listenLocal(registrySocket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(registrySocket); err != nil || info.Mode().Perm() != 0o660 {
+		t.Errorf("the socket: %v, %v; want mode 0660", info, err)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- run(ctx, l, s) }()
+	go func() { done <- run(ctx, l, local, s) }()
 	buf := make([]byte, 64)
 	n, err := notify.Read(buf)
 	if err != nil || string(buf[:n]) != "READY=1" {
@@ -77,7 +87,7 @@ func TestRun(t *testing.T) {
 	}
 	conn.Close()
 	var out bytes.Buffer
-	if err := command(ctx, []string{"catalog", port}, &out); err != nil || strings.TrimSpace(out.String()) != `{"repositories":[]}` {
+	if err := command(ctx, []string{"catalog", registrySocket}, &out); err != nil || strings.TrimSpace(out.String()) != `{"repositories":[]}` {
 		t.Errorf("catalog = %q, %v", out.String(), err)
 	}
 	cancel()

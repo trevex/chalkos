@@ -119,8 +119,8 @@ func TestRegistryMirrorsWithoutDocuments(t *testing.T) {
 }
 
 // The cluster registry's endpoints come before the Mirror's, the one the node serves first, each
-// below the mirrored host's path and verified by the OS CAs, and a mirrored host that no Mirror
-// names gets a hosts.toml.
+// below the mirrored host's path, verified by the OS CAs and presented the node certificate, and
+// a mirrored host that no Mirror names gets a hosts.toml.
 func TestRegistryHostsClusterRegistry(t *testing.T) {
 	runDir := runtimeDocs(t, `apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network
@@ -141,7 +141,7 @@ spec: {registry: docker.io, endpoints: ["https://mirror.example"]}
 	if err != nil {
 		t.Fatal(err)
 	}
-	const endpoint = "\n[host.\"https://%s:5000/v2/%s\"]\n  capabilities = [\"pull\", \"resolve\"]\n  override_path = true\n  ca = \"/state/chalkd/ca.crt\"\n"
+	const endpoint = "\n[host.\"https://%s:5000/v2/%s\"]\n  capabilities = [\"pull\", \"resolve\"]\n  override_path = true\n  ca = \"/state/chalkd/ca.crt\"\n  client = \"/state/chalkd/node.pem\"\n"
 	want := map[string]string{
 		"docker.io": "server = \"https://registry-1.docker.io\"\n" +
 			fmt.Sprintf(endpoint, "192.0.2.12", "docker.io") +

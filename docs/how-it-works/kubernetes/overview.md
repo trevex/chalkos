@@ -387,7 +387,8 @@ image's registry.
   alone.
 - An endpoint of the cluster registry is a node's static address, which its node certificate
   names, so a VIP cannot be one.
-- Anyone who reaches the cluster registry's port can pull every image it holds.
+- The cluster registry's port is open to every source. A client without a certificate of the OS CA
+  completes the TLS handshake, and the registry answers its requests with 401.
 - The node's noexec mounts bind the node's processes, not pods: runc mounts a pod's `hostPath`
   volumes with flags of its own. A program a pod leaves below `/var`, outside the exec paths, does
   not run on the node, as [Mount options](../../reference/image-layout.md#mount-options)

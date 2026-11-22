@@ -249,6 +249,8 @@ lists for every node, it leaves these:
   allows. Unrevoking names once the CAs were rotated keeps the list short.
 - Every rotation skips a revoked node left in the inventory, and other commands still reach it
   until it is removed from the inventory.
+- The cluster registry checks no revocation list, so a revoked node's certificate still pulls
+  from it until the certificate expires or `os-ca` rotates.
 
 ## The cluster registry serves the node certificate
 
@@ -265,8 +267,12 @@ certificate. containerd passes over the endpoint to the next one while it restar
 
 The registry takes a client certificate when the client offers one, and checks it per request:
 
-- A pull, any GET or HEAD request, needs none. The registry drops an `Authorization` header from
-  it, so credentials containerd sends along mean nothing there.
+- A pull, any GET or HEAD request, the catalog included, needs a certificate of the OS CA: a
+  node's or a client file's of any role. containerd presents the node certificate, which the
+  `hosts.toml` of each mirrored host names as `client` beside the OS CAs as `ca`, and reads both
+  files again for every pull, so a renewed node certificate takes effect at the next pull
+  without a restart of containerd. The registry drops an `Authorization` header from a read, so
+  credentials containerd sends along mean nothing there.
 - Every other request needs a client certificate of the admin role: a push, a delete, and
   garbage collection through `POST /chalkos/v1/gc`. The registry verifies the certificate against
   the OS CAs again at the time of each request, after the handshake did, and reads its role as
@@ -274,10 +280,12 @@ The registry takes a client certificate when the client offers one, and checks i
   writes.
 
 A client certificate that does not verify against the OS CAs fails the TLS handshake, before any
-request. A write without a certificate, or with one that no longer verifies when the request comes,
-such as one that expired on a kept connection, gets 401; a certificate of another role gets 403.
-Each answer's message starts with
-`writing to the registry needs a client certificate of the admin role`. `chalkctl registry push`,
+request. A request without a certificate, or with one that no longer verifies when the request
+comes, such as one that expired on a kept connection, gets 401; a write with a certificate of
+another role gets 403. The message of a refused read starts with
+`reading the registry needs a certificate of the OS CA`, that of a refused write with
+`writing to the registry needs a client certificate of the admin role`. `chalkctl registry list`
+reads with the client file or the secrets file like any other command. `chalkctl registry push`,
 `delete` and `gc` authenticate with the one-hour admin certificate chalkctl issues from the secrets
 file, or with an admin client file.
 

@@ -2,8 +2,9 @@
 # the ClusterRegistry kind, one per cluster, whose endpoints name the nodes that serve it. On those
 # nodes alone the output cluster-registry renders the port, and chalkos-registry serves on it as a
 # user of its own, behind a firewall table that opens the port. The unit is ready once the port
-# listens, so the effects after its restart, the kubelet's among them, find it answering. The
-# diagnostic cluster-registry lists its repositories.
+# listens, so the effects after its restart, the kubelet's among them, find it answering. Its
+# port serves a client with a certificate of the OS CA alone, a node's or a client file's; its
+# socket serves reads to its group, as the diagnostic cluster-registry lists its repositories.
 {
   chalkosLib,
   config,
@@ -41,6 +42,8 @@ let
     "ca.crt" = "/state/chalkd/ca.crt";
   };
   storage = "/var/lib/chalkos-registry";
+  # The socket that serves reads without a certificate, to the registry's group alone.
+  socket = "/run/chalkos-registry/registry.sock";
   # The specs of the Volume documents of the config c mounted at the storage or above it, in the
   # order of their names.
   storageMounts =
@@ -144,7 +147,8 @@ in
 
     # The registry serves on the nodes with a rendered port alone, as a user of its own without
     # capabilities. It reads the node certificate and the OS CAs once, from its credentials, and
-    # keeps its images in its state directory. A Volume may be mounted there: the unit starts
+    # keeps its images in its state directory. Its runtime directory holds the socket of reads,
+    # which its group may reach. A Volume may be mounted there: the unit starts
     # after the mount, and systemd gives the directory, and everything below it when its owner
     # differs, to the unit's user before it starts, so a fresh file system is the registry's too.
     # Nothing it stores runs as a program, even where an exec path or a Volume would allow it.
@@ -173,10 +177,12 @@ in
           User = "chalkos-registry";
           Group = "chalkos-registry";
           EnvironmentFile = "${dir}/registry.env";
-          ExecStart = "${registry} serve --port \${PORT} --storage ${storage}";
+          ExecStart = "${registry} serve --port \${PORT} --socket ${socket} --storage ${storage}";
           LoadCredential = lib.mapAttrsToList (name: file: "${name}:${file}") credentials;
           StateDirectory = "chalkos-registry";
           StateDirectoryMode = "0700";
+          RuntimeDirectory = "chalkos-registry";
+          RuntimeDirectoryMode = "0750";
           Restart = "on-failure";
           RestartSec = 5;
           CapabilityBoundingSet = [ "" ];
@@ -224,17 +230,11 @@ in
       command = [
         registry
         "catalog"
-        "{port}"
+        socket
       ];
-      parameters.port = {
-        type = "int";
-        min = 1024;
-        max = 65535;
-        default = "5000";
-        description = "Port of the cluster registry, the ClusterRegistry's port.";
-      };
       role = "reader";
       timeout = "10s";
+      groups = [ "chalkos-registry" ];
     };
   };
 }
