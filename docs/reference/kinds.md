@@ -826,7 +826,7 @@ A node's config may hold several, each with a name of its own. It has 7 [change 
 | `spec.exec` | boolean | `false` | Whether programs on the volume may run. Volumes are mounted `nosuid,nodev,noexec`; `true` mounts the volume `exec,nosuid,nodev`. A volume mounted at one of the image's exec paths, such as `/var/lib/containerd` on a Kubernetes image, takes that path's options instead. Changing it mounts the volume again. |
 | `spec.format` | one of `ext4`, `xfs`, `btrfs`, `swap`, `raw` | `"ext4"` | File system of the volume; `raw` leaves a raw block device, which has no mountPoint. |
 | `spec.mountPoint` | string or null | `null` | Where the volume is mounted; null leaves it unmounted. Unique among the Volume documents. |
-| `spec.repart` | map of string | `{}` | Extra repart.d keys of the volume's partition. Type, Label, Encrypt, Format, SizeMinBytes, SizeMaxBytes and MountPoint come from the typed options. |
+| `spec.repart` | map of string | `{}` | Extra repart.d keys of the volume's partition: Priority, Weight, PaddingWeight, PaddingMinBytes, PaddingMaxBytes, GrowFileSystem, NoAuto, ReadOnly, Flags, UUID, and FactoryReset set to `no`. Type, Label, Encrypt, TPM2PCRs, Format, SizeMinBytes, SizeMaxBytes and MountPoint come from the typed options. Any other key is refused, such as CopyFiles and CopyBlocks, which copy from the host. |
 | `spec.size` | string or null | `null` | Size of the volume, such as `100G`, with at most 18 digits without a suffix, and 15, 12, 9, 6 or 3 with K, M, G, T or P; null fills the remaining space on its disk. |
 
 ## time.chalkos.dev { #time-chalkos-dev }

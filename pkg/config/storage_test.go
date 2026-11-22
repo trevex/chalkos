@@ -193,10 +193,16 @@ func TestStorageRefusesNamesMountPointsAndKeys(t *testing.T) {
 		check(p, vol("data", `{size: 1G, mountPoint: "`+p+`"}`), "Volume data: mountPoint must be an absolute path")
 	}
 	check("/srv/My_data-2.0", vol("data", "{size: 1G, mountPoint: /srv/My_data-2.0}"), "")
-	for _, key := range []string{"Type", "Label", "Encrypt", "Format", "SizeMinBytes", "SizeMaxBytes", "MountPoint"} {
+	for _, key := range typedRepartKeys {
 		check(key, vol("data", "{size: 1G, repart: {"+key+": x}}"), "repart must not set "+key)
 	}
 	check("Weight", vol("data", `{size: 1G, repart: {Weight: "2000"}}`), "")
+	check("GrowFileSystem", vol("data", `{size: 1G, format: xfs, repart: {GrowFileSystem: "yes"}}`), "")
+	check("FactoryReset=no", vol("data", `{size: 1G, repart: {FactoryReset: "no"}}`), "")
+	check("FactoryReset=yes", vol("data", `{size: 1G, repart: {FactoryReset: "yes"}}`), `repart sets FactoryReset to "yes", which a volume's definition may set to no alone`)
+	for _, key := range []string{"CopyFiles", "CopyBlocks", "MakeDirectories", "KeyFile", "Verity"} {
+		check(key, vol("data", "{size: 1G, repart: {"+key+": /state}}"), "repart sets "+key+", which a volume's definition may not; it may set Priority, Weight,")
+	}
 }
 
 // TestStorageEncryptionModes encrypts VAR as the node's SystemDisk says unless VAR's own mode
