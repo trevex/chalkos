@@ -51,6 +51,7 @@ in
     ./ceph.nix
     ./kubevirt.nix
     ./longhorn.nix
+    ./nvidia.nix
     ./bgp
     ./registry
   ];

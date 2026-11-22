@@ -4912,6 +4912,95 @@ lib.runTests {
         ];
       };
     };
+  # nvidia is off by default. On, with NVIDIA's unfree packages allowed: NVIDIA's open or
+  # proprietary modules from boot.extraModulePackages, loaded at boot with nouveau kept out, the
+  # gpu group and the GSP firmware, containerd's nvidia handler, the unit that writes the CDI
+  # specification without running programs from outside the store, and the driver root at
+  # /usr/local/nvidia. Without the allowance, the image names the packages to allow: the open
+  # modules are free, the proprietary ones are not.
+  testKubernetesNvidia =
+    let
+      on =
+        type: allow:
+        worker [
+          {
+            nixpkgs.config.allowUnfreePredicate = p: lib.elem (lib.getName p) allow;
+            chalkos.kubernetes.nvidia = {
+              enable = true;
+              kernelModuleType = type;
+            };
+          }
+        ];
+      open = on "open" [ "nvidia-x11" ];
+      proprietary = on "proprietary" [
+        "nvidia-x11"
+        "nvidia-kernel-modules"
+      ];
+      names = c: map lib.getName c.boot.extraModulePackages;
+      cdi = open.systemd.services.chalkos-nvidia-cdi;
+    in
+    {
+      expr = {
+        default = w.chalkos.kubernetes.nvidia.enable;
+        defaultType = w.chalkos.kubernetes.nvidia.kernelModuleType;
+        offUnit = w.systemd.services ? chalkos-nvidia-cdi;
+        offLink = w.chalkos.usr.links ? "local/nvidia";
+        openModules = names open;
+        proprietaryModules = names proprietary;
+        loaded = lib.filter (lib.hasPrefix "nvidia") open.boot.kernelModules;
+        nouveau = lib.elem "nouveau" open.boot.blacklistedKernelModules;
+        gpu = lib.elem "gpu" open.chalkos.kernel.moduleGroups;
+        # hardware.firmware is the environment of the packages, compressed where they allow it.
+        firmware = lib.any (
+          p:
+          lib.hasSuffix "-nvidia-x11-${open.chalkos.kubernetes.nvidia.package.version}-firmware" (toString p)
+        ) open.hardware.firmware.paths;
+        runtime = lib.hasSuffix "/bin/nvidia-container-runtime" open.chalkos.kubernetes.containerd.runtimes.nvidia.options.BinaryName;
+        cdi = lib.hasInfix "/bin/nvidia-ctk cdi generate --output=/var/run/cdi/nvidia.yaml --driver-root=/usr/local/nvidia " cdi.serviceConfig.ExecStart;
+        cdiWanted = cdi.wantedBy;
+        cdiNoExec =
+          cdi.serviceConfig.NoExecPaths == [ "/" ] && cdi.serviceConfig.ExecPaths == [ "/nix/store" ];
+        driverRoot = lib.hasPrefix "/nix/store/" (toString open.chalkos.usr.links."local/nvidia");
+        refusedOpen = refuses ''[ "nvidia-x11" ]'' (worker [
+          { chalkos.kubernetes.nvidia.enable = true; }
+        ]);
+        refusedProprietary = refuses ''[ "nvidia-kernel-modules" ]'' (worker [
+          {
+            nixpkgs.config.allowUnfreePredicate = p: lib.getName p == "nvidia-x11";
+            chalkos.kubernetes.nvidia = {
+              enable = true;
+              kernelModuleType = "proprietary";
+            };
+          }
+        ]);
+        allowed = refuses "NVIDIA's unfree" open || refuses "NVIDIA's unfree" proprietary;
+      };
+      expected = {
+        default = false;
+        defaultType = "open";
+        offUnit = false;
+        offLink = false;
+        openModules = [ "nvidia-open" ];
+        proprietaryModules = [ "nvidia-kernel-modules" ];
+        loaded = [
+          "nvidia"
+          "nvidia_drm"
+          "nvidia_modeset"
+          "nvidia_uvm"
+        ];
+        nouveau = true;
+        gpu = true;
+        firmware = true;
+        runtime = true;
+        cdi = true;
+        cdiWanted = [ "multi-user.target" ];
+        cdiNoExec = true;
+        driverRoot = true;
+        refusedOpen = true;
+        refusedProprietary = true;
+        allowed = false;
+      };
+    };
   # The kernel's modprobe helper, which loads the modules pods need on demand, is kmod's ELF
   # modprobe, set by nixos-init, and no modprobe.d install or remove command makes it run a shell.
   testModprobeWithoutShell =
