@@ -62,9 +62,10 @@ jobs:
   # vulnix matches the packages of each release image's NixOS system, its runtime closure, against
   # the National Vulnerability Database's CVEs, which it downloads, every night, whether or not CI
   # ran. It reports what it finds in the run's summary and as the artifact vulnix, one JSON file
-  # per image, and fails only when it cannot scan: a CVE in nixpkgs's packages is fixed by an
-  # update of nixpkgs, not by holding the nightly run. .github/vulnix-whitelist.toml holds the
-  # matches judged not to apply, each with its reason.
+  # per image, and fails only when it cannot scan; the job vulnix-issue opens an issue for a
+  # high-score match. A CVE in nixpkgs's packages is fixed by an update of nixpkgs, not by
+  # holding the nightly run. .github/vulnix-whitelist.toml holds the matches judged not to apply,
+  # each with its reason.
   vulnix:
     if: github.repository == 'trevex/chalkos'
     runs-on: ubuntu-latest
@@ -129,3 +130,55 @@ jobs:
         with:
           name: vulnix
           path: reports
+
+  # Opens the issue labelled security that lists the vulnix matches with a CVSS v3 score of 7 or
+  # more, or comments on the open one when the scan finds a match it does not list. A run with no
+  # new match leaves the issue as it is, and the job never closes it: closing it acknowledges the
+  # matches it lists, and the next new match opens another. It runs apart from the scan so that
+  # issues: write stays away from the Nix action.
+  vulnix-issue:
+    needs: vulnix
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: vulnix
+          path: reports
+      - name: Open or update the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="vulnix matches high-score CVEs in the release images"
+          # The newest issue of that title, open or closed, holds the matches already reported.
+          issues=$(gh issue list --label security --state all --limit 100 --json number,title,state)
+          number=$(jq -r --arg title "$title" 'map(select(.title == $title)) | .[0].number // empty' <<<"$issues")
+          state=$(jq -r --arg title "$title" 'map(select(.title == $title)) | .[0].state // empty' <<<"$issues")
+          if [ -n "$number" ]; then
+            gh issue view "$number" --json body --jq .body >previous.md
+          else
+            : >previous.md
+          fi
+          .github/scripts/vulnix-issue.sh reports previous.md new.md >body.md
+          printf '\nThe nightly run %s found these matches.\n' "$RUN" >>body.md
+          if [ ! -s new.md ]; then
+            echo "No new match with a CVSS v3 score of 7 or more."
+          elif [ "$state" = OPEN ]; then
+            gh issue edit "$number" --body-file body.md
+            {
+              echo "The nightly run $RUN found matches the issue did not list:"
+              echo
+              echo "| Image | Package | CVE | CVSS v3 |"
+              echo "| --- | --- | --- | ---: |"
+              cat new.md
+            } | gh issue comment "$number" --body-file -
+          else
+            gh issue create --title "$title" --label security --body-file body.md
+          fi

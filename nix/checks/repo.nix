@@ -401,6 +401,7 @@ in
         nativeBuildInputs = [
           pkgs.actionlint
           pkgs.gitMinimal
+          pkgs.jq
           pkgs.shellcheck
         ];
         src = lib.fileset.toSource {

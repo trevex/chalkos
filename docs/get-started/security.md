@@ -18,7 +18,7 @@ Three tools look for known vulnerabilities, each in a different part of what a r
 | Tool | Scans | When | Result |
 | --- | --- | --- | --- |
 | [govulncheck](https://go.dev/doc/security/vuln/) | The Go code against the Go vulnerability database | Every pull request, every push to `main` and every night | Fails CI when the code calls a function with a known vulnerability |
-| [vulnix](https://github.com/nix-community/vulnix) | The NixOS system of each release image against the CVEs of the National Vulnerability Database | Every night | A report in the nightly run, which never fails it |
+| [vulnix](https://github.com/nix-community/vulnix) | The NixOS system of each release image against the CVEs of the National Vulnerability Database | Every night | A report in the nightly run, which never fails it, and an issue labelled `security` for a new match with a CVSS v3 score of 7 or more |
 | [Renovate](https://docs.renovatebot.com/) | The Go modules and the GitHub Actions against the GitHub Advisory Database and OSV | Continuously | A pull request labelled `security` per fixed version, outside the weekly schedule |
 
 govulncheck checks reachability: a vulnerable function in a module that chalkos requires but never
@@ -28,6 +28,14 @@ vulnix matches package names and versions, so some of its matches do not apply, 
 nixpkgs patches the fix into a package without changing its version.
 `.github/vulnix-whitelist.toml` records each such match with its reason. A real match in a nixpkgs
 package is fixed by updating nixpkgs, which the `update-nixpkgs` workflow does each week.
+
+The nightly run reports the matches with a CVSS v3 score of 7 or more that the whitelist does not
+hold in an issue labelled `security`, titled "vulnix matches high-score CVEs in the release
+images". The issue lists each match by image, package and CVE, with its score. A later run that
+finds a match the issue does not list updates the list and comments on the issue; a run with no
+new match leaves it alone. No run closes the issue. Closing it acknowledges the matches it lists,
+and the next new match opens another. A match without a CVSS v3 score opens no issue and shows in
+the run's summary alone.
 
 ## Software bills of materials
 
