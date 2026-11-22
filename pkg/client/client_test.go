@@ -305,6 +305,7 @@ func TestUntrustedProbesOnlyAlertShapedFailures(t *testing.T) {
 		{"a connection cut short", io.ErrUnexpectedEOF, true},
 		{"a connection reset", &net.OpError{Op: "read", Err: syscall.ECONNRESET}, true},
 		{"a write to a closed connection", &net.OpError{Op: "write", Err: syscall.EPIPE}, true},
+		{"a write to a connection the client closed", &net.OpError{Op: "write", Err: net.ErrClosed}, true},
 		{"a timeout", &net.OpError{Op: "read", Err: os.ErrDeadlineExceeded}, false},
 		{"a protocol error", errors.New("http2: server sent GOAWAY and closed the connection; LastStreamID=1, ErrCode=PROTOCOL_ERROR"), false},
 	} {
