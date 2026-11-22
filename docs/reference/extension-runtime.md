@@ -354,6 +354,9 @@ chalkd runs every renderer, check and validator as a transient unit with these l
 - A renderer may write `$OUT` and a private `/tmp` of 16 MiB alone. A validator writes no
   output's files, so it may write no path but its private `/tmp` of 16 MiB.
 - It must finish within 30 seconds. The validators of a delivery run one after another.
+- It may use 256 MiB of memory, its private `/tmp` included, and 256 processes and threads
+  together. The kernel stops a program that needs more memory and refuses it more processes or
+  threads, which fails the render.
 - No file it writes, standard output among them, may grow past 16 MiB, and a renderer's files
   together may take 16 MiB and hold no links, because chalkd sets their owner afterwards and must
   not follow a link to a file the output does not own.

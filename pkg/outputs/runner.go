@@ -92,6 +92,11 @@ var sandbox = append([]string{
 	"--property=ProtectKernelLogs=yes",
 	"--property=ProtectControlGroups=yes",
 	"--property=InaccessiblePaths=-/state -/var -/run/chalkos/config -/run/chalkos/credentials -/run/chalkos/kubernetes",
+	// A program that loops cannot starve the node while chalkd holds the config lock or boots. The
+	// largest, vtysh's and Kea's checks, peak near 24 MiB; a Go renderer starts a thread for
+	// every four CPUs while it collects garbage.
+	"--property=MemoryMax=256M",
+	"--property=TasksMax=256",
 	"--property=DefaultDependencies=no",
 }, command.StoreOnly...)
 
