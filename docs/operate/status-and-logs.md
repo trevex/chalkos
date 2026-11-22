@@ -47,6 +47,7 @@ certificates:
   Kubernetes CA             expires <date>
   front-proxy CA            expires <date>
   etcd CA                   expires <date>
+  kubelet serving CA        expires <date>
   Kubernetes control plane  expires <date>
   kubelet client            expires <date>
   kubelet serving           expires <date>
@@ -55,6 +56,7 @@ trust:
   Kubernetes CA         <fingerprint> (issues)
   front-proxy CA        <fingerprint> (issues)
   etcd CA               <fingerprint> (issues)
+  kubelet serving CA    <fingerprint> (issues)
   service-account keys  <fingerprint> (issues)
   encryption keys       <fingerprint> (issues)
 time: synchronised to <server>, offset <offset> s

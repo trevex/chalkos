@@ -45,6 +45,9 @@ The flags of the control plane are close to kubeadm's. chalkos makes a few choic
 - The API server encrypts Secrets in etcd with the cluster's encryption key.
 - The controller-manager runs without the `bootstrapsigner` and `tokencleaner` controllers,
   because no node joins with a token.
+- The controller-manager signs kubelet serving certificates with the kubelet serving CA and the
+  requests of every other signer with the Kubernetes CA. The API server verifies kubelets against
+  the kubelet serving CA alone.
 
 `extraArgs` of the `Cluster` document adds or overrides flags per component of the control plane:
 `etcd`, `kube-apiserver`, `kube-controller-manager` and `kube-scheduler`. `kubeletExtraArgs` of a

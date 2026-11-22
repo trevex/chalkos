@@ -121,6 +121,10 @@ func TestControlPlaneCertificates(t *testing.T) {
 		string(files[FileEtcdCA]) != k.EtcdCA.Certificate || string(files[FileFrontProxyCA]) != k.FrontProxyCA.Certificate {
 		t.Error("the CA files differ from the share")
 	}
+	if string(files[FileKubeletServingCA]) != k.KubeletServingCA.Certificate || string(files[FileKubeletServingCASigning]) != k.KubeletServingCA.Certificate ||
+		string(files[FileKubeletServingCAKey]) != k.KubeletServingCA.Key {
+		t.Error("the kubelet serving CA files differ from the share")
+	}
 	if string(files[FileServiceAccountKey]) != k.ServiceAccountKey || !strings.Contains(string(files[FileServiceAccountPub]), "PUBLIC KEY") {
 		t.Error("the service account key files are wrong")
 	}
@@ -398,5 +402,44 @@ func TestConfigFilesBytes(t *testing.T) {
 }`
 	if string(enc) != wantEnc {
 		t.Errorf("encryption configuration =\n%s\nwant\n%s", enc, wantEnc)
+	}
+}
+
+// TestKubeletServingTrustedByTheAPIServerAlone checks that a kubelet serving certificate of the
+// kubelet serving CA verifies against the bundle the API server checks kubelets with, and not
+// against the Kubernetes CAs that kubeconfigs and pods trust, even for the API server's names.
+func TestKubeletServingTrustedByTheAPIServerAlone(t *testing.T) {
+	k := secrets(t)
+	files, err := ControlPlane(ControlPlaneShare(k, pkitest.NodeCA(t, now)), testCluster(), testNode, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serving, err := pki.IssueLeaf(k.KubeletServingCA, pki.Leaf{CommonName: NodeUserPrefix + "w1", Organization: []string{NodesGroup},
+		DNSNames: []string{"w1", "kubernetes.default.svc"}, Server: true}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, _, err := serving.Parse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool := func(file string) *x509.CertPool {
+		p := x509.NewCertPool()
+		if !p.AppendCertsFromPEM(files[file]) {
+			t.Fatalf("%s holds no certificate", file)
+		}
+		return p
+	}
+	verify := func(file, name string) error {
+		_, err := cert.Verify(x509.VerifyOptions{Roots: pool(file), DNSName: name, CurrentTime: now, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}})
+		return err
+	}
+	if err := verify(FileKubeletServingCA, "w1"); err != nil {
+		t.Errorf("the API server's kubelet CA refuses the kubelet's serving certificate: %v", err)
+	}
+	for _, name := range []string{"w1", "kubernetes.default.svc"} {
+		if err := verify(FileCA, name); err == nil {
+			t.Errorf("the Kubernetes CAs accept a kubelet's serving certificate for %s", name)
+		}
 	}
 }

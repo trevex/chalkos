@@ -26,11 +26,12 @@ page explains what each one issues, how the certificates are renewed, how a CA i
 why a node's clock decides what it accepts. [Certificates](../../reference/certificates.md) in the
 reference lists every CA and certificate with its lifetime and renewal point.
 
-!!! note "With the Kubernetes layer, three more CAs and two keys serve Kubernetes"
+!!! note "With the Kubernetes layer, four more CAs and two keys serve Kubernetes"
 
-    The secrets file also holds the Kubernetes, front-proxy and etcd CAs, the service-account key
-    and the encryption key. [Kubernetes certificates](../kubernetes/certificates.md) explains what
-    they issue and how they are rotated.
+    The secrets file also holds the Kubernetes, front-proxy, etcd and kubelet serving CAs, the
+    service-account key and the encryption key.
+    [Kubernetes certificates](../kubernetes/certificates.md) explains what they issue and how they
+    are rotated.
 
 ## The OS CA issues clients and the node CA
 

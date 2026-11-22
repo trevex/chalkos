@@ -13,7 +13,7 @@ func TestGenerateHasKubernetes(t *testing.T) {
 		t.Errorf("version = %d, want 3", s.Version)
 	}
 	k := s.Kubernetes
-	for name, ca := range map[string]pki.CertKey{"ca": k.CA, "frontProxyCA": k.FrontProxyCA, "etcdCA": k.EtcdCA} {
+	for name, ca := range map[string]pki.CertKey{"ca": k.CA, "frontProxyCA": k.FrontProxyCA, "etcdCA": k.EtcdCA, "kubeletServingCA": k.KubeletServingCA} {
 		cert, _, err := ca.Parse()
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
@@ -30,7 +30,8 @@ func TestGenerateHasKubernetes(t *testing.T) {
 	}
 	pub := s.Public()
 	if pub.Kubernetes.CA.Certificate != k.CA.Certificate || pub.Kubernetes.CA.Key != "" ||
-		pub.Kubernetes.EtcdCA.Key != "" || pub.Kubernetes.FrontProxyCA.Key != "" {
+		pub.Kubernetes.EtcdCA.Key != "" || pub.Kubernetes.FrontProxyCA.Key != "" || pub.Kubernetes.KubeletServingCA.Key != "" ||
+		pub.Kubernetes.KubeletServingCA.Certificate != k.KubeletServingCA.Certificate {
 		t.Errorf("public Kubernetes part = %+v, want the CA certificates only", pub.Kubernetes)
 	}
 }
@@ -64,6 +65,7 @@ func TestValidateRejectsSharedCAs(t *testing.T) {
 	}{
 		{"etcd CA is the Kubernetes CA", "kubernetes.ca", "kubernetes.etcdCA", func(s *Secrets) { s.Kubernetes.EtcdCA = s.Kubernetes.CA }},
 		{"front-proxy CA is the Kubernetes CA", "kubernetes.ca", "kubernetes.frontProxyCA", func(s *Secrets) { s.Kubernetes.FrontProxyCA = s.Kubernetes.CA }},
+		{"kubelet serving CA is the Kubernetes CA", "kubernetes.ca", "kubernetes.kubeletServingCA", func(s *Secrets) { s.Kubernetes.KubeletServingCA = s.Kubernetes.CA }},
 		{"etcd CA is the OS CA", "osCA", "kubernetes.etcdCA", func(s *Secrets) { s.Kubernetes.EtcdCA = s.OSCA }},
 		{"Kubernetes CA is the node CA", "nodeCA", "kubernetes.ca", func(s *Secrets) { s.Kubernetes.CA = s.NodeCA }},
 	} {
@@ -87,5 +89,16 @@ func TestValidateRejectsSharedCAs(t *testing.T) {
 	k.EtcdCA = k.CA
 	if err := k.Validate(); err == nil {
 		t.Error("KubernetesSecrets.Validate accepted an etcd CA that is the Kubernetes CA")
+	}
+}
+
+// TestValidateNamesMissingKubeletServingCA checks that secrets without the kubelet serving CA, as
+// from before chalkos had it, are refused with the way to new ones.
+func TestValidateNamesMissingKubeletServingCA(t *testing.T) {
+	s := generate(t)
+	s.Kubernetes.KubeletServingCA = pki.CertKey{}
+	err := s.Validate()
+	if err == nil || !strings.Contains(err.Error(), "kubernetes.kubeletServingCA is missing") || !strings.Contains(err.Error(), "chalkctl gen secrets") {
+		t.Errorf("Validate = %v, want kubernetes.kubeletServingCA named missing with chalkctl gen secrets", err)
 	}
 }

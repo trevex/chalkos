@@ -101,7 +101,7 @@ func StaticPods(c kubernetes.Cluster, n kubernetes.Node, pkiDir string, files ma
 		"etcd-certfile":                      pki(kpki.FileAPIServerEtcdClient),
 		"etcd-keyfile":                       pki(kpki.FileAPIServerEtcdClientKey),
 		"etcd-servers":                       c.LocalEtcd(),
-		"kubelet-certificate-authority":      pki(kpki.FileCA),
+		"kubelet-certificate-authority":      pki(kpki.FileKubeletServingCA),
 		"kubelet-client-certificate":         pki(kpki.FileAPIServerKubeletClient),
 		"kubelet-client-key":                 pki(kpki.FileAPIServerKubeletKey),
 		"kubelet-preferred-address-types":    "InternalIP,ExternalIP,Hostname",
@@ -131,15 +131,24 @@ func StaticPods(c kubernetes.Cluster, n kubernetes.Node, pkiDir string, files ma
 	// The controller-manager and the scheduler serve their health endpoints on IPv4's loopback
 	// address in every setup, as kubeadm's do: every node has it.
 	controllerManagerFlags := map[string]string{
-		"allocate-node-cidrs":              "true",
-		"authentication-kubeconfig":        pki(kpki.FileControllerManagerConfig),
-		"authorization-kubeconfig":         pki(kpki.FileControllerManagerConfig),
-		"bind-address":                     "127.0.0.1",
-		"client-ca-file":                   pki(kpki.FileCA),
-		"cluster-cidr":                     strs.Join(c.PodCIDRList(), ","),
-		"cluster-name":                     "kubernetes",
-		"cluster-signing-cert-file":        pki(kpki.FileCASigning),
-		"cluster-signing-key-file":         pki(kpki.FileCAKey),
+		"allocate-node-cidrs":       "true",
+		"authentication-kubeconfig": pki(kpki.FileControllerManagerConfig),
+		"authorization-kubeconfig":  pki(kpki.FileControllerManagerConfig),
+		"bind-address":              "127.0.0.1",
+		"client-ca-file":            pki(kpki.FileCA),
+		"cluster-cidr":              strs.Join(c.PodCIDRList(), ","),
+		"cluster-name":              "kubernetes",
+		// The kubelet serving CA signs serving certificates alone, so no client that trusts the
+		// Kubernetes CA accepts a kubelet as the API server; the controller-manager refuses
+		// cluster-signing-cert-file next to a signer's own flags, so every signer is named.
+		"cluster-signing-kube-apiserver-client-cert-file": pki(kpki.FileCASigning),
+		"cluster-signing-kube-apiserver-client-key-file":  pki(kpki.FileCAKey),
+		"cluster-signing-kubelet-client-cert-file":        pki(kpki.FileCASigning),
+		"cluster-signing-kubelet-client-key-file":         pki(kpki.FileCAKey),
+		"cluster-signing-kubelet-serving-cert-file":       pki(kpki.FileKubeletServingCASigning),
+		"cluster-signing-kubelet-serving-key-file":        pki(kpki.FileKubeletServingCAKey),
+		"cluster-signing-legacy-unknown-cert-file":        pki(kpki.FileCASigning),
+		"cluster-signing-legacy-unknown-key-file":         pki(kpki.FileCAKey),
 		"controllers":                      "*,-bootstrapsigner,-tokencleaner",
 		"kubeconfig":                       pki(kpki.FileControllerManagerConfig),
 		"leader-elect":                     "true",

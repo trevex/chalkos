@@ -9,7 +9,7 @@
       "tier": "control-plane"
     },
     "annotations": {
-      "chalkos.dev/certificates": "5bc65c12513ceb15441a08fe379f0519037bc46597e5e8b2b2e414b7ec333ef2"
+      "chalkos.dev/certificates": "32db44f318004dc7c34ae187667548dcd8323dc87bfb7ea9d1a5e91cecb8575d"
     }
   },
   "spec": {
@@ -41,7 +41,7 @@
           "--etcd-certfile=/etc/kubernetes/pki/apiserver-etcd-client.crt",
           "--etcd-keyfile=/etc/kubernetes/pki/apiserver-etcd-client.key",
           "--etcd-servers=https://[::1]:2379",
-          "--kubelet-certificate-authority=/etc/kubernetes/pki/ca.crt",
+          "--kubelet-certificate-authority=/etc/kubernetes/pki/kubelet-serving-ca.crt",
           "--kubelet-client-certificate=/etc/kubernetes/pki/apiserver-kubelet-client.crt",
           "--kubelet-client-key=/etc/kubernetes/pki/apiserver-kubelet-client.key",
           "--kubelet-preferred-address-types=InternalIP",

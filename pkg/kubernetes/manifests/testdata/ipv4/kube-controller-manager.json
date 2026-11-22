@@ -9,7 +9,7 @@
       "tier": "control-plane"
     },
     "annotations": {
-      "chalkos.dev/certificates": "5bc65c12513ceb15441a08fe379f0519037bc46597e5e8b2b2e414b7ec333ef2"
+      "chalkos.dev/certificates": "32db44f318004dc7c34ae187667548dcd8323dc87bfb7ea9d1a5e91cecb8575d"
     }
   },
   "spec": {
@@ -35,8 +35,14 @@
           "--client-ca-file=/etc/kubernetes/pki/ca.crt",
           "--cluster-cidr=10.244.0.0/16",
           "--cluster-name=kubernetes",
-          "--cluster-signing-cert-file=/etc/kubernetes/pki/ca-signing.crt",
-          "--cluster-signing-key-file=/etc/kubernetes/pki/ca.key",
+          "--cluster-signing-kube-apiserver-client-cert-file=/etc/kubernetes/pki/ca-signing.crt",
+          "--cluster-signing-kube-apiserver-client-key-file=/etc/kubernetes/pki/ca.key",
+          "--cluster-signing-kubelet-client-cert-file=/etc/kubernetes/pki/ca-signing.crt",
+          "--cluster-signing-kubelet-client-key-file=/etc/kubernetes/pki/ca.key",
+          "--cluster-signing-kubelet-serving-cert-file=/etc/kubernetes/pki/kubelet-serving-ca-signing.crt",
+          "--cluster-signing-kubelet-serving-key-file=/etc/kubernetes/pki/kubelet-serving-ca.key",
+          "--cluster-signing-legacy-unknown-cert-file=/etc/kubernetes/pki/ca-signing.crt",
+          "--cluster-signing-legacy-unknown-key-file=/etc/kubernetes/pki/ca.key",
           "--controllers=*,-bootstrapsigner,-tokencleaner",
           "--kubeconfig=/etc/kubernetes/pki/controller-manager.kubeconfig",
           "--leader-elect=true",

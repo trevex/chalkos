@@ -73,14 +73,15 @@ type KubernetesAccepted struct {
 	CA                 []string        `json:"ca,omitempty"`
 	FrontProxyCA       []string        `json:"frontProxyCA,omitempty"`
 	EtcdCA             []string        `json:"etcdCA,omitempty"`
+	KubeletServingCA   []string        `json:"kubeletServingCA,omitempty"`
 	ServiceAccountKeys []string        `json:"serviceAccountKeys,omitempty"`
 	EncryptionKeys     []EncryptionKey `json:"encryptionKeys,omitempty"`
 }
 
 // String counts what is accepted and never prints an encryption key.
 func (a KubernetesAccepted) String() string {
-	return fmt.Sprintf("clustersecrets.KubernetesAccepted{ca: %d, frontProxyCA: %d, etcdCA: %d, serviceAccountKeys: %d, encryptionKeys: %v}",
-		len(a.CA), len(a.FrontProxyCA), len(a.EtcdCA), len(a.ServiceAccountKeys), a.EncryptionKeys)
+	return fmt.Sprintf("clustersecrets.KubernetesAccepted{ca: %d, frontProxyCA: %d, etcdCA: %d, kubeletServingCA: %d, serviceAccountKeys: %d, encryptionKeys: %v}",
+		len(a.CA), len(a.FrontProxyCA), len(a.EtcdCA), len(a.KubeletServingCA), len(a.ServiceAccountKeys), a.EncryptionKeys)
 }
 
 // GoString redacts like String.
@@ -138,6 +139,7 @@ type NewValues struct {
 	CA                *pki.CertKey `json:"ca,omitempty"`
 	FrontProxyCA      *pki.CertKey `json:"frontProxyCA,omitempty"`
 	EtcdCA            *pki.CertKey `json:"etcdCA,omitempty"`
+	KubeletServingCA  *pki.CertKey `json:"kubeletServingCA,omitempty"`
 	ServiceAccountKey string       `json:"serviceAccountKey,omitempty"`
 }
 
@@ -153,7 +155,7 @@ func (n NewValues) onlyOf(kind RotationKind) bool {
 	of := map[RotationKind]bool{
 		RotateOSCA:              n.OSCA != nil,
 		RotateNodeCA:            n.NodeCA != nil && n.OSCA == nil,
-		RotateKubernetesCA:      n.CA != nil || n.FrontProxyCA != nil || n.EtcdCA != nil,
+		RotateKubernetesCA:      n.CA != nil || n.FrontProxyCA != nil || n.EtcdCA != nil || n.KubeletServingCA != nil,
 		RotateServiceAccountKey: n.ServiceAccountKey != "",
 	}
 	for k, set := range of {
@@ -169,8 +171,9 @@ func (s Secrets) OSCABundle() string {
 	return trustBundle(s.OSCA, s.Accepted.OSCA)
 }
 
-// CABundle is the Kubernetes CAs trusted, the one that issues first; FrontProxyCABundle and
-// EtcdCABundle are those of the front-proxy and etcd CAs.
+// CABundle is the Kubernetes CAs trusted, the one that issues first; FrontProxyCABundle,
+// EtcdCABundle and KubeletServingCABundle are those of the front-proxy, etcd and kubelet serving
+// CAs.
 func (k KubernetesSecrets) CABundle() string {
 	return trustBundle(k.CA, k.Accepted.CA)
 }
@@ -181,6 +184,10 @@ func (k KubernetesSecrets) FrontProxyCABundle() string {
 
 func (k KubernetesSecrets) EtcdCABundle() string {
 	return trustBundle(k.EtcdCA, k.Accepted.EtcdCA)
+}
+
+func (k KubernetesSecrets) KubeletServingCABundle() string {
+	return trustBundle(k.KubeletServingCA, k.Accepted.KubeletServingCA)
 }
 
 // trustBundle is the bundle of a CA that issues and the certificates accepted besides it, the
