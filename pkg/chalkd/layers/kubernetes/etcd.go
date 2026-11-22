@@ -246,7 +246,8 @@ func (p *Plugin) EtcdLeave(ctx context.Context, req *kubernetesv1.EtcdLeaveReque
 		}
 	}()
 	stop := func() {
-		k.stopLoops()
+		// The VIPs must be released before the node leaves, so the wait outlives the request.
+		k.stopLoops(context.WithoutCancel(ctx))
 		restart = true
 	}
 	// The join holds the membership while it waits for etcd, until its loop stops. A bootstrapped

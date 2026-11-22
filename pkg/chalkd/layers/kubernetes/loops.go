@@ -40,18 +40,28 @@ func (g *loopGroup) Go(name string, f func(ctx context.Context)) {
 	}()
 }
 
-// Stop ends the group's context and waits for each loop, in the order they started, up to timeout
-// for each. It logs the loops that did not end in time.
-func (g *loopGroup) Stop(timeout time.Duration) {
+// Stop ends the group's context and waits for its loops, up to timeout for all of them together
+// or until ctx ends. It logs the loops that did not end in time.
+func (g *loopGroup) Stop(ctx context.Context, timeout time.Duration) {
 	g.cancel()
 	g.mu.Lock()
 	loops := g.loops
 	g.mu.Unlock()
-	for _, l := range loops {
+	expired := time.After(timeout)
+	for i, l := range loops {
 		select {
 		case <-l.done:
-		case <-time.After(timeout):
-			log.Printf("kubernetes: %s did not end in time", l.name)
+			continue
+		case <-expired:
+		case <-ctx.Done():
 		}
+		for _, l := range loops[i:] {
+			select {
+			case <-l.done:
+			default:
+				log.Printf("kubernetes: %s did not end in time", l.name)
+			}
+		}
+		return
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"sync"
 	"time"
 
 	"k8s.io/client-go/kubernetes"
@@ -113,7 +114,11 @@ func (k *side) runControlPlaneOnce(ctx context.Context, applied func(n int)) err
 	if err != nil {
 		return err
 	}
-	go k.watchSplit(ctx, share)
+	ctx, cancel := context.WithCancel(ctx)
+	var wg sync.WaitGroup
+	defer wg.Wait()
+	defer cancel()
+	wg.Go(func() { k.watchSplit(ctx, share) })
 	return k.hooks.ControlPlane(ctx, share, applied)
 }
 
@@ -122,6 +127,8 @@ func (k *side) runControlPlaneOnce(ctx context.Context, applied func(n int)) err
 // memory.
 func (k *side) runControlPlane(ctx context.Context, share kpki.Share, applied func(n int)) error {
 	ctx, cancel := context.WithCancel(ctx)
+	var wg sync.WaitGroup
+	defer wg.Wait()
 	defer cancel()
 	c, err := k8s.ReadCluster(k.state.Cluster)
 	if err != nil {
@@ -132,7 +139,7 @@ func (k *side) runControlPlane(ctx context.Context, share kpki.Share, applied fu
 	if _, err := cred.GetClientCertificate(nil); err != nil {
 		return fmt.Errorf("issue chalkd's client certificate: %w", err)
 	}
-	go cred.renew(ctx)
+	wg.Go(func() { cred.renew(ctx) })
 	cfg, err := cred.restConfig(c.LocalAPIServer())
 	if err != nil {
 		return err
@@ -144,7 +151,10 @@ func (k *side) runControlPlane(ctx context.Context, share kpki.Share, applied fu
 // is ready and, apart from that, applying the control plane's objects until that succeeds, so
 // objects that fail, such as an Addon document's, do not keep kubelets from their certificates.
 func (k *side) serveControlPlane(ctx context.Context, c k8s.Cluster, cfg *rest.Config, applied func(n int)) error {
-	go func() {
+	// It returns only once ctx ended, which ends the approver too.
+	var wg sync.WaitGroup
+	defer wg.Wait()
+	wg.Go(func() {
 		err := kapply.WaitReady(ctx, cfg)
 		switch {
 		case err == nil:
@@ -152,7 +162,7 @@ func (k *side) serveControlPlane(ctx context.Context, c k8s.Cluster, cfg *rest.C
 		case ctx.Err() == nil:
 			log.Printf("kubernetes: approve kubelet serving certificates: %v", err)
 		}
-	}()
+	})
 	for {
 		n, err := k.applyOnce(ctx, c, cfg)
 		if err == nil {

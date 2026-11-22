@@ -10,8 +10,8 @@ import (
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 )
 
-// TestLoopGroupStop ends the group's context, waits for the loops that end and gives up on one
-// that does not after the timeout.
+// TestLoopGroupStop ends the group's context, waits for the loops that end and gives up on those
+// that do not once the timeout, one for all of them, passed.
 func TestLoopGroupStop(t *testing.T) {
 	testwait.Bubble(t, func(t *testing.T) {
 		g := newLoopGroup()
@@ -23,15 +23,33 @@ func TestLoopGroupStop(t *testing.T) {
 		})
 		release := make(chan struct{})
 		defer close(release)
-		g.Go("a loop that does not end", func(context.Context) { <-release })
+		for range 3 {
+			g.Go("a loop that does not end", func(context.Context) { <-release })
+		}
 		start := time.Now()
-		g.Stop(100 * time.Millisecond)
+		g.Stop(context.Background(), 100*time.Millisecond)
 		if !ended.Load() {
 			t.Error("Stop returned before the loop that ends ended")
 		}
-		// The first loop ends after 50ms, and Stop gives the second the timeout from then.
-		if d := time.Since(start); d != 150*time.Millisecond {
-			t.Errorf("Stop returned after %v, want 150ms", d)
+		if d := time.Since(start); d != 100*time.Millisecond {
+			t.Errorf("Stop returned after %v, want the timeout of 100ms", d)
+		}
+	})
+}
+
+// A context that ends before the timeout ends Stop's wait, as the restart action's does.
+func TestLoopGroupStopEndsWithItsContext(t *testing.T) {
+	testwait.Bubble(t, func(t *testing.T) {
+		g := newLoopGroup()
+		release := make(chan struct{})
+		defer close(release)
+		g.Go("a loop that does not end", func(context.Context) { <-release })
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+		defer cancel()
+		start := time.Now()
+		g.Stop(ctx, time.Minute)
+		if d := time.Since(start); d != 20*time.Millisecond {
+			t.Errorf("Stop returned after %v, want the context's 20ms", d)
 		}
 	})
 }
@@ -46,12 +64,12 @@ func TestLeftoverJoinLeavesTheNextGeneration(t *testing.T) {
 	old := k.loops()
 	k.joining = true
 	k.mu.Unlock()
-	k.stopLoops()
+	k.stopLoops(context.Background())
 	k.mu.Lock()
 	next := k.loops()
 	k.joining = true
 	k.mu.Unlock()
-	t.Cleanup(k.stopLoops)
+	t.Cleanup(func() { k.stopLoops(context.Background()) })
 	k.superviseJoin(old.ctx, old)
 	k.mu.Lock()
 	defer k.mu.Unlock()

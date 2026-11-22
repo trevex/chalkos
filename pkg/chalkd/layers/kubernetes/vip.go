@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
@@ -15,9 +16,13 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
-// superviseVIP takes part in the VIP election until ctx ends.
+// superviseVIP takes part in the VIP election until ctx ends. An election that stops starts again
+// with the control plane's backoff, and a failure is logged when it differs from the one before,
+// so an etcd outage does not fill the log.
 func (k *side) superviseVIP(ctx context.Context) {
+	backoff, last := restartBackoff, ""
 	for {
+		started := time.Now()
 		err := k.runVIP(ctx)
 		if ctx.Err() != nil {
 			return
@@ -26,12 +31,20 @@ func (k *side) superviseVIP(ctx context.Context) {
 			log.Print("kubernetes: the node's share changed the etcd CAs; starting the VIP election again")
 			continue
 		}
-		log.Printf("kubernetes: the VIP election stopped: %v; starting it again", err)
+		// An election that ran for a while failed afresh rather than again.
+		if time.Since(started) > maxRestartBackoff {
+			backoff, last = restartBackoff, ""
+		}
+		if msg := err.Error(); msg != last {
+			log.Printf("kubernetes: the VIP election stopped: %v; starting it again", err)
+			last = msg
+		}
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(10 * time.Second):
+		case <-time.After(backoff):
 		}
+		backoff = min(2*backoff, maxRestartBackoff)
 	}
 }
 
@@ -81,9 +94,11 @@ func (k *side) runVIP(ctx context.Context) error {
 	// The client verifies etcd and renews its credential with the CAs of the share it was dialled
 	// with, which a rotation of the etcd CA replaces. On such a change the election ends as when
 	// chalkd stops, releasing the VIPs and resigning, and starts again with the new share.
+	var wg sync.WaitGroup
+	defer wg.Wait()
 	ectx, restart := context.WithCancelCause(ctx)
 	defer restart(nil)
-	go watchEtcdTrust(ectx, k.state, share, k.timing.VIPInterval, restart)
+	wg.Go(func() { watchEtcdTrust(ectx, k.state, share, k.timing.VIPInterval, restart) })
 	err = election.Run(ectx)
 	if ctx.Err() == nil && errors.Is(context.Cause(ectx), errEtcdTrustChanged) {
 		return errEtcdTrustChanged
