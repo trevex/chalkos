@@ -14,6 +14,18 @@ let
   # The router image of the fixtures, whose rules, outputs and kernel modules the rules check
   # checks, and whose units the router checks run.
   router = fixtures.edge-metal.nixos;
+  # Kubernetes images with each feature that is off by default, which the shell checks build:
+  # each must stay free of shells and shell calls.
+  featureImages = {
+    longhorn = self.lib.mkImage {
+      name = "feature-longhorn";
+      platform = "metal";
+      modules = [
+        self.nixosModules.kubernetes
+        { chalkos.kubernetes.longhorn.enable = true; }
+      ];
+    };
+  };
 
   # Whether every image, of an attribute set holding mkImage's results, that runs Kubernetes runs
   # the kubelet of the patch release modules/node/kubernetes/releases.nix pins for its minor; the
@@ -104,6 +116,7 @@ in
 {
   inherit
     chalkPkgs
+    featureImages
     kubeletsPinned
     prelude
     router

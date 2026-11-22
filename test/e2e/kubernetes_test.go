@@ -158,6 +158,7 @@ func TestKubernetesCluster(t *testing.T) {
 
 	if !t.Run("host-integration", func(t *testing.T) {
 		modulePolicy(t, ctx, cs, nodes)
+		longhornTools(t, ctx, cs)
 		modulePolicyTampered(t, ctx, cs, nodes)
 	}) {
 		return

@@ -1,15 +1,15 @@
 ---
 title: "Storage and GPU workloads"
-description: "Run Rook and Ceph CSI and KubeVirt on chalkos nodes"
+description: "Run Rook and Ceph CSI, KubeVirt and Longhorn on chalkos nodes"
 ---
 
 # Storage and GPU workloads
 
 This page shows what Kubernetes images carry for workloads that need kernel modules from the
-host, such as Ceph CSI and KubeVirt, and how to run them. A node's kernel loads modules only from
-its image, and no container can load one, so the image must carry the modules these workloads
-use. Each workload has a feature of the Kubernetes layer that adds them. `ceph` and `kubevirt`
-are on by default.
+host or programs of the host, such as Ceph CSI, KubeVirt and Longhorn, and how to run them. A
+node's kernel loads modules only from its image, and no container can load one, so the image must
+carry the modules these workloads use. Each workload has a feature of the Kubernetes layer that
+adds them. `ceph` and `kubevirt` are on by default; `longhorn` is off.
 
 ## Before you begin
 
@@ -55,6 +55,57 @@ chalkos.kubernetes.kubevirt.iommu = true;
 The option also adds `intel_iommu=on iommu=pt` to the kernel's command line. AMD's IOMMU is on
 unless the command line turns it off, so it needs no parameter of its own. Turn on the IOMMU in
 the machine's firmware as well, as VT-d on Intel or AMD-Vi on AMD.
+
+## Run Longhorn
+
+[`chalkos.kubernetes.longhorn.enable`](../reference/image-options.md#chalkoskuberneteslonghornenable)
+is off by default. Turn it on in the image's modules:
+
+```nix
+chalkos.kubernetes.longhorn.enable = true;
+```
+
+The image then carries what Longhorn's chart expects of a node:
+
+- iscsid, which runs from boot, and `iscsiadm`. Longhorn finds the iscsid process and runs
+  `iscsiadm` in its namespaces, which are the host's. iscsiadm's database lives in
+  `/var/lib/iscsi`, and each node writes its initiator name there on its first boot.
+- The NFS client, `mount.nfs`, for Longhorn's RWX volumes. Longhorn's CSI plugin mounts them with
+  NFSv4.1 by running `mount` in the host's namespaces.
+- Links for `iscsiadm`, `fstrim`, `cryptsetup`, `dmsetup` and `mount` in `/usr/bin` and
+  `/usr/sbin`, where Longhorn finds them in the host's mount namespace.
+- The `iscsi_tcp` and `dm_crypt` modules, loaded at boot, as Longhorn's node check expects
+  `dm_crypt` to be loaded.
+
+Give Longhorn's replicas a disk of their own with a Volume mounted on `/var/lib/longhorn`, the
+chart's default data path, as [Add storage volumes](../operate/storage-volumes.md#put-a-volume-on-a-disk-of-its-own)
+shows. A Volume mounted elsewhere needs the chart's `defaultSettings.defaultDataPath` set to its
+mount point. Without a Volume, Longhorn keeps its replicas on VAR. Install Longhorn with its
+chart's default values otherwise.
+
+The NFS client mounts NFSv4 alone. The image carries no `rpc.statd`, which NFSv3's locks need.
+
+### Run Longhorn's V2 data engine
+
+The V2 data engine runs on SPDK, which needs huge pages and the `vfio_pci`, `uio_pci_generic`
+and `nvme_tcp` modules. The `kubevirt` feature carries the VFIO and UIO modules, so keep it on.
+Longhorn's node check expects the three modules to be loaded, and no pod can load a module, so
+load them at boot and reserve the 2 MiB huge pages the chart's `dataEngineMemorySize` asks for,
+2048 MiB by default, in the image's modules:
+
+```nix
+boot.kernelModules = [
+  "vfio_pci"
+  "uio_pci_generic"
+  "nvme_tcp"
+];
+boot.kernelParams = [
+  "hugepagesz=2M"
+  "hugepages=1024"
+];
+```
+
+Then set the chart's `defaultSettings.v2DataEngine` to `true`.
 
 ## Leave a workload's modules out of an image
 

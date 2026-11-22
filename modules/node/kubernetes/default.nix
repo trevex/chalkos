@@ -50,6 +50,7 @@ in
     ./kinds.nix
     ./ceph.nix
     ./kubevirt.nix
+    ./longhorn.nix
     ./bgp
     ./registry
   ];
