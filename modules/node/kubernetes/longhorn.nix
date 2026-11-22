@@ -135,7 +135,7 @@ in
       # Written once: %m is the machine ID of the boot that writes it.
       ${initiatorName}.f = {
         mode = "0600";
-        argument = "InitiatorName=iqn.2026-11.dev.chalkos:%m\\n";
+        argument = "InitiatorName=iqn.2026-11.dev.chalkos:%m";
       };
     }
     // lib.genAttrs (map (d: "${db}/${d}") dbDirs) (_: {

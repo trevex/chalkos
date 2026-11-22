@@ -4865,6 +4865,8 @@ lib.runTests {
         hostTools = lib.attrNames on.chalkos.kubernetes.hostTools;
         etc = lib.filter (lib.hasPrefix "iscsi/") (lib.attrNames on.environment.etc);
         initiator = on.environment.etc."iscsi/initiatorname.iscsi".source;
+        initiatorName =
+          on.systemd.tmpfiles.settings.chalkos-iscsi."/var/lib/iscsi/initiatorname.iscsi".f.argument;
         nodes = on.environment.etc."iscsi/nodes".source;
         mountNfs = lib.any (p: lib.getName p == "nfs-utils-chalkos") on.environment.systemPackages;
         loaded = lib.filter (
@@ -4901,6 +4903,7 @@ lib.runTests {
           "iscsi/static"
         ];
         initiator = "/var/lib/iscsi/initiatorname.iscsi";
+        initiatorName = "InitiatorName=iqn.2026-11.dev.chalkos:%m";
         nodes = "/var/lib/iscsi/nodes";
         mountNfs = true;
         loaded = [
