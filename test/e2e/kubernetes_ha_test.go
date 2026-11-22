@@ -388,7 +388,7 @@ func TestKubernetesHA(t *testing.T) {
 			t.Fatalf("bootstrap without --force: %v\n%s", err, out)
 		}
 		waitFor(t, time.Minute, "cp3 to refuse a bootstrap while the cluster answers", func() error {
-			out, err := c.chalkctl("cp3", "bootstrap", "cp3", "--force")
+			out, err := c.chalkctl("cp3", "bootstrap", "cp3")
 			if err == nil {
 				t.Fatalf("cp3 bootstrapped a second cluster:\n%s", out)
 			}
