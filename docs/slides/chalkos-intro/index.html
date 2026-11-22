@@ -899,7 +899,7 @@ table.ledger { width: 100%; border-collapse: collapse; }
             <li class="off"><s>SSH, shell, logins</s></li>
         </ul>
     </div>
-    <div class="stamp reveal" style="--i:4">Unreleased</div>
+    <div class="stamp reveal" style="--i:4">Early releases</div>
     <div class="foot reveal" style="--i:5">
         <span>github.com/trevex/chalkos</span>
         <span>trevex.github.io/chalkos</span>
@@ -1071,7 +1071,7 @@ table.ledger { width: 100%; border-collapse: collapse; }
                         <tr><td class="t">Upgrades</td><td>Node keeps <b>one config</b> across upgrades</td><td><b>One config slot per image</b>; a rollback boots <b>its own config</b></td></tr>
                         <tr><td class="t">Images</td><td><b>One image</b>, signed system extensions</td><td><b>One image per kind of node</b>, from <b>NixOS modules</b></td></tr>
                         <tr><td class="t">Node CA</td><td>Control planes hold <b>the root CA's key</b></td><td>Control planes hold <b>a node CA</b>; the OS CA key <b>stays offline</b></td></tr>
-                        <tr><td class="t">Maturity</td><td><b>Released</b>, many platforms</td><td><b>Unreleased</b>; x86-64 bare metal and KVM</td></tr>
+                        <tr><td class="t">Maturity</td><td><b>Released</b>, many platforms</td><td><b>Early</b>, v0.x releases; x86-64 bare metal and KVM</td></tr>
                     </tbody>
                 </table>
                 <div class="card inked" style="margin-top:auto"><div class="cb" style="padding:18px 24px; gap:8px">
@@ -1432,13 +1432,16 @@ protocol bgp <span class="s">'{{ $peer.metadata.name }}_{{ . }}'</span> {
   ...</pre>
                 </div>
                 <div class="col reveal" style="--i:3; gap:0">
-                    <div class="codehead"><span>bgp.nix</span><span>simplified</span></div>
+                    <div class="codehead"><span>bgp.nix</span><span>simplified, no shell</span></div>
 <pre class="code" style="flex:1">chalkos.outputs.<span class="p">bird-conf</span> = {
   inputs = [ <span class="s">"Speaker"</span> <span class="s">"Peer"</span> ];
   render = chalkosLib.render
     .<span class="k">template</span> ./bird.conf.tmpl;
-  check = <span class="s">''
-    ... bird -p -c "$conf"
+  check = <span class="k">writeScript</span> <span class="s">"check" ''
+    #!${execline}/bin/execlineb -P
+    importas -i out OUT
+    ${bird}/bin/bird -p
+      -c ''${out}/bird.conf
   ''</span>;
 };
 
@@ -1644,6 +1647,7 @@ cp1: runs 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6), <span class="g">found healthy</sp
                         <li>VIP held through an etcd election</li>
                         <li>FRR speaker announces node address and VIP</li>
                         <li><b>ClusterRegistry</b> for air gaps</li>
+                        <li>Ceph and KubeVirt host support; Longhorn and NVIDIA opt in</li>
                         <li>A Kubernetes upgrade is an image upgrade</li>
                     </ul>
                 </div>
@@ -1865,7 +1869,7 @@ cp1: runs 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6), <span class="g">found healthy</sp
         </table>
         <div style="display:flex; justify-content:space-between; align-items:center; margin-top:34px">
             <span class="disp" style="font-size:46px">Niklas Voss</span>
-            <span class="stamp" style="font-size:24px">Unreleased · feedback welcome</span>
+            <span class="stamp" style="font-size:24px">Early · feedback welcome</span>
         </div>
     </div>
     <div class="pagenum">16 / 16</div>
