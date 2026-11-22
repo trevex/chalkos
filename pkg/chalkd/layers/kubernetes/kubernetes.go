@@ -243,22 +243,31 @@ func (k *side) stop() {
 	k.mu.Lock()
 	k.stopped = true
 	k.mu.Unlock()
-	k.stopLoops()
+	k.stopLoops(context.Background())
 }
+
+// stopTimeout bounds how long stopLoops waits for all the loops together.
+const stopTimeout = 15 * time.Second
 
 // stopLoops ends the loops and waits until the node released the VIPs, which must never stay on a
 // node whose chalkd no longer holds their lease, the join stopped and a renewal of the control
-// plane's certificates, which renders the static pods, ended. startLoops starts them again.
-func (k *side) stopLoops() {
+// plane's certificates, which renders the static pods, ended, up to stopTimeout or until ctx ends.
+// startLoops starts them again.
+func (k *side) stopLoops(ctx context.Context) {
 	k.mu.Lock()
 	g := k.group
 	k.group = nil
-	// The next start runs the loops afresh and closes a channel of its own once they applied the
-	// manifests.
-	k.started, k.joining, k.done = false, false, nil
+	k.started, k.joining = false, false
+	// A bootstrap waits on done until the manifests were applied: the next start keeps a channel
+	// not closed yet and closes it once its loop applied them. One closed already is replaced.
+	select {
+	case <-k.done:
+		k.done = nil
+	default:
+	}
 	k.mu.Unlock()
 	if g != nil {
-		g.Stop(15 * time.Second)
+		g.Stop(ctx, stopTimeout)
 	}
 }
 
@@ -322,25 +331,28 @@ func (k *side) startLocked() chan struct{} {
 		k.leaves = k.controlPlaneRenewal()
 	}
 	g.Go("the certificate renewal", k.leaves.Run)
-	var once sync.Once
 	reload := k.reload
 	g.Go("the control plane's loop", func(ctx context.Context) {
 		k.superviseControlPlane(ctx, func(n int) {
-			once.Do(func() {
-				k.mu.Lock()
+			// done outlives a restart, so a loop stopped since may still report; the first closes it.
+			k.mu.Lock()
+			defer k.mu.Unlock()
+			select {
+			case <-done:
+			default:
 				k.count = n
-				k.mu.Unlock()
 				close(done)
-			})
+			}
 		}, reload)
 	})
 	return done
 }
 
 // restart starts the loops again, as after the cluster's settings changed: the VIP election,
-// the join and the control plane's loop read them when they start.
-func (k *side) restart() {
-	k.stopLoops()
+// the join and the control plane's loop read them when they start. ctx bounds the wait for the
+// loops to stop.
+func (k *side) restart(ctx context.Context) {
+	k.stopLoops(ctx)
 	k.startLoops()
 }
 

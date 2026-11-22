@@ -59,6 +59,10 @@ type Conn struct {
 	source string
 	// rpc reaches the node's services.
 	rpc *connect.Client
+	// endpoint is the node's address, which a call that ran out of time names.
+	endpoint string
+	// callTimeout bounds a unary call whose context has no deadline; 0 leaves it unbounded.
+	callTimeout time.Duration
 }
 
 // errClosed is what calls after Close fail with.
@@ -138,7 +142,7 @@ func Dial(endpoint string, o Options) (*Conn, error) {
 	if _, _, err := net.SplitHostPort(endpoint); err != nil {
 		endpoint = net.JoinHostPort(endpoint, Port)
 	}
-	c := &Conn{netDial: (&net.Dialer{Timeout: 10 * time.Second}).DialContext, source: o.Source}
+	c := &Conn{netDial: (&net.Dialer{Timeout: 10 * time.Second}).DialContext, source: o.Source, endpoint: endpoint, callTimeout: CallTimeout}
 	cfg := &tls.Config{
 		MinVersion: tls.VersionTLS13,
 		// Verification is VerifyConnection's job: by fingerprint, or by the CA for the node's
@@ -186,7 +190,7 @@ func DialSocket(path string) *Conn {
 // makes it, such as a node's diagnostics: connect would otherwise refuse one over 4 MiB.
 func (c *Conn) connect(hc *http.Client, baseURL string) {
 	hc.Transport = brokenUnavailable{hc.Transport}
-	c.rpc = connect.NewClient(connecthttp.NewTransport(hc, baseURL, connecthttp.WithReadMaxBytes(0)))
+	c.rpc = connect.NewClient(connecthttp.NewTransport(hc, baseURL, connecthttp.WithReadMaxBytes(0)), c.bounded)
 	c.NodeServiceClient = nodev1connect.NewNodeServiceClient(c.rpc)
 }
 

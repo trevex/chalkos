@@ -205,7 +205,7 @@ func (b *rebooter) waitHealthy(ctx context.Context, n *rebootNode, t bootTarget)
 	// unhealthyFor is the boot found settled and unhealthy for the grace period. A look that
 	// reached no node changes nothing.
 	unhealthyFor := poll.Sustained{Window: b.grace}
-	err := poll.Until(ctx, "", b.timeout, b.poll, func() error {
+	err := poll.Until(ctx, "", b.timeout, b.poll, func(ctx context.Context) error {
 		var st *nodev1.StatusResponse
 		var notReady error
 		err := b.reach.Call(n.name, func(conn *client.Conn) error {

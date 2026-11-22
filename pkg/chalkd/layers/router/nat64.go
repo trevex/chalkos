@@ -286,7 +286,7 @@ func (p *Plugin) plumbNAT64(ctx context.Context, n nat64Instance, tabled map[str
 	if n.vrf != "" {
 		key := n.vrf + " " + n.table
 		if _, tried := tabled[key]; !tried {
-			tabled[key] = poll.Until(ctx, "", vrfTableWait, 200*time.Millisecond, func() error {
+			tabled[key] = poll.Until(ctx, "", vrfTableWait, 200*time.Millisecond, func(context.Context) error {
 				links, err := p.Links()
 				if err != nil {
 					return err

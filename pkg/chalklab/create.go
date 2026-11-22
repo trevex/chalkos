@@ -456,7 +456,7 @@ func (a *app) startSupervisor(ctx context.Context, dir string) error {
 	exited := make(chan error, 1)
 	go func() { exited <- cmd.Wait() }()
 	errNotReady := errors.New("the lab is not ready")
-	err = poll.Until(ctx, "", 2*time.Minute, 100*time.Millisecond, func() error {
+	err = poll.Until(ctx, "", 2*time.Minute, 100*time.Millisecond, func(context.Context) error {
 		if lab.Ready(dir) {
 			return nil
 		}
@@ -588,7 +588,7 @@ func maintenanceFingerprint(ctx context.Context, l *lab.Lab, n lab.Node) (string
 func chalkdAnswers(ctx context.Context, addr, fingerprint string) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
-	return poll.UntilDone(ctx, "", 2*time.Second, func() error {
+	return poll.UntilDone(ctx, "", 2*time.Second, func(ctx context.Context) error {
 		d := tls.Dialer{NetDialer: &net.Dialer{Timeout: 5 * time.Second}, Config: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS13}}
 		conn, err := d.DialContext(ctx, "tcp", addr)
 		if err != nil {
@@ -609,7 +609,7 @@ func (a *app) waitBootstrap(ctx context.Context, name string, cluster []string) 
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 	var last bytes.Buffer
-	err := poll.UntilDone(ctx, "", 5*time.Second, func() error {
+	err := poll.UntilDone(ctx, "", 5*time.Second, func(ctx context.Context) error {
 		last.Reset()
 		if err := a.chalkctl(ctx, &last, append([]string{"status", name}, cluster...)...); err != nil {
 			return err

@@ -39,6 +39,9 @@
 - name: ci-failure
   color: "b60205"
   description: CI failed on main or in the nightly run
+- name: flaky
+  color: "fbca04"
+  description: A check failed on main or in the nightly run and passed on its retry
 - name: dependencies
   color: "0366d6"
   description: Updates a dependency

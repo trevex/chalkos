@@ -1,5 +1,6 @@
 # Evaluation tests of the images a release publishes, nix/release.nix, and of version.nix, which
-# release-please updates. Returns lib.runTests failures, empty on success.
+# release-please updates. Returns the tests in the form of lib.runTests, which the release-eval
+# check runs.
 {
   lib,
   self,
@@ -95,7 +96,7 @@ let
   versions =
     line: lib.concatLists (lib.filter lib.isList (builtins.split "([0-9]+\\.[0-9]+\\.[0-9]+)" line));
 in
-lib.runTests {
+{
   # One image of each published Kubernetes minor and of the router on each platform, named after
   # its repository below ghcr.io/trevex/chalkos and tagged v<version>.
   testImages = {

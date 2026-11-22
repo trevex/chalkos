@@ -97,6 +97,8 @@ func (s *Server) EnrollSecureBoot(ctx context.Context, req *nodev1.EnrollSecureB
 	}
 	// The TPM will not unseal STATE once the keys change PCR 7; the installer runs without one.
 	if !s.Installer {
+		ctx, cancel := storageContext(ctx)
+		defer cancel()
 		if err := s.RemoveState(ctx); err != nil {
 			return nil, fmt.Errorf("remove STATE, which the next boot creates again: %w", err)
 		}

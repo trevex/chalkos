@@ -497,7 +497,7 @@ func (r *upgradeRun) activate(ctx context.Context, n *upgradeNode, st *nodev1.St
 	if !r.rollback {
 		var resp *nodev1.ActivateImageResponse
 		if err := r.reach.Call(n.name, layer.Fetch(&resp, func(conn *client.Conn) (*nodev1.ActivateImageResponse, error) {
-			return conn.ActivateImage(ctx, &nodev1.ActivateImageRequest{RootHash: target})
+			return conn.ActivateImage(client.Unbounded(ctx), &nodev1.ActivateImageRequest{RootHash: target})
 		})); err != nil {
 			return err
 		}
@@ -663,7 +663,7 @@ func (r *upgradeRun) reactivate(ctx context.Context, n *upgradeNode) error {
 	r.Say("%s: rolling back to %s", n.name, image)
 	var resp *nodev1.RollbackImageResponse
 	if err := r.reach.Call(n.name, layer.Fetch(&resp, func(conn *client.Conn) (*nodev1.RollbackImageResponse, error) {
-		return conn.RollbackImage(ctx, &nodev1.RollbackImageRequest{RootHash: root})
+		return conn.RollbackImage(client.Unbounded(ctx), &nodev1.RollbackImageRequest{RootHash: root})
 	})); err != nil {
 		return err
 	}

@@ -1,5 +1,5 @@
 # Evaluation tests of chalkos.lib's image functions and the images they build; returns
-# lib.runTests failures (empty on success).
+# the tests in the form of lib.runTests, which the eval check runs.
 {
   lib,
   pkgs,
@@ -84,7 +84,7 @@ let
     groups = lib.attrNames (lib.filterAttrs (_: g: g.gid == null) c.users.groups);
   };
 in
-lib.runTests {
+{
   # Every image carries its checker, chalkd, on its system path, where the chalkd of a node that
   # runs another image finds it as sw/bin/chalkd.
   testImageCarriesItsChecker = {

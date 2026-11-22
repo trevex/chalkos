@@ -42,7 +42,7 @@ func addMember(t *testing.T, cli *etcd.Client, ca pki.CertKey, name string) *etc
 	var added etcd.Member
 	var initial string
 	// etcd adds no member while one it just promoted is not yet in touch with the others.
-	err := poll.UntilDone(ctx, "the learner", 100*time.Millisecond, func() (err error) {
+	err := poll.UntilDone(ctx, "the learner", 100*time.Millisecond, func(ctx context.Context) (err error) {
 		added, initial, err = cli.AddLearner(ctx, name, peerURL)
 		return err
 	})

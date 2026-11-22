@@ -328,9 +328,10 @@ is the default 3 GiB:
 error: node-metal: the store's data takes <size> bytes, more than 80% of its slot of 3221225472 (chalkos.disk.storeSize)
 ```
 
-Leave out what the image does not need first. Raising `chalkos.disk.storeSize` helps only nodes
-installed afterwards: a node's partitions are laid out at install, and a node refuses an upgrade
-whose store does not fit its slot.
+Leave out what the image does not need first. Raising `chalkos.disk.storeSize` or
+`chalkos.disk.espSize` helps only nodes installed afterwards: a node's partitions are laid out at
+install, and a node refuses an upgrade whose store does not fit its slot, or whose UKI does not
+fit the ESP's free space, before it changes anything.
 
 ## Inspect what an image contains
 

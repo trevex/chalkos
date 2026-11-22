@@ -183,6 +183,9 @@ type upgradeLab struct {
 	flaky int
 	// noBootID makes the nodes report no boot ID, as a chalkd that cannot read it.
 	noBootID bool
+	// hangHealth makes the nodes never answer a look that checks the health of their boot, as a
+	// chalkd whose layer hangs on etcd.
+	hangHealth bool
 	// healthChecked holds the IDs of the boots whose health each node was asked to check, in order.
 	healthChecked map[string][]string
 	// unhealthyMembers are etcd members that do not answer.
@@ -252,7 +255,7 @@ func (l *upgradeLab) record(format string, args ...any) {
 // awaitDrained waits a minute at most until the node uncordonAfter names for node was drained,
 // and logs a wait that ran out, as when the nodes of a batch did not upgrade together.
 func (l *upgradeLab) awaitDrained(node string) {
-	if poll.Until(context.Background(), "", time.Minute, 5*time.Millisecond, func() error {
+	if poll.Until(context.Background(), "", time.Minute, 5*time.Millisecond, func(context.Context) error {
 		l.mu.Lock()
 		defer l.mu.Unlock()
 		if other := l.uncordonAfter[node]; other != "" && !slices.Contains(l.events, other+" drain") {
@@ -308,11 +311,16 @@ func (n *upgradeFake) Info(context.Context, *nodev1.InfoRequest) (*nodev1.InfoRe
 	return &nodev1.InfoResponse{RootHash: n.root, ImageId: "chalkos", Image: n.imageName, Platform: n.platform, Layers: n.layers}, nil
 }
 
-func (n *upgradeFake) Status(_ context.Context, req *nodev1.StatusRequest) (*nodev1.StatusResponse, error) {
+func (n *upgradeFake) Status(ctx context.Context, req *nodev1.StatusRequest) (*nodev1.StatusResponse, error) {
 	if err := n.down(); err != nil {
 		return nil, err
 	}
 	n.lab.mu.Lock()
+	if n.lab.hangHealth && req.GetCheckHealth() {
+		n.lab.mu.Unlock()
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	sick, settling, noBootID := maps.Clone(n.lab.sick), n.lab.settling, n.lab.noBootID
 	flaky := req.GetCheckHealth() && n.lab.flaky > 0
 	if flaky {
@@ -1298,6 +1306,23 @@ func TestNodeRebootWithoutTheBootBefore(t *testing.T) {
 	}
 	if waited := time.Since(start); waited < time.Second {
 		t.Errorf("the command stopped after %v, before its timeout", waited)
+	}
+}
+
+// TestNodeRebootBoundsAHangingStatus ends the wait at its timeout when the node never answers a
+// look at its boot.
+func TestNodeRebootBoundsAHangingStatus(t *testing.T) {
+	l := newUpgradeLab(t, 1)
+	l.mu.Lock()
+	l.hangHealth = true
+	l.mu.Unlock()
+	start := time.Now()
+	err := l.run("node", "reboot", "w2", "--no-drain", "--timeout", "1s")
+	if err == nil || !strings.HasPrefix(err.Error(), "w2: waiting for 010101010101 to be found healthy: ") {
+		t.Errorf("node reboot with a hanging status = %v", err)
+	}
+	if waited := time.Since(start); waited > 30*time.Second {
+		t.Errorf("the command waited %v, far past its timeout of 1s", waited)
 	}
 }
 

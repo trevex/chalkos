@@ -83,7 +83,7 @@ var _ layer.Actions = (*Plugin)(nil)
 // plane's objects.
 func (p *Plugin) Actions() map[string]func(context.Context) error {
 	return map[string]func(context.Context) error{
-		"restart": func(context.Context) error { p.k.restart(); return nil },
+		"restart": func(ctx context.Context) error { p.k.restart(ctx); return nil },
 		"reload":  func(context.Context) error { p.k.reloadControlPlane(); return nil },
 	}
 }

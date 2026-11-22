@@ -204,7 +204,7 @@ func (p *Plugin) awaitStarted(ctx context.Context, started []string) []error {
 	var errs []error
 	for _, u := range started {
 		var state string
-		_ = poll.Until(ctx, "", time.Until(deadline), pollInterval, func() error {
+		_ = poll.Until(ctx, "", time.Until(deadline), pollInterval, func(ctx context.Context) error {
 			state, _ = systemctl.IsActive(ctx, p.run, u)
 			if state == "active" || state == "failed" {
 				return nil
@@ -247,7 +247,7 @@ func (p *Plugin) awaitDevices(ctx context.Context, s perVRF, in instance, deadli
 		devices = append(devices, in.vrf)
 	}
 	var missing []string
-	_ = poll.Until(ctx, "", time.Until(deadline), pollInterval, func() error {
+	_ = poll.Until(ctx, "", time.Until(deadline), pollInterval, func(context.Context) error {
 		missing = missing[:0]
 		for _, d := range devices {
 			if _, err := os.Stat(filepath.Join(p.NetDir, d)); err != nil {

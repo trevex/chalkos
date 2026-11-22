@@ -154,7 +154,7 @@ func (a *app) securebootEnroll(ctx context.Context, f securebootEnrollFlags) err
 	if err != nil {
 		return err
 	}
-	resp, err := conn.EnrollSecureBoot(ctx, req)
+	resp, err := conn.EnrollSecureBoot(client.Unbounded(ctx), req)
 	if err != nil {
 		return fmt.Errorf("enroll the keys: %w", err)
 	}
@@ -225,7 +225,7 @@ func enrolmentRequest(k secureboot.Keys, microsoft bool, hashes [][]byte, force 
 // Secure Boot stops the wait.
 func (a *app) waitSecureBoot(ctx context.Context, addr string, cert *tls.Certificate, before string, timeout time.Duration) (string, error) {
 	var fingerprint string
-	err := poll.Until(ctx, "the node to boot again with Secure Boot on", timeout, a.poll(), func() error {
+	err := poll.Until(ctx, "the node to boot again with Secure Boot on", timeout, a.poll(), func(ctx context.Context) error {
 		conn, err := client.Dial(addr, client.Options{Verify: client.AnyCertificate(), Certificate: cert, Source: "--address"})
 		if err != nil {
 			return err

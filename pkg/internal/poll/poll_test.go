@@ -5,11 +5,13 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/trevex/chalkos/pkg/internal/testwait"
 )
 
 func TestUntilPasses(t *testing.T) {
 	n := 0
-	err := Until(context.Background(), "it", time.Second, time.Millisecond, func() error {
+	err := Until(context.Background(), "it", time.Second, time.Millisecond, func(context.Context) error {
 		if n++; n < 3 {
 			return errors.New("not yet")
 		}
@@ -23,7 +25,7 @@ func TestUntilPasses(t *testing.T) {
 // Once the time is up the error is the last check's, naming what was waited for.
 func TestUntilTimesOut(t *testing.T) {
 	n := 0
-	err := Until(context.Background(), "the disk", 30*time.Millisecond, 10*time.Millisecond, func() error {
+	err := Until(context.Background(), "the disk", 30*time.Millisecond, 10*time.Millisecond, func(context.Context) error {
 		n++
 		return errors.New("busy")
 	})
@@ -37,7 +39,7 @@ func TestUntilPastChecksOnce(t *testing.T) {
 	for _, timeout := range []time.Duration{0, -time.Second} {
 		n := 0
 		busy := errors.New("busy")
-		err := Until(context.Background(), "", timeout, time.Hour, func() error {
+		err := Until(context.Background(), "", timeout, time.Hour, func(context.Context) error {
 			n++
 			return busy
 		})
@@ -52,17 +54,49 @@ func TestUntilPastChecksOnce(t *testing.T) {
 func TestUntilContextEndsFirst(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
-	err := Until(ctx, "the disk", time.Hour, 10*time.Millisecond, func() error { return errors.New("busy") })
+	err := Until(ctx, "the disk", time.Hour, 10*time.Millisecond, func(context.Context) error { return errors.New("busy") })
 	if !errors.Is(err, context.DeadlineExceeded) || err.Error() != "waiting for the disk: busy: context deadline exceeded" {
 		t.Errorf("err = %v", err)
 	}
+}
+
+// A check that blocks in a call gets a context that ends at the timeout, so the wait does not
+// overrun it.
+func TestUntilBoundsABlockedCheck(t *testing.T) {
+	testwait.Bubble(t, func(t *testing.T) {
+		start := time.Now()
+		err := Until(context.Background(), "the node", time.Minute, time.Second, func(ctx context.Context) error {
+			<-ctx.Done()
+			return ctx.Err()
+		})
+		if !errors.Is(err, context.DeadlineExceeded) || time.Since(start) != time.Minute {
+			t.Errorf("err = %v after %v, want the deadline after a minute", err, time.Since(start))
+		}
+	})
+}
+
+// A check the timeout cut short leaves the error of the check before it.
+func TestUntilKeepsTheErrorBeforeACutCheck(t *testing.T) {
+	testwait.Bubble(t, func(t *testing.T) {
+		n := 0
+		err := Until(context.Background(), "", time.Minute, time.Second, func(ctx context.Context) error {
+			if n++; n == 1 {
+				return errors.New("busy")
+			}
+			<-ctx.Done()
+			return ctx.Err()
+		})
+		if err == nil || err.Error() != "busy" {
+			t.Errorf("err = %v, want the first check's", err)
+		}
+	})
 }
 
 // A permanent error ends the wait at once with the error it wraps.
 func TestUntilPermanent(t *testing.T) {
 	n := 0
 	refused := errors.New("refused")
-	err := Until(context.Background(), "it", time.Hour, time.Millisecond, func() error {
+	err := Until(context.Background(), "it", time.Hour, time.Millisecond, func(context.Context) error {
 		n++
 		return Permanent{Err: refused}
 	})
@@ -73,7 +107,7 @@ func TestUntilPermanent(t *testing.T) {
 
 func TestUntilDonePasses(t *testing.T) {
 	n := 0
-	err := UntilDone(context.Background(), "it", time.Millisecond, func() error {
+	err := UntilDone(context.Background(), "it", time.Millisecond, func(context.Context) error {
 		if n++; n < 3 {
 			return errors.New("not yet")
 		}
@@ -89,7 +123,7 @@ func TestUntilDoneContextEnds(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
 	n := 0
-	err := UntilDone(ctx, "etcd to stop", 10*time.Millisecond, func() error {
+	err := UntilDone(ctx, "etcd to stop", 10*time.Millisecond, func(context.Context) error {
 		n++
 		return errors.New("it listens")
 	})
@@ -102,7 +136,7 @@ func TestUntilDoneContextEnds(t *testing.T) {
 func TestUntilDoneContextEndsInTheCheck(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	err := UntilDone(ctx, "", time.Hour, func() error { return ctx.Err() })
+	err := UntilDone(ctx, "", time.Hour, func(context.Context) error { return ctx.Err() })
 	if err != context.Canceled {
 		t.Errorf("err = %v, want the check's", err)
 	}
@@ -111,7 +145,7 @@ func TestUntilDoneContextEndsInTheCheck(t *testing.T) {
 // A permanent error ends UntilDone at once with the error it wraps.
 func TestUntilDonePermanent(t *testing.T) {
 	refused := errors.New("refused")
-	err := UntilDone(context.Background(), "it", time.Hour, func() error { return Permanent{Err: refused} })
+	err := UntilDone(context.Background(), "it", time.Hour, func(context.Context) error { return Permanent{Err: refused} })
 	if err != refused {
 		t.Errorf("err = %v, want the wrapped error", err)
 	}

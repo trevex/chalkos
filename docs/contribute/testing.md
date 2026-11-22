@@ -158,9 +158,12 @@ Prefer this level for anything about partitions, firewall rules or interfaces.
 `test/nix/eval.nix` holds evaluation tests in the form of `lib.runTests`: each `test*`
 attribute has an `expr` and an `expected` value. They evaluate images with `mkImages` and check
 their arguments, the images' options and assertions, and what the images set; a test that an
-evaluation fails uses `builtins.tryEval`. The `eval` check fails with the list of failures, and
-`eval-kinds` does the same for `test/nix/kinds.nix`, the tests of config kinds, outputs,
-effects, facts and validators. Both take their helpers from `test/nix/lib.nix`: `fails`,
+evaluation fails uses `builtins.tryEval`. The `eval` check fails its build with the tests that
+failed, each with its expected value and its result, and `eval-kinds` does the same for
+`test/nix/kinds.nix`, the tests of config kinds, outputs, effects, facts and validators. A failed
+test fails only its check, so a `nix build` of several checks still builds the others. A test
+whose expression throws fails as well, but another evaluation error, such as a missing
+attribute, fails the evaluation of every check. Both take their helpers from `test/nix/lib.nix`: `fails`,
 `refuses`, `worker`, `router`, `routerWithout`, `installer`, `etcJSON` and `hasPackage`. Here
 `w` is the plain worker image, which eval.nix evaluates once:
 

@@ -14,7 +14,9 @@ Its data is lost. A volume the config encrypts is sealed to the TPM again and, u
 node's fallback is none, gets the second keyslot back: the node's recovery key or its password.
 A volume the config leaves unencrypted is created without encryption. The command needs the
 inventory, which defines the volume, and an admin client file or the secrets file. A
-node whose fallback is its recovery key needs the secrets file, from which the key is derived.
+node whose fallback is its recovery key needs the secrets file, from which the key is derived. The
+reset refuses a config that changes another volume too, which a delivery carries out, and runs
+once no config is on trial. A client that goes away does not stop a reset that has begun.
 
 ## Flags
 

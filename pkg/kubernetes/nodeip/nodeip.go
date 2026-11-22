@@ -367,7 +367,7 @@ func Wait(ctx context.Context, s Selector, timeout time.Duration) ([]Address, er
 // wait is Wait among the addresses list returns.
 func wait(ctx context.Context, list func() ([]Address, error), s Selector, timeout time.Duration) ([]Address, error) {
 	var picked []Address
-	err := poll.Until(ctx, "", timeout, time.Second, func() error {
+	err := poll.Until(ctx, "", timeout, time.Second, func(context.Context) error {
 		addrs, err := list()
 		if err == nil {
 			picked, err = s.Select(addrs)

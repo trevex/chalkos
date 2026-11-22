@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Tests dco.sh, pr-title.sh and vulnix-issue.sh: dco.sh on the commits of a repository made for
-# the test, pr-title.sh on titles that pass and titles that fail, and vulnix-issue.sh on reports
-# made for the test. The workflows check runs it.
+# Tests dco.sh, pr-title.sh, vulnix-issue.sh and retried.sh: dco.sh on the commits of a repository
+# made for the test, pr-title.sh on titles that pass and titles that fail, vulnix-issue.sh on
+# reports made for the test, and retried.sh on build logs made for the test. The workflows check runs it.
 set -euo pipefail
 
 scripts=$(cd "$(dirname "$0")" && pwd)
@@ -159,6 +159,25 @@ vulnix_issue "$vulnix/previous.md"
 expect pass "the same match in another image is new" grep -qxF -- '| router-kvm | systemd | CVE-2026-0001 | 9.8 |' "$vulnix/new.md"
 expect pass "the match the previous issue lists stays old" test "$(wc -l <"$vulnix/new.md")" = 1
 rm -rf "$vulnix"
+
+# retried.sh on first attempts made for the test: it names the checks whose builds failed, in
+# either of Nix's forms, and the tests that failed in them, and says when the log names none.
+retried=$(mktemp -d)
+cat >"$retried/first.log" <<'LOG'
+chalkos-go-unit> --- FAIL: TestTrialRollsBackAtItsDeadline (0.10s)
+chalkos-go-unit> FAIL
+error: Cannot build '/nix/store/jrc222f7m6a2205ayvvw8bivncq7hknr-chalkos-go-unit.drv'.
+error: builder for '/nix/store/abc222f7m6a2205ayvvw8bivncq7hknr-chalkos-eval-tests.drv' failed with exit code 1
+LOG
+bash "$scripts/retried.sh" fast "$retried/first.log" >"$retried/summary.md"
+expect pass "the summary names the job" grep -qxF "### fast passed on its retry" "$retried/summary.md"
+expect pass "the summary names a build Nix cannot build" grep -qxF -- "- \`chalkos-go-unit\`" "$retried/summary.md"
+expect pass "the summary names a failed builder" grep -qxF -- "- \`chalkos-eval-tests\`" "$retried/summary.md"
+expect pass "the summary names the failed test" grep -qxF -- "chalkos-go-unit> --- FAIL: TestTrialRollsBackAtItsDeadline (0.10s)" "$retried/summary.md"
+echo "error: unable to download 'https://proxy.golang.org/x'" >"$retried/download.log"
+bash "$scripts/retried.sh" fast "$retried/download.log" >"$retried/summary.md"
+expect pass "a log without a failed test says so" grep -qF "names no failed test" "$retried/summary.md"
+rm -rf "$retried"
 
 if [ "$failures" != 0 ]; then
   echo "$failures cases failed" >&2

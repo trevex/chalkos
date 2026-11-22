@@ -246,7 +246,8 @@ func (p *Plugin) EtcdLeave(ctx context.Context, req *kubernetesv1.EtcdLeaveReque
 		}
 	}()
 	stop := func() {
-		k.stopLoops()
+		// The VIPs must be released before the node leaves, so the wait outlives the request.
+		k.stopLoops(context.WithoutCancel(ctx))
 		restart = true
 	}
 	// The join holds the membership while it waits for etcd, until its loop stops. A bootstrapped
@@ -363,7 +364,7 @@ func etcdStopped(ctx context.Context, c k8s.Cluster) error {
 		return err
 	}
 	addr := u.Host
-	return poll.UntilDone(ctx, "", time.Second, func() error {
+	return poll.UntilDone(ctx, "", time.Second, func(ctx context.Context) error {
 		conn, err := (&net.Dialer{Timeout: time.Second}).DialContext(ctx, "tcp", addr)
 		if err != nil && ctx.Err() == nil {
 			return nil

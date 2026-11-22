@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"connectrpc.com/connect/v2"
@@ -172,8 +173,8 @@ func TestTrialState(t *testing.T) {
 	check(trialLost)
 }
 
-// TestChangesWaitForATrial refuses every delivery, an upgrade and an image rollback while a config
-// is on trial, names how to end it, and changes nothing.
+// TestChangesWaitForATrial refuses every delivery, a volume reset, an upgrade and an image rollback
+// while a config is on trial, names how to end it, and changes nothing.
 func TestChangesWaitForATrial(t *testing.T) {
 	s, r := configServer(t)
 	rec := recordTrial(t, s, nextConfig)
@@ -194,6 +195,10 @@ func TestChangesWaitForATrial(t *testing.T) {
 		{"config", "another delivery", apply(&nodev1.ApplyConfigRequest{Config: baseConfig})},
 		{"staged config", "another delivery", apply(&nodev1.ApplyConfigRequest{Config: baseConfig, Staged: true})},
 		{"OS CAs", "another delivery", apply(&nodev1.ApplyConfigRequest{Trust: []byte("x")})},
+		{"volume reset", "a volume reset", func() error {
+			_, err := s.ResetVolume(ctx, &nodev1.ResetVolumeRequest{Volume: "data", Config: baseConfig})
+			return err
+		}},
 		{"image rollback", "an image rollback", func() error {
 			_, err := s.RollbackImage(ctx, &nodev1.RollbackImageRequest{RootHash: bytes.Repeat([]byte{1}, 32)})
 			return err
@@ -713,22 +718,33 @@ func TestApplyConfigOnTrial(t *testing.T) {
 
 // TestTrialRollsBackAtItsDeadline rolls the config back through the pipeline once the deadline
 // passed unconfirmed: demo.service restarts, the node runs the config from before the trial and
-// keeps the one on trial as its previous config, and the trial ends.
+// keeps the one on trial as its previous config, and the trial ends. Fake time stands still while
+// the delivery writes files, so the trial's deadline, which bounds the delivery too, cannot pass
+// during it.
 func TestTrialRollsBackAtItsDeadline(t *testing.T) {
-	s := trialServer(t)
-	if _, err := sendTrial(s, nextConfig, 100*time.Millisecond); err != nil {
-		t.Fatal(err)
-	}
-	testwait.Eventually(t, "the rollback", func() bool { return !trialOpenOn(t, s) })
-	if v, _ := slot.Version(slotOf(t, s)); v != hashOf(t, baseConfig) {
-		t.Errorf("the node runs %s, want baseConfig's", v)
-	}
-	if v, _ := slot.Version(slot.Previous(slotOf(t, s))); v != hashOf(t, nextConfig) {
-		t.Errorf("the previous config is %s, want the one on trial", v)
-	}
-	if got := readFile(t, filepath.Join(s.Loader.RunDir, "credentials", "demo", "demo.token")); got != "s3cret" {
-		t.Errorf("demo's credential = %q", got)
-	}
+	testwait.Bubble(t, func(t *testing.T) {
+		s := trialServer(t)
+		if _, err := sendTrial(s, nextConfig, time.Minute); err != nil {
+			t.Fatal(err)
+		}
+		if !trialOpenOn(t, s) {
+			t.Fatal("no trial is open")
+		}
+		time.Sleep(time.Minute + time.Second)
+		synctest.Wait()
+		if trialOpenOn(t, s) {
+			t.Fatal("the trial is open past its deadline")
+		}
+		if v, _ := slot.Version(slotOf(t, s)); v != hashOf(t, baseConfig) {
+			t.Errorf("the node runs %s, want baseConfig's", v)
+		}
+		if v, _ := slot.Version(slot.Previous(slotOf(t, s))); v != hashOf(t, nextConfig) {
+			t.Errorf("the previous config is %s, want the one on trial", v)
+		}
+		if got := readFile(t, filepath.Join(s.Loader.RunDir, "credentials", "demo", "demo.token")); got != "s3cret" {
+			t.Errorf("demo's credential = %q", got)
+		}
+	})
 }
 
 // TestTrialRefusals refuses a trial of anything a rollback cannot undo, without config to roll

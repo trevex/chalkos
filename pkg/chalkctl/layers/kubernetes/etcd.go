@@ -148,7 +148,7 @@ func etcdRemoveMemberCommand(h layer.Host) *cobra.Command {
 func etcdRemoveMember(h layer.Host, ctx context.Context, f viaFlags, pos []string) error {
 	var resp *kubernetesv1.EtcdRemoveMemberResponse
 	err := throughControlPlane(h, ctx, f, pos[0], layer.Fetch(&resp, func(conn *client.Conn) (*kubernetesv1.EtcdRemoveMemberResponse, error) {
-		return Client(conn).EtcdRemoveMember(ctx, &kubernetesv1.EtcdRemoveMemberRequest{Member: pos[0], Force: f.force})
+		return Client(conn).EtcdRemoveMember(client.Unbounded(ctx), &kubernetesv1.EtcdRemoveMemberRequest{Member: pos[0], Force: f.force})
 	}))
 	if err != nil {
 		return err
@@ -177,7 +177,7 @@ func etcdLeave(h layer.Host, ctx context.Context, f viaFlags, pos []string) erro
 		return err
 	}
 	if err := t.Call(func(conn *client.Conn) error {
-		_, err := Client(conn).EtcdLeave(ctx, &kubernetesv1.EtcdLeaveRequest{Force: f.force})
+		_, err := Client(conn).EtcdLeave(client.Unbounded(ctx), &kubernetesv1.EtcdLeaveRequest{Force: f.force})
 		return err
 	}); err != nil {
 		return err

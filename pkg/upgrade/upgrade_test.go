@@ -595,6 +595,10 @@ func TestRefusesBeforeChanging(t *testing.T) {
 		{"no generation after the highest", nil, func(l *lab) {
 			os.WriteFile(filepath.Join(l.esp, esp.LinuxDir, "chalkos_18446744073709551615.efi"), []byte("not a UKI"), 0o644)
 		}, "too large"},
+		// A node's ESP keeps the size its install laid out, which a larger UKI outgrows.
+		{"an ESP without room for the UKI", nil, func(l *lab) {
+			l.node.ESPSpace = func(string) (esp.Space, error) { return esp.Space{Free: 0, Block: 512}, nil }
+		}, "the ESP has 0 bytes free, and the UKI of "},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			l := newLab(t, old)
@@ -973,6 +977,38 @@ func TestRemovesTheTemporaryUKI(t *testing.T) {
 				t.Errorf("the ESP keeps %q", temp)
 			}
 		})
+	}
+}
+
+// TestESPSpaceCountsTheRetiredUKIs installs an image whose UKI fits the ESP only once the
+// retirement removed the UKI of the image staged before it, and refuses one that does not fit.
+func TestESPSpaceCountsTheRetiredUKIs(t *testing.T) {
+	old, first, next := newImage(t, "a", 3), newImage(t, "b", 3), newImage(t, "c", 3)
+	l := newLab(t, old)
+	l.stage(first)
+	staged, err := esp.StagedFiles(l.esp)
+	if err != nil || len(staged) != 1 {
+		t.Fatalf("staged UKIs %q, %v", staged, err)
+	}
+	block := int64(512)
+	blocks := func(n int64) int64 { return (n + block - 1) / block * block }
+	fi, err := os.Stat(filepath.Join(l.esp, esp.LinuxDir, staged[0]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	free := blocks(next.header.UKI.Size) - blocks(fi.Size())
+	for _, tc := range []struct {
+		free int64
+		fits bool
+	}{{free - 1, false}, {free, true}} {
+		l.node.ESPSpace = func(string) (esp.Space, error) { return esp.Space{Free: tc.free, Block: block}, nil }
+		_, err := l.node.Install(context.Background(), next.header, next.Stream())
+		if fits := err == nil; fits != tc.fits {
+			t.Errorf("with %d bytes free: install = %v", tc.free, err)
+		}
+		if !tc.fits && !errors.As(err, new(*RefusalError)) {
+			t.Errorf("with %d bytes free: %v is no refusal", tc.free, err)
+		}
 	}
 }
 

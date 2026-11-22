@@ -1,5 +1,5 @@
 # Evaluation tests of config kinds and their schemas, outputs, effects, facts and validators.
-# Returns lib.runTests failures, empty on success.
+# Returns the tests in the form of lib.runTests, which the eval-kinds check runs.
 {
   lib,
   flakeLib,
@@ -338,7 +338,7 @@ let
     };
   };
 in
-lib.runTests {
+{
   # ref refuses a reserved name no document can have, an unknown attribute and no kind.
   testRefRefuses = {
     expr = map (a: fails (kindTypes.ref a).name) [

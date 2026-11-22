@@ -115,7 +115,7 @@ func (p *Plugin) After(ctx context.Context, u layer.Upgrading, name string, role
 // never are, which only --allow-downtime accepts. The check is retried for a while, as etcd may
 // need a moment after the previous control plane came back.
 func quorum(ctx context.Context, u layer.Upgrading, allowDowntime bool, name string, reboot bool) error {
-	return poll.Until(ctx, "", u.QuorumWait(), u.Poll(), func() error { return quorumOnce(ctx, u, allowDowntime, name, reboot) })
+	return poll.Until(ctx, "", u.QuorumWait(), u.Poll(), func(ctx context.Context) error { return quorumOnce(ctx, u, allowDowntime, name, reboot) })
 }
 
 // quorumOnce checks the quorum once. A reboot keeps every voter, so the quorum counts them all,
@@ -173,7 +173,7 @@ func drainElsewhere(err error) bool {
 func drain(ctx context.Context, u layer.Upgrading, deleteEmptyDir bool, name string) error {
 	var resp *kubernetesv1.DrainNodeResponse
 	err := viaControlPlanes(u, name, drainElsewhere, layer.Fetch(&resp, func(conn *client.Conn) (*kubernetesv1.DrainNodeResponse, error) {
-		return Client(conn).DrainNode(ctx, &kubernetesv1.DrainNodeRequest{Node: name, TimeoutSeconds: uint32(u.DrainTimeout() / time.Second), DeleteEmptydirData: deleteEmptyDir})
+		return Client(conn).DrainNode(client.Unbounded(ctx), &kubernetesv1.DrainNodeRequest{Node: name, TimeoutSeconds: uint32(u.DrainTimeout() / time.Second), DeleteEmptydirData: deleteEmptyDir})
 	}))
 	if err != nil {
 		return fmt.Errorf("drain %s: %w", name, err)

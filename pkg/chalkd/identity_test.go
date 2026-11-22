@@ -456,15 +456,15 @@ func addPartition(t *testing.T, s *Server, disk, name, devnum, number, uuid, lin
 }
 
 func reset(s *Server, volume, identity string) error {
-	return resetWith(s, volume, identity, secret)
+	return resetWith(context.Background(), s, volume, identity, secret)
 }
 
 // resetWith resets the volume to what identity defines, with the documents of its storage section
 // checked against the image's schemas, as ResetVolume translates them, and the fallback secret.
-func resetWith(s *Server, volume, identity, fallback string) error {
+func resetWith(ctx context.Context, s *Server, volume, identity, fallback string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.resetVolume(context.Background(), "n1", volume, slot.Stored{Documents: documentsOf(identity), Identity: []byte(identity)}, fallback)
+	return s.resetVolume(ctx, "n1", volume, slot.Stored{Documents: documentsOf(identity), Identity: []byte(identity)}, fallback)
 }
 
 // A reset recreates a volume on its disk, also when the config references the disk anew.
@@ -728,12 +728,61 @@ func TestResetVolumeNeedsFallbackForEveryEncryptedVolume(t *testing.T) {
 		v.Encryption = storage.EncryptionNone
 		s.Volumes["extra"] = v
 	}), storage.EncryptionTPM2)
-	err := resetWith(s, "extra", identityWith(next), "")
+	err := resetWith(context.Background(), s, "extra", identityWith(next), "")
 	if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "Volume data is encrypted") || !strings.Contains(err.Error(), "no fallback secret") {
 		t.Fatalf("err = %v", err)
 	}
 	if len(r.Calls) != 0 {
 		t.Errorf("ran %v", r.Calls)
+	}
+}
+
+// A reset whose request ends while it runs still wipes, partitions and enrolls the volume with a
+// live context, so no step is killed halfway.
+func TestResetVolumeOutlivesItsRequest(t *testing.T) {
+	s, r := installedServer(t, section("", "ext4"), true)
+	partitionLink(t, s, "vdb", "vdb1", "253:17", "1")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := resetWith(ctx, s, "extra", identityWith(section("", "xfs")), secret); err != nil {
+		t.Fatal(err)
+	}
+	if !contains(r.Calls, "wipefs --all /dev/vdb1") {
+		t.Fatalf("the volume was not wiped: %v", r.Calls)
+	}
+	for _, line := range r.Ended {
+		for _, step := range []string{"systemctl", "wipefs", "sfdisk", "systemd-repart", "systemd-cryptenroll", "mkfs"} {
+			if strings.HasPrefix(line, step+" ") {
+				t.Errorf("ran %q with the request's ended context", line)
+			}
+		}
+	}
+}
+
+// A reset without the fallback secret its encrypted volume is enrolled with refuses before it
+// wipes anything.
+func TestResetVolumeNeedsItsFallbackSecretBeforeTheWipe(t *testing.T) {
+	s, r := installedServer(t, section("", "ext4"), true)
+	partitionLink(t, s, "vdb", "vdb1", "253:17", "1")
+	err := resetWith(context.Background(), s, "extra", identityWith(section("", "xfs")), "")
+	if err == nil || !strings.Contains(err.Error(), "no fallback secret") {
+		t.Fatalf("err = %v", err)
+	}
+	if changed := withoutChecks(r.Calls); len(changed) != 0 {
+		t.Errorf("ran %v", changed)
+	}
+}
+
+// A reset refuses a config that also changes another volume, which only a delivery carries out.
+func TestResetVolumeRefusesChangesToOtherVolumes(t *testing.T) {
+	s, r := installedServer(t, section("", "ext4"), true)
+	partitionLink(t, s, "vdb", "vdb1", "253:17", "1")
+	err := reset(s, "extra", identityWith(withSystemVolume(t, section("", "xfs"), storage.EncryptionNone)))
+	if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the config also changes volume data (new volume), which a reset of volume extra does not carry out") {
+		t.Fatalf("err = %v", err)
+	}
+	if changed := withoutChecks(r.Calls); len(changed) != 0 {
+		t.Errorf("ran %v", changed)
 	}
 }
 

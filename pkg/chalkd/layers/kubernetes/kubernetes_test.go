@@ -148,6 +148,49 @@ func TestBootstrapReturnsBeforeManifestsApplied(t *testing.T) {
 	})
 }
 
+// The restart action, as a delivery that changes the cluster's settings runs it, during a bootstrap
+// that waits for the add-ons leaves the bootstrap waiting for the loop started since, which applies
+// them.
+func TestRestartDuringBootstrap(t *testing.T) {
+	testwait.Bubble(t, func(t *testing.T) {
+		s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
+		apply := make(chan struct{})
+		s.k.hooks.ControlPlane = func(ctx context.Context, _ kpki.Share, applied func(int)) error {
+			select {
+			case <-apply:
+				applied(3)
+			case <-ctx.Done():
+			}
+			<-ctx.Done()
+			return ctx.Err()
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+		defer cancel()
+		type result struct {
+			applied uint32
+			err     error
+		}
+		bootstrapped := make(chan result, 1)
+		go func() {
+			resp, err := kubernetestest.Bootstrap(ctx, s)
+			bootstrapped <- result{resp.GetApplied(), err}
+		}()
+		synctest.Wait()
+		if err := s.Actions()["restart"](context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		close(apply)
+		start := time.Now()
+		r := <-bootstrapped
+		if r.err != nil || r.applied != 3 {
+			t.Errorf("bootstrap = %d applied, %v, want 3", r.applied, r.err)
+		}
+		if d := time.Since(start); d != 0 {
+			t.Errorf("the bootstrap returned %v after the add-ons were applied", d)
+		}
+	})
+}
+
 // readyServer is an API server whose /readyz answers ok once ready is set.
 func readyServer(t *testing.T, ready *atomic.Bool) *rest.Config {
 	t.Helper()
@@ -457,7 +500,7 @@ func TestControlPlaneRendersStaleStaticPods(t *testing.T) {
 	}
 
 	// The control plane's loop renders them as it starts.
-	k.stopLoops()
+	k.stopLoops(context.Background())
 	staleStaticPod(t, p)
 	k.startLoops()
 	testwait.Eventually(t, "the stale static pod to be rendered", func() bool {
@@ -490,7 +533,7 @@ func TestStopLoopsWaitsForTheCertificateRenewal(t *testing.T) {
 			t.Fatal("the renewal did not run")
 		}
 		stopped := make(chan struct{})
-		go func() { k.stopLoops(); close(stopped) }()
+		go func() { k.stopLoops(context.Background()); close(stopped) }()
 		synctest.Wait()
 		select {
 		case <-stopped:

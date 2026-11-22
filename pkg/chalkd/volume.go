@@ -9,6 +9,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect/v2"
 
@@ -59,7 +60,19 @@ func (s *Server) applyStorage(ctx context.Context, recorded, section storage.Sec
 	if err := checkFallback(recorded, section, secret); err != nil {
 		return err
 	}
+	ctx, cancel := storageContext(ctx)
+	defer cancel()
 	return storageFailed(s.storage().Change(ctx, recorded, section, secret, changes))
+}
+
+// storageTimeout bounds a change of the node's storage once its request no longer does.
+const storageTimeout = 30 * time.Minute
+
+// storageContext detaches ctx for steps that change disks: a client that goes away must not kill
+// wipefs, sfdisk, mkfs or systemd-cryptenroll halfway, which could leave a partition table half
+// written or a volume wiped and still pinned.
+func storageContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), storageTimeout)
 }
 
 // storageChanges are the changes as the API answers them.
@@ -114,6 +127,15 @@ func enrolled(recorded, section storage.Section) string {
 func (s *Server) ResetVolume(ctx context.Context, m *nodev1.ResetVolumeRequest) (*nodev1.ResetVolumeResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// A reset writes storage.json and the pins, which an upgrade reads, and a trial's rollback
+	// restores the node as it was before the trial, which a reset would change under it.
+	if !s.upgrading.TryLock() {
+		return nil, layer.Errorf(connect.CodeAborted, "an upgrade, an image rollback or the rollback at a trial's deadline is running; reset the volume once it ended")
+	}
+	defer s.upgrading.Unlock()
+	if err := s.refuseOnTrial("a volume reset", true); err != nil {
+		return nil, err
+	}
 	if m.Config == "" {
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "the request delivers no config, which defines the volume")
 	}
@@ -184,11 +206,24 @@ func (s *Server) resetVolume(ctx context.Context, node, name string, next slot.S
 		}
 		return err
 	}
+	// A reset recreates its volume alone: a change to another volume goes with a delivery, which
+	// writes the config slot.
+	changes := storage.Changes(without, d.section)
+	for _, c := range changes {
+		if c.Volume != name {
+			return layer.Errorf(connect.CodeFailedPrecondition, "the config also changes volume %s (%s), which a reset of volume %s does not carry out; deliver the config first", c.Volume, c.Reason, name)
+		}
+	}
+	if err := checkFallback(without, d.section, fallback); err != nil {
+		return err
+	}
 
+	ctx, cancel := storageContext(ctx)
+	defer cancel()
 	if err := storageFailed(s.storage().DeleteVolume(ctx, name, v, pins)); err != nil {
 		return err
 	}
-	if err := s.applyStorage(ctx, without, d.section, fallback, storage.Changes(without, d.section)); err != nil {
+	if err := s.applyStorage(ctx, without, d.section, fallback, changes); err != nil {
 		return err
 	}
 	log.Printf("volume %s reset", name)

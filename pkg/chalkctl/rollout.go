@@ -298,7 +298,7 @@ func (r *upgradeRun) checkImages(ctx context.Context) error {
 func (a *app) waitDelivered(ctx context.Context, t *target, until time.Time) error {
 	said := false
 	var last error
-	err := poll.Until(ctx, "", time.Until(until), a.poll(), func() error {
+	err := poll.Until(ctx, "", time.Until(until), a.poll(), func(ctx context.Context) error {
 		// An attempt ends with the wait, so a layer whose service does not answer holds the trial no
 		// longer than its deadline.
 		ctx, cancel := context.WithDeadline(ctx, until)
@@ -337,7 +337,7 @@ func (a *app) waitDelivered(ctx context.Context, t *target, until time.Time) err
 // config back by itself, as trialRolledBack does.
 func (a *app) rollbackTrial(ctx context.Context, t *target, version, previous string, deadline time.Time, failure error) error {
 	err := callNode(t, func(conn *client.Conn) error {
-		_, err := conn.RollbackConfig(ctx, &nodev1.RollbackConfigRequest{Version: previous})
+		_, err := conn.RollbackConfig(client.Unbounded(ctx), &nodev1.RollbackConfigRequest{Version: previous})
 		return err
 	})
 	if err != nil {

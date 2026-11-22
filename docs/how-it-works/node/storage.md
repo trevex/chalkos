@@ -252,6 +252,9 @@ the config is refused: Volume data: its disk data (model "WDC WD40EFRX", size 4T
 
 `chalkctl storage reset` wipes one volume and creates it again, empty, as the config defines it.
 The new volume is sealed to the TPM again and gets its fallback keyslot, and its data is lost.
+A reset recreates that volume alone: a config that also changes another volume is refused, and
+is delivered first. No reset runs while a config is on trial. Once the reset begins, it runs to the
+end even when the client goes away.
 Changes to `repart` passthrough keys are not compared, so a config that changes only them is not
 applied to the disks. [Add storage volumes](../../operate/storage-volumes.md#apply-the-change)
 shows a change and a reset.

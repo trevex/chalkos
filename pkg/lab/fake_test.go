@@ -53,7 +53,7 @@ func TestMain(m *testing.M) {
 func exitWithTest() {
 	parent := os.Getppid()
 	go func() {
-		poll.UntilDone(context.Background(), "", 200*time.Millisecond, func() error {
+		poll.UntilDone(context.Background(), "", 200*time.Millisecond, func(context.Context) error {
 			if os.Getppid() == parent {
 				return errors.New("the test runs")
 			}
