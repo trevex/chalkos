@@ -27,7 +27,7 @@ initialised behind the endpoint. The command needs an admin client file or the s
 | --- | --- | --- | --- |
 | `--address`{ #flag-address } | list of [NODE=]ADDR | each node's address in the inventory | Address of a node's chalkd: host or host:port for the node the command names, or NODE=ADDR for any node; may be repeated. |
 | `--config`{ #flag-config } | string | $CHALKOSCONFIG, else ~/.config/chalkos/config, unless --secrets is given | Client file to authenticate with instead of the secrets file. |
-| `--force`{ #flag-force } | boolean | `false` | Bootstrap although another control plane of the inventory is an etcd member, is joining or does not answer, as when recovering a cluster whose other control planes are lost. |
+| `--force`{ #flag-force } | boolean | `false` | Bootstrap although another control plane of the inventory is an etcd member or is joining, as when recovering a cluster whose other control planes are lost. |
 | `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |
 | `--inventory`{ #flag-inventory } | string | $CHALKOSINVENTORY, else chalkos.yaml in the current directory, when it exists | Inventory naming the cluster's nodes, their addresses and their config files. |
 | `--secrets`{ #flag-secrets } | string | — | Cluster secrets path (.age, .enc.*, or plaintext), provider URI, or - for standard input. |

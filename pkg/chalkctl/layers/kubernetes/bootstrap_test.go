@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 
@@ -47,10 +48,9 @@ func TestAdmitBootstrap(t *testing.T) {
 		{[]string{"bootstrapped", "waiting"}, []string{"bootstrapped: bootstrapped"}},
 		{[]string{"joining"}, []string{"joining: joining the cluster at"}},
 		{[]string{"missing"}, []string{"missing: etcd data missing"}},
-		{[]string{"down"}, []string{"down does not say whether it is a member: connection refused"}},
 	} {
 		c := cluster(tc.others...)
-		err := admitBootstrap(context.Background(), c, "cp1", false, status)
+		err := admitBootstrap(context.Background(), c, "cp1", false, status, io.Discard)
 		if tc.want == nil {
 			if err != nil {
 				t.Errorf("%v: %v", tc.others, err)
@@ -66,8 +66,22 @@ func TestAdmitBootstrap(t *testing.T) {
 				t.Errorf("%v: %v, want %q", tc.others, err, w)
 			}
 		}
-		if err := admitBootstrap(context.Background(), c, "cp1", true, status); err != nil {
+		if err := admitBootstrap(context.Background(), c, "cp1", true, status, io.Discard); err != nil {
 			t.Errorf("%v with --force: %v", tc.others, err)
 		}
+	}
+}
+
+func TestAdmitBootstrapWarnsOfSilentControlPlanes(t *testing.T) {
+	c := fakeCluster{types: map[string]string{"cp1": k8s.KindControlPlane, "cp2": k8s.KindControlPlane}}
+	status := func(context.Context, string) (*kubernetesv1.StatusResponse, error) {
+		return nil, errors.New("connection refused")
+	}
+	var stderr strings.Builder
+	if err := admitBootstrap(context.Background(), c, "cp1", false, status, &stderr); err != nil {
+		t.Fatalf("admitBootstrap: %v", err)
+	}
+	if want := "warning: cp2 does not say whether it is a member of a cluster: connection refused\n"; stderr.String() != want {
+		t.Errorf("stderr %q, want %q", stderr.String(), want)
 	}
 }

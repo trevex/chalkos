@@ -108,8 +108,8 @@ instead:
 A refused connection, a timeout or a closed connection at the endpoint reads as no cluster: the
 first bootstrap behind a VIP that no node holds yet needs that. A cluster whose control planes are
 all down therefore looks like no cluster to the node. With an inventory, chalkctl asks the other
-control planes for their status before it calls the node, and refuses while one is an etcd member,
-is joining or does not answer. `--force` skips that check, for the recovery of a cluster whose
+control planes for their status before it calls the node, and refuses while one is an etcd member or
+is joining. It warns of one that does not answer, since chalkctl may reach only some nodes. `--force` skips that check, for the recovery of a cluster whose
 other control planes are lost.
 
 ## Further control planes join etcd on their own
