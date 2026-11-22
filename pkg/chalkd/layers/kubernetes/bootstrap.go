@@ -2,6 +2,7 @@ package kubernetes
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -95,6 +96,9 @@ func (p *Plugin) bootstrap(ctx context.Context, c k8s.Cluster) (chan struct{}, e
 	}
 	// A second bootstrap would start a second cluster.
 	answers, err := k.hooks.ClusterAnswers(ctx, c, share)
+	if _, ok := errors.AsType[foreignCAError](err); ok {
+		return nil, layer.Errorf(connect.CodeFailedPrecondition, "%v; a bootstrap would start a second cluster behind the endpoint: check that the node was installed from the cluster's secrets file", err)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("check for an API server at %s before bootstrapping: %w", c.Endpoint, err)
 	}

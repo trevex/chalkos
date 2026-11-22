@@ -230,7 +230,7 @@ func TestKubernetesHA(t *testing.T) {
 	var cs kubernetes.Interface
 	if !c.phase("bootstrap", func(t *testing.T) {
 		waitFor(t, 5*time.Minute, "cp1 to wait for bootstrap or the cluster", func() error {
-			if got := c.kubernetes("cp1"); got != "kubernetes controlplane: waiting for bootstrap or for the cluster at https://[fd00:100::10]:6443" {
+			if got := c.kubernetes("cp1"); got != "kubernetes controlplane: waiting for the cluster at https://[fd00:100::10]:6443; bootstrap only the first control plane of a new cluster" {
 				return fmt.Errorf("status %q", got)
 			}
 			return nil
@@ -383,8 +383,12 @@ func TestKubernetesHA(t *testing.T) {
 		})
 		// Not yet a member again, cp3 refuses to bootstrap a second cluster: the endpoint answers with
 		// this cluster's CA. A join attempt holding the membership refuses it too, so ask again then.
+		// chalkctl refuses first, as cp1 and cp2 are members; --force reaches cp3's own check.
+		if out, err := c.chalkctl("cp3", "bootstrap", "cp3"); err == nil || !strings.Contains(out, "another control plane may hold the cluster") {
+			t.Fatalf("bootstrap without --force: %v\n%s", err, out)
+		}
 		waitFor(t, time.Minute, "cp3 to refuse a bootstrap while the cluster answers", func() error {
-			out, err := c.chalkctl("cp3", "bootstrap", "cp3")
+			out, err := c.chalkctl("cp3", "bootstrap", "cp3", "--force")
 			if err == nil {
 				t.Fatalf("cp3 bootstrapped a second cluster:\n%s", out)
 			}

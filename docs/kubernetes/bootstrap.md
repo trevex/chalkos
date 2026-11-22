@@ -40,7 +40,7 @@ An installed control plane cannot tell whether it should start the cluster or jo
 [`chalkctl status`](../reference/cli/chalkctl_status.md) shows it in the Kubernetes line:
 
 ```text
-kubernetes controlplane: waiting for bootstrap or for the cluster at https://[fdc8:a1b2:c3d4:ff::10]:6443
+kubernetes controlplane: waiting for the cluster at https://[fdc8:a1b2:c3d4:ff::10]:6443; bootstrap only the first control plane of a new cluster
 ```
 
 The URL is the cluster endpoint, here the VIP. A worker reads `joined` once it has
@@ -180,9 +180,11 @@ minute, until flannel runs on it.
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| A control plane stays at `waiting for bootstrap or for the cluster at ...` after the bootstrap | It cannot reach the API server at the endpoint. | Check that the endpoint reaches a bootstrapped control plane on port 6443. |
+| A control plane stays at `waiting for the cluster at ...; bootstrap only the first control plane of a new cluster` after the bootstrap | It cannot reach the API server at the endpoint. | Check that the endpoint reaches a bootstrapped control plane on port 6443. |
 | A worker's `node ready` stays `unknown` | Its kubelet cannot register at the endpoint. | Check `chalkctl logs <node> --unit=kubelet.service`. |
 | The bootstrap times out | The control plane is still pulling its images. | Wait, and watch `chalkctl status node1`. |
+| `chalkctl bootstrap` fails with `another control plane may hold the cluster` | Another control plane of the inventory is an etcd member, is joining or does not answer. | Bootstrap only the first control plane of a new cluster. Pass `--force` only to recover a cluster whose other control planes are lost. |
+| The bootstrap fails with `an API server of another CA answers at ...` | The node was installed from another secrets file than the cluster at the endpoint, or another cluster uses the endpoint. | Reinstall the node from the cluster's secrets file, or give the new cluster an endpoint of its own. |
 | `chalkctl kubeconfig` fails with `no Cluster document of the cluster ... names an endpoint` | The inventory's files give no node a `Cluster` document. | Add the `Cluster` document to the files every node gets. |
 
 [Troubleshoot Kubernetes](troubleshooting.md) covers further symptoms.

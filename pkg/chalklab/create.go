@@ -610,7 +610,7 @@ func (a *app) waitBootstrap(ctx context.Context, name string, cluster []string) 
 			return err
 		}
 		for line := range strings.Lines(last.String()) {
-			if strings.Contains(line, "waiting for bootstrap") {
+			if strings.Contains(line, "waiting for the cluster at") {
 				fmt.Fprintf(a.stdout, "%s: %s", name, line)
 				return nil
 			}

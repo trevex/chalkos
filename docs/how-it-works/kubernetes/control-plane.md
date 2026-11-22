@@ -101,7 +101,16 @@ instead:
 - it has joined or is joining a cluster;
 - it holds etcd data;
 - it has left etcd;
-- it finds the cluster's API server answering at the endpoint.
+- it finds the cluster's API server answering at the endpoint;
+- an API server of another CA answers at the endpoint, as when the node was installed from
+  another secrets file. The refusal reads `an API server of another CA answers at <endpoint>`.
+
+A refused connection, a timeout or a closed connection at the endpoint reads as no cluster: the
+first bootstrap behind a VIP that no node holds yet needs that. A cluster whose control planes are
+all down therefore looks like no cluster to the node. With an inventory, chalkctl asks the other
+control planes for their status before it calls the node, and refuses while one is an etcd member,
+is joining or does not answer. `--force` skips that check, for the recovery of a cluster whose
+other control planes are lost.
 
 ## Further control planes join etcd on their own
 
@@ -225,7 +234,7 @@ stateDiagram-v2
     state "no share" as NoShare
     state "preparing" as Preparing
     state "preparation failed" as Failed
-    state "waiting for bootstrap or for the cluster" as Waiting
+    state "waiting for the cluster" as Waiting
     state "joining the cluster" as Joining
     state "bootstrapped" as Bootstrapped
     state "joined" as Joined

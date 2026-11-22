@@ -117,7 +117,7 @@ The Kubernetes line of `chalkctl status` names the node's kind and one of these 
 | --- | --- |
 | `no share` | The node holds no Kubernetes share yet; it gets one at install or with `chalkctl config apply --kubernetes-share` |
 | `preparing` | The preparation of the node's addresses, certificates and kubelet flags runs |
-| `waiting for bootstrap or for the cluster at <endpoint>` | A control plane that found no cluster to join yet |
+| `waiting for the cluster at <endpoint>; bootstrap only the first control plane of a new cluster` | A control plane that found no cluster to join yet |
 | `joining the cluster at <endpoint>: <step>` | A join that runs, with its step or its last error |
 | `bootstrapped` | A control plane that is an etcd voter, by bootstrap or join |
 | `bootstrapped: <problem>` | A control plane whose etcd member belongs to another cluster than the other control planes' members |

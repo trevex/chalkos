@@ -873,7 +873,7 @@ func createLab(t *testing.T, dir string, args ...string) (nodes map[string]*node
 	t.Helper()
 	nodes, l, out, state := startLab(t, dir, labName, "lab.yaml", args...)
 	// The status chalklab saw before the bootstrap names the cluster's endpoint.
-	if want := "cp1: kubernetes controlplane: waiting for bootstrap or for the cluster at https://192.168.100.11:6443"; !strings.Contains(out, want) {
+	if want := "cp1: kubernetes controlplane: waiting for the cluster at https://192.168.100.11:6443; bootstrap only the first control plane of a new cluster"; !strings.Contains(out, want) {
 		t.Errorf("chalklab create did not print %q", want)
 	}
 	for _, n := range l.Nodes {

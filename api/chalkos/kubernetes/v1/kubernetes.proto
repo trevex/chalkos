@@ -96,11 +96,12 @@ message StatusResponse {
   // What the node waits for or is: "no share", "preparing" while its Kubernetes files are
   // prepared, or why their preparation failed, such as "preparation failed: no ipv4 node address
   // matches validSubnets 10.0.0.0/8 (the node has ...)"; then on a control-plane node "waiting
-  // for bootstrap or for the cluster at <endpoint>", what joining that cluster does or waits for,
-  // such as "joining the cluster at <endpoint>: etcd member <id> catches up" or a stale member
-  // and how to remove it, "bootstrapped" or "etcd data missing: restore etcd or reinstall the
-  // node"; "joined" on a worker, followed by ": the Node has no <family> pod range; ..." when the
-  // control plane allocated it no pod range of one of the worker's families.
+  // for the cluster at <endpoint>; bootstrap only the first control plane of a new cluster", what
+  // joining that cluster does or waits for, such as "joining the cluster at <endpoint>: etcd
+  // member <id> catches up" or a stale member and how to remove it, "bootstrapped" or "etcd data
+  // missing: restore etcd or reinstall the node"; "joined" on a worker, followed by ": the Node
+  // has no <family> pod range; ..." when the control plane allocated it no pod range of one of
+  // the worker's families.
   string state = 2;
   // Where the node stands, as state describes it in words. Clients decide on the phase; state is
   // for people to read.

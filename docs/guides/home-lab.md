@@ -699,7 +699,7 @@ that it waits:
 ```console
 $ chalkctl status node1 --secrets=secrets.age
 ...
-kubernetes controlplane: waiting for bootstrap or for the cluster at https://[fdc8:a1b2:c3d4:ff::10]:6443
+kubernetes controlplane: waiting for the cluster at https://[fdc8:a1b2:c3d4:ff::10]:6443; bootstrap only the first control plane of a new cluster
 ...
 ```
 

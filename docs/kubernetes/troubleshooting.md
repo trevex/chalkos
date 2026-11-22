@@ -69,7 +69,7 @@ Two other preparation failures name the address too:
 The Kubernetes line reads:
 
 ```text
-kubernetes controlplane: waiting for bootstrap or for the cluster at https://10.0.0.11:6443
+kubernetes controlplane: waiting for the cluster at https://10.0.0.11:6443; bootstrap only the first control plane of a new cluster
 ```
 
 Every control plane reads this before the cluster exists. Run
