@@ -6,11 +6,15 @@ import (
 	"cmp"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -85,7 +89,53 @@ func StartAdvertising(t testing.TB, ca pki.CertKey, name, peerURL string) *Membe
 // --initial-cluster-state=existing does with the initial cluster.
 func StartExisting(t testing.TB, ca pki.CertKey, name, peerURL, initialCluster string) *Member {
 	t.Helper()
+	knownToPeers(t, ca, peerURL, initialCluster)
 	return start(t, ca, name, peerURL, peerURL, initialCluster, embed.ClusterStateFlagExisting)
+}
+
+// peerMember is what a member's peer listener tells of a member at /members.
+type peerMember struct {
+	PeerURLs []string `json:"peerURLs"`
+}
+
+// knownToPeers waits until the other members of initialCluster that answer list the member at
+// peerURL, and one of them answers. The leader adds a member before the followers apply the
+// addition, and a member that starts reads the cluster from the first peer that answers: from a
+// follower that lags, the cluster has a member less than initialCluster, and etcd refuses to
+// start ("member count is unequal").
+func knownToPeers(t testing.TB, ca pki.CertKey, peerURL, initialCluster string) {
+	t.Helper()
+	transport := &http.Transport{TLSClientConfig: ClientTLS(t, ca)}
+	defer transport.CloseIdleConnections()
+	hc := &http.Client{Transport: transport, Timeout: 10 * time.Second}
+	// lists reports whether the member at peer answers, and whether it lists the new member.
+	lists := func(peer string) (answers, listed bool) {
+		resp, err := hc.Get(peer + "/members")
+		if err != nil {
+			return false, false
+		}
+		defer resp.Body.Close()
+		var members []peerMember
+		if err := json.NewDecoder(resp.Body).Decode(&members); err != nil {
+			return false, false
+		}
+		return true, slices.ContainsFunc(members, func(m peerMember) bool { return slices.Contains(m.PeerURLs, peerURL) })
+	}
+	testwait.Eventually(t, "the members to list the member at "+peerURL, func() bool {
+		answered := false
+		for entry := range strings.SplitSeq(initialCluster, ",") {
+			_, peer, _ := strings.Cut(entry, "=")
+			if peer == peerURL {
+				continue
+			}
+			answers, listed := lists(peer)
+			if answers && !listed {
+				return false
+			}
+			answered = answered || answers
+		}
+		return answered
+	})
 }
 
 // startAttempts is how often start tries a member when etcd finds a port taken: between the
