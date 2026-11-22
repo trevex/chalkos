@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.7.0](https://github.com/trevex/chalkos/compare/v0.6.0...v0.7.0) (2026-11-22)
+
+
+### Features
+
+* **kubernetes:** sign kubelet serving certificates with a CA of their own ([#136](https://github.com/trevex/chalkos/issues/136)) ([8ed39cf](https://github.com/trevex/chalkos/commit/8ed39cf08cf5a1d862cab8e13c543fd8e8715a10))
+* start FRR only with a BGPSpeaker, narrow BFD and cap renderers ([#139](https://github.com/trevex/chalkos/issues/139)) ([7e4512e](https://github.com/trevex/chalkos/commit/7e4512e8412059f8c0048ae8194f714fe24a6686))
+
+
+### Bug Fixes
+
+* read the node's refusal behind a closed connection and stop the etcd join flake ([#141](https://github.com/trevex/chalkos/issues/141)) ([5f6d808](https://github.com/trevex/chalkos/commit/5f6d8083369b472ca5844b0391fd3ffd3d982764))
+* resilience fixes from the November review ([#138](https://github.com/trevex/chalkos/issues/138)) ([933a366](https://github.com/trevex/chalkos/commit/933a3666fc325b6b3a6d13c757d9dab4fdb5b2ad))
+* security fixes from the November review ([#134](https://github.com/trevex/chalkos/issues/134)) ([3e05e88](https://github.com/trevex/chalkos/commit/3e05e888012c3c237c94e44547698839d28784c0))
+
 ## [0.6.0](https://github.com/trevex/chalkos/compare/v0.5.0...v0.6.0) (2026-11-22)
 
 
