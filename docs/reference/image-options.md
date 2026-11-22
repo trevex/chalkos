@@ -213,6 +213,12 @@ boot, as KubeVirt needs to pass PCI devices through to virtual machines. AMD's I
 is on unless the kernel's command line turns it off; this adds
 `intel_iommu=on iommu=pt`. Only with `chalkos.kubernetes.kubevirt.enable`.
 
+### `chalkos.kubernetes.longhorn.enable` { #chalkoskuberneteslonghornenable }
+
+Type: boolean · Default: `false` · Declared in: [modules/node/kubernetes/longhorn.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/longhorn.nix)
+
+Whether Kubernetes images carry what Longhorn runs on the host: iscsid and iscsiadm, the NFS client, the `iscsi_tcp` and `dm_crypt` kernel modules, loaded at boot, and links for `iscsiadm`, `fstrim`, `cryptsetup`, `dmsetup` and `mount` in `/usr/bin` and `/usr/sbin`. Only with the Kubernetes layer; set it true in an image's modules to add the feature to it.
+
 ### `chalkos.kubernetes.package` { #chalkoskubernetespackage }
 
 Type: package · Default: the release `chalkos.kubernetes.version` selects · Declared in: [modules/node/kubernetes/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/default.nix)

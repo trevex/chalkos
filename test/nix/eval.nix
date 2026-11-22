@@ -4834,6 +4834,79 @@ lib.runTests {
         routerGroup = false;
       };
     };
+  # longhorn is off by default. On, the image runs iscsid from boot, with its socket, carries
+  # iscsiadm, the NFS client and host-tool links, and loads iscsi_tcp and dm_crypt; iscsiadm's
+  # database and the node's initiator name live on VAR.
+  testKubernetesLonghorn =
+    let
+      on = worker [ { chalkos.kubernetes.longhorn.enable = true; } ];
+      iscsid = on.systemd.services.iscsid;
+    in
+    {
+      expr = {
+        default = w.chalkos.kubernetes.longhorn.enable;
+        offSocket = w.systemd.sockets ? iscsid;
+        offService = w.systemd.services ? iscsid;
+        socket = on.systemd.sockets.iscsid.listenStreams;
+        socketWanted = on.systemd.sockets.iscsid.wantedBy;
+        serviceWanted = iscsid.wantedBy;
+        type = iscsid.serviceConfig.Type;
+        # Longhorn enters iscsid's mount namespace, which must be the host's.
+        noMountNamespace =
+          !lib.any (o: iscsid.serviceConfig ? ${o}) [
+            "NoExecPaths"
+            "ProtectSystem"
+            "PrivateTmp"
+            "PrivateNetwork"
+            "ReadOnlyPaths"
+          ];
+        hostTools = lib.attrNames on.chalkos.kubernetes.hostTools;
+        etc = lib.filter (lib.hasPrefix "iscsi/") (lib.attrNames on.environment.etc);
+        initiator = on.environment.etc."iscsi/initiatorname.iscsi".source;
+        nodes = on.environment.etc."iscsi/nodes".source;
+        mountNfs = lib.any (p: lib.getName p == "nfs-utils-chalkos") on.environment.systemPackages;
+        loaded = lib.filter (
+          m:
+          lib.elem m [
+            "iscsi_tcp"
+            "dm_crypt"
+          ]
+        ) on.boot.kernelModules;
+      };
+      expected = {
+        default = false;
+        offSocket = false;
+        offService = false;
+        socket = [ "@ISCSIADM_ABSTRACT_NAMESPACE" ];
+        socketWanted = [ "sockets.target" ];
+        serviceWanted = [ "multi-user.target" ];
+        type = "notify";
+        noMountNamespace = true;
+        hostTools = [
+          "cryptsetup"
+          "dmsetup"
+          "fstrim"
+          "iscsiadm"
+          "mount"
+        ];
+        etc = [
+          "iscsi/ifaces"
+          "iscsi/initiatorname.iscsi"
+          "iscsi/iscsid.conf"
+          "iscsi/isns"
+          "iscsi/nodes"
+          "iscsi/send_targets"
+          "iscsi/static"
+        ];
+        initiator = "/var/lib/iscsi/initiatorname.iscsi";
+        nodes = "/var/lib/iscsi/nodes";
+        mountNfs = true;
+        loaded = [
+          "dm_crypt"
+          "iscsi_tcp"
+        ];
+      };
+    };
   # The kernel's modprobe helper, which loads the modules pods need on demand, is kmod's ELF
   # modprobe, set by nixos-init, and no modprobe.d install or remove command makes it run a shell.
   testModprobeWithoutShell =
