@@ -472,6 +472,10 @@ in
         "nixos-system-nixos/init" = allowed."nixos-init/bin/nixos-init";
         "cni-plugins-chalkos/bin/portmap" = "a string of Go's tables, which no code executes";
         "chalkd/bin/chalkd" = "the command of flannel's container, which runs in the container";
+        "nvidia-driver-root/bin/nvidia-smi" =
+          "NVIDIA's closed driver, which the GPU operator's containers run from the driver root; on the node, which has no /bin/sh, such a call fails instead of running a shell";
+        "nvidia-driver-root/lib64/libcudadebugger.so*" = allowed."nvidia-driver-root/bin/nvidia-smi";
+        "nvidia-driver-root/lib64/libnvidia-nvvm.so*" = allowed."nvidia-driver-root/bin/nvidia-smi";
         "open-iscsi-chalkos/bin/*" =
           "runs iscsid.conf's iscsid.startup when iscsid does not answer, which the image's iscsid.conf leaves unset";
       };
