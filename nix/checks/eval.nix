@@ -1,4 +1,4 @@
-# The evaluation tests of test/nix: each check fails to evaluate with the tests that failed. eval
+# The evaluation tests of test/nix: each check fails its build with the tests that failed. eval
 # also holds the test images and the fixtures to the kubelets chalkos pins.
 {
   pkgs,

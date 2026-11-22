@@ -102,7 +102,11 @@ the pull request ran the end-to-end checks its labels name before the merge, and
 runs them all on `main`.
 
 A job whose build fails builds once more, which rebuilds only what failed, because a download
-from a module proxy or a registry fails now and then. The job's log warns of the retry.
+from a module proxy or a registry fails now and then. The retry also reruns a test that failed,
+such as one of `go-unit`, so a job that passes on its retry may hide a flaky test. Such a job
+warns that it passed only on its retry, and the run's summary names the checks whose builds
+failed first and the `--- FAIL:` lines of their Go tests. A first attempt whose log names no
+failed test failed on a download.
 
 A check in no tier, in two tiers, or a name in a tier that is no check fails the evaluation of
 the checks, so a new check cannot be left out of CI. The `e2e` tier takes the checks of the
@@ -173,6 +177,10 @@ gh workflow run nightly.yml
 
 When a check fails on a push to `main` or in the nightly run, CI opens an issue labelled
 `ci-failure`, or comments on the open one, with a link to the run.
+
+When a check passes there only on its retry, CI opens an issue labelled `flaky`, or comments on
+the open one, with the summary of what failed first and a link to the run. Each comment names a
+test to fix or a download that failed; close the issue once the flaky tests it names are fixed.
 
 The nightly run's job `vulnix` runs every night, whether or not the tiers run. It builds the NixOS
 system of each release image, which the caches usually hold from the `release-image-*` checks,

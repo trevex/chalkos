@@ -294,12 +294,50 @@ in
       touch $out
     '';
 
-  # A check of lib.runTests failures: it builds when there are none, and fails to evaluate with
-  # them otherwise.
+  # A check of tests in the form of lib.runTests: each test* attribute has an expr and an expected
+  # value. It builds when every test passes and fails its build, not the evaluation, with the tests
+  # that failed, so the other checks of the same nix build still build. A test whose comparison
+  # throws fails too; builtins.tryEval catches throw and assert alone, so another error, such as a
+  # missing attribute, still fails the evaluation.
   evalTests =
-    name: description: failures:
-    if failures == [ ] then
-      pkgs.runCommand "chalkos-${name}-tests" { } "touch $out"
-    else
-      throw "${description} tests failed:\n${lib.generators.toPretty { } failures}";
+    name: description: tests:
+    let
+      shown =
+        value:
+        let
+          r = builtins.tryEval (lib.generators.toPretty { } value);
+        in
+        if r.success then r.value else "<throws>";
+      failed = lib.concatLists (
+        lib.mapAttrsToList (
+          test: t:
+          let
+            r = builtins.tryEval (t.expr == t.expected);
+          in
+          lib.optional (lib.hasPrefix "test" test && !(r.success && r.value)) (
+            if r.success then
+              "${test}:\n  expected: ${shown t.expected}\n  result: ${shown t.expr}"
+            else
+              "${test}: the expression throws"
+          )
+        ) tests
+      );
+    in
+    pkgs.runCommand "chalkos-${name}-tests"
+      {
+        # Values are shown, never built.
+        report = builtins.unsafeDiscardStringContext (
+          lib.optionalString (
+            failed != [ ]
+          ) "${description} tests failed:\n${lib.concatStringsSep "\n" failed}\n"
+        );
+        passAsFile = [ "report" ];
+      }
+      ''
+        if [ -s "$reportPath" ]; then
+          cat "$reportPath" >&2
+          exit 1
+        fi
+        touch $out
+      '';
 }

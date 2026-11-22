@@ -9,8 +9,8 @@
 # again. A draft pull request runs only those two jobs and lint, which builds the tiers' lint
 # checks, and fails result; marking it ready for review runs the workflow again with everything. A push to main runs
 # the fast and image tiers, and the nightly run, which calls this workflow, runs every tier; both
-# open or update an issue labelled ci-failure when a check fails. The job result is the one check
-# that branch protection requires.
+# open or update an issue labelled ci-failure when a check fails, and one labelled flaky when a
+# check passes only on its retry. The job result is the one check that branch protection requires.
 name: ci
 
 on:
@@ -95,18 +95,35 @@ jobs:
           cachix-name: ${{ vars.CACHIX_NAME }}
           cachix-auth-token: ${{ github.ref == 'refs/heads/main' && secrets.CACHIX_AUTH_TOKEN || '' }}
       # A build that fails is built once more, which rebuilds only what failed, since a download
-      # from a module proxy or registry fails now and then.
+      # from a module proxy or registry fails now and then. A retry that passes is no silent pass:
+      # the run's summary and a warning name what failed first, and on main and in the nightly run
+      # report comments it on the issue labelled flaky, as a test that fails and then passes is
+      # flaky.
       - name: Build ${{ matrix.name }}
+        id: build
         env:
           CHECKS: ${{ matrix.checks }}
           NAME: ${{ matrix.name }}
         run: |
+          set -o pipefail
           read -ra checks <<<"$CHECKS"
           installables=("${checks[@]/#/.#checks.x86_64-linux.}")
-          if ! nix build --print-build-logs --no-link --keep-going "${installables[@]}"; then
-            echo "::warning title=Retried $NAME::the build of $NAME failed; building it once more"
-            nix build --print-build-logs --no-link --keep-going "${installables[@]}"
+          if nix build --print-build-logs --no-link --keep-going "${installables[@]}" 2>&1 | tee first.log; then
+            exit 0
           fi
+          echo "::warning title=Retried $NAME::the build of $NAME failed; building it once more"
+          nix build --print-build-logs --no-link --keep-going "${installables[@]}"
+          .github/scripts/retried.sh "$NAME" first.log >"retried-$NAME.md"
+          cat "retried-$NAME.md" >>"$GITHUB_STEP_SUMMARY"
+          echo "::warning title=Flaky $NAME::$NAME passed only on its retry; the run's summary names what failed first"
+          echo "retried=true" >>"$GITHUB_OUTPUT"
+      - name: Keep what failed before the retry
+        if: steps.build.outputs.retried == 'true' && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: retried-${{ matrix.name }}
+          path: retried-${{ matrix.name }}.md
+          retention-days: 7
 
   # A draft pull request builds the lint checks of the tiers, which belong to the fast tier too,
   # and no other; a ready one builds them in the fast job.
@@ -260,14 +277,17 @@ jobs:
             { [ "$RELEASE_PR" = success ] || [ "$RELEASE_PR" = skipped ]; } &&
             passed "$PR_TITLE" && passed "$DCO"
 
+  # A failed check opens or updates the issue labelled ci-failure, and a check that passed only on
+  # its retry the issue labelled flaky.
   report:
     needs: [tiers, check, govulncheck]
-    if: failure() && github.event_name != 'pull_request'
+    if: always() && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       issues: write
     steps:
       - name: Open or update the issue
+        if: contains(needs.*.result, 'failure')
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -278,4 +298,28 @@ jobs:
             gh issue comment "$number" --body "$BODY"
           else
             gh issue create --title "CI fails on main" --label ci-failure --body "$BODY"
+          fi
+      - name: Collect the checks that passed on their retry
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: retried-*
+          path: retried
+          merge-multiple: true
+      - name: Open or update the issue of flaky checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          INTRO: "The ${{ github.event_name }} run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }} of ${{ github.sha }} passed these checks only on their retry."
+        run: |
+          shopt -s nullglob
+          reports=(retried/*.md)
+          if [ "${#reports[@]}" = 0 ]; then
+            exit 0
+          fi
+          body=$(printf '%s\n\n' "$INTRO"; cat "${reports[@]}")
+          number=$(gh issue list --label flaky --state open --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "$body"
+          else
+            gh issue create --title "Flaky checks" --label flaky --body "$body"
           fi
