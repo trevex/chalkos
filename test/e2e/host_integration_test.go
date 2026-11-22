@@ -160,8 +160,10 @@ for p in $pids; do
   nsenter -t $p -m -n iscsiadm --version || fail "iscsiadm does not run in iscsid's namespaces"
   nsenter -t $p -m -n iscsiadm -m iface >/dev/null || fail "iscsiadm -m iface fails in iscsid's namespaces"
 done
-grep -qx 'InitiatorName=iqn.2026-11.dev.chalkos:[0-9a-f]\{32\}' /proc/1/root/etc/iscsi/initiatorname.iscsi \
-  || fail "the initiator name is $(cat /proc/1/root/etc/iscsi/initiatorname.iscsi 2>&1)"
+# /etc/iscsi/initiatorname.iscsi leads to the file on VAR; read below /proc/1/root, the link would
+# resolve in the pod.
+grep -qx 'InitiatorName=iqn.2026-11.dev.chalkos:[0-9a-f]\{32\}' /proc/1/root/var/lib/iscsi/initiatorname.iscsi \
+  || fail "the initiator name is $(cat /proc/1/root/var/lib/iscsi/initiatorname.iscsi 2>&1)"
 if out=$(nsenter -t $p -m -n iscsiadm -m discovery -t sendtargets -p 127.0.0.1:3260 2>&1); then
   fail "the discovery of 127.0.0.1 found targets: $out"
 fi
