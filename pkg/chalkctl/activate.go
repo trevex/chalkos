@@ -66,7 +66,7 @@ func (a *app) nodeActivate(ctx context.Context, f nodeActivateFlags, name string
 	image := statusview.ImageName(root, revision, tag)
 	var resp *nodev1.ActivateImageResponse
 	if err := callNode(t, layer.Fetch(&resp, func(conn *client.Conn) (*nodev1.ActivateImageResponse, error) {
-		return conn.ActivateImage(ctx, &nodev1.ActivateImageRequest{RootHash: root})
+		return conn.ActivateImage(client.Unbounded(ctx), &nodev1.ActivateImageRequest{RootHash: root})
 	})); err != nil {
 		return err
 	}

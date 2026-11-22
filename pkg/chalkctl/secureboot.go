@@ -154,7 +154,7 @@ func (a *app) securebootEnroll(ctx context.Context, f securebootEnrollFlags) err
 	if err != nil {
 		return err
 	}
-	resp, err := conn.EnrollSecureBoot(ctx, req)
+	resp, err := conn.EnrollSecureBoot(client.Unbounded(ctx), req)
 	if err != nil {
 		return fmt.Errorf("enroll the keys: %w", err)
 	}
