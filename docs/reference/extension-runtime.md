@@ -373,10 +373,22 @@ Services read the files at the output's `dir`, `/run/chalkos/outputs/<name>` by 
 a symbolic link to the directory of the last render. chalkd replaces the link in one rename, so a
 service reads the files of one render and never a mix of two.
 
-The built-in output `networkd` uses `/run/systemd/network`. The first swap removes a directory it
-finds at `dir`, so the image's evaluation refuses a `dir` that breaks these rules:
+The first swap replaces an empty directory it finds at `dir`, as a tmpfiles rule makes. When `dir`
+holds anything else, such as a directory with files in it or a link that does not lead to an earlier
+render, the swap fails the output and leaves `dir` as it is. The built-in output `networkd` alone
+replaces what it finds at its `dir`, `/run/systemd/network`.
+
+`dir` must not be a unit's `RuntimeDirectory=`, such as `/run/bird` for a unit with
+`RuntimeDirectory=bird`: systemd makes that directory when the unit starts and removes it, with the
+link, when the unit stops. Take a path of the output's own, such as the default.
+
+The image's evaluation refuses a `dir` that breaks these rules:
 
 - It is a clean path below `/run`, and no component starts with a dot.
+- It stays out of the directories that systemd, NixOS and chalkd keep their state in:
+  `/run/systemd`, except for networkd's `/run/systemd/network`, `/run/credentials`, `/run/chalkd`,
+  `/run/wrappers`, `/run/current-system`, `/run/booted-system`, `/run/user`, `/run/dbus`,
+  `/run/udev`, `/run/keys`, `/run/lock` and `/run/log`.
 - It stays out of `/run/chalkos`, except for `/run/chalkos/outputs/<name>` and the paths below it.
 - It is neither another output's `dir` nor inside one.
 

@@ -1818,8 +1818,9 @@ lib.runTests {
       file = "/run/bird/why";
     };
   };
-  # An output's dir is a clean path below /run, out of chalkos's own directories but its own and
-  # out of every other output's dir, since chalkd replaces whatever it holds with a link.
+  # An output's dir is a clean path below /run, out of the directories systemd, NixOS and chalkd
+  # keep their state in but networkd's, out of chalkos's own directories but its own and out of
+  # every other output's dir, since chalkd replaces what it holds with a link.
   testOutputDirs =
     let
       dirs =
@@ -1835,6 +1836,9 @@ lib.runTests {
     {
       expr = {
         systemd = accepted { a = "/run/systemd/resolved.conf.d"; };
+        chalkd = accepted { a = "/run/chalkd"; };
+        credentials = accepted { a = "/run/credentials/bird.service"; };
+        currentSystem = accepted { a = "/run/current-system"; };
         # The built-in output networkd's.
         networkd = accepted { a = "/run/systemd/network"; };
         own = accepted { a = "/run/chalkos/outputs/a/sub"; };
@@ -1858,7 +1862,10 @@ lib.runTests {
         };
       };
       expected = {
-        systemd = true;
+        systemd = false;
+        chalkd = false;
+        credentials = false;
+        currentSystem = false;
         networkd = false;
         own = true;
         etc = false;

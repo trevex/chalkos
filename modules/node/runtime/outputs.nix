@@ -115,6 +115,16 @@ let
             follows.
           '';
         };
+        replace = lib.mkOption {
+          type = lib.types.bool;
+          default = false;
+          internal = true;
+          description = ''
+            Whether a swap replaces whatever `dir` holds, as the networkd output replaces what else
+            writes to /run/systemd/network. Without it a swap replaces only nothing, an empty
+            directory or a link to an earlier render, and fails the output otherwise.
+          '';
+        };
         user = lib.mkOption {
           type = lib.types.str;
           default = "root";
@@ -139,20 +149,40 @@ let
   runsPrograms = outputs != { } || config.chalkos.validators != { };
   # Where chalkd renders the outputs, outputs.DefaultRoot.
   outputsRoot = "/run/chalkos/outputs";
+  # The directories of /run that systemd, NixOS and chalkd keep their state in, outputs.runOwned.
+  runOwned = [
+    "systemd"
+    "credentials"
+    "chalkd"
+    "wrappers"
+    "current-system"
+    "booted-system"
+    "user"
+    "dbus"
+    "udev"
+    "keys"
+    "lock"
+    "log"
+  ];
   # Why chalkd may not replace dir, the dir of the output name, with a link, or null. As in
   # outputs.checkDir, dir must:
   # - be a clean path below /run, a tmpfs;
   # - have no component that starts with a dot, as the links and directories chalkd keeps beside
   #   the outputs' do;
+  # - stay out of the directories of /run that systemd, NixOS and chalkd keep their state in,
+  #   runOwned, except for networkd's /run/systemd/network;
   # - stay out of /run/chalkos, which holds the node's config and credentials, except for
   #   /run/chalkos/outputs/<name> and the paths below it.
   dirProblem =
     name: dir:
     let
       own = "/run/chalkos/outputs/${name}";
+      top = lib.head (lib.splitString "/" (lib.removePrefix "/run/" dir));
     in
     if builtins.match "/run(/[^/.][^/]*)+" dir == null then
       "must be a clean path below /run with no component that starts with a dot"
+    else if lib.elem top runOwned && dir != "/run/systemd/network" then
+      "takes /run/${top} or a path below it, which systemd, NixOS or chalkd own"
     else if
       (dir == "/run/chalkos" || lib.hasPrefix "/run/chalkos/" dir)
       && !(dir == own || lib.hasPrefix "${own}/" dir)
@@ -199,6 +229,7 @@ let
     inherit (o)
       inputs
       dir
+      replace
       user
       group
       mode

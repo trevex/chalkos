@@ -49,6 +49,10 @@ type Definition struct {
 	User  string `json:"user"`
 	Group string `json:"group"`
 	Mode  string `json:"mode"`
+	// Replace lets a swap replace whatever dir holds, as the networkd output replaces what else
+	// writes to /run/systemd/network; without it a swap replaces only nothing, an empty
+	// directory or a link to an earlier render.
+	Replace bool `json:"replace,omitempty"`
 }
 
 // Read reads the outputs an image declares for a node that renders them below root, DefaultRoot
@@ -96,16 +100,23 @@ func (d Definition) check(name, root string) error {
 	return nil
 }
 
+// runOwned are the directories below /run that systemd, NixOS and chalkd keep their state in, which
+// no output's dir may be or lie in, but for networkd's dir, /run/systemd/network.
+var runOwned = []string{"systemd", "credentials", "chalkd", "wrappers", "current-system", "booted-system", "user", "dbus", "udev", "keys", "lock", "log"}
+
 // checkDir refuses a dir of the output name that a swap could not safely replace by a link: one
 // that is not clean or lies outside /run, a tmpfs, one with a dot component like chalkd's own
-// links, or one in /run/chalkos, where the config and credentials live, other than below
-// root/<name>.
+// links, one in a directory of runOwned, or one in /run/chalkos, where the config and credentials
+// live, other than below root/<name>.
 func checkDir(name, dir, root string) error {
 	chalkos := filepath.Dir(root)
 	run := filepath.Dir(chalkos)
 	rest, ok := strings.CutPrefix(dir, run+"/")
 	if !ok || filepath.Clean(dir) != dir || slices.ContainsFunc(strings.Split(rest, "/"), func(c string) bool { return strings.HasPrefix(c, ".") }) {
 		return fmt.Errorf("the dir %q must be a clean path below %s with no component that starts with a dot", dir, run)
+	}
+	if top, _, _ := strings.Cut(rest, "/"); slices.Contains(runOwned, top) && dir != run+"/systemd/network" {
+		return fmt.Errorf("the dir %q takes %s/%s or a path below it, which systemd, NixOS or chalkd own", dir, run, top)
 	}
 	own := filepath.Join(root, name)
 	if (dir == chalkos || strings.HasPrefix(dir, chalkos+"/")) && dir != own && !strings.HasPrefix(dir, own+"/") {

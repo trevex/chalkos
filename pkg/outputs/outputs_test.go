@@ -171,6 +171,68 @@ func TestSwapReplacesADirectory(t *testing.T) {
 	}
 }
 
+// A dir that holds another program's files, a directory with files in it or a link to anything
+// but an earlier render, stays as it is and fails the swap, unless the output may replace it; the
+// staged files go with Discard.
+func TestSwapLeavesAnotherProgramsFiles(t *testing.T) {
+	for name, tc := range map[string]struct {
+		make    func(dir string) error
+		replace bool
+	}{
+		"directory": {make: func(dir string) error {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return err
+			}
+			return os.WriteFile(filepath.Join(dir, "state"), []byte("kept\n"), 0o644)
+		}},
+		"link": {make: func(dir string) error {
+			if err := os.MkdirAll(dir+".real", 0o755); err != nil {
+				return err
+			}
+			if err := os.WriteFile(filepath.Join(dir+".real", "state"), []byte("kept\n"), 0o644); err != nil {
+				return err
+			}
+			return os.Symlink(dir+".real", dir)
+		}},
+		"replaced": {replace: true, make: func(dir string) error {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return err
+			}
+			return os.WriteFile(filepath.Join(dir, "state"), []byte("kept\n"), 0o644)
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := renderer(t)
+			d := def(t, r.Root, script(t, `echo new > "$OUT/file"`), "")
+			d.Replace = tc.replace
+			if err := tc.make(d.Dir); err != nil {
+				t.Fatal(err)
+			}
+			s, failures := r.Render(context.Background(), map[string]Definition{"demo": d}, input(t, demos))
+			if len(failures) > 0 {
+				t.Fatal(failures)
+			}
+			err := s.Swap()
+			s.Discard()
+			if tc.replace {
+				if data, _ := os.ReadFile(filepath.Join(d.Dir, "file")); err != nil || string(data) != "new\n" {
+					t.Errorf("Swap = %v, the dir holds %q", err, data)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), d.Dir+" holds another program's files") {
+				t.Errorf("Swap = %v", err)
+			}
+			if data, _ := os.ReadFile(filepath.Join(d.Dir, "state")); string(data) != "kept\n" {
+				t.Errorf("the dir holds %q", data)
+			}
+			if entries, _ := os.ReadDir(filepath.Join(r.Root, ".staging")); len(entries) != 0 {
+				t.Errorf("staged files stay: %v", entries)
+			}
+		})
+	}
+}
+
 // A renderer or a check that fails is a failure that names its exit status, while what it wrote
 // to standard error goes to the log alone; a failed output is not staged, and the others are.
 func TestRenderFailures(t *testing.T) {
@@ -288,23 +350,28 @@ func TestLive(t *testing.T) {
 // directories or in another output's, and a mode that is no octal number.
 func TestRead(t *testing.T) {
 	for name, tc := range map[string]struct{ json, want string }{
-		"fine":     {`{"a": {"inputs": [], "render": "/nix/store/x/bin/r a", "dir": "/run/a", "user": "root", "group": "root", "mode": "0644"}}`, ""},
-		"name":     {`{"A": {"render": "/nix/store/x", "dir": "/run/a", "mode": "0644"}}`, `output A: the name is not lower-case letters, digits and dashes`},
-		"secret":   {`{"a": {"inputs": ["Secret"], "render": "/nix/store/x", "dir": "/run/a", "mode": "0644"}}`, `output a: it reads Secret documents, whose values no program reads`},
-		"renderer": {`{"a": {"render": "r", "dir": "/run/a", "mode": "0644"}}`, `output a: the renderer "r" names no program by its absolute path`},
-		"check":    {`{"a": {"render": "/nix/store/x", "check": "true", "dir": "/run/a", "mode": "0644"}}`, `output a: the check "true" names no program`},
-		"dir":      {`{"a": {"render": "/nix/store/x", "dir": "run/a", "mode": "0644"}}`, `the dir "run/a" must be a clean path below /run`},
-		"mode":     {`{"a": {"render": "/nix/store/x", "dir": "/run/a", "mode": "rw"}}`, `the mode "rw" is no octal file mode`},
-		"networkd": {`{"a": {"render": "/nix/store/x", "dir": "/run/systemd/network", "mode": "0644"}}`, ""},
-		"own":      {`{"a": {"render": "/nix/store/x", "dir": "/run/chalkos/outputs/a/sub", "mode": "0644"}}`, ""},
-		"etc":      {`{"a": {"render": "/nix/store/x", "dir": "/etc/a", "mode": "0644"}}`, `the dir "/etc/a" must be a clean path below /run`},
-		"run":      {`{"a": {"render": "/nix/store/x", "dir": "/run", "mode": "0644"}}`, `the dir "/run" must be a clean path below /run`},
-		"unclean":  {`{"a": {"render": "/nix/store/x", "dir": "/run/a/", "mode": "0644"}}`, `the dir "/run/a/" must be a clean path below /run`},
-		"dot":      {`{"a": {"render": "/nix/store/x", "dir": "/run/a/.b", "mode": "0644"}}`, `the dir "/run/a/.b" must be a clean path below /run`},
-		"chalkos":  {`{"a": {"render": "/nix/store/x", "dir": "/run/chalkos/config", "mode": "0644"}}`, `the dir "/run/chalkos/config" is in /run/chalkos, where an output may take only /run/chalkos/outputs/a`},
-		"other":    {`{"a": {"render": "/nix/store/x", "dir": "/run/chalkos/outputs/b", "mode": "0644"}}`, `where an output may take only /run/chalkos/outputs/a`},
-		"same":     {`{"a": {"render": "/nix/store/x", "dir": "/run/x", "mode": "0644"}, "b": {"render": "/nix/store/x", "dir": "/run/x", "mode": "0644"}}`, `output b: the dir "/run/x" is the dir of the output a`},
-		"nested":   {`{"a": {"render": "/nix/store/x", "dir": "/run/x/y", "mode": "0644"}, "b": {"render": "/nix/store/x", "dir": "/run/x", "mode": "0644"}}`, `output a: the dir "/run/x/y" is inside the dir of the output b`},
+		"fine":          {`{"a": {"inputs": [], "render": "/nix/store/x/bin/r a", "dir": "/run/a", "user": "root", "group": "root", "mode": "0644"}}`, ""},
+		"name":          {`{"A": {"render": "/nix/store/x", "dir": "/run/a", "mode": "0644"}}`, `output A: the name is not lower-case letters, digits and dashes`},
+		"secret":        {`{"a": {"inputs": ["Secret"], "render": "/nix/store/x", "dir": "/run/a", "mode": "0644"}}`, `output a: it reads Secret documents, whose values no program reads`},
+		"renderer":      {`{"a": {"render": "r", "dir": "/run/a", "mode": "0644"}}`, `output a: the renderer "r" names no program by its absolute path`},
+		"check":         {`{"a": {"render": "/nix/store/x", "check": "true", "dir": "/run/a", "mode": "0644"}}`, `output a: the check "true" names no program`},
+		"dir":           {`{"a": {"render": "/nix/store/x", "dir": "run/a", "mode": "0644"}}`, `the dir "run/a" must be a clean path below /run`},
+		"mode":          {`{"a": {"render": "/nix/store/x", "dir": "/run/a", "mode": "rw"}}`, `the mode "rw" is no octal file mode`},
+		"networkd":      {`{"a": {"render": "/nix/store/x", "dir": "/run/systemd/network", "mode": "0644"}}`, ""},
+		"systemd":       {`{"a": {"render": "/nix/store/x", "dir": "/run/systemd/resolve", "mode": "0644"}}`, `the dir "/run/systemd/resolve" takes /run/systemd or a path below it, which systemd, NixOS or chalkd own`},
+		"chalkd":        {`{"a": {"render": "/nix/store/x", "dir": "/run/chalkd", "mode": "0644"}}`, `the dir "/run/chalkd" takes /run/chalkd or a path below it`},
+		"credentials":   {`{"a": {"render": "/nix/store/x", "dir": "/run/credentials/a.service", "mode": "0644"}}`, `takes /run/credentials or a path below it`},
+		"currentSystem": {`{"a": {"render": "/nix/store/x", "dir": "/run/current-system", "mode": "0644"}}`, `takes /run/current-system or a path below it`},
+		"bird":          {`{"a": {"render": "/nix/store/x", "dir": "/run/chalkd-bird", "mode": "0644"}}`, ""},
+		"own":           {`{"a": {"render": "/nix/store/x", "dir": "/run/chalkos/outputs/a/sub", "mode": "0644"}}`, ""},
+		"etc":           {`{"a": {"render": "/nix/store/x", "dir": "/etc/a", "mode": "0644"}}`, `the dir "/etc/a" must be a clean path below /run`},
+		"run":           {`{"a": {"render": "/nix/store/x", "dir": "/run", "mode": "0644"}}`, `the dir "/run" must be a clean path below /run`},
+		"unclean":       {`{"a": {"render": "/nix/store/x", "dir": "/run/a/", "mode": "0644"}}`, `the dir "/run/a/" must be a clean path below /run`},
+		"dot":           {`{"a": {"render": "/nix/store/x", "dir": "/run/a/.b", "mode": "0644"}}`, `the dir "/run/a/.b" must be a clean path below /run`},
+		"chalkos":       {`{"a": {"render": "/nix/store/x", "dir": "/run/chalkos/config", "mode": "0644"}}`, `the dir "/run/chalkos/config" is in /run/chalkos, where an output may take only /run/chalkos/outputs/a`},
+		"other":         {`{"a": {"render": "/nix/store/x", "dir": "/run/chalkos/outputs/b", "mode": "0644"}}`, `where an output may take only /run/chalkos/outputs/a`},
+		"same":          {`{"a": {"render": "/nix/store/x", "dir": "/run/x", "mode": "0644"}, "b": {"render": "/nix/store/x", "dir": "/run/x", "mode": "0644"}}`, `output b: the dir "/run/x" is the dir of the output a`},
+		"nested":        {`{"a": {"render": "/nix/store/x", "dir": "/run/x/y", "mode": "0644"}, "b": {"render": "/nix/store/x", "dir": "/run/x", "mode": "0644"}}`, `output a: the dir "/run/x/y" is inside the dir of the output b`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "outputs.json")
