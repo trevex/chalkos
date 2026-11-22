@@ -106,7 +106,7 @@ Create a directory for the cluster and initialise it from the template:
 <!-- x-release-please-start-version -->
 ```console
 $ mkdir cluster && cd cluster
-$ nix flake init -t github:trevex/chalkos/v0.5.0#cluster-metal
+$ nix flake init -t github:trevex/chalkos/v0.6.0#cluster-metal
 wrote: "/home/alice/cluster/.gitignore"
 wrote: "/home/alice/cluster/README.md"
 wrote: "/home/alice/cluster/chalkos.yaml"

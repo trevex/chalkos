@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.6.0](https://github.com/trevex/chalkos/compare/v0.5.0...v0.6.0) (2026-11-22)
+
+
+### Features
+
+* **kubernetes:** add the longhorn feature with iscsid, the NFS client and host tools ([#80](https://github.com/trevex/chalkos/issues/80)) ([31f99c3](https://github.com/trevex/chalkos/commit/31f99c366124f163a940e48aaa6a48b34da3dc5f))
+* **kubernetes:** add the nvidia feature for the GPU operator's host-driver mode ([#82](https://github.com/trevex/chalkos/issues/82)) ([dbe6875](https://github.com/trevex/chalkos/commit/dbe68754ba010ec899622d4191a29bb141c9f652))
+* **kubernetes:** carry Ceph's and KubeVirt's kernel modules by default ([#79](https://github.com/trevex/chalkos/issues/79)) ([2ae630d](https://github.com/trevex/chalkos/commit/2ae630d7af7779db8ec265be7fa02ac5a2a96623))
+* **kubernetes:** link /lib/modules to the image's modules and add host tools below /usr ([#78](https://github.com/trevex/chalkos/issues/78)) ([dc95b59](https://github.com/trevex/chalkos/commit/dc95b5975a7348724127f3f63272a94a345b5bfb))
+* **node:** load kernel modules from the image alone ([#76](https://github.com/trevex/chalkos/issues/76)) ([6f41a9e](https://github.com/trevex/chalkos/commit/6f41a9e1711a41e05fd3c7426d452869beb63220))
+
 ## [0.5.0](https://github.com/trevex/chalkos/compare/v0.4.0...v0.5.0) (2026-11-21)
 
 

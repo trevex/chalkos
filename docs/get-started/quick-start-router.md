@@ -56,7 +56,7 @@ Create a directory and initialise it from the `router-lab` template:
 <!-- x-release-please-start-version -->
 ```console
 $ mkdir router-lab && cd router-lab
-$ nix flake init -t github:trevex/chalkos/v0.5.0#router-lab
+$ nix flake init -t github:trevex/chalkos/v0.6.0#router-lab
 wrote: "/home/alice/router-lab/.gitignore"
 wrote: "/home/alice/router-lab/README.md"
 wrote: "/home/alice/router-lab/chalklab.yaml"
@@ -143,7 +143,7 @@ bootstrap:
 ```console
 $ chalklab create --secrets secrets.json
 creating the lab's Secure Boot keys in /home/alice/.local/state/chalklab/router-lab/keys
-pulled ghcr.io/trevex/chalkos/router-kvm:v0.5.0 as ghcr.io/trevex/chalkos/router-kvm@sha256:<digest>
+pulled ghcr.io/trevex/chalkos/router-kvm:v0.6.0 as ghcr.io/trevex/chalkos/router-kvm@sha256:<digest>
 copying the image of client from /home/alice/.local/state/chalklab/router-lab/images/sha256-<digest>
 using cached ghcr.io/trevex/chalkos/router-kvm@sha256:<digest>
 copying the image of router from /home/alice/.local/state/chalklab/router-lab/images/sha256-<digest>
