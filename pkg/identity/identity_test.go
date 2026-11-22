@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -45,5 +46,16 @@ func TestLayer(t *testing.T) {
 	id.Layers["c"] = []byte(`[]`)
 	if ok, err := id.Layer("c", &got); !ok || err == nil {
 		t.Errorf("Layer(c) of a part that does not decode = %v, %v; want true and an error", ok, err)
+	}
+}
+
+func TestStaticPrefixes(t *testing.T) {
+	id := Identity{Network: map[string]any{"networks": map[string]any{
+		"20-b": map[string]any{"address": []any{"10.0.1.1/24", "10.0.2.1"}},
+		"10-a": map[string]any{"address": []any{"fd00::1/64"}},
+	}}}
+	got := fmt.Sprint(id.StaticPrefixes())
+	if want := "[fd00::1/64 10.0.1.1/24]"; got != want {
+		t.Errorf("StaticPrefixes() = %s, want %s", got, want)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"net/netip"
 	"slices"
 	"strings"
 
@@ -59,6 +60,29 @@ func (id Identity) Layer(name string, v any) (bool, error) {
 // StaticAddresses returns the addresses of the node's networkd networks, in network name order,
 // without prefix lengths.
 func (id Identity) StaticAddresses() []string {
+	var addrs []string
+	for _, a := range id.staticAddresses() {
+		addr, _, _ := strings.Cut(a, "/")
+		addrs = append(addrs, addr)
+	}
+	return addrs
+}
+
+// StaticPrefixes returns the addresses of the node's networkd networks with their prefix lengths,
+// in network name order; an address without one, or one that does not parse, is left out.
+func (id Identity) StaticPrefixes() []netip.Prefix {
+	var prefixes []netip.Prefix
+	for _, a := range id.staticAddresses() {
+		if p, err := netip.ParsePrefix(a); err == nil {
+			prefixes = append(prefixes, p)
+		}
+	}
+	return prefixes
+}
+
+// staticAddresses returns the Address= values of the node's networkd networks as written, in
+// network name order.
+func (id Identity) staticAddresses() []string {
 	networks, _ := id.Network["networks"].(map[string]any)
 	var addrs []string
 	for _, name := range slices.Sorted(maps.Keys(networks)) {
@@ -66,8 +90,7 @@ func (id Identity) StaticAddresses() []string {
 		list, _ := network["address"].([]any)
 		for _, a := range list {
 			if s, ok := a.(string); ok {
-				addr, _, _ := strings.Cut(s, "/")
-				addrs = append(addrs, addr)
+				addrs = append(addrs, s)
 			}
 		}
 	}

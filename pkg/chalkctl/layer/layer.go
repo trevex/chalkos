@@ -77,6 +77,14 @@ type Inventory interface {
 	CheckInventory(c Cluster) error
 }
 
+// InventoryWarnings is a plugin whose layer warns about an inventory's valid config. chalkctl
+// validate asks every compiled plugin.
+type InventoryWarnings interface {
+	// InventoryWarnings are what the documents of the cluster's nodes together warrant a warning
+	// for, such as a setting whose default leaves the cluster open.
+	InventoryWarnings(c Cluster) []string
+}
+
 // Delivery is a plugin whose layer takes payloads that chalkctl issues a node from the secrets
 // file, and which admits a node to them. chalkctl asks every compiled plugin.
 type Delivery interface {

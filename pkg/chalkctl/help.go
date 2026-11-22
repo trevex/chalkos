@@ -535,8 +535,10 @@ https://trevex.github.io/chalkos/how-it-works/node/config/#chalkctl-and-chalkd-b
 The command prints a line for each node whose config is valid, with the digest of an image in a
 registry, names each node whose config is not, and warns of a node whose SystemDisk leaves STATE,
 which holds its keys and secrets, unencrypted, and of each image reference that names a tag but no
-digest, which nodes pull by whatever the tag points to when they pull. It reaches no node and
-needs no secrets file or client file.
+digest, which nodes pull by whatever the tag points to when they pull. A layer warns of what the
+nodes' config together leaves open, such as flannel's VXLAN taken from any source, with the
+ranges of the nodes' addresses to set instead. It reaches no node and needs no secrets file or
+client file.
 
 validate reads the file:// sources of Secret documents and decrypts no sops:// or age:// source,
 so it asks for no key. It checks each key of such a source with a placeholder value, which no

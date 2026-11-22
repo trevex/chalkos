@@ -32,6 +32,7 @@ func TestValidateWarnsOfUnpinnedImages(t *testing.T) {
 	ta := newTestApp(t)
 	ta.withoutSecrets(t)
 	unpinProxy(t, ta.dir)
+	closeVXLAN(t, ta.dir)
 	if err := ta.run(context.Background(), []string{"validate", "--inventory", ta.inventory}); err != nil {
 		t.Fatal(err)
 	}
