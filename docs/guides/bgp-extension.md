@@ -60,18 +60,10 @@ Add this entry to `images` in the homelab's `flake.nix`. It builds `node-bird-me
 ```
 
 Add `node-bird-metal` to the list inherited from `images` in `packages.${system}`. Create
-`extensions/default.nix` to import the extension. The extension's credentials unit and its
-output's check are bash scripts, so the file lets a shell into the image;
-[Keep an image shell-free](../build/shell-free.md) shows programs that need none.
+`extensions/default.nix` to import the extension:
 
 ```nix title="extensions/default.nix"
-# The guide's BGP extension, bird with its Speaker and Peer kinds and the config rendered from
-# them, which the image node-bird-metal carries in place of the built-in speaker. Its credentials
-# unit and its output's check are bash scripts, so the image carries a shell.
-{
-  imports = [ ./bgp.nix ];
-  chalkos.shell.allow = true;
-}
+--8<-- "examples/bgp-extension/extensions/default.nix"
 ```
 
 `extensions/bgp.nix` starts with the module's arguments and two types the kinds use:
@@ -297,8 +289,16 @@ Then declare the output in the body:
 ```
 
 The check is a program, which chalkd runs without a shell. bird needs a constant for each password
-line, so this check is a script of the module's own that defines them before it runs `bird -p`. A
-check that only runs a program on the files needs no script:
+line, so the check gives `bird -p` a config that defines them and then includes `bird.conf`.
+Create `extensions/bird-conf-check.jq`, which writes that config from the rendered file:
+
+```text title="extensions/bird-conf-check.jq"
+--8<-- "examples/bgp-extension/extensions/bird-conf-check.jq"
+```
+
+The check is a script for execline, a language without a shell: it pipes jq's output into bird,
+which reads the config from standard input. A check that only runs a program on the files needs
+no script:
 `chalkosLib.check.run [ "${bird}/bin/bird" "-p" "-c" "$OUT/bird.conf" ]` would do for a config
 without passwords.
 
@@ -412,6 +412,13 @@ turns the sessions' password into bird constants. Add it to the `let` bindings:
 
 ```nix
 --8<-- "examples/bgp-extension/extensions/bgp.nix:credentials"
+```
+
+Create `extensions/bird-credentials.rs`, the program. `pkgs.writers.writeRustBin` compiles it
+when the image builds, and a compiled program needs no shell:
+
+```rust title="extensions/bird-credentials.rs"
+--8<-- "examples/bgp-extension/extensions/bird-credentials.rs"
 ```
 
 `bird-credentials` runs before bird starts and on each reload. It reads each `secret_*` file in

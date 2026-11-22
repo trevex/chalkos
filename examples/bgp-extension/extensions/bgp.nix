@@ -22,34 +22,11 @@ let
   # An octet of an IPv4 address in decimal, without leading zeros.
   octet = "25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9]";
   # --8<-- [start:credentials]
-  # bird reads no password from a file, and its strings take no escapes: this writes each of the
-  # unit's credentials as a constant of bird's config, named as the credential, which bird.conf's
-  # password lines name. A name outside letters, digits, '.', '_' and '-', or a value with a quote
-  # or a line break, fails the unit. The constants go to a new file that replaces the old one, so
-  # bird never reads a file half written or emptied by a failed run.
-  credentials = pkgs.writeShellApplication {
-    name = "bird-credentials";
-    text = ''
-      shopt -s nullglob
-      umask 077
-      tmp=$(mktemp /run/bird/credentials.conf.XXXXXX)
-      trap 'rm -f "$tmp"' EXIT
-      for file in "''${CREDENTIALS_DIRECTORY-}"/secret_*; do
-        name=''${file##*/}
-        if [[ ! ''${name#secret_} =~ ^[A-Za-z0-9._-]+$ ]]; then
-          echo "$name: bird takes a credential name of letters, digits, '.', '_' and '-' alone" >&2
-          exit 1
-        fi
-        value=$(<"$file")
-        if [[ $value == *[$'"\n']* ]]; then
-          echo "$name: bird takes no password with a quote or a line break" >&2
-          exit 1
-        fi
-        printf "define '%s' = \"%s\";\n" "$name" "$value"
-      done >"$tmp"
-      mv "$tmp" /run/bird/credentials.conf
-    '';
-  };
+  # bird reads no password from a file: bird-credentials.rs writes each of the unit's credentials
+  # as a constant of bird's config. A compiled program runs without a shell.
+  credentials = pkgs.writers.writeRustBin "bird-credentials" { } (
+    builtins.readFile ./bird-credentials.rs
+  );
   # --8<-- [end:credentials]
 in
 {
@@ -163,27 +140,20 @@ in
 
   # --8<-- [start:output]
   # bird.conf, with a session per Peer and interface. bird -p parses a config without running it;
-  # the constants the password lines name exist on the node alone, so the check, a script of the
-  # module's own, defines each first. chalkd runs it without a shell and with no PATH of use.
+  # the constants the password lines name exist on the node alone, so bird-conf-check.jq defines
+  # each first and includes bird.conf after them. execline pipes that config into bird without a
+  # shell; chalkd runs the check with no PATH of use.
   chalkos.outputs.bird-conf = {
     inputs = [
       "Speaker"
       "Peer"
     ];
     render = chalkosLib.render.template ./bird.conf.tmpl;
-    check = pkgs.writeShellScript "bird-conf-check" ''
-      set -e
-      PATH=${
-        lib.makeBinPath [
-          pkgs.coreutils
-          pkgs.gnugrep
-          pkgs.gnused
-        ]
-      }
-      conf=$(mktemp)
-      grep -o "'secret_[^']*'" "$OUT/bird.conf" | sort -u | sed 's/.*/define & = "checked";/' >"$conf"
-      echo "include \"$OUT/bird.conf\";" >>"$conf"
-      ${bird}/bin/bird -p -c "$conf"
+    check = pkgs.writeScript "bird-conf-check" ''
+      #!${pkgs.execline}/bin/execlineb -P
+      importas -i out OUT
+      pipeline { ${lib.getExe pkgs.jq} -Rrs --arg conf ''${out}/bird.conf -f ${./bird-conf-check.jq} ''${out}/bird.conf }
+      ${bird}/bin/bird -p -c /dev/stdin
     '';
   };
   # --8<-- [end:output]

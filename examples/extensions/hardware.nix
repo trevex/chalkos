@@ -61,13 +61,15 @@
       Type = "oneshot";
       # Active after it ran, so chalkd's try-restart runs it again.
       RemainAfterExit = true;
+      # The file's variables replace these, on a node with a Hardware document.
+      Environment = [
+        "VENDOR=unknown"
+        "MODEL=unknown"
+      ];
       EnvironmentFile = "-${config.chalkos.outputs.hardware.dir}/hardware.env";
-      ExecStart = pkgs.writeShellScript "hardware-info" ''
-        echo "hardware: ''${VENDOR:-unknown} ''${MODEL:-unknown}''${ASSET_TAG:+, asset tag $ASSET_TAG}"
-      '';
+      # systemd expands the variables itself: ${NAME} as one argument, $NAME as none when empty.
+      ExecStart = "${pkgs.coreutils}/bin/echo hardware: \${VENDOR} \${MODEL} $ASSET_TAG";
     };
   };
-  # The unit is a bash script, so the image carries a shell.
-  chalkos.shell.allow = true;
 }
 # --8<-- [end:tail]
