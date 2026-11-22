@@ -70,6 +70,8 @@ type Node struct {
 	// the slot stays retired and the running image stays the next boot.
 	CheckStore func(Store) error
 	StoreMount string
+	// ESPSpace, when set, replaces reading the ESP's free space.
+	ESPSpace func(dir string) (esp.Space, error)
 	// CheckStaged, when set, checks the image Activate makes the next boot once the image staged
 	// is the one asked for, before the UKI or the slot is checked and anything changes, such as
 	// chalkd checking that STATE keeps the image's config. Its error refuses the activation.
@@ -251,6 +253,9 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 		}
 	}
 	if err := inactive.Fits(h.Image); err != nil {
+		return Result{}, err
+	}
+	if err := n.fitsESP(all, h, booted, running); err != nil {
 		return Result{}, err
 	}
 
@@ -475,20 +480,50 @@ func (n *Node) recheck(ctx context.Context, h Header, slot storeslot.Slot, stage
 	return &StagedRetiredError{Err: err}
 }
 
-// retire removes every UKI of the image but those booting the running store, along with UKIs an
-// upgrade left half written and the staged one, and then makes the inactive slot one nothing
-// finds.
-func (n *Node) retire(ctx context.Context, entries []esp.Entry, imageID string, booted esp.Entry, running []byte, slot storeslot.Slot) error {
-	// Every file under a staged name goes, also one that is no UKI of the image: the slot it would
-	// boot is retired.
+// retiring lists the files on the ESP that the retirement removes. Every file under a staged name
+// goes, also one that is no UKI of the image: the slot it would boot is retired.
+func (n *Node) retiring(entries []esp.Entry, imageID string, booted esp.Entry, running []byte) ([]string, error) {
 	remove, err := esp.Unnamed(n.ESP, "")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for _, e := range entries {
 		if retired(e, imageID, booted, running) {
 			remove = append(remove, e.File)
 		}
+	}
+	return remove, nil
+}
+
+// fitsESP refuses an image whose UKI the ESP has no room for once the retirement removed its
+// files, before the retirement removes the image the node could roll back to. A node's ESP keeps
+// the size its install laid out, which a later image's UKI may outgrow.
+func (n *Node) fitsESP(entries []esp.Entry, h Header, booted esp.Entry, running []byte) error {
+	remove, err := n.retiring(entries, h.ImageID, booted, running)
+	if err != nil {
+		return err
+	}
+	spaceOf := n.ESPSpace
+	if spaceOf == nil {
+		spaceOf = esp.SpaceOf
+	}
+	space, err := spaceOf(n.ESP)
+	if err != nil {
+		return err
+	}
+	if err := esp.Fits(n.ESP, space, h.UKI.Size, remove); err != nil {
+		return refused(err)
+	}
+	return nil
+}
+
+// retire removes every UKI of the image but those booting the running store, along with UKIs an
+// upgrade left half written and the staged one, and then makes the inactive slot one nothing
+// finds.
+func (n *Node) retire(ctx context.Context, entries []esp.Entry, imageID string, booted esp.Entry, running []byte, slot storeslot.Slot) error {
+	remove, err := n.retiring(entries, imageID, booted, running)
+	if err != nil {
+		return err
 	}
 	if err := esp.Remove(n.ESP, remove, n.Change); err != nil {
 		return err

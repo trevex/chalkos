@@ -32,6 +32,15 @@ func (i *Installer) writeUKI(ctx context.Context, espPart gpt.Partition, h upgra
 		if err != nil {
 			return err
 		}
+		// The UKIs of an earlier install go once the new one is written, so only a half-written one
+		// of the same image, which the new one replaces, frees space for it.
+		space, err := esp.SpaceOf(dir)
+		if err != nil {
+			return err
+		}
+		if err := esp.Fits(dir, space, h.UKI.Size, []string{filepath.Base(tmp)}); err != nil {
+			return err
+		}
 		if loader, err = i.receiveUKI(tmp, h, parts); err == nil {
 			system, err = upgrade.UKISystem(tmp)
 		}

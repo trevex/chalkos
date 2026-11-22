@@ -182,3 +182,41 @@ func call(change func(string) error, what string) error {
 	}
 	return change(what)
 }
+
+// Space is a filesystem's free space: its free bytes and its block size.
+type Space struct{ Free, Block int64 }
+
+// SpaceOf reads the free space of the filesystem dir is on.
+func SpaceOf(dir string) (Space, error) {
+	var st unix.Statfs_t
+	if err := unix.Statfs(dir, &st); err != nil {
+		return Space{}, fmt.Errorf("read the free space of the ESP: %w", err)
+	}
+	return Space{Free: int64(st.Bavail) * st.Bsize, Block: st.Bsize}, nil
+}
+
+// Fits refuses a UKI of size bytes that the ESP mounted at dir, with space free, has no room for
+// once the UKIs named remove are gone. Files take whole blocks.
+func Fits(dir string, space Space, size int64, remove []string) error {
+	blocks := func(n int64) int64 {
+		if space.Block <= 0 {
+			return n
+		}
+		return (n + space.Block - 1) / space.Block * space.Block
+	}
+	free := space.Free
+	for _, name := range remove {
+		fi, err := os.Stat(filepath.Join(dir, LinuxDir, name))
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		free += blocks(fi.Size())
+	}
+	if free < blocks(size) {
+		return fmt.Errorf("the ESP has %d bytes free, and the UKI of %d bytes needs more", free, size)
+	}
+	return nil
+}
