@@ -137,7 +137,7 @@ against `SHA256SUMS`:
 
 <!-- x-release-please-start-version -->
 ```sh
-release=https://github.com/trevex/chalkos/releases/download/v0.7.0
+release=https://github.com/trevex/chalkos/releases/download/v0.7.1
 curl -fL -O "$release/chalkctl-linux-amd64" -O "$release/chalkctl-linux-amd64.sigstore.json" \
   -O "$release/SHA256SUMS" -O "$release/SHA256SUMS.sigstore.json"
 sha256sum --check --ignore-missing SHA256SUMS
@@ -231,7 +231,7 @@ and check it as you would chalkctl:
 
 <!-- x-release-please-start-version -->
 ```sh
-release=https://github.com/trevex/chalkos/releases/download/v0.7.0
+release=https://github.com/trevex/chalkos/releases/download/v0.7.1
 curl -fL -O "$release/router-metal.spdx.json" -O "$release/router-metal.spdx.json.sigstore.json" \
   -O "$release/SHA256SUMS" -O "$release/SHA256SUMS.sigstore.json"
 sha256sum --check --ignore-missing SHA256SUMS
