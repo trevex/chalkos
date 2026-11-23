@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.1](https://github.com/trevex/chalkos/compare/v0.7.0...v0.7.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* **client:** name the node when its own deadline ends the call first ([#149](https://github.com/trevex/chalkos/issues/149)) ([5ca6340](https://github.com/trevex/chalkos/commit/5ca6340ea51ef49f47808f657d33883fbfcaad29))
+
+
+### Dependencies
+
+* update the flake inputs ([#148](https://github.com/trevex/chalkos/issues/148)) ([6a55c8d](https://github.com/trevex/chalkos/commit/6a55c8dddace51127a9515f2a3358dc82f626f8b))
+
 ## [0.7.0](https://github.com/trevex/chalkos/compare/v0.6.0...v0.7.0) (2026-11-22)
 
 
