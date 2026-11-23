@@ -26,14 +26,24 @@ func (silentHandler) Status(ctx context.Context, _ *nodev1.StatusRequest) (*node
 	return nil, ctx.Err()
 }
 
-func serveSilent(t *testing.T) string {
+// earlyHandler answers every Status call at once as the node does when its deadline, the call's
+// rounded down to whole milliseconds, ends before the caller's.
+type earlyHandler struct {
+	nodev1connect.UnimplementedNodeServiceHandler
+}
+
+func (earlyHandler) Status(context.Context, *nodev1.StatusRequest) (*nodev1.StatusResponse, error) {
+	return nil, connect.NewError(connect.CodeDeadlineExceeded, context.DeadlineExceeded.Error())
+}
+
+func serveNode(t *testing.T, handler nodev1connect.NodeServiceHandler) string {
 	t.Helper()
 	self, err := pki.SelfSigned("chalkd", time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := connect.NewServer()
-	nodev1connect.RegisterNodeServiceHandler(server, silentHandler{})
+	nodev1connect.RegisterNodeServiceHandler(server, handler)
 	mux := http.NewServeMux()
 	connecthttp.Mount(mux, server)
 	srv := httptest.NewUnstartedServer(mux)
@@ -50,7 +60,7 @@ func serveSilent(t *testing.T) string {
 
 // A unary call to a node that never answers fails at the call timeout, naming the node.
 func TestCallWithoutAnswerEndsAtTheCallTimeout(t *testing.T) {
-	addr := serveSilent(t)
+	addr := serveNode(t, silentHandler{})
 	c, err := Dial(addr, Options{Verify: AnyCertificate()})
 	if err != nil {
 		t.Fatal(err)
@@ -65,7 +75,7 @@ func TestCallWithoutAnswerEndsAtTheCallTimeout(t *testing.T) {
 
 // A call's own deadline and an Unbounded context replace the call timeout.
 func TestCallTimeoutGivesWay(t *testing.T) {
-	addr := serveSilent(t)
+	addr := serveNode(t, silentHandler{})
 	c, err := Dial(addr, Options{Verify: AnyCertificate()})
 	if err != nil {
 		t.Fatal(err)
@@ -86,5 +96,21 @@ func TestCallTimeoutGivesWay(t *testing.T) {
 	}
 	if minutes(CallTimeout) != "2m" {
 		t.Errorf("CallTimeout reads %s", minutes(CallTimeout))
+	}
+}
+
+// The node's deadline_exceeded, arriving before the call timeout ends the call's own context, still
+// names the node as not answering.
+func TestNodesDeadlineNamesTheNode(t *testing.T) {
+	addr := serveNode(t, earlyHandler{})
+	c, err := Dial(addr, Options{Verify: AnyCertificate()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	c.callTimeout = time.Minute
+	_, err = c.Status(context.Background(), &nodev1.StatusRequest{})
+	if connect.CodeOf(err) != connect.CodeDeadlineExceeded || err.Error() != "deadline_exceeded: chalkd on "+addr+" did not answer within 1m" {
+		t.Errorf("err = %v, want the node named as not answering", err)
 	}
 }
