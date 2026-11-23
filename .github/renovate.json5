@@ -13,7 +13,7 @@
   timezone: 'Europe/Berlin',
   schedule: ['before 6am on monday'],
   prHourlyLimit: 0,
-  dependencyDashboard: true,
+  dependencyDashboard: { enabled: true },
   labels: ['dependencies'],
   semanticCommits: 'enabled',
   // deps is release-please's patch-releasing type: an update of what chalkos ships
