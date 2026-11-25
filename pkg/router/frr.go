@@ -13,16 +13,27 @@ import (
 	"strings"
 )
 
-// The vtysh commands whose JSON the parsers read.
-const (
-	// RoutesCommand is the command of the default VRF's paths of a family, ipv4 or ipv6.
-	RoutesCommand = "show bgp %s unicast detail json"
-	// VRFRoutesCommand is the command of a VRF's paths of a family: the VRF's name, then ipv4 or
-	// ipv6.
-	VRFRoutesCommand = "show bgp vrf %s %s unicast detail json"
-)
+// RoutesCommand is the vtysh command of the paths of a family, ipv4 or ipv6, of the VRF of the
+// name, or of the default VRF for an empty one. With a valid prefix, it asks for the paths within
+// it alone, so a router with a full table answers a narrow request at once:
+//
+//	show bgp [vrf <name>] <family> unicast detail json
+//	show bgp [vrf <name>] <family> unicast <prefix> longer-prefixes json detail
+//
+// Both print the paths alike. FRR takes detail for detail-routes in the first.
+func RoutesCommand(vrf, family string, prefix netip.Prefix) string {
+	command := "show bgp "
+	if vrf != "" {
+		command += "vrf " + vrf + " "
+	}
+	command += family + " unicast "
+	if prefix.IsValid() {
+		return command + prefix.String() + " longer-prefixes json detail"
+	}
+	return command + "detail json"
+}
 
-// path is a path as show bgp [vrf <name>] <family> unicast detail json prints it.
+// path is a path as RoutesCommand's commands print it.
 type path struct {
 	// ImportedFrom is set for a path the instance imports from another VRF's, whose name
 	// NHVRFName holds.
@@ -59,9 +70,9 @@ type path struct {
 	} `json:"largeCommunity"`
 }
 
-// ParseRoutes reads the paths of show bgp [vrf <name>] <family> unicast detail json into the
-// routes BGP selected: the best path of each prefix and the equal paths installed beside it, by
-// prefix. FRR prints a warning and no routes without a BGP instance.
+// ParseRoutes reads the paths RoutesCommand's commands print into the routes BGP selected: the
+// best path of each prefix and the equal paths installed beside it, by prefix. FRR prints a
+// warning and no routes without a BGP instance.
 func ParseRoutes(data []byte) ([]*BGPRoute, error) {
 	if len(bytes.TrimSpace(data)) == 0 {
 		return nil, errors.New("bgpd did not answer")

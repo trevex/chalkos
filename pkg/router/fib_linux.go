@@ -10,11 +10,13 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// KernelRoutes lists the routes of every table, both families, by table, family and destination.
+// KernelRoutes lists the routes the filter keeps, by table, family and destination, at most limit
+// of them, or all with a limit of 0. It asks the kernel for the filter's families alone and drops
+// the routes the filter does not keep as it reads them.
 // zebra installs routes with nexthop objects, whose next hops the kernel adds to the dump while
 // net.ipv4.nexthop_compat_mode is 1, its default; RTA_NH_ID is not resolved here. A dump the kernel
 // interrupts because the routes changed is listed as it came.
-func KernelRoutes() ([]*KernelRoute, error) {
+func KernelRoutes(f Filter, limit int) ([]*KernelRoute, error) {
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return nil, fmt.Errorf("list the node's interfaces: %w", err)
@@ -24,22 +26,28 @@ func KernelRoutes() ([]*KernelRoute, error) {
 		names[i.Index] = i.Name
 	}
 	var routes []*KernelRoute
-	for _, family := range []int{netlink.FAMILY_V4, netlink.FAMILY_V6} {
+	families := map[string]int{"ipv4": netlink.FAMILY_V4, "ipv6": netlink.FAMILY_V6}
+	for _, name := range f.Families() {
 		var convErr error
-		err := netlink.RouteListFilteredIter(family, &netlink.Route{Table: unix.RT_TABLE_UNSPEC}, netlink.RT_FILTER_TABLE, func(r netlink.Route) bool {
+		err := netlink.RouteListFilteredIter(families[name], &netlink.Route{Table: unix.RT_TABLE_UNSPEC}, netlink.RT_FILTER_TABLE, func(r netlink.Route) bool {
 			k, err := kernelRoute(r, names)
 			if err != nil {
 				convErr = err
 				return false
 			}
-			routes = append(routes, k)
-			return true
+			if f.Keeps(k) {
+				routes = append(routes, k)
+			}
+			return limit == 0 || len(routes) < limit
 		})
 		if err != nil && !errors.Is(err, netlink.ErrDumpInterrupted) {
 			return nil, fmt.Errorf("list the node's routes: %w", err)
 		}
 		if convErr != nil {
 			return nil, convErr
+		}
+		if limit != 0 && len(routes) >= limit {
+			break
 		}
 	}
 	sortKernel(routes)

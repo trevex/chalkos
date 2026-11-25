@@ -43,7 +43,7 @@ func routerNode(t *testing.T, kernel ...*routing.KernelRoute) (*Plugin, *tooltes
 	r := &tooltest.Runner{}
 	vrfs, resolvers := t.TempDir(), t.TempDir()
 	touch(t, filepath.Join(vrfs, "tenant.json"), `{"apiVersion": "router.chalkos.dev/v1alpha1", "kind": "VRF", "metadata": {"name": "tenant"}, "spec": {"table": 100, "interfaces": ["swp1"]}}`+"\n")
-	return New(runnerNode{run: r}, Options{KernelRoutes: func() ([]*routing.KernelRoute, error) { return kernel, nil }, FRRConfig: frrLink(t), ResolverConfig: filepath.Join(t.TempDir(), "unbound.conf"), NAT64Dir: t.TempDir(), VRFDir: vrfs, ResolverDir: resolvers, KeaDir: t.TempDir(), RelayDir: t.TempDir(), PDDir: t.TempDir(), RunDir: t.TempDir(), NetDir: t.TempDir()}), r
+	return New(runnerNode{run: r}, Options{KernelRoutes: func(f routing.Filter, _ int) ([]*routing.KernelRoute, error) { return f.Kernel(kernel), nil }, FRRConfig: frrLink(t), ResolverConfig: filepath.Join(t.TempDir(), "unbound.conf"), NAT64Dir: t.TempDir(), VRFDir: vrfs, ResolverDir: resolvers, KeaDir: t.TempDir(), RelayDir: t.TempDir(), PDDir: t.TempDir(), RunDir: t.TempDir(), NetDir: t.TempDir()}), r
 }
 
 // frrLink is FRR's config link of an image with BGP, to a config FRR has not filled in, as
@@ -634,5 +634,42 @@ func TestEnded(t *testing.T) {
 		if got != c.want {
 			t.Errorf("ended(%v, %v, %v) = %q, want %q", c.ctx.Err(), c.budget.Err(), c.err, got, c.want)
 		}
+	}
+}
+
+// TestRoutesOfAPrefix asks vtysh for the paths within a VRF's prefix in its family alone.
+func TestRoutesOfAPrefix(t *testing.T) {
+	p, r := routerNode(t, &routing.KernelRoute{Destination: "2001:db8:ffff::2/128", Type: "unicast", Protocol: "bgp", Table: 100, Metric: 20})
+	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "vtysh -c show bgp vrf tenant ipv6 unicast 2001:db8::/32 longer-prefixes json detail", Out: routerRecording(t, "ipv6-detail-imported.json")})
+	got, err := p.Routes(context.Background(), &routerv1.RoutesRequest{Vrf: "tenant", Prefix: "2001:db8::1/32"})
+	if err != nil || len(got.Kernel) != 1 || got.Truncated {
+		t.Fatalf("routes within 2001:db8::/32 = %v, %v", got, err)
+	}
+	if want := []string{"vtysh -c show bgp vrf tenant ipv6 unicast 2001:db8::/32 longer-prefixes json detail"}; !slices.Equal(r.Calls, want) {
+		t.Errorf("asked %v, want %v", r.Calls, want)
+	}
+}
+
+// TestRoutesTruncated answers at most maxRoutes kernel routes and BGP paths, and says it cut them.
+func TestRoutesTruncated(t *testing.T) {
+	var kernel []*routing.KernelRoute
+	paths := map[string]any{}
+	for i := range maxRoutes + 1 {
+		prefix := fmt.Sprintf("10.%d.%d.0/24", i/256, i%256)
+		kernel = append(kernel, &routing.KernelRoute{Destination: prefix, Type: "unicast", Protocol: "bgp", Table: 254})
+		paths[prefix] = []any{map[string]any{"valid": true, "bestpath": map[string]any{"overall": true}}}
+	}
+	table, err := json.Marshal(map[string]any{"routes": paths})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, r := routerNode(t, kernel...)
+	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "vtysh -c show bgp ipv4 unicast 10.0.0.0/8 longer-prefixes json detail", Out: string(table)})
+	got, err := p.Routes(context.Background(), &routerv1.RoutesRequest{Prefix: "10.0.0.0/8"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Kernel) != maxRoutes || len(got.Bgp) != maxRoutes || !got.Truncated || got.BgpError != "" {
+		t.Errorf("%d kernel routes, %d BGP paths, truncated %v, %q; want %d each, truncated", len(got.Kernel), len(got.Bgp), got.Truncated, got.BgpError, maxRoutes)
 	}
 }

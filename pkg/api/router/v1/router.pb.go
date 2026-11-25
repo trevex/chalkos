@@ -713,7 +713,10 @@ type RoutesResponse struct {
 	// The VRF whose routes these are: the request's vrf, or default for a request without one. A
 	// node whose image does not know VRFs leaves it empty and lists the main table and the default
 	// instance's paths, whatever the request's vrf.
-	Vrf           string `protobuf:"bytes,4,opt,name=vrf,proto3" json:"vrf,omitempty"`
+	Vrf string `protobuf:"bytes,4,opt,name=vrf,proto3" json:"vrf,omitempty"`
+	// Set when the kernel's routes or BGP's paths were more than 10,000 and the list holds the
+	// first 10,000 of them; a narrower prefix lists them whole.
+	Truncated     bool `protobuf:"varint,5,opt,name=truncated,proto3" json:"truncated,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -774,6 +777,13 @@ func (x *RoutesResponse) GetVrf() string {
 		return x.Vrf
 	}
 	return ""
+}
+
+func (x *RoutesResponse) GetTruncated() bool {
+	if x != nil {
+		return x.Truncated
+	}
+	return false
 }
 
 // A route in the kernel's routing tables.
@@ -1107,12 +1117,13 @@ const file_chalkos_router_v1_router_proto_rawDesc = "" +
 	"\x06prefix\x18\x01 \x01(\tR\x06prefix\x12\x1a\n" +
 	"\bprotocol\x18\x02 \x01(\tR\bprotocol\x12\x14\n" +
 	"\x05table\x18\x03 \x01(\tR\x05table\x12\x10\n" +
-	"\x03vrf\x18\x04 \x01(\tR\x03vrf\"\xa6\x01\n" +
+	"\x03vrf\x18\x04 \x01(\tR\x03vrf\"\xc4\x01\n" +
 	"\x0eRoutesResponse\x126\n" +
 	"\x06kernel\x18\x01 \x03(\v2\x1e.chalkos.router.v1.KernelRouteR\x06kernel\x12-\n" +
 	"\x03bgp\x18\x02 \x03(\v2\x1b.chalkos.router.v1.BGPRouteR\x03bgp\x12\x1b\n" +
 	"\tbgp_error\x18\x03 \x01(\tR\bbgpError\x12\x10\n" +
-	"\x03vrf\x18\x04 \x01(\tR\x03vrf\"\xc6\x01\n" +
+	"\x03vrf\x18\x04 \x01(\tR\x03vrf\x12\x1c\n" +
+	"\ttruncated\x18\x05 \x01(\bR\ttruncated\"\xc6\x01\n" +
 	"\vKernelRoute\x12 \n" +
 	"\vdestination\x18\x01 \x01(\tR\vdestination\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12\x1a\n" +

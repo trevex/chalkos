@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -207,15 +206,17 @@ func (p *Plugin) dhcp6Routes(ctx context.Context, now time.Time) error {
 	} else if err != nil {
 		return err
 	}
-	kernel, err := p.KernelRoutes()
+	// Only IPv6 routes are of delegated prefixes, in the table of any VRF.
+	pd, err := routing.NewFilter("::/0", "dhcp-pd", "all")
+	if err != nil {
+		return err
+	}
+	kernel, err := p.KernelRoutes(pd, 0)
 	if err != nil {
 		return err
 	}
 	for _, k := range kernel {
-		// Only IPv6 routes are of delegated prefixes, and one of several next hops is of none.
-		if k.Protocol != "dhcp-pd" || !strings.Contains(k.Destination, ":") {
-			continue
-		}
+		// A route of several next hops is of no delegated prefix.
 		kept := truncated
 		for _, rt := range routes {
 			kept = kept || (len(k.NextHops) == 1 && rt.Prefix.String() == k.Destination &&

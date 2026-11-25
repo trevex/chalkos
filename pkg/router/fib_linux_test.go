@@ -22,20 +22,24 @@ func describeKernel(rs []*KernelRoute) []string {
 	return out
 }
 
-// mainRoutes lists the kernel's routes of the main table.
-func mainRoutes(t *testing.T) []string {
+// kernelRoutes lists the kernel's routes that a filter of the prefix, protocol and table keeps.
+func kernelRoutes(t *testing.T, prefix, protocol, table string, limit int) []string {
 	t.Helper()
-	routes, err := KernelRoutes()
+	f, err := NewFilter(prefix, protocol, table)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var main []string
-	for _, r := range describeKernel(routes) {
-		if strings.Contains(r, " table=254 ") {
-			main = append(main, r)
-		}
+	routes, err := KernelRoutes(f, limit)
+	if err != nil {
+		t.Fatal(err)
 	}
-	return main
+	return describeKernel(routes)
+}
+
+// mainRoutes lists the kernel's routes of the main table.
+func mainRoutes(t *testing.T) []string {
+	t.Helper()
+	return kernelRoutes(t, "", "", "", 0)
 }
 
 // The kernel's routes as zebra installs them for an unnumbered fabric: the default route and an
@@ -86,12 +90,15 @@ func TestKernelRoutesOfNamespace(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Errorf("routes:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
-	routes, err := KernelRoutes()
-	if err != nil {
-		t.Fatal(err)
+	if want, got := "198.51.100.0/24 unicast static table=1000 metric=0 192.0.2.254@eth1/0", kernelRoutes(t, "", "", "all", 0); !slices.Contains(got, want) {
+		t.Errorf("no route %q in %v", want, got)
 	}
-	if want := "198.51.100.0/24 unicast static table=1000 metric=0 192.0.2.254@eth1/0"; !slices.Contains(describeKernel(routes), want) {
-		t.Errorf("no route %q in %v", want, describeKernel(routes))
+	// A prefix keeps its family's routes within it, and a limit stops the dump.
+	if got, want := kernelRoutes(t, "2001:db8::/32", "", "", 0), want[4:]; !slices.Equal(got, want) {
+		t.Errorf("routes within 2001:db8::/32: %v, want %v", got, want)
+	}
+	if got := kernelRoutes(t, "", "bgp", "", 2); len(got) != 2 {
+		t.Errorf("routes up to 2: %v", got)
 	}
 
 	if err := os.WriteFile("/proc/sys/net/ipv4/nexthop_compat_mode", []byte("0"), 0o644); err != nil {
@@ -106,13 +113,9 @@ func TestKernelRoutesOfNamespace(t *testing.T) {
 
 // The node's own routes come from netlink: every network namespace has its loopback's.
 func TestKernelRoutes(t *testing.T) {
-	routes, err := KernelRoutes()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !slices.ContainsFunc(routes, func(r *KernelRoute) bool {
-		return r.Destination == "127.0.0.1/32" && r.Type == "local" && r.Table == 255
+	if routes := kernelRoutes(t, "127.0.0.0/8", "", "local", 0); !slices.ContainsFunc(routes, func(r string) bool {
+		return strings.HasPrefix(r, "127.0.0.1/32 local ")
 	}) {
-		t.Errorf("no local route of 127.0.0.1 in %v", describeKernel(routes))
+		t.Errorf("no local route of 127.0.0.1 in %v", routes)
 	}
 }

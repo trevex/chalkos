@@ -36,8 +36,9 @@ import (
 // Options set up the router layer; zero fields mean chalkd's own. The output directories hold
 // one config per VRF, as package services names them.
 type Options struct {
-	// KernelRoutes lists the kernel's routes; nil reads them through netlink.
-	KernelRoutes func() ([]*routing.KernelRoute, error)
+	// KernelRoutes lists the kernel's routes the filter keeps, at most limit of them or all with a
+	// limit of 0; nil reads them through netlink.
+	KernelRoutes func(f routing.Filter, limit int) ([]*routing.KernelRoute, error)
 	// FRRConfig is the link to the config frr.service fills in, which images with BGP carry
 	// whether FRR runs or not; chalkd asks FRR nothing without it. Default /etc/frr/frr.conf.
 	FRRConfig string
@@ -472,7 +473,8 @@ func (p *Plugin) dhcpRelays(ctx context.Context) []*routerv1.DHCPRelayStatus {
 
 func (p *Plugin) Routes(ctx context.Context, req *routerv1.RoutesRequest) (*routerv1.RoutesResponse, error) {
 	// The request's strings reach no command: the filter parses them, a VRF's name passes its
-	// pattern and names a running VRF document, and vtysh is asked for whole families alone.
+	// pattern and names a running VRF document, and vtysh is asked for whole families, or for the
+	// paths within the prefix the filter parsed.
 	table, vrf := req.Table, req.Vrf
 	if vrf != "" && table != "" {
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "give a VRF or a table, not both: a VRF's routes are those of its table")
@@ -489,21 +491,25 @@ func (p *Plugin) Routes(ctx context.Context, req *routerv1.RoutesRequest) (*rout
 	if err != nil {
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "%w", err)
 	}
-	kernel, err := p.KernelRoutes()
+	// One more than the cap tells whether the list was cut.
+	kernel, err := p.KernelRoutes(f, maxRoutes+1)
 	if err != nil {
 		return nil, err
 	}
 	resp := &routerv1.RoutesResponse{Vrf: cmp.Or(vrf, derive.DefaultVRF)}
-	for _, r := range f.Kernel(kernel) {
+	if len(kernel) > maxRoutes {
+		kernel, resp.Truncated = kernel[:maxRoutes], true
+	}
+	for _, r := range kernel {
 		resp.Kernel = append(resp.Kernel, kernelRoute(r))
 	}
 	if f.WantsBGP() && p.hasBGP() {
-		for _, family := range []string{"ipv4", "ipv6"} {
-			command := fmt.Sprintf(routing.RoutesCommand, family)
-			if named {
-				command = fmt.Sprintf(routing.VRFRoutesCommand, vrf, family)
-			}
-			out, err := frrstatus.Query(ctx, p.run, command)
+		instance := ""
+		if named {
+			instance = vrf
+		}
+		for _, family := range f.Families() {
+			out, err := frrstatus.Query(ctx, p.run, routing.RoutesCommand(instance, family, f.Prefix()))
 			var routes []*routing.BGPRoute
 			if err == nil {
 				routes, err = routing.ParseRoutes(out)
@@ -513,12 +519,19 @@ func (p *Plugin) Routes(ctx context.Context, req *routerv1.RoutesRequest) (*rout
 				break
 			}
 			for _, r := range f.BGP(routes) {
+				if len(resp.Bgp) == maxRoutes {
+					resp.Truncated = true
+					break
+				}
 				resp.Bgp = append(resp.Bgp, bgpRoute(r))
 			}
 		}
 	}
 	return resp, nil
 }
+
+// maxRoutes is the most kernel routes, and the most BGP paths, Routes answers.
+const maxRoutes = 10000
 
 // defaultVRFDir holds the running VRF documents, as chalkd writes the node's config for its
 // services.

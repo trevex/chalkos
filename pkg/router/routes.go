@@ -95,16 +95,36 @@ func (f Filter) within(d string) bool {
 	return err == nil && p.Addr().Is4() == f.prefix.Addr().Is4() && p.Bits() >= f.prefix.Bits() && f.prefix.Contains(p.Addr())
 }
 
+// Keeps reports whether the filter keeps the kernel route.
+func (f Filter) Keeps(r *KernelRoute) bool {
+	return (f.allTables || r.Table == f.table) && (f.protocol == "" || r.Protocol == f.protocol) && f.within(r.Destination)
+}
+
 // Kernel keeps the kernel routes the filter keeps.
 func (f Filter) Kernel(routes []*KernelRoute) []*KernelRoute {
 	var kept []*KernelRoute
 	for _, r := range routes {
-		if (f.allTables || r.Table == f.table) && (f.protocol == "" || r.Protocol == f.protocol) && f.within(r.Destination) {
+		if f.Keeps(r) {
 			kept = append(kept, r)
 		}
 	}
 	return kept
 }
+
+// Families are the address families, ipv4 and ipv6, of the routes the filter keeps: the prefix's
+// alone, or both.
+func (f Filter) Families() []string {
+	switch {
+	case !f.prefix.IsValid():
+		return []string{"ipv4", "ipv6"}
+	case f.prefix.Addr().Is4():
+		return []string{"ipv4"}
+	}
+	return []string{"ipv6"}
+}
+
+// Prefix is the address range whose routes the filter keeps; invalid for every one.
+func (f Filter) Prefix() netip.Prefix { return f.prefix }
 
 // WantsBGP reports whether the filter keeps BGP's paths: for the protocol bgp, or for any.
 func (f Filter) WantsBGP() bool {

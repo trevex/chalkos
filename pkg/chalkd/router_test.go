@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -30,7 +31,7 @@ func routerServer(t *testing.T, kernel ...*router.KernelRoute) (*Server, *toolte
 	if err := os.Symlink(filepath.Join(t.TempDir(), "frr.conf"), frr); err != nil {
 		t.Fatal(err)
 	}
-	s.Plugins = chalkdtest.Plugins(t, s, layers.Of(layers.Router), routerplugin.New(s, routerplugin.Options{KernelRoutes: func() ([]*router.KernelRoute, error) { return kernel, nil }, FRRConfig: frr, ResolverConfig: filepath.Join(t.TempDir(), "unbound.conf"), NAT64Dir: t.TempDir()}))
+	s.Plugins = chalkdtest.Plugins(t, s, layers.Of(layers.Router), routerplugin.New(s, routerplugin.Options{KernelRoutes: func(f router.Filter, _ int) ([]*router.KernelRoute, error) { return f.Kernel(kernel), nil }, FRRConfig: frr, ResolverConfig: filepath.Join(t.TempDir(), "unbound.conf"), NAT64Dir: t.TempDir()}))
 	return s, r
 }
 
@@ -55,7 +56,8 @@ func TestRoutes(t *testing.T) {
 	)
 	r.Rules = append(r.Rules,
 		tooltest.Rule{Prefix: "vtysh -c show bgp ipv4 unicast detail json", Out: routerRecording(t, "ipv4-detail.json"), Times: 2},
-		tooltest.Rule{Prefix: "vtysh -c show bgp ipv6 unicast detail json", Out: routerRecording(t, "ipv6-detail.json"), Times: 2},
+		tooltest.Rule{Prefix: "vtysh -c show bgp ipv6 unicast detail json", Out: routerRecording(t, "ipv6-detail.json"), Times: 1},
+		tooltest.Rule{Prefix: "vtysh -c show bgp ipv6 unicast ::/0 longer-prefixes json detail", Out: routerRecording(t, "ipv6-detail.json"), Times: 1},
 	)
 	c := newCreds(t)
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleReader])
@@ -73,12 +75,17 @@ func TestRoutes(t *testing.T) {
 	if len(resp.Kernel) != 3 || len(resp.Bgp) != 7 || resp.BgpError != "" {
 		t.Errorf("all routes: %d kernel, %d BGP, %q", len(resp.Kernel), len(resp.Bgp), resp.BgpError)
 	}
+	// A prefix asks for its family's paths within it alone.
+	r.ResetCalls()
 	resp, err = routes("::/0", "bgp", "main")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(resp.Kernel) != 1 || resp.Kernel[0].Destination != "::/0" || len(resp.Bgp) != 5 || resp.Bgp[0].Prefix != "::/0" || !resp.Bgp[0].Best {
 		t.Errorf("the IPv6 BGP routes: %v, %v", resp.Kernel, resp.Bgp)
+	}
+	if want := []string{"vtysh -c show bgp ipv6 unicast ::/0 longer-prefixes json detail"}; !slices.Equal(r.Calls, want) {
+		t.Errorf("asked %v for ::/0, want %v", r.Calls, want)
 	}
 	resp, err = routes("", "boot", "")
 	if err != nil {
