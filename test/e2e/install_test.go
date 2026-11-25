@@ -39,6 +39,8 @@ func TestInstallInPlace(t *testing.T) {
 	extra := lab.VMDisk{Path: extraPath, Serial: "chalk-extra"}
 	n := startNode(t, lab.VMConfig{Dir: dir, FirmwareVars: os.Getenv("CHALKLAB_OVMF_VARS"), Disks: []lab.VMDisk{system, extra}})
 	assertFacts(t, readFacts(t, n.vm, 5*time.Minute), consoleFacts)
+	// The facts come from a unit of their own, which may finish before chalkd listens.
+	waitForChalkd(t, n, time.Minute)
 
 	// The image carries the OS CA, so even in maintenance mode a client needs its certificate.
 	anonymous, err := client.Dial(n.addr, client.Options{Verify: client.AnyCertificate()})
