@@ -214,6 +214,12 @@ func TestDrainRefusals(t *testing.T) {
 	if _, err := l.drain(0); layer.CodeOf(err) != connect.CodeNotFound {
 		t.Errorf("draining an unknown node: %v", err)
 	}
+	if _, err := l.s.DrainNode(context.Background(), &kubernetesv1.DrainNodeRequest{}); layer.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("draining without a node name: %v", err)
+	}
+	if _, err := l.s.UncordonNode(context.Background(), &kubernetesv1.UncordonNodeRequest{}); layer.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("uncordoning without a node name: %v", err)
+	}
 	s, _ := kubernetesNode(t, k8s.KindWorker, true)
 	if _, err := s.DrainNode(context.Background(), &kubernetesv1.DrainNodeRequest{Node: "w1"}); layer.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Errorf("draining through a worker: %v", err)

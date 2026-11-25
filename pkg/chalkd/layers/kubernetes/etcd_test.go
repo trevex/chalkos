@@ -14,7 +14,10 @@ import (
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connectproto"
+	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
 	"golang.org/x/sys/unix"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
@@ -557,4 +560,25 @@ func closedAfterWriting(t *testing.T, path string) <-chan error {
 		closed <- err
 	}()
 	return closed
+}
+
+// TestRemoveErrorCodes: etcd that does not answer in time makes chalkctl ask another member,
+// and one that refuses does not.
+func TestRemoveErrorCodes(t *testing.T) {
+	for _, c := range []struct {
+		err  error
+		want connect.Code
+	}{
+		{fmt.Errorf("remove the member 1: %w", context.DeadlineExceeded), connect.CodeUnavailable},
+		{context.Canceled, connect.CodeUnavailable},
+		{status.Error(codes.Unavailable, "no connection"), connect.CodeUnavailable},
+		{fmt.Errorf("remove the member 1: %w", status.Error(codes.DeadlineExceeded, "too slow")), connect.CodeUnavailable},
+		{rpctypes.ErrUnhealthy, connect.CodeUnavailable},
+		{rpctypes.ErrMemberNotFound, connect.CodeFailedPrecondition},
+		{&etcd.QuorumError{Voters: 2, Healthy: 1, Quorum: 2}, connect.CodeFailedPrecondition},
+	} {
+		if got := layer.CodeOf(removeError(c.err)); got != c.want {
+			t.Errorf("removeError(%v) has code %v, want %v", c.err, got, c.want)
+		}
+	}
 }

@@ -12,6 +12,9 @@ import (
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connectproto"
+	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
@@ -184,10 +187,24 @@ func (p *Plugin) EtcdRemoveMember(ctx context.Context, req *kubernetesv1.EtcdRem
 		return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w; pass --force to remove it anyway", err)
 	}
 	if err != nil {
-		return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
+		return nil, removeError(err)
 	}
 	log.Printf("kubernetes: removed the etcd member %s", m)
 	return &kubernetesv1.EtcdRemoveMemberResponse{Removed: memberMessage(m, nil)}, nil
+}
+
+// removeError gives a failed removal of a member its code: etcd that does not answer, or not in
+// time, is UNAVAILABLE, so chalkctl asks another member; etcd that refuses is FAILED_PRECONDITION.
+func removeError(err error) error {
+	code := status.Code(err)
+	if e, ok := errors.AsType[rpctypes.EtcdError](err); ok {
+		code = e.Code()
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) ||
+		code == codes.Unavailable || code == codes.DeadlineExceeded {
+		return layer.Errorf(connect.CodeUnavailable, "%w", err)
+	}
+	return layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
 }
 
 // ownMember finds the node's member among the members with etcd.Self, at the peer URL of the
@@ -333,7 +350,7 @@ func (k *side) leaveEtcd(ctx context.Context, cp controlPlaneNode, bootstrapped,
 		err = remover.Remove(rctx, self.ID, false)
 		cancel()
 		if err != nil {
-			return layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
+			return removeError(err)
 		}
 		log.Printf("kubernetes: removed this node's etcd member %s", self)
 	} else {
