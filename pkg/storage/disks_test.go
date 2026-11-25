@@ -237,7 +237,7 @@ func TestFindPinnedDisk(t *testing.T) {
 	if err != nil || !ok || d.Device != "/dev/sda" {
 		t.Errorf("Find(serial) = %v, %v, %v", d, ok, err)
 	}
-	d, ok, err = h.Find(Identity{Path: "pci-0000:00:05.0"})
+	d, ok, err = h.Find(Identity{Path: "pci-0000:00:05.0", Size: 2 << 30})
 	if err != nil || !ok || d.Device != "/dev/vdb" {
 		t.Errorf("Find(path) = %v, %v, %v", d, ok, err)
 	}
@@ -255,11 +255,17 @@ func TestIdentitySame(t *testing.T) {
 		{Identity{WWN: "w1"}, Identity{WWN: "w2"}, false},
 		{Identity{Serial: "s1", Model: "m"}, Identity{Serial: "s1", Model: "m", Path: "elsewhere"}, true},
 		{Identity{Serial: "s1", Model: "m"}, Identity{Serial: "s1", Model: "n"}, false},
-		{Identity{Path: "p"}, Identity{Path: "p"}, true},
+		{Identity{Path: "p", Size: 1}, Identity{Path: "p", Size: 1}, true},
 		{Identity{}, Identity{}, false},
 		// A pin made before udev reported the WWN still matches by serial.
 		{Identity{Serial: "s1", Model: "m"}, Identity{WWN: "w1", Serial: "s1", Model: "m"}, true},
-		{Identity{Path: "p"}, Identity{WWN: "w1", Serial: "s1", Path: "p"}, true},
+		{Identity{Path: "p", Size: 1}, Identity{WWN: "w1", Serial: "s1", Path: "p", Size: 1}, true},
+		// In the initrd udev may not know the identifiers yet: port and size still match.
+		{Identity{Serial: "s1", Model: "m", Path: "p", Size: 1}, Identity{Path: "p", Size: 1}, true},
+		{Identity{WWN: "w1", Path: "p", Size: 1}, Identity{Model: "m", Path: "p", Size: 1}, true},
+		// A blank replacement disk in the pinned disk's port differs in size or model.
+		{Identity{Serial: "s1", Model: "m", Path: "p", Size: 1}, Identity{Path: "p", Size: 2}, false},
+		{Identity{Serial: "s1", Model: "m", Path: "p", Size: 1}, Identity{Model: "n", Path: "p", Size: 1}, false},
 		{Identity{WWN: "w1", Serial: "s1", Model: "m"}, Identity{WWN: "w2", Serial: "s1", Model: "m"}, false},
 		// Neither identity has what identifies the other; a shared port proves nothing.
 		{Identity{WWN: "w1", Path: "p"}, Identity{Serial: "s1", Path: "p"}, false},

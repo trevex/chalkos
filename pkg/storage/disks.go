@@ -39,7 +39,9 @@ type Identity struct {
 // Same reports whether two identities describe the same physical disk, by the strongest
 // identifier both of them have. A disk whose udev entry gained a WWN after it was pinned is still
 // the pinned disk. The path only decides when one side has no WWN or serial at all: two disks
-// that each have a WWN or serial the other lacks share nothing that tells them apart.
+// that each have a WWN or serial the other lacks share nothing that tells them apart. A port alone
+// does not identify a replacement disk in the same bay, so the path also needs an equal size, and
+// an equal model when both report one.
 func (i Identity) Same(other Identity) bool {
 	switch {
 	case i.WWN != "" && other.WWN != "":
@@ -49,7 +51,8 @@ func (i Identity) Same(other Identity) bool {
 	case i.unique() && other.unique():
 		return false
 	default:
-		return i.Path != "" && i.Path == other.Path
+		return i.Path != "" && i.Path == other.Path && i.Size == other.Size &&
+			(i.Model == "" || other.Model == "" || i.Model == other.Model)
 	}
 }
 

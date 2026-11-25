@@ -98,9 +98,10 @@ A disk reference, `spec.disk` of a `SystemDisk` or a `Volume`, is a `path` below
 selector of `model` (a glob), `serial`, `wwn`, `size` (a comparison such as `>= 1T`) and `type`
 (`nvme`, `ssd` or `hdd`). A selector must match exactly one disk, so one that matches two is
 refused. A reference is resolved once, the first time the node sees it. The node pins the disk it
-found on STATE by its WWN, serial or udev path. Every later boot looks for the pinned disk, so
-device names that change between boots, or a new disk that also matches the selector, never move
-a volume.
+found on STATE by its WWN, serial or udev path. A disk found by its udev path alone must also have
+the pinned size, and the pinned model when it reports one. Every later boot looks for the pinned
+disk, so device names that change between boots, or a new disk that also matches the selector,
+never move a volume.
 
 A disk is taken only when it is provably unused: blkid finds nothing on it, or it carries a GPT
 whose partitions all have types of this disk's definitions. A disk with other data is refused
