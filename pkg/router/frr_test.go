@@ -22,6 +22,8 @@ func readTestdata(t *testing.T, name string) []byte {
 // router behind a fabric edge: the default route over both sessions, the best first, with its
 // local preference and communities, a network the router originates, and no path that lost.
 // The IPv4 paths carry an IPv6 next hop (RFC 8950) and an address peer's AS path and MED.
+// The same paths as show bgp ipv6 unicast ::/0 longer-prefixes json detail prints them, each
+// prefix an object with its paths in paths, as FRR 10.7.1 shapes that answer, read alike.
 func TestParseBGPRoutes(t *testing.T) {
 	if _, err := ParseRoutes(nil); err == nil || !strings.Contains(err.Error(), "bgpd did not answer") {
 		t.Errorf("err of no paths = %v", err)
@@ -42,6 +44,13 @@ func TestParseBGPRoutes(t *testing.T) {
 		want []string
 	}{
 		{"ipv6-detail.json", []string{
+			`::/0 best=true path="64512" peer="eth2" via=[fe80::e06b:dcff:fe54:f465] pref=200 med=0 comm=[64512:1 64512:1:2]`,
+			`::/0 best=false path="64512" peer="eth1" via=[fe80::b817:4cff:fe8b:9cf] pref=200 med=0 comm=[]`,
+			`2001:db8:2::/48 best=true path="" peer="" via=[::] pref=- med=0 comm=[]`,
+			`2001:db8:ffff::1/128 best=true path="64512" peer="eth2" via=[fe80::e06b:dcff:fe54:f465] pref=200 med=0 comm=[]`,
+			`2001:db8:ffff::1/128 best=false path="64512" peer="eth1" via=[fe80::b817:4cff:fe8b:9cf] pref=200 med=0 comm=[]`,
+		}},
+		{"ipv6-prefix-detail.json", []string{
 			`::/0 best=true path="64512" peer="eth2" via=[fe80::e06b:dcff:fe54:f465] pref=200 med=0 comm=[64512:1 64512:1:2]`,
 			`::/0 best=false path="64512" peer="eth1" via=[fe80::b817:4cff:fe8b:9cf] pref=200 med=0 comm=[]`,
 			`2001:db8:2::/48 best=true path="" peer="" via=[::] pref=- med=0 comm=[]`,

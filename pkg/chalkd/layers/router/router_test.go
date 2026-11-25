@@ -640,9 +640,10 @@ func TestEnded(t *testing.T) {
 // TestRoutesOfAPrefix asks vtysh for the paths within a VRF's prefix in its family alone.
 func TestRoutesOfAPrefix(t *testing.T) {
 	p, r := routerNode(t, &routing.KernelRoute{Destination: "2001:db8:ffff::2/128", Type: "unicast", Protocol: "bgp", Table: 100, Metric: 20})
-	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "vtysh -c show bgp vrf tenant ipv6 unicast 2001:db8::/32 longer-prefixes json detail", Out: routerRecording(t, "ipv6-detail-imported.json")})
+	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "vtysh -c show bgp vrf tenant ipv6 unicast 2001:db8::/32 longer-prefixes json detail", Out: routerRecording(t, "ipv6-prefix-detail.json")})
 	got, err := p.Routes(context.Background(), &routerv1.RoutesRequest{Vrf: "tenant", Prefix: "2001:db8::1/32"})
-	if err != nil || len(got.Kernel) != 1 || got.Truncated {
+	// Of FRR's paths, those within 2001:db8::/32: a network and a prefix's two equal paths.
+	if err != nil || len(got.Kernel) != 1 || len(got.Bgp) != 3 || got.BgpError != "" || got.Truncated {
 		t.Fatalf("routes within 2001:db8::/32 = %v, %v", got, err)
 	}
 	if want := []string{"vtysh -c show bgp vrf tenant ipv6 unicast 2001:db8::/32 longer-prefixes json detail"}; !slices.Equal(r.Calls, want) {
@@ -657,7 +658,7 @@ func TestRoutesTruncated(t *testing.T) {
 	for i := range maxRoutes + 1 {
 		prefix := fmt.Sprintf("10.%d.%d.0/24", i/256, i%256)
 		kernel = append(kernel, &routing.KernelRoute{Destination: prefix, Type: "unicast", Protocol: "bgp", Table: 254})
-		paths[prefix] = []any{map[string]any{"valid": true, "bestpath": map[string]any{"overall": true}}}
+		paths[prefix] = map[string]any{"prefix": prefix, "paths": []any{map[string]any{"valid": true, "bestpath": map[string]any{"overall": true}}}}
 	}
 	table, err := json.Marshal(map[string]any{"routes": paths})
 	if err != nil {

@@ -39,7 +39,7 @@ func routerNode(t *testing.T, ta *testApp) string {
 		{Prefix: "vtysh -c " + frrstatus.NeighborsCommand, Out: frr("neighbors.json")},
 		{Prefix: "vtysh -c show bgp ipv4 unicast detail json", Out: frr("ipv4-detail.json")},
 		{Prefix: "vtysh -c show bgp ipv6 unicast detail json", Out: frr("ipv6-detail.json")},
-		{Prefix: "vtysh -c show bgp ipv6 unicast ::/0 longer-prefixes json detail", Out: frr("ipv6-detail.json")},
+		{Prefix: "vtysh -c show bgp ipv6 unicast ::/0 longer-prefixes json detail", Out: frr("ipv6-prefix-detail.json")},
 		{Prefix: "vtysh -c show bgp vrf tenant ipv4 unicast detail json", Out: "{}"},
 		{Prefix: "vtysh -c show bgp vrf tenant ipv6 unicast detail json", Out: frr("ipv6-detail-imported.json")},
 	}}

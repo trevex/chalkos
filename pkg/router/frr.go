@@ -20,7 +20,9 @@ import (
 //	show bgp [vrf <name>] <family> unicast detail json
 //	show bgp [vrf <name>] <family> unicast <prefix> longer-prefixes json detail
 //
-// Both print the paths alike. FRR takes detail for detail-routes in the first.
+// Both print the same paths. The first lists each prefix's paths, as FRR takes detail for
+// detail-routes there; with json detail, the second prints each prefix as an object holding its
+// paths in paths.
 func RoutesCommand(vrf, family string, prefix netip.Prefix) string {
 	command := "show bgp "
 	if vrf != "" {
@@ -70,6 +72,21 @@ type path struct {
 	} `json:"largeCommunity"`
 }
 
+// prefixPaths are the paths of a prefix: a list, or an object that holds them in paths.
+type prefixPaths []path
+
+func (ps *prefixPaths) UnmarshalJSON(data []byte) error {
+	if len(data) > 0 && data[0] == '{' {
+		var entry struct {
+			Paths []path `json:"paths"`
+		}
+		err := json.Unmarshal(data, &entry)
+		*ps = entry.Paths
+		return err
+	}
+	return json.Unmarshal(data, (*[]path)(ps))
+}
+
 // ParseRoutes reads the paths RoutesCommand's commands print into the routes BGP selected: the
 // best path of each prefix and the equal paths installed beside it, by prefix. FRR prints a
 // warning and no routes without a BGP instance.
@@ -78,7 +95,7 @@ func ParseRoutes(data []byte) ([]*BGPRoute, error) {
 		return nil, errors.New("bgpd did not answer")
 	}
 	var table struct {
-		Routes map[string][]path `json:"routes"`
+		Routes map[string]prefixPaths `json:"routes"`
 	}
 	if err := json.Unmarshal(data, &table); err != nil {
 		return nil, fmt.Errorf("read FRR's BGP paths: %w", err)

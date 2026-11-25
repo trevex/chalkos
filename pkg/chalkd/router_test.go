@@ -57,7 +57,7 @@ func TestRoutes(t *testing.T) {
 	r.Rules = append(r.Rules,
 		tooltest.Rule{Prefix: "vtysh -c show bgp ipv4 unicast detail json", Out: routerRecording(t, "ipv4-detail.json"), Times: 2},
 		tooltest.Rule{Prefix: "vtysh -c show bgp ipv6 unicast detail json", Out: routerRecording(t, "ipv6-detail.json"), Times: 1},
-		tooltest.Rule{Prefix: "vtysh -c show bgp ipv6 unicast ::/0 longer-prefixes json detail", Out: routerRecording(t, "ipv6-detail.json"), Times: 1},
+		tooltest.Rule{Prefix: "vtysh -c show bgp ipv6 unicast ::/0 longer-prefixes json detail", Out: routerRecording(t, "ipv6-prefix-detail.json"), Times: 1},
 	)
 	c := newCreds(t)
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleReader])
@@ -81,8 +81,8 @@ func TestRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(resp.Kernel) != 1 || resp.Kernel[0].Destination != "::/0" || len(resp.Bgp) != 5 || resp.Bgp[0].Prefix != "::/0" || !resp.Bgp[0].Best {
-		t.Errorf("the IPv6 BGP routes: %v, %v", resp.Kernel, resp.Bgp)
+	if len(resp.Kernel) != 1 || resp.Kernel[0].Destination != "::/0" || len(resp.Bgp) != 5 || resp.Bgp[0].Prefix != "::/0" || !resp.Bgp[0].Best || resp.BgpError != "" {
+		t.Errorf("the IPv6 BGP routes: %v, %v, %q", resp.Kernel, resp.Bgp, resp.BgpError)
 	}
 	if want := []string{"vtysh -c show bgp ipv6 unicast ::/0 longer-prefixes json detail"}; !slices.Equal(r.Calls, want) {
 		t.Errorf("asked %v for ::/0, want %v", r.Calls, want)
