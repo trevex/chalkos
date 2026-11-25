@@ -172,7 +172,7 @@ chalkos.outputs.racks = {
 };
 ```
 
-Each kind it names must be one of `inputs`, or the render fails. A unit granted the kind reads
+Each kind it names must be one of `inputs`, or the image fails to build. A unit granted the kind reads
 the same documents below `/run/chalkos/config` without an output.
 
 ## Render with any program of the store

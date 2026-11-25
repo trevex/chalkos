@@ -206,6 +206,22 @@ let
       )
     ) outputs
   );
+  # Why the kinds a renderer of chalkosLib.render.documents copies do not suit the output: chalkd
+  # hands a renderer the documents of the output's inputs alone, so each kind is one of them.
+  documentsProblems =
+    where: o:
+    let
+      kinds = o.render.documents;
+      missing = lib.subtractLists o.inputs kinds;
+    in
+    lib.optionals (lib.isAttrs o.render && lib.attrNames o.render == [ "documents" ]) (
+      lib.optional (
+        !(lib.isList kinds) || kinds == [ ]
+      ) "${where}.render: chalkosLib.render.documents takes a non-empty list of kinds"
+      ++
+        lib.optional (lib.isList kinds && missing != [ ])
+          "${where}.render: chalkosLib.render.documents names ${lib.concatStringsSep ", " missing}, which ${where}.inputs does not hold; the renderer reads the documents of the output's inputs alone"
+    );
   # What is wrong with an output; its name names its directories on the node, so it is a plain
   # name.
   outputProblems =
@@ -221,6 +237,7 @@ let
     ++
       lib.optional (renderCommand o.render == null)
         "${where}.render: a renderer is a command or one of chalkosLib.render.template, .jq and .documents, not ${attrsetText o.render}"
+    ++ documentsProblems where o
     ++
       lib.optional (checkCommand o.check == null)
         "${where}.check: a check is a command or one of chalkosLib.check.run and .each, each with a command whose arguments hold no white space, not ${attrsetText o.check}";
