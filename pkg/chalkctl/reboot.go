@@ -142,11 +142,7 @@ func (b *rebooter) reboot(ctx context.Context, n *rebootNode, t bootTarget, hold
 				return err
 			}
 			if rerr := b.hooks(ctx, n, layer.Upgrade.After); rerr != nil {
-				msg := "releasing it failed"
-				if n.roles.member() {
-					msg = heldNote + ", as releasing it failed"
-				}
-				return fmt.Errorf("%w; %s: %w", err, msg, rerr)
+				return n.stillHeld(fmt.Errorf("%w; releasing it failed: %w", err, rerr))
 			}
 			n.held = false
 			return err
@@ -156,7 +152,7 @@ func (b *rebooter) reboot(ctx context.Context, n *rebootNode, t bootTarget, hold
 		_, err := conn.Reboot(ctx, &nodev1.RebootRequest{})
 		return err
 	}); err != nil {
-		return err
+		return n.stillHeld(err)
 	}
 	b.Say("%s: rebooting into %s", n.name, t.image)
 	return b.release(ctx, n, t, hold)

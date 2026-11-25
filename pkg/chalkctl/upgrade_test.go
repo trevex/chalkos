@@ -200,6 +200,8 @@ type upgradeLab struct {
 	// activateLost makes the node fail its next activation after it made the image boot next, as
 	// when syncing the ESP after the rename fails.
 	activateLost string
+	// refuseReboot makes the node refuse its next reboot, as while a change of the node runs.
+	refuseReboot string
 	// refuseRollback makes the node refuse its next rollback, as if its UKI could not be renamed.
 	refuseRollback string
 	// uncountedRollback makes the nodes stage a rollback's image without tries, as chalkd does while
@@ -558,6 +560,15 @@ func (n *upgradeFake) pendingOutcome(fate nodev1.PendingFate) *nodev1.PendingOut
 func (n *upgradeFake) Reboot(context.Context, *nodev1.RebootRequest) (*nodev1.RebootResponse, error) {
 	if err := n.down(); err != nil {
 		return nil, err
+	}
+	n.lab.mu.Lock()
+	refused := n.lab.refuseReboot == n.name
+	if refused {
+		n.lab.refuseReboot = ""
+	}
+	n.lab.mu.Unlock()
+	if refused {
+		return nil, connect.NewError(connect.CodeAborted, "an upgrade is running; reboot once it ended")
 	}
 	n.lab.record("%s reboot", n.name)
 	n.mu.Lock()
@@ -1267,6 +1278,28 @@ func TestNodeReboot(t *testing.T) {
 	}
 	if got := l.takeEvents(); !slices.Equal(got, []string{"w3 drain", "w3 reboot"}) || !l.cordoned["w3"] {
 		t.Errorf("events %q, w3 cordoned: %v", got, l.cordoned["w3"])
+	}
+}
+
+// TestNodeRebootRefusedStaysHeld leaves a drained node held when it refuses the reboot, says so with
+// the remedy, and releases it when the command runs again.
+func TestNodeRebootRefusedStaysHeld(t *testing.T) {
+	l := newUpgradeLab(t, 1)
+	l.mu.Lock()
+	l.refuseReboot = "w2"
+	l.mu.Unlock()
+	err := l.run("node", "reboot", "w2")
+	if want := "an upgrade is running; reboot once it ended; it stays held by its layers; run the command again to wait for it and release it"; err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("node reboot refused = %v, want %q", err, want)
+	}
+	if got := l.takeEvents(); !slices.Equal(got, []string{"w2 drain"}) || !l.cordoned["w2"] {
+		t.Errorf("events %q, w2 cordoned: %v", got, l.cordoned["w2"])
+	}
+	if err := l.run("node", "reboot", "w2"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if l.cordoned["w2"] {
+		t.Error("w2 stays cordoned after the command ran again")
 	}
 }
 
