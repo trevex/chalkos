@@ -45,4 +45,4 @@ comment = "dbus-1 is the name of /etc/dbus-1, NixOS's D-Bus configuration, not a
 
 ["gcc-16.2.0"]
 cve = ["CVE-2023-4039"]
-comment = "The stack protector flaw affects aarch64 only; the images are x86-64"
+comment = "A flaw of the stack protector gcc generates for aarch64; the images hold only gcc's runtime libraries (libgcc_s, libstdc++ and the like), built for x86-64, not the compiler"
