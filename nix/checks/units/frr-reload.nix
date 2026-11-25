@@ -301,10 +301,13 @@ pkgs.testers.runNixOSTest {
             "ip link add veth0 type veth peer name veth1 netns peer",
             "ip address add 192.0.2.1/24 dev veth0 && ip link set veth0 up",
             "ip -n peer address add 192.0.2.2/24 dev veth1 && ip -n peer link set veth1 up && ip -n peer link set lo up",
-            "install -d -o frr -g frr /run/peer",
-            "systemd-run --unit=peer-zebra ip netns exec peer ${frr}/libexec/frr/zebra -f /dev/null"
+            "install -d -o frr -g frr /run/peer /run/frr/peer",
+            # -N peer gives the peer's daemons a mgmtd socket of their own, which nothing serves;
+            # without it the peer's zebra registers with the node's mgmtd as a second zebra, and
+            # the two take turns until mgmtd aborts.
+            "systemd-run --unit=peer-zebra ip netns exec peer ${frr}/libexec/frr/zebra -N peer -f /dev/null"
             + " -i /run/peer/zebra.pid -z /run/peer/zserv.api --vty_socket /run/peer -A 127.0.0.1",
-            "systemd-run --unit=peer-bgpd ip netns exec peer ${frr}/libexec/frr/bgpd -f ${peer}"
+            "systemd-run --unit=peer-bgpd ip netns exec peer ${frr}/libexec/frr/bgpd -N peer -f ${peer}"
             + " -i /run/peer/bgpd.pid -z /run/peer/zserv.api --vty_socket /run/peer -A 127.0.0.1",
         )
         machine.succeed("install -m 644 ${crash} ${rendered} && systemctl restart frr")
