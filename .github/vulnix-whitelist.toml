@@ -7,3 +7,42 @@
 #   comment = "The NVD's entry names 1.0.3 to 1.2.0; nixpkgs ships the fixed 1.2.1"
 #
 # See https://github.com/nix-community/vulnix#whitelisting for the format.
+
+["brotli-1.2.1"]
+cve = ["CVE-2026-111497"]
+comment = "The NVD's entry names 1.0.3 to 1.2.0; nixpkgs ships the fixed 1.2.1"
+
+["zlib-1.3.2"]
+cve = ["CVE-2026-27820", "CVE-2023-6992"]
+comment = "Neither is zlib's: CVE-2026-27820 is the Ruby gem zlib's, CVE-2023-6992 Cloudflare's fork's"
+
+["glibc-2.44-57"]
+cve = ["CVE-2026-5435", "CVE-2026-6238"]
+comment = "Both lie in ns_printrr, ns_printrrf and fp_nquery, deprecated debugging functions outside the resolver's path (GLIBC-SA-2026-0011); no program of the images calls them, and CVE-2026-6238 ends at 2.43"
+
+["sqlite-3.54.0"]
+cve = ["CVE-2026-119586"]
+comment = "The command injection lies in the sqlite3 command's .recover; the images hold the library only, for FRR, and no sqlite3 command"
+
+["libssh2-1.11.1"]
+cve = [
+  "CVE-2025-15661",
+  "CVE-2026-55199",
+  "CVE-2026-55200",
+  "CVE-2026-58050",
+  "CVE-2026-58051",
+  "CVE-2026-66032",
+  "CVE-2026-66033",
+  "CVE-2026-66034",
+  "CVE-2026-66035",
+  "CVE-2026-7598",
+]
+comment = "nixpkgs patches CVE-2025-15661, CVE-2026-55199, CVE-2026-55200 and CVE-2026-7598, and CVE-2026-58050 needs a 32-bit platform. The rest are client bugs that a malicious SSH server triggers; libssh2 comes only through libcurl, for scp:// and sftp:// URLs, and the images' libcurl users (systemd, tpm2-tss, elfutils) fetch none, with no curl command in the images. Remove the entry once nixpkgs patches the rest"
+
+["dbus-1"]
+cve = ["CVE-2022-42010", "CVE-2022-42011", "CVE-2022-42012"]
+comment = "dbus-1 is the name of /etc/dbus-1, NixOS's D-Bus configuration, not a dbus release; dbus fixed the three in 1.14.4"
+
+["gcc-16.2.0"]
+cve = ["CVE-2023-4039"]
+comment = "The stack protector flaw affects aarch64 only; the images are x86-64"
