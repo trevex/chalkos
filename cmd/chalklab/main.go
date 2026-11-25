@@ -12,6 +12,8 @@ import (
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	// The first signal ends the context; the next one kills the process.
+	context.AfterFunc(ctx, stop)
 	status := chalklab.Execute(ctx, chalklab.NewCommand())
 	stop()
 	os.Exit(status)
