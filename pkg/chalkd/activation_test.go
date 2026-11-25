@@ -207,3 +207,34 @@ func TestActivationStatusWithARecordItCouldNotWrite(t *testing.T) {
 		t.Fatalf("activation = %v", a)
 	}
 }
+
+// TestRefusedDeliveryRecordsNoActivation: a delivery refused before it changes the node, here
+// because it cannot record its attempt, leaves the activation of the config before it as it was.
+func TestRefusedDeliveryRecordsNoActivation(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes to read-only directories")
+	}
+	s, _ := configServer(t)
+	write(t, s.Paths.BootID, "boot-one\n")
+	if _, err := sendConfig(s, baseConfig); err != nil {
+		t.Fatal(err)
+	}
+	before, err := s.readActivation()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A baseline an earlier delivery left is read, and the attempt cannot be added to it.
+	write(t, s.Paths.EffectsBaseline, `{"documents":[],"facts":{}}`)
+	dir := filepath.Dir(s.Paths.EffectsBaseline)
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
+	if _, err := sendConfig(s, next); err == nil || !strings.Contains(err.Error(), "baseline of the effects") {
+		t.Fatalf("delivery that cannot record its attempt: %v, want a refusal", err)
+	}
+	if after, err := s.readActivation(); err != nil || after != before {
+		t.Errorf("activation after a refused delivery = %+v, %v; want %+v", after, err, before)
+	}
+}

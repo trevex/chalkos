@@ -518,7 +518,7 @@ func (s *Server) applyTrial(ctx context.Context, r applyRequest) (*nodev1.ApplyC
 		return nil, fmt.Errorf("record the trial: %w", err)
 	}
 	d.until = rec.Deadline
-	resp, err := d.commit(ctx)
+	resp, _, err := d.commit(ctx)
 	st, ferr := s.settleTrial(rec)
 	if err == nil {
 		log.Printf("config %s is on trial until %s; it rolls back to config %s unless confirmed", rec.Version, rec.Deadline.UTC().Format(time.RFC3339), rec.Previous)

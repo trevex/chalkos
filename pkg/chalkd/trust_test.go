@@ -219,7 +219,7 @@ func TestTrustRefusedOnCommitLeavesTheBaseline(t *testing.T) {
 		t.Fatal(err)
 	}
 	d.osCA = other.Certificate
-	if _, err := d.commit(ctx); codeOf(err) != connect.CodeInvalidArgument {
+	if _, _, err := d.commit(ctx); codeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("OS CAs that do not verify the node: %v, want a refusal", err)
 	}
 	if got := readFile(t, s.Paths.EffectsBaseline); got != earlier {
