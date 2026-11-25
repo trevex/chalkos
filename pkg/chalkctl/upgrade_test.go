@@ -1007,13 +1007,13 @@ func TestUpgradeWorkersInBatches(t *testing.T) {
 }
 
 // TestUpgradeStopsAtARollback stops at the first node that falls back, naming the image it runs
-// again and what the failed boots logged; the node stays cordoned.
+// again and what the failed boots logged; the node stays held.
 func TestUpgradeStopsAtARollback(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	l.unhealthy["0.3.0"] = true
 	img := testUpgradeImage(t, "w-metal", "0.3.0")
 	err := l.upgrade(img)
-	if err == nil || !strings.Contains(err.Error(), "w1: upgrade to "+shortOf(t, img)+" failed: rolled back to 010101010101; it stays cordoned") || !strings.Contains(err.Error(), "units failed: broken.service") {
+	if err == nil || !strings.Contains(err.Error(), "w1: upgrade to "+shortOf(t, img)+" failed: rolled back to 010101010101; it stays held by its layers") || !strings.Contains(err.Error(), "units failed: broken.service") {
 		t.Fatalf("upgrade = %v", err)
 	}
 	if got := l.takeEvents(); !slices.Equal(got, []string{"w1 upgrade", "w1 drain", "w1 activate", "w1 reboot"}) {
@@ -1229,18 +1229,18 @@ func TestNodeReboot(t *testing.T) {
 	l.sick["0.1.0"], l.settling = "units failed: broken.service", true
 	l.mu.Unlock()
 	err := l.run("node", "reboot", "w2", "--no-drain", "--timeout", "1s")
-	if err == nil || !strings.Contains(err.Error(), "w2: waiting for 010101010101 to be found healthy: its boot is not healthy yet: units failed: broken.service") {
+	if err == nil || !strings.Contains(err.Error(), "w2: waiting for 010101010101 to be found healthy: its boot is not healthy yet: units failed: broken.service") || strings.Contains(err.Error(), "held") {
 		t.Errorf("node reboot into a boot that is not healthy yet = %v", err)
 	}
 	// Once the boot settled and stayed unhealthy for the grace period, its result is final: the
-	// command stops long before its timeout, and the node it drained stays cordoned.
+	// command stops long before its timeout, and the node it drained stays held.
 	l.mu.Lock()
 	l.settling = false
 	l.mu.Unlock()
 	l.takeEvents()
 	start := time.Now()
 	err = l.run("node", "reboot", "w2", "--timeout", "1m")
-	if err == nil || err.Error() != "w2: its boot of 010101010101 settled and is not healthy: units failed: broken.service; it stays cordoned" {
+	if err == nil || err.Error() != "w2: its boot of 010101010101 settled and is not healthy: units failed: broken.service; it stays held by its layers; run the command again to wait for it and release it" {
 		t.Errorf("node reboot into a settled boot that is not healthy = %v", err)
 	}
 	if waited := time.Since(start); waited < 200*time.Millisecond || waited > 30*time.Second {
@@ -1262,11 +1262,37 @@ func TestNodeReboot(t *testing.T) {
 	}
 	l.takeEvents()
 	err = l.run("node", "reboot", "w3")
-	if err == nil || !strings.Contains(err.Error(), "w3: its boot of "+shortOf(t, img)+" failed: it fell back to 010101010101; it stays cordoned") {
+	if err == nil || !strings.Contains(err.Error(), "w3: its boot of "+shortOf(t, img)+" failed: it fell back to 010101010101; it stays held by its layers") {
 		t.Errorf("node reboot into an image that falls back = %v", err)
 	}
 	if got := l.takeEvents(); !slices.Equal(got, []string{"w3 drain", "w3 reboot"}) || !l.cordoned["w3"] {
 		t.Errorf("events %q, w3 cordoned: %v", got, l.cordoned["w3"])
+	}
+}
+
+// TestNodeRebootHeldTimesOut leaves a held node held when its boot is not found healthy within
+// --timeout, says so with the remedy, and releases it when the command runs again.
+func TestNodeRebootHeldTimesOut(t *testing.T) {
+	l := newUpgradeLab(t, 1)
+	l.mu.Lock()
+	l.sick["0.1.0"], l.settling = "units failed: broken.service", true
+	l.mu.Unlock()
+	err := l.run("node", "reboot", "w2", "--timeout", "1s")
+	if want := "w2: waiting for 010101010101 to be found healthy: its boot is not healthy yet: units failed: broken.service; it stays held by its layers; run the command again to wait for it and release it"; err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("node reboot into a boot that is not healthy yet = %v, want %q", err, want)
+	}
+	if got := l.takeEvents(); !slices.Equal(got, []string{"w2 drain", "w2 reboot"}) || !l.cordoned["w2"] {
+		t.Errorf("events %q, w2 cordoned: %v", got, l.cordoned["w2"])
+	}
+	l.mu.Lock()
+	delete(l.sick, "0.1.0")
+	l.settling = false
+	l.mu.Unlock()
+	if err := l.run("node", "reboot", "w2", "--timeout", "1m"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if l.cordoned["w2"] {
+		t.Error("w2 stays cordoned after the command ran again")
 	}
 }
 
@@ -1333,7 +1359,7 @@ func TestUpgradeHoldsANodeWhoseImageBootsNextAfterAFailedActivation(t *testing.T
 	img := testUpgradeImage(t, "w-metal", "0.2.0")
 	l.activateLost = "w2"
 	err := l.upgrade(img, "--nodes", "w2")
-	if err == nil || !strings.HasPrefix(err.Error(), "w2: ") || !strings.Contains(err.Error(), "sync the ESP: input/output error; "+shortOf(t, img)+" boots next all the same, so it stays cordoned: chalkctl node reboot w2 boots it and releases the node") {
+	if err == nil || !strings.HasPrefix(err.Error(), "w2: ") || !strings.Contains(err.Error(), "sync the ESP: input/output error; "+shortOf(t, img)+" boots next all the same, so it stays held by its layers: chalkctl node reboot w2 boots it and releases the node") {
 		t.Fatalf("upgrade = %v", err)
 	}
 	if got, want := l.takeEvents(), []string{"w2 upgrade", "w2 drain", "w2 activate"}; !slices.Equal(got, want) {
@@ -2518,7 +2544,7 @@ func TestUpgradeRollbackFallsBack(t *testing.T) {
 	l.takeEvents()
 	l.unhealthy["0.1.0"] = true
 	err := l.run("upgrade", "--rollback", "--nodes", "w1")
-	if err == nil || !strings.Contains(err.Error(), "w1: rollback to 010101010101 failed: it fell back to "+shortOf(t, img)+"; it stays cordoned") {
+	if err == nil || !strings.Contains(err.Error(), "w1: rollback to 010101010101 failed: it fell back to "+shortOf(t, img)+"; it stays held by its layers") {
 		t.Fatalf("rollback = %v", err)
 	}
 	if got, want := l.takeEvents(), []string{"w1 drain", "w1 rollback", "w1 reboot"}; !slices.Equal(got, want) {

@@ -397,7 +397,7 @@ w1: installing 23112865089f (v2)
 
 A node of the cluster whose new image is not found healthy boots its previous image and stays
 cordoned, so you can look at it before workloads return. The run stops with
-`rolled back to <old>; it stays cordoned`. [A node rolled back during the
+`rolled back to <old>; it stays held by its layers`. [A node rolled back during the
 upgrade](../operate/upgrade.md#a-node-rolled-back-during-the-upgrade) explains how to find the
 cause.
 

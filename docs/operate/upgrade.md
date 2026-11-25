@@ -350,15 +350,15 @@ A node whose new image is not found healthy within its tries boots its previous 
 at that node:
 
 ```text
-chalkctl: cp3: upgrade to <new> failed: rolled back to <old>; it stays cordoned; its boots logged:
+chalkctl: cp3: upgrade to <new> failed: rolled back to <old>; it stays held by its layers; its boots logged:
   <journal lines>
 ```
 
 `<old>` is the image the node runs again. `<journal lines>` are the last 30 lines that chalkd and the
 health check logged during the failed boot, such as
-`the node did not become healthy within 5m0s: ...`. `; it stays cordoned` appears on a node of a
-Kubernetes cluster alone. `chalkctl status cp3` shows the same lines for as long as the failed image
-stays on the disk.
+`the node did not become healthy within 5m0s: ...`. `; it stays held by its layers` appears on a node
+its layers hold, such as a node of a Kubernetes cluster, which stays cordoned. `chalkctl status cp3`
+shows the same lines for as long as the failed image stays on the disk.
 
 The node runs its previous image, and that boot is healthy. To go on:
 
