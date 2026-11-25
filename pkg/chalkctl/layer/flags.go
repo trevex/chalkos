@@ -62,7 +62,7 @@ type NodeFlags struct {
 func (f *NodeFlags) Register(fs *pflag.FlagSet) {
 	f.ClusterFlags.Register(fs)
 	f.Secrets.Register(fs)
-	fs.Var(&f.Address, "address", "address of a node's chalkd: host or host:port for the node the command names, or NODE=ADDR for any node; may be repeated (default each node's address in the inventory)")
+	fs.Var(&f.Address, "address", "address of a node's chalkd: ADDR for the node the command names, or NODE=ADDR for any node, where ADDR is host or host:port; may be repeated (default each node's address in the inventory)")
 }
 
 // RegisterClient registers the flags of a command that a client file may run: those of Register

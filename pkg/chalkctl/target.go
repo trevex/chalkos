@@ -184,9 +184,9 @@ func dialEither(t *target, p pinFlags) (*client.Conn, error) {
 	return dialInstalled(t)
 }
 
-// nodeAddressesUsage is the usage of --address of a command that reaches the cluster's nodes and
-// names none: rotate, and upgrade, which names its nodes with --nodes.
-const nodeAddressesUsage = "address of a node's chalkd, NODE=ADDR, host or host:port; may be repeated (default each node's address in the inventory)"
+// nodeAddressesUsage is the usage of --address of a command that reaches several nodes: config
+// apply, rotate, and upgrade, which names its nodes with --nodes.
+const nodeAddressesUsage = "address of a node's chalkd as NODE=ADDR, where ADDR is host or host:port; may be repeated (default each node's address in the inventory)"
 
 // nodeSet reaches the nodes of a cluster with one set of credentials: each at the address
 // --address gives for it, or else at the inventory's.
