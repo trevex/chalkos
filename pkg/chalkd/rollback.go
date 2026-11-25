@@ -38,6 +38,8 @@ func (s *Server) RollbackConfig(ctx context.Context, req *nodev1.RollbackConfigR
 		return nil, layer.Errorf(connect.CodeAborted, "an upgrade, an image rollback or the rollback at a trial's deadline is running; roll back once it ended")
 	}
 	defer s.upgrading.Unlock()
+	defer s.muBy.hold("a config rollback")()
+	defer s.upgradingBy.hold("a config rollback")()
 	r, open, err := readTrial(s.Paths.StateDir)
 	if err != nil {
 		// A record that cannot be read refuses every other change, and a rollback is where every

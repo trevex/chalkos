@@ -462,17 +462,21 @@ func serve() error {
 		loops.Go(func() { srv.ResumeTrial(ctx) })
 	}
 	go announceAddresses(ctx, srv.CurrentFingerprint)
+	// The Logs streams end once chalkd stops, as nothing they hold needs to finish.
+	srv.Stopping = ctx
+	api := httpServer(srv.Handler(), chalkd.TLSConfig(creds.getCertificate(), creds.clientCAs))
+	servers := []*http.Server{api}
 	served := make(chan error, 1)
-	go func() {
-		served <- httpServer(srv.Handler(), chalkd.TLSConfig(creds.getCertificate(), creds.clientCAs)).ServeTLS(ln, "", "")
-	}()
+	go func() { served <- api.ServeTLS(ln, "", "") }()
 	// The console is a convenience at the machine: chalkd serves the network without it.
 	if serveConsole {
 		if cln, err := chalkd.ListenConsole(paths.RunDir); err != nil {
 			log.Printf("listen for the console: %v", err)
 		} else {
+			console := httpServer(srv.ConsoleHandler(), nil)
+			servers = append(servers, console)
 			go func() {
-				if err := httpServer(srv.ConsoleHandler(), nil).Serve(cln); err != nil {
+				if err := console.Serve(cln); !errors.Is(err, http.ErrServerClosed) {
 					log.Printf("serve the console: %v", err)
 				}
 			}()
@@ -483,7 +487,34 @@ func serve() error {
 		return err
 	case <-ctx.Done():
 	}
+	stopServing(srv, servers)
 	return nil
+}
+
+// drainTimeout bounds how long chalkd waits, once it is to stop, for the calls and changes of the
+// node that run. It stays below chalkd.service's TimeoutStopSec of 90 seconds, after which systemd
+// kills chalkd.
+const drainTimeout = 60 * time.Second
+
+// stopServing lets the calls of the servers end and then waits for the changes of the node that
+// run outside a call, such as the rollback at a trial's deadline, within drainTimeout. A call
+// still running then is cut off.
+func stopServing(srv *chalkd.Server, servers []*http.Server) {
+	ctx, cancel := context.WithTimeout(context.Background(), drainTimeout)
+	defer cancel()
+	var wg sync.WaitGroup
+	for _, hs := range servers {
+		wg.Go(func() {
+			if err := hs.Shutdown(ctx); err != nil {
+				log.Printf("stop: calls still run after %v; cutting them off", drainTimeout)
+				hs.Close()
+			}
+		})
+	}
+	wg.Wait()
+	if err := srv.Drain(ctx); err != nil {
+		log.Printf("stop: %v after %v; stopping anyway", err, drainTimeout)
+	}
 }
 
 // httpServer bounds what a client can hold without sending requests: the time to send headers,

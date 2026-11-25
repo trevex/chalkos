@@ -52,6 +52,7 @@ func (s *Server) EnrollSecureBoot(ctx context.Context, req *nodev1.EnrollSecureB
 		return nil, layer.Errorf(connect.CodeAborted, "another change of the node is running")
 	}
 	defer s.mu.Unlock()
+	defer s.muBy.hold("a Secure Boot enrolment")()
 	if s.installed {
 		return nil, layer.Errorf(connect.CodeFailedPrecondition, "the node is installed and reboots")
 	}

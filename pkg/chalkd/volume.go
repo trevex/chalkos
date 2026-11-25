@@ -133,6 +133,8 @@ func (s *Server) ResetVolume(ctx context.Context, m *nodev1.ResetVolumeRequest) 
 		return nil, layer.Errorf(connect.CodeAborted, "an upgrade, an image rollback or the rollback at a trial's deadline is running; reset the volume once it ended")
 	}
 	defer s.upgrading.Unlock()
+	defer s.muBy.hold("a volume reset")()
+	defer s.upgradingBy.hold("a volume reset")()
 	if err := s.refuseOnTrial("a volume reset", true); err != nil {
 		return nil, err
 	}

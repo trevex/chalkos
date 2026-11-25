@@ -200,6 +200,8 @@ type Server struct {
 	// config, and run the diagnostics of operators, as the image's chalkos.console.actions.enable
 	// says.
 	ConsoleActions bool
+	// Stopping ends once chalkd stops, and the Logs streams with it; nil never ends.
+	Stopping context.Context
 
 	// clock is the time client certificates are verified at; nil is the system clock.
 	clock func() time.Time
@@ -216,12 +218,17 @@ type Server struct {
 	activating liveActivation
 	// upgrading is held while an upgrade runs, which changes only the inactive slot and the ESP.
 	upgrading sync.Mutex
+	// upgradingBy and muBy name the changes that hold s.upgrading and s.mu.
+	upgradingBy, muBy changeHolder
 	// trial rolls the config on trial back at its deadline; s.mu guards it.
 	trial trialDeadline
 	// logStreams counts the Logs calls running.
 	logStreams atomic.Int32
 	// diagnosticRuns counts the RunDiagnostic calls running.
 	diagnosticRuns atomic.Int32
+	// streamIdle bounds how long the client of an install or an upgrade may send nothing; zero is
+	// idleStream. Tests shorten it.
+	streamIdle time.Duration
 }
 
 // Offline is the Server of chalkd's commands that do not serve, such as check, health and the
@@ -337,8 +344,12 @@ func (s *Server) ConsoleHandler() http.Handler {
 	})
 }
 
+// responseKey holds the http.ResponseController of a call, through which a handler bounds its
+// reads.
+type responseKey struct{}
+
 // mux serves the node API and every compiled plugin's API behind the authorizer.
-func (s *Server) mux() *http.ServeMux {
+func (s *Server) mux() http.Handler {
 	server := connect.NewServer(authorizer{s: s, gates: s.gates()}.intercept, errorCodes)
 	nodev1connect.RegisterNodeServiceHandler(server, s)
 	for _, p := range s.Plugins.Compiled() {
@@ -351,7 +362,9 @@ func (s *Server) mux() *http.ServeMux {
 		// decompressing one up to the limit off chalkd.
 		connecthttp.WithCompressors(),
 	)
-	return mux
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mux.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), responseKey{}, http.NewResponseController(w))))
+	})
 }
 
 // verifyClient verifies a client's certificate with pki.VerifyClient against the OS CAs the node
@@ -512,13 +525,17 @@ func (s *Server) recorded() (storage.Section, storage.Pins, error) {
 	return section, pins, nil
 }
 
-func (s *Server) Reboot(ctx context.Context, _ *nodev1.RebootRequest) (*nodev1.RebootResponse, error) {
-	s.rebootSoon()
+func (s *Server) Reboot(ctx context.Context, req *nodev1.RebootRequest) (*nodev1.RebootResponse, error) {
+	if err := s.afterChanges(ctx, req.Force, "reboot", s.RebootNode); err != nil {
+		return nil, err
+	}
 	return &nodev1.RebootResponse{}, nil
 }
 
-func (s *Server) Shutdown(ctx context.Context, _ *nodev1.ShutdownRequest) (*nodev1.ShutdownResponse, error) {
-	s.afterResponse(s.PowerOffNode)
+func (s *Server) Shutdown(ctx context.Context, req *nodev1.ShutdownRequest) (*nodev1.ShutdownResponse, error) {
+	if err := s.afterChanges(ctx, req.Force, "shut down", s.PowerOffNode); err != nil {
+		return nil, err
+	}
 	return &nodev1.ShutdownResponse{}, nil
 }
 

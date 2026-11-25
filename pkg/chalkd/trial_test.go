@@ -208,7 +208,7 @@ func TestChangesWaitForATrial(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			stream.Send(&nodev1.UpgradeRequest{})
+			stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{}}}})
 			_, err = stream.CloseAndReceive()
 			return err
 		}},
@@ -489,10 +489,10 @@ func TestChangesPassAnEndedTrial(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			stream.Send(&nodev1.UpgradeRequest{})
+			stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{}}}})
 			_, err = stream.CloseAndReceive()
 			return err
-		}, "the first upgrade message must be the header"},
+		}, "the image's ID and platform are required"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, _ := configServer(t)

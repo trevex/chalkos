@@ -37,11 +37,12 @@ import (
 // with the credentials of the config's Registry of its host, and checked against the header as a
 // streamed one.
 func (s *Server) Upgrade(ctx context.Context, stream nodev1connect.NodeServiceUpgradeServerStream) (*nodev1.UpgradeResponse, error) {
-	unlock, err := s.lockSlots("an upgrade")
-	if err != nil {
-		return nil, err
-	}
-	defer unlock()
+	return s.upgrade(ctx, boundIdle(ctx, stream, s.idleBound()))
+}
+
+// upgrade is Upgrade of the requests of stream. It reads and checks the header before it takes the
+// slots' locks, so a client that sends nothing holds none.
+func (s *Server) upgrade(ctx context.Context, stream requests[*nodev1.UpgradeRequest]) (*nodev1.UpgradeResponse, error) {
 	h, err := readHeader(stream, (*nodev1.UpgradeRequest).GetHeader, "upgrade")
 	if err != nil {
 		return nil, err
@@ -58,6 +59,11 @@ func (s *Server) Upgrade(ctx context.Context, stream nodev1connect.NodeServiceUp
 	case h.GetStageOnly() && h.GetReboot():
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "an upgrade that stops once the image is staged does not reboot: the node boots a staged image only once ActivateImage activated it")
 	}
+	unlock, err := s.lockSlots("an upgrade")
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	header := imageHeader(img)
 	// The node's known-good image, staged by a rollback, keeps the config it last ran. Only config
 	// is refused for it, so an upgrade without config reads the ESP for it once Install found the

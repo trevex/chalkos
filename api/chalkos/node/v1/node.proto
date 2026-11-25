@@ -74,8 +74,9 @@ service NodeService {
   // Logs streams the journal of the current boot, or of one unit in it. Available in maintenance
   // and normal mode to readers. The console may call it.
   rpc Logs(LogsRequest) returns (stream LogsResponse);
-  // Reboot reboots the node once the response is sent. Available in maintenance and normal mode
-  // to operators. The console may call it while the image allows the console's actions.
+  // Reboot reboots the node once the response is sent and no change of the node runs, unless
+  // forced. Available in maintenance and normal mode to operators. The console may call it while
+  // the image allows the console's actions.
   rpc Reboot(RebootRequest) returns (RebootResponse);
   // Upgrade installs a new image into the node's inactive slot and stages it there, then activates
   // it as ActivateImage does, so it boots next, counting the image's boot tries until a boot is
@@ -181,9 +182,9 @@ service NodeService {
   // under Secure Boot, and where the firmware found it. Available in maintenance mode to
   // readers.
   rpc SecureBootDrivers(SecureBootDriversRequest) returns (SecureBootDriversResponse);
-  // Shutdown powers the node off once the response is sent, as Reboot reboots it. Available in
-  // maintenance and normal mode to operators. The console may call it while the image allows the
-  // console's actions.
+  // Shutdown powers the node off once the response is sent and no change of the node runs, as
+  // Reboot reboots it. Available in maintenance and normal mode to operators. The console may call
+  // it while the image allows the console's actions.
   rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
 }
 
@@ -1050,7 +1051,12 @@ message LogsResponse {
 }
 
 // The request of Reboot.
-message RebootRequest {}
+message RebootRequest {
+  // Reboot at once, even while a change of the node runs, such as an upgrade, a config delivery or
+  // an install, which the reboot interrupts. Without it the node waits a few seconds for the
+  // change to end and otherwise refuses the reboot with ABORTED, naming the change.
+  bool force = 1;
+}
 
 // The response of Reboot, which the node sends before it reboots.
 message RebootResponse {}
@@ -1271,7 +1277,10 @@ message SecureBootDriver {
 }
 
 // The request of Shutdown.
-message ShutdownRequest {}
+message ShutdownRequest {
+  // Power off at once, even while a change of the node runs, as RebootRequest.force reboots.
+  bool force = 1;
+}
 
 // The response of Shutdown, which the node sends before it powers off.
 message ShutdownResponse {}

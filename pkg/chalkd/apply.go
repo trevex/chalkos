@@ -33,6 +33,7 @@ type applyRequest struct {
 func (s *Server) ApplyConfig(ctx context.Context, req *nodev1.ApplyConfigRequest) (*nodev1.ApplyConfigResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer s.muBy.hold("a config delivery")()
 	if req.IgnoreReadiness && (req.Config == "" || req.Staged || req.DiscardPending ||
 		len(req.Layers) != 0 || len(req.Trust) != 0 || len(req.NodeCertificate) != 0 || len(req.NodeKey) != 0) {
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "ignore_readiness requires a config-only delivery to the running image")
@@ -53,6 +54,7 @@ func (s *Server) ApplyConfig(ctx context.Context, req *nodev1.ApplyConfigRequest
 			return nil, layer.Errorf(connect.CodeAborted, "an upgrade, an image rollback or the rollback at a trial's deadline is running; apply the config once it ended")
 		}
 		defer s.upgrading.Unlock()
+		defer s.upgradingBy.hold("a config delivery")()
 	}
 	if req.DiscardPending {
 		return s.discardPending(req)

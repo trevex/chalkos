@@ -48,6 +48,16 @@ func diagnosticOf(name string, d diagnostics.Definition) *nodev1.Diagnostic {
 }
 
 func (s *Server) RunDiagnostic(ctx context.Context, req *nodev1.RunDiagnosticRequest, stream nodev1connect.NodeServiceRunDiagnosticServerStream) error {
+	return s.runDiagnostic(ctx, req, stream)
+}
+
+// diagnosticStream is the stream of RunDiagnostic's responses.
+type diagnosticStream interface {
+	Send(*nodev1.RunDiagnosticResponse) error
+}
+
+// runDiagnostic is RunDiagnostic with its responses sent to stream.
+func (s *Server) runDiagnostic(ctx context.Context, req *nodev1.RunDiagnosticRequest, stream diagnosticStream) error {
 	name := req.Name
 	d, ok := s.Loader.Contract.Diagnostics[name]
 	if !ok {
@@ -64,13 +74,17 @@ func (s *Server) RunDiagnostic(ctx context.Context, req *nodev1.RunDiagnosticReq
 		s.diagnosticRuns.Add(-1)
 		return layer.Errorf(connect.CodeResourceExhausted, "%d diagnostics run already; wait for one to end", maxDiagnosticRuns)
 	}
-	defer s.diagnosticRuns.Add(-1)
+	// The run's slot is free once its unit ended: a client that stops reading blocks the stream's
+	// last sends, but holds no slot.
+	release := sync.OnceFunc(func() { s.diagnosticRuns.Add(-1) })
+	defer release()
 
 	runCtx, stop := context.WithCancel(ctx)
 	defer stop()
 	out := &diagnosticOutput{stream: stream, stop: stop, left: diagnostics.MaxOutput}
 	run := diagnostics.Run{Name: name, Argv: argv, Capabilities: d.Capabilities, Groups: d.Groups, NetworkNamespace: ns, Timeout: d.RunTime()}
 	exit, err := s.diagnose().Run(runCtx, run, out.writer(false), out.writer(true))
+	release()
 	return out.finish(ctx, name, ns, exit, err)
 }
 
@@ -102,7 +116,7 @@ func (s *Server) diagnose() diagnostics.Runner {
 // so that its pipes never fill. A run may return while its output is still being copied, so the
 // stream's last message is sent under the same lock, and what is written after it is discarded.
 type diagnosticOutput struct {
-	stream nodev1connect.NodeServiceRunDiagnosticServerStream
+	stream diagnosticStream
 	stop   context.CancelFunc
 
 	mu      sync.Mutex
