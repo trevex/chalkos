@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -488,5 +489,55 @@ func TestRenderReadBack(t *testing.T) {
 	}
 	if live, err := Live(d, hashed); err != nil || live.Secrets != want.States()["demo"].Secrets {
 		t.Errorf("Live of the hashed input = %v, %v", live, err)
+	}
+}
+
+// Direct runs a check, which may not write $OUT on a node, on read-only files: a check that writes
+// them fails as on the node.
+func TestDirectCheckCannotWrite(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes despite the modes")
+	}
+	r := renderer(t)
+	render := script(t, `mkdir "$OUT/sub"; echo hi > "$OUT/sub/file"`)
+	defs := map[string]Definition{
+		"adds":    def(t, r.Root, render, script(t, `echo more > "$OUT/extra"`)),
+		"changes": def(t, r.Root, render, script(t, `echo more >> "$OUT/sub/file"`)),
+		"reads":   def(t, r.Root, render, script(t, `grep -q hi "$OUT/sub/file"`)),
+	}
+	for name, d := range defs {
+		d.Dir = filepath.Join(r.Root, name)
+		defs[name] = d
+	}
+	s, failures := r.Render(context.Background(), defs, input(t, demos))
+	var failed []string
+	for _, f := range failures {
+		failed = append(failed, f.Name)
+	}
+	if !slices.Equal(failed, []string{"adds", "changes"}) {
+		t.Fatalf("failures = %v, want adds and changes", failures)
+	}
+	if err := s.Swap(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Direct gives $OUT and the files below it their modes back after a program without Write.
+func TestDirectRestoresModes(t *testing.T) {
+	out := t.TempDir()
+	if err := os.Mkdir(filepath.Join(out, "sub"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(out, "sub", "file"), nil, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	p := Program{Argv: []string{script(t, `echo more >> "$OUT/sub/file"`)}, Out: out, Timeout: 30 * time.Second}
+	if _, err := (Direct{}).Run(context.Background(), p); err == nil && os.Geteuid() != 0 {
+		t.Error("the program wrote $OUT")
+	}
+	for path, want := range map[string]os.FileMode{"sub": 0o750, "sub/file": 0o640} {
+		if info, err := os.Stat(filepath.Join(out, path)); err != nil || info.Mode().Perm() != want {
+			t.Errorf("%s: %v, %v; want mode %o", path, info, err, want)
+		}
 	}
 }

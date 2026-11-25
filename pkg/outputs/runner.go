@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -206,18 +207,26 @@ func readOutput(path string) ([]byte, error) {
 	return data, nil
 }
 
-// Direct runs programs as they are, as the image's build, its checker and tests do; a check may
-// write $OUT.
+// Direct runs programs as they are, as the image's build, its checker and tests do. A program
+// without Write finds $OUT read-only, as in the sandbox: Direct takes the write permission from
+// the files and directories below it while the program runs. Root writes despite the modes.
 type Direct struct{}
 
-func (Direct) Run(ctx context.Context, p Program) ([]byte, error) {
+func (Direct) Run(ctx context.Context, p Program) (printed []byte, err error) {
+	if !p.Write {
+		restore, err := readOnly(p.Out)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { err = errors.Join(err, restore()) }()
+	}
 	ctx, cancel := context.WithTimeout(ctx, p.Timeout)
 	defer cancel()
 	limit := command.MaxOutput
 	if p.Report {
 		limit = refusals.MaxReport
 	}
-	printed, err := command.Run(ctx, p.Argv, p.Stdin, limit, "OUT="+p.Out)
+	printed, err = command.Run(ctx, p.Argv, p.Stdin, limit, "OUT="+p.Out)
 	if !p.Report {
 		printed = nil
 	}
@@ -228,4 +237,36 @@ func (Direct) Run(ctx context.Context, p Program) ([]byte, error) {
 		return printed, &ProgramError{Status: failed.Status, Stderr: failed.Stderr}
 	}
 	return printed, err
+}
+
+// readOnly takes the write permission from dir and the files and directories below it, and
+// returns a function that gives them their modes back.
+func readOnly(dir string) (func() error, error) {
+	modes := map[string]fs.FileMode{}
+	restore := func() error {
+		var errs []error
+		for path, mode := range modes {
+			errs = append(errs, os.Chmod(path, mode))
+		}
+		return errors.Join(errs...)
+	}
+	err := filepath.WalkDir(dir, func(path string, e fs.DirEntry, err error) error {
+		if err != nil || e.Type()&fs.ModeSymlink != 0 {
+			return err
+		}
+		info, err := e.Info()
+		if err != nil {
+			return err
+		}
+		mode := info.Mode() & (fs.ModePerm | fs.ModeSetuid | fs.ModeSetgid | fs.ModeSticky)
+		if err := os.Chmod(path, mode&^0o222); err != nil {
+			return err
+		}
+		modes[path] = mode
+		return nil
+	})
+	if err != nil {
+		return nil, errors.Join(err, restore())
+	}
+	return restore, nil
 }
