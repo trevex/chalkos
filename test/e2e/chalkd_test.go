@@ -5,9 +5,11 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -193,6 +195,27 @@ func info(c *client.Conn) error {
 	defer cancel()
 	_, err := c.Info(ctx, &nodev1.InfoRequest{})
 	return err
+}
+
+// refusesAnonymous reports nil once chalkd refuses a client without a certificate with TLS's
+// certificate required alert. In TLS 1.3 the client's handshake ends before chalkd checks for a
+// certificate, so a call sees the alert only as a broken connection at times; this reads it on a
+// connection of its own. Any other answer is tried again until the timeout, and then returned.
+func refusesAnonymous(n *node, timeout time.Duration) error {
+	return poll(timeout, 2*time.Second, func() error {
+		conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 5 * time.Second}, "tcp", n.addr, &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS13})
+		if err != nil {
+			return err
+		}
+		defer conn.Close()
+		if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+			return err
+		}
+		if _, err = conn.Read(make([]byte, 1)); err == nil || !strings.Contains(err.Error(), "remote error: tls: certificate required") {
+			return fmt.Errorf("chalkd at %s did not refuse a client without a certificate: %v", n.addr, err)
+		}
+		return nil
+	})
 }
 
 // waitForNode waits until the installed node serves its node certificate.

@@ -2,6 +2,7 @@ package registry_test
 
 import (
 	"crypto/x509"
+	"io"
 	"net/http"
 	"net/http/httptrace"
 	"os"
@@ -18,7 +19,10 @@ import (
 // trusting, on the connection whose handshake verified it, and closes that connection.
 func TestWritesVerifiedPerRequest(t *testing.T) {
 	r := startRegistry(t)
-	client := r.clients["admin"]
+	// One connection: the transport returns the first request's connection to its pool after the
+	// response, and without the limit the second request may dial a new one before it is back.
+	client := r.clients["admin"].(*http.Transport).Clone()
+	client.MaxConnsPerHost = 1
 	collect := func() (status int, reused bool, closed bool) {
 		t.Helper()
 		trace := &httptrace.ClientTrace{GotConn: func(info httptrace.GotConnInfo) { reused = info.Reused }}
@@ -28,6 +32,10 @@ func TestWritesVerifiedPerRequest(t *testing.T) {
 		}
 		resp, err := client.RoundTrip(req)
 		if err != nil {
+			t.Fatal(err)
+		}
+		// The transport keeps a connection for the next request only once its body was read to the end.
+		if _, err := io.Copy(io.Discard, resp.Body); err != nil {
 			t.Fatal(err)
 		}
 		resp.Body.Close()
