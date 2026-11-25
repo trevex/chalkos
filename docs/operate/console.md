@@ -410,7 +410,8 @@ The image author turns the console off, or its actions alone, with two image opt
   true by default, allows the actions. With it false, the console's last row reads
   `a actions (off in this image)`, `a` shows
   `the image turns the console's actions off (chalkos.console.actions.enable)`, and chalkd refuses
-  the actions on its console socket.
+  the actions on its console socket. It also refuses the diagnostics of operators there, so the
+  router tab shows `the diagnostic dhcp-leases needs the operator role` in place of the leases.
 
 Each option takes effect on a node with an upgrade to an image built with it.
 [Images and platforms](../build/images-and-platforms.md) shows where an image's options are

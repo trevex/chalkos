@@ -100,8 +100,9 @@ image's layers and the mode as for any call, then the Console column in place of
 - A method marked `action` fails with `PERMISSION_DENIED` and
   `the image turns the console's actions off` on an image built with
   [`chalkos.console.actions.enable`](image-options.md#chalkosconsoleactionsenable) set to false.
-- RunDiagnostic runs the diagnostics of readers and operators. A diagnostic of admins fails with
-  `the diagnostic <name> needs the admin role`.
+- RunDiagnostic runs the diagnostics of readers, and those of operators on an image with the
+  console's actions on. Any other diagnostic fails with
+  `the diagnostic <name> needs the <role> role`.
 
 chalkd serves the socket only on an image built with
 [`chalkos.console.enable`](image-options.md#chalkosconsoleenable) set to true, the default.

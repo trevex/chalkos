@@ -593,6 +593,9 @@ func call(c *client.Conn, procedure string) connect.Code {
 		if s, err = c.RunDiagnostic(ctx, &nodev1.RunDiagnosticRequest{Name: "nope"}); err == nil {
 			err = drain(s)
 		}
+	case "RunOperatorDiagnostic":
+		// testDiagnostics's ping, which needs the operator role.
+		_, _, _, err = runDiagnostic(c, "ping", map[string]string{"address": "192.0.2.1"})
 	case "Routes":
 		_, err = rt.Routes(ctx, &routerv1.RoutesRequest{})
 	case "KubernetesStatus":

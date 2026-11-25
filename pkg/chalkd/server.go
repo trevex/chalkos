@@ -197,7 +197,8 @@ type Server struct {
 	// test's time.
 	RenewOnApplyConfig bool
 	// ConsoleActions lets the console reboot and shut down the node and roll back its image and
-	// config, as the image's chalkos.console.actions.enable says.
+	// config, and run the diagnostics of operators, as the image's chalkos.console.actions.enable
+	// says.
 	ConsoleActions bool
 
 	// clock is the time client certificates are verified at; nil is the system clock.

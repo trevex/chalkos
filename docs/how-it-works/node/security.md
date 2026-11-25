@@ -320,8 +320,9 @@ privileged access, as access to a BMC is.
 
 Through chalkd's console socket, the console reads what a reader reads: the node's information,
 status, disks and journal, and the status of the image's layer. chalkd also lets it run the
-diagnostics of readers and operators, and refuses it those of admins. The console runs the ones
-its tabs show, such as the DHCP leases of a router, which need the operator role through chalkctl.
+diagnostics of readers, those of operators while its actions are on, and none of admins. The
+console runs the ones its tabs show, such as the DHCP leases of a router, which need the operator
+role through chalkctl.
 
 Its actions reboot and shut down the node, and roll back its image and its config. Through
 chalkctl, the first three need the operator role and the config rollback the admin role. Physical
@@ -332,7 +333,8 @@ calls no method that installs a node, delivers or reads config, upgrades or issu
 An image built with
 [`chalkos.console.actions.enable`](../../reference/image-options.md#chalkosconsoleactionsenable)
 set to false offers no actions. chalkd then refuses them on the console's socket with
-`the image turns the console's actions off`, and the console keeps its reads. An image built with
+`the image turns the console's actions off`, refuses the diagnostics of operators, and the
+console keeps its reads. An image built with
 [`chalkos.console.enable`](../../reference/image-options.md#chalkosconsoleenable) set to false
 runs no console, and chalkd serves no console socket.
 

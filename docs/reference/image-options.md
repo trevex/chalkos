@@ -418,9 +418,10 @@ Example: `[ "tty0" "ttyS1,115200" ]`
 
 Type: boolean · Default: `true` · Declared in: [modules/node/console.nix](https://github.com/trevex/chalkos/blob/main/modules/node/console.nix)
 
-Whether the console may reboot and shut down the node and roll back its image and its
-config. Anyone at the machine's keyboard can use them; chalkd refuses them on the
-console's socket when this is false.
+Whether the console may reboot and shut down the node, roll back its image and its
+config, and run the image's diagnostics of operators. Anyone at the machine's keyboard
+can use them; chalkd refuses them on the console's socket when this is false, and the
+console runs the diagnostics of readers alone.
 
 ### `chalkos.console.enable` { #chalkosconsoleenable }
 
