@@ -86,8 +86,11 @@ func (notEtcdMemberError) Details() []*connect.ErrorDetail {
 // mayBeMember reports whether the node is, or may be, an etcd member: it was bootstrapped, or it
 // started joining, or it holds what either left behind.
 func mayBeMember(m knode.Membership, l knode.Leftovers) bool {
-	return m == knode.MembershipBootstrapped || m == knode.MembershipJoining || l.InitialCluster || l.Pinned || l.EtcdData
+	return m == knode.MembershipBootstrapped || m == knode.MembershipJoining || holdsMembership(l)
 }
+
+// holdsMembership reports whether the node holds what an etcd membership leaves behind.
+func holdsMembership(l knode.Leftovers) bool { return l.InitialCluster || l.Pinned || l.EtcdData }
 
 // dialEtcd connects to the endpoints, the node's own member by default, with chalkd's etcd
 // credential.
@@ -226,18 +229,31 @@ func (p *Plugin) EtcdLeave(ctx context.Context, req *kubernetesv1.EtcdLeaveReque
 	if err != nil {
 		return nil, err
 	}
-	c, name, share := cp.cluster, cp.name, cp.share
 	m, leftovers, err := k.state.ReadMembership()
 	switch {
 	case err != nil:
 		return nil, err
-	case mayBeMember(m, leftovers):
+	case m == knode.MembershipLeft && holdsMembership(leftovers):
+		// etcd removed the member already: what is left is local, and the cluster need not answer.
+		k.membership.Lock()
+		defer k.membership.Unlock()
+		err = k.finishLeave(ctx, cp.cluster)
 	case m == knode.MembershipLeft:
 		return nil, layer.Errorf(connect.CodeFailedPrecondition, "the node left etcd already; reinstall it to join the cluster again")
+	case mayBeMember(m, leftovers):
+		err = k.leaveEtcd(ctx, cp, m == knode.MembershipBootstrapped, req.Force)
 	default:
 		return nil, layer.Errorf(connect.CodeFailedPrecondition, "the node is not an etcd member")
 	}
-	bootstrapped := m == knode.MembershipBootstrapped
+	if err != nil {
+		return nil, err
+	}
+	return &kubernetesv1.EtcdLeaveResponse{}, nil
+}
+
+// leaveEtcd removes the node's member through the other members, then finishes the leave.
+func (k *side) leaveEtcd(ctx context.Context, cp controlPlaneNode, bootstrapped, force bool) error {
+	c, name, share := cp.cluster, cp.name, cp.share
 	// A refused leave starts the loops it stopped again.
 	restart := false
 	defer func() {
@@ -261,40 +277,40 @@ func (p *Plugin) EtcdLeave(ctx context.Context, req *kubernetesv1.EtcdLeaveReque
 	endpoints := k.leaveEndpoints(ctx, c, share)
 	cli, err := k.dialEtcd(c, share, endpoints...)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer cli.Close()
 	rctx, cancel := k.etcdRequest(ctx)
 	answered, err := cli.OneCluster(rctx, endpoints)
 	cancel()
 	if _, ok := errors.AsType[*etcd.SplitError](err); ok {
-		return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
+		return layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
 	}
 	if err != nil {
-		return nil, layer.Errorf(connect.CodeUnavailable, "%w", err)
+		return layer.Errorf(connect.CodeUnavailable, "%w", err)
 	}
 	cli.SetEndpoints(answered...)
 	rctx, cancel = k.etcdRequest(ctx)
 	members, err := cli.Members(rctx)
 	cancel()
 	if err != nil {
-		return nil, layer.Errorf(connect.CodeUnavailable, "%w", err)
+		return layer.Errorf(connect.CodeUnavailable, "%w", err)
 	}
 	self, ok, err := k.ownMember(members, name)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if ok {
 		// A bootstrapped node leaves through the other members alone only when forced: its own
 		// member may be healthy but cut off, or unable to run, as without its pinned address.
-		if bootstrapped && !req.Force && !slices.Contains(answered, k.localEtcd(c)) {
-			return nil, layer.Errorf(connect.CodeFailedPrecondition, "this node's etcd member %s does not answer at %s; pass --force to remove it through the other members, as when the node lost its pinned address", self, k.localEtcd(c))
+		if bootstrapped && !force && !slices.Contains(answered, k.localEtcd(c)) {
+			return layer.Errorf(connect.CodeFailedPrecondition, "this node's etcd member %s does not answer at %s; pass --force to remove it through the other members, as when the node lost its pinned address", self, k.localEtcd(c))
 		}
 		rctx, cancel := k.etcdRequest(ctx)
 		err := etcd.CheckQuorum(members, cli.Health(rctx, members), self.ID)
 		cancel()
 		if err != nil {
-			return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
+			return layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
 		}
 		// The other voters remove the member: this one stops once it is removed.
 		var others []string
@@ -304,11 +320,11 @@ func (p *Plugin) EtcdLeave(ctx context.Context, req *kubernetesv1.EtcdLeaveReque
 			}
 		}
 		if len(others) == 0 {
-			return nil, layer.Errorf(connect.CodeFailedPrecondition, "etcd has no other voter to remove %s through", self)
+			return layer.Errorf(connect.CodeFailedPrecondition, "etcd has no other voter to remove %s through", self)
 		}
 		remover, err := k.dialEtcd(c, share, others...)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		defer remover.Close()
 		// The VIPs go first, while the node is still a healthy member.
@@ -317,7 +333,7 @@ func (p *Plugin) EtcdLeave(ctx context.Context, req *kubernetesv1.EtcdLeaveReque
 		err = remover.Remove(rctx, self.ID, false)
 		cancel()
 		if err != nil {
-			return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
+			return layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
 		}
 		log.Printf("kubernetes: removed this node's etcd member %s", self)
 	} else {
@@ -326,32 +342,38 @@ func (p *Plugin) EtcdLeave(ctx context.Context, req *kubernetesv1.EtcdLeaveReque
 		stop()
 	}
 	restart = false
+	return k.finishLeave(ctx, c)
+}
 
+// finishLeave runs the local steps of a leave once etcd has no member of the node: it marks the
+// node as left, stops its control plane and etcd, and deletes what the membership left behind.
+// The caller holds the membership lock.
+func (k *side) finishLeave(ctx context.Context, c k8s.Cluster) error {
 	// A renewal of the control plane's certificates renders the static pods while it holds this
 	// lock: it ends first, and none renders them once the node is marked as left.
 	unlock, err := k.state.LockPKI(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("the node left etcd, but stopping its control plane failed: %w", err)
+		return fmt.Errorf("the node left etcd, but stopping its control plane failed: %w", err)
 	}
 	defer unlock()
 	// The marker comes first: from here on the node is no member, whatever it still holds.
 	if err := k.state.MarkLeft(time.Now()); err != nil {
-		return nil, fmt.Errorf("the node left etcd, but recording it failed: %w", err)
+		return fmt.Errorf("the node left etcd, but recording it failed: %w", err)
 	}
 	if err := k.state.RemoveStaticPods(); err != nil {
-		return nil, fmt.Errorf("the node left etcd, but stopping its control plane failed: %w", err)
+		return fmt.Errorf("the node left etcd, but stopping its control plane failed: %w", err)
 	}
 	if err := k.hooks.EtcdStopped(ctx, c); err != nil {
-		return nil, fmt.Errorf("the node left etcd, but its etcd did not stop: %w; its data stays in %s until chalkctl etcd leave runs again", err, k.state.EtcdData)
+		return fmt.Errorf("the node left etcd, but its etcd did not stop: %w; its data stays in %s until chalkctl etcd leave runs again", err, k.state.EtcdData)
 	}
 	if err := k.state.RemoveEtcdData(); err != nil {
-		return nil, fmt.Errorf("the node left etcd, but deleting its etcd data failed: %w", err)
+		return fmt.Errorf("the node left etcd, but deleting its etcd data failed: %w", err)
 	}
 	if err := k.state.ClearMembership(); err != nil {
-		return nil, fmt.Errorf("the node left etcd: %w", err)
+		return fmt.Errorf("the node left etcd: %w", err)
 	}
 	log.Print("kubernetes: the node left etcd; reinstall it to join the cluster again")
-	return &kubernetesv1.EtcdLeaveResponse{}, nil
+	return nil
 }
 
 // etcdStopped waits until the node's etcd no longer listens, as the kubelet stops it once its

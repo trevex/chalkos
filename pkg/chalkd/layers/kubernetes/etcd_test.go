@@ -259,6 +259,33 @@ func TestEtcdLeaveRetriedAfterEtcdKeptRunning(t *testing.T) {
 	checkLeft(t, s)
 }
 
+// A node marked left whose etcd data outlived the leave finishes it on its own: no member needs
+// to answer.
+func TestEtcdLeaveFinishesLocallyOnceLeft(t *testing.T) {
+	t.Parallel()
+	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
+	k := s.k
+	p := k.state
+	k.o.LocalEtcd = "https://127.0.0.1:1"
+	k.hooks.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
+		return nil, errors.New("no control plane answers")
+	}
+	k.hooks.EtcdStopped = func(context.Context, k8s.Cluster) error { return nil }
+	write(t, p.BootstrappedMarker(), "")
+	write(t, p.EtcdInitialisedMarker(), "")
+	write(t, filepath.Join(p.EtcdData, "member", "snap", "db"), "")
+	if err := p.RenderStaticPods(); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.MarkLeft(time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := leave(s, false); err != nil {
+		t.Fatalf("leave of a node marked left: %v", err)
+	}
+	checkLeft(t, s)
+}
+
 // A leave interrupted while it cleared the membership is retried: the bootstrapped marker and
 // the pin it had not removed yet go too.
 func TestEtcdLeaveRetriedAfterPartialClear(t *testing.T) {
