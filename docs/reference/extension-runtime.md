@@ -170,10 +170,12 @@ kind's schema does not declare, as [Change rules](#change-rule-variables) descri
 rule that reads a fact no module declares, and on a command fact that is no program of the store.
 It also limits a rule's cost:
 
-- The build refuses a rule whose estimated cost exceeds 10,000,000, estimated with 256 elements
-  in every list, map and string. A loop over a kind's documents inside another loop over them
-  fits; a third nested loop does not.
-- A node stops a rule at a cost of 1,000,000 on the config it meets.
+- The build refuses a rule whose estimated cost exceeds 10,000,000. It estimates each list, map
+  and string at the bound its schema sets with `maxItems`, `maxProperties` or `maxLength`, and at
+  256 elements where the schema sets none. A loop over a kind's documents inside another loop over
+  them fits; a third nested loop does not.
+- A node stops a rule at the same cost of 10,000,000 on the config it meets, and refuses the
+  delivery with `the image's rule is too costly for this config`.
 
 A rule of the running image that does not compile on the node fails the delivery as an internal
 error.
@@ -185,9 +187,9 @@ A refusal does not leak a secret or a fact's content that the rule only compared
 - A rule that cannot be evaluated refuses the delivery with the kind of error alone, such as
   `cannot check: Peer/router: spec.asn: a rule cannot be evaluated: no such key`. The kind is
   one of `no such key`, `index out of bounds`, `no such overload`, `unknown time zone`,
-  `invalid input to a function`, `cost limit exceeded`, `overflow`, `division by zero` and
-  `conversion error`. An error of chalkos's functions names the function, such as
-  `ip: the argument is not an address`. Of any other error the refusal says only
+  `invalid input to a function`, `the image's rule is too costly for this config`, `overflow`,
+  `division by zero` and `conversion error`. An error of chalkos's functions names the
+  function, such as `ip: the argument is not an address`. Of any other error the refusal says only
   `a rule cannot be evaluated`.
 - A rule that reads a field the schema declares and the document lacks names the field, a name
   from the schema rather than a value:

@@ -248,7 +248,7 @@ func TestLibraryCosts(t *testing.T) {
 	if iss.Err() != nil {
 		t.Fatal(iss.Err())
 	}
-	prg, err := e.Program(ast, cel.CostLimit(runtimeCostLimit))
+	prg, err := e.Program(ast, cel.CostLimit(costLimit))
 	if err != nil {
 		t.Fatal(err)
 	}
