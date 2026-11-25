@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/lab"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -43,12 +42,8 @@ func TestInstallInPlace(t *testing.T) {
 	waitForChalkd(t, n, time.Minute)
 
 	// The image carries the OS CA, so even in maintenance mode a client needs its certificate.
-	anonymous, err := client.Dial(n.addr, client.Options{Verify: client.AnyCertificate()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := info(anonymous); err == nil {
-		t.Error("a client without a certificate was served in maintenance mode")
+	if err := refusesAnonymous(n, time.Minute); err != nil {
+		t.Errorf("in maintenance mode: %v", err)
 	}
 	// The firmware starts in Setup Mode. Enrolling the test keys, whose db key signed the image, and
 	// Microsoft's CAs, which make db and KEK hold several lists, turns Secure Boot on; the node
@@ -99,8 +94,8 @@ func TestInstallInPlace(t *testing.T) {
 	if err != nil || !strings.Contains(out, "(the inventory's)") || !regexp.MustCompile(`\s/var\s+mounted`).MatchString(out) {
 		t.Errorf("status: %v", err)
 	}
-	if err := info(anonymous); err == nil {
-		t.Error("an installed node served a client without a certificate")
+	if err := refusesAnonymous(n, time.Minute); err != nil {
+		t.Errorf("installed: %v", err)
 	}
 	reader := dialNode(t, n, "chalklab", clientCertificate(t, pki.RoleReader))
 	if err := info(reader); err != nil {
