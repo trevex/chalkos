@@ -20,8 +20,9 @@ reboots into the image as chalkctl node reboot does. Its layers hold it before t
 release it once its boot was found healthy: Kubernetes keeps etcd's quorum, drains the node and
 uncordons it once it is Ready. A node that falls back to the image before stops the run. A node
 not found healthy within --timeout stops it too and stays held; the command run again waits for it
-and releases it. --until stage or --until activate stops each node after that step and holds no
-node.
+and releases it, unless the node fell back meanwhile: like any node that fell back, it then stays
+held until a run installs a fixed image on it, or the same image once more with --retry-failed.
+--until stage or --until activate stops each node after that step and holds no node.
 
 Before any node gets its image, the image's layers check the versions it brings against what the
 cluster runs and refuse an image that would break their bounds, as Kubernetes refuses a kubelet
@@ -63,7 +64,7 @@ operator client file or the secrets file.
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
-| `--address`{ #flag-address } | list of [NODE=]ADDR | each node's address in the inventory | Address of a node's chalkd as NODE=ADDR, where ADDR is host or host:port; may be repeated. |
+| `--address`{ #flag-address } | list of [NODE=]ADDR | each node's address in the inventory | Address of a node's chalkd as NODE=ADDR, or as ADDR alone when the command names one node, where ADDR is host or host:port; may be repeated. |
 | `--allow-downtime`{ #flag-allow-downtime } | boolean | `false` | Reboot a control plane of a cluster with one or two, whose etcd loses its quorum and API server is down while it reboots. |
 | `--config`{ #flag-config } | string | $CHALKOSCONFIG, else ~/.config/chalkos/config, unless --secrets is given | Client file to authenticate with instead of the secrets file. |
 | `--delete-emptydir-data`{ #flag-delete-emptydir-data } | boolean | `false` | Evict pods with emptyDir volumes too, deleting their data. |

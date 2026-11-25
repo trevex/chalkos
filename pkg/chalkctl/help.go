@@ -477,8 +477,9 @@ reboots into the image as chalkctl node reboot does. Its layers hold it before t
 release it once its boot was found healthy: Kubernetes keeps etcd's quorum, drains the node and
 uncordons it once it is Ready. A node that falls back to the image before stops the run. A node
 not found healthy within --timeout stops it too and stays held; the command run again waits for it
-and releases it. --until stage or --until activate stops each node after that step and holds no
-node.
+and releases it, unless the node fell back meanwhile: like any node that fell back, it then stays
+held until a run installs a fixed image on it, or the same image once more with --retry-failed.
+--until stage or --until activate stops each node after that step and holds no node.
 
 Before any node gets its image, the image's layers check the versions it brings against what the
 cluster runs and refuse an image that would break their bounds, as Kubernetes refuses a kubelet

@@ -37,7 +37,8 @@ func (a *app) rotateCommand() *cobra.Command {
 	fs := cmd.Flags()
 	f.node.Register(fs)
 	f.change.register(fs)
-	fs.Lookup("address").Usage = nodeAddressesUsage
+	address := fs.Lookup("address")
+	address.Value, address.Usage = namedAddresses{&f.node.Address}, namedAddressesUsage
 	fs.BoolVar(&f.resume, "resume", false, "continue the rotation the secrets file records")
 	fs.BoolVar(&f.finish, "finish", false, "remove the old value from every node and the secrets file")
 	fs.BoolVar(&f.force, "force", false, "with --finish, finish although the kind asks to wait, as the service-account key does within the hour after its switch")
