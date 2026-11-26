@@ -19,6 +19,7 @@ import (
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
+	sdkkubernetes "github.com/trevex/chalkos/pkg/sdk/layers/kubernetes"
 	kubernetesview "github.com/trevex/chalkos/pkg/statusview/layers/kubernetes"
 )
 
@@ -187,7 +188,7 @@ func (p *Plugin) ApplyRotation(ctx context.Context, r layer.Rotating, kind clust
 // its manifests define.
 func restartAddons(ctx context.Context, r layer.Rotating) error {
 	return rotationThroughControlPlane(ctx, r, func(ctx context.Context, conn *client.Conn) error {
-		resp, err := Client(conn).RotationStep(ctx, &kubernetesv1.RotationStepRequest{Step: kubernetesv1.RotationStep_ROTATION_STEP_RESTART_ADDONS})
+		resp, err := sdkkubernetes.Client(conn).RotationStep(ctx, &kubernetesv1.RotationStepRequest{Step: kubernetesv1.RotationStep_ROTATION_STEP_RESTART_ADDONS})
 		if err == nil {
 			r.Say("  restarted %s", strings.Join(resp.Restarted, ", "))
 			if len(resp.NotWaited) > 0 {
@@ -247,7 +248,7 @@ func waitQuorum(ctx context.Context, r layer.Rotating, name string) error {
 		var members []*kubernetesv1.EtcdMember
 		var answer error
 		err := r.Call(name, func(conn *client.Conn) error {
-			resp, err := Client(conn).EtcdMembers(ctx, &kubernetesv1.EtcdMembersRequest{})
+			resp, err := sdkkubernetes.Client(conn).EtcdMembers(ctx, &kubernetesv1.EtcdMembersRequest{})
 			if err == nil {
 				members = resp.Members
 			}
@@ -255,7 +256,7 @@ func waitQuorum(ctx context.Context, r layer.Rotating, name string) error {
 			return err
 		})
 		switch {
-		case client.FromNode(answer) && notEtcdMember(answer):
+		case client.FromNode(answer) && sdkkubernetes.NotEtcdMember(answer):
 			return nil
 		case err != nil && (answer == nil || !client.FromNode(answer)):
 			if silent.Holds() {
@@ -320,7 +321,7 @@ func refreshKubernetesCA(ctx context.Context, r layer.Rotating, workers []string
 			return r.Call(name, func(conn *client.Conn) error {
 				ctx, cancel := context.WithTimeout(ctx, r.Timeout())
 				defer cancel()
-				_, err := Client(conn).RotationStep(ctx, &kubernetesv1.RotationStepRequest{Step: kubernetesv1.RotationStep_ROTATION_STEP_RENEW_KUBELET_SERVING})
+				_, err := sdkkubernetes.Client(conn).RotationStep(ctx, &kubernetesv1.RotationStepRequest{Step: kubernetesv1.RotationStep_ROTATION_STEP_RENEW_KUBELET_SERVING})
 				return err
 			})
 		}
@@ -403,7 +404,7 @@ func (p *Plugin) Paused(ctx context.Context, r layer.Rotating, rot clustersecret
 		r.Say("The API server signs tokens with the new service-account key, and chalkos's addons and the workloads of the Addon documents, StatefulSets included, restarted with new tokens. Kubelets renew the tokens of other pods within the hour after every control plane applied the switch; finish from %s with chalkctl rotate %s --finish.", at.Local().Format(time.RFC3339), kind)
 		var secrets []string
 		err := rotationThroughControlPlane(ctx, r, func(ctx context.Context, conn *client.Conn) error {
-			resp, err := Client(conn).RotationStep(ctx, &kubernetesv1.RotationStepRequest{Step: kubernetesv1.RotationStep_ROTATION_STEP_LIST_TOKEN_SECRETS})
+			resp, err := sdkkubernetes.Client(conn).RotationStep(ctx, &kubernetesv1.RotationStepRequest{Step: kubernetesv1.RotationStep_ROTATION_STEP_LIST_TOKEN_SECRETS})
 			if err == nil {
 				secrets = resp.TokenSecrets
 			}
@@ -434,7 +435,7 @@ func rotationThroughControlPlane(ctx context.Context, r layer.Rotating, fn func(
 	if len(names) == 0 {
 		return errors.New("the cluster has no control-plane node to ask")
 	}
-	return nodes.ViaFirst(names, tryNextControlPlane, func(conn *client.Conn) error { return fn(ctx, conn) })
+	return nodes.ViaFirst(names, sdkkubernetes.TryNextControlPlane, func(conn *client.Conn) error { return fn(ctx, conn) })
 }
 
 // encryptedCounts runs a rotation step that counts the objects etcd holds and returns them by key
@@ -442,7 +443,7 @@ func rotationThroughControlPlane(ctx context.Context, r layer.Rotating, fn func(
 func encryptedCounts(ctx context.Context, r layer.Rotating, step kubernetesv1.RotationStep) (map[string]uint64, error) {
 	counts := map[string]uint64{}
 	err := rotationThroughControlPlane(ctx, r, func(ctx context.Context, conn *client.Conn) error {
-		resp, err := Client(conn).RotationStep(ctx, &kubernetesv1.RotationStepRequest{Step: step})
+		resp, err := sdkkubernetes.Client(conn).RotationStep(ctx, &kubernetesv1.RotationStepRequest{Step: step})
 		if err != nil {
 			return err
 		}

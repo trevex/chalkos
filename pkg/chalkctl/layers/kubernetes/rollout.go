@@ -18,6 +18,7 @@ import (
 	"github.com/trevex/chalkos/pkg/imageref"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/translate"
+	sdkkubernetes "github.com/trevex/chalkos/pkg/sdk/layers/kubernetes"
 )
 
 // rolloutFlags are the Kubernetes layer's flags of chalkctl config apply.
@@ -42,7 +43,7 @@ type versions struct {
 
 // Versions reads the node's kind and versions from its status.
 func (p *Plugin) Versions(ctx context.Context, conn *client.Conn) (any, error) {
-	k, err := Status(ctx, conn)
+	k, err := sdkkubernetes.Status(ctx, conn)
 	if err != nil {
 		return nil, err
 	}
@@ -339,7 +340,7 @@ func (p *Plugin) BeforeDelivery(ctx context.Context, u layer.Upgrading, name str
 // bootstrap, has nothing to check. The kubelet's own health is the node's: the trial's
 // confirmation waits for it.
 func (p *Plugin) Delivered(ctx context.Context, conn *client.Conn) error {
-	k, err := Status(ctx, conn)
+	k, err := sdkkubernetes.Status(ctx, conn)
 	if err != nil {
 		return err
 	}

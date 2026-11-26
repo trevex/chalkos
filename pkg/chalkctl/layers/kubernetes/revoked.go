@@ -12,6 +12,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	sdkkubernetes "github.com/trevex/chalkos/pkg/sdk/layers/kubernetes"
 	kubernetesview "github.com/trevex/chalkos/pkg/statusview/layers/kubernetes"
 )
 
@@ -26,7 +27,7 @@ func revokedNodesOf(ctx context.Context, controlPlanes []string, status statusFu
 	bootstrapped := false
 	for _, name := range controlPlanes {
 		k, err := status(ctx, name)
-		if errors.Is(err, errNoKubernetes) {
+		if errors.Is(err, sdkkubernetes.ErrNoKubernetes) {
 			why = append(why, fmt.Sprintf("%s: is not bootstrapped: no Kubernetes", name))
 			continue
 		}

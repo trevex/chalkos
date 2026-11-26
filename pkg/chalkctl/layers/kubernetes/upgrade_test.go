@@ -7,6 +7,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
+	sdkkubernetes "github.com/trevex/chalkos/pkg/sdk/layers/kubernetes"
 )
 
 // fakeUpgrading is a run whose ViaCoordinators fails with err and whose Flags are flags.
@@ -26,7 +27,7 @@ func (u fakeUpgrading) ViaCoordinators(string, func(error) bool, func(*client.Co
 // other error on as it is.
 func TestViaControlPlanes(t *testing.T) {
 	call := func(err error) error {
-		return viaControlPlanes(fakeUpgrading{err: err}, "w1", tryNextControlPlane, func(*client.Conn) error { return nil })
+		return viaControlPlanes(fakeUpgrading{err: err}, "w1", sdkkubernetes.TryNextControlPlane, func(*client.Conn) error { return nil })
 	}
 	none := fmt.Errorf("drain w1: %w", layer.ErrNoCoordinator)
 	if err := call(none); err == nil || err.Error() != "the cluster has no control-plane node to ask; pass --inventory" {

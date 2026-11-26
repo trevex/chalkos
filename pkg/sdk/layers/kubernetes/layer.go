@@ -1,5 +1,6 @@
 // Package kubernetes is the Kubernetes layer's part in the SDK: the facts its images carry, the
-// Addon documents it leaves to the control planes, and the share it issues a node.
+// Addon documents it leaves to the control planes, the share it issues a node, the calls to a
+// node's Kubernetes layer, such as its bootstrap and its etcd membership, and admin kubeconfigs.
 package kubernetes
 
 import (

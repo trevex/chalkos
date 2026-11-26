@@ -10,6 +10,7 @@ import (
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	sdkkubernetes "github.com/trevex/chalkos/pkg/sdk/layers/kubernetes"
 )
 
 // TestAdmitBootstrap refuses a bootstrap while another control plane of the inventory is an etcd
@@ -29,7 +30,7 @@ func TestAdmitBootstrap(t *testing.T) {
 			return st, nil
 		}
 		if name == "router" {
-			return nil, fmt.Errorf("%s: %w", name, errNoKubernetes)
+			return nil, fmt.Errorf("%s: %w", name, sdkkubernetes.ErrNoKubernetes)
 		}
 		return nil, errors.New("connection refused")
 	}
