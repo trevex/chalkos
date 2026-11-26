@@ -892,7 +892,7 @@ in
             rule = "self == oldSelf";
             mesage = "x";
           };
-          refusal = "${at}: mesage is none of rule, message, messageExpression, takes and description";
+          refusal = "${at}: mesage is none of rule, message, messageExpression, takes, reason and description";
         }
         {
           rule = {

@@ -258,17 +258,19 @@ let
         "message"
         "messageExpression"
         "takes"
+        "reason"
         "description"
       ];
       unknown = lib.subtractLists attributes (lib.attrNames r);
       takes = r.takes or null;
+      reason = r.reason or null;
     in
     if !lib.isAttrs r then
       "${at} is no rule; give { rule = \"<CEL>\"; message = \"...\"; }"
     else if unknown != [ ] then
       "${at}: ${lib.concatStringsSep ", " unknown} ${
         if lib.length unknown == 1 then "is" else "are"
-      } none of rule, message, messageExpression, takes and description"
+      } none of rule, message, messageExpression, takes, reason and description"
     else if !lib.isString (r.rule or null) || r.rule == "" then
       "${at} has no rule; set rule to the CEL expression that is true for every change the node accepts"
     else if
@@ -280,6 +282,8 @@ let
       ]
     then
       "${at}.takes: ${builtins.toJSON takes} is none of refuse, reset and reinstall"
+    else if reason != null && !lib.elem reason api.ruleReasons then
+      "${at}.reason: ${builtins.toJSON reason} is none of ${lib.concatStringsSep ", " api.ruleReasons}"
     else
       null;
 
