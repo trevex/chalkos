@@ -187,23 +187,13 @@ let
       # The layer an effect's chalkd action names, or a run of chalkd <layer> <command> does.
       chalkdLayer = if e.chalkd == null then null else lib.head (lib.splitString ":" e.chalkd);
       runWords = if e.run == null then [ ] else chalkosLib.internal.argv e.run;
+      # A run of chalkd whose subcommand is the name of a layer of chalkos runs that layer's
+      # command; chalkd's own subcommands name no layer.
       runLayer =
         if
           lib.length runWords >= 2
           && baseNameOf (lib.head runWords) == "chalkd"
-          # chalkd's own subcommands, which name no layer; they must match those of cmd/chalkd.
-          && !(lib.elem (lib.elemAt runWords 1) [
-            "serve"
-            "load-config"
-            "health"
-            "check"
-            "apply-links"
-            "chrony-dhcp"
-            "chrony-reload-sources"
-            "frr-credentials"
-            "tcp-connect"
-            "help"
-          ])
+          && lib.elem (lib.elemAt runWords 1) chalkosLib.internal.layerNames
         then
           lib.elemAt runWords 1
         else

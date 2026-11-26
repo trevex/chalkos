@@ -228,6 +228,8 @@ in
         SystemCallArchitectures = "native";
       };
       inherit commandType argv;
+      # The names of chalkos's layers, those of the flake's nixosModules.
+      layerNames = lib.attrNames (import ./layers.nix);
       # The type of a program option: a value of commandType, or an attribute set of a builder,
       # such as chalkosLib.render's, which the option's module checks.
       programType =

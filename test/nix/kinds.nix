@@ -1813,7 +1813,9 @@ in
         documentsNone = true;
       };
     };
-  # An effect's chalkd action or run names a layer of the image; another layer fails.
+  # An effect's chalkd action, or a run of chalkd whose subcommand names a layer of chalkos, names
+  # a layer of the image; another layer fails. chalkd's own subcommands and a layer's command
+  # without the layer's name name no layer.
   testEffectOfAnotherLayerFails = {
     expr =
       map
@@ -1835,12 +1837,19 @@ in
           { run = "/nix/store/x-chalkd/bin/chalkd load-config"; }
           { run = "/nix/store/x-chalkd/bin/chalkd \tload-config"; }
           { run = "/nix/store/x-chalkd/bin/chalkd kubernetes vxlan-rule"; }
-          # A layer's command without the layer's name names no layer of the image.
           { run = "/nix/store/x-chalkd/bin/chalkd vxlan-rule"; }
+          {
+            run = [
+              "/nix/store/x-chalkd/bin/chalkd"
+              "router"
+              "x"
+            ];
+          }
         ];
     expected = [
       true
       true
+      false
       false
       false
       false
