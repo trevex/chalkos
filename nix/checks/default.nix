@@ -48,22 +48,43 @@ let
         ./repo.nix
         ./release.nix
       ];
-  tiers = import ./tiers.nix {
-    inherit lib;
-    names = lib.attrNames checks ++ [ "ci-tiers" ];
-  };
+  names = lib.attrNames checks ++ [ "ci-tiers" ];
+  tiers = import ./tiers.nix { inherit lib names; };
+  # The packages of pkg/ whose names end in test, the shared test helpers, as pkg/<path>.
+  helpers =
+    let
+      walk =
+        dir: path:
+        lib.concatLists (
+          lib.mapAttrsToList (
+            name: type:
+            lib.optionals (type == "directory") (
+              lib.optional (lib.hasSuffix "test" name) "${path}/${name}"
+              ++ walk (dir + "/${name}") "${path}/${name}"
+            )
+          ) (builtins.readDir dir)
+        );
+    in
+    walk ../../pkg "pkg";
+  e2eFiles = lib.filter (lib.hasSuffix "_test.go") (lib.attrNames (builtins.readDir ../../test/e2e));
 in
 checks
 // {
   # Every check is in exactly one tier, and .github/labels.yml has the label e2e and the labels of
   # the tiers' e2eLabels, which run end-to-end checks on a pull request, and the label ci-failure
-  # of the issues CI opens.
+  # of the issues CI opens. testing.md or ci.md names each check in code font, but the
+  # release-image-<name> checks, which ci.md names by that pattern, and testing.md each end-to-end
+  # test file and each test helper package.
   ci-tiers =
     pkgs.runCommand "chalkos-ci-tiers"
       {
         nativeBuildInputs = [ pkgs.yq-go ];
         labels = ../../.github/labels.yml;
         expected = lib.concatLines (lib.sort lib.lessThan ([ "e2e" ] ++ lib.attrNames tiers.e2eLabels));
+        testing = ../../docs/contribute/testing.md;
+        ci = ../../docs/contribute/ci.md;
+        checks = lib.filter (name: !lib.hasPrefix "release-image-" name) names;
+        pages = e2eFiles ++ helpers;
       }
       ''
         actual=$(yq -r '.[].name | select(test("^e2e(:|$)"))' "$labels" | LC_ALL=C sort)
@@ -78,6 +99,20 @@ checks
           echo "error: .github/labels.yml has no label ci-failure, which CI's failure issues carry" >&2
           exit 1
         fi
+        status=0
+        for name in $checks; do
+          grep -qF -- "\`$name\`" "$testing" "$ci" || {
+            echo "error: docs/contribute/testing.md and ci.md name no check $name" >&2
+            status=1
+          }
+        done
+        for name in $pages; do
+          grep -qF -- "\`$name\`" "$testing" || {
+            echo "error: docs/contribute/testing.md names no $name" >&2
+            status=1
+          }
+        done
+        [ "$status" = 0 ]
         touch $out
       '';
 }

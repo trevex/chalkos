@@ -117,6 +117,8 @@ no VM, and in `images` when it builds or boots images that other checks share.
 
 The `ci-tiers` check also wants each label of `e2eLabels` in `.github/labels.yml`, so a new
 end-to-end check needs its label there too, and the label `ci-failure`.
+Every check other than the `release-image-<name>` checks must be named in code font on this page
+or on [Testing](testing.md), and every end-to-end test file and test helper package on Testing.
 
 ## End-to-end labels
 
