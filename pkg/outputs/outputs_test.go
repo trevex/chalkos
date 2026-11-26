@@ -541,3 +541,15 @@ func TestDirectRestoresModes(t *testing.T) {
 		}
 	}
 }
+
+// Direct reports a mode it cannot give back, as of a file a program without Write removes.
+func TestDirectReportsRestoreFailure(t *testing.T) {
+	out := t.TempDir()
+	if err := os.WriteFile(filepath.Join(out, "file"), nil, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	p := Program{Argv: []string{script(t, `chmod u+w "$OUT"; rm -f "$OUT/file"`)}, Out: out, Timeout: 30 * time.Second}
+	if _, err := (Direct{}).Run(context.Background(), p); err == nil {
+		t.Error("Run succeeded although the file's mode was not given back")
+	}
+}

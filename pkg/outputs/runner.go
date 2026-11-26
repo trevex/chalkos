@@ -214,9 +214,9 @@ type Direct struct{}
 
 func (Direct) Run(ctx context.Context, p Program) (printed []byte, err error) {
 	if !p.Write {
-		restore, err := readOnly(p.Out)
-		if err != nil {
-			return nil, err
+		restore, roErr := readOnly(p.Out)
+		if roErr != nil {
+			return nil, roErr
 		}
 		defer func() { err = errors.Join(err, restore()) }()
 	}
