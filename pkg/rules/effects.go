@@ -41,7 +41,7 @@ func CompileEffect(name, when string) (*EffectRule, error) {
 		return nil, fail("%v", err)
 	}
 	e.Facts = facts
-	if e.program, _, err = program(env, parsed[0], cel.BoolType); err != nil {
+	if e.program, _, err = program(env, parsed[0], cel.BoolType, estimator{}); err != nil {
 		return nil, fail("%v", err)
 	}
 	return e, nil

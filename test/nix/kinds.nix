@@ -1520,10 +1520,16 @@ in
         {
           chalkos.outputs = {
             t.render = chalkosLib.render.template ../../modules/testing/greeting.tmpl;
-            d.render = chalkosLib.render.documents [
-              "Peer"
-              "Link"
-            ];
+            d = {
+              inputs = [
+                "Demo"
+                "Network"
+              ];
+              render = chalkosLib.render.documents [
+                "Demo"
+                "Network"
+              ];
+            };
             j.render = chalkosLib.render.jq (builtins.toFile "bird.conf.jq" ".");
             p.render = pkgs.writeShellScript "r" "true";
           };
@@ -1537,7 +1543,7 @@ in
         template = builtins.match ".*/bin/chalkos-render template /nix/store/[^ ]*-greeting.tmpl (.*)" (
           render "t"
         );
-        documents = builtins.match ".*/bin/chalkos-render (documents Peer Link)" (render "d");
+        documents = builtins.match ".*/bin/chalkos-render (documents Demo Network)" (render "d");
         jq = builtins.match ".*/bin/chalkos-render jq /nix/store/[^ ]+/bin/jq /nix/store/[^ ]+-bird.conf.jq (bird.conf)" (
           render "j"
         );
@@ -1546,7 +1552,7 @@ in
       expected = {
         value.documents = [ "Peer" ];
         template = [ "greeting" ];
-        documents = [ "documents Peer Link" ];
+        documents = [ "documents Demo Network" ];
         jq = [ "bird.conf" ];
         package = true;
       };
@@ -1756,6 +1762,21 @@ in
               inherit render;
             };
             name."Bird.conf" = { inherit render; };
+            documents.bird-conf = {
+              inputs = [ "Demo" ];
+              render.documents = [ "Demo" ];
+            };
+            documentsNotInInputs.bird-conf = {
+              inputs = [ "Demo" ];
+              render.documents = [
+                "Demo"
+                "Network"
+              ];
+            };
+            documentsNone.bird-conf = {
+              inputs = [ "Demo" ];
+              render.documents = [ ];
+            };
           };
       expected = {
         accepted = false;
@@ -1764,6 +1785,9 @@ in
         unknownKind = true;
         secret = true;
         name = true;
+        documents = false;
+        documentsNotInInputs = true;
+        documentsNone = true;
       };
     };
   # An effect's chalkd action or run names a layer of the image; another layer fails.

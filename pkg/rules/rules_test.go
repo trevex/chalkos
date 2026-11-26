@@ -10,6 +10,9 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"cel.dev/cel-go/cel"
+	"github.com/santhosh-tekuri/jsonschema/v6"
+
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/jsonfile"
 	"github.com/trevex/chalkos/pkg/kubernetes/translate"
@@ -244,6 +247,68 @@ func TestSpecRules(t *testing.T) {
 	}
 }
 
+// The build estimates a list, map or string at the bound its schema sets with maxItems,
+// maxProperties or maxLength, and at sizeHint without one, so bounding the lists of a rule that
+// loops over documents and over two lists of each lets it compile.
+func TestSchemaBoundsLowerTheEstimate(t *testing.T) {
+	e, err := newEnv()
+	if err == nil {
+		e, err = e.Extend(cel.Variable("self", cel.ListType(cel.StringType)))
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	ast, iss := e.Compile(`self.all(a, self.all(b, a == b))`)
+	if iss.Err() != nil {
+		t.Fatal(iss.Err())
+	}
+	items, length := 16, 8
+	array, str := new(jsonschema.Types(0)), new(jsonschema.Types(0))
+	array.Add("array")
+	str.Add("string")
+	bounded := &jsonschema.Schema{Types: array, MaxItems: &items, Items2020: &jsonschema.Schema{Types: str, MaxLength: &length}}
+	estimates := map[string]uint64{}
+	for name, est := range map[string]estimator{"unbounded": {}, "bounded": fieldEstimator(bounded)} {
+		c, err := e.EstimateCost(ast, est)
+		if err != nil {
+			t.Fatal(err)
+		}
+		estimates[name] = c.Max
+	}
+	if estimates["bounded"]*100 > estimates["unbounded"] {
+		t.Errorf("estimates = %v, want bounded far below unbounded", estimates)
+	}
+
+	// A kind of closed objects, as lib/kinds/schema.nix writes one, whose lists take maxItems
+	// items at most, or any number with maxItems 0.
+	closed := func(props map[string]any) map[string]any {
+		o := object(props)
+		o["additionalProperties"] = false
+		return o
+	}
+	kind := func(maxItems int) map[string]any {
+		list := func(items map[string]any) map[string]any {
+			l := map[string]any{"type": "array", "items": items}
+			if maxItems > 0 {
+				l["maxItems"] = maxItems
+			}
+			return l
+		}
+		integer := map[string]any{"type": "integer"}
+		spec := closed(map[string]any{"pools": list(closed(map[string]any{"first": integer, "last": integer})), "reserved": list(integer)})
+		ranges := `documents.all(n, cel.bind(s, documents[n].spec, s.pools.all(p, s.reserved.all(r, r < p.first || r > p.last))))`
+		k := kindSchema("Demo", true, spec, []any{rule(ranges, "")})
+		k["additionalProperties"] = false
+		return k
+	}
+	if _, err := Compile(schemasOf(t, kind(0))); err == nil || !strings.Contains(err.Error(), "more than the limit") {
+		t.Errorf("unbounded lists: %v, want the rule refused", err)
+	}
+	if _, err := Compile(schemasOf(t, kind(32))); err != nil {
+		t.Errorf("lists of 32 items at most: %v", err)
+	}
+}
+
 // A kind's rules see the documents of the kind by name, and every rule the whole config by
 // apiVersion, kind and name, Secret values hashed.
 func TestKindRulesAndConfig(t *testing.T) {
@@ -433,7 +498,7 @@ func TestEvaluateErrors(t *testing.T) {
 		"overload signature":  {`sets.contains([1], self.s)`, spec, "a rule cannot be evaluated: no such overload"},
 		"unknown time zone":   {`timestamp("2020-01-01T00:00:00Z").getHours(self.tz) == 1`, spec, "a rule cannot be evaluated: unknown time zone"},
 		"invalid input":       {`self.l.join(",") == ""`, spec, "a rule cannot be evaluated: invalid input to a function"},
-		"cost":                {`self.list.all(a, self.list.all(b, a == b))`, `{"list": [` + strings.Join(items, ",") + `]}`, "a rule cannot be evaluated: cost limit exceeded"},
+		"cost":                {`self.list.all(a, self.list.all(b, a == b))`, `{"list": [` + strings.Join(items, ",") + `]}`, "a rule cannot be evaluated: the image's rule is too costly for this config"},
 		"overflow":            {`self.max + self.i == 1`, spec, "a rule cannot be evaluated: overflow"},
 		"unsigned overflow":   {`uint(-self.i) == 1u`, spec, "a rule cannot be evaluated: overflow"},
 		"division by zero":    {`self.i / self.z == 1`, spec, "a rule cannot be evaluated: division by zero"},
@@ -807,5 +872,31 @@ func TestCompileRefusesUnknownField(t *testing.T) {
 	byName := rule(`documents.all(n, cel.bind(r, n in facts.recorded ? facts.recorded[n] : null, r == null || r.format == ""))`, "")
 	if _, err := Compile(schemasOf(t, kindSchema("Open", true, object(nil), []any{byName}))); err != nil {
 		t.Error(err)
+	}
+}
+
+// A value is estimated at the bound of each type its schema allows, and at sizeHint for a type
+// it allows without a bound: maxLength bounds no list.
+func TestSizeTakesTheBoundOfTheType(t *testing.T) {
+	typed := func(maxItems, maxLength int, types ...string) *jsonschema.Schema {
+		s := &jsonschema.Schema{Types: new(jsonschema.Types(0)), MaxItems: &maxItems, MaxLength: &maxLength}
+		for _, typ := range types {
+			s.Types.Add(typ)
+		}
+		return s
+	}
+	for _, c := range []struct {
+		s    *jsonschema.Schema
+		want uint64
+	}{
+		{typed(2000, 1, "array"), 2000},
+		{typed(1, 2000, "string"), 2000},
+		{typed(4, 8, "array", "string"), 8},
+		{typed(4, 8, "array", "object"), sizeHint},
+		{&jsonschema.Schema{MaxItems: new(4)}, sizeHint},
+	} {
+		if got := sizeOf(c.s, 0).Max; got != c.want {
+			t.Errorf("sizeOf(%v) = %d, want %d", c.s.Types, got, c.want)
+		}
 	}
 }

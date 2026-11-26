@@ -9,18 +9,18 @@ import (
 	"cel.dev/cel-go/cel"
 	celast "cel.dev/cel-go/common/ast"
 	"cel.dev/cel-go/common/cost"
-	"cel.dev/cel-go/common/types"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
-// Cost limits. A rule's estimated cost assumes every list, map and string holds sizeHint
-// elements, so two nested loops over a kind's documents fit and three exceed the limit. The
-// runtime limit stops a rule on the documents it meets.
+// A rule's cost limit. The build estimates a rule's cost with the sizes its kind's schema bounds
+// lists, maps and strings to, and sizeHint elements in those it does not bound, so two nested loops
+// over a kind's documents fit and three exceed the limit. A node stops a rule at the same limit on
+// the documents it meets.
 const (
-	sizeHint         = 256
-	maxEstimatedCost = 10_000_000
-	runtimeCostLimit = 1_000_000
+	sizeHint  = 256
+	costLimit = 10_000_000
 )
 
 // Program is a rule compiled for the kind or field that declares it.
@@ -78,9 +78,9 @@ func Compile(s *schema.Schemas) (*Set, error) {
 		if err != nil {
 			return nil, err
 		}
-		add := func(path []string, self *types.Type, rules []schema.Rule) {
+		add := func(path []string, s *jsonschema.Schema, rules []schema.Rule) {
 			for _, r := range rules {
-				p, err := compile(apiVersions, kt, k, path, self, r)
+				p, err := compile(apiVersions, kt, k, path, s, r)
 				if err != nil {
 					errs = append(errs, err)
 					continue
@@ -91,7 +91,7 @@ func Compile(s *schema.Schemas) (*Set, error) {
 		s.WalkSchema(k.APIVersion, k.Kind, func(n schema.Node) bool {
 			a := n.Annotations()
 			if len(n.Field) == 0 && len(a.KindRules) > 0 {
-				add(nil, kt.of(n.Schema, nil), a.KindRules)
+				add(nil, n.Schema, a.KindRules)
 			}
 			switch {
 			case len(a.Rules) == 0:
@@ -100,7 +100,7 @@ func Compile(s *schema.Schemas) (*Set, error) {
 			case slices.Contains(n.Field, schema.ItemStep) || slices.Contains(n.Field, schema.ValueStep):
 				errs = append(errs, fmt.Errorf("%s %s: a rule below a list item or a map value has no path to bind self to; declare it on the list or the map", k.Kind, n.Path))
 			default:
-				add(slices.Clone(n.Field), kt.of(n.Schema, n.Field), a.Rules)
+				add(slices.Clone(n.Field), n.Schema, a.Rules)
 			}
 			return true
 		})
@@ -113,15 +113,18 @@ func Compile(s *schema.Schemas) (*Set, error) {
 
 // compile compiles a rule of the kind k, of its field at path or, with a nil path, of the kind.
 // Every rule sees config, oldConfig and node, and document(kind, name) over config; a kind's rules
-// documents and oldDocuments, maps of names to documents of type self; a field's self and oldSelf,
-// of type self; and each fact it names as facts.<name>. kt holds the types of k's schema.
-func compile(apiVersions map[string]string, kt *kindTypes, k schema.Kind, path []string, self *types.Type, r schema.Rule) (*Program, error) {
+// documents and oldDocuments, maps of names to documents of the schema s; a field's self and
+// oldSelf, values of s; and each fact it names as facts.<name>. kt holds the types of k's schema.
+func compile(apiVersions map[string]string, kt *kindTypes, k schema.Kind, path []string, s *jsonschema.Schema, r schema.Rule) (*Program, error) {
 	p := &Program{Rule: r, Kind: k, Path: path}
 	fail := func(format string, args ...any) error {
 		return fmt.Errorf("%s: rule %q: %s", p.Where(), r.Rule, fmt.Sprintf(format, args...))
 	}
+	self := kt.of(s, path)
+	estimate := fieldEstimator(s)
 	opts := []cel.EnvOption{documents(apiVersions), cel.CustomTypeProvider(kt), kt.indexes()}
 	if path == nil {
+		estimate = kindEstimator(s)
 		docs := cel.MapType(cel.StringType, self)
 		opts = append(opts, cel.Variable("documents", docs), cel.Variable("oldDocuments", docs))
 	} else {
@@ -140,11 +143,11 @@ func compile(apiVersions map[string]string, kt *kindTypes, k schema.Kind, path [
 	}
 	check, message := parsed[0], parsed[1]
 	p.Facts = facts
-	if p.check, p.checkFields, err = program(e, check, cel.BoolType); err != nil {
+	if p.check, p.checkFields, err = program(e, check, cel.BoolType, estimate); err != nil {
 		return nil, fail("%v", err)
 	}
 	if message != nil {
-		if p.message, p.messageFields, err = program(e, message, cel.StringType); err != nil {
+		if p.message, p.messageFields, err = program(e, message, cel.StringType, estimate); err != nil {
 			return nil, fail("messageExpression: %v", err)
 		}
 	}
@@ -194,10 +197,11 @@ func parseRule(base *cel.Env, idents []string, rule string, srcs ...string) (*ce
 	return e, parsed, facts, nil
 }
 
-// program checks a parsed expression, which must yield want or dyn, and limits its cost. In the
+// program checks a parsed expression, which must yield want or dyn, and limits its cost as est
+// estimates it. In the
 // environment of a kind's rule it returns the fields of the kind's schema the expression reads,
 // as kindTypes.fieldsRead does.
-func program(e *cel.Env, parsed *cel.Ast, want *cel.Type) (cel.Program, []string, error) {
+func program(e *cel.Env, parsed *cel.Ast, want *cel.Type, est estimator) (cel.Program, []string, error) {
 	checked, iss := e.Check(parsed)
 	if iss.Err() != nil {
 		return nil, nil, iss.Err()
@@ -212,40 +216,153 @@ func program(e *cel.Env, parsed *cel.Ast, want *cel.Type) (cel.Program, []string
 	if out := checked.OutputType(); !out.IsExactType(want) && !out.IsExactType(cel.DynType) {
 		return nil, nil, fmt.Errorf("yields %s, not %s", out, want)
 	}
-	est, err := e.EstimateCost(checked, estimator{})
+	cost, err := e.EstimateCost(checked, est)
 	if err != nil {
 		return nil, nil, err
 	}
-	if est.Max > maxEstimatedCost {
-		return nil, nil, fmt.Errorf("costs up to %d, more than the limit of %d, with %d elements in each list, map and string", est.Max, maxEstimatedCost, sizeHint)
+	if cost.Max > costLimit {
+		return nil, nil, fmt.Errorf("costs up to %d, more than the limit of %d, with %d elements in each list, map and string whose schema sets no maxItems, maxProperties or maxLength", cost.Max, costLimit, sizeHint)
 	}
-	prg, err := e.Program(checked, cel.CostLimit(runtimeCostLimit))
+	prg, err := e.Program(checked, cel.CostLimit(costLimit))
 	return prg, fields, err
 }
 
-// estimator assumes sizeHint elements wherever CEL cannot tell a size, and the same for the keys
-// and elements of a list or map down to sizeDepth levels, the deepest nesting the kinds' documents
-// reach; CEL counts a container whose element size it cannot tell as unbounded.
-type estimator struct{}
+// estimator estimates the size of a value a rule reads from the schema its path leads to: a
+// list's maxItems, a string's maxLength or an object's maxProperties, and sizeHint where the
+// schema sets no bound or the path leads to none. It estimates the keys and elements of a list or
+// map the same way down to sizeDepth levels, the deepest nesting the kinds' documents reach; CEL
+// counts a container whose element size it cannot tell as unbounded.
+type estimator struct {
+	// roots are the schemas of the variables a rule reads by name: self and oldSelf of a field's
+	// rule, and documents and oldDocuments of a kind's, a map of the kind's documents. Without
+	// them every size is sizeHint.
+	roots map[string]*jsonschema.Schema
+}
 
 const sizeDepth = 8
 
-func nestedSize(depth int) *cost.SizeEstimate {
-	s := &cost.SizeEstimate{Min: 0, Max: sizeHint}
-	if depth > 0 {
-		s.Key = nestedSize(depth - 1)
-		s.Elem = nestedSize(depth - 1)
-	}
-	return s
+// kindEstimator is the estimator of a rule of the kind whose document schema is doc.
+func kindEstimator(doc *jsonschema.Schema) estimator {
+	docs := &jsonschema.Schema{AdditionalProperties: doc}
+	return estimator{roots: map[string]*jsonschema.Schema{"documents": docs, "oldDocuments": docs}}
 }
 
-func (estimator) EstimateSize(cost.AstNode) *cost.SizeEstimate {
+// fieldEstimator is the estimator of a rule of the field whose schema is s.
+func fieldEstimator(s *jsonschema.Schema) estimator {
+	return estimator{roots: map[string]*jsonschema.Schema{"self": s, "oldSelf": s}}
+}
+
+func (e estimator) EstimateSize(n cost.AstNode) *cost.SizeEstimate {
 	// A new estimate each time: the checker keeps and merges the estimates it is given.
-	return nestedSize(sizeDepth)
+	path := n.Path()
+	if len(path) == 0 {
+		return sizeOf(nil, sizeDepth)
+	}
+	s := e.roots[path[0]]
+	for _, step := range path[1:] {
+		s = stepInto(s, step)
+	}
+	return sizeOf(s, sizeDepth)
 }
 
 func (estimator) EstimateCallCost(string, string, *cost.AstNode, []cost.AstNode) *cost.CallEstimate {
 	return nil
+}
+
+// sizeOf is the size of a value of s, nil for a value of no known schema, and of its keys and
+// elements down to depth levels.
+func sizeOf(s *jsonschema.Schema, depth int) *cost.SizeEstimate {
+	s = valueSchema(s)
+	size := &cost.SizeEstimate{Min: 0, Max: sizeHint}
+	var elem *jsonschema.Schema
+	if s != nil {
+		size.Max = boundOf(s)
+		elem = s.Items2020
+		if extra, ok := s.AdditionalProperties.(*jsonschema.Schema); ok {
+			elem = extra
+		}
+	}
+	if depth > 0 {
+		size.Key = sizeOf(nil, depth-1)
+		size.Elem = sizeOf(elem, depth-1)
+	}
+	return size
+}
+
+// boundOf is the most elements of a value of s: the largest bound of the types s allows, a list's
+// maxItems, a string's maxLength and an object's maxProperties, sizeHint for one it does not bound,
+// and sizeHint where s allows none of them.
+func boundOf(s *jsonschema.Schema) uint64 {
+	types := []string{"array", "string", "object"}
+	if s.Types != nil {
+		types = s.Types.ToStrings()
+	}
+	bounds := map[string]*int{"array": s.MaxItems, "string": s.MaxLength, "object": s.MaxProperties}
+	most, sized := uint64(0), false
+	for _, t := range types {
+		bound, ok := bounds[t]
+		if !ok {
+			continue
+		}
+		sized = true
+		if bound == nil {
+			return sizeHint
+		}
+		most = max(most, uint64(max(*bound, 0)))
+	}
+	if !sized {
+		return sizeHint
+	}
+	return most
+}
+
+// stepInto is the schema below s at a step of a CEL cost path: a field's name, @items, @values,
+// @indices, or @keys, which is a list's items where CEL loops over a dyn value; nil where it knows
+// none.
+func stepInto(s *jsonschema.Schema, step string) *jsonschema.Schema {
+	s = valueSchema(s)
+	if s == nil {
+		return nil
+	}
+	extra, _ := s.AdditionalProperties.(*jsonschema.Schema)
+	switch step {
+	case "@items":
+		return s.Items2020
+	case "@values":
+		return extra
+	case "@keys":
+		return s.Items2020
+	case "@indices":
+		return nil
+	}
+	if p, ok := s.Properties[step]; ok {
+		return p
+	}
+	return extra
+}
+
+// valueSchema is s with its $ref followed, or the one branch of an anyOf other than null, as
+// nullOr writes; nil for any other anyOf.
+func valueSchema(s *jsonschema.Schema) *jsonschema.Schema {
+	if s == nil {
+		return nil
+	}
+	s = schema.Resolve(s)
+	if len(s.AnyOf) == 0 {
+		return s
+	}
+	var branch *jsonschema.Schema
+	for _, b := range s.AnyOf {
+		r := schema.Resolve(b)
+		if r.Types != nil && slices.Equal(r.Types.ToStrings(), []string{"null"}) {
+			continue
+		}
+		if branch != nil {
+			return nil
+		}
+		branch = r
+	}
+	return valueSchema(branch)
 }
 
 // factNames returns the facts a parsed expression reads, each as <ident>.<name> for one of

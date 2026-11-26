@@ -347,7 +347,7 @@ var evalErrors = []struct{ prefix, says string }{
 	{"index out of range: ", "index out of bounds"},
 	{"no such overload", "no such overload"},
 	{"unknown time zone ", "unknown time zone"},
-	{"operation cancelled: actual cost limit exceeded", "cost limit exceeded"},
+	{"operation cancelled: actual cost limit exceeded", "the image's rule is too costly for this config"},
 	{"integer overflow", "overflow"},
 	{"unsigned integer overflow", "overflow"},
 	{"duration overflow", "overflow"},
