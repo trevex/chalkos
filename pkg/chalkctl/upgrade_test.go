@@ -41,6 +41,7 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/schema/schematest"
+	"github.com/trevex/chalkos/pkg/sdk/sdktest"
 	"github.com/trevex/chalkos/pkg/statusview"
 )
 
@@ -85,7 +86,7 @@ func testImageOf(t *testing.T, imageName, platform, label string, blockSize int,
 	testImageNames.Store(string(root), label)
 	// The contract chalkctl checks a node's config against, and the metadata it reads the image's
 	// root hash from: the upgrade lab's images cp-*, w-* and k8s-* run Kubernetes.
-	copySchemas(t, filepath.Join(imgDir, "schemas"))
+	schematest.Copy(t, filepath.Join(imgDir, "schemas"), sdktest.Schemas...)
 	if runsKubernetes(imageName) {
 		writeFile(t, filepath.Join(imgDir, "facts", "kubernetes.json"), testImageJSON)
 	}
@@ -740,7 +741,7 @@ func newUpgradeLabOf(t *testing.T, controlPlanes int, workers []string, cpImage,
 		nodes = append(nodes, testNode{w, kubernetes.KindWorker, wImage})
 	}
 	nodes = append(nodes, testNode{"n1", "", "plain-metal"})
-	l := &upgradeLab{t: t, ta: ta, schemas: schematest.Files(t, fixtureSchemas...), nodes: map[string]*upgradeFake{}, addrs: map[string]string{}, unhealthy: map[string]bool{}, sick: map[string]string{}, cordoned: map[string]bool{}, emptyDir: map[string]bool{}, stopping: map[string]bool{}, notReady: map[string]bool{}, healthChecked: map[string][]string{}}
+	l := &upgradeLab{t: t, ta: ta, schemas: schematest.Files(t, sdktest.Schemas...), nodes: map[string]*upgradeFake{}, addrs: map[string]string{}, unhealthy: map[string]bool{}, sick: map[string]string{}, cordoned: map[string]bool{}, emptyDir: map[string]bool{}, stopping: map[string]bool{}, notReady: map[string]bool{}, healthChecked: map[string][]string{}}
 	for _, node := range nodes {
 		name := node.name
 		n := &upgradeFake{lab: l, name: name, imageName: node.image, platform: "metal", kind: node.kind, image: "0.1.0", root: bytes.Repeat([]byte{1}, 32), generation: 1}
@@ -764,7 +765,7 @@ func newUpgradeLabOf(t *testing.T, controlPlanes int, workers []string, cpImage,
 		kubernetesv1connect.RegisterKubernetesServiceHandler(server, upgradeKubernetes{upgradeFake: n})
 		connecthttp.Mount(mux, server)
 
-		l.addrs[name] = serveTLS(t, withRoles(mux), chalkd.TLSConfig(nc.GetCertificate, nc.ClientCAs))
+		l.addrs[name] = sdktest.ServeTLS(t, withRoles(mux), chalkd.TLSConfig(nc.GetCertificate, nc.ClientCAs))
 		l.nodes[name] = n
 	}
 	l.useInventory(t, nil)
@@ -1746,7 +1747,7 @@ func TestUpgradeChecksEveryNodesConfigFirst(t *testing.T) {
 // facts/kubernetes.json alone: a directory without it is an image without Kubernetes.
 func TestImageContractReadsLayerFacts(t *testing.T) {
 	dir := t.TempDir()
-	copySchemas(t, filepath.Join(dir, "schemas"))
+	schematest.Copy(t, filepath.Join(dir, "schemas"), sdktest.Schemas...)
 	writeFile(t, filepath.Join(dir, "image.json"), testImageJSON)
 	if c, err := imageContract(dir); err != nil || len(c.target.Translators) != 0 {
 		t.Fatalf("without facts/: contract = %+v, %v", c, err)

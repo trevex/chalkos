@@ -24,6 +24,7 @@ import (
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
+	"github.com/trevex/chalkos/pkg/sdk/sdktest"
 )
 
 // revokeNode is n1 as a bootstrapped control plane whose API server is a fake holding w1's Node.
@@ -269,7 +270,7 @@ func installLab(t *testing.T) *rotationLab {
 
 // install installs n1 in the lab, on a node in maintenance mode started for it.
 func (l *rotationLab) install(args ...string) error {
-	s := maintenanceNode()
+	s := sdktest.Maintenance()
 	s.InPlace = func(context.Context, install.Request, []byte) error { return nil }
 	addr := l.ta.startNode(l.t, s)
 	return l.ta.run(context.Background(), append([]string{"install", "n1", "--insecure", "--inventory", l.ta.inventory, "--address", addr}, args...))

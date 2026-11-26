@@ -21,6 +21,8 @@ import (
 	"github.com/trevex/chalkos/pkg/inventory"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/schema/schematest"
+	"github.com/trevex/chalkos/pkg/sdk/sdktest"
 )
 
 // testInventoryYAML is the inventory of the test cluster lab: n1 at 10.0.0.11, of cluster.yaml
@@ -91,7 +93,7 @@ func writeImageDir(t *testing.T, dir, name, platform, rootHash string, kubernete
 		writeFile(t, filepath.Join(dir, "facts", "kubernetes.json"), testImageJSON)
 	}
 	writeFile(t, filepath.Join(dir, "metadata.json"), fmt.Sprintf(`{"schemaVersion": 0, "id": "chalkos", "name": %q, "platform": %q, "rootHash": %q, "kinds": []}`, name, platform, rootHash))
-	copySchemas(t, filepath.Join(dir, "schemas"))
+	schematest.Copy(t, filepath.Join(dir, "schemas"), sdktest.Schemas...)
 }
 
 // TestValidate checks each node's config against the schemas of its image's directory, without a
@@ -350,7 +352,7 @@ const n1Host = "apiVersion: chalkos.dev/v1alpha1\nkind: Host\nmetadata: {name: d
 func TestInstallFromTheInventory(t *testing.T) {
 	ta := newTestApp(t)
 	path := writeInventory(t, ta.dir, n1Host, n1SystemDisk, n1Network)
-	s := maintenanceNode()
+	s := sdktest.Maintenance()
 	var got install.Request
 	s.InPlace = func(_ context.Context, req install.Request, _ []byte) error { got = req; return nil }
 	addr := ta.startNode(t, s)
@@ -386,7 +388,7 @@ func TestInstallTakesItsImageFromTheInventory(t *testing.T) {
 	writeFile(t, filepath.Join(img, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
 	path := writeInventory(t, ta.dir)
 	writeFile(t, path, strings.Replace(testInventoryYAML, "directory: images/test-metal", "directory: "+img, 1))
-	s := maintenanceNode()
+	s := sdktest.Maintenance()
 	s.Installer = true
 	var got install.PartsRequest
 	var checked install.Checked

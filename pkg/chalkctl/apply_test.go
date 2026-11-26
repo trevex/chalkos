@@ -14,6 +14,7 @@ import (
 	"github.com/trevex/chalkos/pkg/config/slot"
 	imagecontract "github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/schema/schematest"
+	"github.com/trevex/chalkos/pkg/sdk/sdktest"
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
@@ -63,7 +64,7 @@ func TestApplyConfigWarnsOfRulesThatFail(t *testing.T) {
 	ta := newTestApp(t)
 	s, r := installedNode(t, ta, []byte(`{}`))
 	var effects map[string]any
-	raw, err := os.ReadFile(filepath.Join(contractDir(t, s), imagecontract.EffectsFile))
+	raw, err := os.ReadFile(filepath.Join(sdktest.ContractDir(t, s), imagecontract.EffectsFile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +73,7 @@ func TestApplyConfigWarnsOfRulesThatFail(t *testing.T) {
 	}
 	effects["report"] = map[string]any{"when": `config["chalkos.dev/v1alpha1"].Cluster.missing.spec.endpoint == ""`, "restart": []string{"report.service"}}
 	data, _ := json.Marshal(effects)
-	writeContract(t, s, imagecontract.EffectsFile, string(data))
+	sdktest.WriteContract(t, s, imagecontract.EffectsFile, string(data))
 	addr := ta.startNode(t, s)
 	if err := ta.run(context.Background(), ta.args([]string{"config", "apply", "n1"}, addr)); err != nil {
 		t.Fatal(err)
@@ -196,13 +197,13 @@ func TestApplyConfigToAnImageOfAnotherName(t *testing.T) {
 func TestApplyConfigStopsOnAFailingCheck(t *testing.T) {
 	ta := newTestApp(t)
 	s, r := installedNode(t, ta, []byte(`{"hostname": "old"}`))
-	dir := contractDir(t, s)
+	dir := sdktest.ContractDir(t, s)
 	for name := range schematest.Files(t, schematest.Networkd) {
 		if err := os.Remove(filepath.Join(dir, imagecontract.SchemasDir, name)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	loadContract(t, s, dir)
+	sdktest.LoadContract(t, s, dir)
 	addr := ta.startNode(t, s)
 	err := ta.run(context.Background(), ta.args([]string{"config", "apply", "n1"}, addr))
 	if err == nil || !strings.Contains(err.Error(), "the config of n1") {
@@ -236,7 +237,7 @@ func TestApplyConfigIgnoreRevokedHelp(t *testing.T) {
 func TestApplyConfigForceRetriesAfterFailedReadiness(t *testing.T) {
 	ta := newTestApp(t)
 	s, r := installedNode(t, ta, []byte(`{}`))
-	writeContract(t, s, imagecontract.EffectsFile, `{
+	sdktest.WriteContract(t, s, imagecontract.EffectsFile, `{
 	  "resolver": {
 	    "kinds": ["SystemDisk"], "restart": ["resolver.service"],
 	    "waitFor": {"description": "a route", "argv": ["/nix/store/demo/bin/probe", "probe-failure"], "timeoutSeconds": 1}

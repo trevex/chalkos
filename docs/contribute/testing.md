@@ -95,6 +95,7 @@ Shared fakes and fixtures live in packages named after the package they serve, w
 | `pkg/chalkd/layer/layertest` | a layer's API checked against its plugin's permissions, and the arguments its commands refuse | `cmd/chalkd`, the layers of `pkg/chalkd/layers` |
 | `pkg/chalkd/layers/kubernetes/kubernetestest` | a node's Kubernetes files, shares and CAs, and stand-ins for the preparation, the API server's Node and chalkd | `pkg/chalkd`, `pkg/chalkctl` |
 | `pkg/chalkd/renewal/renewaltest` | the waits of a `Renewal`, run in the test's synctest bubble, which hands the test each check | `pkg/chalkd` |
+| `pkg/sdk/sdktest` | a chalkd node served over TLS, in maintenance mode or normal mode with a node certificate, for the tests that dial it | `pkg/sdk`, `pkg/chalkctl` |
 | `pkg/kubernetes/kubetest` | a cluster and its images, a node, and the `Cluster` and `Node` documents that describe them | `pkg/chalkd`, `pkg/chalkctl` |
 | `pkg/kubernetes/etcd/etcdtest` | etcd members in the test's process, with mutual TLS from a test CA | `pkg/chalkd/layers/kubernetes`, `pkg/chalkctl` |
 | `pkg/router/derive/derivetest` | a router's documents as its outputs and validator take them, and the scenarios both test | `cmd/chalkos-render`, `pkg/router` |

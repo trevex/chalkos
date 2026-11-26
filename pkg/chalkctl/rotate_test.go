@@ -30,6 +30,7 @@ import (
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/sdk/sdktest"
 )
 
 // fakeNode answers chalkctl rotate as chalkd does: it trusts and serves what it was delivered
@@ -427,7 +428,7 @@ func newRotationLabOf(t *testing.T, nodes []testNode) *rotationLab {
 		kubernetesv1connect.RegisterKubernetesServiceHandler(server, fakeKubernetes{fakeNode: n})
 		connecthttp.Mount(mux, server)
 
-		l.addrs[name] = serveTLS(t, mux, chalkd.TLSConfig(n.cert.GetCertificate, n.cert.ClientCAs))
+		l.addrs[name] = sdktest.ServeTLS(t, mux, chalkd.TLSConfig(n.cert.GetCertificate, n.cert.ClientCAs))
 		l.nodes[name] = n
 	}
 	return l

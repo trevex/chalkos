@@ -16,6 +16,7 @@ import (
 	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/ociimage/ocitest"
 	"github.com/trevex/chalkos/pkg/schema"
+	"github.com/trevex/chalkos/pkg/sdk/sdktest"
 )
 
 // pushTestImage pushes an image whose contract is that of the image directory dir, as
@@ -71,7 +72,7 @@ func TestInstallPullsTheImageFromTheRegistry(t *testing.T) {
 	useOCIImage(t, ta, ref)
 	host, _, _ := strings.Cut(ref, "/")
 	ta.writeNode(t, n1SystemDisk, n1Network, fmt.Sprintf("apiVersion: oci.chalkos.dev/v1alpha1\nkind: Registry\nmetadata: {name: lab}\nspec: {host: %q, insecure: true}\n", host))
-	s := maintenanceNode()
+	s := sdktest.Maintenance()
 	s.Installer = true
 	var got install.PartsRequest
 	var checked install.Checked

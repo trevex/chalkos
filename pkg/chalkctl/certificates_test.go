@@ -14,6 +14,7 @@ import (
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/sdk/sdktest"
 )
 
 // nodeWithCertificate serves s with the node certificate in a store it can replace.
@@ -26,7 +27,7 @@ func (ta *testApp) nodeWithCertificate(t *testing.T, s *chalkd.Server, cert pki.
 	if s.Certificate, err = chalkd.LoadNodeCertificate(dir); err != nil {
 		t.Fatal(err)
 	}
-	return serveTLS(t, s.Handler(), chalkd.TLSConfig(s.Certificate.GetCertificate, s.Certificate.ClientCAs))
+	return sdktest.ServeTLS(t, s.Handler(), chalkd.TLSConfig(s.Certificate.GetCertificate, s.Certificate.ClientCAs))
 }
 
 func TestNodeRenewReachesAnExpiredNode(t *testing.T) {

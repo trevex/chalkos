@@ -234,6 +234,7 @@ Test helpers live in packages of their own:
 | `registry/registrytest` | `pkg/registry` served on loopback with a node certificate of the test's OS CA. |
 | `router/derive/derivetest` | A router's documents by kind, and the scenarios that the router outputs and the validator router both test. |
 | `schema/schematest` | The fixture schemas of `test/fixtures`. |
+| `sdk/sdktest` | In-process chalkd nodes served over TLS, for the tests that dial them. |
 | `secureboot/secureboottest` | TPM event logs as firmware writes them. |
 | `storage/hostops/hostopstest` | A fake host that keeps its mounts and device-mapper volumes in maps. |
 | `storage/storagetest` | The sysfs, udev and `/dev` trees of a host's disks. |

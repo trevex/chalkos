@@ -19,6 +19,8 @@ import (
 	routerplugin "github.com/trevex/chalkos/pkg/chalkd/layers/router"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/schema/schematest"
+	"github.com/trevex/chalkos/pkg/sdk/sdktest"
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
@@ -234,9 +236,9 @@ func TestUpgradeConfirmsEveryNode(t *testing.T) {
 func TestInstallWipeDiskConfirms(t *testing.T) {
 	ta := newTestApp(t)
 	imageDir := testUpgradeImage(t, "gpu-metal", "0.1.0")
-	copySchemas(t, filepath.Join(imageDir, "schemas"))
+	schematest.Copy(t, filepath.Join(imageDir, "schemas"), sdktest.Schemas...)
 	writeFile(t, filepath.Join(imageDir, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
-	s := maintenanceNode()
+	s := sdktest.Maintenance()
 	s.Installer = true
 	var installs []install.PartsRequest
 	s.FromParts = func(_ context.Context, req install.PartsRequest) error {

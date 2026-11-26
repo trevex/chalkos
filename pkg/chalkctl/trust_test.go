@@ -13,6 +13,7 @@ import (
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/sdk/sdktest"
 )
 
 // beginRotation starts rotating kind in the test cluster's secrets file.
@@ -50,7 +51,7 @@ func TestClientFilesAndInstallsTrustBothOSCAs(t *testing.T) {
 		t.Error("the client file does not hold both OS CAs")
 	}
 
-	s := maintenanceNode()
+	s := sdktest.Maintenance()
 	var got install.Request
 	s.InPlace = func(_ context.Context, req install.Request, _ []byte) error { got = req; return nil }
 	addr := ta.startNode(t, s)
@@ -69,7 +70,7 @@ func TestClientFilesAndInstallsTrustBothOSCAs(t *testing.T) {
 // than the secrets file.
 func TestInstallFromAnImageOfAnotherOSCA(t *testing.T) {
 	ta := newTestApp(t)
-	s := maintenanceNode()
+	s := sdktest.Maintenance()
 	s.InPlace = func(context.Context, install.Request, []byte) error { t.Error("installed"); return nil }
 	other, err := pki.NewOSCA(time.Now())
 	if err != nil {
@@ -79,7 +80,7 @@ func TestInstallFromAnImageOfAnotherOSCA(t *testing.T) {
 	pair, _ := tls.X509KeyPair([]byte(self.Certificate), []byte(self.Key))
 	pool, _ := pki.BundlePool(other.Certificate)
 	s.ClientCAs = chalkd.StaticCAs(pool)
-	addr := serveTLS(t, s.Handler(), chalkd.TLSConfig(chalkd.StaticCertificate(&pair), s.ClientCAs))
+	addr := sdktest.ServeTLS(t, s.Handler(), chalkd.TLSConfig(chalkd.StaticCertificate(&pair), s.ClientCAs))
 	for _, pin := range [][]string{{"--insecure"}, {"--fingerprint", pki.Fingerprint(pair.Certificate[0])}} {
 		err := ta.run(context.Background(), ta.args(append([]string{"install", "n1"}, pin...), addr))
 		if err == nil || !strings.Contains(err.Error(), "the maintenance image trusts another OS CA") {
