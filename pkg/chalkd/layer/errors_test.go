@@ -93,6 +93,18 @@ func TestErrorCarriesTheReason(t *testing.T) {
 		if got := client.Reason(ce); got != trial {
 			t.Errorf("%s: reason %v, want %v", name, got, trial)
 		}
+		// The client gets the details alone, without the error they came from.
+		var detail nodev1.ErrorReason
+		for _, d := range ce.Details() {
+			if v, err := connectproto.UnmarshalErrorDetail(d); err == nil {
+				if r, ok := v.(*nodev1.ReasonDetail); ok {
+					detail = r.GetReason()
+				}
+			}
+		}
+		if detail != trial {
+			t.Errorf("%s: detail's reason %v, want %v", name, detail, trial)
+		}
 	}
 	if got := client.Reason(Codes(nil).Error(Errorf(connect.CodeInternal, "no reason"))); got != nodev1.ErrorReason_ERROR_REASON_UNSPECIFIED {
 		t.Errorf("an error without a reason gives %v", got)
