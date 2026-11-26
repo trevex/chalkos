@@ -3,6 +3,7 @@ package sdk_test
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
@@ -225,8 +226,8 @@ func kubernetesImage(t *testing.T, s *chalkd.Server) {
 // TestInstallFromAnOCIImageSendsTheSource installs in place from an image in a registry: the
 // config is checked against the image's contract layer, whose schemas take a Network that the
 // running image's do not, and the header the node receives describes the image without the boot
-// loader the node keeps and names it by its digest. A reference by tag is refused before the node
-// gets anything.
+// loader the node keeps and names it by its digest. A reference by tag and an image that carries
+// another OS CA than the secrets' are refused before the node gets anything.
 func TestInstallFromAnOCIImageSendsTheSource(t *testing.T) {
 	secrets := generateSecrets(t)
 	host := ocitest.Registry(t)
@@ -266,6 +267,17 @@ func TestInstallFromAnOCIImageSendsTheSource(t *testing.T) {
 	r.Image = host + "/lab/test-metal:v2"
 	if err := sdk.Install(context.Background(), conn, r); err == nil || !strings.Contains(err.Error(), "by digest") || got != nil {
 		t.Fatalf("install by tag = %v, sent %v; want it refused", err, got)
+	}
+	osCA, err := json.Marshal(generateSecrets(t).OSCA.Certificate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Image = ocitest.Push(t, ocitest.Image(t, ociimage.Header{ImageID: "chalkos", RootHash: root, Architecture: "x86-64", Platform: "metal", Tag: "v2"},
+		ociimage.Contract{Metadata: []byte(md[:len(md)-1] + `, "osCA": ` + string(osCA) + `}`), Schemas: schematest.Files(t, schematest.Builtin, schematest.Networkd),
+			Definitions: map[string][]byte{"50-state.conf": []byte("[Partition]\nLabel=state\n")}}),
+		host+"/lab/test-metal:other-os-ca")
+	if err := sdk.Install(context.Background(), conn, r); !errors.Is(err, sdk.ErrOSCARefused) || got != nil {
+		t.Fatalf("install of an image of another OS CA = %v, sent %v; want ErrOSCARefused before the node gets anything", err, got)
 	}
 	r.Image = ref
 	if err := sdk.Install(context.Background(), conn, r); err != nil {

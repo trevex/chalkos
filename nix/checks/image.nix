@@ -526,6 +526,9 @@ in
           and (has("kinds") | not)
           and (has("kubernetes") | not)
         ' $dir/metadata.json
+        # metadata.json names the OS CA the image carries, the test secrets'.
+        jq -e --slurpfile pub ${chalkPkgs.test-secrets}/secrets.pub.json \
+          '.osCA == $pub[0].osCA.certificate' $dir/metadata.json
         # Slot A's labels name its store by the root hash, in the raw image as in
         # repart-output.json, and the image boots its UKI as the first generation.
         id=$(jq -r '.rootHash[0:16]' $dir/metadata.json)

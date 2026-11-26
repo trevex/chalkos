@@ -46,11 +46,19 @@ let
     }
   );
   provenance = config.chalkos.provenance;
+  # The OS CA certificate the image carries as /etc/chalkos/os-ca.crt, in PEM, or null. Clients
+  # read it before they boot the image, to refuse one whose OS CA is not their cluster's. The store
+  # holds the certificate as that file already, so metadata.json naming it changes no root hash.
+  osCA =
+    if config.chalkos.maintenance.osCA == null then
+      "--argjson osCA null"
+    else
+      "--rawfile osCA ${config.environment.etc."chalkos/os-ca.crt".source}";
   metadata =
     pkgs.runCommand "${config.image.repart.name}-metadata.json" { nativeBuildInputs = [ pkgs.jq ]; }
       ''
-        jq --slurpfile repart ${config.system.build.image}/repart-output.json \
-          '. + { rootHash: ([$repart[0][] | .roothash // empty] | first) }' \
+        jq --slurpfile repart ${config.system.build.image}/repart-output.json ${osCA} \
+          '. + { rootHash: ([$repart[0][] | .roothash // empty] | first), osCA: $osCA }' \
           ${metadataFields} > $out
       '';
   # The layers' facts as facts/<layer>.json.

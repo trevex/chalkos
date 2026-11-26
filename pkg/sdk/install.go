@@ -55,7 +55,8 @@ type InstallRequest struct {
 	Now time.Time
 	// Image, when set, is the image the node installs in place of the one it runs: its reference
 	// in a registry by digest, repository@sha256:…. Install reads the image's header and contract
-	// layer with the credentials Keychain resolves and checks the config against that contract.
+	// layer with the credentials Keychain resolves, refuses an image whose OS CA the secrets do not
+	// trust with ErrOSCARefused, as CheckImageOSCA does, and checks the config against that contract.
 	// The node pulls the image with the credentials of the Registry of the reference's
 	// host among Documents, writes the image into its inactive slot, has the image's own checker
 	// check the config there and boots the image once it is installed. The node keeps the disk
@@ -166,7 +167,8 @@ func Install(ctx context.Context, conn *client.Conn, r InstallRequest) error {
 }
 
 // registryImage reads the image in a registry r.Image names, by digest: its contract, the header
-// of an install in place of it, without the boot loader the node keeps, and its reference.
+// of an install in place of it, without the boot loader the node keeps, and its reference. It
+// refuses an image whose OS CA the secrets do not trust.
 func registryImage(ctx context.Context, r InstallRequest) (Contract, *nodev1.ImageHeader, string, error) {
 	if _, err := name.NewDigest(r.Image, name.StrictValidation); err != nil {
 		return Contract{}, nil, "", fmt.Errorf("install %s: the image %q is no reference by digest, repository@sha256:…: %w", r.Node, r.Image, err)
@@ -178,6 +180,9 @@ func registryImage(ctx context.Context, r InstallRequest) (Contract, *nodev1.Ima
 	a, err := ociimage.Read(ctx, r.Image, kc)
 	if err != nil {
 		return Contract{}, nil, "", fmt.Errorf("install %s: %w", r.Node, err)
+	}
+	if err := CheckImageOSCA(a.Metadata, r.Secrets); err != nil {
+		return Contract{}, nil, "", fmt.Errorf("install %s with %s: %w", r.Node, a.Reference, err)
 	}
 	c, err := ArtifactContract(r.Layers, a)
 	if err != nil {
