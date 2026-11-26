@@ -685,7 +685,8 @@ in
   # capability bounding set short of the full one, as chalkosLib.sandbox.hardened starts it, or is
   # one of mayRunAsFullRoot, with the reason it keeps every capability. A unit without
   # CapabilityBoundingSet, or with one of the capabilities it drops, ~CAP_..., keeps the full set.
-  # The check's own probe units show that it refuses those two and accepts them once listed.
+  # The check's own probe units show that it refuses those, an empty list and a ~ after a space
+  # included, and accepts them once listed.
   unit-sandbox =
     let
       # The units of chalkos's modules that keep every capability, by the reason.
@@ -704,13 +705,14 @@ in
         systemd-sysctl = "systemd's; the router orders it alone";
         systemd-bless-boot = "systemd's; chalkos names its ESP alone";
       };
-      # Whether the unit keeps every capability: an empty list writes no CapabilityBoundingSet=.
+      # Whether the unit keeps every capability: an empty list writes no CapabilityBoundingSet=, and
+      # systemd reads a ~ after leading whitespace too.
       fullRoot =
         s:
         let
           caps = s.serviceConfig.CapabilityBoundingSet or null;
         in
-        caps == null || caps == [ ] || lib.any (lib.hasPrefix "~") (lib.toList caps);
+        caps == null || caps == [ ] || lib.any (c: lib.hasPrefix "~" (lib.trim c)) (lib.toList caps);
       # The failures of the units of an image, called name, of the services given, by the table.
       failures =
         table: services: name: units:
@@ -729,6 +731,7 @@ in
         dropping.serviceConfig.CapabilityBoundingSet = "~CAP_SYS_MODULE";
         empty.serviceConfig = self.lib.sandbox.hardened;
         emptyList.serviceConfig.CapabilityBoundingSet = [ ];
+        spacedDropping.serviceConfig.CapabilityBoundingSet = [ " ~CAP_SYS_MODULE" ];
         bound.serviceConfig.CapabilityBoundingSet = [ "CAP_NET_ADMIN" ];
       };
       probeFailures = table: failures table probe "probe" (lib.attrNames probe);
@@ -740,18 +743,23 @@ in
           unit:
           "mayRunAsFullRoot in nix/checks/image.nix lists ${unit}, which no image's modules define with every capability"
         ) stale
-        ++ lib.optional (
-          map (f: lib.head (lib.splitString ":" f)) (probeFailures { }) != [
-            "the probe's dropping keeps every capability"
-            "the probe's emptyList keeps every capability"
-            "the probe's unbound keeps every capability"
-          ]
-        ) "the check refuses other probe units than dropping, emptyList and unbound, or not all three"
+        ++
+          lib.optional
+            (
+              map (f: lib.head (lib.splitString ":" f)) (probeFailures { }) != [
+                "the probe's dropping keeps every capability"
+                "the probe's emptyList keeps every capability"
+                "the probe's spacedDropping keeps every capability"
+                "the probe's unbound keeps every capability"
+              ]
+            )
+            "the check refuses other probe units than dropping, emptyList, spacedDropping and unbound, or not all four"
         ++ lib.optional (
           probeFailures {
             unbound = "a reason";
             dropping = "a reason";
             emptyList = "a reason";
+            spacedDropping = "a reason";
           } != [ ]
         ) "the check refuses the probe's units that mayRunAsFullRoot lists";
     in
