@@ -372,8 +372,9 @@ Message of rule 1:
 | --- | --- | --- | --- | --- | --- |
 | 1 | — | The node keeps the type its Kubernetes share is for. | `refuse` | `facts.share == null || documents.all(n, documents[n].spec.type == facts.share.kind)` | after the table |
 | 2 | `spec.labels` | The node keeps its labels once it holds a Kubernetes share. | `refuse` | `facts.share == null || self == oldSelf` | the config changes the node's labels; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; change the Node object with kubectl label instead, or reinstall the node |
-| 3 | `spec.taints` | The node keeps its taints once it holds a Kubernetes share. | `refuse` | `facts.share == null || self == oldSelf` | the config changes the node's taints; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; change the Node object with kubectl taint instead, or reinstall the node |
-| 4 | `spec.vip.interface` | A control plane of a cluster with a routed VIP names the interface it adds the VIP to. | `refuse` | after the table | the Cluster's VIP is routed, so a control plane needs vip.interface: the interface it adds the VIP to, such as a dummy interface its routing daemon announces |
+| 3 | `spec.providerID` | The node keeps its provider ID once it holds a Kubernetes share. | `refuse` | `facts.share == null || self == oldSelf` | the config changes the node's provider ID; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; keep the provider ID it registered with, or reinstall the node |
+| 4 | `spec.taints` | The node keeps its taints once it holds a Kubernetes share. | `refuse` | `facts.share == null || self == oldSelf` | the config changes the node's taints; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; change the Node object with kubectl taint instead, or reinstall the node |
+| 5 | `spec.vip.interface` | A control plane of a cluster with a routed VIP names the interface it adds the VIP to. | `refuse` | after the table | the Cluster's VIP is routed, so a control plane needs vip.interface: the interface it adds the VIP to, such as a dummy interface its routing daemon announces |
 
 Message of rule 1:
 
@@ -383,7 +384,7 @@ cel.bind(type, documents.map(n, documents[n].spec.type)[0],
   + "\"; a node keeps its type once it holds a Kubernetes share, so keep it, or reinstall the node as a " + type)
 ```
 
-Expression of rule 4:
+Expression of rule 5:
 
 ```text
 self != null || cel.bind(nodes, (("kubernetes.chalkos.dev/v1alpha1" in config && "Node" in config["kubernetes.chalkos.dev/v1alpha1"]) ? config["kubernetes.chalkos.dev/v1alpha1"].Node : {}), nodes.all(n, nodes[n].spec.type == "worker")) || cel.bind(clusters, (("kubernetes.chalkos.dev/v1alpha1" in config && "Cluster" in config["kubernetes.chalkos.dev/v1alpha1"]) ? config["kubernetes.chalkos.dev/v1alpha1"].Cluster : {}), clusters.all(n, clusters[n].spec.vip.mode != "routed" || size(clusters[n].spec.vip.addresses) == 0))

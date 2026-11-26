@@ -382,3 +382,17 @@ func nodeOf(t *testing.T, id identity.Identity) kubernetes.NodeIdentity {
 	}
 	return k
 }
+
+// TestNodeProviderID carries a Node's providerID into the identity; a Node without one leaves it
+// empty.
+func TestNodeProviderID(t *testing.T) {
+	for node, want := range map[string]string{"providerID: kubevirt://w1": "kubevirt://w1", "": ""} {
+		id, err := identityOn(kubernetesNodeSet(t, "{}", node, ""), "n1", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := nodeOf(t, id).ProviderID; got != want {
+			t.Errorf("%q: providerID = %q, want %q", node, got, want)
+		}
+	}
+}

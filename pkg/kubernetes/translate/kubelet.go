@@ -64,7 +64,8 @@ func kubelet(s *config.Set, id *identity.Identity, name string, c kubernetes.Clu
 		return fmt.Errorf("invalid Kubernetes settings:\n- %s", strings.Join(errs, "\n- "))
 	}
 	return id.SetLayer(layers.Kubernetes, kubernetes.NodeIdentity{
-		NodeName: name, NodeIPs: ips, ValidSubnets: spec.NodeIP.ValidSubnets, Labels: labels, Taints: taints,
+		NodeName: name, NodeIPs: ips, ValidSubnets: spec.NodeIP.ValidSubnets, ProviderID: deref(spec.ProviderID),
+		Labels: labels, Taints: taints,
 	})
 }
 

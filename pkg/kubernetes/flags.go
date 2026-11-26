@@ -74,14 +74,14 @@ var conflictingAPIServerFlags = map[string]flagConflict{
 
 // protectedKubeletFlags are the kubelet's flags chalkos sets: where it finds its configuration,
 // credentials, credential provider, certificates and static pods, the node's name, addresses,
-// labels and taints, and who may use its API. Extra flags come last on the kubelet's command
-// line, so they would override them.
+// provider ID, labels and taints, and who may use its API. Extra flags come last on the kubelet's
+// command line, so they would override them.
 var protectedKubeletFlags = []string{
 	"anonymous-auth", "authentication-token-webhook", "authorization-mode", "bootstrap-kubeconfig",
 	"cert-dir", "client-ca-file", "config", "config-dir", "hostname-override",
 	"image-credential-provider-bin-dir", "image-credential-provider-config", "kubeconfig", "node-ip",
-	"node-labels", "pod-manifest-path", "read-only-port", "register-with-taints", "rotate-certificates",
-	"tls-cert-file", "tls-private-key-file",
+	"node-labels", "pod-manifest-path", "provider-id", "read-only-port", "register-with-taints",
+	"rotate-certificates", "tls-cert-file", "tls-private-key-file",
 }
 
 // flagName is a flag's name as the Kubernetes components read it: they take _ for -, so
@@ -125,6 +125,9 @@ func ValidateFlags(component string, flags map[string]string) error {
 			err := fmt.Errorf("--%s is set by chalkos and cannot be overridden", name)
 			if component == "kubelet" && (flagName(name) == "node-labels" || flagName(name) == "register-with-taints") {
 				err = fmt.Errorf("%w; give the node's labels and taints in the Node document's labels and taints", err)
+			}
+			if component == "kubelet" && flagName(name) == "provider-id" {
+				err = fmt.Errorf("%w; give the node's provider ID in the Node document's providerID", err)
 			}
 			return err
 		}

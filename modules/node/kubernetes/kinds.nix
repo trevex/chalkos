@@ -145,7 +145,7 @@ in
 
     chalkos.kinds = {
       Node = builtin groups.kubernetes // {
-        description = "The node's part in the Kubernetes cluster: its type, the labels and taints it registers with, its address, the interface of the VIP and its kubelet's flags.";
+        description = "The node's part in the Kubernetes cluster: its type, the provider ID, labels and taints it registers with, its address, the interface of the VIP and its kubelet's flags.";
         # The share's certificates are those of its kind, and a control plane's etcd data stays its
         # own, until the node is reinstalled; a share of another type delivered with the config
         # changes neither.
@@ -167,6 +167,18 @@ in
               "worker"
             ];
             description = "Type of the node in the cluster; it is fixed once the node holds a Kubernetes share.";
+          };
+          providerID = chalkosLib.mkOption {
+            type = types.nullOr types.nonEmptyStr;
+            default = null;
+            description = "Provider ID the node registers with, such as kubevirt://w1, by which Cluster API finds the node of a Machine; null registers the node without one. It is fixed once the node holds a Kubernetes share.";
+            rules = [
+              (registered {
+                description = "The node keeps its provider ID once it holds a Kubernetes share.";
+                what = "the node's provider ID";
+                instead = "keep the provider ID it registered with";
+              })
+            ];
           };
           labels = chalkosLib.mkOption {
             type = types.attrsOf types.str;

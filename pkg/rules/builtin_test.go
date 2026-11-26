@@ -23,7 +23,7 @@ func TestBuiltinRulesCompile(t *testing.T) {
 	for kind, want := range map[string]int{
 		"storage.chalkos.dev/v1alpha1 Volume":     8,
 		"storage.chalkos.dev/v1alpha1 SystemDisk": 1,
-		"kubernetes.chalkos.dev/v1alpha1 Node":    4,
+		"kubernetes.chalkos.dev/v1alpha1 Node":    5,
 		"kubernetes.chalkos.dev/v1alpha1 Cluster": 6,
 		"oci.chalkos.dev/v1alpha1 Registry":       1,
 	} {
@@ -56,9 +56,9 @@ func TestRegistryRules(t *testing.T) {
 	}
 }
 
-// The kubelet applies the node's labels and taints, and the control-plane taint, when it
-// registers the node, so a node holding a Kubernetes share refuses changes to them. A node without
-// a share, as at its install, and unchanged values pass.
+// The kubelet applies the node's provider ID, labels and taints, and the control-plane taint,
+// when it registers the node, so a node holding a Kubernetes share refuses changes to them. A node
+// without a share, as at its install, and unchanged values pass.
 func TestRegistrationRules(t *testing.T) {
 	set := builtinRules(t)
 	docs := func(node, cluster string) []config.Document {
@@ -68,7 +68,7 @@ func TestRegistrationRules(t *testing.T) {
 		}
 	}
 	const (
-		labels     = `"labels": {"zone": "a"}, "taints": []`
+		labels     = `"labels": {"zone": "a"}, "taints": [], "providerID": null`
 		scheduling = `"allowSchedulingOnControlPlanes": false`
 		suffix     = "; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; "
 	)
@@ -83,6 +83,8 @@ func TestRegistrationRules(t *testing.T) {
 			[]string{`Node/default: spec.labels: the config changes the node's labels` + suffix + "change the Node object with kubectl label instead, or reinstall the node"}},
 		{"taints", `"labels": {"zone": "a"}, "taints": [{"key": "dedicated", "value": null, "effect": "NoSchedule"}]`, scheduling,
 			[]string{`Node/default: spec.taints: the config changes the node's taints` + suffix + "change the Node object with kubectl taint instead, or reinstall the node"}},
+		{"providerID", `"labels": {"zone": "a"}, "taints": [], "providerID": "kubevirt://w1"`, scheduling,
+			[]string{`Node/default: spec.providerID: the config changes the node's provider ID` + suffix + "keep the provider ID it registered with, or reinstall the node"}},
 		{"scheduling", labels, `"allowSchedulingOnControlPlanes": true`,
 			[]string{`Cluster/default: spec.allowSchedulingOnControlPlanes: the config changes allowSchedulingOnControlPlanes` + suffix +
 				"add or remove the node-role.kubernetes.io/control-plane:NoSchedule taint with kubectl taint instead, or reinstall the node"}},

@@ -9,9 +9,10 @@ import (
 
 // nodeSpec is the Kubernetes Node's.
 type nodeSpec struct {
-	Type   string            `json:"type"`
-	Labels map[string]string `json:"labels"`
-	Taints []struct {
+	Type       string            `json:"type"`
+	ProviderID *string           `json:"providerID"`
+	Labels     map[string]string `json:"labels"`
+	Taints     []struct {
 		Key    string  `json:"key"`
 		Value  *string `json:"value"`
 		Effect string  `json:"effect"`

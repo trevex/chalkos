@@ -202,6 +202,10 @@ kubectl taint node w1 dedicated=storage:NoSchedule-
 
 A reinstall registers the node again with the labels and taints of its `Node` document.
 
+`providerID` sets the provider ID the node registers with, such as `kubevirt://w1`, by which
+Cluster API links a Machine to its node; like the labels, it is fixed once the node holds a
+Kubernetes share.
+
 The `Node` document also holds the node's own address settings, `nodeIP`, and on a control plane
 the interface it holds the VIP on, `vip.interface`.
 [Kubernetes networking](../how-it-works/kubernetes/networking.md#each-node-picks-one-address-per-family-before-the-kubelet-starts)
@@ -309,7 +313,8 @@ spec:
 The kubelet's configuration is the same on every node and comes from the cluster. Its flags come
 last on the kubelet's command line, so they override that configuration. chalkos refuses the flags
 it sets itself. They give the kubelet its configuration, credentials, certificates and static pods.
-They also set the node's name, addresses, labels and taints, and who may use the kubelet's API.
+They also set the node's name, addresses, provider ID, labels and taints, and who may use the
+kubelet's API.
 [Protected kubelet flags](../reference/kubernetes.md#protected-kubelet-flags) lists them.
 
 A refused flag names its replacement where there is one:

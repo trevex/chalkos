@@ -29,8 +29,10 @@ type Node struct {
 	ValidSubnets []string
 	// Addresses are the node's static addresses.
 	Addresses []netip.Addr
-	Labels    map[string]string
-	Taints    []Taint
+	// ProviderID is the provider ID the kubelet registers the node with; empty for none.
+	ProviderID string
+	Labels     map[string]string
+	Taints     []Taint
 }
 
 // NodeIdentity is what the node is in Kubernetes: the Kubernetes layer's part of its identity.
@@ -43,9 +45,11 @@ type NodeIdentity struct {
 	NodeIPs []string `json:"nodeIPs"`
 	// ValidSubnets are the subnets the node picks its addresses from instead of its cluster's;
 	// nil uses the cluster's.
-	ValidSubnets []string          `json:"validSubnets"`
-	Labels       map[string]string `json:"labels"`
-	Taints       []Taint           `json:"taints"`
+	ValidSubnets []string `json:"validSubnets"`
+	// ProviderID is the provider ID the kubelet registers the node with; empty for none.
+	ProviderID string            `json:"providerID,omitempty"`
+	Labels     map[string]string `json:"labels"`
+	Taints     []Taint           `json:"taints"`
 }
 
 // Taint is a Kubernetes taint applied to the node.
@@ -83,7 +87,7 @@ func ParseNode(data []byte) (Node, error) {
 	if !ok || k.NodeName == "" {
 		return Node{}, errors.New("the identity names no Kubernetes node")
 	}
-	n := Node{Name: k.NodeName, Hostname: id.Hostname, ValidSubnets: k.ValidSubnets, Labels: k.Labels, Taints: k.Taints}
+	n := Node{Name: k.NodeName, Hostname: id.Hostname, ValidSubnets: k.ValidSubnets, ProviderID: k.ProviderID, Labels: k.Labels, Taints: k.Taints}
 	for _, s := range k.NodeIPs {
 		ip, err := netip.ParseAddr(s)
 		if err != nil || ip.Zone() != "" {
