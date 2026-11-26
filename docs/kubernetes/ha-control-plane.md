@@ -38,7 +38,10 @@ The page follows the cluster of the `cluster-metal` template, whose control plan
 
 Every node gets the `Cluster` document, which puts the VIP in `spec.vip.addresses` and makes it the
 cluster endpoint. The template has no workers, so `allowSchedulingOnControlPlanes` lets workloads
-run on the control planes:
+run on the control planes. The `Flannel` document in the same file takes the pod network's VXLAN
+only from the nodes' network, as
+[Set the pod network's MTU and VXLAN sources](configure.md#set-the-pod-networks-mtu-and-vxlan-sources)
+explains:
 
 ```yaml title="cluster/cluster.yaml"
 apiVersion: kubernetes.chalkos.dev/v1alpha1
@@ -49,6 +52,12 @@ spec:
   endpoint: https://192.168.1.10:6443
   vip: {addresses: [192.168.1.10], mode: l2}
   --8<-- "templates/cluster-metal/cluster/cluster.yaml:images"
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Flannel
+metadata: {name: default}
+spec:
+  vxlanSourceSubnets: [192.168.1.0/24]
 ```
 
 Each control plane has a file of its own with `type: controlplane`, its system disk and its static
