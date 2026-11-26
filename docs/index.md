@@ -104,6 +104,11 @@ image does not boot healthy, the node returns to the image before.
     checks every block the node reads against what Nix built. The TPM unseals the node's encrypted
     state only under the same Secure Boot state.
 
+:material-lock-check: Nothing runs that the image did not bring
+:   Nodes carry no shell, every writable file system is mounted noexec, and the kernel loads
+    modules only from the signed image. The [security model](how-it-works/node/security.md) lists
+    what each attacker position reaches.
+
 :material-backup-restore: Appliance nodes
 :   Nodes have no SSH and no login. chalkd serves an API over mutual TLS, and the role in a client's
     certificate decides what it may call. A node boots a new image with a fixed number of tries and

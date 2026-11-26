@@ -166,6 +166,17 @@ call. Status, logs, config, reboots, upgrades, etcd membership and certificate r
 through it. See [Architecture](../how-it-works/node/architecture.md) and
 [Security model](../how-it-works/node/security.md).
 
+## Nothing runs that the image did not bring
+
+A node runs programs from its store alone, which dm-verity checks against the signed UKI. Node
+images carry no shell: the build fails when a shell is in the image's system. Every writable
+file system, from `/tmp` to STATE and VAR, is mounted noexec, so a file written on the node does
+not run as a program. The only exceptions are the directories a layer names, such as
+containerd's root for container images. The kernel loads modules only from the signed image,
+under an IPE policy that the db key signs. See
+[Programs run from the store alone](../how-it-works/node/security.md#programs-run-from-the-store-alone)
+and [Kernel modules load from the image alone](../how-it-works/node/security.md#kernel-modules-load-from-the-image-alone).
+
 ## Upgrades replace the whole image
 
 An upgrade starts with a new build: `nix build` writes a new image directory where the inventory's

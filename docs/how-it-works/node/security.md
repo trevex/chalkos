@@ -370,6 +370,29 @@ console keeps its reads. An image built with
 [`chalkos.console.enable`](../../reference/image-options.md#chalkosconsoleenable) set to false
 runs no console, and chalkd serves no console socket.
 
+## What each attacker position reaches
+
+The table lists what an attacker reaches from each position, what stops them going further, and
+the section that explains it. The rows on pods and control planes need the Kubernetes layer.
+
+| Position | Reaches | Stopped by | More |
+| --- | --- | --- | --- |
+| The network, installed node | The node API's TLS handshake on port 50000 and the ports the image opens. No method without a client certificate of the OS CA. | Mutual TLS against the OS CAs the node trusts. | [chalkd checks the role of every request](#chalkd-checks-the-role-of-every-request) |
+| The network, maintenance mode, image with `osCA` | A maintenance-mode node's reader methods and its certificate fingerprint. Nothing that installs it. | The image's OS CA, which every maintenance-mode call must chain to. | [A node in maintenance mode is trusted by its fingerprint](#a-node-in-maintenance-mode-is-trusted-by-its-fingerprint) |
+| The network, maintenance mode, image without `osCA` | Every method as an admin: installs the node with a config of their own, runs every diagnostic and enrols their Secure Boot keys in firmware in Setup Mode. | Nothing until the node is installed. | [Limits](#limits) |
+| A reader client file | Status, information, disks, the journal and the reader diagnostics of every node. The journal may quote config values, never Secret values. | The role in its certificate; its lifetime, a year by default; a rotation of `os-ca`. | [Roles and credentials](../../reference/access.md) |
+| An operator client file | A reader's access, and reboots, shutdowns, image rollbacks, operator diagnostics and upgrades without config. With Secure Boot, only to images signed with the db key. | The role; Secure Boot; 90 days by default; a rotation of `os-ca`. | [Secure Boot limits a node to images the key holder signed](#secure-boot-limits-a-node-to-images-the-key-holder-signed) |
+| An admin client file | Every method of every node: reads and delivers config, resets volumes, bootstraps and rotates. With the Kubernetes layer, `Addon` documents apply objects to the cluster. No CA key, so it issues no certificate and installs no node. | 30 days by default; a rotation of `os-ca`. | [Clients authenticate with the secrets file or a client file](#clients-authenticate-with-the-secrets-file-or-a-client-file) |
+| A node certificate | `RenewNodeCertificate` on a control plane, for its own name. No other method. | The role `node`; `chalkctl node revoke`; a rotation of `os-ca`. | [A node's access ends with its certificate](#a-nodes-access-ends-with-its-certificate) |
+| Root on a worker | The node key, the disk keys through the TPM, the kubelet's credentials and the Secrets of the pods bound to the node, and the node's registry credentials. No CA key. | `chalkctl node revoke`, then rotations of `os-ca` and `kubernetes-ca`. | [Revocation leaves reads and the certificates valid](../kubernetes/certificates.md#revocation-leaves-reads-and-the-certificates-valid) |
+| Root on a control plane, or its unlocked disk | A worker's reach, and the node CA and every Kubernetes CA key: node certificates and full access to the cluster's Kubernetes. | Rotations of `os-ca` and `kubernetes-ca`. | [Kubernetes certificates](../kubernetes/certificates.md#limits) |
+| A stolen disk | Nothing: the disk is sealed to its machine's TPM. | The TPM and PCR 7. | [Chain of trust](trust.md#whoever-controls-the-tpm-controls-the-disk-keys) |
+| A stolen machine | Its disks unlock under the same PCR 7: for any image signed with the db key and, after `chalkctl secureboot enroll --microsoft`, for binaries Microsoft's UEFI CA signed. | dbx entries for the old images; enrolling with `--option-roms` in place of `--microsoft`. | [Limits](#limits) |
+| An unprivileged pod | What Kubernetes RBAC and Pod Security admission allow it. No module load, as no container holds `CAP_SYS_MODULE`. | Kubernetes; containerd's capability bounding set; the IPE module policy. | [How Kubernetes runs on a node](../kubernetes/overview.md#limits) |
+| A privileged pod | Root on its node, through the host's mounts and systemd. No module from outside the image; switching IPE off is reported as tampered. | Pod Security admission, which decides who runs one. | [Kernel modules load from the image alone](#kernel-modules-load-from-the-image-alone) |
+| The console or the BMC | What a reader reads, reader and operator diagnostics, reboot, shutdown and rollbacks of the image and the config; the firmware setup. No install, config or shell. | `chalkos.console.actions.enable`; physical security of the machine and the BMC's network. | [The console acts for whoever sits at the machine](#the-console-acts-for-whoever-sits-at-the-machine) |
+| The holder of the db key | Images and module policies every node accepts, which unseal the disks on a machine the holder can boot. Installing them takes an operator client file, or the machine. | Revoking the key through dbx, which changes PCR 7. | [The signing keys never reach a node](trust.md#the-signing-keys-never-reach-a-node) |
+
 ## Limits
 
 --8<-- "docs/includes/no-os-ca.md"
@@ -395,8 +418,19 @@ runs no console, and chalkd serves no console socket.
   machine in hand who attacks it while it runs, for example through its memory.
 - PCR 7 does not change after the initrd, so root on a running node can unseal the disk keys
   again, as [Chain of trust](trust.md#a-running-node-can-unseal-its-disk-keys-again) explains.
-- PCR 7 does not tell one image signed with the db key from another. An older signed image with a
-  known flaw unseals the keys too, until its signature or the key is revoked through dbx.
+- PCR 7 records which db entries verified the boot binaries, not which binaries ran. An older
+  image signed with the db key, with a known flaw, unseals the keys too, until its signature or
+  the key is revoked through dbx. chalkos has no command that seals the keys again to the new
+  PCR 7, so a dbx update sends every unlock to the console.
+- With `chalkctl secureboot enroll --microsoft`, every boot loader or UEFI application that
+  Microsoft's UEFI CA signed can unseal the disks. A normal boot of a machine whose cards carry
+  option ROMs already records that CA in PCR 7. An attacker who holds the machine writes the ESP,
+  which is not encrypted, and has chalkos's signed systemd-boot start such a binary, for example a
+  shim of another distribution. PCR 7 still matches, and the TPM releases the keys of STATE and
+  VAR to code that is not chalkos. Enrol the option ROMs' digests with `--option-roms` where the
+  cards allow it, as
+  [Allow the cards' option ROMs](../../operate/secure-boot.md#allow-the-cards-option-roms)
+  describes.
 - A refusal of an upgrade's config gives the reason in the reply and in the node's journal, and the
   reason can quote values of the config. That holds for an operator's upgrade too, whose node
   checks the config it carries over.

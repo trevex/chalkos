@@ -169,7 +169,9 @@ does not use that yet.
 PCR 7 records which db certificate verified the boot binaries, and not which binaries. An older
 image with a known flaw, signed with the same key, unseals the keys too, until dbx revokes its
 UKI or the key. A policy signed with the image's PCR 11 values would bind the keys to images the
-key holder signed, including their stores through `usrhash=`.
+key holder signed, including their stores through `usrhash=`. With Microsoft's certificates in db, binaries
+Microsoft's UEFI CA signed unseal the keys as well, as the
+[security model's limits](security.md#limits) explain.
 
 ### The node key can be copied
 

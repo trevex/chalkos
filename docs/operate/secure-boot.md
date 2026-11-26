@@ -104,8 +104,12 @@ The device path names the card's PCI slot. There are three ways to allow the opt
 | Flag | What db gets | Trade-off |
 | --- | --- | --- |
 | `--option-roms` | The digests of the option ROMs the firmware loaded at this boot, as the node reads them from the event log. chalkctl prints them before it enrols them. | db allows those exact option ROMs and nothing else Microsoft signed. A firmware update of a card, or a new card, brings another digest, and the firmware refuses it until db holds that digest too, which takes the firmware setup, or clearing the keys and enrolling again. |
-| `--microsoft` | Microsoft's UEFI CAs, of which the CA of 2011 and the Option ROM CA of 2023 sign most option ROMs. | db allows every option ROM and boot loader Microsoft signed, including shims that boot other operating systems. Cards and firmware updates keep working. |
+| `--microsoft` | Microsoft's UEFI CAs, of which the CA of 2011 and the Option ROM CA of 2023 sign most option ROMs. | db allows every option ROM and boot loader Microsoft signed, including shims that boot other operating systems. Cards and firmware updates keep working. The TPM releases the disk keys to those boot loaders too: a thief who writes the ESP can boot one with the node's PCR 7 and unlock STATE and VAR. |
 | `--db-hash <sha256>` | A digest you give, 64 hex digits, with or without `sha256:` in front; repeat the flag for more. | For an option ROM the firmware did not load at this boot, such as that of a card you add later: take the digest `--option-roms` printed on a machine with the same card and firmware. |
+
+Use `--option-roms` where the cards allow it. With `--microsoft`, the disk encryption no longer
+protects a stolen machine from code that Microsoft's UEFI CA signed, as the
+[security model's limits](../how-it-works/node/security.md#limits) explain.
 
 With `--option-roms`, chalkctl lists the option ROMs before the enrolment, and db lists their
 digests after it:
