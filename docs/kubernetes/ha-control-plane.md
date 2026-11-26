@@ -37,13 +37,15 @@ The page follows the cluster of the `cluster-metal` template, whose control plan
 ## Define three control planes and the VIP
 
 Every node gets the `Cluster` document, which puts the VIP in `spec.vip.addresses` and makes it the
-cluster endpoint:
+cluster endpoint. The template has no workers, so `allowSchedulingOnControlPlanes` lets workloads
+run on the control planes:
 
 ```yaml title="cluster/cluster.yaml"
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Cluster
 metadata: {name: default}
 spec:
+  allowSchedulingOnControlPlanes: true
   endpoint: https://192.168.1.10:6443
   vip: {addresses: [192.168.1.10], mode: l2}
   --8<-- "templates/cluster-metal/cluster/cluster.yaml:images"
