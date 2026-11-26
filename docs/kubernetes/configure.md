@@ -429,6 +429,8 @@ chalkctl validate
 chalkctl config apply cp1 cp2 cp3 --secrets=secrets.age
 ```
 
+Add `w1` to the list when its file changed, as after the examples of its `Node` document.
+
 A changed `Cluster`, `Flannel` or `Node` document restarts `chalkos-kubernetes.service` and
 `kubelet.service` on the node, and chalkd on a control plane renders the control plane's pods again.
 A changed `Node` document also restarts `chalkos-controlplane.service`, which opens the control
