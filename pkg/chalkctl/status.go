@@ -507,11 +507,17 @@ func (i nodeInventory) ImageLine(boot *nodev1.BootStatus) string {
 }
 
 // Compare compares the node the status s describes with the inventory, as status -o json prints
-// it.
+// it. A slot's config the node could not read is unknown.
 func (i nodeInventory) Compare(s *nodev1.StatusResponse) statusview.Comparison {
-	c := statusview.Comparison{Config: i.configMatch(s.ConfigVersion), Image: statusview.Unknown, Platform: statusview.Unknown}
+	slotMatch := func(section, version string) string {
+		if slices.ContainsFunc(s.GetErrors(), func(e *nodev1.SectionError) bool { return e.GetSection() == section }) {
+			return statusview.Unknown
+		}
+		return i.configMatch(version)
+	}
+	c := statusview.Comparison{Config: slotMatch("config", s.ConfigVersion), Image: statusview.Unknown, Platform: statusview.Unknown}
 	if s.GetBoot().GetStaged() != nil {
-		c.StagedConfig = i.configMatch(s.StagedConfigVersion)
+		c.StagedConfig = slotMatch("staged config", s.StagedConfigVersion)
 	}
 	if i.c.Partial() {
 		return c

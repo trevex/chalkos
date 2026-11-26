@@ -6,10 +6,12 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/statusview"
 )
 
 // TestStatusWithABrokenConfig reports the rest of the status when chalkctl cannot read the node's
@@ -197,5 +199,25 @@ func TestStatusJSONKeepsALayerError(t *testing.T) {
 	}
 	if s.LayerErrors["kubernetes"] != "the node is unreachable" || s.Layers != nil {
 		t.Errorf("layerErrors = %v, layers = %v", s.LayerErrors, s.Layers)
+	}
+}
+
+// A config the node could not read compares as unknown with the inventory's, not as differing.
+func TestCompareUnreadConfig(t *testing.T) {
+	c, err := loadInventory(t.Context(), writeInventory(t, t.TempDir()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := nodeInventory{c: c, name: "n1"}
+	s := &nodev1.StatusResponse{Boot: &nodev1.BootStatus{Staged: &nodev1.BootImage{}}}
+	if got := i.Compare(s); got.Config != statusview.Differs || got.StagedConfig != statusview.Differs {
+		t.Fatalf("Compare of empty versions = %+v, want both differing", got)
+	}
+	s.Errors = []*nodev1.SectionError{{Section: "config", Message: "boom"}, {Section: "staged config", Message: "boom"}}
+	if got := i.Compare(s); got.Config != statusview.Unknown || got.StagedConfig != statusview.Unknown {
+		t.Errorf("Compare = %+v, want both unknown", got)
+	}
+	if p := statusview.Problems(s, statusview.Options{Inventory: i}); slices.Contains(p, "config not the inventory's") || slices.Contains(p, "staged config not the inventory's") {
+		t.Errorf("Problems = %q", p)
 	}
 }
