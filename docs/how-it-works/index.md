@@ -10,6 +10,14 @@ task. They explain how a node is built, configured, booted, secured and upgraded
 protection stops. For the whole model on one page first, read
 [What is chalkos](../get-started/what-is-chalkos.md).
 
+## Read in this order
+
+1. [How a node works](node/overview.md) follows a node from build to upgrade.
+2. [The image](node/image.md) describes what a node boots.
+3. [Config and the inventory](node/config.md) describes how a node takes its YAML.
+4. [Chain of trust](node/trust.md) follows trust from the firmware to the API.
+5. [Security model](node/security.md) lists what each protection stops and where it ends.
+
 ## The node OS
 
 These pages describe the operating system of a node: the base that every image carries. A layer, a
@@ -17,222 +25,174 @@ predefined set of NixOS modules that chalkos ships and an image lists in its mod
 on top of the base, and an image carries one layer at most. The Kubernetes layer and the router
 layer below describe what chalkos adds to run Kubernetes on it, or to route between networks.
 
+<!-- docgen cards: node/overview.md node/architecture.md node/image.md node/boot-and-rollback.md node/config.md node/config-pipeline.md node/storage.md node/networking.md node/trust.md node/security.md node/certificates.md node/upgrades.md -->
 <div class="grid cards" markdown>
 
--   :material-map-outline: __How a node works__
+-   __[How a node works](node/overview.md)__
 
     ---
 
-    The machines that build, drive and run a node, and the stages of a node's life.
+    The machines that build, drive and run a chalkos node, and the stages of a node's life
 
-    [:octicons-arrow-right-24: Read](node/overview.md)
-
--   :material-sitemap: __Architecture__
+-   __[Architecture](node/architecture.md)__
 
     ---
 
-    The parts of chalkos, where each one runs, and how chalkd picks its mode.
+    The parts of chalkos, where each one runs, and how chalkd picks its mode
 
-    [:octicons-arrow-right-24: Read](node/architecture.md)
-
--   :material-harddisk: __The image__
+-   __[The image](node/image.md)__
 
     ---
 
-    What an image holds: the erofs store on dm-verity, the signed UKI and the A/B slots.
+    What an image holds: the erofs store on dm-verity, the signed UKI and the A/B slots
 
-    [:octicons-arrow-right-24: Read](node/image.md)
-
--   :material-restart: __Boot, health and rollback__
+-   __[Boot, health and rollback](node/boot-and-rollback.md)__
 
     ---
 
-    How a node boots, decides whether a boot is healthy, and falls back from an image that is not.
+    How a node boots, decides whether a boot is healthy, and falls back from an image that is not
 
-    [:octicons-arrow-right-24: Read](node/boot-and-rollback.md)
-
--   :material-file-cog: __Config and the inventory__
+-   __[Config and the inventory](node/config.md)__
 
     ---
 
-    How YAML config documents describe each node, how the inventory gives them out, and how a node
-    applies them.
+    How YAML config documents describe each node, how the inventory gives them out and how a node applies them
 
-    [:octicons-arrow-right-24: Read](node/config.md)
-
--   :material-file-document-edit: __The config pipeline__
+-   __[The config pipeline](node/config-pipeline.md)__
 
     ---
 
-    How a delivery passes a node's documents through rules, outputs and effects, and what happens
-    at boot and after an upgrade.
+    How a delivery passes a node's documents through rules, outputs and effects, at boot and after an upgrade
 
-    [:octicons-arrow-right-24: Read](node/config-pipeline.md)
-
--   :material-database: __Storage and encryption__
+-   __[Storage and encryption](node/storage.md)__
 
     ---
 
-    STATE, VAR and volumes, how they are encrypted and unlocked, and how they change after
-    install.
+    STATE, VAR and volumes, how they are encrypted and unlocked, and how they change after install
 
-    [:octicons-arrow-right-24: Read](node/storage.md)
-
--   :material-lan: __Networking__
+-   __[Networking](node/networking.md)__
 
     ---
 
-    How a node configures its interfaces with networkd, filters traffic with nftables and keeps its
-    clock.
+    How a node configures its interfaces with systemd-networkd, filters traffic with nftables and keeps its clock
 
-    [:octicons-arrow-right-24: Read](node/networking.md)
-
--   :material-link-lock: __Chain of trust__
+-   __[Chain of trust](node/trust.md)__
 
     ---
 
-    How trust passes from the firmware to the node API, where each key lives, and what no one can
-    verify yet.
+    How trust passes from the firmware to the node API, where each key lives, and what no one can verify yet
 
-    [:octicons-arrow-right-24: Read](node/trust.md)
-
--   :material-shield-lock: __Security model__
+-   __[Security model](node/security.md)__
 
     ---
 
-    What Secure Boot, the TPM, the OS CA and client roles protect, and what they do not.
+    What Secure Boot, the TPM, the OS CA and client roles protect, and what they do not
 
-    [:octicons-arrow-right-24: Read](node/security.md)
-
--   :material-certificate-outline: __Certificates__
+-   __[Certificates](node/certificates.md)__
 
     ---
 
-    The OS CA, the node CA and the node API's certificates, how they are renewed and rotated, and
-    why the clock matters.
+    The OS CA, the node CA and the certificates of the node API, how they are renewed and rotated, and why the clock matters
 
-    [:octicons-arrow-right-24: Read](node/certificates.md)
-
--   :material-update: __Upgrades__
+-   __[Upgrades](node/upgrades.md)__
 
     ---
 
-    How a new image reaches a node, how the node writes and checks it, and how it boots it on trial.
-
-    [:octicons-arrow-right-24: Read](node/upgrades.md)
+    How a new image reaches a node, how the node writes and checks it, and how it boots it on trial
 
 </div>
+<!-- end docgen cards -->
 
 ## Kubernetes layer
 
 These pages describe what chalkos adds to a node to run Kubernetes on images with the
 Kubernetes layer.
 
+<!-- docgen cards: kubernetes/overview.md kubernetes/control-plane.md kubernetes/networking.md kubernetes/certificates.md kubernetes/upgrades.md -->
 <div class="grid cards" markdown>
 
--   :material-kubernetes: __How Kubernetes runs on a node__
+-   __[How Kubernetes runs on a node](kubernetes/overview.md)__
 
     ---
 
-    The components of each type of node, the Kubernetes share and where the config comes from.
+    What a Kubernetes node adds to the node OS: its components by node type, its share and its config
 
-    [:octicons-arrow-right-24: Read](kubernetes/overview.md)
-
--   :material-server-network: __The control plane__
+-   __[The control plane](kubernetes/control-plane.md)__
 
     ---
 
-    The static pods, the bootstrap, the joins of etcd and the add-ons the control plane applies.
+    How chalkd runs etcd and the control plane as static pods, starts the cluster, joins control planes and applies add-ons
 
-    [:octicons-arrow-right-24: Read](kubernetes/control-plane.md)
-
--   :material-lan-connect: __Kubernetes networking__
+-   __[Kubernetes networking](kubernetes/networking.md)__
 
     ---
 
-    How a node picks its addresses, dual stack, the VIP election, flannel and the ports of the
-    control plane.
+    How a Kubernetes node picks its addresses, how dual stack, the VIP and flannel work, and which ports the control plane opens
 
-    [:octicons-arrow-right-24: Read](kubernetes/networking.md)
-
--   :material-certificate: __Kubernetes certificates__
+-   __[Kubernetes certificates](kubernetes/certificates.md)__
 
     ---
 
-    The Kubernetes CAs and keys, the certificates of the control plane and the kubelets, and their
-    rotation.
+    The Kubernetes CAs and keys, the certificates a control plane and the kubelets run on, how the CAs and keys are rotated, and how a node is revoked
 
-    [:octicons-arrow-right-24: Read](kubernetes/certificates.md)
-
--   :material-update: __Kubernetes upgrades__
+-   __[Kubernetes upgrades](kubernetes/upgrades.md)__
 
     ---
 
-    How a new Kubernetes version rolls through the control planes first.
-
-    [:octicons-arrow-right-24: Read](kubernetes/upgrades.md)
+    How a new Kubernetes release reaches a cluster: the control plane through config, then the kubelets in images that roll through the control planes first
 
 </div>
+<!-- end docgen cards -->
 
 ## Router layer
 
 These pages describe what chalkos adds to a node of a router image to forward between its
 networks and filter what passes.
 
+<!-- docgen cards: router/overview.md router/firewall.md router/bgp.md router/vrfs.md router/policy-routing.md router/nat64-and-dns.md router/dhcp.md -->
 <div class="grid cards" markdown>
 
--   :material-router-network: __How a router works__
+-   __[How a router works](router/overview.md)__
 
     ---
 
-    The router kinds, the Router document's kernel settings, the boot order and the guard of the
-    management interfaces.
+    What the router layer adds to a node: the router kinds, forwarding set by a Router document, the firewall, policy routing, BGP, NAT64, the resolver, the boot order and the management guard
 
-    [:octicons-arrow-right-24: Read](router/overview.md)
-
--   :material-wall-fire: __The router's firewall__
+-   __[The router's firewall](router/firewall.md)__
 
     ---
 
-    The one nftables table of a router: the protected rules, zones and policies, NAT, the
-    reverse-path filter and the fallback ruleset.
+    The nftables table of a router image: the protected rules, chalkd's port, zones and policies, NAT, zones of VRFs, conntrack zones, the reverse-path filter and the fallback ruleset
 
-    [:octicons-arrow-right-24: Read](router/firewall.md)
-
--   :material-transit-connection-variant: __BGP on a router__
+-   __[BGP on a router](router/bgp.md)__
 
     ---
 
-    FRR's config of the BGP kinds, the passwords as credentials, the reload, the boot order and
-    the state chalkd reads.
+    How a router image runs BGP: FRR, the config the output frr renders from the BGP kinds, conditional default routes, the passwords, the reload, the boot order, the firewall's ports and the state chalkd reads
 
-    [:octicons-arrow-right-24: Read](router/bgp.md)
-
--   :material-call-split: __VRFs on a router__
+-   __[VRFs on a router](router/vrfs.md)__
 
     ---
 
-    Why management stays in the default VRF, the units networkd gets, chalkos-vrf, FRR's
-    instance per VRF, imported routes and the state chalkd reads.
+    How a router image runs VRFs: management in the default VRF, the units networkd gets, the unreachable defaults, chalkos-vrf, FRR's instances, the firewall, NAT64s and resolvers in VRFs, and chalkd
 
-    [:octicons-arrow-right-24: Read](router/vrfs.md)
-
--   :material-sign-direction: __Policy routing on a router__
+-   __[Policy routing on a router](router/policy-routing.md)__
 
     ---
 
-    The firewall's marks, the chain after the reverse-path filter, networkd's rules at priority
-    900 and the next hops' tables that fail closed.
+    How a router image routes by policy: the firewall's marks, the chain after the reverse-path filter, networkd's rules at priority 900 and the next hops' tables that fail closed
 
-    [:octicons-arrow-right-24: Read](router/policy-routing.md)
-
--   :material-swap-horizontal: __NAT64 and DNS64 on a router__
+-   __[NAT64 and DNS64 on a router](router/nat64-and-dns.md)__
 
     ---
 
-    Jool's instances of the NAT64 documents, the prefix's route, Unbound's rendered config with
-    DNS64, the reloads and the state chalkd reads.
+    How a router image runs NAT64 with Jool and its resolvers with Unbound: the rendered instances, links and configs, each NAT64's network namespace, the firewall around it, the resolvers of VRFs, the reloads and the state chalkd reads
 
-    [:octicons-arrow-right-24: Read](router/nat64-and-dns.md)
+-   __[DHCP on a router](router/dhcp.md)__
+
+    ---
+
+    How a router image leases addresses with Kea and relays DHCP with dnsmasq: the configs the outputs render per VRF and family, the sockets and the firewall, chalkos-dhcp and the servers of each VRF, the routes of delegated prefixes, the relays, the lease files and the state chalkd reads
 
 </div>
+<!-- end docgen cards -->

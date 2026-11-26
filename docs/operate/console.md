@@ -31,7 +31,7 @@ then the screen shows the boot.
 The rows at the top stay on every tab. On an installed node they read:
 
 ```text
-node1  node n1  normal  up 3h 12m
+cp1  node cp1  normal  up 3h 12m
 image 81bd81bd81bd generation 7  node-metal on metal
 healthy
 module policy: enforced (version 0.5.0)
@@ -119,20 +119,17 @@ the main table with their gateway, link and protocol, and the DNS servers the no
 
 ```text
 LINK    STATE  MAC                MTU   ADDRESSES
-enp1s0  UP     52:54:00:12:34:56  1500  192.168.1.50/24
-                                        2001:db8::50/64
-                                        fe80::5054:ff:fe12:3456/64
-enp2s0  DOWN   52:54:00:ab:cd:ef  1500
+enp1s0  UP     02:00:00:00:00:11  1500  192.168.1.11/24
+                                        fe80::ff:fe00:11/64
 default routes:
-  via 192.168.1.1 dev enp1s0 (dhcp)
-  via fe80::1 dev enp1s0 (ra)
-DNS servers: 192.168.1.1, 2001:db8::1
+  via 192.168.1.1 dev enp1s0 (static)
+DNS servers: 192.168.1.1
 ```
 
 The tab runs the diagnostics `addresses` and `routes` every 5 seconds while it is on screen, and
-reads the DNS servers from systemd-resolved. On a Kubernetes node with a configured BGP speaker,
-it also shows the local BGP sessions, their state and BFD status. This read works while the
-Kubernetes API server is down.
+reads the DNS servers from systemd-resolved. On a Kubernetes node with a configured
+[BGP speaker](../kubernetes/bgp.md), it also shows the local BGP sessions, their state and BFD
+status. This read works while the Kubernetes API server is down.
 
 ## Storage shows the disks and the volumes
 
@@ -158,11 +155,11 @@ lists the tab's keys:
 
 ```text
 this boot, all units, following   u unit  / search  n N match  w wrap
-2026-11-13T11:52:01+00:00 node1 systemd[1]: Started chalkd.service.
-2026-11-13T11:52:02+00:00 node1 chronyd[580]: chronyd version 4.6 starting (+CMD
-2026-11-13T11:52:02+00:00 node1 chalkd[612]: serving the node API on :50000
-2026-11-13T11:53:15+00:00 node1 chalkd[612]: apply: output networkd failed: rend
-2026-11-13T11:55:00+00:00 node1 chalkd[612]: config 3fa9c1e2b7d0 delivered
+2026-11-13T11:52:01+00:00 cp1 systemd[1]: Started chalkd.service.
+2026-11-13T11:52:02+00:00 cp1 chronyd[580]: chronyd version 4.6 starting (+CMD
+2026-11-13T11:52:02+00:00 cp1 chalkd[612]: serving the node API on :50000
+2026-11-13T11:53:15+00:00 cp1 chalkd[612]: apply: output networkd failed: rend
+2026-11-13T11:55:00+00:00 cp1 chalkd[612]: config 3fa9c1e2b7d0 delivered
 ```
 
 The tab starts to read the journal the first time it comes on screen and keeps its last 5000
@@ -272,14 +269,14 @@ that opens late. systemd's own prompt cannot use tty1 while the console runs the
 answers the request itself. The question takes the screen below the header, in place of the tabs:
 
 ```text
-node1  node n1  normal  up 3h 12m
+cp1  node cp1  normal  up 3h 12m
 image 81bd81bd81bd generation 7  node-metal on metal
 healthy
 module policy: enforced (version 0.5.0)
 systemd asks for a password
 
 Please enter passphrase for disk data:
-chalkctl recovery-key n1 prints the node's recovery key
+chalkctl recovery-key cp1 prints the node's recovery key
 
 > ***_
 ```
@@ -343,8 +340,8 @@ An action that does not apply is grey, with the reason beside it:
 Picking an action asks for a confirmation that names the node and what the action does:
 
 ```text
-Roll back the config of n1 to 1b2c3d4e5f60? The node delivers it again, and the
-units its effects name restart.
+Roll back the config of cp1 to 1b2c3d4e5f60? The node delivers it again, and
+the units its effects name restart.
 
 y: roll back the config   Enter or Esc: back
 ```
@@ -359,9 +356,9 @@ the image warn that the console does not drain the node. On a control plane they
 quorum check too:
 
 ```text
-Reboot n1? It goes down at once and boots the image and config it runs. chalkctl
-node reboot and upgrade --rollback drain the node and check etcd's quorum first;
-the console does neither.
+Reboot cp1? It goes down at once and boots the image and config it runs.
+chalkctl node reboot and upgrade --rollback drain the node and check etcd's quorum
+first; the console does neither.
 ```
 
 A worker's warning reads

@@ -111,17 +111,12 @@ feature's software, kinds, outputs, units and diagnostics out of the image:
 }
 ```
 
-| Option | Leaves out | Kinds the nodes refuse |
-| --- | --- | --- |
-| [`chalkos.router.bgp.enable`](../reference/image-options.md#chalkosrouterbgpenable) | FRR: zebra, bgpd, bfdd, staticd, vtysh and `chalkos-frr-reload` | `BGP`, `BGPPeer`, `PrefixList`, `CommunityList`, `RoutingPolicy` |
-| [`chalkos.router.nat64.enable`](../reference/image-options.md#chalkosrouternat64enable) | Jool's kernel module and `jool` | `NAT64` |
-| [`chalkos.router.resolver.enable`](../reference/image-options.md#chalkosrouterresolverenable) | Unbound | `Resolver` |
-| [`chalkos.router.dhcp.enable`](../reference/image-options.md#chalkosrouterdhcpenable) | Kea | `DHCPSubnet` |
-| [`chalkos.router.dhcpRelay.enable`](../reference/image-options.md#chalkosrouterdhcprelayenable) | dnsmasq | `DHCPRelay` |
+The router layer has these features:
+
+--8<-- "docs/includes/features-router.md"
 
 The firewall, VRFs, policy routing and the kernel's forwarding settings run no daemon of their
-own, so every router image carries them. A metal router image with every feature takes 320 MiB of
-store; one without all five takes 205 MiB. FRR accounts for 97 MiB of the difference.
+own, so every router image carries them.
 
 The binary cache does not hold Kea built without its database backends, so the first build of a
 router image with DHCP after a nixpkgs update compiles it, about 5 minutes on 16 cores.
@@ -131,6 +126,39 @@ A node whose image leaves a feature out refuses documents of its kinds. `chalkct
 an upgrade to such an image while the node's config holds them. To drop a feature from running
 nodes, remove its documents from their config with `chalkctl config apply` first, then upgrade
 them to the new image. `chalkctl status` prints no line of a feature the image leaves out.
+
+## Choose Kubernetes features
+
+The Kubernetes layer has features of its own. `bgp`, `registry`, `ceph` and `kubevirt` are on by
+default; `longhorn` and `nvidia` are off, as only clusters that run Longhorn or NVIDIA's GPU
+operator need what they add. This image leaves KubeVirt's modules out and adds what Longhorn
+needs on the host:
+
+```nix
+{
+  name = "node-metal";
+  platform = "metal";
+  modules = [
+    chalkos.nixosModules.kubernetes
+    {
+      chalkos.kubernetes = {
+        kubevirt.enable = false;
+        longhorn.enable = true;
+      };
+    }
+  ];
+}
+```
+
+The Kubernetes layer has these features:
+
+--8<-- "docs/includes/features-kubernetes.md"
+
+A node's kernel loads modules only from its image, and no pod can load one, so a workload that
+needs a kernel module runs only on images whose features carry it.
+[Storage and GPU workloads](../kubernetes/storage-and-gpu.md) shows how to run Rook and Ceph CSI,
+KubeVirt, Longhorn and NVIDIA's GPU operator on such images. As with the router, a node refuses
+the documents of a kind its image leaves out, such as `ClusterRegistry` without `registry`.
 
 ## Add an image only for other software
 
@@ -213,17 +241,24 @@ image to `spec.images`, beside `node-metal`, and name it on the node that runs i
 ```yaml title="chalkos.yaml"
 apiVersion: chalkctl.chalkos.dev/v1alpha1
 kind: Inventory
-metadata: {name: storage}
+metadata: {name: cluster}
 spec:
   images:
     node-metal: {source: {directory: images/node-metal}}
     storage-metal: {source: {directory: images/storage-metal}}
-  all: {imageName: node-metal, files: [cluster/*.yaml]}
+  all: {imageName: node-metal}
+  groups:
+    kubernetes: {files: [cluster/*.yaml]}
   nodes:
-    node1: {address: 192.0.2.11, files: [nodes/node1.yaml]}
-    node2: {address: 192.0.2.12, files: [nodes/node2.yaml]}
-    storage1: {address: 192.0.2.31, imageName: storage-metal, files: [nodes/storage1.yaml]}
+    cp1: {address: 192.168.1.11, groups: [kubernetes], files: [nodes/cp1.yaml]}
+    cp2: {address: 192.168.1.12, groups: [kubernetes], files: [nodes/cp2.yaml]}
+    cp3: {address: 192.168.1.13, groups: [kubernetes], files: [nodes/cp3.yaml]}
+    storage1: {address: 192.168.1.31, imageName: storage-metal, files: [nodes/storage1.yaml]}
 ```
+
+The control planes get the files of `cluster/` through the group `kubernetes`, not through
+`spec.all`, because `storage-metal` carries no Kubernetes layer and refuses the `Cluster`
+document.
 
 A node's own `imageName` wins, then the `imageName` of its groups, then `spec.all.imageName`.
 chalkctl refuses the inventory when a node is in two groups that name different images, or when

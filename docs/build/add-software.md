@@ -98,7 +98,7 @@ $ modinfo -n mt7921e
 `drivers/net/wireless` belongs to the `wireless` group. Next, check whether the image carries the
 module. The image's module tree is a build output of its own, so this needs no full image build.
 A flake that exports the images' NixOS systems,
-`nixosConfigurations = chalkos.lib.nixosOf images;` as the homelab's does, builds the tree alone.
+`nixosConfigurations = chalkos.lib.nixosOf images;` as the `cluster-metal` template's does, builds the tree alone.
 Build it and look for the module:
 
 ```console

@@ -10,174 +10,156 @@ against `main` on [GitHub](https://github.com/trevex/chalkos). A change is ready
 its tests, the documentation it affects, formatted code, and passing flake checks for what it
 touches.
 
+## Read in this order
+
+1. [First change in 10 minutes](development.md#first-change-in-10-minutes) takes a small change
+   from a fresh clone to a commit.
+2. [Architecture for developers](architecture.md) says where things live.
+3. [Common changes](common-changes.md) gives the steps of a frequent change.
+4. [Testing](testing.md) says which tests a change needs.
+
+The [roadmap](roadmap.md) lists [good first changes](roadmap.md#good-first-changes), what chalkos
+does not do yet and the known limits of what it does.
+
 ## Start
 
 These pages take a first change from setup to commit.
 
+<!-- docgen cards: development.md common-changes.md conventions.md testing.md -->
 <div class="grid cards" markdown>
 
--   :material-laptop: __Development setup__
+-   __[Development setup](development.md)__
 
     ---
 
-    The development shell, the repository layout and the commands of a development loop.
+    The development shell, the repository layout and the commands of a development loop
 
-    [:octicons-arrow-right-24: Read](development.md)
-
--   :material-format-list-checks: __Common changes__
+-   __[Common changes](common-changes.md)__
 
     ---
 
-    Checklists for an API method, a chalkctl command, a built-in kind, a router feature and a
-    layer.
+    Checklists for adding an API method, a chalkctl command, a built-in kind, a router feature or a layer, and for updating a Kubernetes release
 
-    [:octicons-arrow-right-24: Read](common-changes.md)
-
--   :material-gavel: __Code conventions__
+-   __[Code conventions](conventions.md)__
 
     ---
 
-    Compatibility, layout, layers, feature toggles, refusals, comments, golden files, generated
-    files and commit messages.
+    The rules chalkos's Go, Nix and proto code follow: compatibility, layout, layers, refusals, comments, generated files, commit messages and sign-off
 
-    [:octicons-arrow-right-24: Read](conventions.md)
-
--   :material-test-tube: __Testing__
+-   __[Testing](testing.md)__
 
     ---
 
-    Unit, namespace, evaluation and end-to-end tests, and when to write which.
-
-    [:octicons-arrow-right-24: Read](testing.md)
-
--   :material-source-pull: __Continuous integration__
-
-    ---
-
-    Pull requests, the tiers of checks CI runs, the e2e labels, the nightly run and the binary
-    cache.
-
-    [:octicons-arrow-right-24: Read](ci.md)
-
--   :material-tag-outline: __Release chalkos__
-
-    ---
-
-    The release pull request, the release workflow that publishes and signs a release, its dry
-    run and the repository's settings for the first release.
-
-    [:octicons-arrow-right-24: Read](releasing.md)
-
--   :material-update: __Dependency updates__
-
-    ---
-
-    Renovate's groups and automerge, the fixup workflow, the weekly flake update and the vendor
-    hash.
-
-    [:octicons-arrow-right-24: Read](dependencies.md)
+    Unit, namespace, evaluation and end-to-end tests, and when to write which
 
 </div>
+<!-- end docgen cards -->
+
+## Maintain
+
+These pages are for maintainers: continuous integration, releases and dependency updates.
+
+<!-- docgen cards: ci.md releasing.md dependencies.md -->
+<div class="grid cards" markdown>
+
+-   __[Continuous integration](ci.md)__
+
+    ---
+
+    How pull requests reach main, which checks and scans CI runs when, the e2e labels, the nightly run and the binary cache
+
+-   __[Release chalkos](releasing.md)__
+
+    ---
+
+    How the release pull request, the release workflow and its dry run make and publish a release of chalkos
+
+-   __[Dependency updates](dependencies.md)__
+
+    ---
+
+    How Renovate, the fixup workflow and the weekly flake update keep the Go modules, the actions, the Kubernetes releases and the flake's inputs up to date
+
+</div>
+<!-- end docgen cards -->
 
 ## Code
 
 These pages map the code, its packages and its internals.
 
+<!-- docgen cards: architecture.md packages.md internals/index.md nix.md -->
 <div class="grid cards" markdown>
 
--   :material-sitemap: __Architecture for developers__
+-   __[Architecture for developers](architecture.md)__
 
     ---
 
-    Where Nix and Go meet, how a layer splits across the code, and where to make each kind of
-    change.
+    Where Nix and Go meet, how a layer splits across the code, and where to make each kind of change
 
-    [:octicons-arrow-right-24: Read](architecture.md)
-
--   :material-package-variant: __Packages and programs__
+-   __[Packages and programs](packages.md)__
 
     ---
 
-    Every Go program in `cmd/` and package in `pkg/`, grouped by area.
+    Every Go program in cmd and package in pkg, grouped by area, with what each one does
 
-    [:octicons-arrow-right-24: Read](packages.md)
-
--   :material-cog-outline: __Internals__
+-   __[Internals](internals/index.md)__
 
     ---
 
-    The code behind the node API, layer plugins, redaction, the sandbox, the install, staging
-    and storage matching.
+    Where the code carries out each mechanism that How chalkos works explains
 
-    [:octicons-arrow-right-24: Read](internals/index.md)
-
--   :material-nix: __Nix code__
+-   __[Nix code](nix.md)__
 
     ---
 
-    How the Nix code is laid out, what a module gets, where a new helper goes and the practices
-    the Nix code follows.
-
-    [:octicons-arrow-right-24: Read](nix.md)
+    How chalkos's Nix code is laid out, what a module gets, where a new helper goes and the practices the Nix code follows
 
 </div>
+<!-- end docgen cards -->
 
 ## Docs
 
 These pages explain how the documentation is built and written.
 
+<!-- docgen cards: writing-docs.md style.md slides.md -->
 <div class="grid cards" markdown>
 
--   :material-file-document-edit: __Writing documentation__
+-   __[Writing documentation](writing-docs.md)__
 
     ---
 
-    How to write, build, check and preview the documentation.
+    How to write, build, check and preview the documentation
 
-    [:octicons-arrow-right-24: Read](writing-docs.md)
-
--   :material-format-text: __Docs style guide__
+-   __[Docs style guide](style.md)__
 
     ---
 
-    The rules every documentation page follows.
+    How chalkos documentation is written: readers, voice, examples, diagrams, terms and page templates
 
-    [:octicons-arrow-right-24: Read](style.md)
-
--   :material-presentation: __Talks and slides__
+-   __[Talks and slides](slides.md)__
 
     ---
 
-    The slide decks of talks on chalkos, which the site serves, and how to add one.
-
-    [:octicons-arrow-right-24: Read](slides.md)
+    The slide decks contributed to chalkos, where the site serves them and how to add one
 
 </div>
+<!-- end docgen cards -->
 
 ## Plans
 
 This page lists what chalkos does not do yet.
 
+<!-- docgen cards: roadmap.md -->
 <div class="grid cards" markdown>
 
--   :material-map-marker-path: __Roadmap and known limits__
+-   __[Roadmap and known limits](roadmap.md)__
 
     ---
 
-    What chalkos does not do yet, and what is planned.
-
-    [:octicons-arrow-right-24: Read](roadmap.md)
+    What chalkos does not do yet, and what is planned
 
 </div>
-
-## Where to start
-
-Start with [First change in 10 minutes](development.md#first-change-in-10-minutes): it takes a
-small change from a fresh clone to a commit. Then read
-[Architecture for developers](architecture.md) for where things live, and
-[Common changes](common-changes.md) for the steps of a frequent change. The
-[roadmap](roadmap.md) lists [good first changes](roadmap.md#good-first-changes), what chalkos does
-not do yet and the known limits of what it does.
+<!-- end docgen cards -->
 
 ## What a change needs
 

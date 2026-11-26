@@ -49,7 +49,7 @@ its `chalkos` input.
 
 chalkctl compares its release with that of chalkd on each node whose information it reads, and
 warns once per command when they differ, as during an upgrade of the cluster's image:
-`chalkctl: warning: node1 runs chalkd 0.5.0, this chalkctl is 0.6.0; use the chalkctl of the node's release`.
+`chalkctl: warning: cp1 runs chalkd 0.5.0, this chalkctl is 0.6.0; use the chalkctl of the node's release`.
 It warns and goes on. A call that the node answers with `unimplemented` adds the same hint.
 
 ### Download it from the release
@@ -123,9 +123,9 @@ cluster/
 └── secrets.pub.json   the public half of the secrets file
 ```
 
-A larger cluster adds directories of its own. The
-[homelab example](https://github.com/trevex/chalkos/tree/main/examples/homelab) gives its router
-and its Kubernetes nodes separate directories and images.
+A larger cluster adds directories of its own. The home lab of
+[Build a home lab](../guides/home-lab.md) gives its router and its Kubernetes nodes separate
+directories and images.
 
 The inventory, `chalkos.yaml`, names the cluster's nodes, the address chalkctl reaches each at,
 the image each runs and the config files each gets:
@@ -175,9 +175,7 @@ takes it.
 
 --8<-- "docs/includes/no-os-ca.md"
 
-The templates name `osCA` already. The homelab's flake
-leaves it out, so that it builds before any cluster has secrets, and
-[Build a home lab](../guides/home-lab.md#generate-the-clusters-secrets) adds it.
+The templates name `osCA` already.
 
 ## Choose a role for each client file
 

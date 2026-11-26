@@ -93,6 +93,22 @@ Show the thing before the rules about it: a YAML document before its field table
 its output before its flags, a whole Nix file before the options it sets. Examples are real: output comes from a run, and documents pass the checks. The mechanics of
 code blocks and placeholders are in [Writing documentation](writing-docs.md#code-blocks).
 
+## Running examples
+
+Each section carries one example through its pages, so a reader can follow one repository from
+page to page:
+
+| Section | Example | Names and addresses |
+| --- | --- | --- |
+| Get started | the `lab` and `router-lab` templates | `cp1` and `w1`; `router` and `client` |
+| Operate nodes, Run Kubernetes, Build images | the `cluster-metal` template | `cp1` to `cp3` at `192.168.1.11` to `.13`, the VIP `192.168.1.10`, a worker `w1` at `192.168.1.14` where a page needs one |
+| Run a router | a router `r1` with the documents each page shows | `r1` |
+| Guides | each guide's own: `cluster-metal` for the cluster and air-gapped guides, the homelab example for the home lab and the BGP extension | as the guide sets them |
+
+The tutorials of Build images, which run on the quick start's lab, keep its `cp1` and `w1`.
+Run Kubernetes > Announce addresses with BGP uses the homelab example, whose routed VIP and BGP
+fabric are the page's subject. A page never mixes the names of two examples.
+
 ## Credentials in examples
 
 An example runs with the credential an operator uses every day. Pass the secrets file only to
@@ -174,7 +190,12 @@ description: "Roll a new image through the nodes with chalkctl upgrade, and act 
 
 ## Page templates
 
-Each page is one of four kinds. A section index is a short paragraph and a card per page.
+Each page is one of four kinds. A section index is not one of them: it holds a sentence on its
+readers, a numbered reading path of three to six links and, for each section of the navigation, a
+sentence and a grid of cards. Name the grid's pages in a line `<!-- docgen cards: install.md ... -->`
+followed by `<!-- end docgen cards -->`; `nix run .#docgen` writes the cards between them from
+the pages' `title` and `description`. The `docs-generated` check fails on a card that differs
+from its page, and on a grid of cards written by hand.
 
 ### Tutorial
 
@@ -199,6 +220,10 @@ For a reader who knows the task they want done.
 For a reader who wants the mechanism behind a task. Open with an example of the behaviour, such
 as a status line or a file. Then explain how it works, with the diagram the page needs. End with
 "Limits": what it does not do.
+
+A topic keeps one list of limits, on its explanation page, since a limit belongs with its
+mechanism. The task page of the topic links that list from a short "Limits" section, and states
+there, or in the step it affects, only the limits that change what an operator writes.
 
 ### Reference
 

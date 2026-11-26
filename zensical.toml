@@ -103,12 +103,13 @@ nav = [
   { "Build images" = [
     "build/index.md",
     { "Build" = [
+      "build/upgrade-the-lab.md",
       "build/first-image.md",
       "build/images-and-platforms.md",
       "build/add-software.md",
       "build/shell-free.md",
     ] },
-    { "Configure services" = [
+    { "Write extensions" = [
       "build/first-extension.md",
       "build/develop-an-extension.md",
       "build/declare-a-kind.md",
@@ -289,6 +290,8 @@ nav = [
       "contribute/common-changes.md",
       "contribute/conventions.md",
       "contribute/testing.md",
+    ] },
+    { "Maintain" = [
       "contribute/ci.md",
       "contribute/releasing.md",
       "contribute/dependencies.md",

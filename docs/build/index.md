@@ -9,19 +9,20 @@ These pages are for image authors who build a cluster's images in Nix with
 `chalkos.lib.mkImages`. They assume some Nix and NixOS modules, and the
 [Kubernetes quick start](../get-started/quick-start-kubernetes.md).
 
-Start here: [Your first image flake](first-image.md), then
-[Images and platforms](images-and-platforms.md), then
-[Add software, drivers and kernel modules](add-software.md). Every later page builds on the
-flake from these three. [Write your first extension](first-extension.md) then adds a config kind
-and a unit that reads it, on the lab of the quick start.
-
 A cluster that needs nothing of its own runs the images each chalkos release publishes, and needs
-none of these pages; [Published images or your own](../get-started/decisions.md#published-images-or-your-own)
-draws the line. Most image authors release their own images the same way, as OCI images in
-a registry from which the nodes pull them.
-[Release your own images](../guides/release-your-images.md) sets up a CI pipeline that does it on
-every tag, and [Publish images to a registry](publish-images.md) covers each step by hand: build,
-sign for Secure Boot and push.
+none of these pages, as
+[Published images or your own](../get-started/decisions.md#published-images-or-your-own)
+explains.
+
+## Read in this order
+
+1. [Upgrade the lab to your own image](upgrade-the-lab.md) builds, signs and rolls out a first
+   image on the quick start's lab.
+2. [Your first image flake](first-image.md) explains the flake every later page builds on.
+3. [Images and platforms](images-and-platforms.md) adds images, layers and features.
+4. [Add software, drivers and kernel modules](add-software.md) puts your own packages in an image.
+5. [Write your first extension](first-extension.md) adds a config kind and a unit that reads it.
+6. [Release your own images](../guides/release-your-images.md) publishes the images on every tag.
 
 ## How an extension fits together
 
@@ -86,216 +87,158 @@ anything reaches the node.
 These pages build an image a node can install: the flake, its images and platforms, and the
 software it carries.
 
+<!-- docgen cards: upgrade-the-lab.md first-image.md images-and-platforms.md add-software.md shell-free.md -->
 <div class="grid cards" markdown>
 
--   :material-rocket-launch: __Your first image flake__
+-   __[Upgrade the lab to your own image](upgrade-the-lab.md)__
 
     ---
 
-    Write a flake that builds a cluster's image with mkImages, into the directory the inventory
-    names.
+    Build an image of your own from the lab template's flake, sign it and roll it through the quick start's lab
 
-    [:octicons-arrow-right-24: Read](first-image.md)
-
--   :material-layers: __Images and platforms__
+-   __[Your first image flake](first-image.md)__
 
     ---
 
-    Build images for nodes that run other software or other machines, and set the order of their
-    modules.
+    Write a flake that builds a cluster's image with mkImages, into the directory the inventory names
 
-    [:octicons-arrow-right-24: Read](images-and-platforms.md)
-
--   :material-expansion-card: __Add software, drivers and kernel modules__
+-   __[Images and platforms](images-and-platforms.md)__
 
     ---
 
-    Add packages, services, kernel modules, firmware and debug tools within an appliance's limits.
+    Build images for nodes that run other software or other machines
 
-    [:octicons-arrow-right-24: Read](add-software.md)
-
--   :material-console-line: __Keep an image shell-free__
+-   __[Add software, drivers and kernel modules](add-software.md)__
 
     ---
 
-    Find what brings a shell into an image, and run units, checks and small programs without one.
+    Add packages, services, kernel modules, firmware and debug tools to a cluster's images within an appliance's limits
 
-    [:octicons-arrow-right-24: Read](shell-free.md)
+-   __[Keep an image shell-free](shell-free.md)__
+
+    ---
+
+    Find what brings a shell into an image, and run units, checks, effects and small programs without one
 
 </div>
+<!-- end docgen cards -->
 
-## Configure services
+## Write extensions
 
-These pages give the services in an image their configuration, in the order an extension grows: a
-config kind for each node's YAML, the files a unit reads, the tests that check them, the effects
-of a change, its secrets and the checks that refuse a config a node cannot run.
+These pages write extensions, in the order an extension grows: a config kind for each node's
+YAML, the files a unit reads, the tests that check them, the effects of a change, its secrets, the
+checks that refuse a config a node cannot run, a change of a kind between images and the
+diagnostics operators run.
 
+<!-- docgen cards: first-extension.md develop-an-extension.md declare-a-kind.md read-config.md render-config.md test-an-extension.md react-to-changes.md pass-secrets.md validate-config.md guard-changes.md change-a-kind.md add-a-diagnostic.md -->
 <div class="grid cards" markdown>
 
--   :material-school: __Write your first extension__
+-   __[Write your first extension](first-extension.md)__
 
     ---
 
-    A tutorial of about 15 minutes: add a config kind, a rendered file, a test and a unit to the
-    quick start's lab, then change the config on a node.
+    Add a config kind, a rendered file, a test and a unit to the lab's image, then change the config on a node
 
-    [:octicons-arrow-right-24: Follow](first-extension.md)
-
--   :material-bug: __Develop and debug an extension__
+-   __[Develop and debug an extension](develop-an-extension.md)__
 
     ---
 
-    Check an extension from the fastest build to a node, find the cause of an evaluation error
-    and fix common errors.
+    Check an extension from the fastest build to a node, find the cause of an evaluation error and fix common errors
 
-    [:octicons-arrow-right-24: Read](develop-an-extension.md)
-
--   :material-shape-plus: __Declare a config kind__
+-   __[Declare a config kind](declare-a-kind.md)__
 
     ---
 
-    Declare a config kind in a NixOS module, so each node's YAML carries values the image checks.
+    Declare a config kind in a NixOS module, so each node's YAML carries values the image checks
 
-    [:octicons-arrow-right-24: Read](declare-a-kind.md)
-
--   :material-file-search: __Read config in a service__
+-   __[Read config in a service](read-config.md)__
 
     ---
 
-    Grant a unit the config kinds it reads, and read their documents as files or with chalkcfg.
+    Grant a unit the config kinds it reads, and read their documents as files or with chalkcfg
 
-    [:octicons-arrow-right-24: Read](read-config.md)
-
--   :material-file-code: __Render config files__
+-   __[Render config files](render-config.md)__
 
     ---
 
-    Render a service's config file from the node's documents, checked before a delivery changes
-    anything.
+    Render a service's config file from the node's documents, checked before a delivery changes anything
 
-    [:octicons-arrow-right-24: Read](render-config.md)
-
--   :material-test-tube: __Test an extension__
+-   __[Test an extension](test-an-extension.md)__
 
     ---
 
-    Check what an image renders, refuses and reloads for a config, with tests that nix flake
-    check runs.
+    Check what an image renders, refuses and reloads for a config, with tests that nix flake check runs
 
-    [:octicons-arrow-right-24: Read](test-an-extension.md)
-
--   :material-refresh: __React to changes__
+-   __[React to changes](react-to-changes.md)__
 
     ---
 
-    Restart, reload or run a command when a delivery changes an output, a kind's documents or a
-    condition.
+    Restart, reload or run a command when a delivery changes an output, a kind's documents or a condition
 
-    [:octicons-arrow-right-24: Read](react-to-changes.md)
-
--   :material-key-chain: __Pass secrets to a service__
+-   __[Pass secrets to a service](pass-secrets.md)__
 
     ---
 
-    Reference a Secret from a field of your kind, so a granted unit gets its value as a systemd
-    credential.
+    Reference a Secret from a field of your kind, so a granted unit gets its value as a systemd credential
 
-    [:octicons-arrow-right-24: Read](pass-secrets.md)
-
--   :material-check-decagram: __Validate config with a program__
+-   __[Validate config with a program](validate-config.md)__
 
     ---
 
-    Refuse a node's config with a program of your image, for what the kind's schema and rules
-    cannot check.
+    Refuse a node's config with a program of your image, for what the kind's schema and rules cannot check
 
-    [:octicons-arrow-right-24: Read](validate-config.md)
-
--   :material-shield-check: __Guard changes with rules and facts__
+-   __[Guard changes with rules and facts](guard-changes.md)__
 
     ---
 
-    Refuse a config change a node cannot make, with CEL rules on your kind and facts about the
-    node.
+    Refuse a config change a node cannot make, with CEL rules on your kind and facts about the node
 
-    [:octicons-arrow-right-24: Read](guard-changes.md)
+-   __[Change a kind incompatibly](change-a-kind.md)__
+
+    ---
+
+    Give a kind a new version, move the nodes' documents to it with an upgrade, and rename or remove a kind
+
+-   __[Add a diagnostic](add-a-diagnostic.md)__
+
+    ---
+
+    Declare a read-only command that operators run on a node with chalkctl node diag
 
 </div>
-
-## Diagnose
-
-This page gives operators a way to look into a service on a node.
-
-<div class="grid cards" markdown>
-
--   :material-stethoscope: __Add a diagnostic__
-
-    ---
-
-    Declare a read-only command that operators run on a node with `chalkctl node diag`.
-
-    [:octicons-arrow-right-24: Read](add-a-diagnostic.md)
-
-</div>
+<!-- end docgen cards -->
 
 ## Ship
 
 These pages take an image to the nodes: the installer, signing for Secure Boot, publishing to a
-registry, testing and rolling out an upgrade, and changing a kind between images.
+registry, and testing and rolling out an upgrade.
 
+<!-- docgen cards: customise-installer.md sign-images.md publish-images.md test-and-roll-out.md -->
 <div class="grid cards" markdown>
 
--   :material-disc: __Customise the installer__
+-   __[Customise the installer](customise-installer.md)__
 
     ---
 
-    Give the installer static addresses, VLANs, bonds, drivers or firmware.
+    Give the installer static addresses, VLANs, bonds, drivers or firmware
 
-    [:octicons-arrow-right-24: Read](customise-installer.md)
-
--   :material-file-certificate: __Sign images for Secure Boot__
+-   __[Sign images for Secure Boot](sign-images.md)__
 
     ---
 
-    An optional step: create Secure Boot keys and enrol them, sign a copy of each image and the
-    installer, and name the signed copy in the inventory.
+    Create Secure Boot keys, sign a copy of each image and the installer, and name the signed copy in the inventory
 
-    [:octicons-arrow-right-24: Read](sign-images.md)
-
--   :material-cloud-upload: __Publish images to a registry__
+-   __[Publish images to a registry](publish-images.md)__
 
     ---
 
-    Build an image as an OCI layout, sign it if the nodes need it, push it and name its digest in
-    the inventory.
+    Build an image as an OCI layout, sign it if the nodes need it, push it and name its digest in the inventory
 
-    [:octicons-arrow-right-24: Read](publish-images.md)
-
--   :material-rocket-launch-outline: __Release your own images__
+-   __[Test and roll out an image](test-and-roll-out.md)__
 
     ---
 
-    Release the images from GitHub Actions on every tag: build, sign, push, sign with cosign and
-    list the digests in the release notes.
-
-    [:octicons-arrow-right-24: Read](../guides/release-your-images.md)
-
--   :material-check-decagram: __Test and roll out an image__
-
-    ---
-
-    Check an image and the nodes' config, upgrade the nodes, and confirm their outputs and
-    services.
-
-    [:octicons-arrow-right-24: Read](test-and-roll-out.md)
-
--   :material-swap-horizontal: __Change a kind incompatibly__
-
-    ---
-
-    Give a kind a new version, move the nodes' documents to it with an upgrade, and rename or
-    remove a kind.
-
-    [:octicons-arrow-right-24: Read](change-a-kind.md)
+    Check an image and the nodes' config, upgrade the nodes, and confirm their outputs and services
 
 </div>
+<!-- end docgen cards -->

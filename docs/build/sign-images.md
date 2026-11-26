@@ -127,19 +127,15 @@ Name the signed directory as the image's `source` in the inventory:
 ```yaml title="chalkos.yaml"
 apiVersion: chalkctl.chalkos.dev/v1alpha1
 kind: Inventory
-metadata: {name: homelab}
+metadata: {name: cluster}
 spec:
   images:
-    router-metal: {source: {directory: images/router-metal-signed}}
     node-metal: {source: {directory: images/node-metal-signed}}
-  groups:
-    router: {imageName: router-metal, files: [router/*.yaml]}
-    nodes: {imageName: node-metal, files: [cluster/*.yaml, bgp/fabric.yaml, bgp/secrets.yaml]}
+  all: {imageName: node-metal, files: [cluster/*.yaml]}
   nodes:
-    router: {address: 192.168.1.2, groups: [router]}
-    node1: {address: "fdc8:a1b2:c3d4:ff::11", groups: [nodes], files: [nodes/node1.yaml]}
-    node2: {address: "fdc8:a1b2:c3d4:ff::12", groups: [nodes], files: [nodes/node2.yaml]}
-    node3: {address: "fdc8:a1b2:c3d4:ff::13", groups: [nodes], files: [nodes/node3.yaml]}
+    cp1: {address: 192.168.1.11, files: [nodes/cp1.yaml]}
+    cp2: {address: 192.168.1.12, files: [nodes/cp2.yaml]}
+    cp3: {address: 192.168.1.13, files: [nodes/cp3.yaml]}
 ```
 
 Signing leaves the store and its root hash as they are, so `chalkctl status` compares a node with

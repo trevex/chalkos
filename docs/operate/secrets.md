@@ -7,7 +7,7 @@ description: "Generate and rotate the cluster secrets file and source service cr
 
 The cluster secrets file holds the CAs, private keys, and recovery material that chalkctl
 uses to administer the cluster. A `Secret` document supplies credentials to node services,
-such as a BGP password. Keep the cluster bundle in a dedicated file and use `Secret`
+such as a registry's access token. Keep the cluster bundle in a dedicated file and use `Secret`
 documents for service credentials.
 
 ## Generate the cluster's secrets with age
@@ -119,31 +119,44 @@ when using stdin for a rotation. See the
 ## Keep the services' secrets in Secret documents
 
 A `Secret` document is a config document, unrelated to the secrets file. It holds values that
-the node's services read, such as a password for a BGP peer, and it reaches the node with the
-rest of the node's config. The homelab's `bgp/secrets.yaml` gives the three nodes one, which the
-`BGPPeer` documents `router-enp1s0` and `router-enp2s0` in `bgp/fabric.yaml` name in a
-`secretRef`:
+the node's services read, such as the access token of a private registry, and it reaches the node
+with the rest of the node's config. In the cluster-metal template, a file such as
+`cluster/registry.yaml` gives the three nodes one, which a `Registry` names in a `secretRef`, as
+[Registries and mirrors](registries.md#give-the-nodes-the-registrys-credentials) shows:
 
-```yaml title="bgp/secrets.yaml"
---8<-- "examples/homelab/bgp/secrets.yaml"
+```yaml title="cluster/registry.yaml"
+apiVersion: oci.chalkos.dev/v1alpha1
+kind: Registry
+metadata: {name: ghcr}
+spec:
+  host: ghcr.io
+  username: example-bot
+  password: {secretRef: {name: registry, key: token}}
+---
+apiVersion: chalkos.dev/v1alpha1
+kind: Secret
+metadata: {name: registry}
+spec:
+  data: {token: example-token}
 ```
 
 Use `spec.data` for literal values or `spec.sources` to read values from other files.
 Each key in `spec.sources` requires a [provider URI](#secret-source-uris). For example,
-this `Secret` takes its password from the `bgp.password` field of a SOPS file.
+this `Secret` takes its token from the `registry.token` field of a SOPS file.
 
-```text title="bgp/secrets.yaml"
+```text title="cluster/registry.yaml"
 apiVersion: chalkos.dev/v1alpha1
 kind: Secret
-metadata: {name: bgp}
+metadata: {name: registry}
 spec:
   sources:
-    password: "sops://./fabric.enc.yaml#/bgp/password"
+    token: "sops://../registry.enc.yaml#/registry/token"
 ```
 
-The path is relative to `bgp/secrets.yaml`, so this reads `bgp/fabric.enc.yaml`. Name the
-`Secret` document in the inventory and keep the provider file outside its config file globs.
-Other documents still use `secretRef: {name: bgp, key: password}`. A document can mix literal
+The path is relative to `cluster/registry.yaml`, so this reads `registry.enc.yaml` in the
+repository's root. Name the `Secret` document in the inventory and keep the provider file outside
+its config file globs, which `cluster/*.yaml` would match.
+Other documents still use `secretRef: {name: registry, key: token}`. A document can mix literal
 and sourced keys. Defining the same key in both maps is an error.
 
 The commands that deliver or compare the config, such as `config apply` with or without `--diff`
@@ -166,8 +179,8 @@ Both `Secret.spec.sources` and `--secrets` use explicit provider URIs. A URI fra
 | Provider | Example | Reads |
 | --- | --- | --- |
 | `file://` | `file://./password.txt` | A plaintext local file. |
-| `sops://` | `sops://./fabric.enc.yaml#/bgp/password` | A local file decrypted by the `sops` executable on `PATH`, using its configured keys. |
-| `age://` | `age://./vault.yaml.age#/bgp/password` | A local file decrypted by chalkctl using `--identity` or the default age and SSH identities. |
+| `sops://` | `sops://./registry.enc.yaml#/registry/token` | A local file decrypted by the `sops` executable on `PATH`, using its configured keys. |
+| `age://` | `age://./vault.yaml.age#/registry/token` | A local file decrypted by chalkctl using `--identity` or the default age and SSH identities. |
 
 The part after `://` is a local path. Use `file:///etc/chalkos/password.txt` for an absolute
 path. Relative paths start at the declaring YAML file for `spec.sources` and in the working
@@ -175,7 +188,7 @@ directory for `--secrets`. Escape a literal `#` in a URI path as `%23`. Quote UR
 commands.
 
 The optional fragment is a JSON Pointer into a single YAML or JSON document. For example,
-`#/bgp/password` selects the password field under `bgp`, `#/peers/0` selects the first item
+`#/registry/token` selects the token field under `registry`, `#/peers/0` selects the first item
 in `peers`, and `~1` and `~0` escape a slash and a tilde in a key. A source without a
 fragment returns the whole file after decryption. A service key selects a string or reads
 the full UTF-8 text, including any trailing newline.

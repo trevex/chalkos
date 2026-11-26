@@ -10,9 +10,7 @@ end each node of the inventory has its config files, with its system disk, netwo
 and volumes, and `chalkctl validate` accepts them. The page follows the
 [`cluster-metal` template](https://github.com/trevex/chalkos/tree/main/templates/cluster-metal):
 the three Kubernetes control planes `cp1`, `cp2` and `cp3`, on one image. Where it needs groups
-or a second image, it shows the
-[homelab example](https://github.com/trevex/chalkos/tree/main/examples/homelab), a router beside
-three Kubernetes nodes.
+or a second image, it adds two GPU workers, `w1` and `w2`, on an image of their own.
 
 ## Before you begin
 
@@ -44,7 +42,7 @@ The inventory's `spec` has four parts:
 - `spec.all` is what every node gets: the image `imageName` names, and the config files `files`
   names. The template gives every node the image `node-metal` and the files of `cluster/`.
 - `spec.groups` holds named groups of nodes, each with its files and its image. The template has
-  none, and the homelab example two, `router` and `nodes`.
+  none; the GPU workers below share one, `gpu`.
 - `spec.nodes` holds each node by its name, with the `address` chalkctl reaches its chalkd at, as
   a host or `host:port`, and its own files.
 
@@ -87,10 +85,30 @@ explains the order in which a node's set takes its files.
 ## Share files and an image through a group
 
 A group holds what some of the nodes share. The template needs none, because its nodes share one
-image and one set of files. The homelab example has two. Its group `router` gives its one node
-the image `router-metal` and the files of `router/`. The group `nodes` gives the three Kubernetes
-nodes the image `node-metal` and the files of `cluster/` and `bgp/`, and each of them names its
-own file beside the group.
+image and one set of files. Two GPU workers, `w1` and `w2`, run an image of their own,
+`gpu-metal`, with the kernel's GPU drivers, as
+[Add software](../build/add-software.md#add-a-module-group-or-single-modules) builds it. A group
+`gpu` gives them that image and the files of `gpu/`, and each of them names its own file beside
+the group:
+
+```yaml title="chalkos.yaml"
+apiVersion: chalkctl.chalkos.dev/v1alpha1
+kind: Inventory
+metadata: {name: cluster}
+spec:
+  images:
+    node-metal: {source: {directory: images/node-metal}}
+    gpu-metal: {source: {directory: images/gpu-metal}}
+  all: {imageName: node-metal, files: [cluster/*.yaml]}
+  groups:
+    gpu: {imageName: gpu-metal, files: [gpu/*.yaml]}
+  nodes:
+    cp1: {address: 192.168.1.11, files: [nodes/cp1.yaml]}
+    cp2: {address: 192.168.1.12, files: [nodes/cp2.yaml]}
+    cp3: {address: 192.168.1.13, files: [nodes/cp3.yaml]}
+    w1: {address: 192.168.1.14, groups: [gpu], files: [nodes/w1.yaml]}
+    w2: {address: 192.168.1.15, groups: [gpu], files: [nodes/w2.yaml]}
+```
 
 A node runs the image named in the first of three places:
 
@@ -98,25 +116,23 @@ A node runs the image named in the first of three places:
 2. the `imageName` of its groups;
 3. `spec.all.imageName`.
 
-The diagram shows how the homelab's inventory gives each node its files and its image:
+The diagram shows how this inventory gives a control plane and a GPU worker their files and
+their images:
 
 ```mermaid
 flowchart LR
-    routerg["group router: router/*.yaml"] --> router["router's set"]
-    nodesg["group nodes: cluster/*.yaml, bgp/"] --> node1["node1's set"]
-    nodesg --> node2["node2's set"]
-    nodesg --> node3["node3's set"]
-    node1f["nodes/node1.yaml"] --> node1
-    node2f["nodes/node2.yaml"] --> node2
-    node3f["nodes/node3.yaml"] --> node3
-    routermetal["router-metal"] -->|the group's imageName| router
-    nodemetal["node-metal"] -->|the group's imageName| node1
-    nodemetal -->|the group's imageName| node2
-    nodemetal -->|the group's imageName| node3
+    all["all: cluster/*.yaml"] --> cp1["cp1's set"]
+    all --> w1["w1's set"]
+    gpug["group gpu: gpu/*.yaml"] --> w1
+    cp1f["nodes/cp1.yaml"] --> cp1
+    w1f["nodes/w1.yaml"] --> w1
+    nodemetal["node-metal"] -->|all's imageName| cp1
+    gpumetal["gpu-metal"] -->|the group's imageName| w1
 ```
 
-The router gets the files of its group and runs `router-metal`. Each Kubernetes node gets the files
-of `nodes`, then its own, and runs `node-metal`.
+Each control plane gets the files of `cluster/`, then its own, and runs `node-metal`. Each GPU
+worker gets the files of `cluster/`, then those of `gpu`, then its own, and runs `gpu-metal`,
+because its group's `imageName` wins over `spec.all`'s.
 
 chalkctl refuses the inventory when a node is in two groups that name different images, also when
 the node names its own. It also refuses a node that gets no image, and an `imageName` that names
@@ -223,16 +239,16 @@ the ports to the bond and the VLAN to the bond, and give the VLAN device the nod
 switch ports must form an LACP group too.
 
 A `Link` document is a `.link` file, which sets the properties of a physical device, such as its
-name or its MTU. The homelab's router names its ports by permanent MAC address, so that its other
-documents name the ports `wan` and `fabric`, whatever the kernel calls them:
+name or its MTU. This one names `cp1`'s port by its permanent MAC address, so that its other
+documents can name the port `lan`, whatever the kernel calls it, such as `enp1s0`:
 
 ```yaml
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Link
-metadata: {name: 10-fabric}
+metadata: {name: 10-lan}
 spec:
-  match: {permanentMACAddress: "02:00:00:00:01:02"}
-  link: {name: fabric}
+  match: {permanentMACAddress: "02:00:00:00:00:11"}
+  link: {name: lan}
 ```
 
 The installer holds no config, so a machine's ports keep the kernel's names until the installed
@@ -316,10 +332,11 @@ encryption and which changes a node accepts.
 ## Keep secret values in Secret documents
 
 A `Secret` document holds secret values by key in `spec.data`. A field of a kind, built in or an
-extension's, references one of its keys instead of holding the value. The homelab's `BGPPeer`
-documents in `bgp/fabric.yaml` do so with `password: {secretRef: {name: bgp, key: password}}`, and
-`bgp/secrets.yaml` holds the `Secret` named `bgp`. chalkctl refuses a set in which a reference names a `Secret` or a key that
-the set lacks.
+extension's, references one of its keys instead of holding the value. A `Registry` document in
+`cluster/registry.yaml` does so with `password: {secretRef: {name: registry, key: token}}`, and
+the same file holds the `Secret` named `registry`, as
+[Registries and mirrors](registries.md#give-the-nodes-the-registrys-credentials) shows. chalkctl
+refuses a set in which a reference names a `Secret` or a key that the set lacks.
 
 `Secret` documents are config, separate from the cluster's secrets file.
 [Keep the services' secrets in Secret documents](secrets.md#keep-the-services-secrets-in-secret-documents)

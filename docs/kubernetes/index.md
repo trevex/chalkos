@@ -8,11 +8,14 @@ description: "Plan and run Kubernetes clusters on chalkos nodes"
 These pages are for operators who run a Kubernetes cluster on nodes whose image lists the Kubernetes
 layer. They build on [Operate nodes](../operate/index.md): they assume a workstation with the
 secrets file, and nodes installed as [Install a node](../operate/install.md) describes. Plan the
-cluster before you install its nodes, because a few of its settings are fixed once it runs. The
-other pages follow in order: bootstrap the cluster, configure it, run its control plane on several
-nodes, serve its images from the control planes, announce its addresses over BGP, run storage and
-virtualisation workloads, upgrade Kubernetes, rotate its CAs and keys, and find out why it
-misbehaves.
+cluster before you install its nodes, because a few of its settings are fixed once it runs.
+
+## Read in this order
+
+1. [Plan a cluster](plan.md) fixes the settings that cannot change later.
+2. [Bootstrap and get a kubeconfig](bootstrap.md) starts Kubernetes on the first control plane.
+3. [Run a highly available control plane](ha-control-plane.md) adds the other control planes.
+4. [Upgrade Kubernetes](upgrade-kubernetes.md) moves the cluster to a newer release.
 
 ## Set up
 
@@ -20,104 +23,78 @@ These pages take a cluster from its plan to a highly available control plane, wh
 cluster's images and whose nodes may announce their addresses over BGP, and run the workloads
 that need kernel modules from the host.
 
+<!-- docgen cards: plan.md bootstrap.md configure.md ha-control-plane.md cluster-registry.md bgp.md storage-and-gpu.md -->
 <div class="grid cards" markdown>
 
--   :material-clipboard-text-outline: __Plan a cluster__
+-   __[Plan a cluster](plan.md)__
 
     ---
 
-    Decide the control planes, the cluster endpoint, the address families and scheduling before
-    installing a cluster.
+    Decide the control planes, the cluster endpoint, the address families and scheduling before installing a cluster
 
-    [:octicons-arrow-right-24: Read](plan.md)
-
--   :material-play-circle-outline: __Bootstrap and get a kubeconfig__
+-   __[Bootstrap and get a kubeconfig](bootstrap.md)__
 
     ---
 
-    Start the cluster on its first control plane, watch the other nodes join and issue
-    kubeconfigs for its Kubernetes API.
+    Start the cluster on its first control plane, watch the other nodes join and issue kubeconfigs for the Kubernetes API
 
-    [:octicons-arrow-right-24: Read](bootstrap.md)
-
--   :material-cog-outline: __Configure Kubernetes__
+-   __[Configure Kubernetes](configure.md)__
 
     ---
 
-    Set the cluster's settings, each node's labels, taints and flags, the pod network and your
-    own add-ons.
+    Set the cluster's settings, each node's labels, taints and flags, the pod network and your own add-ons
 
-    [:octicons-arrow-right-24: Read](configure.md)
-
--   :material-sitemap: __Run a highly available control plane__
+-   __[Run a highly available control plane](ha-control-plane.md)__
 
     ---
 
-    Run three control planes behind a virtual IP, and add, replace or remove one.
+    Run three control planes behind a VIP, and add, replace or remove one while etcd keeps its quorum
 
-    [:octicons-arrow-right-24: Read](ha-control-plane.md)
-
--   :material-database-arrow-down: __Run an air-gapped cluster with the cluster registry__
+-   __[Run an air-gapped cluster with the cluster registry](cluster-registry.md)__
 
     ---
 
-    Serve container images from the control planes to a cluster that cannot reach their
-    registries, and push, check and delete them on every control plane.
+    Serve container images from the control planes to a cluster that cannot reach their registries
 
-    [:octicons-arrow-right-24: Read](cluster-registry.md)
-
--   :material-transit-connection-variant: __Announce addresses with BGP__
+-   __[Announce addresses with BGP](bgp.md)__
 
     ---
 
-    Announce the nodes' addresses and the routed VIP to the fabric's routers, and take the
-    default route they send.
+    Announce a Kubernetes node's addresses and the routed VIP with the layer's BGP speaker
 
-    [:octicons-arrow-right-24: Read](bgp.md)
-
--   :material-harddisk: __Run storage and GPU workloads__
+-   __[Storage and GPU workloads](storage-and-gpu.md)__
 
     ---
 
-    Run Rook and Ceph CSI, KubeVirt, Longhorn and NVIDIA's GPU operator with the kernel modules,
-    drivers and host tools the image carries for them, and pass PCI devices through to virtual
-    machines.
-
-    [:octicons-arrow-right-24: Read](storage-and-gpu.md)
+    Run Rook and Ceph CSI, KubeVirt, Longhorn and NVIDIA's GPU operator on chalkos nodes
 
 </div>
+<!-- end docgen cards -->
 
 ## Maintain
 
 These pages keep a running cluster current and fix what goes wrong.
 
+<!-- docgen cards: upgrade-kubernetes.md rotate-kubernetes-cas.md troubleshooting.md -->
 <div class="grid cards" markdown>
 
--   :material-update: __Upgrade Kubernetes__
+-   __[Upgrade Kubernetes](upgrade-kubernetes.md)__
 
     ---
 
-    Move to a new Kubernetes release, and keep etcd's quorum and the workloads within their
-    PodDisruptionBudgets while nodes reboot.
+    Move a cluster to a new Kubernetes release: the control plane through config first, then the kubelets through new images
 
-    [:octicons-arrow-right-24: Read](upgrade-kubernetes.md)
-
--   :material-key-change: __Rotate the Kubernetes CAs and keys__
+-   __[Rotate the Kubernetes CAs and keys](rotate-kubernetes-cas.md)__
 
     ---
 
-    Replace the Kubernetes CAs, the service-account key and the encryption key, and revoke
-    Kubernetes access.
+    Replace the Kubernetes CAs, the service-account key and the encryption key phase by phase, and revoke Kubernetes access
 
-    [:octicons-arrow-right-24: Read](rotate-kubernetes-cas.md)
-
--   :material-stethoscope: __Troubleshoot Kubernetes__
+-   __[Troubleshoot Kubernetes](troubleshooting.md)__
 
     ---
 
-    Find out why a node's Kubernetes does not start, join, serve logs or reach other nodes'
-    pods.
-
-    [:octicons-arrow-right-24: Read](troubleshooting.md)
+    Find out why a node's Kubernetes does not start, join, serve logs, reach other pods or get its kubelet certificates
 
 </div>
+<!-- end docgen cards -->

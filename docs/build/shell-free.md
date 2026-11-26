@@ -344,7 +344,7 @@ On an image with the Kubernetes layer and the debug tools, a privileged pod reac
 tools through the host's root:
 
 ```sh
-kubectl debug node/node1 -it --profile=sysadmin --image=busybox -- \
+kubectl debug node/cp1 -it --profile=sysadmin --image=busybox -- \
   chroot /host /run/current-system/sw/bin/bash
 ```
 

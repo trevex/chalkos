@@ -313,13 +313,16 @@ networkd has since replaced does not count as running.
   with an echo reply or a TCP reset. chalkd stays out of reach, as no socket of the default VRF
   takes it. The router's IPv6 echo reply to an address that a VRF and the default VRF both hold
   leaves through the default VRF.
-- No protected rule covers the router's own traffic to its addresses in a VRF. The VRF's
-  policies to `local` decide it.
+- No protected rule covers the router's own connections to its addresses in a VRF. They reach the
+  input chain as connections from the VRF's links, and the VRF's policies to `local` decide them.
+- A VRF instance cannot announce a default route from its `networks`. A peer family's
+  `defaultOriginate` sends one.
 - The rules read interface names and globs without knowing which links networkd matches. The
   validator `router` compares them with the names in the `Network` documents and cannot see the
   links the node has.
 - networkd also matches `Name=` against a link's alternative names, which the documents do not
-  give. The validator and the renderers read interface names alone.
+  give. The validator and the renderers read interface names alone, so they cannot tell which
+  link a `Network` matches by an alternative name.
 - Routes leak between VRFs through BGP alone.
 
 ## Related pages

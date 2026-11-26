@@ -1,9 +1,23 @@
 ---
-title: "Security"
+title: "Security policy"
 description: "Which chalkos releases receive security fixes, how to report a vulnerability, and how the project scans its code and images"
 ---
 
-# Security
+# Security policy
+
+A chalkos node guarantees the following, as the [security model](../how-it-works/node/security.md)
+explains with what each attacker position reaches:
+
+- With Secure Boot on, the firmware boots only images signed with a certificate in db: the
+  cluster's db key, and Microsoft's CAs when `--microsoft` enrolled them or the firmware kept them
+  in db. dm-verity checks every block of the store.
+- Outside containers, nothing runs that the image did not bring: there is no shell, every writable
+  file system is mounted noexec except the directories a layer runs programs from, such as
+  containerd's root for container images, and with Secure Boot on and the module policy left on,
+  as it is by default, kernel modules load only from the signed image.
+- The TPM releases the disk keys only under the Secure Boot state the node was installed under.
+- Nobody logs in: chalkd serves the only API, over mutual TLS, and checks the role of every call.
+- The keys that sign images and issue certificates never reach a node.
 
 This page is for operators who run chalkos and for anyone who finds a vulnerability in it. It holds
 the project's security policy, which `SECURITY.md` in the repository also holds, and describes how

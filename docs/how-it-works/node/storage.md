@@ -166,7 +166,10 @@ PCR 7 changes whenever the Secure Boot state does, and then the TPM releases no 
 - A disk moved to another machine does not unlock there, because the other TPM does not hold the
   sealed key.
 - Any boot whose binaries the same db certificate signed measures the same PCR 7, older chalkos
-  images included. Those boots unlock as usual.
+  images included. Those boots unlock as usual. With `chalkctl secureboot enroll --microsoft`, so do
+  boot loaders that Microsoft's UEFI CA signed, as the
+  [security model's limits](security.md#limits) and
+  [Allow the cards' option ROMs](../../operate/secure-boot.md#allow-the-cards-option-roms) explain.
 
 The diagram shows how the node unlocks each encrypted partition.
 

@@ -209,13 +209,23 @@ Until both reloads are done, a packet may take another target's table or the mai
 
 - `rpFilter: strict` drops the replies that come back through a next hop's link, unless the main
   table routes their source through that link too.
-- The replies to traffic sent into a VRF need a route back in the VRF's table.
-- During a delivery that changes the targets, a packet may take another target's table or the
-  main table for a moment.
-- The router's own traffic takes no policy, and the router marks no connections.
-- A rule's `destination` matches the address before DNAT, except on a VRF's second pass.
-- A next hop's gateway that the addresses of its link do not reach leaves the link `configuring`
-  in networkd, and the next hop's traffic is dropped.
+- The replies to traffic sent into a VRF come back in the VRF and need a route back in its table,
+  from a BGP import or a `Network`'s `[Route] Table=`.
+- A delivery that adds or removes a target table can renumber the marks. The firewall and networkd
+  reload in the same delivery, in no set order. While they reload, a packet may take another
+  target's table or the main table.
+- The rules see the forwarded traffic and the traffic to the router in prerouting. The router's
+  own traffic takes no policy.
+- The router does not mark connections. The replies to a connection that came in through an
+  uplink leave by the routes or policies of their own direction.
+- A policy matches packets. A connection whose packets carry different DSCP values can take two
+  paths.
+- A rule's `destination` matches the address before the firewall's DNAT rules translate it. A
+  packet from a VRF's link that no rule marked meets the chain again with the VRF's device, after
+  DNAT, where a document without `in` matches its translated address.
+- networkd adds a next hop's route only once the addresses of its link reach the gateway. Until
+  then the link stays `configuring`, and the next hop's traffic is dropped. This holds for a
+  `NextHop` that no rule names too.
 
 ## Related pages
 

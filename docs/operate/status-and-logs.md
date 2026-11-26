@@ -7,7 +7,8 @@ description: "Read what chalkctl status reports, follow a unit's journal, run th
 
 This page is for an operator who wants to know what a node is doing. It explains each line of
 `chalkctl status`, then the four places that tell more: a unit's journal, the image's
-diagnostics, the serial console and a shell on a node with the debug tools. The examples read the homelab's `node1`, a control plane.
+diagnostics, the serial console and a shell on a node with the debug tools. The examples read
+`cp1` of the cluster-metal template, a control plane.
 
 At the machine itself, the console on its screen shows the same status, the node's network,
 storage and journal, without a workstation or a network, as
@@ -24,11 +25,11 @@ operator's. The boot and the serial console need the machine's BMC, a screen, or
 ## Read chalkctl status from the top
 
 `chalkctl status` asks the node's chalkd for what it checks, and compares the node's config and
-image with the inventory. A healthy `node1` reads:
+image with the inventory. A healthy `cp1` reads:
 
 ```console
-$ chalkctl status node1
-node1: healthy
+$ chalkctl status cp1
+cp1: healthy
 config <version> (the inventory's)
 platform metal (the inventory's)
 image <image>, booted from chalkos_1.efi
@@ -80,11 +81,11 @@ its lines out.
 
 ## Read the summary line
 
-The first line sums up the lines below it: `node1: healthy`, or the problems they show, each in
+The first line sums up the lines below it: `cp1: healthy`, or the problems they show, each in
 a few words, such as:
 
 ```text
-node1: 3 problems: boot not found healthy yet, volume data missing, unit demo.service failed
+cp1: 3 problems: boot not found healthy yet, volume data missing, unit demo.service failed
 ```
 
 A problem is a line that needs a look: a config or image that is not the inventory's, a trial or
@@ -99,29 +100,29 @@ established. The sections below explain each.
 `config <version> (the inventory's)` means the node runs the config the inventory gives it. The
 parentheses say otherwise when they differ:
 
-- `not the inventory's; chalkctl config apply node1 delivers it`: the node's files changed since the
+- `not the inventory's; chalkctl config apply cp1 delivers it`: the node's files changed since the
   last delivery.
-- `not the inventory's; chalkctl config apply node1 delivers it if the image <image> in the
+- `not the inventory's; chalkctl config apply cp1 delivers it if the image <image> in the
   inactive slot, which is not the inventory's, accepts it too`: the node runs the inventory's
   image, but another image is staged or active, as an upgrade with `--until stage` of an image the
   inventory names no longer leaves it. A delivery writes that image's config slot too, so that
   image checks the config, and no command removes it. An upgrade to a new image replaces it.
-- `not the inventory's; chalkctl upgrade node1 delivers it with the image <image>`: the
+- `not the inventory's; chalkctl upgrade cp1 delivers it with the image <image>`: the
   node runs another image than the inventory's. `config apply` checks the config against the
   image the node runs, which may refuse it, so the config comes with the upgrade.
 - `not the inventory's; it comes with the image <image> in the inactive slot`: the node has the
   inventory's image staged or active, and boots it with the config the `staged config` line shows.
 - `not the inventory's; the node boots the image <image> next with the config it last ran; once it
-  runs it, chalkctl config apply node1 delivers it`: the inventory's image is the known-good image
+  runs it, chalkctl config apply cp1 delivers it`: the inventory's image is the known-good image
   of a rollback from a boot that was not found healthy. It keeps the config it last ran.
 - `not the inventory's; the node takes no delivery until the trial of config <version> ends`: a
   config is on trial. A trial whose rollback at the deadline failed holds nothing back, as the
   node finishes that rollback before the next delivery.
-- `not the inventory's; the node takes no delivery until chalkctl config rollback node1 removes
+- `not the inventory's; the node takes no delivery until chalkctl config rollback cp1 removes
   the record of a config's trial that cannot be read`: the node cannot read its trial record and
   refuses every change but a rollback.
 - `not compared with the inventory's, which takes Secret values from sops or age sources that
-  status does not decrypt; chalkctl config apply --diff node1 compares them`: a `Secret` of the
+  status does not decrypt; chalkctl config apply --diff cp1 compares them`: a `Secret` of the
   node's config takes a value from a `sops://` or `age://` source. The config's version hashes
   that value, and status decrypts nothing, so it asks for no key and cannot compare the versions.
   `--diff` decrypts the sources and compares the documents.
@@ -132,17 +133,17 @@ parentheses say otherwise when they differ:
 
 `config none` is a node installed before config documents existed. A node with an image staged or
 active in its inactive slot adds `staged config <version> (...)`, the config that image boots
-with. When it differs, its parentheses name `chalkctl config apply node1`, which writes the config
-slots of both images, or `chalkctl config apply --staged node1` when the running image runs the
+with. When it differs, its parentheses name `chalkctl config apply cp1`, which writes the config
+slots of both images, or `chalkctl config apply --staged cp1` when the running image runs the
 inventory's config already, or when the staged image is the inventory's and the running image is
-not. When neither image is the inventory's, they name `chalkctl upgrade node1`, as the
+not. When neither image is the inventory's, they name `chalkctl upgrade cp1`, as the
 config line does. A staged image that is not the inventory's on a node that runs the inventory's
 image adds the same condition as the config line. When status cannot compare the config, the
-staged line names `chalkctl config apply --staged --diff node1`, which compares the staged slot.
+staged line names `chalkctl config apply --staged --diff cp1`, which compares the staged slot.
 After a rollback from a boot that was not found healthy, the staged image is the rollback image,
 and the parentheses say that it keeps the config it last ran until the boot is found healthy.
 During a trial the node takes no delivery. When the inventory's config is on trial, the
-parentheses name `chalkctl config confirm node1`, because the confirmation writes the staged
+parentheses name `chalkctl config confirm cp1`, because the confirmation writes the staged
 config. Otherwise they say what must end the trial first, as the config line does.
 
 A node that holds config for its next upgrade adds
@@ -214,13 +215,13 @@ still checks ends in `, not found healthy yet`. More lines follow after an upgra
   [A node rolled back during the upgrade](upgrade.md#a-node-rolled-back-during-the-upgrade)
   says what to do.
 - `its store's root hash is ..., not that of the image ... the inventory names, ...`: the image was
-  rebuilt since the node's upgrade. The line ends in `chalkctl upgrade node1 installs that
-  image`, in `it has ... staged: chalkctl node activate node1 makes it boot next` when the image
+  rebuilt since the node's upgrade. The line ends in `chalkctl upgrade cp1 installs that
+  image`, in `it has ... staged: chalkctl node activate cp1 makes it boot next` when the image
   waits for its activation, or in `it has ... active, which it boots with its next reboot:
-  chalkctl node reboot node1` when it waits for a reboot. After a rollback from a boot that was
+  chalkctl node reboot cp1` when it waits for a reboot. After a rollback from a boot that was
   not found healthy, the inventory's image can be the known-good image the node falls back to,
   and the line says `it has ... active as its known-good image, which it boots with the config it
-  last ran at its next reboot: chalkctl node reboot node1`.
+  last ran at its next reboot: chalkctl node reboot cp1`.
 
 `image ...; its boot is unknown: ...` means chalkd could not read the boot entries on the ESP or
 the running store, for the reason named.
@@ -234,7 +235,7 @@ running image alone. The other states are these:
 - `failed`: Secure Boot is on, but the policy did not load. Check that db holds the certificate of
   the key the image was signed with.
 - `tampered`: something switched IPE to permissive or activated another policy during this boot.
-  `chalkctl logs node1` shows the kernel's audit records, and the line stays until the node
+  `chalkctl logs cp1` shows the kernel's audit records, and the line stays until the node
   reboots.
 
 The console's header shows the same line, in maintenance mode and on the installer too.
@@ -360,11 +361,10 @@ each:
 ```console
 $ chalkctl status
 NODE    IMAGE                                BOOT         CONFIG                                PROBLEMS
-node1   <image>                              healthy      inventory's                           0
-node2   <image>                              not healthy  on trial until 2026-11-26T10:15:00Z   2
-node3   -                                    unreachable  -                                     -
-router  <image>                              healthy      differs                               1
-chalkctl: node3 is unreachable: <error>
+cp1     <image>                              healthy      inventory's                           0
+cp2     <image>                              not healthy  on trial until 2026-11-26T10:15:00Z   2
+cp3     -                                    unreachable  -                                     -
+chalkctl: cp3 is unreachable: <error>
 ```
 
 BOOT says whether the node found its boot healthy. CONFIG says whether the config of the running
@@ -381,11 +381,11 @@ an object with `nodes`, and `chalkctl status <node> -o json` one node's object:
 
 ```json
 {
-  "node": "node1",
+  "node": "cp1",
   "healthy": true,
   "problems": [],
   "inventory": {"config": "same", "image": "same", "platform": "same"},
-  "info": {"mode": "MODE_NORMAL", "imageId": "chalkos", "nodeName": "node1", "chalkosVersion": "0.8.0"},
+  "info": {"mode": "MODE_NORMAL", "imageId": "chalkos", "nodeName": "cp1", "chalkosVersion": "0.8.0"},
   "status": {"configVersion": "<version>", "boot": {"running": {"rootHash": "<base64>"}, "blessed": true}},
   "layers": {"kubernetes": {"kind": "controlplane", "nodeReady": "True"}}
 }
@@ -417,14 +417,14 @@ chalkctl status -o json | jq -e '
 alone. `-f` follows it, starting with the last 100 entries:
 
 ```sh
-chalkctl logs node1 --unit=chalkd.service -f
+chalkctl logs cp1 --unit=chalkd.service -f
 ```
 
 `-n` or `--lines` starts with that many of the last entries; `-n 0` starts with the boot's first
 entry, which is what `chalkctl logs` without `-f` prints by default:
 
 ```sh
-chalkctl logs node1 -n 20
+chalkctl logs cp1 -n 20
 ```
 
 A node serves eight journal streams to the clients of its network at a time, four of them to one
@@ -453,7 +453,7 @@ registry on the nodes that a `ClusterRegistry` names.
 A node in maintenance mode answers `chalkctl logs` too, with `--fingerprint` or `--insecure`:
 
 ```sh
-chalkctl logs node1 --insecure --unit=chalkd.service
+chalkctl logs cp1 --insecure --unit=chalkd.service
 ```
 
 ## Run the image's diagnostics with chalkctl node diag
@@ -463,7 +463,7 @@ chalkd runs it on the node and sends back what it prints, so a node without a lo
 its addresses, routes and firewall. Without a diagnostic, `chalkctl node diag` lists them:
 
 ```console
-$ chalkctl node diag node1
+$ chalkctl node diag cp1
 DIAGNOSTIC            ROLE      DESCRIPTION
 addresses             reader    The addresses of the node's interfaces, as ip -json address show prints them.
 bfd-peers             reader    One VRF's BFD sessions and their state, as show bfd peers prints them.
@@ -508,9 +508,9 @@ speaker runs. Every image has the others.
 Name the diagnostic and give each parameter as `<parameter>=<value>`:
 
 ```sh
-chalkctl node diag node1 route-get address=2001:db8::1
-chalkctl node diag node1 routes family=inet6
-chalkctl node diag node1 tcp-connect address=192.0.2.10 port=443
+chalkctl node diag cp1 route-get address=192.168.1.1
+chalkctl node diag cp1 routes table=all
+chalkctl node diag cp1 tcp-connect address=192.0.2.10 port=443
 ```
 
 The command's output goes to standard output and its errors to standard error. chalkctl fails
@@ -526,7 +526,7 @@ A connect that gets no answer within 5 seconds prints
 
 chalkd checks each value against its parameter's type before it runs anything. It also refuses
 any value that starts with `-` or holds a control character. A misspelt address fails with
-`invalid_argument: diagnostic route-get: address: "2001:db8::g" is no IPv4 or IPv6 address`. A
+`invalid_argument: diagnostic route-get: address: "192.168.1.256" is no IPv4 or IPv6 address`. A
 `hostname` reaches the command fully qualified: `dns-query name=registry` asks for `registry.`,
 and the node's DNS search domains do not apply. A command that runs longer than its timeout
 fails with `route-get ran longer than its timeout, and the node stopped it`. chalkd sends at most
@@ -536,7 +536,7 @@ A node in maintenance mode answers `chalkctl node diag` too, with `--fingerprint
 `--insecure`. The installer then shows whether the machine reaches a registry before it installs:
 
 ```sh
-chalkctl node diag node1 --insecure tcp-connect address=2001:db8::5000 port=443
+chalkctl node diag cp1 --insecure tcp-connect address=192.168.1.5 port=443
 ```
 
 --8<-- "docs/includes/no-os-ca.md"
@@ -588,7 +588,7 @@ With the Kubernetes layer and the debug tools, a privileged pod on the node reac
 through the host's root:
 
 ```sh
-kubectl debug node/node1 -it --profile=sysadmin --image=busybox -- \
+kubectl debug node/cp1 -it --profile=sysadmin --image=busybox -- \
   chroot /host /run/current-system/sw/bin/bash
 ```
 

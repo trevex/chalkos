@@ -103,19 +103,15 @@ The image's `source` in the inventory's `spec.images` takes the reference as `oc
 ```yaml title="chalkos.yaml"
 apiVersion: chalkctl.chalkos.dev/v1alpha1
 kind: Inventory
-metadata: {name: homelab}
+metadata: {name: cluster}
 spec:
   images:
-    router-metal: {source: {directory: images/router-metal}}
     node-metal: {source: {oci: "ghcr.io/example/node-metal@sha256:<digest>"}}
-  groups:
-    router: {imageName: router-metal, files: [router/*.yaml]}
-    nodes: {imageName: node-metal, files: [cluster/*.yaml, bgp/fabric.yaml, bgp/secrets.yaml]}
+  all: {imageName: node-metal, files: [cluster/*.yaml]}
   nodes:
-    router: {address: 192.168.1.2, groups: [router]}
-    node1: {address: "fdc8:a1b2:c3d4:ff::11", groups: [nodes], files: [nodes/node1.yaml]}
-    node2: {address: "fdc8:a1b2:c3d4:ff::12", groups: [nodes], files: [nodes/node2.yaml]}
-    node3: {address: "fdc8:a1b2:c3d4:ff::13", groups: [nodes], files: [nodes/node3.yaml]}
+    cp1: {address: 192.168.1.11, files: [nodes/cp1.yaml]}
+    cp2: {address: 192.168.1.12, files: [nodes/cp2.yaml]}
+    cp3: {address: 192.168.1.13, files: [nodes/cp3.yaml]}
 ```
 
 A reference by digest pins the image, so the inventory changes only when you push a new one. The
@@ -181,7 +177,7 @@ lists the media types and the header's fields.
 the image's reference by digest in place of the image:
 
 ```sh
-chalkctl install node1 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint>
+chalkctl install cp1 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint>
 ```
 
 It prints a line of this form, where `<serial>` is the system disk's serial, `<root-hash>` and
@@ -189,7 +185,7 @@ It prints a line of this form, where `<serial>` is the system disk's serial, `<r
 manifest's digest:
 
 ```text
-installing node1 onto serial "<serial>": chalkos <root-hash> (<revision>), which the installer pulls from ghcr.io/example/node-metal@sha256:<digest>
+installing cp1 onto serial "<serial>": chalkos <root-hash> (<revision>), which the installer pulls from ghcr.io/example/node-metal@sha256:<digest>
 ```
 
 The installer pulls the store, the hash tree, the UKI and the boot loader, and takes the image's
@@ -241,7 +237,7 @@ For each node whose config is valid it prints a line of this form, where `<root-
 first 12 hex digits of the image's root hash and `<hash>` the hash of the node's config:
 
 ```text
-node1: valid for the image node-metal at ghcr.io/example/node-metal@sha256:<digest> (node-metal on metal, root hash <root-hash>), config <hash>
+cp1: valid for the image node-metal at ghcr.io/example/node-metal@sha256:<digest> (node-metal on metal, root hash <root-hash>), config <hash>
 ```
  The digest is that of the manifest chalkctl read, so it names
 the image that was checked even when the inventory names a tag.
