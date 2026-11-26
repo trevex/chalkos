@@ -18,9 +18,6 @@ type NodeConfig struct {
 	// Documents are the documents of the node's files, in their order, as the inventory's filters
 	// leave them.
 	Documents []config.Document
-	// Hostname is the Host document's spec.hostname, empty without a Host or for a null one,
-	// which take the node's name.
-	Hostname string
 	// ImageName is the name of the image the inventory gives the node; ImageDir is that image's
 	// directory, absolute, or ImageOCI its reference in a registry, as its source names one of
 	// them.
@@ -65,12 +62,6 @@ func (inv *Inventory) Node(name string) (*NodeConfig, error) {
 		return nil, err
 	}
 	c := &NodeConfig{Name: name, ImageName: imageName, ImageDir: source.Directory, ImageOCI: source.OCI, inv: inv, documentPaths: seen}
-	for _, d := range docs {
-		if d.APIVersion == config.CoreAPI && d.Kind == "Host" {
-			host, _ := d.Object["spec"].(map[string]any)
-			c.Hostname, _ = host["hostname"].(string)
-		}
-	}
 	for _, filter := range inv.filters {
 		docs = filter(docs)
 	}

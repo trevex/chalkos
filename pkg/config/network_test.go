@@ -88,3 +88,12 @@ spec: {network: {address: [10.0.0.11/24, fd00::11/64]}}
 		t.Errorf("addresses = %v, want %v", got, want)
 	}
 }
+
+func TestHostname(t *testing.T) {
+	if got := Hostname(mustParse(t, "apiVersion: chalkos.dev/v1alpha1\nkind: Host\nmetadata: {name: default}\nspec: {hostname: n1.lab}\n")); got != "n1.lab" {
+		t.Errorf("hostname = %q, want n1.lab", got)
+	}
+	if got := Hostname(mustParse(t, "apiVersion: chalkos.dev/v1alpha1\nkind: Host\nmetadata: {name: default}\nspec: {hostname: null}\n")); got != "" {
+		t.Errorf("hostname of a null one = %q, want none", got)
+	}
+}

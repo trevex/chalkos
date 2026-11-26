@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
+	"github.com/trevex/chalkos/pkg/config"
 	imagecontract "github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/inventory"
 	"github.com/trevex/chalkos/pkg/sdk"
@@ -39,20 +40,21 @@ func imageContract(dir string) (sdk.Contract, error) {
 // deliveryFor checks a node's config against the image ct describes, as the node would. An image of
 // another platform than the node's is an error, since the node translates config for its image's
 // platform; the image's name is not compared, as the schemas decide. A config the checks refuse is
-// a refusal; a node the inventory lacks is an error.
-func (c *cluster) deliveryFor(ctx context.Context, name string, ct sdk.Contract) (sdk.Delivery, error) {
+// a refusal; a node the inventory lacks is an error. It returns the documents it checked too, with
+// the values of their Secrets resolved.
+func (c *cluster) deliveryFor(ctx context.Context, name string, ct sdk.Contract) (sdk.Delivery, []config.Document, error) {
 	if err := c.samePlatform(name, ct.Platform); err != nil {
-		return sdk.Delivery{}, err
+		return sdk.Delivery{}, nil, err
 	}
 	nc, err := c.desiredConfig(name)
 	if err != nil {
-		return sdk.Delivery{}, err
+		return sdk.Delivery{}, nil, err
 	}
 	d, err := sdk.Check(ctx, ct, nc.Name, nc.Documents)
 	if err != nil {
-		return sdk.Delivery{}, &layer.NodeError{Node: name, Err: fmt.Errorf("the config of %s: %w", name, err), Named: true, Refused: true}
+		return sdk.Delivery{}, nil, &layer.NodeError{Node: name, Err: fmt.Errorf("the config of %s: %w", name, err), Named: true, Refused: true}
 	}
-	return d, nil
+	return d, nc.Documents, nil
 }
 
 // imageContractOf is the contract of the node's image in the inventory.

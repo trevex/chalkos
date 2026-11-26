@@ -127,7 +127,7 @@ func (r *configRollout) plan(ctx context.Context, names []string) error {
 				if err != nil {
 					return err
 				}
-				d, err := r.cluster.deliveryFor(ctx, name, ct)
+				d, _, err := r.cluster.deliveryFor(ctx, name, ct)
 				if err != nil {
 					return err
 				}

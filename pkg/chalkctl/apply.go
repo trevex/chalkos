@@ -253,7 +253,7 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 	if err != nil {
 		return err
 	}
-	d, err := t.cluster.deliveryFor(ctx, t.name, c)
+	d, _, err := t.cluster.deliveryFor(ctx, t.name, c)
 	if err != nil {
 		return err
 	}
@@ -631,7 +631,7 @@ func (a *app) resetVolume(ctx context.Context, f resetVolumeFlags, pos []string)
 	if err != nil {
 		return err
 	}
-	d, err := t.cluster.deliveryFor(ctx, t.name, c)
+	d, _, err := t.cluster.deliveryFor(ctx, t.name, c)
 	if err != nil {
 		return err
 	}

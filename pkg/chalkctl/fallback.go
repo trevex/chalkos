@@ -28,22 +28,27 @@ func (a *app) fallbackSecret(ctx context.Context, t *target, fallback, passwordF
 		}
 		return clustersecrets.RecoveryKey(t.secrets.RecoverySecret, t.name)
 	case storage.FallbackPassword:
-		if passwordFile != "" {
-			data, err := os.ReadFile(passwordFile)
-			if err != nil {
-				return "", err
-			}
-			// Only the line ending that ends the file's line, LF or CRLF; the rest belongs to
-			// the password.
-			password := strings.TrimSuffix(strings.TrimSuffix(string(data), "\n"), "\r")
-			if password == "" {
-				return "", fmt.Errorf("%s is empty", passwordFile)
-			}
-			return password, nil
-		}
-		return a.askPassword(ctx, t.name)
+		return a.password(ctx, t, passwordFile)
 	}
 	return "", fmt.Errorf("node %s has the unknown fallback %q", t.name, fallback)
+}
+
+// password returns the password that unlocks the node when its TPM fails: the content of
+// passwordFile, or else what the operator types on the terminal, twice.
+func (a *app) password(ctx context.Context, t *target, passwordFile string) (string, error) {
+	if passwordFile == "" {
+		return a.askPassword(ctx, t.name)
+	}
+	data, err := os.ReadFile(passwordFile)
+	if err != nil {
+		return "", err
+	}
+	// Only the line ending that ends the file's line, LF or CRLF; the rest belongs to the password.
+	password := strings.TrimSuffix(strings.TrimSuffix(string(data), "\n"), "\r")
+	if password == "" {
+		return "", fmt.Errorf("%s is empty", passwordFile)
+	}
+	return password, nil
 }
 
 func (a *app) askPassword(ctx context.Context, node string) (string, error) {

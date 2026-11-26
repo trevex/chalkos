@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"net"
 	"os"
 	"slices"
 	"strings"
@@ -186,22 +185,7 @@ func (c *cluster) certNames(name string) (pki.NodeNames, error) {
 	if err != nil {
 		return pki.NodeNames{}, err
 	}
-	hostnames := []string{name}
-	if nc.Hostname != "" && nc.Hostname != name {
-		hostnames = append(hostnames, nc.Hostname)
-	}
-	return pki.NodeNames{CommonName: name, DNSNames: hostnames, IPs: ipAddresses(nc.StaticAddresses())}, nil
-}
-
-// ipAddresses parses the addresses that are IPs, for the node certificate.
-func ipAddresses(addrs []string) []net.IP {
-	var ips []net.IP
-	for _, a := range addrs {
-		if ip := net.ParseIP(a); ip != nil {
-			ips = append(ips, ip)
-		}
-	}
-	return ips
+	return sdk.NodeNames(name, nc.Documents), nil
 }
 
 // samePlatform refuses a node that runs an image of another platform than its config's image:

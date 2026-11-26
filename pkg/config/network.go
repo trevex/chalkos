@@ -56,3 +56,16 @@ func joinValues(v any) any {
 func StaticAddresses(docs []Document) []string {
 	return identity.Identity{Network: NetworkMap(docs)}.StaticAddresses()
 }
+
+// Hostname returns the Host document's spec.hostname, read from the documents alone: empty
+// without a Host or for a null one, which take the node's name.
+func Hostname(docs []Document) string {
+	var hostname string
+	for _, d := range docs {
+		if d.APIVersion == CoreAPI && d.Kind == "Host" {
+			host, _ := d.Object["spec"].(map[string]any)
+			hostname, _ = host["hostname"].(string)
+		}
+	}
+	return hostname
+}

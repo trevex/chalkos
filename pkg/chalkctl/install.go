@@ -7,14 +7,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/spf13/cobra"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/internal/cli"
-	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/sdk"
 	"github.com/trevex/chalkos/pkg/storage"
 )
@@ -85,9 +83,9 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		}
 	}
 
-	header := &nodev1.InstallHeader{CaCertificate: []byte(t.secrets.OSCABundle()), WipeDisk: f.wipeDisk}
 	var img *diskImage
 	var c sdk.Contract
+	var definitions map[string]string
 	if !info.Installer {
 		// The node runs its image already, which must be of the node's platform.
 		if err := t.cluster.samePlatform(t.name, info.Platform); err != nil {
@@ -96,7 +94,6 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		if c, err = sdk.NodeContract(ctx, conn, sdkLayers(), t.name); err != nil {
 			return err
 		}
-		header.Target = &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}
 	} else {
 		if img, err = a.installerImage(ctx, t, f.image); err != nil {
 			return err
@@ -106,50 +103,43 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		if err := checkInstallImage(t, img); err != nil {
 			return err
 		}
-		header.Image = img.header
 		// The installer runs another image than the one it installs, so it gets that image's
 		// contract with the config; an image it pulls brings its contract along.
-		if img.source != nil {
-			header.Origin = &nodev1.InstallHeader_Source{Source: img.source}
-		} else {
-			definitions, err := readDefinitions(img.definitions)
-			if err != nil {
+		if img.source == nil {
+			if definitions, err = readDefinitions(img.definitions); err != nil {
 				return err
 			}
-			header.Origin = &nodev1.InstallHeader_Contract{Contract: &nodev1.ImageContract{
-				SystemDefinitions: definitions, Schemas: c.Image.Schemas.Files(), LayerFacts: c.Facts,
-			}}
 		}
 	}
-	d, err := t.cluster.deliveryFor(ctx, t.name, c)
+	d, docs, err := t.cluster.deliveryFor(ctx, t.name, c)
 	if err != nil {
 		return err
 	}
 	a.warnUnpinned(t.name, d)
-	header.Config = d.Text
-	names, err := t.cluster.certNames(t.name)
-	if err != nil {
-		return err
-	}
-	nodeCert, err := pki.IssueNode(t.secrets.NodeCA, names, time.Now())
-	if err != nil {
-		return err
-	}
-	header.NodeCertificate, header.NodeKey = []byte(nodeCert.Certificate), []byte(nodeCert.Key)
+	r := sdk.InstallRequest{Node: t.name, Documents: docs, Secrets: t.secrets, Layers: sdkLayers()}
 	fallback := d.Identity.Storage.Fallback
-	if header.FallbackSecret, err = a.fallbackSecret(ctx, t, fallback, f.passwordFile); err != nil {
-		return err
+	if fallback == storage.FallbackPassword {
+		if r.Password, err = a.password(ctx, t, f.passwordFile); err != nil {
+			return err
+		}
 	}
-	docs, err := t.cluster.Documents(t.name)
+	header, err := sdk.NewInstallHeader(r, d)
 	if err != nil {
 		return err
 	}
-	if header.Layers, err = sdk.PayloadsOf(sdkLayers(), t.secrets, t.name, docs, time.Now()); err != nil {
-		return err
-	}
+	header.WipeDisk = f.wipeDisk
 	if img == nil {
+		header.Target = &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}
 		fmt.Fprintf(a.stdout, "installing %s in place\n", t.name)
 	} else {
+		header.Image = img.header
+		if img.source != nil {
+			header.Origin = &nodev1.InstallHeader_Source{Source: img.source}
+		} else {
+			header.Origin = &nodev1.InstallHeader_Contract{Contract: &nodev1.ImageContract{
+				SystemDefinitions: definitions, Schemas: c.Image.Schemas.Files(), LayerFacts: c.Facts,
+			}}
+		}
 		ref := d.Identity.Storage.Disks[storage.SystemDisk].Ref
 		header.Target = &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{
 			Path: ref.Path, Model: ref.Selector.Model, Serial: ref.Selector.Serial,
