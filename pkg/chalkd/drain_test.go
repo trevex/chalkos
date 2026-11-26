@@ -216,11 +216,10 @@ func TestDiagnosticSlotFreeOnceTheRunEnds(t *testing.T) {
 	s, _ := newTestServer(t, normal, vda)
 	writeContract(t, s, contract.DiagnosticsFile, testDiagnostics)
 	stream := &blockedDiagnosticStream{sending: make(chan struct{}), unblock: make(chan struct{})}
-	// The unit prints, and ends while the copy of its output blocks, as the sandbox's run returns
-	// once the unit stopped and its pipes' wait passed.
+	// The unit prints and ends. The sandbox's run returns only once the copy of its output
+	// returned, as exec.Cmd waits for it even after it closed the pipes.
 	s.Diagnose = diagnoseFunc(func(_ context.Context, _ diagnostics.Run, stdout, _ io.Writer) (diagnostics.Exit, error) {
-		go stdout.Write([]byte("output"))
-		<-stream.sending
+		stdout.Write([]byte("output"))
 		return diagnostics.Exit{}, nil
 	})
 	ctx := context.WithValue(context.Background(), roleKey{}, pki.RoleReader)
