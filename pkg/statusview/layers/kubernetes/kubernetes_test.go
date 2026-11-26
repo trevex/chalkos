@@ -85,6 +85,7 @@ func TestProblems(t *testing.T) {
 		{&kubernetesv1.StatusResponse{Kind: "worker", State: "joined", Phase: kubernetesv1.Phase_PHASE_JOINED, NodeReady: "True"}, nil},
 		{&kubernetesv1.StatusResponse{Kind: "worker", State: "preparing", Phase: kubernetesv1.Phase_PHASE_PREPARING}, nil},
 		{&kubernetesv1.StatusResponse{Kind: "worker", State: "preparation failed: no node address", Phase: kubernetesv1.Phase_PHASE_PREPARATION_FAILED}, []string{"Kubernetes preparation failed"}},
+		{&kubernetesv1.StatusResponse{Kind: "control-plane", Phase: kubernetesv1.Phase_PHASE_ETCD_DATA_MISSING}, []string{"etcd data missing"}},
 		{&kubernetesv1.StatusResponse{
 			Kind: "controlplane", State: "bootstrapped", Phase: kubernetesv1.Phase_PHASE_BOOTSTRAPPED, NodeReady: "True", ControlPlanePods: "current",
 			ControlPlane: "the API server serves certificates the node replaced",

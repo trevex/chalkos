@@ -467,7 +467,8 @@ type InfoResponse struct {
 	// Whether the kernel loads modules from the running image alone.
 	ModulePolicy *ModulePolicyStatus `protobuf:"bytes,16,opt,name=module_policy,json=modulePolicy,proto3" json:"module_policy,omitempty"`
 	// The release of chalkos that chalkd belongs to, as its version command prints it, such as 0.6.0;
-	// chalkctl of another release warns, as the two keep no compatibility between releases.
+	// chalkctl of another release warns, as the two keep no compatibility between releases. A build
+	// without a release, whose version reads unknown, on either side draws no warning.
 	ChalkosVersion string `protobuf:"bytes,17,opt,name=chalkos_version,json=chalkosVersion,proto3" json:"chalkos_version,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache

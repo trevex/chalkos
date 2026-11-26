@@ -71,7 +71,7 @@ The response of Info.
 | `layers` | list of string | The layers the running image carries beside the base every image has, such as "kubernetes", in name order; empty on the installer and on an image of the base alone. |
 | `node_name` | string | The node's name, as its node certificate names it; empty in maintenance mode and on the installer. |
 | `module_policy` | ModulePolicyStatus | Whether the kernel loads modules from the running image alone. |
-| `chalkos_version` | string | The release of chalkos that chalkd belongs to, as its version command prints it, such as 0.6.0; chalkctl of another release warns, as the two keep no compatibility between releases. |
+| `chalkos_version` | string | The release of chalkos that chalkd belongs to, as its version command prints it, such as 0.6.0; chalkctl of another release warns, as the two keep no compatibility between releases. A build without a release, whose version reads unknown, on either side draws no warning. |
 
 Field types: [Mode](#enum-mode), [SecureBoot](#enum-secureboot), [ModulePolicyStatus](#message-modulepolicystatus).
 
