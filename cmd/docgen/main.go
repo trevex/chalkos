@@ -49,6 +49,13 @@
 // fails when a directory of Go code below ROOT/cmd or ROOT/pkg has no row in the tables of the
 // page PAGE, the contributors' list of programs and packages.
 //
+//	docgen cards OUT_DIR DOCS_DIR PAGE...
+//
+// writes the index pages PAGE, paths below DOCS_DIR, below OUT_DIR, each region of cards filled
+// with a card per page its opening line <!-- docgen cards: PAGE... --> names: the page's title and
+// description from its front matter. A page is read below OUT_DIR when it is there. An index page
+// with a grid of cards outside such a region fails.
+//
 //	docgen abbr GLOSSARY OUT
 //
 // writes the terms of the glossary page GLOSSARY to OUT as Markdown abbreviations, which the site
@@ -95,8 +102,10 @@ func run(args []string) error {
 		return checkPackages(args[1], args[2])
 	case len(args) == 3 && args[0] == "abbr":
 		return writeAbbr(args[1], args[2])
+	case len(args) >= 3 && args[0] == "cards":
+		return writeCards(args[1], args[2], args[3:])
 	}
-	return errors.New("usage: docgen cli DIR ZENSICAL_TOML DOCS_DIR | docgen kinds PAGE SCHEMAS_DIR [SCHEMA_FILE...] | docgen options DIR TEMPLATES_DIR ARGUMENTS_JSON OPTIONS_JSON | docgen builtins PAGE DEFAULT_IMAGE PLAIN_IMAGE ROUTER_IMAGE | docgen check DOCS_DIR | docgen yaml DOCS_DIR SCHEMAS_DIR | docgen nix DOCS_DIR OUT_DIR | docgen packages PAGE ROOT | docgen abbr GLOSSARY OUT")
+	return errors.New("usage: docgen cli DIR ZENSICAL_TOML DOCS_DIR | docgen kinds PAGE SCHEMAS_DIR [SCHEMA_FILE...] | docgen options DIR TEMPLATES_DIR ARGUMENTS_JSON OPTIONS_JSON | docgen builtins PAGE DEFAULT_IMAGE PLAIN_IMAGE ROUTER_IMAGE | docgen check DOCS_DIR | docgen yaml DOCS_DIR SCHEMAS_DIR | docgen nix DOCS_DIR OUT_DIR | docgen packages PAGE ROOT | docgen abbr GLOSSARY OUT | docgen cards OUT_DIR DOCS_DIR PAGE...")
 }
 
 // programs are the four command trees with cobra's help and completion commands. The completion

@@ -16,108 +16,93 @@ reach it through WireGuard, and whom it serves time.
 To see a router run first, [Quick start: router](../get-started/quick-start-router.md) runs one
 with a client on its LAN as virtual machines, in about 15 minutes.
 
+## Read in this order
+
+1. [Set up a router](set-up.md) gives a node its router config.
+2. [Filter and translate traffic](firewall-and-nat.md) decides what passes.
+3. [Route with BGP](bgp.md) exchanges routes with the router's neighbours.
+4. [Lease addresses with DHCP](dhcp.md) leases addresses on the router's networks.
+
 ## Set up
 
 These pages give a node its router config and its firewall.
 
+<!-- docgen cards: set-up.md firewall-and-nat.md -->
 <div class="grid cards" markdown>
 
--   :material-router-network: __Set up a router__
+-   __[Set up a router](set-up.md)__
 
     ---
 
-    Write the `Router` document, choose the interfaces of the node API and check what the router
-    loaded.
+    Configure a router node's interfaces, its Router document and the interfaces of its node API, deliver the config and check the result
 
-    [:octicons-arrow-right-24: Read](set-up.md)
-
--   :material-wall-fire: __Filter and translate traffic__
+-   __[Filter and translate traffic](firewall-and-nat.md)__
 
     ---
 
-    Group interfaces into zones, write policies between them and to the router, and masquerade or
-    forward ports.
-
-    [:octicons-arrow-right-24: Read](firewall-and-nat.md)
+    Group a router's interfaces into zones, write firewall policies between them and to the router, and masquerade or forward ports with NAT rules
 
 </div>
+<!-- end docgen cards -->
 
 ## Route
 
 These pages decide where the router sends traffic.
 
+<!-- docgen cards: bgp.md vrfs.md policy-routing.md -->
 <div class="grid cards" markdown>
 
--   :material-transit-connection-variant: __Route with BGP__
+-   __[Route with BGP](bgp.md)__
 
     ---
 
-    Give the router a BGP instance, peer on its links or at addresses, filter routes with
-    policies and check the sessions.
+    Give a router a BGP instance, peer with its neighbours on interfaces, at addresses or from a prefix, filter routes with prefix lists and routing policies, and check its sessions and routes
 
-    [:octicons-arrow-right-24: Read](bgp.md)
-
--   :material-call-split: __Separate routing with VRFs__
+-   __[Separate routing with VRFs](vrfs.md)__
 
     ---
 
-    Put links into VRFs with tables of their own, run a BGP instance in each and import routes
-    between them, while the node API stays in the default VRF.
+    Put a router's links into VRFs, run a BGP instance in each and import routes between them, while the node API stays in the default VRF
 
-    [:octicons-arrow-right-24: Read](vrfs.md)
-
--   :material-sign-direction: __Route traffic by policy__
+-   __[Route traffic by policy](policy-routing.md)__
 
     ---
 
-    Send traffic by source, port or DSCP into a VRF, another table or through another router,
-    whatever its destination's route.
-
-    [:octicons-arrow-right-24: Read](policy-routing.md)
+    Send a router's forwarded traffic by source, port or DSCP into a VRF, another table or through a next hop, whatever its destination's route
 
 </div>
+<!-- end docgen cards -->
 
 ## Serve the networks
 
 These pages give the router's networks their services.
 
+<!-- docgen cards: nat64-and-dns.md dhcp.md wireguard.md time-server.md -->
 <div class="grid cards" markdown>
 
--   :material-swap-horizontal: __Translate to IPv4 and resolve names__
+-   __[Translate to IPv4 and resolve names](nat64-and-dns.md)__
 
     ---
 
-    Give IPv6-only networks the IPv4 internet through NAT64, answer their queries with DNS64 and
-    local zones, and check the translations.
+    Give IPv6-only networks the IPv4 internet through a router's NAT64, answer their DNS queries with DNS64 and local zones, do both in a VRF, and check the translations and the resolvers
 
-    [:octicons-arrow-right-24: Read](nat64-and-dns.md)
-
--   :material-ip-network: __Lease addresses with DHCP__
+-   __[Lease addresses with DHCP](dhcp.md)__
 
     ---
 
-    Lease IPv4 and IPv6 addresses on the router's links from pools and reservations, give clients
-    their options and PXE clients their boot files, delegate IPv6 prefixes and relay DHCP to
-    other servers, in each VRF.
+    Serve IPv4 and IPv6 addresses on a router's links with Kea, delegate IPv6 prefixes to other routers and relay DHCP to servers elsewhere: pools, reservations, options, PXE boot files and a server per VRF
 
-    [:octicons-arrow-right-24: Read](dhcp.md)
-
--   :material-vpn: __Run WireGuard__
+-   __[Run WireGuard](wireguard.md)__
 
     ---
 
-    Give the router a WireGuard interface with keys from Secrets, add peers such as a laptop and
-    check their handshakes.
+    Give a router a WireGuard interface with keys from Secrets, add peers such as a laptop, let the tunnel through the firewall, rotate keys and check the handshakes
 
-    [:octicons-arrow-right-24: Read](wireguard.md)
-
--   :material-clock-outline: __Serve time with NTP__
+-   __[Serve time with NTP](time-server.md)__
 
     ---
 
-    Let the router answer NTP for its networks, serve its own clock without a source and list
-    the clients it answered.
-
-    [:octicons-arrow-right-24: Read](time-server.md)
+    Let a router answer NTP for its networks with a TimeServer, point nodes at it, serve the router's own clock without a source, and check its clients
 
 </div>
+<!-- end docgen cards -->

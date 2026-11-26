@@ -188,6 +188,8 @@ run no virtual machines smaller.
 
 ## What next
 
+- [Choose Kubernetes features](../build/images-and-platforms.md#choose-kubernetes-features) lists
+  every feature of the Kubernetes layer and what it carries.
 - [Security model](../how-it-works/node/security.md#kernel-modules-load-from-the-image-alone)
   explains why pods cannot load modules.
 - [How Kubernetes runs on a node](../how-it-works/kubernetes/overview.md) describes

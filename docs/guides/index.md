@@ -6,58 +6,53 @@ description: "Longer walks through a whole setup: a cluster on real machines, on
 # Guides
 
 These pages follow one project from start to end, across the roles of the other sections, and
-link to the how-to pages for the details of each step. Start with the cluster on real machines.
-The air-gapped cluster builds on it, and so does the release pipeline for a cluster's own images.
-The other two build on the homelab example, an advanced setup of a router and three Kubernetes
-nodes on an IPv6 fabric with BGP.
+link to the how-to pages for the details of each step.
 [Decisions before you install](../get-started/decisions.md) lists the choices that each guide makes
 for you, with what each one costs.
 
+## Read in this order
+
+1. [Build a cluster on real machines](cluster-on-machines.md) installs three machines.
+2. [Build an air-gapped cluster](air-gapped.md) builds on it.
+3. [Release your own images](release-your-images.md) publishes a cluster's own images.
+
+## All guides
+
+The guides on the BGP extension and the home lab build on the homelab example, an advanced setup
+of a router and three Kubernetes nodes on an IPv6 fabric with BGP.
+
+<!-- docgen cards: cluster-on-machines.md air-gapped.md release-your-images.md bgp-extension.md home-lab.md -->
 <div class="grid cards" markdown>
 
--   :material-server-network: __Build a cluster on real machines__
+-   __[Build a cluster on real machines](cluster-on-machines.md)__
 
     ---
 
-    Install three machines from the `cluster-metal` template as a Kubernetes cluster of three
-    control planes, with static IPv4 addresses and a VIP for the Kubernetes API.
+    Install three machines from the cluster-metal template as a Kubernetes cluster of three control planes behind a VIP
 
-    [:octicons-arrow-right-24: Build](cluster-on-machines.md)
-
--   :material-wifi-off: __Build an air-gapped cluster__
+-   __[Build an air-gapped cluster](air-gapped.md)__
 
     ---
 
-    Run the cluster without internet access: bring in the OS images, chalkctl and the container
-    images from a connected machine, serve them from the control planes and keep time locally.
+    Run a chalkos cluster without internet access: what to bring in, in which order, and how to upgrade it later
 
-    [:octicons-arrow-right-24: Build](air-gapped.md)
-
--   :material-rocket-launch-outline: __Release your own images__
+-   __[Release your own images](release-your-images.md)__
 
     ---
 
-    Build, sign and push the cluster's own images from GitHub Actions on every tag, pin their
-    digests in the inventory and follow chalkos releases with Renovate.
+    Build, sign and push a cluster's own images from GitHub Actions on every tag, pin their digests in the inventory and follow chalkos releases
 
-    [:octicons-arrow-right-24: Set up](release-your-images.md)
-
--   :material-puzzle-outline: __Write a BGP extension__
+-   __[Write a BGP extension](bgp-extension.md)__
 
     ---
 
-    Build a BIRD extension from an empty module: its kinds, the rendered config, the
-    service, effects, rules, a validator, a diagnostic and their tests, and debug it on a node.
+    Build a BIRD BGP extension from an empty module, test each part, and debug it on a node
 
-    [:octicons-arrow-right-24: Write](bgp-extension.md)
-
--   :material-home-variant-outline: __Build a home lab__
+-   __[Build a home lab](home-lab.md)__
 
     ---
 
-    An advanced setup: turn four machines and a switch into a router and three Kubernetes
-    control planes on an IPv6 fabric with BGP, and test what happens when a cable or a node fails.
-
-    [:octicons-arrow-right-24: Build](home-lab.md)
+    Turn four machines and a switch into a router and a three-node Kubernetes cluster on an IPv6 fabric
 
 </div>
+<!-- end docgen cards -->

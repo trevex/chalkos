@@ -9,89 +9,81 @@ These pages are for readers new to chalkos. They explain the model of a cluster,
 cluster or a lab router on one machine and list what real machines need. The
 [guides](../guides/index.md) go on to a cluster on real machines.
 
+## Read in this order
+
+1. [What is chalkos](what-is-chalkos.md) explains the model of a cluster.
+2. [Quick start: Kubernetes](quick-start-kubernetes.md) runs a lab cluster on one machine.
+3. [Requirements](requirements.md) lists what real machines need.
+4. [Decisions before you install](decisions.md) lists the choices to make first.
+
 ## Understand chalkos
 
 This page explains the model of a cluster before any command.
 
+<!-- docgen cards: what-is-chalkos.md -->
 <div class="grid cards" markdown>
 
--   :material-lightbulb-on-outline: __What is chalkos__
+-   __[What is chalkos](what-is-chalkos.md)__
 
     ---
 
-    What chalkos builds and what sets it apart, the model of a cluster from the images and the
-    config documents to an upgrade, and how chalkos compares with Talos and NixOS.
-
-    [:octicons-arrow-right-24: Read](what-is-chalkos.md)
+    What chalkos builds, what sets it apart, and the model of a cluster from images and config to an upgrade
 
 </div>
+<!-- end docgen cards -->
 
 ## Quick starts
 
 Each quick start runs a lab of virtual machines on one machine in about 15 minutes.
 
+<!-- docgen cards: quick-start-kubernetes.md quick-start-router.md -->
 <div class="grid cards" markdown>
 
--   :material-rocket-launch: __Quick start: Kubernetes__
+-   __[Quick start: Kubernetes](quick-start-kubernetes.md)__
 
     ---
 
-    Run a cluster of two QEMU virtual machines on one machine with chalklab, upgrade it and
-    remove it, in about 15 minutes.
+    Run a chalkos cluster of two QEMU virtual machines on this machine with chalklab
 
-    [:octicons-arrow-right-24: Start](quick-start-kubernetes.md)
-
--   :material-router-network: __Quick start: router__
+-   __[Quick start: router](quick-start-router.md)__
 
     ---
 
-    Run a router and a client on its LAN as QEMU virtual machines, check its DHCP, DNS and
-    masquerade, and change its firewall on trial, in about 15 minutes.
-
-    [:octicons-arrow-right-24: Start](quick-start-router.md)
+    Run a chalkos router and a client on its LAN as QEMU virtual machines with chalklab, and change its firewall on trial
 
 </div>
+<!-- end docgen cards -->
 
 ## Before you install
 
 These pages prepare an install on real machines.
 
+<!-- docgen cards: requirements.md decisions.md releases.md security.md -->
 <div class="grid cards" markdown>
 
--   :material-clipboard-check-outline: __Requirements__
+-   __[Requirements](requirements.md)__
 
     ---
 
-    What chalkos needs from machines, firmware, disks and networks, and what a lab needs from its
-    host.
+    What chalkos needs from machines, firmware, disks and networks, and from the workstation, build host and lab host
 
-    [:octicons-arrow-right-24: Read](requirements.md)
-
--   :material-source-branch: __Decisions before you install__
+-   __[Decisions before you install](decisions.md)__
 
     ---
 
-    Secure Boot, the control planes, the VIP, the secrets file and the platform: each choice
-    with its consequence.
+    The choices that shape a chalkos cluster before its first install, each with its consequence and the page that carries it out
 
-    [:octicons-arrow-right-24: Read](decisions.md)
-
--   :material-tag-outline: __Releases__
+-   __[Releases](releases.md)__
 
     ---
 
-    The images, the installer and chalkctl a release publishes, when to use its generic images,
-    and how to pin and verify them.
+    What a chalkos release publishes, when to use its generic images, and how to pin and verify them
 
-    [:octicons-arrow-right-24: Read](releases.md)
-
--   :material-shield-check-outline: __Security__
+-   __[Security policy](security.md)__
 
     ---
 
-    Which releases receive security fixes, how to report a vulnerability, and how chalkos scans
-    its code and images.
-
-    [:octicons-arrow-right-24: Read](security.md)
+    Which chalkos releases receive security fixes, how to report a vulnerability, and how the project scans its code and images
 
 </div>
+<!-- end docgen cards -->

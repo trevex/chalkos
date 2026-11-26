@@ -13,163 +13,144 @@ kubeconfigs, which need the Kubernetes layer. Their examples come from a Kuberne
 The [command cheat sheet](../reference/cheat-sheet.md) lists the command and the credential for
 each common task.
 
+## Read in this order
+
+1. [Set up your workstation](workstation.md) gets chalkctl and the cluster's secrets.
+2. [Write a node's config](node-config.md) gives each node its files and image.
+3. [Install a node](install.md) installs the first machine.
+4. [Change a node's config](change-config.md) delivers a change to a running node.
+5. [Upgrade nodes](upgrade.md) rolls a new image through the nodes.
+6. [Status, logs and the console](status-and-logs.md) reads what a node does.
+
 ## Set up
 
 These pages go from a new workstation to the first installed node.
 
+<!-- docgen cards: workstation.md secrets.md node-config.md install.md install-vm.md secure-boot.md -->
 <div class="grid cards" markdown>
 
--   :material-laptop: __Set up your workstation__
+-   __[Set up your workstation](workstation.md)__
 
     ---
 
-    Get chalkctl, generate the cluster's secrets and choose the credentials each command needs.
+    Get chalkctl, lay out the repository, generate the cluster's secrets and pick each command's credentials
 
-    [:octicons-arrow-right-24: Read](workstation.md)
-
--   :material-file-cog: __Write a node's config__
+-   __[Manage secrets](secrets.md)__
 
     ---
 
-    Give each node its files and image in the inventory, and check its documents.
+    Generate and rotate the cluster secrets file and source service credentials from local files, age, or SOPS
 
-    [:octicons-arrow-right-24: Read](node-config.md)
-
--   :material-server-network: __Install a node__
+-   __[Write a node's config](node-config.md)__
 
     ---
 
-    Boot a physical machine from the installer and install a node on it.
+    Give nodes their config files and images in the inventory, write the built-in kinds and validate them
 
-    [:octicons-arrow-right-24: Read](install.md)
-
--   :material-monitor-dashboard: __Install a node in a VM__
+-   __[Install a node](install.md)__
 
     ---
 
-    Run a node under QEMU, libvirt or Proxmox from the kvm image, installed in place.
+    Boot a physical machine from the installer and install a node of the inventory on it with chalkctl install
 
-    [:octicons-arrow-right-24: Read](install-vm.md)
-
--   :material-shield-key: __Enrol Secure Boot keys__
+-   __[Install a node in a VM](install-vm.md)__
 
     ---
 
-    Put the cluster's Secure Boot keys into a machine's firmware before it is installed.
+    Run a node of the inventory as a VM under QEMU, libvirt or Proxmox, from the kvm image, and install it in place
 
-    [:octicons-arrow-right-24: Read](secure-boot.md)
+-   __[Enrol Secure Boot keys](secure-boot.md)__
+
+    ---
+
+    Enrol the cluster's Secure Boot keys in a machine's firmware with chalkctl secureboot enroll, or through its setup screen or BMC
 
 </div>
+<!-- end docgen cards -->
 
 ## Day 2
 
 These pages cover nodes that run: config changes, new and removed nodes, upgrades, access,
 storage, registries and the tasks that recur.
 
+<!-- docgen cards: change-config.md add-remove-nodes.md upgrade.md access.md storage-volumes.md registries.md recurring-tasks.md -->
 <div class="grid cards" markdown>
 
--   :material-file-edit: __Change a node's config__
+-   __[Change a node's config](change-config.md)__
 
     ---
 
-    Deliver changed YAML to a running node, preview it, and act on a refusal.
+    Deliver changed YAML to a running node with chalkctl config apply, preview it with --diff and --dry-run, try it with --try and act on a refusal
 
-    [:octicons-arrow-right-24: Read](change-config.md)
-
--   :material-server-plus: __Add and remove nodes__
+-   __[Add and remove nodes](add-remove-nodes.md)__
 
     ---
 
-    Add a node to a running cluster, reinstall one, or take one out for good.
+    Add a node to the inventory and install it, reinstall a node, take it out of the cluster for good, or reuse its name
 
-    [:octicons-arrow-right-24: Read](add-remove-nodes.md)
-
--   :material-update: __Upgrade nodes__
+-   __[Upgrade nodes](upgrade.md)__
 
     ---
 
-    Roll a new image through the nodes, and act on a node that rolls back.
+    Roll a new image through the nodes with chalkctl upgrade, and act on a node that rolls back
 
-    [:octicons-arrow-right-24: Read](upgrade.md)
-
--   :material-certificate: __Manage access and certificates__
+-   __[Manage access and certificates](access.md)__
 
     ---
 
-    Give and revoke access, renew node certificates, and rotate the OS CA and the node CA.
+    Give and revoke access to the nodes, keep node certificates valid, and rotate the OS CA and the node CA
 
-    [:octicons-arrow-right-24: Read](access.md)
-
--   :material-key-variant: __Manage secrets__
+-   __[Add storage volumes](storage-volumes.md)__
 
     ---
 
-    Generate and rotate the cluster bundle, and source credentials for node services.
+    Size VAR and add encrypted or raw volumes on the system disk or on other disks
 
-    [:octicons-arrow-right-24: Read](secrets.md)
-
--   :material-harddisk: __Add storage volumes__
+-   __[Registries and mirrors](registries.md)__
 
     ---
 
-    Size VAR, and add encrypted or raw volumes on the system disk or on other disks.
+    Give nodes the credentials of a private registry, and pull images through a mirror
 
-    [:octicons-arrow-right-24: Read](storage-volumes.md)
-
--   :material-database-arrow-down: __Registries and mirrors__
+-   __[Recurring tasks](recurring-tasks.md)__
 
     ---
 
-    Give nodes the credentials of a private registry, and pull images through a mirror.
-
-    [:octicons-arrow-right-24: Read](registries.md)
-
--   :material-calendar-check: __Recurring tasks__
-
-    ---
-
-    What expires when, what to back up, and how to move the cluster to a newer chalkos.
-
-    [:octicons-arrow-right-24: Read](recurring-tasks.md)
+    What expires when, how to check it, what to back up, and how to move a cluster to a newer chalkos
 
 </div>
+<!-- end docgen cards -->
 
 ## Diagnose and recover
 
 These pages read what a node does and bring back a node that fails.
 
+<!-- docgen cards: status-and-logs.md console.md recover-node.md troubleshooting.md -->
 <div class="grid cards" markdown>
 
--   :material-text-box-search: __Status, logs and the console__
+-   __[Status, logs and the console](status-and-logs.md)__
 
     ---
 
-    Read what `chalkctl status` reports, follow a unit's journal, run the image's diagnostics and reach a node's tools.
+    Read what chalkctl status reports, follow a unit's journal, run the image's diagnostics, watch the console and reach a node's tools
 
-    [:octicons-arrow-right-24: Read](status-and-logs.md)
-
--   :material-monitor: __The console on the machine's screen__
+-   __[The console on the machine's screen](console.md)__
 
     ---
 
-    Read a node at its screen, and reboot, shut down or roll it back there.
+    Read a node at its screen: its identity and health, its status, network, storage, logs and layers, and the actions for a node chalkctl cannot reach
 
-    [:octicons-arrow-right-24: Read](console.md)
-
--   :material-lifebuoy: __Recover a node__
+-   __[Recover a node](recover-node.md)__
 
     ---
 
-    Bring back a node that does not unlock, boot or renew, or whose secrets file is lost.
+    Bring back a node that does not unlock, boot or renew, or whose secrets file is lost
 
-    [:octicons-arrow-right-24: Read](recover-node.md)
-
--   :material-stethoscope: __Troubleshooting__
+-   __[Troubleshooting](troubleshooting.md)__
 
     ---
 
-    Find the cause of a node's symptom and the page that fixes it.
-
-    [:octicons-arrow-right-24: Read](troubleshooting.md)
+    Find the cause of a node's symptom and the page that fixes it
 
 </div>
+<!-- end docgen cards -->

@@ -176,7 +176,9 @@ in
       };
       # The option <name>.enable of a feature of a layer's images, on unless default is false.
       # Its description says that the layer's images carry `carries` and accept the kinds named,
-      # if any; layer is the layer as the description names it, such as router.
+      # if any; layer is the layer as the description names it, such as router. The option also
+      # carries the declaration as chalkosFeature, from which the documentation's features tables
+      # are generated.
       feature =
         layer: name:
         {
@@ -199,11 +201,17 @@ in
               "set it true in an image's modules to add the feature to it.";
         in
         {
-          ${name}.enable = lib.mkOption {
-            type = lib.types.bool;
-            inherit default;
-            description = "Whether ${layer} images carry ${carries}${accepts}. Only with the ${layer} layer; ${how}";
-          };
+          ${name}.enable =
+            lib.mkOption {
+              type = lib.types.bool;
+              inherit default;
+              description = "Whether ${layer} images carry ${carries}${accepts}. Only with the ${layer} layer; ${how}";
+            }
+            // {
+              chalkosFeature = {
+                inherit carries kinds default;
+              };
+            };
         };
       # The sandbox of a unit that runs as root but needs no capability and no network: Unix
       # sockets alone, which stay reachable on a read-only system and from the private network

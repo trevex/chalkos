@@ -73,6 +73,8 @@ These pages are generated and never edited by hand:
 | `docs/reference/api.md` | the proto files of the node API and of each layer's API, `api/chalkos/*/v1/*.proto`, through the template `api/markdown.tmpl` | protoc-gen-doc in `buf.gen.yaml` |
 | the navigation region of `zensical.toml` | the command trees | `docgen cli` |
 | `docs/includes/abbreviations.md` | the first sentence of each entry of `docs/reference/glossary.md` | `docgen abbr` |
+| `docs/includes/features-router.md`, `docs/includes/features-kubernetes.md` | the features each layer declares with `chalkosLib.internal.feature`: option, default, what images carry and the kinds | `featuresTable` in `nix/docs/default.nix` |
+| the regions of cards of the section index pages | the `title` and `description` of the pages each region names | `docgen cards` |
 
 To change one, change its source and regenerate all of them:
 
