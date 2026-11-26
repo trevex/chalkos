@@ -704,13 +704,13 @@ in
         systemd-sysctl = "systemd's; the router orders it alone";
         systemd-bless-boot = "systemd's; chalkos names its ESP alone";
       };
-      # Whether the unit keeps every capability.
+      # Whether the unit keeps every capability: an empty list writes no CapabilityBoundingSet=.
       fullRoot =
         s:
         let
           caps = s.serviceConfig.CapabilityBoundingSet or null;
         in
-        caps == null || lib.any (lib.hasPrefix "~") (lib.toList caps);
+        caps == null || caps == [ ] || lib.any (lib.hasPrefix "~") (lib.toList caps);
       # The failures of the units of an image, called name, of the services given, by the table.
       failures =
         table: services: name: units:
@@ -728,6 +728,7 @@ in
         unbound.serviceConfig = { };
         dropping.serviceConfig.CapabilityBoundingSet = "~CAP_SYS_MODULE";
         empty.serviceConfig = self.lib.sandbox.hardened;
+        emptyList.serviceConfig.CapabilityBoundingSet = [ ];
         bound.serviceConfig.CapabilityBoundingSet = [ "CAP_NET_ADMIN" ];
       };
       probeFailures = table: failures table probe "probe" (lib.attrNames probe);
@@ -742,13 +743,15 @@ in
         ++ lib.optional (
           map (f: lib.head (lib.splitString ":" f)) (probeFailures { }) != [
             "the probe's dropping keeps every capability"
+            "the probe's emptyList keeps every capability"
             "the probe's unbound keeps every capability"
           ]
-        ) "the check refuses other units of the probe than dropping and unbound, or not both of them"
+        ) "the check refuses other probe units than dropping, emptyList and unbound, or not all three"
         ++ lib.optional (
           probeFailures {
             unbound = "a reason";
             dropping = "a reason";
+            emptyList = "a reason";
           } != [ ]
         ) "the check refuses the probe's units that mayRunAsFullRoot lists";
     in
