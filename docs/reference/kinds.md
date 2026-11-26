@@ -177,7 +177,7 @@ A node's config holds at most one. It has 5 [change rules](builtins.md#rules-nod
 | `spec.labels` | map of string | `{}` | Kubernetes labels the node registers with; they are fixed once the node holds a Kubernetes share. |
 | `spec.nodeIP.addresses` | list of IP address or null | `null` | Fixed addresses of the node, at most one per family; null takes the first static address of each family unless validSubnets apply. |
 | `spec.nodeIP.validSubnets` | list of string or null | `null` | Subnets the node picks its address from, which replace the Cluster's nodeIP.validSubnets as a whole; null takes the Cluster's. |
-| `spec.providerID` | string or null | `null` | Provider ID the node registers with, such as kubevirt://w1, by which Cluster API finds the node of a Machine; null registers the node without one. It is fixed once the node holds a Kubernetes share. |
+| `spec.providerID` | string or null | `null` | Provider ID the node registers with, such as kubevirt://w1, by which Cluster API finds the node of a Machine; null registers the node without one. It holds no whitespace, control characters or backslashes, as it is one of the kubelet's arguments. It is fixed once the node holds a Kubernetes share. |
 | `spec.taints` | list of object | `[]` | Kubernetes taints the node registers with; they are fixed once the node holds a Kubernetes share. |
 | `spec.taints[].effect` | one of `NoSchedule`, `PreferNoSchedule`, `NoExecute` | required | Effect of the taint on pods that do not tolerate it. |
 | `spec.taints[].key` | string | required | Taint key. |

@@ -328,7 +328,7 @@ kubelet through an environment file that systemd splits at whitespace. A flag th
 separated by spaces is refused:
 
 ```text
-node w1: the Kubernetes cluster the documents give: Node "default": kubeletExtraArgs: --eviction-hard="memory.available<500Mi nodefs.available<10%": the kubelet's flags cannot hold whitespace or backslashes
+node w1: the Kubernetes cluster the documents give: Node "default": kubeletExtraArgs: --eviction-hard="memory.available<500Mi nodefs.available<10%": the kubelet's flags cannot hold whitespace, control characters or backslashes
 ```
 
 ## Choose how clients authenticate to the API server

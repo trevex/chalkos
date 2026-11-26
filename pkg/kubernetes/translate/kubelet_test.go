@@ -396,3 +396,23 @@ func TestNodeProviderID(t *testing.T) {
 		}
 	}
 }
+
+// TestNodeProviderIDIsOneKubeletArgument refuses a providerID with whitespace, a control
+// character or a backslash, which would split --provider-id into more of the kubelet's
+// arguments or lose its backslashes.
+func TestNodeProviderIDIsOneKubeletArgument(t *testing.T) {
+	for name, id := range map[string]string{
+		"space":             `"kubevirt://w1 --kubeconfig=/nonexistent"`,
+		"tab":               `"kubevirt://w1\t"`,
+		"newline":           `"kubevirt://w1\nX=1"`,
+		"control character": `"kubevirt://w1\x1b"`,
+		"backslash":         `"kubevirt://w1\\x"`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := identityOn(kubernetesNodeSet(t, "{}", "providerID: "+id, ""), "n1", "")
+			if err == nil || !strings.Contains(err.Error(), "Node: providerID ") || !strings.Contains(err.Error(), "cannot hold whitespace, control characters or backslashes") {
+				t.Fatalf("err = %v, want the provider ID refused", err)
+			}
+		})
+	}
+}

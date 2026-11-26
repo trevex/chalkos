@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 )
 
 // APIServerFlags are the flags chalkos sets on the API server. Extra flags must not override
@@ -132,8 +133,8 @@ func ValidateFlags(component string, flags map[string]string) error {
 			return err
 		}
 		if component != "kube-apiserver" {
-			if component == "kubelet" && strings.ContainsAny(name+flags[name], " \t\r\n\\") {
-				return fmt.Errorf("--%s=%q: the kubelet's flags cannot hold whitespace or backslashes", name, flags[name])
+			if component == "kubelet" && !KubeletArgument(name+flags[name]) {
+				return fmt.Errorf("--%s=%q: the kubelet's flags cannot hold whitespace, control characters or backslashes", name, flags[name])
 			}
 			continue
 		}
@@ -149,6 +150,13 @@ func ValidateFlags(component string, flags map[string]string) error {
 		}
 	}
 	return nil
+}
+
+// KubeletArgument reports whether s can be part of one of the kubelet's arguments, which reach it
+// through an environment variable that ExecStart splits at whitespace, from an environment file
+// that drops backslashes: s holds no whitespace, control character or backslash.
+func KubeletArgument(s string) bool {
+	return !strings.ContainsFunc(s, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) || r == '\\' })
 }
 
 // MergeFlags returns a component's flags: base with the extra flags on top. The API server's
