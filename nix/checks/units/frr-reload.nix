@@ -9,6 +9,14 @@
 let
   inherit (pkgs.chalkos) frr;
   reload = "${lib.getExe pkgs.chalkos.chalkos-frr-reload} -vtysh vtysh";
+  # The daemons, each in a unit of its own that loads its config before it is active.
+  daemons = [
+    "mgmtd"
+    "zebra"
+    "staticd"
+    "bfdd"
+    "bgpd"
+  ];
   # The rendered config, which frr.service fills in.
   rendered = "/run/frr-test/frr.conf";
   # The crash test's config: a peer group's password, which the fill fills in, a session with the
@@ -227,7 +235,7 @@ pkgs.testers.runNixOSTest {
             serviceConfig.LoadCredential = [ "secret:/run/chalkos/credentials/frr" ];
           };
         }
-        // lib.genAttrs [ "frr-mgmtd" "frr-zebra" "frr-staticd" "frr-bgpd" "frr-bfdd" ] (_: {
+        // lib.genAttrs (map (d: "frr-${d}") daemons) (_: {
           startLimitIntervalSec = 0;
         });
       };
@@ -240,11 +248,14 @@ pkgs.testers.runNixOSTest {
     def plan():
         return machine.succeed("${reload} -n /run/frr/frr.conf")
 
-    # The daemons take their config once they run, after frr.service has started, so FRR runs a
-    # config once the reload plans nothing for it, which also shows that a config FRR runs holds
-    # no change.
+    # The daemons take their config once they run, after frr.service has started, and vtysh shows
+    # the config of the daemons that run alone, so FRR runs a config once each daemon's unit is
+    # active and the reload plans nothing for it, which also shows that a config FRR runs holds no
+    # change.
     def start(name):
         machine.succeed(f"install -m 644 {goldens[name]} ${rendered} && systemctl restart frr")
+        for unit in [${lib.concatMapStrings (d: ''"frr-${d}.service", '') daemons}]:
+            machine.wait_for_unit(unit)
         machine.wait_until_succeeds("p=$(${reload} -n /run/frr/frr.conf) && test -z \"$p\"", timeout=60)
 
     def pid(daemon):
