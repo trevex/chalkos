@@ -56,8 +56,10 @@ type InstallRequest struct {
 	Now time.Time
 	// Image, when set, is the image the node installs in place of the one it runs: its reference
 	// in a registry by digest, repository@sha256:…. Install reads the image's header and contract
-	// layer with the credentials Keychain resolves, refuses an image whose OS CA the secrets do not
-	// trust with ErrOSCARefused, as CheckImageOSCA does, and checks the config against that contract.
+	// layer with the credentials Keychain resolves, refuses with ErrOSCARefused an image that carries
+	// an OS CA other than the one that issues the secrets' client certificates, as CheckImageOSCA
+	// does, and checks the config against that contract. An image built before a rotation of the OS
+	// CA finished must be built again with the current OS CA.
 	// The node pulls the image with the credentials of the Registry of the reference's
 	// host among Documents, writes the image into its inactive slot, has the image's own checker
 	// check the config there and boots the image once it is installed. The node keeps the disk

@@ -10,11 +10,13 @@ import (
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
-// CheckImageOSCA refuses an image whose metadata names an OS CA that none of the secrets' OS CAs
-// is: neither the one that issues nor, during a rotation, one accepted besides it. A node that
-// boots such an image in maintenance mode refuses every client certificate the secrets issue, so
-// the error wraps ErrOSCARefused. An image without an OS CA accepts any client in maintenance mode
-// and passes.
+// CheckImageOSCA refuses an image whose metadata names an OS CA that is not the one that issues
+// the secrets' client certificates. A node that boots the image in maintenance mode trusts the
+// image's OS CA alone, also after an install that failed after activating it, so it refuses every
+// client certificate the secrets issue, and the error wraps ErrOSCARefused. An OS CA accepted
+// besides the issuing one during a rotation does not do: an image built before a rotation of the
+// OS CA finished must be built again with the current one. An image without an OS CA accepts any
+// client in maintenance mode and passes.
 func CheckImageOSCA(md schema.Metadata, s clustersecrets.Secrets) error {
 	if md.OSCA == "" {
 		return nil
@@ -23,19 +25,19 @@ func CheckImageOSCA(md schema.Metadata, s clustersecrets.Secrets) error {
 	if err != nil {
 		return fmt.Errorf("the image's OS CA: %w", err)
 	}
-	trusted, err := pki.ParseBundle(s.OSCABundle())
+	issuing, err := pki.ParseBundle(s.OSCA.Certificate)
 	if err != nil {
-		return fmt.Errorf("the secrets' OS CAs: %w", err)
+		return fmt.Errorf("the secrets' OS CA: %w", err)
 	}
 	for _, c := range image {
-		for _, t := range trusted {
+		for _, t := range issuing {
 			if bytes.Equal(c.Raw, t.Raw) {
 				return nil
 			}
 		}
 	}
 	imageFPs, _ := pki.Fingerprints(md.OSCA)
-	trustedFPs, _ := pki.Fingerprints(s.OSCABundle())
-	return fmt.Errorf("%w: the image carries the OS CA %s, the secrets trust %s",
-		ErrOSCARefused, strings.Join(imageFPs, ", "), strings.Join(trustedFPs, ", "))
+	issuingFPs, _ := pki.Fingerprints(s.OSCA.Certificate)
+	return fmt.Errorf("%w: the image carries the OS CA %s, the secrets issue client certificates with %s; build the image again with the current OS CA",
+		ErrOSCARefused, strings.Join(imageFPs, ", "), strings.Join(issuingFPs, ", "))
 }
