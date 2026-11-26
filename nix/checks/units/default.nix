@@ -5,12 +5,13 @@ let
   inherit (pkgs) lib;
   inherit (checkLib) worker firewall unitCheck;
   # setpriv's arguments that leave root with the capabilities caps alone, as a unit's
-  # CapabilityBoundingSet= does. The checks' namespaces map root alone, so a unit's own user,
-  # such as kea or dnsmasq, is no user they can run as.
+  # CapabilityBoundingSet= does; an empty string, as an empty set holds, adds none. The checks'
+  # namespaces map root alone, so a unit's own user, such as kea or dnsmasq, is no user they can
+  # run as.
   boundTo =
     caps:
-    "setpriv --bounding-set=-all,${
-      lib.concatMapStringsSep "," (c: "+" + lib.toLower (lib.removePrefix "CAP_" c)) caps
+    "${pkgs.util-linux}/bin/setpriv --bounding-set=-all${
+      lib.concatMapStrings (c: ",+" + lib.toLower (lib.removePrefix "CAP_" c)) (lib.remove "" caps)
     } --no-new-privs --";
   # Binds each IPv4 and IPv6 socket to the device $BIND_DEVICE names when it is created.
   bindDevice = pkgs.runCommandCC "bind-device.so" { } ''

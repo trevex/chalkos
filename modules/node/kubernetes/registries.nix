@@ -31,7 +31,10 @@ in
       wantedBy = [ "containerd.service" ];
       before = [ "containerd.service" ];
       after = [ "chalkos-config.service" ];
-      serviceConfig = chalkosLib.sandbox.noExec // {
+      # It reads the documents and writes below /run/containerd alone, which needs no capability:
+      # the swap renames certs.d within it.
+      serviceConfig = chalkosLib.sandbox.hardened // {
+        ReadWritePaths = [ "/run/containerd" ];
         Type = "oneshot";
         RemainAfterExit = true;
         ExecStart = "${lib.getExe chalkd} kubernetes registry-mirrors";
@@ -47,7 +50,10 @@ in
       wantedBy = [ "multi-user.target" ];
       before = [ "kubelet.service" ];
       after = [ "chalkos-config.service" ];
-      serviceConfig = chalkosLib.sandbox.noExec // {
+      # It reads the documents and its credentials and writes below /run/chalkos alone, which needs
+      # no capability.
+      serviceConfig = chalkosLib.sandbox.hardened // {
+        ReadWritePaths = [ "/run/chalkos" ];
         Type = "oneshot";
         RemainAfterExit = true;
         ExecStart = "${lib.getExe chalkd} kubernetes registry-credentials";

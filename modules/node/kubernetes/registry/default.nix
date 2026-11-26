@@ -214,7 +214,7 @@ in
       # --no-block queues the restart and ends the service at once: a path unit does not start
       # an active service again, so waiting for the registry's restart would miss a change of
       # the other file during it.
-      serviceConfig = chalkosLib.sandbox.noExec // {
+      serviceConfig = chalkosLib.internal.rootNoCaps // {
         Type = "oneshot";
         ExecStart = "${config.systemd.package}/bin/systemctl --no-block try-restart chalkos-registry.service";
       };

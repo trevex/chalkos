@@ -3,10 +3,16 @@
 {
   worker,
   unitCheck,
+  boundTo,
   ...
 }:
 let
-  script = worker.config.systemd.services.chalkos-registry-mirrors.serviceConfig.ExecStart;
+  # The unit's start, with the capabilities its bounding set leaves.
+  script =
+    let
+      unit = worker.config.systemd.services.chalkos-registry-mirrors.serviceConfig;
+    in
+    "${boundTo unit.CapabilityBoundingSet} ${unit.ExecStart}";
 in
 unitCheck "registry-mirrors" [ ] ''
   documents=/run/chalkos/config/oci.chalkos.dev
