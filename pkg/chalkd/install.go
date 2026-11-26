@@ -151,7 +151,7 @@ func (s *Server) install(ctx context.Context, stream requests[*nodev1.InstallReq
 	}
 	if err != nil {
 		log.Printf("install failed: %v", err)
-		return nil, layer.Errorf(connect.CodeFailedPrecondition, "install: %w", err)
+		return nil, refused("install", err)
 	}
 	s.installed = true
 	log.Print("installed; rebooting")
@@ -290,6 +290,15 @@ func (r idleRequests[M]) Receive() (M, error) {
 		return msg, layer.Errorf(connect.CodeDeadlineExceeded, "the client sent nothing for %v", r.idle)
 	}
 	return msg, err
+}
+
+// refused is the error of an install or an upgrade (what) that failed with err: FAILED_PRECONDITION,
+// unless the client's idle bound ended it, which keeps DEADLINE_EXCEEDED.
+func refused(what string, err error) error {
+	if layer.CodeOf(err) == connect.CodeDeadlineExceeded {
+		return fmt.Errorf("%s: %w", what, err)
+	}
+	return layer.Errorf(connect.CodeFailedPrecondition, "%s: %w", what, err)
 }
 
 // chunks reads the image the requests after the header of stream carry.

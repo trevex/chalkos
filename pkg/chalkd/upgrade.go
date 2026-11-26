@@ -130,7 +130,7 @@ func (s *Server) upgrade(ctx context.Context, stream requests[*nodev1.UpgradeReq
 			}
 			return nil, layer.Errorf(connect.CodeFailedPrecondition, "upgrade: %w; the staged image was retired with it: chalkctl config apply --staged %s changes a staged image's config without retiring the image on a refusal", err, s.nodeName())
 		}
-		return nil, layer.Errorf(connect.CodeFailedPrecondition, "upgrade: %w", err)
+		return nil, refused("upgrade", err)
 	}
 	s.recordImages(&header)
 	// The image is staged, or boots next, with the config stageConfig gave it, so the pending config

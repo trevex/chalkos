@@ -1,6 +1,7 @@
 package chalkd
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
 	"io"
@@ -14,10 +15,13 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/diagnostics"
+	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/internal/testwait"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
 // stalledRequests are the requests of a client that sends nothing until release is closed, and
@@ -248,16 +252,19 @@ func (d *deadlineRecorder) SetReadDeadline(t time.Time) error {
 	return nil
 }
 
-// requestsOf are requests from a list, then io.EOF.
-type requestsOf[M any] []M
+// requestsOf are the requests msgs, then the error end, or io.EOF without one.
+type requestsOf[M any] struct {
+	msgs []M
+	end  error
+}
 
 func (r *requestsOf[M]) Receive() (M, error) {
 	var none M
-	if len(*r) == 0 {
-		return none, io.EOF
+	if len(r.msgs) == 0 {
+		return none, cmp.Or(r.end, io.EOF)
 	}
-	msg := (*r)[0]
-	*r = (*r)[1:]
+	msg := r.msgs[0]
+	r.msgs = r.msgs[1:]
 	return msg, nil
 }
 
@@ -266,7 +273,7 @@ func (r *requestsOf[M]) Receive() (M, error) {
 func TestIdleBoundClearsTheDeadlineBetweenReads(t *testing.T) {
 	rec := &deadlineRecorder{}
 	ctx := context.WithValue(context.Background(), responseKey{}, http.NewResponseController(rec))
-	in := requestsOf[*nodev1.UpgradeRequest]{{}, {}}
+	in := requestsOf[*nodev1.UpgradeRequest]{msgs: []*nodev1.UpgradeRequest{{}, {}}}
 	stream := boundIdle(ctx, &in, time.Minute)
 	for range 3 {
 		before := len(rec.deadlines)
@@ -276,4 +283,44 @@ func TestIdleBoundClearsTheDeadlineBetweenReads(t *testing.T) {
 			t.Fatalf("a read set the read deadlines %v, want one ahead and then none", got)
 		}
 	}
+}
+
+// An install or an upgrade whose client stops sending its image fails with the idle bound's
+// DEADLINE_EXCEEDED, not as a refusal.
+func TestIdleImageStreamsEndWithTheDeadline(t *testing.T) {
+	idle := layer.Errorf(connect.CodeDeadlineExceeded, "the client sent nothing for 2m0s")
+	t.Run("install", func(t *testing.T) {
+		s, _ := newTestServer(t, maintenance, vda)
+		s.Installer = true
+		s.FromParts = func(_ context.Context, req install.PartsRequest) error {
+			_, err := io.ReadAll(req.Parts)
+			return err
+		}
+		h := header(t, &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Serial: "chalk-target"}})
+		h.Image = &nodev1.ImageHeader{
+			ImageId: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: []byte{1},
+			Store: &nodev1.ImagePart{Size: 1, Sha256: []byte{2}}, HashTree: &nodev1.ImagePart{Size: 3, Sha256: []byte{4}},
+			Uki: &nodev1.ImagePart{Size: 5, Sha256: []byte{6}}, BootLoader: &nodev1.ImagePart{Size: 7, Sha256: []byte{8}},
+		}
+		contractOf(h).Schemas = fixtureSchemas(t)
+		in := &requestsOf[*nodev1.InstallRequest]{msgs: []*nodev1.InstallRequest{{Message: &nodev1.InstallRequest_Header{Header: h}}}, end: idle}
+		if _, err := s.install(context.Background(), in); codeOf(err) != connect.CodeDeadlineExceeded {
+			t.Errorf("install = %v (%v), want DEADLINE_EXCEEDED", err, codeOf(err))
+		}
+	})
+	t.Run("upgrade", func(t *testing.T) {
+		s, _ := newTestServer(t, normal, vda)
+		fakeImageSlots(t, s).install = func(_ context.Context, _ upgrade.Header, _, _ string, _ bool, r io.Reader) (upgrade.Result, imageConfig, error) {
+			_, err := io.ReadAll(r)
+			return upgrade.Result{}, imageConfig{}, err
+		}
+		h := &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{
+			ImageId: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: []byte{1, 2},
+			Store: &nodev1.ImagePart{Size: 1, Sha256: []byte{4}}, HashTree: &nodev1.ImagePart{Size: 2, Sha256: []byte{5}}, Uki: &nodev1.ImagePart{Size: 3, Sha256: []byte{6}},
+		}}
+		in := &requestsOf[*nodev1.UpgradeRequest]{msgs: []*nodev1.UpgradeRequest{{Message: &nodev1.UpgradeRequest_Header{Header: h}}}, end: idle}
+		if _, err := s.upgrade(context.Background(), in); codeOf(err) != connect.CodeDeadlineExceeded {
+			t.Errorf("upgrade = %v (%v), want DEADLINE_EXCEEDED", err, codeOf(err))
+		}
+	})
 }
