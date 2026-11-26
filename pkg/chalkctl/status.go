@@ -104,7 +104,8 @@ func (a *app) readStatus(ctx context.Context, t *target, conn *client.Conn) (*st
 		}
 		section, err := s.ReadStatus(ctx, conn)
 		if err != nil {
-			return nil, err
+			// A layer's section the node could not answer shows in its place, as chalkd's own do.
+			section = unreadSection(p.Name(), client.Describe(err, t.hints()))
 		}
 		r.layers = append(r.layers, layerSection{p.Name(), section})
 	}
@@ -126,6 +127,17 @@ func (a *app) readStatus(ctx context.Context, t *target, conn *client.Conn) (*st
 		r.problems = append(r.problems, l.Problems...)
 	}
 	return r, nil
+}
+
+// unreadSection is the section of the layer called name, whose status could not be read for err.
+func unreadSection(name string, err error) layer.StatusSection {
+	return layer.StatusSection{
+		Write: func(w io.Writer) error {
+			_, werr := fmt.Fprintln(w, statusview.SectionErrorLine(name, err.Error()))
+			return werr
+		},
+		Problems: []string{name + " unknown"},
+	}
 }
 
 // statusJSON is a node's status as status -o json prints it.
@@ -167,6 +179,9 @@ func (r *statusRead) json() (statusJSON, error) {
 		return statusJSON{}, err
 	}
 	for _, l := range r.layers {
+		if l.Message == nil {
+			continue
+		}
 		if s.Layers == nil {
 			s.Layers = map[string]json.RawMessage{}
 		}

@@ -163,3 +163,26 @@ func noSOPS(t *testing.T, ta *testApp) string {
 	writeFile(t, filepath.Join(ta.dir, "nodes", "fabric.enc.yaml"), "sops: {}\n")
 	return calls
 }
+
+// A section the node could not read counts as a problem in the summary line and in -o json, which
+// carries the node's section error, and the rest of the status prints as before.
+func TestStatusWithASectionError(t *testing.T) {
+	ta := newTestApp(t)
+	s, _ := installedNode(t, ta, []byte(`{}`))
+	writeFile(t, s.Paths.StorageStatus, "{")
+	addr := ta.startNode(t, s)
+	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	out := ta.stdout.String()
+	if !strings.Contains(strings.SplitN(out, "\n", 2)[0], "disks unknown") || !strings.Contains(out, "\ndisks unknown: parse ") || !strings.Contains(out, "platform metal") {
+		t.Errorf("status = %q", out)
+	}
+	ta.stdout.Reset()
+	if err := ta.run(context.Background(), ta.args([]string{"status", "n1", "-o", "json"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if out := ta.stdout.String(); !strings.Contains(out, `"disks unknown"`) || !strings.Contains(out, `"section":"disks"`) && !strings.Contains(out, `"section": "disks"`) {
+		t.Errorf("status -o json = %s", out)
+	}
+}

@@ -28,32 +28,89 @@ import (
 	"github.com/trevex/chalkos/pkg/tool/systemctl"
 )
 
+// statusTimeout bounds each command a status runs, such as systemctl, so a node whose systemd does
+// not answer still answers with the other sections.
+const statusTimeout = 5 * time.Second
+
+// Status reads the node's status section by section. A section that cannot be read is left empty
+// and named in the response's errors, with why; the others answer all the same.
 func (s *Server) Status(ctx context.Context, req *nodev1.StatusRequest) (*nodev1.StatusResponse, error) {
 	resp := &nodev1.StatusResponse{Platform: readOSRelease(s.Paths.OSRelease)["CHALKOS_PLATFORM"]}
-	dir, version, err := s.runningVersion()
-	if err != nil {
-		return nil, err
+	failed := func(section string, err error) bool {
+		if err == nil {
+			return false
+		}
+		log.Printf("status: %s: %v", section, err)
+		resp.Errors = append(resp.Errors, &nodev1.SectionError{Section: section, Message: err.Error()})
+		return true
 	}
-	resp.ConfigVersion = version
-	resp.ConfigActivation = s.activationStatus(dir, version, s.bootID())
-	if resp.PreviousConfigVersion, err = slot.PreviousVersion(dir); err != nil {
-		return nil, fmt.Errorf("read the previous config's version: %w", err)
+	if dir, version, err := s.runningVersion(); !failed("config", err) {
+		resp.ConfigVersion = version
+		resp.ConfigActivation = s.activationStatus(dir, version, s.bootID())
+		resp.PreviousConfigVersion, err = slot.PreviousVersion(dir)
+		failed("previous config", err)
 	}
 	resp.Trial, resp.TrialError = s.trialStatus()
 
+	var err error
+	resp.Disks, err = s.diskStatus()
+	failed("disks", err)
+	resp.Volumes, err = s.volumeStatus()
+	failed("volumes", err)
+
+	uctx, cancel := context.WithTimeout(ctx, statusTimeout)
+	resp.FailedUnits, err = systemctl.FailedUnits(uctx, s.Run)
+	if errors.Is(uctx.Err(), context.DeadlineExceeded) {
+		err = fmt.Errorf("systemctl did not answer within %v", statusTimeout)
+	}
+	cancel()
+	failed("failed units", err)
+	resp.Outputs = s.outputStatus()
+	now := time.Now()
+	resp.Certificates = s.certificates(now)
+	resp.Trust = s.trust()
+	for _, h := range layer.Active[layer.Certificates](s.Plugins) {
+		certs, trust := h.Certificates(ctx, now)
+		resp.Certificates = append(resp.Certificates, certs...)
+		resp.Trust = append(resp.Trust, trust...)
+	}
+	resp.Time = s.timeStatus(ctx)
+	resp.Boot = s.bootStatus()
+	if req.GetCheckHealth() {
+		resp.Boot.Health = s.bootHealth(ctx)
+	}
+	resp.StagedConfigVersion, err = s.stagedVersion(resp.Boot)
+	failed("staged config", err)
+	resp.PendingConfig, err = s.pendingConfig()
+	failed("pending config", err)
+	return resp, nil
+}
+
+// diskStatus is the disks of the node's storage as the boot's storage setup recorded them in
+// storage-status.json; none without the file.
+func (s *Server) diskStatus() ([]*nodev1.DiskStatus, error) {
 	var status storage.Status
-	if raw, err := os.ReadFile(s.Paths.StorageStatus); err == nil {
-		if err := json.Unmarshal(raw, &status); err != nil {
-			return nil, fmt.Errorf("parse %s: %w", s.Paths.StorageStatus, err)
-		}
-	} else if !errors.Is(err, fs.ErrNotExist) {
+	raw, err := os.ReadFile(s.Paths.StorageStatus)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return nil, nil
+	case err != nil:
 		return nil, err
 	}
+	if err := json.Unmarshal(raw, &status); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", s.Paths.StorageStatus, err)
+	}
+	var disks []*nodev1.DiskStatus
 	for _, name := range slices.Sorted(maps.Keys(status.Disks)) {
 		d := status.Disks[name]
-		resp.Disks = append(resp.Disks, &nodev1.DiskStatus{Name: name, Device: d.Device, Error: d.Error})
+		disks = append(disks, &nodev1.DiskStatus{Name: name, Device: d.Device, Error: d.Error})
 	}
+	return disks, nil
+}
 
+// volumeStatus is the volumes STATE records, whether they are present and mounted, and the use of
+// those mounted.
+func (s *Server) volumeStatus() ([]*nodev1.VolumeStatus, error) {
 	section, pins, err := s.recorded()
 	if err != nil {
 		return nil, err
@@ -62,6 +119,7 @@ func (s *Server) Status(ctx context.Context, req *nodev1.StatusRequest) (*nodev1
 	if err != nil {
 		return nil, err
 	}
+	var volumes []*nodev1.VolumeStatus
 	for _, name := range slices.Sorted(maps.Keys(section.Volumes)) {
 		v := section.Volumes[name]
 		vs := &nodev1.VolumeStatus{
@@ -80,40 +138,14 @@ func (s *Server) Status(ctx context.Context, req *nodev1.StatusRequest) (*nodev1
 				log.Printf("read the use of %s: %v", v.MountPoint, err)
 			}
 		}
-		resp.Volumes = append(resp.Volumes, vs)
+		volumes = append(volumes, vs)
 	}
-
-	if resp.FailedUnits, err = systemctl.FailedUnits(ctx, s.Run); err != nil {
-		return nil, fmt.Errorf("list failed units: %w", err)
-	}
-	if resp.Outputs, err = s.outputStatus(); err != nil {
-		return nil, err
-	}
-	now := time.Now()
-	resp.Certificates = s.certificates(now)
-	resp.Trust = s.trust()
-	for _, h := range layer.Active[layer.Certificates](s.Plugins) {
-		certs, trust := h.Certificates(ctx, now)
-		resp.Certificates = append(resp.Certificates, certs...)
-		resp.Trust = append(resp.Trust, trust...)
-	}
-	resp.Time = s.timeStatus(ctx)
-	resp.Boot = s.bootStatus()
-	if req.GetCheckHealth() {
-		resp.Boot.Health = s.bootHealth(ctx)
-	}
-	if resp.StagedConfigVersion, err = s.stagedVersion(resp.Boot); err != nil {
-		return nil, err
-	}
-	if resp.PendingConfig, err = s.pendingConfig(); err != nil {
-		return nil, err
-	}
-	return resp, nil
+	return volumes, nil
 }
 
 // outputStatus is each output of the running image with the hash of the files the node serves
 // and why its last render or check failed, as the renders recorded them.
-func (s *Server) outputStatus() ([]*nodev1.OutputStatus, error) {
+func (s *Server) outputStatus() []*nodev1.OutputStatus {
 	defs := s.Loader.Contract.Outputs
 	recorded, err := outputs.ReadStatus(s.Loader.Render.Root)
 	if err != nil {
@@ -124,12 +156,12 @@ func (s *Server) outputStatus() ([]*nodev1.OutputStatus, error) {
 	for _, name := range slices.Sorted(maps.Keys(defs)) {
 		list = append(list, &nodev1.OutputStatus{Name: name, Hash: recorded[name].Hash, Error: recorded[name].Error})
 	}
-	return list, nil
+	return list
 }
 
 // timeStatus reads chrony's tracking state.
 func (s *Server) timeStatus(ctx context.Context) *nodev1.TimeStatus {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, statusTimeout)
 	defer cancel()
 	// chronyc fails on every request while chronyd is down: its error goes into the status, not
 	// once more into chalkd's log.
@@ -191,6 +223,8 @@ func (s *Server) bootHealth(ctx context.Context) *nodev1.BootHealth {
 // up after the units that start them, within the time a counted boot has to become healthy. A
 // state that cannot be read counts as not settled, so a client keeps waiting until its timeout.
 func (s *Server) bootSettled(ctx context.Context) bool {
+	ctx, cancel := context.WithTimeout(ctx, statusTimeout)
+	defer cancel()
 	shown, err := systemctl.Show(ctx, s.Run, nil, "SystemState", "FinishTimestampMonotonic")
 	if err != nil {
 		log.Printf("read whether the boot settled: %v", err)

@@ -70,7 +70,8 @@ service NodeService {
   rpc ResetVolume(ResetVolumeRequest) returns (ResetVolumeResponse);
   // Status reports the state of an installed node: its config versions, storage, failed units,
   // certificates, trust, clock, boot and outputs; each layer's own state is its service's Status.
-  // Available in normal mode to readers. The console may call it.
+  // A section the node cannot read is left empty and named in StatusResponse.errors, and the others
+  // answer all the same. Available in normal mode to readers. The console may call it.
   rpc Status(StatusRequest) returns (StatusResponse);
   // Logs streams the journal of the current boot, or of one unit in it. Available in maintenance
   // and normal mode to readers. The console may call it.
@@ -829,6 +830,9 @@ message StatusResponse {
   PendingConfig pending_config = 15;
   // Progress of live activation for the running image. Older nodes omit this field.
   ConfigActivation config_activation = 16;
+  // The sections of the status the node could not read, each with why: their fields are left
+  // empty, and the other sections answer all the same. Empty while every section was read.
+  repeated SectionError errors = 17;
 }
 
 // A config on trial, which the node rolls back by itself at the deadline unless ConfirmConfig
@@ -1358,6 +1362,14 @@ message ConfigActivation {
   // chalkd could not write the record the last time it tried, so it may tell of an earlier
   // delivery or of none; the journal says why.
   bool unwritten = 8;
+}
+
+// A section of the status the node could not read.
+message SectionError {
+  // The section, in a few words, such as "storage" or "failed units".
+  string section = 1;
+  // Why the node could not read it.
+  string message = 2;
 }
 
 // Why the node refused a request, where a client acts on more than the code: chalkd attaches it to

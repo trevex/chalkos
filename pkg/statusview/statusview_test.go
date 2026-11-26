@@ -104,6 +104,29 @@ func TestWriteWithoutInventory(t *testing.T) {
 	}
 }
 
+// A section the node could not read shows in its place, with why, and counts as a problem; a
+// section this program does not know of shows at the end.
+func TestWriteSectionErrors(t *testing.T) {
+	s := richStatus()
+	s.Volumes, s.Disks, s.FailedUnits, s.PendingConfig = nil, nil, nil, nil
+	s.Errors = []*nodev1.SectionError{
+		{Section: "volumes", Message: "read the recorded storage: parse storage.json: unexpected end of JSON input"},
+		{Section: "disks", Message: "parse /run/chalkos/storage-status.json: unexpected end of JSON input"},
+		{Section: "pending config", Message: "read the pending config's version: permission denied"},
+		{Section: "failed units", Message: "systemctl did not answer within 5s"},
+		{Section: "later", Message: "a section of a newer node"},
+	}
+	var b bytes.Buffer
+	if err := Write(&b, s, Options{Node: "n1"}); err != nil {
+		t.Fatal(err)
+	}
+	golden.Check(t, "testdata/status-section-errors.golden", b.String())
+	want := []string{"volumes unknown", "disks unknown", "pending config unknown", "failed units unknown", "later unknown"}
+	if got := Problems(s, Options{}); !slices.Equal(got[:len(want)], want) {
+		t.Errorf("problems = %q, want them to start with %q", got, want)
+	}
+}
+
 func TestWriteDisks(t *testing.T) {
 	var b bytes.Buffer
 	if err := WriteDisks(&b, []*nodev1.Disk{

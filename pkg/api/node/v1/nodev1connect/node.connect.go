@@ -263,7 +263,8 @@ type NodeServiceClient interface {
 	ResetVolume(context.Context, *v1.ResetVolumeRequest) (*v1.ResetVolumeResponse, error)
 	// Status reports the state of an installed node: its config versions, storage, failed units,
 	// certificates, trust, clock, boot and outputs; each layer's own state is its service's Status.
-	// Available in normal mode to readers. The console may call it.
+	// A section the node cannot read is left empty and named in StatusResponse.errors, and the others
+	// answer all the same. Available in normal mode to readers. The console may call it.
 	Status(context.Context, *v1.StatusRequest) (*v1.StatusResponse, error)
 	// Logs streams the journal of the current boot, or of one unit in it. Available in maintenance
 	// and normal mode to readers. The console may call it.
@@ -538,7 +539,8 @@ type NodeServiceHandler interface {
 	ResetVolume(context.Context, *v1.ResetVolumeRequest) (*v1.ResetVolumeResponse, error)
 	// Status reports the state of an installed node: its config versions, storage, failed units,
 	// certificates, trust, clock, boot and outputs; each layer's own state is its service's Status.
-	// Available in normal mode to readers. The console may call it.
+	// A section the node cannot read is left empty and named in StatusResponse.errors, and the others
+	// answer all the same. Available in normal mode to readers. The console may call it.
 	Status(context.Context, *v1.StatusRequest) (*v1.StatusResponse, error)
 	// Logs streams the journal of the current boot, or of one unit in it. Available in maintenance
 	// and normal mode to readers. The console may call it.

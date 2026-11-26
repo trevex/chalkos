@@ -266,7 +266,8 @@ No fields.
 
 Status reports the state of an installed node: its config versions, storage, failed units,
 certificates, trust, clock, boot and outputs; each layer's own state is its service's Status.
-Available in normal mode to readers. The console may call it.
+A section the node cannot read is left empty and named in StatusResponse.errors, and the others
+answer all the same. Available in normal mode to readers. The console may call it.
 
 Request: StatusRequest. Response: StatusResponse.
 
@@ -300,8 +301,9 @@ The response of Status: the state of an installed node.
 | `trial_error` | string | Why the record of a config's trial cannot be read, while it cannot; trial is unset then. The node refuses every other change until RollbackConfig rolls the config back, which removes the record. Empty otherwise. |
 | `pending_config` | PendingConfig | The config the node holds pending for its next upgrade, unchecked; unset without one. |
 | `config_activation` | ConfigActivation | Progress of live activation for the running image. Older nodes omit this field. |
+| `errors` | list of SectionError | The sections of the status the node could not read, each with why: their fields are left empty, and the other sections answer all the same. Empty while every section was read. |
 
-Field types: [DiskStatus](#message-diskstatus), [VolumeStatus](#message-volumestatus), [CertificateStatus](#message-certificatestatus), [TimeStatus](#message-timestatus), [TrustStatus](#message-truststatus), [BootStatus](#message-bootstatus), [OutputStatus](#message-outputstatus), [ConfigTrial](#message-configtrial), [PendingConfig](#message-pendingconfig), [ConfigActivation](#message-configactivation).
+Field types: [DiskStatus](#message-diskstatus), [VolumeStatus](#message-volumestatus), [CertificateStatus](#message-certificatestatus), [TimeStatus](#message-timestatus), [TrustStatus](#message-truststatus), [BootStatus](#message-bootstatus), [OutputStatus](#message-outputstatus), [ConfigTrial](#message-configtrial), [PendingConfig](#message-pendingconfig), [ConfigActivation](#message-configactivation), [SectionError](#message-sectionerror).
 
 ### Logs { #method-logs }
 
@@ -1073,6 +1075,15 @@ A chalkos image in an OCI registry.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `reference` | string | The image's repository and manifest digest, repository@sha256:…, as chalkctl resolved the inventory's reference. The node pulls that manifest and refuses it unless its config is the image the header describes and its store, hash-tree, UKI and, for an install, boot-loader layers have the header's sizes and SHA-256 sums. An upgrade pulls through the Mirror and authenticates with the Registry documents of the config the request delivers, or without one of the running config; an install through those of the config the request delivers. It tries each endpoint of the Mirror of the reference's host, then the host, each with the Registry of its own host, and pulls anonymously from a host without one. |
+
+### SectionError { #message-sectionerror }
+
+A section of the status the node could not read.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `section` | string | The section, in a few words, such as "storage" or "failed units". |
+| `message` | string | Why the node could not read it. |
 
 ### SecureBootDriver { #message-securebootdriver }
 
