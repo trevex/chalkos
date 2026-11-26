@@ -128,7 +128,13 @@ in
       ];
       wantedBy = [ "multi-user.target" ];
       path = [ pkgs.nftables ];
-      serviceConfig = chalkosLib.sandbox.noExec // {
+      # nft loads the table through netlink, which takes CAP_NET_ADMIN; the unit writes nothing.
+      serviceConfig = chalkosLib.sandbox.hardened // {
+        CapabilityBoundingSet = [ "CAP_NET_ADMIN" ];
+        RestrictAddressFamilies = [
+          "AF_UNIX"
+          "AF_NETLINK"
+        ];
         Type = "oneshot";
         RemainAfterExit = true;
         ExecStart = load;

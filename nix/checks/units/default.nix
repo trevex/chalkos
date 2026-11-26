@@ -39,9 +39,11 @@ let
   routerFirewall =
     let
       unit = checkLib.router.config.systemd.services.chalkos-firewall;
-      # The start runs chalkd, which runs nft from the unit's path.
-      ExecStart = "PATH=${lib.makeBinPath unit.path}:$PATH ${unit.serviceConfig.ExecStart}";
-      inherit (unit.serviceConfig) ExecReload;
+      # The start runs chalkd, which runs nft from the unit's path; both run with the capabilities
+      # the unit's bounding set leaves.
+      bound = boundTo unit.serviceConfig.CapabilityBoundingSet;
+      ExecStart = "PATH=${lib.makeBinPath unit.path}:$PATH ${bound} ${unit.serviceConfig.ExecStart}";
+      ExecReload = "${bound} ${unit.serviceConfig.ExecReload}";
       dir = checkLib.router.config.chalkos.outputs.router-nftables.dir;
     in
     {
