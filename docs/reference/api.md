@@ -1685,7 +1685,7 @@ etcd membership.
 | `PHASE_LEFT` | 6 | A control-plane node that left etcd. It joins the cluster again only once reinstalled. |
 | `PHASE_JOINED` | 7 | A worker node whose Kubernetes files are prepared: its kubelet joins the cluster. |
 | `PHASE_PREPARATION_FAILED` | 8 | The preparation of the node's Kubernetes files failed; state says why. |
-| `PHASE_NO_CLUSTER` | 9 | The node's config gives no Kubernetes cluster, so the node takes no part in one. |
+| `PHASE_NO_CLUSTER` | 9 | The node's config gives no Kubernetes cluster for its image, so the node takes no part in one. |
 
 ### RotationStep { #kubernetes-enum-rotationstep }
 

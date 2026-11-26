@@ -52,7 +52,7 @@ const (
 	Phase_PHASE_JOINED Phase = 7
 	// The preparation of the node's Kubernetes files failed; state says why.
 	Phase_PHASE_PREPARATION_FAILED Phase = 8
-	// The node's config gives no Kubernetes cluster, so the node takes no part in one.
+	// The node's config gives no Kubernetes cluster for its image, so the node takes no part in one.
 	Phase_PHASE_NO_CLUSTER Phase = 9
 )
 

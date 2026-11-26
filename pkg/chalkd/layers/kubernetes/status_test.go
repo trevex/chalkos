@@ -230,18 +230,18 @@ func TestStatusListsTwentyPodsNotRunning(t *testing.T) {
 	}
 }
 
-// TestStatusWithoutACluster reports a node whose config gives no cluster as a state, and refuses a
-// request that needs the cluster as a failed precondition, not an internal error.
+// TestStatusWithoutACluster reports a node whose config gives no cluster for its image as a state,
+// and refuses a request that needs the cluster as a failed precondition, not an internal error.
 func TestStatusWithoutACluster(t *testing.T) {
 	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
 	if err := os.Remove(s.k.state.Cluster); err != nil {
 		t.Fatal(err)
 	}
 	st := kubernetestest.Status(t, s)
-	if st.Phase != kubernetesv1.Phase_PHASE_NO_CLUSTER || st.State != "no cluster: the node's config gives none" {
+	if st.Phase != kubernetesv1.Phase_PHASE_NO_CLUSTER || st.State != "no cluster: the node's config gives none for this image" {
 		t.Errorf("status = %v", st)
 	}
-	if _, err := s.k.controlPlane(); layer.CodeOf(err) != connect.CodeFailedPrecondition || err.Error() != "the node's config gives no Kubernetes cluster" {
+	if _, err := s.k.controlPlane(); layer.CodeOf(err) != connect.CodeFailedPrecondition || err.Error() != "the node's config gives no Kubernetes cluster for this image" {
 		t.Errorf("controlPlane = %v", err)
 	}
 }

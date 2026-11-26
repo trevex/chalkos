@@ -65,7 +65,7 @@ func (k *side) status(ctx context.Context) (*kubernetesv1.StatusResponse, error)
 	c, err := k.cluster()
 	switch {
 	case errors.Is(err, errNoCluster):
-		return &kubernetesv1.StatusResponse{Phase: kubernetesv1.Phase_PHASE_NO_CLUSTER, State: "no cluster: the node's config gives none"}, nil
+		return &kubernetesv1.StatusResponse{Phase: kubernetesv1.Phase_PHASE_NO_CLUSTER, State: "no cluster: the node's config gives none for this image"}, nil
 	case err != nil:
 		return nil, err
 	}

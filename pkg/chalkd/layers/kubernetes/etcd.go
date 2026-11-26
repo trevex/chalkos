@@ -416,9 +416,9 @@ func etcdStopped(ctx context.Context, c k8s.Cluster) error {
 	})
 }
 
-// errNoCluster refuses a request on a node whose config gives no Kubernetes cluster: WriteConfig
-// removes the cluster file then.
-var errNoCluster = layer.Errorf(connect.CodeFailedPrecondition, "the node's config gives no Kubernetes cluster")
+// errNoCluster refuses a request on a node whose config gives no Kubernetes cluster for its image:
+// WriteConfig removes the cluster file then.
+var errNoCluster = layer.Errorf(connect.CodeFailedPrecondition, "the node's config gives no Kubernetes cluster for this image")
 
 // cluster reads the node's cluster file: errNoCluster without one, and an internal error for one
 // that cannot be read.
