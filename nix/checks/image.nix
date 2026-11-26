@@ -560,7 +560,6 @@ in
         containerd = "mounts the containers' file systems, which run from its exec path";
         iscsid = "Longhorn runs iscsiadm in its mount and network namespaces, which must be the host's";
         kubelet = "mounts the pods' volumes, whose programs run from its exec path";
-        qemu-guest-agent = "runs systemd's poweroff, halt, reboot and shutdown from /sbin, a tmpfs of its own that holds them alone, bound read-only from the store";
         systemd-networkd = "systemd's; the router gives it credentials alone";
         systemd-sysctl = "systemd's; the router orders it alone";
         systemd-bless-boot = "systemd's; chalkos names its ESP alone";

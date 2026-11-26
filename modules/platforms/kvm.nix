@@ -26,9 +26,9 @@
     # asks over its socket, powers the node off. It shuts the node down with /sbin/poweroff, halt,
     # reboot or shutdown, which systemd gives, on a tmpfs of its own: an image with links below
     # /usr has /sbin lead to the read-only /usr/sbin, where no mount point can be made. Programs
-    # run from the store and from /sbin, which holds programs of the store alone.
+    # run from the store alone: the programs below /sbin are mounts of their own from the store,
+    # which keep its exec flag.
     serviceConfig = chalkosLib.sandbox.noExec // {
-      ExecPaths = chalkosLib.sandbox.noExec.ExecPaths ++ [ "/sbin" ];
       CapabilityBoundingSet = [ "" ];
       TemporaryFileSystem = "/sbin";
       BindReadOnlyPaths = map (b: "${config.systemd.package}/bin/${b}:/sbin/${b}") [
