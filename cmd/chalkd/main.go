@@ -387,12 +387,11 @@ func serve() error {
 		FromParts:   install.ForInstaller(paths.RunDir).FromParts,
 		Journal:     chalkd.Journal,
 	}
-	// systemctl runs a verb of systemd that ends the boot, once a response has been sent.
-	systemctl := func(verb string) func() {
-		return func() {
-			if _, err := tool.Run(context.Background(), srv.Run, "systemctl", verb); err != nil {
-				log.Printf("%s: %v", verb, err)
-			}
+	// systemctl starts a verb of systemd that ends the boot, once a response has been sent.
+	systemctl := func(verb string) func() error {
+		return func() error {
+			_, err := tool.Run(context.Background(), srv.Run, "systemctl", verb)
+			return err
 		}
 	}
 	srv.RebootNode = systemctl("reboot")

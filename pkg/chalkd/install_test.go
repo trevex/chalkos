@@ -99,7 +99,7 @@ func TestInstallInPlace(t *testing.T) {
 		return nil
 	}
 	rebooted := make(chan struct{})
-	s.RebootNode = func() { close(rebooted) }
+	s.RebootNode = func() error { close(rebooted); return nil }
 
 	if err := sendInstall(t, s, header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}), nil); err != nil {
 		t.Fatal(err)
@@ -284,7 +284,7 @@ func TestInstallFailureCanBeRepeated(t *testing.T) {
 		return nil
 	}
 	var rebooted atomic.Bool
-	s.RebootNode = func() { rebooted.Store(true) }
+	s.RebootNode = func() error { rebooted.Store(true); return nil }
 	in := header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
 	if err := sendInstall(t, s, in, nil); connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Fatalf("err = %v", err)

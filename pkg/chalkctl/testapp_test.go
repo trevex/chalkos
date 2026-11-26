@@ -272,7 +272,7 @@ func maintenanceNode() *chalkd.Server {
 		Mode:       nodev1.Mode_MODE_MAINTENANCE,
 		InPlace:    func(context.Context, install.Request, []byte) error { return errors.New("unexpected install in place") },
 		FromParts:  func(context.Context, install.PartsRequest) error { return errors.New("unexpected install onto a disk") },
-		RebootNode: func() {},
+		RebootNode: func() error { return nil },
 	}
 }
 
@@ -346,7 +346,7 @@ func installedNode(t *testing.T, ta *testApp, recorded []byte) (*chalkd.Server, 
 		Paths:      chalkd.PathsUnder(root),
 		Run:        r,
 		Host:       storage.Host{SysRoot: filepath.Join(root, "sys"), UdevRoot: filepath.Join(root, "udev"), DevRoot: filepath.Join(root, "dev")},
-		RebootNode: func() {},
+		RebootNode: func() error { return nil },
 	}
 	s.Loader = nodeconfig.LoaderUnder(root)
 	s.Loader.Render.Run = outputs.Direct{}

@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"crypto/tls"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -134,18 +135,21 @@ func TestIdleStreamsEnd(t *testing.T) {
 }
 
 // Reboot and Shutdown wait for a change of the node and then refuse, naming it; forced, they act
-// at once. Once the change ended they act and hold the changes' locks until the node goes down.
+// at once. Once the change ended they act and keep the changes' locks once the node goes down,
+// so no change starts and Drain waits for none; a reboot that fails to start releases them.
 func TestRebootWaitsForChanges(t *testing.T) {
 	s, _ := newTestServer(t, normal, vda)
 	var rebooted, poweredOff int
-	s.RebootNode = func() {
+	var rebootErr error
+	s.RebootNode = func() error {
 		rebooted++
 		if s.upgrading.TryLock() {
 			s.upgrading.Unlock()
 			t.Error("the reboot does not hold the changes' locks")
 		}
+		return rebootErr
 	}
-	s.PowerOffNode = func() { poweredOff++ }
+	s.PowerOffNode = func() error { poweredOff++; return nil }
 	reboot := func(force bool) error {
 		_, err := s.Reboot(context.Background(), &nodev1.RebootRequest{Force: force})
 		return err
@@ -180,14 +184,40 @@ func TestRebootWaitsForChanges(t *testing.T) {
 		t.Errorf("a forced shutdown: %v, powered off %d times", err, poweredOff)
 	}
 	unlock()
+	rebootErr = errors.New("the manager refused the job")
 	if err := reboot(false); err != nil || rebooted != 2 {
 		t.Errorf("a reboot once the upgrade ended: %v, rebooted %d times", err, rebooted)
 	}
 	if !s.upgrading.TryLock() || !s.mu.TryLock() {
-		t.Fatal("the reboot keeps the changes' locks once the node went down")
+		t.Fatal("a reboot that failed to start keeps the changes' locks")
 	}
 	s.mu.Unlock()
 	s.upgrading.Unlock()
+	rebootErr = nil
+	if err := reboot(false); err != nil || rebooted != 3 {
+		t.Errorf("a reboot once the upgrade ended: %v, rebooted %d times", err, rebooted)
+	}
+	if s.mu.TryLock() {
+		s.mu.Unlock()
+		t.Error("a change may start once the reboot started")
+	}
+	testwait.Bubble(t, func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		start := time.Now()
+		if err := shutdown(false); codeOf(err) != connect.CodeAborted || !strings.Contains(err.Error(), "goes down") {
+			t.Errorf("a shutdown once the reboot started: %v, want ABORTED", err)
+		}
+		if err := s.Drain(ctx); err != nil {
+			t.Errorf("drain once the reboot started: %v", err)
+		}
+		if took := time.Since(start); took != 0 {
+			t.Errorf("the shutdown and the drain took %v, want no wait", took)
+		}
+	})
+	if poweredOff != 1 {
+		t.Errorf("powered off %d times, want once", poweredOff)
+	}
 }
 
 // blockedDiagnosticStream is the stream of a client that stops reading: Send blocks until

@@ -174,10 +174,10 @@ type Server struct {
 	// Journal streams the journal of the boot, or of one unit, from its last lines entries when
 	// lines is not zero.
 	Journal func(ctx context.Context, unit string, follow bool, lines uint32) (io.ReadCloser, error)
-	// RebootNode reboots the node; it is called once the response has been sent.
-	RebootNode func()
-	// PowerOffNode powers the node off; it is called once the response has been sent.
-	PowerOffNode func()
+	// RebootNode starts the reboot of the node; it is called once the response has been sent.
+	RebootNode func() error
+	// PowerOffNode starts the power-off of the node; it is called once the response has been sent.
+	PowerOffNode func() error
 	// AfterResponse runs f once the response has had time to reach the client, as before a
 	// reboot or power-off; nil waits a second. Tests replace it to run f when they choose.
 	AfterResponse func(f func())
@@ -220,6 +220,9 @@ type Server struct {
 	upgrading sync.Mutex
 	// upgradingBy and muBy name the changes that hold s.upgrading and s.mu.
 	upgradingBy, muBy changeHolder
+	// goingDown is set once a reboot or shutdown that holds s.upgrading and s.mu started, which
+	// keeps them until the node went down.
+	goingDown atomic.Bool
 	// trial rolls the config on trial back at its deadline; s.mu guards it.
 	trial trialDeadline
 	// logStreams counts the Logs calls running.
@@ -540,7 +543,7 @@ func (s *Server) Shutdown(ctx context.Context, req *nodev1.ShutdownRequest) (*no
 }
 
 // rebootSoon reboots once the response has had time to reach the client.
-func (s *Server) rebootSoon() { s.afterResponse(s.RebootNode) }
+func (s *Server) rebootSoon() { s.afterResponse(func() { goDown("reboot", s.RebootNode) }) }
 
 // afterResponse calls f once the response has had time to reach the client.
 func (s *Server) afterResponse(f func()) {

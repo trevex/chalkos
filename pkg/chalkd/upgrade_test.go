@@ -64,7 +64,7 @@ func TestUpgrade(t *testing.T) {
 			record := filepath.Join(s.Paths.StateDir, "chalkd", "rollback")
 			write(t, record, strings.Repeat("31", 32)+"\n")
 			rebooted := make(chan struct{})
-			s.RebootNode = func() { close(rebooted) }
+			s.RebootNode = func() error { close(rebooted); return nil }
 			var got []byte
 			fakeImageSlots(t, s).install = func(_ context.Context, h upgrade.Header, _, _ string, _ bool, r io.Reader) (upgrade.Result, imageConfig, error) {
 				want := upgrade.Header{ImageID: "chalkos", Platform: "metal", Architecture: "x86-64",
