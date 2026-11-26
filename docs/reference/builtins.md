@@ -69,7 +69,7 @@ cel.bind(sd, documents.map(n, documents[n].spec)[0], cel.bind(r, facts.recorded.
 | 3 | — | A disk reference that differs from the one the volume's disk was pinned by resolves. | `refuse` | after the table | after the table |
 | 4 | — | A volume keeps its format and encryption, also the encryption it inherits from the SystemDisk, and does not shrink or take a fixed size where it filled its disk. | `reset` | after the table | after the table |
 | 5 | — | The pinned disk of a volume that the config creates or changes is plugged in. | `refuse` | after the table | after the table |
-| 6 | — | No volume the machine records is left out of the config. | `reinstall` | `facts.recorded == null || facts.recorded.volumes.all(n, n == "var" || n in documents)` | after the table |
+| 6 | — | No volume the machine records is left out of the config. | `reinstall` | <code>facts&#46;recorded &#61;&#61; null &#124;&#124; facts&#46;recorded&#46;volumes&#46;all&#40;n&#44; n &#61;&#61; &#34;var&#34; &#124;&#124; n in documents&#41;</code> | after the table |
 | 7 | — | A new TPM2-encrypted volume, on a node with a fallback, comes with the fallback secret. | `refuse` | after the table | after the table |
 | 8 | — | The fallback secret that comes with a new TPM2-encrypted volume opens the node's fallback keyslot. | `refuse` | after the table | the fallback secret does not match the node's existing fallback keyslot |
 
@@ -180,14 +180,14 @@ The rules of the kinds that images with Kubernetes accept, and those they add to
 
 | Rule | Field | Guards | Takes | Expression | Message |
 | --- | --- | --- | --- | --- | --- |
-| 1 | `spec` | A BGPPeer names an address, interfaces or both. | `refuse` | `self.address != null || self.interfaces != null` | the peer names neither address nor interfaces; give its address, the interfaces of unnumbered sessions, or the address and the one interface its session runs on |
-| 2 | `spec` | A BGPPeer with an address names one interface at most. | `refuse` | `self.address == null || self.interfaces == null || size(self.interfaces) == 1` | FRR binds a session to an address to one interface, so a peer with an address names one interface at most; for a neighbour on several links, give each link a BGPPeer of its own with the neighbour's address on that link, a different address on each, or leave the address out for unnumbered sessions |
+| 1 | `spec` | A BGPPeer names an address, interfaces or both. | `refuse` | <code>self&#46;address &#33;&#61; null &#124;&#124; self&#46;interfaces &#33;&#61; null</code> | the peer names neither address nor interfaces; give its address, the interfaces of unnumbered sessions, or the address and the one interface its session runs on |
+| 2 | `spec` | A BGPPeer with an address names one interface at most. | `refuse` | <code>self&#46;address &#61;&#61; null &#124;&#124; self&#46;interfaces &#61;&#61; null &#124;&#124; size&#40;self&#46;interfaces&#41; &#61;&#61; 1</code> | FRR binds a session to an address to one interface, so a peer with an address names one interface at most; for a neighbour on several links, give each link a BGPPeer of its own with the neighbour's address on that link, a different address on each, or leave the address out for unnumbered sessions |
 | 3 | `spec` | No interface carries the unnumbered sessions of two BGPPeers. | `refuse` | after the table | after the table |
 | 4 | `spec` | A node with BGPPeer documents has a BGPSpeaker. | `refuse` | after the table | a node with BGPPeer documents needs a BGPSpeaker document, which gives FRR its AS number and router ID |
 | 5 | `spec.address` | A BGPPeer's address is a unicast address: not unspecified, loopback, link-local or multicast. | `refuse` | after the table | after the table |
 | 6 | `spec.asn` | A BGPPeer keeps its AS number. | `refuse` | `self == oldSelf` | `"the AS number stays " + string(oldSelf) + "; add a BGPPeer of another name for " + string(self)` |
 | 7 | `spec.interfaces` | Each interface is named by a Network document's [Match] Name=. | `refuse` | after the table | after the table |
-| 8 | `spec.interfaces` | A BGPPeer's interfaces are not named like IPv4 addresses. | `refuse` | `self == null || self.all(i, !i.matches("^([0-9]{1,3}[.]){3}[0-9]{1,3}$"))` | after the table |
+| 8 | `spec.interfaces` | A BGPPeer's interfaces are not named like IPv4 addresses. | `refuse` | <code>self &#61;&#61; null &#124;&#124; self&#46;all&#40;i&#44; &#33;i&#46;matches&#40;&#34;&#94;&#40;&#91;0&#45;9&#93;&#123;1&#44;3&#125;&#91;&#46;&#93;&#41;&#123;3&#125;&#91;0&#45;9&#93;&#123;1&#44;3&#125;&#36;&#34;&#41;&#41;</code> | after the table |
 | 9 | `spec.password` | A BGPPeer's password names its Secret and key as credentials' names. | `refuse` | after the table | the Secret's name and key hold letters, digits, '.', '_' and '-' alone, as the names of frr.service's credentials do |
 
 Expression of rule 3:
@@ -251,7 +251,7 @@ self == null || self.secretRef.name.matches("^[A-Za-z0-9._-]+$") && self.secretR
 | 1 | `spec` | A BGPSpeaker gives a router ID unless the Node has an IPv4 address. | `refuse` | after the table | the Node's nodeIP.addresses hold no IPv4 address, which FRR would take as its router ID; give routerID, an IPv4 address unique within the node's AS, such as 0.0.0.11 |
 | 2 | `spec.asn` | A BGPSpeaker keeps its AS number. | `refuse` | `self == oldSelf` | after the table |
 | 3 | `spec.export.interfaces` | Each interface is named by a Network document's [Match] Name=. | `refuse` | after the table | after the table |
-| 4 | `spec.routerID` | A router ID is not 0.0.0.0. | `refuse` | `self == null || self != "0.0.0.0"` | FRR takes no router ID 0.0.0.0; give the node another one, unique within its AS |
+| 4 | `spec.routerID` | A router ID is not 0.0.0.0. | `refuse` | <code>self &#61;&#61; null &#124;&#124; self &#33;&#61; &#34;0&#46;0&#46;0&#46;0&#34;</code> | FRR takes no router ID 0.0.0.0; give the node another one, unique within its AS |
 
 Expression of rule 1:
 
@@ -284,9 +284,9 @@ cel.bind(names, cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in config && "N
 | 1 | — | The pod range of each family both configs have stays once the node holds a Kubernetes share. | `refuse` | after the table | after the table |
 | 2 | — | The service range of each family both configs have stays once the node holds a Kubernetes share. | `refuse` | after the table | after the table |
 | 3 | — | The cluster DNS's address of each family both configs have, by default the 10th of its service range, stays once the node holds a Kubernetes share. | `refuse` | after the table | after the table |
-| 4 | `spec.allowSchedulingOnControlPlanes` | Whether workloads run on control planes stays once the node holds a Kubernetes share. | `refuse` | `facts.share == null || self == oldSelf` | the config changes allowSchedulingOnControlPlanes; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; add or remove the node-role.kubernetes.io/control-plane:NoSchedule taint with kubectl taint instead, or reinstall the node |
-| 5 | `spec.domain` | The cluster's domain stays once the node holds a Kubernetes share. | `refuse` | `facts.share == null || self == oldSelf` | after the table |
-| 6 | `spec.ipFamilies` | The cluster's address families stay once the node holds a Kubernetes share. | `refuse` | `facts.share == null || self == oldSelf` | after the table |
+| 4 | `spec.allowSchedulingOnControlPlanes` | Whether workloads run on control planes stays once the node holds a Kubernetes share. | `refuse` | <code>facts&#46;share &#61;&#61; null &#124;&#124; self &#61;&#61; oldSelf</code> | the config changes allowSchedulingOnControlPlanes; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; add or remove the node-role.kubernetes.io/control-plane:NoSchedule taint with kubectl taint instead, or reinstall the node |
+| 5 | `spec.domain` | The cluster's domain stays once the node holds a Kubernetes share. | `refuse` | <code>facts&#46;share &#61;&#61; null &#124;&#124; self &#61;&#61; oldSelf</code> | after the table |
+| 6 | `spec.ipFamilies` | The cluster's address families stay once the node holds a Kubernetes share. | `refuse` | <code>facts&#46;share &#61;&#61; null &#124;&#124; self &#61;&#61; oldSelf</code> | after the table |
 
 Expression of rule 1:
 
@@ -370,10 +370,10 @@ Message of rule 1:
 
 | Rule | Field | Guards | Takes | Expression | Message |
 | --- | --- | --- | --- | --- | --- |
-| 1 | — | The node keeps the type its Kubernetes share is for. | `refuse` | `facts.share == null || documents.all(n, documents[n].spec.type == facts.share.kind)` | after the table |
-| 2 | `spec.labels` | The node keeps its labels once it holds a Kubernetes share. | `refuse` | `facts.share == null || self == oldSelf` | the config changes the node's labels; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; change the Node object with kubectl label instead, or reinstall the node |
-| 3 | `spec.providerID` | The node keeps its provider ID once it holds a Kubernetes share. | `refuse` | `facts.share == null || self == oldSelf` | the config changes the node's provider ID; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; keep the provider ID it registered with, or reinstall the node |
-| 4 | `spec.taints` | The node keeps its taints once it holds a Kubernetes share. | `refuse` | `facts.share == null || self == oldSelf` | the config changes the node's taints; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; change the Node object with kubectl taint instead, or reinstall the node |
+| 1 | — | The node keeps the type its Kubernetes share is for. | `refuse` | <code>facts&#46;share &#61;&#61; null &#124;&#124; documents&#46;all&#40;n&#44; documents&#91;n&#93;&#46;spec&#46;type &#61;&#61; facts&#46;share&#46;kind&#41;</code> | after the table |
+| 2 | `spec.labels` | The node keeps its labels once it holds a Kubernetes share. | `refuse` | <code>facts&#46;share &#61;&#61; null &#124;&#124; self &#61;&#61; oldSelf</code> | the config changes the node's labels; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; change the Node object with kubectl label instead, or reinstall the node |
+| 3 | `spec.providerID` | The node keeps its provider ID once it holds a Kubernetes share. | `refuse` | <code>facts&#46;share &#61;&#61; null &#124;&#124; self &#61;&#61; oldSelf</code> | the config changes the node's provider ID; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; keep the provider ID it registered with, or reinstall the node |
+| 4 | `spec.taints` | The node keeps its taints once it holds a Kubernetes share. | `refuse` | <code>facts&#46;share &#61;&#61; null &#124;&#124; self &#61;&#61; oldSelf</code> | the config changes the node's taints; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; change the Node object with kubectl taint instead, or reinstall the node |
 | 5 | `spec.vip.interface` | A control plane of a cluster with a routed VIP names the interface it adds the VIP to. | `refuse` | after the table | the Cluster's VIP is routed, so a control plane needs vip.interface: the interface it adds the VIP to, such as a dummy interface its routing daemon announces |
 
 Message of rule 1:
@@ -517,15 +517,15 @@ Message of rule 8:
 | 2 | — | A BGPPeer's VRF has a BGP document. | `refuse` | after the table | after the table |
 | 3 | — | A BGPPeer at an IPv6 address or with an IPv6 listen range that exchanges IPv4 routes has extendedNextHop. | `refuse` | after the table | after the table |
 | 4 | `spec.address` | A BGPPeer's address is a unicast address beyond the router: not unspecified, loopback, link-local, multicast, broadcast or IPv4-mapped IPv6. | `refuse` | after the table | after the table |
-| 5 | `spec.description` | A BGPPeer's description holds 80 characters at most. | `refuse` | `self == null || size(self) <= 80` | the description holds more than 80 characters |
-| 6 | `spec.families` | A BGPPeer exchanges the routes of one family at least. | `refuse` | `self.ipv4 != null || self.ipv6 != null` | the peer exchanges the routes of no family; give families.ipv4 or families.ipv6, an empty one accepting and sending every route |
+| 5 | `spec.description` | A BGPPeer's description holds 80 characters at most. | `refuse` | <code>self &#61;&#61; null &#124;&#124; size&#40;self&#41; &#60;&#61; 80</code> | the description holds more than 80 characters |
+| 6 | `spec.families` | A BGPPeer exchanges the routes of one family at least. | `refuse` | <code>self&#46;ipv4 &#33;&#61; null &#124;&#124; self&#46;ipv6 &#33;&#61; null</code> | the peer exchanges the routes of no family; give families.ipv4 or families.ipv6, an empty one accepting and sending every route |
 | 7 | `spec.families` | A family's policies match PrefixLists of that family alone. | `refuse` | after the table | after the table |
 | 8 | `spec.families` | A family's defaultOriginateWhen comes with defaultOriginate. | `refuse` | after the table | after the table |
 | 9 | `spec.families` | A family's defaultOriginateWhen is a PrefixList of that family. | `refuse` | after the table | after the table |
 | 10 | `spec.interface` | A BGPPeer's interfaces are not named like addresses. | `refuse` | after the table | after the table |
 | 11 | `spec.interfaces` | A BGPPeer's interfaces are not named like addresses. | `refuse` | after the table | after the table |
 | 12 | `spec.listen` | A BGPPeer's listen range starts at an address a neighbour may have: not in link-local, loopback, multicast or IPv4-mapped IPv6 space. | `refuse` | after the table | after the table |
-| 13 | `spec.listen` | A BGPPeer's listen range is longer than 0 bits. | `refuse` | `self == null || cidr(self.range).prefix() > 0` | after the table |
+| 13 | `spec.listen` | A BGPPeer's listen range is longer than 0 bits. | `refuse` | <code>self &#61;&#61; null &#124;&#124; cidr&#40;self&#46;range&#41;&#46;prefix&#40;&#41; &#62; 0</code> | after the table |
 | 14 | `spec.password` | A BGPPeer's password names its Secret and key as credentials' names. | `refuse` | after the table | the Secret's name and key hold letters, digits, '.', '_' and '-' alone, as the names of frr.service's credentials do |
 
 Expression of rule 1:
@@ -709,17 +709,17 @@ Message of rule 1:
 | 7 | `spec` | A reservation lies outside the pools. | `refuse` | after the table | after the table |
 | 8 | `spec` | A reservation is neither the subnet's network nor its broadcast address, nor an IPv6 subnet's subnet-router anycast address. | `refuse` | after the table | after the table |
 | 9 | `spec` | A reservation is neither the gateway nor a DNS server nor boot's server. | `refuse` | after the table | after the table |
-| 10 | `spec` | A gateway is given for IPv4 subnets alone; IPv6 clients learn their routers from router advertisements. | `refuse` | `cel.bind(c, cidr(self.subnet), self.gateway == null || c.ip(0).family() == "ipv4")` | gateway is for IPv4 subnets; IPv6 clients learn their routers from router advertisements |
-| 11 | `spec` | A gateway lies inside the subnet. | `refuse` | `cel.bind(c, cidr(self.subnet), self.gateway == null || c.contains(ip(self.gateway)))` | after the table |
+| 10 | `spec` | A gateway is given for IPv4 subnets alone; IPv6 clients learn their routers from router advertisements. | `refuse` | <code>cel&#46;bind&#40;c&#44; cidr&#40;self&#46;subnet&#41;&#44; self&#46;gateway &#61;&#61; null &#124;&#124; c&#46;ip&#40;0&#41;&#46;family&#40;&#41; &#61;&#61; &#34;ipv4&#34;&#41;</code> | gateway is for IPv4 subnets; IPv6 clients learn their routers from router advertisements |
+| 11 | `spec` | A gateway lies inside the subnet. | `refuse` | <code>cel&#46;bind&#40;c&#44; cidr&#40;self&#46;subnet&#41;&#44; self&#46;gateway &#61;&#61; null &#124;&#124; c&#46;contains&#40;ip&#40;self&#46;gateway&#41;&#41;&#41;</code> | after the table |
 | 12 | `spec` | A gateway is neither the subnet's network nor its broadcast address. | `refuse` | after the table | after the table |
 | 13 | `spec` | A DNS server is an address of the subnet's family, and no IPv4-mapped IPv6 address. | `refuse` | after the table | after the table |
-| 14 | `spec` | PXE boot files are given for IPv4 subnets alone. | `refuse` | `cel.bind(c, cidr(self.subnet), self.boot == null || c.ip(0).family() == "ipv4")` | boot is for IPv4 subnets |
-| 15 | `spec` | A subnet delegates prefixes for IPv6 alone. | `refuse` | `cel.bind(c, cidr(self.subnet), self.prefixDelegation == null || !(c.ip(0).family() == "ipv4"))` | prefixDelegation delegates IPv6 prefixes, which an IPv4 subnet has none of |
+| 14 | `spec` | PXE boot files are given for IPv4 subnets alone. | `refuse` | <code>cel&#46;bind&#40;c&#44; cidr&#40;self&#46;subnet&#41;&#44; self&#46;boot &#61;&#61; null &#124;&#124; c&#46;ip&#40;0&#41;&#46;family&#40;&#41; &#61;&#61; &#34;ipv4&#34;&#41;</code> | boot is for IPv4 subnets |
+| 15 | `spec` | A subnet delegates prefixes for IPv6 alone. | `refuse` | <code>cel&#46;bind&#40;c&#44; cidr&#40;self&#46;subnet&#41;&#44; self&#46;prefixDelegation &#61;&#61; null &#124;&#124; &#33;&#40;c&#46;ip&#40;0&#41;&#46;family&#40;&#41; &#61;&#61; &#34;ipv4&#34;&#41;&#41;</code> | prefixDelegation delegates IPv6 prefixes, which an IPv4 subnet has none of |
 | 16 | `spec` | The prefixes a subnet delegates lie apart from the subnet. | `refuse` | after the table | after the table |
-| 17 | `spec` | An IPv6 subnet is served on one link, the one Kea's DHCPv6 subnet names. | `refuse` | `cel.bind(c, cidr(self.subnet), c.ip(0).family() == "ipv4" || size(self.interfaces) == 1)` | after the table |
-| 18 | `spec.boot` | A boot names a file. | `refuse` | `self == null || self.bios != null || self.uefi != null || self.ipxe != null` | boot names no file; give bios, uefi or ipxe, or leave boot out |
-| 19 | `spec.boot` | A boot's server is an IPv4 address. | `refuse` | `self == null || self.server == null || ip(self.server).family() == "ipv4"` | boot's server is no IPv4 address |
-| 20 | `spec.boot` | A boot of BIOS or UEFI files names their server. | `refuse` | `self == null || self.server != null || (self.bios == null && self.uefi == null)` | boot's bios and uefi files load over TFTP from boot's server; give server |
+| 17 | `spec` | An IPv6 subnet is served on one link, the one Kea's DHCPv6 subnet names. | `refuse` | <code>cel&#46;bind&#40;c&#44; cidr&#40;self&#46;subnet&#41;&#44; c&#46;ip&#40;0&#41;&#46;family&#40;&#41; &#61;&#61; &#34;ipv4&#34; &#124;&#124; size&#40;self&#46;interfaces&#41; &#61;&#61; 1&#41;</code> | after the table |
+| 18 | `spec.boot` | A boot names a file. | `refuse` | <code>self &#61;&#61; null &#124;&#124; self&#46;bios &#33;&#61; null &#124;&#124; self&#46;uefi &#33;&#61; null &#124;&#124; self&#46;ipxe &#33;&#61; null</code> | boot names no file; give bios, uefi or ipxe, or leave boot out |
+| 19 | `spec.boot` | A boot's server is an IPv4 address. | `refuse` | <code>self &#61;&#61; null &#124;&#124; self&#46;server &#61;&#61; null &#124;&#124; ip&#40;self&#46;server&#41;&#46;family&#40;&#41; &#61;&#61; &#34;ipv4&#34;</code> | boot's server is no IPv4 address |
+| 20 | `spec.boot` | A boot of BIOS or UEFI files names their server. | `refuse` | <code>self &#61;&#61; null &#124;&#124; self&#46;server &#33;&#61; null &#124;&#124; &#40;self&#46;bios &#61;&#61; null &#38;&#38; self&#46;uefi &#61;&#61; null&#41;</code> | boot's bios and uefi files load over TFTP from boot's server; give server |
 | 21 | `spec.leaseTime` | A lease lasts 4294967295 seconds at most, the longest Kea takes. | `refuse` | after the table | `"a lease of " + self + " is longer than 4294967295 seconds, the longest Kea takes"` |
 | 22 | `spec.prefixDelegation` | Prefixes are delegated from an IPv6 range apart from ::/8, fe80::/10 and ff00::/8, each longer than the range. | `refuse` | after the table | after the table |
 | 23 | `spec.subnet` | A subnet is an IPv4 range of 30 bits at most apart from 0.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16 and 224.0.0.0/3, or an IPv6 range of 120 bits at most apart from ::/8, fe80::/10 and ff00::/8. | `refuse` | after the table | after the table |
@@ -897,7 +897,7 @@ Message of rule 23:
 | Rule | Field | Guards | Takes | Expression | Message |
 | --- | --- | --- | --- | --- | --- |
 | 1 | — | A FirewallPolicy comes from a FirewallZone, not from local. | `refuse` | `documents.all(n, documents[n].spec.from != "local")` | after the table |
-| 2 | `spec.rules` | A rule's source and destination each name an AddressSet or address ranges, one of them. | `refuse` | `self.all(r, [r.source, r.destination].all(m, m == null || (m.set == null) != (m.cidrs == null)))` | a rule's source or destination names both set and cidrs, or neither; give one, or leave the field out to match every address |
+| 2 | `spec.rules` | A rule's source and destination each name an AddressSet or address ranges, one of them. | `refuse` | <code>self&#46;all&#40;r&#44; &#91;r&#46;source&#44; r&#46;destination&#93;&#46;all&#40;m&#44; m &#61;&#61; null &#124;&#124; &#40;m&#46;set &#61;&#61; null&#41; &#33;&#61; &#40;m&#46;cidrs &#61;&#61; null&#41;&#41;&#41;</code> | a rule's source or destination names both set and cidrs, or neither; give one, or leave the field out to match every address |
 | 3 | `spec.rules` | A rule with a family has addresses and sets of that family alone. | `refuse` | after the table | a rule has addresses or a set of another family than its own |
 | 4 | `spec.rules` | A rule matches IPv4 or IPv6: its family, protocol, addresses and sets leave one. | `refuse` | after the table | a rule matches no connection: its family, protocol, addresses and sets leave neither IPv4 nor IPv6 |
 | 5 | `spec.rules` | Ports go with tcp, udp or sctp, ICMP types with icmp or icmpv6, and packet-too-big with icmpv6. | `refuse` | after the table | a rule has ports without the protocol tcp, udp or sctp, or ICMP types its protocol lacks |
@@ -931,7 +931,7 @@ self.all(r, (size(r.sourcePorts) == 0 && size(r.destinationPorts) == 0 || r.prot
 | Rule | Field | Guards | Takes | Expression | Message |
 | --- | --- | --- | --- | --- | --- |
 | 1 | — | No FirewallZone is named local, the router itself. | `refuse` | `!("local" in documents)` | a FirewallZone is named local, which is the router itself: FirewallPolicy documents name it without a document, so give the zone another name |
-| 2 | — | A FirewallZone names an interface or a VRF. | `refuse` | `documents.all(n, size(documents[n].spec.interfaces) > 0 || size(documents[n].spec.vrfs) > 0)` | after the table |
+| 2 | — | A FirewallZone names an interface or a VRF. | `refuse` | <code>documents&#46;all&#40;n&#44; size&#40;documents&#91;n&#93;&#46;spec&#46;interfaces&#41; &#62; 0 &#124;&#124; size&#40;documents&#91;n&#93;&#46;spec&#46;vrfs&#41; &#62; 0&#41;</code> | after the table |
 
 Message of rule 2:
 
@@ -949,7 +949,7 @@ documents.filter(n, size(documents[n].spec.interfaces) == 0 && size(documents[n]
 | 4 | `spec.pool4` | A pool's entries are IPv4 ranges of 65536 addresses at most. | `refuse` | `self.all(a, cidr(a.prefix).ip(0).family() == "ipv4" && cidr(a.prefix).prefix() >= 16)` | after the table |
 | 5 | `spec.pool4` | A pool's entries hold no unspecified, loopback, multicast or broadcast address. | `refuse` | after the table | after the table |
 | 6 | `spec.pool4` | A pool's entries hold no link-local address; the NAT64s' links take 169.254.64.0/18. | `refuse` | `self.all(a, !cidr("169.254.0.0/16").contains(cidr(a.prefix).ip(0)))` | after the table |
-| 7 | `spec.pool4` | A pool entry's ports leave out the kernel's ephemeral ports, 32768 to 60999. | `refuse` | `self.all(a, portRange(a.ports).last < 32768 || portRange(a.ports).first > 60999)` | after the table |
+| 7 | `spec.pool4` | A pool entry's ports leave out the kernel's ephemeral ports, 32768 to 60999. | `refuse` | <code>self&#46;all&#40;a&#44; portRange&#40;a&#46;ports&#41;&#46;last &#60; 32768 &#124;&#124; portRange&#40;a&#46;ports&#41;&#46;first &#62; 60999&#41;</code> | after the table |
 | 8 | `spec.pool4` | No two entries of a pool share a protocol, addresses and ports. | `refuse` | after the table | after the table |
 | 9 | `spec.prefix` | A NAT64 prefix is an IPv6 range of 32, 40, 48, 56, 64 or 96 bits of no link-local, multicast or unspecified addresses, whose bits 64 to 71 are zero, as RFC 6052 gives them. | `refuse` | after the table | after the table |
 
@@ -1248,10 +1248,10 @@ documents.filter(n, cel.bind(s, documents[n].spec, !s.entries.all(e, cel.bind(c,
 | 3 | `spec.dns64` | A NAT64 prefix is an IPv6 range of 32, 40, 48, 56, 64 or 96 bits of no link-local, multicast or unspecified addresses, whose bits 64 to 71 are zero, as RFC 6052 gives them. | `refuse` | after the table | after the table |
 | 4 | `spec.forwarders` | The resolver forwards to unicast addresses. | `refuse` | after the table | after the table |
 | 5 | `spec.listen` | The resolver listens on unicast addresses. | `refuse` | after the table | after the table |
-| 6 | `spec.localZones` | A local zone's records are of the zone's name or names below it. | `refuse` | `self.all(z, z.records.all(r, r.name == z.name || r.name.endsWith("." + z.name)))` | after the table |
+| 6 | `spec.localZones` | A local zone's records are of the zone's name or names below it. | `refuse` | <code>self&#46;all&#40;z&#44; z&#46;records&#46;all&#40;r&#44; r&#46;name &#61;&#61; z&#46;name &#124;&#124; r&#46;name&#46;endsWith&#40;&#34;&#46;&#34; &#43; z&#46;name&#41;&#41;&#41;</code> | after the table |
 | 7 | `spec.localZones` | The names of local zones and their records are DNS names of 253 characters at most. | `refuse` | `self.all(z, isDNSName(z.name)) && self.map(z, z.records).flatten().all(r, isDNSName(r.name))` | after the table |
 | 8 | `spec.localZones` | A record holds data of its type: an address of its family for A and AAAA, a DNS name for CNAME and PTR, numbers and a DNS name for MX and SRV, and text for TXT. | `refuse` | `self.map(z, z.records).flatten().all(r, isRecordData(r.type, r.value))` | after the table |
-| 9 | `spec.localZones` | A redirect zone's records are of the zone's name, which Unbound answers for every name below it. | `refuse` | `self.all(z, z.type != "redirect" || z.records.all(r, r.name == z.name))` | after the table |
+| 9 | `spec.localZones` | A redirect zone's records are of the zone's name, which Unbound answers for every name below it. | `refuse` | <code>self&#46;all&#40;z&#44; z&#46;type &#33;&#61; &#34;redirect&#34; &#124;&#124; z&#46;records&#46;all&#40;r&#44; r&#46;name &#61;&#61; z&#46;name&#41;&#41;</code> | after the table |
 
 Expression of rule 1:
 
@@ -1360,7 +1360,7 @@ cel.bind(was, cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in oldConfig && "
 | Rule | Field | Guards | Takes | Expression | Message |
 | --- | --- | --- | --- | --- | --- |
 | 1 | `spec.terms` | A RoutingPolicy holds 6000 terms at most. | `refuse` | `size(self) <= 6000` | after the table |
-| 2 | `spec.terms` | A term's asPath holds 200 characters at most. | `refuse` | `self.all(t, t.match.asPath == null || size(t.match.asPath) <= 200)` | a term's asPath holds more than 200 characters |
+| 2 | `spec.terms` | A term's asPath holds 200 characters at most. | `refuse` | <code>self&#46;all&#40;t&#44; t&#46;match&#46;asPath &#61;&#61; null &#124;&#124; size&#40;t&#46;match&#46;asPath&#41; &#60;&#61; 200&#41;</code> | a term's asPath holds more than 200 characters |
 | 3 | `spec.terms` | A RoutingPolicy's PrefixLists are of one family. | `refuse` | after the table | the terms match PrefixLists of both families; a policy serves the routes of one family, so give each family a policy of its own |
 | 4 | `spec.terms` | A term that rejects sets nothing. | `refuse` | after the table | a term that rejects routes sets local preference, MED, communities or a prepend, which no route it rejects keeps; drop them or accept |
 
@@ -1740,7 +1740,7 @@ The diagnostics every image declares.
 | `nft-ruleset`{ #diagnostic-nft-ruleset } | The node's nftables ruleset, as nft list ruleset prints it. Runs `nft list ruleset`. | — | operator | `CAP_NET_ADMIN` |
 | `ping`{ #diagnostic-ping } | Sends ICMP echo requests to an address and prints the replies, for at most 10 seconds. Runs `ping -n -w 10 -c {count} {address}`. | `address`, address; `count`, int from 1 to 10, default `4` | operator | `CAP_NET_RAW` |
 | `route-get`{ #diagnostic-route-get } | The route the kernel takes to an address. Runs `ip -json route get {address}`. | `address`, address | reader | — |
-| `routes`{ #diagnostic-routes } | The routes of one family in one routing table, as ip -json route show prints them. Runs `ip -json -family {family} route show table {table}`. | `family`, enum of `inet` or `inet6`, default `inet`; `table`, pattern `^(main|local|default|all|[0-9]+)$`, default `main` | reader | — |
+| `routes`{ #diagnostic-routes } | The routes of one family in one routing table, as ip -json route show prints them. Runs `ip -json -family {family} route show table {table}`. | `family`, enum of `inet` or `inet6`, default `inet`; `table`, pattern <code>&#94;&#40;main&#124;local&#124;default&#124;all&#124;&#91;0&#45;9&#93;&#43;&#41;&#36;</code>, default `main` | reader | — |
 | `tcp-connect`{ #diagnostic-tcp-connect } | Opens a TCP connection to an address and port, closes it again and says whether it connected. Runs `chalkd tcp-connect {address} {port}`. | `address`, address; `port`, int from 1 to 65535 | operator | — |
 
 ### Images with Kubernetes { #diagnostics-kubernetes }
@@ -1750,7 +1750,7 @@ The diagnostics images with Kubernetes add.
 | Diagnostic | Does | Parameters | Role | Capabilities |
 | --- | --- | --- | --- | --- |
 | `bfd-peers`{ #diagnostic-bfd-peers } | One VRF's BFD sessions and their state, as show bfd peers prints them. Runs `vtysh -c show bfd vrf {vrf} peers`. | `vrf`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, default `default` | reader | — |
-| `bgp-neighbor`{ #diagnostic-bgp-neighbor } | One BGP session in detail, as show bgp neighbors prints it: its state, timers, capabilities and routes. Runs `vtysh -c show bgp vrf {vrf} neighbors {peer}`. | `peer`, pattern `^([0-9A-Fa-f:.]+|[A-Za-z0-9_.:@-]{1,15})$`; `vrf`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, default `default` | reader | — |
+| `bgp-neighbor`{ #diagnostic-bgp-neighbor } | One BGP session in detail, as show bgp neighbors prints it: its state, timers, capabilities and routes. Runs `vtysh -c show bgp vrf {vrf} neighbors {peer}`. | `peer`, pattern <code>&#94;&#40;&#91;0&#45;9A&#45;Fa&#45;f&#58;&#46;&#93;&#43;&#124;&#91;A&#45;Za&#45;z0&#45;9&#95;&#46;&#58;&#64;&#45;&#93;&#123;1&#44;15&#125;&#41;&#36;</code>; `vrf`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, default `default` | reader | — |
 | `bgp-route`{ #diagnostic-bgp-route } | One VRF's BGP paths to a prefix, as show bgp prints them: each path's AS path, next hop and attributes, and the best. Runs `vtysh -c show bgp vrf {vrf} {family} unicast {prefix}`. | `prefix`, prefix; `vrf`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, default `default`; `family`, enum of `ipv4` or `ipv6`, default `ipv6` | reader | — |
 | `bgp-summary`{ #diagnostic-bgp-summary } | One VRF's BGP sessions of each address family, as show bgp summary prints them. Runs `vtysh -c show bgp vrf {vrf} summary`. | `vrf`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, default `default` | reader | — |
 | `cluster-registry`{ #diagnostic-cluster-registry } | Lists the repositories of the cluster registry the node serves, as its catalog does, or says why it does not answer. Runs `chalkos-registry catalog /run/chalkos-registry/registry.sock`. | — | reader | — |
@@ -1762,7 +1762,7 @@ The diagnostics router images add.
 | Diagnostic | Does | Parameters | Role | Capabilities |
 | --- | --- | --- | --- | --- |
 | `bfd-peers`{ #diagnostics-router-images-bfd-peers } | One VRF's BFD sessions and their state, as show bfd peers prints them. Runs `vtysh -c show bfd vrf {vrf} peers`. | `vrf`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, default `default` | reader | — |
-| `bgp-neighbor`{ #diagnostics-router-images-bgp-neighbor } | One BGP session in detail, as show bgp neighbors prints it: its state, timers, capabilities and routes. Runs `vtysh -c show bgp vrf {vrf} neighbors {peer}`. | `peer`, pattern `^([0-9A-Fa-f:.]+|[A-Za-z0-9_.:@-]{1,15})$`; `vrf`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, default `default` | reader | — |
+| `bgp-neighbor`{ #diagnostics-router-images-bgp-neighbor } | One BGP session in detail, as show bgp neighbors prints it: its state, timers, capabilities and routes. Runs `vtysh -c show bgp vrf {vrf} neighbors {peer}`. | `peer`, pattern <code>&#94;&#40;&#91;0&#45;9A&#45;Fa&#45;f&#58;&#46;&#93;&#43;&#124;&#91;A&#45;Za&#45;z0&#45;9&#95;&#46;&#58;&#64;&#45;&#93;&#123;1&#44;15&#125;&#41;&#36;</code>; `vrf`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, default `default` | reader | — |
 | `bgp-route`{ #diagnostics-router-images-bgp-route } | One VRF's BGP paths to a prefix, as show bgp prints them: each path's AS path, next hop and attributes, and the best. Runs `vtysh -c show bgp vrf {vrf} {family} unicast {prefix}`. | `prefix`, prefix; `vrf`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, default `default`; `family`, enum of `ipv4` or `ipv6`, default `ipv6` | reader | — |
 | `bgp-summary`{ #diagnostics-router-images-bgp-summary } | One VRF's BGP sessions of each address family, as show bgp summary prints them. Runs `vtysh -c show bgp vrf {vrf} summary`. | `vrf`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, default `default` | reader | — |
 | `dhcp-leases`{ #diagnostic-dhcp-leases } | The leases of the DHCPv4 and DHCPv6 servers of every VRF, or of one subnet or MAC address: each lease's VRF, subnet, address or delegated prefix, MAC address, host name and end, as Kea's lease commands report them. Runs `chalkd router dhcp-leases --subnet={subnet} --mac={mac}`. | `subnet`, pattern `^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`, optional; `mac`, pattern `^[0-9a-f]{2}(:[0-9a-f]{2}){5}$`, optional | operator | — |

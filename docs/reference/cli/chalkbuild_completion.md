@@ -27,8 +27,8 @@ command needs no secrets file or client file.
 | Shell | Current session | Every new session |
 | --- | --- | --- |
 | bash | `source <(chalkbuild completion bash)` | With the bash-completion package installed, `chalkbuild completion bash > ~/.local/share/bash-completion/completions/chalkbuild` once. |
-| fish | `chalkbuild completion fish | source` | `chalkbuild completion fish > ~/.config/fish/completions/chalkbuild.fish` once. |
-| powershell | `chalkbuild completion powershell | Out-String | Invoke-Expression` | `chalkbuild completion powershell | Out-String | Invoke-Expression` in the PowerShell profile, `$PROFILE`. |
+| fish | <code>chalkbuild completion fish &#124; source</code> | `chalkbuild completion fish > ~/.config/fish/completions/chalkbuild.fish` once. |
+| powershell | <code>chalkbuild completion powershell &#124; Out&#45;String &#124; Invoke&#45;Expression</code> | <code>chalkbuild completion powershell &#124; Out&#45;String &#124; Invoke&#45;Expression</code> in the PowerShell profile, `$PROFILE`. |
 | zsh | `source <(chalkbuild completion zsh)` | With completion enabled by `autoload -U compinit; compinit` in `~/.zshrc`, `chalkbuild completion zsh > "${fpath[1]}/_chalkbuild"` once. |
 
 ## Examples

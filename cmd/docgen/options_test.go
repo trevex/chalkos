@@ -175,9 +175,11 @@ func TestOptionType(t *testing.T) {
 
 func TestTableCell(t *testing.T) {
 	for in, want := range map[string]string{
-		"a | b":                   `a \| b`,
-		"`(alpha|beta)` or a | b": "`(alpha|beta)` or a \\| b",
-		"``a ` | b`` |":           "``a ` | b`` \\|",
+		"a | b": `a \| b`,
+		// A code span with a pipe becomes a code element with its punctuation as references.
+		"`(alpha|beta)` or a | b": "<code>&#40;alpha&#124;beta&#41;</code> or a \\| b",
+		"``a ` | b`` |":           "<code>a &#96; &#124; b</code> \\|",
+		"`a b` | `c`":             "`a b` \\| `c`",
 		"unclosed ` | pipe":       "unclosed ` \\| pipe",
 		// A placeholder outside a code span would be taken for HTML; one inside shows as it is.
 		"below <path>/v2, as `<path>`": "below &lt;path>/v2, as `<path>`",

@@ -27,8 +27,8 @@ command needs no secrets file or client file.
 | Shell | Current session | Every new session |
 | --- | --- | --- |
 | bash | `source <(chalklab completion bash)` | With the bash-completion package installed, `chalklab completion bash > ~/.local/share/bash-completion/completions/chalklab` once. |
-| fish | `chalklab completion fish | source` | `chalklab completion fish > ~/.config/fish/completions/chalklab.fish` once. |
-| powershell | `chalklab completion powershell | Out-String | Invoke-Expression` | `chalklab completion powershell | Out-String | Invoke-Expression` in the PowerShell profile, `$PROFILE`. |
+| fish | <code>chalklab completion fish &#124; source</code> | `chalklab completion fish > ~/.config/fish/completions/chalklab.fish` once. |
+| powershell | <code>chalklab completion powershell &#124; Out&#45;String &#124; Invoke&#45;Expression</code> | <code>chalklab completion powershell &#124; Out&#45;String &#124; Invoke&#45;Expression</code> in the PowerShell profile, `$PROFILE`. |
 | zsh | `source <(chalklab completion zsh)` | With completion enabled by `autoload -U compinit; compinit` in `~/.zshrc`, `chalklab completion zsh > "${fpath[1]}/_chalklab"` once. |
 
 ## Examples

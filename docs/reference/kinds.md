@@ -708,7 +708,7 @@ A node's config may hold several, each with a name of its own. It has 4 [change 
 | --- | --- | --- | --- |
 | `spec.default` | one of `accept`, `reject` | `"reject"` | What the router does with a route no term matches. |
 | `spec.terms` | list of object | `[]` | Terms in order: the first whose match holds for a route decides. |
-| `spec.terms[].match.asPath` | string or null | `null` | Regular expression the route's AS path matches, with `_` for the start, the end or a space between two ASes; null matches every path. It holds up to 200 digits, single spaces and `_^$.*+?()|{},-`. The schema and rules check these characters alone; the output frr refuses an expression that bgpd cannot compile. |
+| `spec.terms[].match.asPath` | string or null | `null` | Regular expression the route's AS path matches, with `_` for the start, the end or a space between two ASes; null matches every path. It holds up to 200 digits, single spaces and <code>&#95;&#94;&#36;&#46;&#42;&#43;&#63;&#40;&#41;&#124;&#123;&#125;&#44;&#45;</code>. The schema and rules check these characters alone; the output frr refuses an expression that bgpd cannot compile. |
 | `spec.terms[].match.communityList` | name of a CommunityList or null | `null` | CommunityList one of whose communities the route carries; null matches every route. |
 | `spec.terms[].match.prefixList` | name of a PrefixList or null | `null` | PrefixList the route's prefix matches; null matches every prefix. |
 | `spec.terms[].then` | object | required |  |
