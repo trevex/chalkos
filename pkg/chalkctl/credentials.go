@@ -19,6 +19,7 @@ import (
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/sdk"
 )
 
 // credentials are what chalkctl authenticates to nodes with and verifies them by: an admin
@@ -60,22 +61,14 @@ func (c *credentials) roots() (*x509.CertPool, error) {
 	return pool, nil
 }
 
-// adminValidity is how long the admin certificate chalkctl issues itself from the secrets file
-// lives: it serves one run and is never stored.
-const adminValidity = time.Hour
-
 // secretCredentials are the credentials of the secrets file, with an admin certificate the OS CA
 // issues chalkctl for this run.
 func secretCredentials(s clustersecrets.Secrets) (*credentials, error) {
-	ck, err := pki.IssueClient(s.OSCA, "chalkctl", pki.RoleAdmin, adminValidity, time.Now())
-	if err != nil {
-		return nil, fmt.Errorf("issue an admin certificate: %w", err)
-	}
-	cert, err := tls.X509KeyPair([]byte(ck.Certificate), []byte(ck.Key))
+	cert, err := sdk.AdminCertificate(s, "chalkctl", time.Now())
 	if err != nil {
 		return nil, err
 	}
-	return &credentials{secrets: &s, cert: &cert, osCA: s.OSCABundle()}, nil
+	return &credentials{secrets: &s, cert: cert, osCA: s.OSCABundle()}, nil
 }
 
 // loadSecretCredentials reads the secrets file for commands that need it.

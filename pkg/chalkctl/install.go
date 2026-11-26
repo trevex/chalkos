@@ -13,9 +13,9 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
-	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/sdk"
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
@@ -54,35 +54,29 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		return err
 	}
 	cert := t.creds.cert
-	conn, err := p.dial(t.addr, t.source, cert)
-	if err != nil {
+	if err := p.validate(); err != nil {
 		return err
 	}
-	// The insecure connection is replaced below, so whichever is current is closed.
-	defer func() { conn.Close() }()
-	if p.insecure {
-		// An insecure connection's fingerprint vouches only for that connection. The secrets go
-		// over a new one pinned to the fingerprint printed here.
-		if _, err := conn.Info(ctx, &nodev1.InfoRequest{}); err != nil {
-			return maintenanceError(ctx, t, err)
-		}
-		fp := conn.Fingerprint()
+	trust := sdk.Trust{Fingerprint: p.fingerprint, Insecure: p.insecure, Source: t.source}
+	conn, info, fp, err := sdk.DialMaintenance(ctx, t.addr, trust, cert)
+	if p.insecure && fp != "" {
+		// An insecure connection's fingerprint vouches only for the connection sdk.DialMaintenance
+		// pinned it to. The secrets go over that one alone; print it whether or not the node
+		// turns out installed already.
 		fmt.Fprintf(a.stderr, "chalkctl: the node's certificate fingerprint is %s\n", fp)
-		pinned, err := client.Dial(t.addr, client.Options{Verify: client.ByFingerprint(fp), Certificate: cert, Source: t.source})
-		if err != nil {
-			return err
-		}
-		conn.Close()
-		conn = pinned
 	}
-	info, err := conn.Info(ctx, &nodev1.InfoRequest{})
-	if err != nil {
-		return maintenanceError(ctx, t, err)
-	}
-	t.nodes.release.check(t.name, info.GetChalkosVersion())
-	if info.Mode != nodev1.Mode_MODE_MAINTENANCE {
+	switch {
+	case errors.Is(err, sdk.ErrInstalled):
+		// Warn of the installed node's release, as for any node that answers.
+		t.nodes.release.check(t.name, info.GetChalkosVersion())
 		return fmt.Errorf("%s at %s is installed already", t.name, t.addr)
+	case errors.Is(err, sdk.ErrOSCARefused):
+		return fmt.Errorf("reach %s at %s: the maintenance image trusts another OS CA than the secrets file, so it refuses chalkctl's certificate; build the image and the installer media again from the current secrets.pub.json", t.name, t.addr)
+	case err != nil:
+		return fmt.Errorf("reach %s at %s: %w", t.name, t.addr, err)
 	}
+	defer conn.Close()
+	t.nodes.release.check(t.name, info.GetChalkosVersion())
 	if !f.ignoreRevoked {
 		for _, d := range compiled[layer.Delivery]() {
 			if err := d.AdmitInstall(ctx, t); err != nil {
@@ -224,16 +218,6 @@ func (a *app) installerImage(ctx context.Context, t *target, path string) (*disk
 		}
 	}
 	return img, nil
-}
-
-// maintenanceError explains why a node in maintenance mode did not answer. A node in maintenance
-// mode whose image carries an OS CA accepts clients of that OS CA alone; it refuses chalkctl's
-// certificate when the image was built from a secrets.pub.json before the OS CA rotated.
-func maintenanceError(ctx context.Context, t *target, err error) error {
-	if client.RefusesCertificate(ctx, err, t.addr, t.creds.cert) {
-		return fmt.Errorf("reach %s at %s: the maintenance image trusts another OS CA than the secrets file, so it refuses chalkctl's certificate; build the image and the installer media again from the current secrets.pub.json", t.name, t.addr)
-	}
-	return fmt.Errorf("reach %s at %s: %w", t.name, t.addr, err)
 }
 
 // readDefinitions reads an image's repart.d files.

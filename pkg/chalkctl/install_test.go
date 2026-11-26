@@ -110,6 +110,17 @@ func TestInstallRefusesWrongFingerprint(t *testing.T) {
 	}
 }
 
+// TestInstallNamesTheSourceOfAnUnreachableAddress names an address install cannot reach with
+// where it comes from, as status does.
+func TestInstallNamesTheSourceOfAnUnreachableAddress(t *testing.T) {
+	ta := newTestApp(t)
+	// Port 1 refuses the connection at once.
+	err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--insecure"}, "127.0.0.1:1"))
+	if err == nil || !strings.Contains(err.Error(), "127.0.0.1:1 (from --address)") {
+		t.Errorf("an unreachable --address: %v, want it named with --address", err)
+	}
+}
+
 // TestInstallFromPartsStreamsTheImage sends the installer the image's store, hash tree, UKI and
 // boot loader with the header describing them, and the image's definitions. The image may be
 // another than the node's image in the inventory: the installer checks the config against the
