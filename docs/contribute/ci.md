@@ -290,7 +290,7 @@ images are too heavy for every pull request.
 
 Each release image's `sbom` attribute builds its SPDX 2.3 SBOM, the release asset
 `<name>.spdx.json`. It is the image's own `sbom`, which every image of `mkImage` has, named after
-the repository and created at the commit's time. `chalkctl.sbom` and `chalkctl.sbom` and `chalkbuild.sbom` build the CycloneDX SBOMs of the
+the repository and created at the commit's time. `chalkctl.sbom` and `chalkbuild.sbom` build the CycloneDX SBOMs of the
 programs. `nix/sbom.nix` builds them all within Nix, so CI, a dry run and a local build write the
 same files:
 
