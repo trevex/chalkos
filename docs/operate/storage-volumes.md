@@ -44,7 +44,7 @@ SSD `/dev/sda` is unused.
 A machine that runs the installer is reached at the address its console shows:
 
 ```sh
-chalkctl disks --address=<address> --insecure
+chalkctl disks --address=<address> --insecure --secrets=secrets.age
 ```
 
 `--insecure` prints the certificate's fingerprint, which you compare with the console.
@@ -102,10 +102,12 @@ spec:
   mountPoint: /var/lib/scratch
 ```
 
-At most one partition per disk may fill its disk, and VAR counts. A node whose `SystemDisk` sizes
-VAR at `200G`, as [Write a node's config](node-config.md#choose-the-system-disk-and-the-size-of-var) shows,
-lets the scratch volume fill the rest, or take a size as here. Sizes are a number with an optional
-`K`, `M`, `G`, `T` or `P`, in units of 1024.
+At most one partition per disk may fill its disk, and VAR counts. The template's `SystemDisk` sets
+no `var.size`, so VAR takes the whole disk and leaves no room behind it. Size VAR in `cp1`'s
+`SystemDisk` before the install, at `200G` as
+[Write a node's config](node-config.md#choose-the-system-disk-and-the-size-of-var) shows, since
+VAR does not shrink once installed. The scratch volume then takes its size, or fills the rest
+without one. Sizes are a number with an optional `K`, `M`, `G`, `T` or `P`, in units of 1024.
 
 The volume's name is its partition label: lower-case letters, digits and dashes, starting and
 ending with a letter or digit, at most 32 characters. `esp`, `store`, `store-verity`, `state`,
