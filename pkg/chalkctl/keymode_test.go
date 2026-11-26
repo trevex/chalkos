@@ -43,6 +43,9 @@ func TestSecretsFileModeWarning(t *testing.T) {
 	if err := os.WriteFile(identity, []byte("AGE-SECRET-KEY-1QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQSPWSJT\n"), 0o640); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Chmod(identity, 0o640); err != nil {
+		t.Fatal(err)
+	}
 	ta.parseIdentity(context.Background(), identity)
 	if !strings.Contains(ta.stderr.String(), identity+" holds a private key and is readable by others (mode 0640); chmod 600 it") {
 		t.Errorf("identity of mode 0640: %q", ta.stderr.String())
