@@ -880,6 +880,68 @@ in
       true
     ];
   };
+  # A field's rules come raw from chalkosLib.mkOption: an attribute a rule does not have, a takes
+  # that is none, and a missing or empty rule fail the evaluation with the rule's option path, as
+  # the typed rules of a kind do.
+  testFieldRuleRefusals =
+    let
+      at = "chalkos.kinds.T.spec.x.rules[0]";
+      cases = [
+        {
+          rule = {
+            rule = "self == oldSelf";
+            mesage = "x";
+          };
+          refusal = "${at}: mesage is none of rule, message, messageExpression, takes and description";
+        }
+        {
+          rule = {
+            rule = "self == oldSelf";
+            takes = "rest";
+          };
+          refusal = "${at}.takes: \"rest\" is none of refuse, reset and reinstall";
+        }
+        {
+          rule.message = "x";
+          refusal = "${at} has no rule; set rule to the CEL expression that is true for every change the node accepts";
+        }
+      ];
+    in
+    {
+      expr = map (x: {
+        fails = fails (specOf {
+          x = chalkosLib.mkOption {
+            type = types.str;
+            rules = [ x.rule ];
+          };
+        });
+        refusal = schema.ruleRefusal at x.rule;
+      }) cases;
+      expected = map (x: {
+        fails = true;
+        inherit (x) refusal;
+      }) cases;
+    };
+  # A type where a field's option belongs, a common slip for lib.mkOption { type = ...; }, fails
+  # the evaluation and says so, at the top of the spec and within a group.
+  testBareTypeRefused = {
+    expr = {
+      top = fails (specOf {
+        asn = types.int;
+      });
+      nested = fails (specOf {
+        peer.asn = types.int;
+      });
+      refusal = schema.groupRefusal "chalkos.kinds.T.spec.asn" types.int;
+      group = schema.groupRefusal "chalkos.kinds.T.spec.peer" { asn = mkOption { type = types.int; }; };
+    };
+    expected = {
+      top = true;
+      nested = true;
+      refusal = "chalkos.kinds.T.spec.asn is a type; declare the field as lib.mkOption { type = ...; }";
+      group = null;
+    };
+  };
   testSubmodule = {
     expr = propOf (
       types.submodule {
