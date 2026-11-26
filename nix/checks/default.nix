@@ -44,6 +44,7 @@ let
         ./e2e.nix
         ./units
         ./image.nix
+        ./hardening.nix
         ./eval.nix
         ./repo.nix
         ./release.nix

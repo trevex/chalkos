@@ -223,15 +223,16 @@ testStateHasItsOwnPartitionType = {
 ```
 
 Build checks test what an image build produces, without booting it. They live in `nix/checks/`:
-`image.nix` checks an image's files, `units/` runs an image's unit scripts in namespaces, one file
-a check, and `repo.nix` validates the lab template and the examples. `units/` also holds
-`image-checker`, which boots one NixOS VM, as an image's checker needs systemd. `release.nix`
-holds the checks of the release images and the SBOMs, `e2e.nix` the end-to-end checks, `eval.nix`
-the evaluation tests, `tiers.nix` the tiers CI runs the checks in, `default.nix` the `ci-tiers`
-check, and `lib.nix` what they share, with the
-shell functions the check scripts call: `fail`, `retry` and `refuses`, and for the unit checks
-`netns`, `veth`, `forwarding`, `document` and `stub`. The test scripts of
-`units/` are `writeShellApplication` scripts, so shellcheck runs on them when they build.
+`image.nix` checks an image's files, `hardening.nix` holds the checks of no shell, no exec from
+writable mounts and the units' sandboxes with their allow-lists, `units/` runs an image's unit
+scripts in namespaces, one file a check, and `repo.nix` validates the lab template and the
+examples. `units/` also holds `image-checker`, which boots one NixOS VM, as an image's checker
+needs systemd. `release.nix` holds the checks of the release images and the SBOMs, `e2e.nix`
+the end-to-end checks, `eval.nix` the evaluation tests, `tiers.nix` the tiers CI runs the checks
+in, `default.nix` the `ci-tiers` check, and `lib.nix` what they share, with the shell functions
+the check scripts call: `fail`, `retry` and `refuses`, and for the unit checks `netns`, `veth`,
+`forwarding`, `document` and `stub`. The test scripts of `units/` are `writeShellApplication`
+scripts, so shellcheck runs on them when they build.
 
 | Check | What it checks |
 | --- | --- |
@@ -239,9 +240,9 @@ shell functions the check scripts call: `fail`, `retry` and `refuses`, and for t
 | `image-size` | The test images and the installer stay within the ceilings in `nix/testing/image-sizes.nix` and hold no Python, and the fit check every image build runs refuses images that leave no room. Its measure of each image agrees with `pkg/verity`. |
 | `bootspec` | An image's bootspec names the UKI on the ESP and no initrd. |
 | `no-shell` | The test images, the release images and the feature images, which carry the Kubernetes features that are off by default, link no `/bin/sh`, have no activation script and no shell on the system path, and the release images build without the debug tools or `chalkos.shell.allow`, so no shell is in their systems or their initrds. |
-| `no-shell-calls` | No ELF file of the release and feature images' systems and initrds imports `system`, `popen` or `wordexp` or holds `/bin/sh`, unless the allow-list in `nix/checks/image.nix` gives the reason it never runs a shell on a node. The images' console keymaps load with the decompression tools disabled, and their initrds carry the zlib that kbd opens for gzipped keymaps and fonts. |
-| `noexec-mounts` | The worker's and the router's writable file systems are mounted `nosuid,nodev,noexec`, and every unit of chalkos's modules on the worker, the router, the installer and the feature images runs programs from the store alone, unless `mayExec` in `nix/checks/image.nix` gives the reason it may not. |
-| `unit-sandbox` | Every unit of chalkos's modules on those images has a capability bounding set short of the full one, unless `mayRunAsFullRoot` in `nix/checks/image.nix` gives the reason it keeps every capability. |
+| `no-shell-calls` | No ELF file of the release and feature images' systems and initrds imports `system`, `popen` or `wordexp` or holds `/bin/sh`, unless the allow-list in `nix/checks/hardening.nix` gives the reason it never runs a shell on a node. The images' console keymaps load with the decompression tools disabled, and their initrds carry the zlib that kbd opens for gzipped keymaps and fonts. |
+| `noexec-mounts` | The worker's and the router's writable file systems are mounted `nosuid,nodev,noexec`, and every unit of chalkos's modules on the worker, the router, the installer and the feature images runs programs from the store alone, unless `mayExec` in `nix/checks/hardening.nix` gives the reason it may not. |
+| `unit-sandbox` | Every unit of chalkos's modules on those images has a capability bounding set short of the full one, unless `mayRunAsFullRoot` in `nix/checks/hardening.nix` gives the reason it keeps every capability. |
 | `module-policy` | The worker's UKI carries the module policy in its first archive, with the store's root hash, padded to its slot's size. |
 | `vxlan-rule` | The VXLAN firewall rule, in network namespaces. |
 | `router-firewall` | A router's firewall unit and rulesets, in network namespaces. |

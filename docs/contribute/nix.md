@@ -35,7 +35,7 @@ and checks it.
 | `nix/release.nix` | The images a release publishes, the flake output `releaseImages`. [Continuous integration](ci.md#release-images) describes them. |
 | `nix/sbom.nix`, `nix/sbom-spdx.jq` | The SBOMs of the images, which `mkImage` attaches as `sbom`, and of chalkctl and chalkbuild, and the conversion of bombon's CycloneDX to SPDX. |
 | `nix/docs/` | The docs output: `default.nix` builds the site and the generated reference pages, `nav.py` checks the site's navigation, and `templates/` holds the openings of the options pages and the end of the extension API's. |
-| `nix/checks/` | The flake's checks. |
+| `nix/checks/` | The flake's checks. `hardening.nix` holds those of the shell-free and noexec images and the units' sandboxes, with the allow-lists a new unit or package may need an entry in. |
 | `nix/testing/` | The test images, their fixtures and the test environment that the checks, the apps and the development shell share. |
 
 ## What the modules and lib hold
