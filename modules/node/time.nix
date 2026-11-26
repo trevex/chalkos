@@ -83,7 +83,7 @@ in
   systemd.services.chalkos-chrony-dhcp-links = {
     description = "Pass the time servers DHCP announced to chrony after a link changed";
     startLimitIntervalSec = 0;
-    serviceConfig = noExec // {
+    serviceConfig = chalkosLib.internal.rootNoCaps // {
       Type = "oneshot";
       ExecStart = "${config.systemd.package}/bin/systemctl restart chalkos-chrony-dhcp.service";
     };

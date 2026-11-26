@@ -1,7 +1,12 @@
 # Virtual machines under KVM, such as QEMU, libvirt and Proxmox: virtio is in the base module
 # groups; the kernel's console is the first serial port alone, which hypervisors show, and the
 # QEMU guest agent answers the host.
-{ config, lib, ... }:
+{
+  chalkosLib,
+  config,
+  lib,
+  ...
+}:
 {
   chalkos.consoles = lib.mkDefault [ "ttyS0,115200" ];
 
@@ -17,31 +22,37 @@
   services.qemuGuest.enable = true;
   systemd.services.qemu-guest-agent = {
     unitConfig.ConditionVirtualization = "kvm";
-    # It shuts the node down with /sbin/poweroff, halt, reboot or shutdown, which systemd gives,
-    # on a tmpfs of its own: an image with links below /usr has /sbin lead to the read-only
-    # /usr/sbin, where no mount point can be made.
-    serviceConfig.TemporaryFileSystem = "/sbin";
-    serviceConfig.BindReadOnlyPaths = map (b: "${config.systemd.package}/bin/${b}:/sbin/${b}") [
-      "poweroff"
-      "halt"
-      "reboot"
-      "shutdown"
-    ];
-    # The host may ask the agent about the node and shut it down; it never runs commands or reads
-    # and writes files on the node, which the agent would otherwise allow.
-    serviceConfig.ExecStart = lib.mkForce "${config.services.qemuGuest.package}/bin/qemu-ga --statedir /run/qemu-ga --allow-rpcs=${
-      lib.concatStringsSep "," [
-        "guest-sync-delimited"
-        "guest-sync"
-        "guest-ping"
-        "guest-info"
-        "guest-get-osinfo"
-        "guest-get-host-name"
-        "guest-get-time"
-        "guest-get-timezone"
-        "guest-network-get-interfaces"
-        "guest-shutdown"
-      ]
-    }";
+    # The agent needs no capability: it opens its device as root, and systemd, which the shutdown
+    # asks over its socket, powers the node off. It shuts the node down with /sbin/poweroff, halt,
+    # reboot or shutdown, which systemd gives, on a tmpfs of its own: an image with links below
+    # /usr has /sbin lead to the read-only /usr/sbin, where no mount point can be made. Programs
+    # run from the store and from /sbin, which holds programs of the store alone.
+    serviceConfig = chalkosLib.sandbox.noExec // {
+      ExecPaths = chalkosLib.sandbox.noExec.ExecPaths ++ [ "/sbin" ];
+      CapabilityBoundingSet = [ "" ];
+      TemporaryFileSystem = "/sbin";
+      BindReadOnlyPaths = map (b: "${config.systemd.package}/bin/${b}:/sbin/${b}") [
+        "poweroff"
+        "halt"
+        "reboot"
+        "shutdown"
+      ];
+      # The host may ask the agent about the node and shut it down; it never runs commands or
+      # reads and writes files on the node, which the agent would otherwise allow.
+      ExecStart = lib.mkForce "${config.services.qemuGuest.package}/bin/qemu-ga --statedir /run/qemu-ga --allow-rpcs=${
+        lib.concatStringsSep "," [
+          "guest-sync-delimited"
+          "guest-sync"
+          "guest-ping"
+          "guest-info"
+          "guest-get-osinfo"
+          "guest-get-host-name"
+          "guest-get-time"
+          "guest-get-timezone"
+          "guest-network-get-interfaces"
+          "guest-shutdown"
+        ]
+      }";
+    };
   };
 }
