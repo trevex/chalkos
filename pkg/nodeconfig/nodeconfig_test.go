@@ -217,17 +217,6 @@ func TestLoadWithoutConfigMakesCredentialDirectories(t *testing.T) {
 	}
 }
 
-func TestApplyWritesNoKeyCredentials(t *testing.T) {
-	l, _ := newTestLoader(t)
-	writeContract(t, &l, contract.ServicesFile, `{"report": {"keys": ["hostname"]}}`)
-	if err := l.Apply([]byte(nodeIdentity)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(l.RunDir, "credentials", "hostname")); !os.IsNotExist(err) {
-		t.Errorf("wrote the credential of an identity key: %v", err)
-	}
-}
-
 // recordingLayer records the documents the loader has it write from, and fails with err.
 type recordingLayer struct {
 	calls int

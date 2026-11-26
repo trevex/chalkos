@@ -100,6 +100,39 @@ func TestLoadRefuses(t *testing.T) {
 	}
 }
 
+// TestLoadRefusesWithheldKinds refuses a granted unit, an output and a validator of Addon, a kind
+// the schemas withhold, whose documents and the values their secretRefs name stay with chalkd, and
+// a unit granted Secret or of a name that is no unit's.
+func TestLoadRefusesWithheldKinds(t *testing.T) {
+	dir := newDir(t, map[string]string{
+		ServicesFile:   `{"demo": {"kinds": ["TimeSync", "Addon"]}, "secrets": {"kinds": ["Secret"]}, "..": {"kinds": []}}`,
+		OutputsFile:    `{"demo": {"inputs": ["Addon"], "render": ["/nix/store/x-demo/bin/render"], "dir": "/run/demo", "user": "root", "group": "root", "mode": "0644"}}`,
+		ValidatorsFile: `{"demo": {"inputs": ["Addon"], "program": ["/nix/store/x-demo/bin/validate"]}}`,
+	})
+	_, err := Load(dir)
+	for _, want := range []string{
+		filepath.Join(dir, ServicesFile) + ": service ..: the name is no unit's name",
+		filepath.Join(dir, ServicesFile) + ": service secrets: it is granted Secret documents",
+	} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("err = %v\nwant one with %q", err, want)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, ServicesFile), []byte(`{"demo": {"kinds": ["TimeSync", "Addon"]}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err = Load(dir)
+	for _, want := range []string{
+		filepath.Join(dir, ServicesFile) + ": service demo: the image withholds Addon documents",
+		filepath.Join(dir, OutputsFile) + ": output demo: the image withholds Addon documents",
+		filepath.Join(dir, ValidatorsFile) + ": validator demo: the image withholds Addon documents",
+	} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("err = %v\nwant one with %q", err, want)
+		}
+	}
+}
+
 // TestRulesThatDoNotCompile loads a contract whose rules do not compile, and refuses them once
 // they are asked for.
 func TestRulesThatDoNotCompile(t *testing.T) {

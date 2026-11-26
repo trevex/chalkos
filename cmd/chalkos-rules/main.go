@@ -14,9 +14,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/command"
 	"github.com/trevex/chalkos/pkg/contract"
-	"github.com/trevex/chalkos/pkg/effects"
 	"github.com/trevex/chalkos/pkg/outputs"
-	"github.com/trevex/chalkos/pkg/schema"
 )
 
 const usage = `usage: chalkos-rules check IMAGE
@@ -26,9 +24,8 @@ check checks the files of the directory IMAGE, as an image's build lays them out
 directory of its schemas; facts.json, effects.json, outputs.json, validators.json and
 diagnostics.json, the image's own; and units/, its systemd units. Every rule of the schemas and of
 the effects compiles and reads only facts facts.json declares, every unit an effect restarts or
-reloads is one of units/, every effect's outputs and kinds name an output or a kind that exists,
-every output and validator is a program of the image's store and reads kinds the schemas declare,
-and every diagnostic is one chalkd can run.
+reloads is one of units/, the programs of every output and validator are of the image's store,
+and every definition, diagnostics among them, is one chalkd can run.
 
 test runs the tests of TESTS, chalkos.tests as the image's build writes them, against the image
 IMAGE, and writes what each got to OUT, which should be new or empty, as the files of an earlier
@@ -68,7 +65,7 @@ func checkImage(image string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	s, defs := c.Schemas, c.Facts
+	defs := c.Facts
 	var errs []error
 	read := map[string]bool{}
 	reads := func(where, rule string, names []string) {
@@ -102,15 +99,13 @@ func checkImage(image string, out io.Writer) error {
 	for _, p := range effectRules {
 		reads(p.Where(), p.When, p.Facts)
 	}
-	kinds := kindNamesOf(s)
 	outs, vals := c.Outputs, c.Validators
 	for _, name := range slices.Sorted(maps.Keys(outs)) {
-		errs = append(errs, checkPrograms(kinds, outputs.RoleOutput, name, outs[name].Inputs, map[string][]string{"renderer": outs[name].Render, "check": outs[name].Check})...)
+		errs = append(errs, checkPrograms(outputs.RoleOutput, name, map[string][]string{"renderer": outs[name].Render, "check": outs[name].Check})...)
 	}
 	for _, name := range slices.Sorted(maps.Keys(vals)) {
-		errs = append(errs, checkPrograms(kinds, outputs.RoleValidator, name, vals[name].Inputs, map[string][]string{"program": vals[name].Program})...)
+		errs = append(errs, checkPrograms(outputs.RoleValidator, name, map[string][]string{"program": vals[name].Program})...)
 	}
-	errs = append(errs, checkEffects(kinds, outs, c.Effects)...)
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
@@ -139,62 +134,14 @@ func declared[V any](m map[string]V) string {
 	return strings.Join(names, ", ")
 }
 
-// kindNames are the names of the kinds an image's schemas declare, and those of the kinds no unit
-// reads: Secret and the kinds the schemas declare withheld.
-type kindNames struct {
-	declared, withheld map[string]bool
-}
-
-func kindNamesOf(s *schema.Schemas) kindNames {
-	k := kindNames{declared: map[string]bool{}, withheld: map[string]bool{"Secret": true}}
-	for _, kind := range s.Kinds() {
-		k.declared[kind.Kind] = true
-		if kind.Withheld {
-			k.withheld[kind.Kind] = true
-		}
-	}
-	return k
-}
-
 // checkPrograms refuses a definition of the role whose programs, by part, are not of the image's
-// store, or whose inputs are kinds the image does not declare or withholds from its programs;
-// contract.Load refused the rest already.
-func checkPrograms(kinds kindNames, role outputs.Role, name string, inputs []string, programs map[string][]string) []error {
+// store; contract.Load refused the rest already.
+func checkPrograms(role outputs.Role, name string, programs map[string][]string) []error {
 	var errs []error
 	for _, part := range slices.Sorted(maps.Keys(programs)) {
 		// InStore judges the program alone: an argument such as /var/lib/ need not be a clean path.
 		if argv := programs[part]; len(argv) > 0 && !command.InStore(argv[0]) {
 			errs = append(errs, fmt.Errorf("%s %s: the %s %q is no program of the image's store", role, name, part, strings.Join(argv, " ")))
-		}
-	}
-	for _, kind := range inputs {
-		switch {
-		case !kinds.declared[kind]:
-			errs = append(errs, fmt.Errorf("%s %s: the image declares no kind %s", role, name, kind))
-		case kinds.withheld[kind]:
-			errs = append(errs, fmt.Errorf("%s %s: the image withholds %s documents from its programs", role, name, kind))
-		}
-	}
-	return errs
-}
-
-// checkEffects refuses an effect whose outputs name no output, or whose kinds are not the image's
-// or are withheld.
-func checkEffects(kinds kindNames, outs map[string]outputs.Definition, effectDefs map[string]effects.Definition) []error {
-	var errs []error
-	for _, name := range slices.Sorted(maps.Keys(effectDefs)) {
-		for _, o := range effectDefs[name].Outputs {
-			if _, ok := outs[o]; !ok {
-				errs = append(errs, fmt.Errorf("effect %s: outputs names %s, which is no output of the image; its outputs are %s", name, o, declared(outs)))
-			}
-		}
-		for _, kind := range effectDefs[name].Kinds {
-			switch {
-			case kinds.withheld[kind]:
-				errs = append(errs, fmt.Errorf("effect %s: an effect does not fire on %s documents", name, kind))
-			case !kinds.declared[kind]:
-				errs = append(errs, fmt.Errorf("effect %s: the image declares no kind %s", name, kind))
-			}
 		}
 	}
 	return errs

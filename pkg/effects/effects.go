@@ -47,13 +47,19 @@ type Definition struct {
 	WaitFor *Readiness `json:"waitFor,omitempty"`
 }
 
-// ReadServices reads the image's services.json; an image without one grants no unit a kind.
+// ReadServices reads the image's services.json, refusing a grant to a name that cannot name a
+// directory of the unit's credentials and a grant of Secret; an image without one grants no unit a
+// kind. contract.Load refuses the withheld kinds, which the schemas declare.
 func ReadServices(path string) (map[string]Service, error) {
-	services := map[string]Service{}
-	if err := jsonfile.Read(path, &services); err != nil {
-		return nil, err
-	}
-	return services, nil
+	return jsonfile.ReadDefs(path, "service", func(unit string, s Service) error {
+		switch {
+		case unit == "" || strings.HasPrefix(unit, ".") || strings.ContainsAny(unit, "/\x00"):
+			return errors.New("the name is no unit's name")
+		case slices.Contains(s.Kinds, "Secret"):
+			return errors.New("it is granted Secret documents, whose values a unit reads as the credentials its kinds name")
+		}
+		return nil
+	})
 }
 
 // Read reads the image's effects.json, refusing an effect chalkd could not carry out and two

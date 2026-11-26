@@ -131,8 +131,7 @@ func withOutput(t *testing.T, files map[string]string, render, check string) map
 
 const hello = "apiVersion: greeting.example.org/v1alpha1\nkind: Greeting\nmetadata: {name: g}\nspec: {message: hello}\n"
 
-// The image's build refuses an output it could not run on a node and an effect on an output the
-// image lacks.
+// The image's build refuses an output it could not run on a node.
 func TestCheckOutputs(t *testing.T) {
 	render := `sed -n 's/.*"message":"\([^"]*\)".*/\1/p' > "$OUT/message"`
 	accepts := `grep -qx hello "$OUT/message"`
@@ -153,11 +152,6 @@ func TestCheckOutputs(t *testing.T) {
 		files map[string]string
 		want  string
 	}{
-		"an undeclared kind": {func() map[string]string {
-			f := withOutput(t, base(), render, accepts)
-			f["outputs.json"] = strings.Replace(f["outputs.json"], `["Greeting"]`, `["Peer"]`, 1)
-			return f
-		}(), "output greeting: the image declares no kind Peer"},
 		"a renderer outside the store": {func() map[string]string {
 			f := withOutput(t, base(), render, accepts)
 			f["outputs.json"] = strings.Replace(f["outputs.json"], storeShell(t), "/bin/sh", 1)
@@ -168,31 +162,11 @@ func TestCheckOutputs(t *testing.T) {
 			f["outputs.json"] = strings.Replace(f["outputs.json"], "/nix/store/", "/nix/store//", 1)
 			return f
 		}(), `output greeting: the renderer "/nix/store//`},
-		"an effect on no output": {func() map[string]string {
-			f := withOutput(t, base(), render, accepts)
-			f["effects.json"] = `{"greeter": {"outputs": ["greting"], "restart": ["greeter.service"]}}`
-			return f
-		}(), "effect greeter: outputs names greting, which is no output of the image; its outputs are greeting"},
-		"an effect on an undeclared kind": {func() map[string]string {
-			f := withOutput(t, base(), render, accepts)
-			f["effects.json"] = `{"greeter": {"kinds": ["Peer"], "restart": ["greeter.service"]}}`
-			return f
-		}(), "effect greeter: the image declares no kind Peer"},
-		"an effect on Secret documents": {func() map[string]string {
-			f := withOutput(t, base(), render, accepts)
-			f["effects.json"] = `{"greeter": {"kinds": ["Secret"], "restart": ["greeter.service"]}}`
-			return f
-		}(), "effect greeter: an effect does not fire on Secret documents"},
-		"an effect on a withheld kind": {func() map[string]string {
-			f := withBundle(withOutput(t, base(), render, accepts))
-			f["effects.json"] = `{"greeter": {"kinds": ["Bundle"], "restart": ["greeter.service"]}}`
-			return f
-		}(), "effect greeter: an effect does not fire on Bundle documents"},
 		"an output of a withheld kind": {func() map[string]string {
 			f := withBundle(withOutput(t, base(), render, accepts))
 			f["outputs.json"] = strings.Replace(f["outputs.json"], `["Greeting"]`, `["Bundle"]`, 1)
 			return f
-		}(), "output greeting: the image withholds Bundle documents from its programs"},
+		}(), "output greeting: the image withholds Bundle documents from its units and programs"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := checkImage(image(t, tc.files), &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -232,16 +206,11 @@ func TestCheckValidators(t *testing.T) {
 		files map[string]string
 		want  string
 	}{
-		"an undeclared kind": {func() map[string]string {
-			f := withValidator(t, base(), validate)
-			f["validators.json"] = strings.Replace(f["validators.json"], `["Greeting"]`, `["Peer"]`, 1)
-			return f
-		}(), "validator greeting: the image declares no kind Peer"},
 		"a withheld kind": {func() map[string]string {
 			f := withBundle(withValidator(t, base(), validate))
 			f["validators.json"] = strings.Replace(f["validators.json"], `["Greeting"]`, `["Bundle"]`, 1)
 			return f
-		}(), "validator greeting: the image withholds Bundle documents from its programs"},
+		}(), "validator greeting: the image withholds Bundle documents from its units and programs"},
 		"a program outside the store": {func() map[string]string {
 			f := withValidator(t, base(), validate)
 			f["validators.json"] = strings.Replace(f["validators.json"], storeShell(t), "/bin/sh", 1)

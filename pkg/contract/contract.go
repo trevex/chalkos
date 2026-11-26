@@ -9,6 +9,12 @@
 //
 // A missing file other than schemas/ declares none. The change rules and the effects' rules compile
 // when first asked for, as a boot renders the outputs without them.
+//
+// The image's modules refuse a definition when the image is evaluated, with a message that names
+// the option. Load checks again, as a defence, what chalkd needs to carry the definitions out
+// safely, such as names that form paths, the outputs' dirs, programs by absolute path, and that
+// no program or granted unit reads Secret or withheld documents. chalkos-rules check adds what needs
+// the image's store and units.
 package contract
 
 import (
@@ -135,7 +141,38 @@ func Load(dir string, opts ...Option) (*Contract, error) {
 	if err := errors.Join(errs...); err != nil {
 		return nil, err
 	}
+	if err := c.checkWithheld(); err != nil {
+		return nil, err
+	}
 	return c, nil
+}
+
+// checkWithheld refuses an output or a validator that reads the documents of a kind the schemas
+// declare withheld, and a unit granted one, since the node keeps those documents, and the values
+// their secretRefs name, for chalkd alone.
+func (c *Contract) checkWithheld() error {
+	withheld := map[string]bool{}
+	for _, k := range c.Schemas.Kinds() {
+		withheld[k.Kind] = k.Withheld
+	}
+	var errs []error
+	check := func(file, what, name string, kinds []string) {
+		for _, kind := range kinds {
+			if withheld[kind] {
+				errs = append(errs, fmt.Errorf("%s: %s %s: the image withholds %s documents from its units and programs", filepath.Join(c.Dir, file), what, name, kind))
+			}
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(c.Outputs)) {
+		check(OutputsFile, string(outputs.RoleOutput), name, c.Outputs[name].Inputs)
+	}
+	for _, name := range slices.Sorted(maps.Keys(c.Validators)) {
+		check(ValidatorsFile, string(outputs.RoleValidator), name, c.Validators[name].Inputs)
+	}
+	for _, name := range slices.Sorted(maps.Keys(c.Services)) {
+		check(ServicesFile, "service", name, c.Services[name].Kinds)
+	}
+	return errors.Join(errs...)
 }
 
 // FromSchemas is the contract of an image of which only the schema files are at hand, by name, as
