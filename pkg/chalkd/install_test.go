@@ -823,6 +823,55 @@ func TestInstallInPlaceFromRegistryOfTheRunningImage(t *testing.T) {
 	}
 }
 
+// TestInstallInPlaceFromRegistryRepeatedAfterActivation repeats an install in place that lost
+// power after it activated the pulled image and before it marked the node installed: the node
+// boots the pulled image in maintenance mode, so the repeated install names the image the node
+// runs. The running image checks the config, nothing goes into the inactive slot again, and the
+// install writes the image's config slot and marks the node installed.
+func TestInstallInPlaceFromRegistryRepeatedAfterActivation(t *testing.T) {
+	host := ocitest.Registry(t)
+	s, _ := newTestServer(t, maintenance, vda)
+	p := placeOn(t, s, imageWith(t, s, fixtureSchemas(t), ""))
+	s.RebootNode = func() error { return nil }
+	h := inPlaceFromRegistry(t, host)
+	if err := sendInstall(t, s, h, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(p.activated, newImage) {
+		t.Fatalf("activated %x, want the pulled image", p.activated)
+	}
+
+	// The power fails before the node is marked installed; it boots the pulled image.
+	if err := os.Remove(filepath.Join(s.Paths.StateDir, "installed")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(slot.Dir(s.Loader.Slots, newImage)); err != nil {
+		t.Fatal(err)
+	}
+	s.installed = false
+	write(t, s.Paths.Cmdline, "usrhash="+hex.EncodeToString(newImage)+"\n")
+	writeSchemas(t, s)
+	fakeImageSlots(t, s).place = func(context.Context, upgrade.Header, func(imageStore, string) error, io.Reader) (upgrade.Result, error) {
+		t.Error("placed the running image again")
+		return upgrade.Result{}, errors.New("placed")
+	}
+	p.activated = nil
+
+	if err := sendInstall(t, s, h, nil); err != nil {
+		t.Fatalf("the repeated install = %v", err)
+	}
+	if p.activated != nil {
+		t.Errorf("activated %x again", p.activated)
+	}
+	stored, found, err := slot.Read(slot.Dir(s.Loader.Slots, newImage))
+	if err != nil || !found || stored.Version != hashOf(t, h.Config) {
+		t.Errorf("the running image's config slot = %+v, %v, %v", stored, found, err)
+	}
+	if installed, err := install.Installed(s.Paths.StateDir); err != nil || !installed {
+		t.Errorf("installed %v, %v", installed, err)
+	}
+}
+
 // TestInstallInPlaceStillRefusesAStreamedImage refuses an install in place that describes an
 // image it does not name in a registry: the node pulls an image it installs in place, and takes
 // no chunks of one.
