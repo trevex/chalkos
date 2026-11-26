@@ -181,6 +181,9 @@ type upgradeLab struct {
 	// flaky is the number of checks of a boot's health, of any node, that find it settled and
 	// unhealthy before the lab answers as it would, as when etcd answers late.
 	flaky int
+	// unblessed makes the nodes report the boots they run as not blessed yet, as before chalkd found
+	// them healthy.
+	unblessed bool
 	// noBootID makes the nodes report no boot ID, as a chalkd that cannot read it.
 	noBootID bool
 	// hangHealth makes the nodes never answer a look that checks the health of their boot, as a
@@ -323,7 +326,7 @@ func (n *upgradeFake) Status(ctx context.Context, req *nodev1.StatusRequest) (*n
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}
-	sick, settling, noBootID := maps.Clone(n.lab.sick), n.lab.settling, n.lab.noBootID
+	sick, settling, noBootID, unblessed := maps.Clone(n.lab.sick), n.lab.settling, n.lab.noBootID, n.lab.unblessed
 	flaky := req.GetCheckHealth() && n.lab.flaky > 0
 	if flaky {
 		n.lab.flaky--
@@ -342,7 +345,7 @@ func (n *upgradeFake) Status(ctx context.Context, req *nodev1.StatusRequest) (*n
 	defer n.mu.Unlock()
 	st := &nodev1.StatusResponse{Boot: &nodev1.BootStatus{
 		Running: &nodev1.BootImage{RootHash: n.root, Generation: n.generation},
-		Entry:   fmt.Sprintf("chalkos_%d.efi", n.generation), Blessed: true,
+		Entry:   fmt.Sprintf("chalkos_%d.efi", n.generation), Blessed: !unblessed,
 		BootId: fmt.Sprintf("boot-%d", n.boots),
 	}}
 	if noBootID {
@@ -1153,6 +1156,30 @@ func TestUpgradeUntilStage(t *testing.T) {
 		if err := l.run(args...); !errors.Is(err, cli.ErrUsage) {
 			t.Errorf("%q = %v, want a usage error", args, err)
 		}
+	}
+}
+
+// TestUpgradeUntilStageLeavesARunningNode leaves a node that runs the image, not yet found healthy,
+// as it runs: --until stage and --until activate do not wait for it or release it.
+func TestUpgradeUntilStageLeavesARunningNode(t *testing.T) {
+	l := newUpgradeLab(t, 3)
+	img := testUpgradeImage(t, "w-metal", "0.2.0")
+	if err := l.upgrade(img, "--nodes", "w1"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	l.takeEvents()
+	l.unblessed = true
+	l.cordoned["w1"] = true
+	for _, until := range []string{"stage", "activate"} {
+		if err := l.upgrade(img, "--nodes", "w1", "--until", until); err != nil {
+			t.Fatalf("--until %s: %v\n%s", until, err, l.ta.stdout)
+		}
+		if got := l.takeEvents(); len(got) != 0 {
+			t.Errorf("--until %s: events %q, want none", until, got)
+		}
+	}
+	if !l.cordoned["w1"] {
+		t.Error("--until stage or activate released w1")
 	}
 }
 

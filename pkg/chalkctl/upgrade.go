@@ -447,11 +447,11 @@ func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 		return fmt.Errorf("%s: its boot is unknown: %s", n.name, boot.GetError())
 	case failed && !r.retryFailed:
 		return r.rolledBack(&n.rebootNode, boot)
+	case runs && r.until != untilReboot:
+		// --until stage and --until activate leave the node as it runs, found healthy or not.
+		r.Say("%s: runs %s", n.name, image)
+		return nil
 	case runs && boot.GetBlessed():
-		if r.until != untilReboot {
-			r.Say("%s: runs %s", n.name, image)
-			return nil
-		}
 		// An earlier run may have stopped while the node did not serve its clusters; it is released
 		// only once it does.
 	case runs:
