@@ -232,8 +232,10 @@ and a client passes only values that chalkd checks against each parameter's type
 them. chalkd runs each command as a transient systemd unit under a user of its own, without new
 privileges and with only the capabilities the diagnostic names, in the node's network or in the
 network namespace the diagnostic names. The unit sees a read-only file system without STATE,
-`/var/lib`, or the config and credentials chalkd writes. Each diagnostic names the least role
-that runs it, so a reader sees the node's addresses but cannot ping from it.
+`/var/lib`, or the config and credentials chalkd and the layers keep below `/run/chalkos`. Each
+diagnostic names the least role that runs it, so a reader sees the node's addresses but cannot
+ping from it. Only a diagnostic of the admin role may take a capability that reaches past the
+sandbox, such as `CAP_DAC_READ_SEARCH`, which reads every file.
 
 The `kvm` platform's images run the QEMU guest agent, which a hypervisor reaches through a
 virtio-serial channel. It answers only `guest-sync-delimited`, `guest-sync`, `guest-ping`,

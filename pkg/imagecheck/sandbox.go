@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"google.golang.org/protobuf/encoding/protojson"
@@ -19,10 +20,10 @@ import (
 // Sandbox runs an image's checker as the oneshot transient unit chalkos-check.service, with the
 // image's store bound read-only over /nix/store: the checker's renderers and their checks, and
 // every program they name, come from the image, and nothing else runs as a program. The unit:
-//   - runs as a user of its own (DynamicUser), without capabilities, devices or network, on a
-//     read-only system without STATE, /var or what chalkd keeps below /run/chalkos, so it reads
-//     no Secret's value; checks may open netlink sockets in a user and network namespace of their
-//     own, as nft --check takes, and create no other namespace;
+//   - runs as a user of its own (DynamicUser), without capabilities, devices or network, in
+//     command.Hardened without STATE or /var, so it reads no Secret's value; checks may open
+//     netlink sockets in a user and network namespace of their own, as nft --check takes, and
+//     create no other namespace;
 //   - runs the checker from Public/chalkd, an empty file on the running system that the image's
 //     chalkd is bound over: systemd-run looks the program up on the running system, whose store
 //     lacks the image's paths, and systemd runs it once the unit's mounts are in place;
@@ -58,37 +59,24 @@ func DefaultSandbox(dir string) Sandbox {
 	return Sandbox{Dir: dir, Public: "/run/chalkos-check", Memory: "512M", Timeout: 2 * time.Minute}
 }
 
-// properties are the unit's sandbox, as systemd-run's options.
-var properties = append([]string{
+// properties are the unit's sandbox, as systemd-run's options: command.Hardened and its own.
+var properties = append(slices.Clone(command.Hardened),
 	"--property=DynamicUser=yes",
 	"--property=CapabilityBoundingSet=",
 	"--property=AmbientCapabilities=",
-	"--property=NoNewPrivileges=yes",
-	"--property=ProtectSystem=strict",
-	"--property=ProtectHome=yes",
-	"--property=ProtectProc=invisible",
 	// Renderers stage each output's files below /tmp; an output may take 16 MiB.
 	"--property=TemporaryFileSystem=/tmp:size=128M,mode=1777",
 	"--property=PrivateDevices=yes",
 	"--property=PrivateNetwork=yes",
 	"--property=IPAddressDeny=any",
-	"--property=ProtectKernelTunables=yes",
-	"--property=ProtectKernelModules=yes",
-	"--property=ProtectKernelLogs=yes",
-	"--property=ProtectControlGroups=yes",
-	"--property=ProtectClock=yes",
-	"--property=ProtectHostname=yes",
-	"--property=LockPersonality=yes",
-	"--property=RestrictRealtime=yes",
-	"--property=SystemCallArchitectures=native",
 	"--property=RestrictNamespaces=user net",
 	"--property=RestrictAddressFamilies=AF_UNIX AF_NETLINK",
 	// The ESP is root's alone (umask=0077), and images have no /boot.
-	"--property=InaccessiblePaths=-/state -/var -/run/chalkos",
+	"--property=InaccessiblePaths=-/state -/var",
 	"--property=MemorySwapMax=0",
 	fmt.Sprintf("--property=LimitFSIZE=%d", MaxResult),
 	"--property=DefaultDependencies=no",
-}, command.StoreOnly...)
+)
 
 // unitArgs is the systemd-run command line that runs the checker of img.
 func (s Sandbox) unitArgs(img Image) []string {

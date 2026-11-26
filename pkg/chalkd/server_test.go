@@ -239,7 +239,8 @@ const storageCommand = "/nix/store/x-chalkos-storage/bin/chalkos-storage"
 // against the test server's disks and with its runner.
 type storageFacts struct{ s *Server }
 
-func (f storageFacts) Run(ctx context.Context, argv []string, stdin []byte, _ int) ([]byte, error) {
+func (f storageFacts) Run(ctx context.Context, c facts.Command, stdin []byte, _ int) ([]byte, error) {
+	argv := c.Argv
 	if len(argv) != 3 || argv[0] != storageCommand || argv[1] != "facts" {
 		return nil, fmt.Errorf("the test runs no command %v", argv)
 	}

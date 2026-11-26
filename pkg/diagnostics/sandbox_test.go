@@ -107,13 +107,19 @@ func TestSandboxStopsTheUnitWhenTheCallEnds(t *testing.T) {
 	}
 }
 
-// The unit runs under a dynamic user, on a read-only system with a private /tmp and programs from
-// the store alone, without new privileges, with the capabilities, groups and time limit of the run
-// alone.
+// The unit runs under a dynamic user in command.Hardened, with a private /tmp, other processes
+// invisible, /run/chalkos and the units' credentials hidden, and the capabilities, groups and
+// time limit of the run alone.
 func TestSandboxArgs(t *testing.T) {
-	for _, p := range []string{"--property=DynamicUser=yes", "--property=ProtectSystem=strict", "--property=PrivateTmp=yes", "--property=NoNewPrivileges=yes", "--property=NoExecPaths=/", "--property=ExecPaths=/nix/store"} {
+	for _, p := range []string{"--property=DynamicUser=yes", "--property=ProtectSystem=strict", "--property=PrivateTmp=yes", "--property=NoNewPrivileges=yes", "--property=NoExecPaths=/", "--property=ExecPaths=/nix/store", "--property=ProtectProc=invisible", "--property=TemporaryFileSystem=/run/chalkos:ro", "--property=InaccessiblePaths=-/run/credentials", "--property=SystemCallFilter=@system-service", "--property=MemoryMax=256M", "--property=TasksMax=256"} {
 		if !slices.Contains(sandbox, p) {
 			t.Errorf("the sandbox lacks %s", p)
+		}
+	}
+	// No property names a directory of a layer: command.Hardened hides /run/chalkos whole.
+	for _, p := range sandbox {
+		if strings.Contains(p, "/run/chalkos/") {
+			t.Errorf("the sandbox names %s", p)
 		}
 	}
 	got := Sandbox{}.args("chalkos-diagnostic-ping-0123456789ab.service", Run{

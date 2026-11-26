@@ -417,8 +417,8 @@ func TestRenderTimeout(t *testing.T) {
 	}
 }
 
-// A renderer runs as the unprivileged user, without capabilities or devices and with STATE, /var,
-// and chalkd's config, credentials and Kubernetes keys hidden; it may write $OUT alone and open
+// A renderer runs as the unprivileged user in command.Hardened, without capabilities or devices
+// and with STATE, /var and all of /run/chalkos but $OUT hidden; it may write $OUT alone and open
 // Unix sockets alone, and prints its report of refusals into a file of chalkd's, which the manager
 // opens. A check may write nothing, prints nowhere, and may open netlink sockets too. No file
 // either writes grows past MaxSize, either has its memory and tasks capped, and systemd stops
@@ -441,9 +441,17 @@ func TestSandboxArgs(t *testing.T) {
 		"--property=LimitFSIZE=16777216",
 		"--property=MemoryMax=256M",
 		"--property=TasksMax=256",
-		"--property=InaccessiblePaths=-/state -/var -/run/chalkos/config -/run/chalkos/credentials -/run/chalkos/kubernetes",
+		"--property=InaccessiblePaths=-/state -/var",
+		"--property=TemporaryFileSystem=/run/chalkos:ro",
+		"--property=InaccessiblePaths=-/run/credentials",
+		"--property=ProtectProc=invisible",
+		"--property=ProtectClock=yes",
+		"--property=SystemCallFilter=@system-service",
+		"--property=SystemCallErrorNumber=EPERM",
+		"--property=MemoryDenyWriteExecute=yes",
+		"--property=RestrictNamespaces=user net",
 		"--property=TimeoutStartSec=30000ms",
-		"--property=ReadWritePaths=/run/chalkos/outputs/.staging/demo.1",
+		"--property=BindPaths=/run/chalkos/outputs/.staging/demo.1",
 		"--property=StandardOutput=truncate:/out",
 		"--property=StandardInput=file:/in",
 		"--property=RestrictAddressFamilies=AF_UNIX",
@@ -455,8 +463,15 @@ func TestSandboxArgs(t *testing.T) {
 	}
 	p.Write, p.Report, p.Netlink = false, false, true
 	args = strings.Join(sandboxArgs("chalkos-render-1.service", p, "/in", "/out"), "\n")
-	if strings.Contains(args, "ReadWritePaths") {
-		t.Errorf("a check may write:\n%s", args)
+	if strings.Contains(args, "BindPaths") || !strings.Contains(args+"\n", "--property=BindReadOnlyPaths=/run/chalkos/outputs/.staging/demo.1\n") {
+		t.Errorf("a check may write, or cannot read:\n%s", args)
+	}
+	// No property names a directory of a layer: command.Hardened hides /run/chalkos whole, and
+	// the unit binds back $OUT alone.
+	for _, p := range sandbox {
+		if strings.Contains(p, "/run/chalkos/") {
+			t.Errorf("the sandbox names %s", p)
+		}
 	}
 	// What a check prints goes nowhere.
 	if !strings.Contains(args+"\n", "--property=StandardOutput=null\n") {

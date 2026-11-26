@@ -325,9 +325,10 @@ from the same documents.
 
 The checker gets the documents with their Secret values hashed, as renderers always do, and
 asks the running chalkd for the facts its rules read. chalkd loads the facts the image
-declares, and runs their commands from the image's store. The unit runs as a user of its own,
-without capabilities, network or access to STATE, `/var` and `/run/chalkos`, within 512 MiB
-and two minutes. Its validators, renderers and checks share those two minutes, and each of them
+declares, and runs their commands from the image's store. The unit runs as a user of its own in
+the [shared sandbox](../../reference/extension-runtime.md#shared-sandbox), without
+capabilities, network or access to STATE, `/var` and `/run/chalkos`, within 512 MiB and two
+minutes. Its validators, renderers and checks share those two minutes, and each of them
 may take up to 30 seconds. What its validators, renderers and checks write to standard error is
 in the unit's journal: `chalkctl logs <node> --unit=chalkos-check.service`.
 

@@ -212,15 +212,15 @@ role and each argument against its parameter's type, then runs the command as a 
 systemd unit, in the host's network or in the network namespace that `networkNamespace`
 names. The unit runs under a dynamic user, without new privileges, with only the
 `capabilities` and `groups` given. It sees a read-only file system with a private `/tmp`,
-without STATE, `/var/lib`, or the config and credentials chalkd writes, and runs for at
-most `timeout`. chalkd sends at most 1 MiB of what the command prints. Every image declares
-the base diagnostics, whose names are taken.
+without STATE, `/var/lib`, what chalkd and the layers keep below `/run/chalkos`, or the
+services' credentials, and runs for at most `timeout`. chalkd sends at most 1 MiB of what
+the command prints. Every image declares the base diagnostics, whose names are taken.
 
 The options within each, by their path below `chalkos.diagnostics`:
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `<name>.capabilities`{ #chalkosdiagnosticscapabilities } | list of string matching `CAP_[A-Z_]+` | `[ ]` | Capabilities of the run's process, as its bounding and ambient sets; it has no other. Example: `[ "CAP_NET_RAW" ]` |
+| `<name>.capabilities`{ #chalkosdiagnosticscapabilities } | list of string matching `CAP_[A-Z_]+` | `[ ]` | Capabilities of the run's process, as its bounding and ambient sets; it has no other. Only a diagnostic of the admin role takes one that reaches past the sandbox: `CAP_DAC_OVERRIDE`, `CAP_DAC_READ_SEARCH`, `CAP_SYS_ADMIN`, `CAP_SYS_PTRACE`, `CAP_SYS_RAWIO`, `CAP_SYS_MODULE`, `CAP_SETUID`, `CAP_SETGID`, `CAP_SETPCAP`, `CAP_BPF` or `CAP_MKNOD`. Example: `[ "CAP_NET_RAW" ]` |
 | `<name>.command`{ #chalkosdiagnosticscommand } | non-empty (list of string) | required | The command chalkd runs, as a list of arguments that no shell reads. The first is a program of the image's store. `{<parameter>}` in an argument becomes the parameter's value within that argument alone, and an argument that names an optional parameter a call leaves out is dropped. Every placeholder names a parameter, and every parameter has a placeholder. Example: `[ "${pkgs.iproute2}/bin/ip" "-json" "route" "get" "{address}" ]` |
 | `<name>.description`{ #chalkosdiagnosticsdescription } | non-empty string | required | One sentence on what the diagnostic shows, which `chalkctl node diag` lists. Example: `"The route the kernel takes to an address."` |
 | `<name>.groups`{ #chalkosdiagnosticsgroups } | list of non-empty string | `[ ]` | Groups of the image the run's process belongs to, as for a daemon's control socket. Example: `[ "bird" ]` |

@@ -87,9 +87,17 @@ func programInStore(cmd string) bool {
 }
 
 // Runner runs a command fact's program with stdin and returns what it prints, at most limit
-// bytes; more is an error.
+// bytes; more is an error. It stops the program when ctx ends.
 type Runner interface {
-	Run(ctx context.Context, argv []string, stdin []byte, limit int) ([]byte, error)
+	Run(ctx context.Context, c Command, stdin []byte, limit int) ([]byte, error)
+}
+
+// Command is a command fact to run: the fact's name, its program with its arguments, and whether
+// it reads the fallback secret, which a sandbox gives what testing the secret takes.
+type Command struct {
+	Name   string
+	Argv   []string
+	Secret bool
 }
 
 // Loader loads the facts of one delivery, each once, when a rule first reads it; the loaders For
@@ -255,7 +263,7 @@ func (l *Loader) command(name string, def Definition, stdin []byte) (any, error)
 	}
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
-	out, err := l.Run.Run(ctx, argv, stdin, command.MaxOutput)
+	out, err := l.Run.Run(ctx, Command{Name: name, Argv: argv, Secret: slices.Contains(def.Inputs, FallbackSecret)}, stdin, command.MaxOutput)
 	switch {
 	case ctx.Err() == context.DeadlineExceeded:
 		return nil, fmt.Errorf("%s did not finish within %s", argv[0], timeout)
