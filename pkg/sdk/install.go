@@ -8,6 +8,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -54,8 +55,8 @@ type InstallRequest struct {
 	Now time.Time
 	// Image, when set, is the image the node installs in place of the one it runs: its reference
 	// in a registry by digest, repository@sha256:…. Install reads the image's header and contract
-	// layer with the credentials of the default keychain and checks the config against that
-	// contract. The node pulls the image with the credentials of the Registry of the reference's
+	// layer with the credentials Keychain resolves and checks the config against that contract.
+	// The node pulls the image with the credentials of the Registry of the reference's
 	// host among Documents, writes the image into its inactive slot, has the image's own checker
 	// check the config there and boots the image once it is installed. The node keeps the disk
 	// layout of the image it booted from, and its chalkd translates the config with the image's
@@ -68,6 +69,9 @@ type InstallRequest struct {
 	// loss after the image is activated and before the node is marked installed boots the image
 	// in maintenance mode, where the same Install repeated finishes the install.
 	Image string
+	// Keychain resolves the credentials Install reads Image with; nil means authn.DefaultKeychain.
+	// A Cluster API provider passes the pull secrets of the machine's image here.
+	Keychain authn.Keychain
 }
 
 // NewInstallHeader returns the header of an install of the request: the checked config, the
@@ -167,7 +171,11 @@ func registryImage(ctx context.Context, r InstallRequest) (Contract, *nodev1.Ima
 	if _, err := name.NewDigest(r.Image, name.StrictValidation); err != nil {
 		return Contract{}, nil, "", fmt.Errorf("install %s: the image %q is no reference by digest, repository@sha256:…: %w", r.Node, r.Image, err)
 	}
-	a, err := ociimage.Read(ctx, r.Image)
+	kc := r.Keychain
+	if kc == nil {
+		kc = authn.DefaultKeychain
+	}
+	a, err := ociimage.Read(ctx, r.Image, kc)
 	if err != nil {
 		return Contract{}, nil, "", fmt.Errorf("install %s: %w", r.Node, err)
 	}

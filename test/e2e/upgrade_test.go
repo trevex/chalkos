@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/inventory"
@@ -214,7 +215,7 @@ func installFromRegistry(t *testing.T, n *node, inventoryFile, ref string) {
 	t.Helper()
 	ctx := context.Background()
 	waitForChalkd(t, n, 5*time.Minute)
-	a, err := ociimage.Read(ctx, ref)
+	a, err := ociimage.Read(ctx, ref, authn.DefaultKeychain)
 	if err != nil {
 		t.Fatal(err)
 	}
