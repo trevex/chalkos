@@ -262,8 +262,9 @@ const idleStream = 2 * time.Minute
 func (s *Server) idleBound() time.Duration { return cmp.Or(s.streamIdle, idleStream) }
 
 // boundIdle ends the reads of stream, the requests of the call of ctx, once its client sent
-// nothing for idle. Before each Receive it moves the request's read deadline that far ahead, which
-// ends a read of an HTTP/2 stream as of an HTTP/1 connection.
+// nothing for idle. Each Receive sets the request's read deadline that far ahead, which ends a
+// read of an HTTP/2 stream as of an HTTP/1 connection, and clears it once it returned: a deadline
+// that passes between reads ends an HTTP/2 stream's next read too.
 func boundIdle[M any](ctx context.Context, stream requests[M], idle time.Duration) requests[M] {
 	rc, ok := ctx.Value(responseKey{}).(*http.ResponseController)
 	if !ok {
@@ -283,12 +284,10 @@ func (r idleRequests[M]) Receive() (M, error) {
 	// A connection that cannot take deadlines leaves the read unbounded.
 	_ = r.rc.SetReadDeadline(time.Now().Add(r.idle))
 	msg, err := r.stream.Receive()
-	if err != nil {
-		// The stream ended, and the call may run on for long without reading it.
-		_ = r.rc.SetReadDeadline(time.Time{})
-		if errors.Is(err, os.ErrDeadlineExceeded) {
-			return msg, layer.Errorf(connect.CodeDeadlineExceeded, "the client sent nothing for %v", r.idle)
-		}
+	// The call may run on for long before it reads again, or without reading at all.
+	_ = r.rc.SetReadDeadline(time.Time{})
+	if errors.Is(err, os.ErrDeadlineExceeded) {
+		return msg, layer.Errorf(connect.CodeDeadlineExceeded, "the client sent nothing for %v", r.idle)
 	}
 	return msg, err
 }

@@ -236,3 +236,44 @@ func TestDiagnosticSlotFreeOnceTheRunEnds(t *testing.T) {
 		t.Errorf("the call ended with %v once the client read again", err)
 	}
 }
+
+// deadlineRecorder is a response whose read deadlines are recorded.
+type deadlineRecorder struct {
+	http.ResponseWriter
+	deadlines []time.Time
+}
+
+func (d *deadlineRecorder) SetReadDeadline(t time.Time) error {
+	d.deadlines = append(d.deadlines, t)
+	return nil
+}
+
+// requestsOf are requests from a list, then io.EOF.
+type requestsOf[M any] []M
+
+func (r *requestsOf[M]) Receive() (M, error) {
+	var none M
+	if len(*r) == 0 {
+		return none, io.EOF
+	}
+	msg := (*r)[0]
+	*r = (*r)[1:]
+	return msg, nil
+}
+
+// The read deadline of an idle bound holds while a read waits and is cleared once it returned, so
+// the call may take its time between reads.
+func TestIdleBoundClearsTheDeadlineBetweenReads(t *testing.T) {
+	rec := &deadlineRecorder{}
+	ctx := context.WithValue(context.Background(), responseKey{}, http.NewResponseController(rec))
+	in := requestsOf[*nodev1.UpgradeRequest]{{}, {}}
+	stream := boundIdle(ctx, &in, time.Minute)
+	for range 3 {
+		before := len(rec.deadlines)
+		stream.Receive()
+		got := rec.deadlines[before:]
+		if len(got) != 2 || got[0].IsZero() || !got[1].IsZero() {
+			t.Fatalf("a read set the read deadlines %v, want one ahead and then none", got)
+		}
+	}
+}
