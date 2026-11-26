@@ -138,22 +138,11 @@ in
   # cache's. The overlay goes first, as Kubernetes's module overlays containerd with a copy of its
   # binaries.
   nixpkgs.overlays = lib.mkBefore [
-    (_: prev: {
-      btrfs-progs =
-        prev.runCommand "btrfs-progs-${prev.btrfs-progs.version}"
-          {
-            pname = "btrfs-progs";
-            inherit (prev.btrfs-progs) version;
-            # The copy has out alone; btrfs-progs's meta names man too, for the system path.
-            meta = prev.btrfs-progs.meta // {
-              outputsToInstall = [ "out" ];
-            };
-          }
-          ''
-            cp -a ${prev.btrfs-progs} $out
-            chmod u+w $out/bin
-            rm $out/bin/fsck.btrfs
-          '';
+    (final: prev: {
+      btrfs-progs = final.chalkos.trimPackage {
+        from = prev.btrfs-progs;
+        drop = [ "bin/fsck.btrfs" ];
+      };
       containerd = prev.containerd.override { inherit (prev) btrfs-progs; };
     })
   ];

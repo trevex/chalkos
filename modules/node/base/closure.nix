@@ -141,7 +141,8 @@ in
             done
           '';
         });
-        # mtools's shell scripts. Nodes run none of mtools, which NixOS adds beside dosfstools.
+        # mtools's shell scripts. Nodes run none of mtools, which NixOS adds beside dosfstools. A
+        # rebuild rather than pkgs.chalkos.trimPackage: the mtools program holds its own store path.
         mtools = prev.mtools.overrideAttrs (old: {
           postInstall = (old.postInstall or "") + ''
             for f in $out/bin/*; do

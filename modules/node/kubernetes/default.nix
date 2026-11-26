@@ -21,9 +21,11 @@ let
   inherit (pkgs.chalkos) chalkd;
   # The kubelet alone: a package of its own may hold every component, which control planes run
   # from images.
-  kubelet = pkgs.runCommand "kubelet-${k.package.version}" { } ''
-    install -Dm755 ${k.package}/bin/kubelet $out/bin/kubelet
-  '';
+  kubelet = pkgs.chalkos.trimPackage {
+    from = k.package;
+    pname = "kubelet";
+    keep = [ "kubelet" ];
+  };
   # Where chalkd writes the node's Kubernetes files: RunDir in Go (pkg/kubernetes), whose
   # CredentialProviderDir is the credential-provider directory below it.
   run = "/run/chalkos/kubernetes";

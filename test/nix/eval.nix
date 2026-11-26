@@ -2742,7 +2742,7 @@ in
             dir = c.system.build.chalkosCNIPlugins;
           in
           {
-            plugins = map baseNameOf dir.plugins;
+            plugins = map baseNameOf dir.programs;
             binDirs = c.virtualisation.containerd.settings.plugins."io.containerd.cri.v1.runtime".cni.bin_dirs;
             inherit (dir) name;
           };
@@ -2936,7 +2936,7 @@ in
         icu = hasPackage "icu4c" (
           xfsprogs.buildInputs ++ xfsprogs.propagatedBuildInputs ++ xfsprogs.nativeBuildInputs
         );
-        inherit (containerd) binaries;
+        binaries = containerd.programs;
         containerdOutputs = containerd.meta.outputsToInstall;
         # NixOS would generate xfs_scrub_all with a PATH alone.
         scrubUnit = lib.elem "xfs_scrub_all.service" c.systemd.suppressedSystemUnits;

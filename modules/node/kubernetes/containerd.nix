@@ -22,29 +22,23 @@ let
   # NixOS puts iptables on containerd's path, for the CNI plugins. A copy without iptables-apply
   # and ip6tables-apply, bash scripts; its tools are links to xtables-nft-multi within the copy,
   # so it references nothing of the original.
-  iptables = pkgs.runCommand "iptables-${pkgs.iptables.version}" { } ''
-    cp -a ${pkgs.iptables} $out
-    chmod u+w $out/bin
-    rm $out/bin/iptables-apply $out/bin/ip6tables-apply
-  '';
+  iptables = pkgs.chalkos.trimPackage {
+    from = pkgs.iptables;
+    drop = [
+      "bin/iptables-apply"
+      "bin/ip6tables-apply"
+    ];
+  };
 
   # The reference plugins the image names (chalkos.cni.plugins), and with flannel its own plugin.
   # Copies, so the store holds these alone.
-  cniPlugins =
-    pkgs.runCommand "cni-plugins-chalkos-${pkgs.cni-plugins.version}"
-      {
-        plugins =
-          map (name: "${pkgs.cni-plugins}/bin/${name}") (
-            lib.sort lib.lessThan (lib.unique config.chalkos.cni.plugins)
-          )
-          ++ lib.optional flannel "${pkgs.cni-plugin-flannel}/bin/flannel";
-      }
-      ''
-        mkdir -p $out/bin
-        for plugin in $plugins; do
-          cp $plugin $out/bin/
-        done
-      '';
+  cniPlugins = pkgs.chalkos.trimPackage {
+    from = pkgs.cni-plugins;
+    pname = "cni-plugins-chalkos";
+    keep =
+      lib.sort lib.lessThan (lib.unique config.chalkos.cni.plugins)
+      ++ lib.optional flannel "${pkgs.cni-plugin-flannel}/bin/flannel";
+  };
 in
 {
   options.chalkos.kubernetes.containerd.allowMacAdmin = lib.mkOption {
@@ -97,27 +91,14 @@ in
     # containerd and its runc shim alone: ctr and containerd-stress are half of the package. A copy,
     # so the store holds these two alone.
     nixpkgs.overlays = [
-      (_: prev: {
-        containerd =
-          prev.runCommand "containerd-${prev.containerd.version}"
-            {
-              pname = "containerd";
-              inherit (prev.containerd) version;
-              # The copy has out alone; containerd's meta names man too, for the system path.
-              meta = prev.containerd.meta // {
-                outputsToInstall = [ "out" ];
-              };
-              binaries = [
-                "containerd"
-                "containerd-shim-runc-v2"
-              ];
-            }
-            ''
-              mkdir -p $out/bin
-              for binary in $binaries; do
-                cp ${prev.containerd}/bin/$binary $out/bin/
-              done
-            '';
+      (final: prev: {
+        containerd = final.chalkos.trimPackage {
+          from = prev.containerd;
+          keep = [
+            "containerd"
+            "containerd-shim-runc-v2"
+          ];
+        };
       })
     ];
 

@@ -29,7 +29,7 @@ and checks it.
 
 | Path | What it holds |
 | --- | --- |
-| `nix/overlay/` | `default.nix`, the overlay that adds `pkgs.chalkos`, the scope of chalkos's packages, and the scope's helpers: `build-go-program.nix` (`buildGoProgram`) and `go-paths.nix` (`treeGoPaths`). |
+| `nix/overlay/` | `default.nix`, the overlay that adds `pkgs.chalkos`, the scope of chalkos's packages, and the scope's helpers: `build-go-program.nix` (`buildGoProgram`), `go-paths.nix` (`treeGoPaths`) and `trim-package.nix` (`trimPackage`). |
 | `nix/packages/` | The scope's packages, one file each, named as the package. The overlay finds them with `lib.packagesFromDirectoryRecursive`. |
 | `nix/outputs/` | The flake outputs that one file builds: `packages.nix`, `apps.nix` and `shell.nix`, the development shell. |
 | `nix/release.nix` | The images a release publishes, the flake output `releaseImages`. [Continuous integration](ci.md#release-images) describes them. |
@@ -86,8 +86,10 @@ Every module of an image gets these arguments in addition to NixOS's own:
   argument, the same way it uses `pkgs` and `config`. mkImage refuses a `specialArgs.chalkosLib`
   of its caller.
 - `pkgs`, with `pkgs.chalkos`: chalkos's programs, its Go toolchain `pkgs.chalkos.go`, the Go
-  program builder `pkgs.chalkos.buildGoProgram` and `pkgs.chalkos.treeGoPaths`, the source paths
-  of the whole Go tree.
+  program builder `pkgs.chalkos.buildGoProgram`, `pkgs.chalkos.treeGoPaths`, the source paths
+  of the whole Go tree, and `pkgs.chalkos.trimPackage`, which copies the programs and libraries
+  of a package that an image runs, without its shell scripts and without a reference to the
+  original. A module that leaves part of a package out of the image uses it.
 - `routerLib`: what the router layer's parts have in common. `routerLib.types` holds the option
   types and CEL of the router kinds, and `routerLib.kinds` loads a part's kinds file.
   `modules/node/router/default.nix` sets it on every image, but it is internal to the router
