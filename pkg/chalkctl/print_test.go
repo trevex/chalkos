@@ -70,7 +70,7 @@ type kubernetesStatus struct {
 
 func (kubernetesStatus) Status(context.Context, *kubernetesv1.StatusRequest) (*kubernetesv1.StatusResponse, error) {
 	return &kubernetesv1.StatusResponse{
-		Kind: "controlplane", State: "bootstrapped", NodeReady: "True", Vip: "holder", ControlPlane: "current",
+		Kind: "controlplane", State: "bootstrapped", NodeReady: "True", Vip: "holder", ControlPlane: "current", ControlPlaneCurrent: true,
 		ApiServerVersion: "1.37.2", KubeletVersion: "1.37.1", ControlPlanePods: "kube-apiserver is not Ready",
 		RevokedNodes: []*kubernetesv1.RevokedNode{
 			{Name: "n7", RevokedAt: timestamppb.New(time.Date(2026, 11, 2, 9, 30, 0, 0, time.UTC))},

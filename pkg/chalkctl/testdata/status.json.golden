@@ -173,6 +173,7 @@
       "nodeReady": "True",
       "vip": "holder",
       "controlPlane": "current",
+      "controlPlaneCurrent": true,
       "revokedNodes": [
         {
           "name": "n7",

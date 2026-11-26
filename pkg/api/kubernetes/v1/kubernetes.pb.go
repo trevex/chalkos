@@ -33,8 +33,7 @@ type Phase int32
 const (
 	// No phase; chalkd never reports it.
 	Phase_PHASE_UNSPECIFIED Phase = 0
-	// The node has no share yet, or its Kubernetes files are being prepared, or their preparation
-	// failed.
+	// The node has no share yet, or its Kubernetes files are being prepared.
 	Phase_PHASE_PREPARING Phase = 1
 	// A control-plane node that is no etcd member and has not started joining. It waits for a
 	// bootstrap or for the cluster, or tries to reach the cluster to join it.
@@ -51,6 +50,8 @@ const (
 	Phase_PHASE_LEFT Phase = 6
 	// A worker node whose Kubernetes files are prepared: its kubelet joins the cluster.
 	Phase_PHASE_JOINED Phase = 7
+	// The preparation of the node's Kubernetes files failed; state says why.
+	Phase_PHASE_PREPARATION_FAILED Phase = 8
 )
 
 // Enum value maps for Phase.
@@ -64,16 +65,18 @@ var (
 		5: "PHASE_ETCD_DATA_MISSING",
 		6: "PHASE_LEFT",
 		7: "PHASE_JOINED",
+		8: "PHASE_PREPARATION_FAILED",
 	}
 	Phase_value = map[string]int32{
-		"PHASE_UNSPECIFIED":       0,
-		"PHASE_PREPARING":         1,
-		"PHASE_WAITING":           2,
-		"PHASE_JOINING":           3,
-		"PHASE_BOOTSTRAPPED":      4,
-		"PHASE_ETCD_DATA_MISSING": 5,
-		"PHASE_LEFT":              6,
-		"PHASE_JOINED":            7,
+		"PHASE_UNSPECIFIED":        0,
+		"PHASE_PREPARING":          1,
+		"PHASE_WAITING":            2,
+		"PHASE_JOINING":            3,
+		"PHASE_BOOTSTRAPPED":       4,
+		"PHASE_ETCD_DATA_MISSING":  5,
+		"PHASE_LEFT":               6,
+		"PHASE_JOINED":             7,
+		"PHASE_PREPARATION_FAILED": 8,
 	}
 )
 
@@ -2070,7 +2073,7 @@ const file_chalkos_kubernetes_v1_kubernetes_proto_rawDesc = "" +
 	"\n" +
 	"ImageFacts\x12\x1d\n" +
 	"\n" +
-	"image_json\x18\x01 \x01(\fR\timageJson*\xb0\x01\n" +
+	"image_json\x18\x01 \x01(\fR\timageJson*\xce\x01\n" +
 	"\x05Phase\x12\x15\n" +
 	"\x11PHASE_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fPHASE_PREPARING\x10\x01\x12\x11\n" +
@@ -2080,7 +2083,8 @@ const file_chalkos_kubernetes_v1_kubernetes_proto_rawDesc = "" +
 	"\x17PHASE_ETCD_DATA_MISSING\x10\x05\x12\x0e\n" +
 	"\n" +
 	"PHASE_LEFT\x10\x06\x12\x10\n" +
-	"\fPHASE_JOINED\x10\a*\xe6\x01\n" +
+	"\fPHASE_JOINED\x10\a\x12\x1c\n" +
+	"\x18PHASE_PREPARATION_FAILED\x10\b*\xe6\x01\n" +
 	"\fRotationStep\x12\x1d\n" +
 	"\x19ROTATION_STEP_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cROTATION_STEP_RESTART_ADDONS\x10\x01\x12$\n" +

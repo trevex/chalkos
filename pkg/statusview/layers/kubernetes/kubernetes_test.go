@@ -74,3 +74,28 @@ func TestPodsAndReadyReason(t *testing.T) {
 		t.Errorf("section:\n%s", b.String())
 	}
 }
+
+// A failed preparation and a control plane that does not serve the node's certificates are
+// problems; a worker's empty control-plane state is not.
+func TestProblems(t *testing.T) {
+	for _, tc := range []struct {
+		k    *kubernetesv1.StatusResponse
+		want []string
+	}{
+		{&kubernetesv1.StatusResponse{Kind: "worker", State: "joined", Phase: kubernetesv1.Phase_PHASE_JOINED, NodeReady: "True"}, nil},
+		{&kubernetesv1.StatusResponse{Kind: "worker", State: "preparing", Phase: kubernetesv1.Phase_PHASE_PREPARING}, nil},
+		{&kubernetesv1.StatusResponse{Kind: "worker", State: "preparation failed: no node address", Phase: kubernetesv1.Phase_PHASE_PREPARATION_FAILED}, []string{"Kubernetes preparation failed"}},
+		{&kubernetesv1.StatusResponse{
+			Kind: "controlplane", State: "bootstrapped", Phase: kubernetesv1.Phase_PHASE_BOOTSTRAPPED, NodeReady: "True", ControlPlanePods: "current",
+			ControlPlane: "the API server serves certificates the node replaced",
+		}, []string{"control plane not current"}},
+		{&kubernetesv1.StatusResponse{
+			Kind: "controlplane", State: "bootstrapped", Phase: kubernetesv1.Phase_PHASE_BOOTSTRAPPED, NodeReady: "True", ControlPlanePods: "current",
+			ControlPlane: "current", ControlPlaneCurrent: true,
+		}, nil},
+	} {
+		if got := Problems(tc.k); !slices.Equal(got, tc.want) {
+			t.Errorf("Problems(%v) = %q, want %q", tc.k, got, tc.want)
+		}
+	}
+}

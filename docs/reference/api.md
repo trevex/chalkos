@@ -1642,13 +1642,14 @@ etcd membership.
 | Name | Number | Description |
 | ---- | ------ | ----------- |
 | `PHASE_UNSPECIFIED` | 0 | No phase; chalkd never reports it. |
-| `PHASE_PREPARING` | 1 | The node has no share yet, or its Kubernetes files are being prepared, or their preparation failed. |
+| `PHASE_PREPARING` | 1 | The node has no share yet, or its Kubernetes files are being prepared. |
 | `PHASE_WAITING` | 2 | A control-plane node that is no etcd member and has not started joining. It waits for a bootstrap or for the cluster, or tries to reach the cluster to join it. |
 | `PHASE_JOINING` | 3 | A control-plane node that started joining the cluster and has not finished. It may be an etcd member already. |
 | `PHASE_BOOTSTRAPPED` | 4 | A control-plane node that is an etcd member: it initialised etcd or finished joining. |
 | `PHASE_ETCD_DATA_MISSING` | 5 | A bootstrapped control-plane node whose etcd data is missing, as after VAR was reset. Its control plane does not start until etcd is restored or the node is reinstalled. |
 | `PHASE_LEFT` | 6 | A control-plane node that left etcd. It joins the cluster again only once reinstalled. |
 | `PHASE_JOINED` | 7 | A worker node whose Kubernetes files are prepared: its kubelet joins the cluster. |
+| `PHASE_PREPARATION_FAILED` | 8 | The preparation of the node's Kubernetes files failed; state says why. |
 
 ### RotationStep { #kubernetes-enum-rotationstep }
 

@@ -131,12 +131,19 @@ func RevokedSince(n *kubernetesv1.RevokedNode) string {
 }
 
 // Problems are what the node's Kubernetes status shows wrong, each in a few words, for the summary
-// of its status: a Node that is not Ready, control-plane pods behind the config, pods that do not
-// run, and lists that could not be read.
+// of its status: a failed preparation, a Node that is not Ready, a control plane that does not
+// serve the node's certificates, control-plane pods behind the config, pods that do not run, and
+// lists that could not be read.
 func Problems(k *kubernetesv1.StatusResponse) []string {
 	var p []string
+	if k.GetPhase() == kubernetesv1.Phase_PHASE_PREPARATION_FAILED {
+		p = append(p, "Kubernetes preparation failed")
+	}
 	if r := k.GetNodeReady(); r != "" && r != "True" {
 		p = append(p, "Kubernetes node not ready")
+	}
+	if k.GetControlPlane() != "" && !k.GetControlPlaneCurrent() {
+		p = append(p, "control plane not current")
 	}
 	if c := k.GetControlPlanePods(); c != "" && c != "current" {
 		p = append(p, "control-plane pods: "+c)
