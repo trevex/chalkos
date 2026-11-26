@@ -87,6 +87,15 @@ layer below describe what chalkos adds to run Kubernetes on it, or to route betw
 
     [:octicons-arrow-right-24: Read](node/networking.md)
 
+-   :material-link-lock: __Chain of trust__
+
+    ---
+
+    How trust passes from the firmware to the node API, where each key lives, and what no one can
+    verify yet.
+
+    [:octicons-arrow-right-24: Read](node/trust.md)
+
 -   :material-shield-lock: __Security model__
 
     ---

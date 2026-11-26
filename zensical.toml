@@ -140,6 +140,7 @@ nav = [
       "how-it-works/node/config-pipeline.md",
       "how-it-works/node/storage.md",
       "how-it-works/node/networking.md",
+      "how-it-works/node/trust.md",
       "how-it-works/node/security.md",
       "how-it-works/node/certificates.md",
       "how-it-works/node/upgrades.md",
