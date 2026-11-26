@@ -40,8 +40,14 @@ func TestFillCards(t *testing.T) {
 	if _, err := fillCards("<!-- docgen cards: missing.md -->\n<!-- end docgen cards -->\n", lookup); err == nil {
 		t.Error("a missing page passed")
 	}
-	_, err = fillCards(text+"\n<div class=\"grid cards\" markdown>\n</div>\n", lookup)
-	if err == nil || !strings.Contains(err.Error(), "by hand") {
-		t.Errorf("a hand-written grid passed: %v", err)
+	for _, grid := range []string{
+		`<div class="grid cards" markdown>`,
+		`<div class='grid cards' markdown>`,
+		`<div markdown class="cards grid">`,
+	} {
+		_, err = fillCards(text+"\n"+grid+"\n</div>\n", lookup)
+		if err == nil || !strings.Contains(err.Error(), "by hand") {
+			t.Errorf("a hand-written grid %s passed: %v", grid, err)
+		}
 	}
 }

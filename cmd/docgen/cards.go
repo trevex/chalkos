@@ -14,7 +14,7 @@ import (
 // line that closes it ends it. A grid of cards outside such a region is hand-written.
 var (
 	cardsRegion = regexp.MustCompile(`(?s)(<!-- docgen cards: ([^>]*?) -->\n).*?(<!-- end docgen cards -->)`)
-	cardsGrid   = regexp.MustCompile(`<div class="grid cards"`)
+	cardsGrid   = regexp.MustCompile(`<div\b[^>]*\bclass\s*=\s*["']\s*(?:grid\s+cards|cards\s+grid)\s*["']`)
 	description = regexp.MustCompile(`(?m)^description:\s*"?(.*?)"?\s*$`)
 )
 
