@@ -18,7 +18,7 @@
 let
   cfg = config.chalkos.frr;
   inherit (pkgs.chalkos) frr;
-  inherit (chalkosLib.sandbox) noExec;
+  inherit (chalkosLib.sandbox) hardened;
   # vtysh reads vtysh.conf from its config directory; the check's own holds no more, so vtysh
   # checks the rendered file alone.
   checkDir = pkgs.writeTextDir "vtysh.conf" "service integrated-vtysh-config\n";
@@ -35,22 +35,41 @@ let
     ConditionPathIsDirectory = "/run/chalkos/credentials/frr";
   }
   // lib.optionalAttrs (cfg.marker != null) { ConditionPathExists = cfg.marker; };
-  # The daemons, with those each starts after, in the order FRR's scripts start them, and their
-  # options: the VTY's TCP port listens on the loopback address alone, as NixOS's FRR module has
-  # it, and zebra's netlink socket takes 90 MB, enough for the routes of a full table. Every
-  # daemon but mgmtd, which holds the config of staticd and zebra, is a client of zebra.
+  # The daemons, with those each starts after, in the order FRR's scripts start them, their
+  # options and the capabilities each keeps once it runs as frr, which it asks for by name and
+  # without which it does not start: the VTY's TCP port listens on the loopback address alone, as
+  # NixOS's FRR module has it, and zebra's netlink socket takes 90 MB, enough for the routes of a
+  # full table. Every daemon but mgmtd, which holds the config of staticd and zebra, is a client
+  # of zebra. bfdd sends its echo packets through a packet socket.
   daemons = {
     mgmtd = {
       after = [ ];
       options = "-A 127.0.0.1";
+      capabilities = [
+        "CAP_NET_BIND_SERVICE"
+        "CAP_NET_RAW"
+        "CAP_NET_ADMIN"
+        "CAP_SYS_ADMIN"
+      ];
     };
     zebra = {
       after = [ "mgmtd" ];
       options = "-A 127.0.0.1 -s 90000000";
+      capabilities = [
+        "CAP_NET_ADMIN"
+        "CAP_SYS_ADMIN"
+        "CAP_NET_RAW"
+      ];
     };
     bfdd = {
       after = [ "zebra" ];
       options = "-A 127.0.0.1";
+      capabilities = [
+        "CAP_NET_BIND_SERVICE"
+        "CAP_SYS_ADMIN"
+        "CAP_NET_RAW"
+      ];
+      families = [ "AF_PACKET" ];
     };
     bgpd = {
       after = [
@@ -58,6 +77,12 @@ let
         "bfdd"
       ];
       options = "-A 127.0.0.1";
+      capabilities = [
+        "CAP_NET_BIND_SERVICE"
+        "CAP_NET_RAW"
+        "CAP_NET_ADMIN"
+        "CAP_SYS_ADMIN"
+      ];
     };
     staticd = {
       after = [
@@ -65,6 +90,7 @@ let
         "zebra"
       ];
       options = "-A 127.0.0.1";
+      capabilities = [ ];
     };
   };
   unit = name: "frr-${name}.service";
@@ -132,8 +158,11 @@ in
           "frr/vtysh.conf".text = "service integrated-vtysh-config\n";
         };
         environment.systemPackages = [ frr ];
-        # The daemons' sockets and PID files.
-        systemd.tmpfiles.rules = [ "d /run/frr 0755 frr frr -" ];
+        # The daemons' sockets and PID files, and mgmtd's record of the commits of its config.
+        systemd.tmpfiles.rules = [
+          "d /run/frr 0755 frr frr -"
+          "d /var/lib/frr 0750 frr frr -"
+        ];
 
         # chalkd reads the speaker's sessions for the router and Kubernetes layers.
         systemd.services.chalkd.path = [ frr ];
@@ -158,7 +187,12 @@ in
             "chalkos-node-addresses.target"
           ];
           unitConfig = condition;
-          serviceConfig = noExec // {
+          # The fill and chalkos-frr-reload, which runs vtysh, run as root and write the config
+          # and vtysh's script into /run/frr, which is frr's, and vtysh talks to the daemons over
+          # their sockets, which are frrvty's: both take CAP_DAC_OVERRIDE.
+          serviceConfig = hardened // {
+            CapabilityBoundingSet = [ "CAP_DAC_OVERRIDE" ];
+            ReadWritePaths = [ "/run/frr" ];
             Type = "oneshot";
             RemainAfterExit = true;
             ExecStart = fill;
@@ -188,7 +222,28 @@ in
             after = [ "frr.service" ] ++ map unit daemon.after;
             before = [ "chalkos-node-addresses.target" ];
             unitConfig = condition;
-            serviceConfig = noExec // {
+            # A daemon starts as root, switches to frr with the capabilities it names and drops the
+            # rest. It writes its socket and PID file to /run/frr and mgmtd its commits to
+            # /var/lib/frr. vtysh -b loads the config as root, which reads the filled config as its
+            # owner and reaches the daemon's socket as a member of frrvty.
+            serviceConfig = hardened // {
+              CapabilityBoundingSet = [
+                "CAP_SETUID"
+                "CAP_SETGID"
+              ]
+              ++ daemon.capabilities;
+              RestrictAddressFamilies = [
+                "AF_UNIX"
+                "AF_NETLINK"
+                "AF_INET"
+                "AF_INET6"
+              ]
+              ++ daemon.families or [ ];
+              ReadWritePaths = [
+                "/run/frr"
+                "/var/lib/frr"
+              ];
+              SupplementaryGroups = [ "frrvty" ];
               Type = "forking";
               PIDFile = "/run/frr/${name}.pid";
               ExecStart = "${frr}/libexec/frr/${name} -d ${daemon.options}";
