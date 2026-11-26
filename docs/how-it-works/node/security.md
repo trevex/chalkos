@@ -15,7 +15,8 @@ to reboot the node, chalkd refuses the call and names the role it needs:
 chalkos protects three things: the code a node boots, the secrets a node keeps on its disks, and
 the API through which a node is installed and operated. Secure Boot and dm-verity cover the code,
 the TPM covers the disks, and mutual TLS with the cluster's own certificate authority covers the
-API.
+API. [Chain of trust](trust.md) follows the three from the firmware to the API in one picture, and
+compares bare metal with virtual machines.
 
 ## A node trusts three anchors
 
@@ -392,6 +393,8 @@ runs no console, and chalkd serves no console socket.
 - The TPM unseals without a PIN for every boot under the same Secure Boot state, so a machine
   decrypts its own disks whenever it boots. chalkos does not defend against an attacker with the
   machine in hand who attacks it while it runs, for example through its memory.
+- PCR 7 does not change after the initrd, so root on a running node can unseal the disk keys
+  again, as [Chain of trust](trust.md#a-running-node-can-unseal-its-disk-keys-again) explains.
 - PCR 7 does not tell one image signed with the db key from another. An older signed image with a
   known flaw unseals the keys too, until its signature or the key is revoked through dbx.
 - A refusal of an upgrade's config gives the reason in the reply and in the node's journal, and the
@@ -435,6 +438,8 @@ runs no console, and chalkd serves no console socket.
 
 ## Related pages
 
+- [Chain of trust](trust.md): the stages from the firmware to the API, where each key lives, and
+  what a node cannot prove yet.
 - [Certificates](certificates.md): the CAs and certificates of the node API, renewal, rotation and
   revocation.
 - [Roles and credentials](../../reference/access.md): the role of each method and where chalkctl

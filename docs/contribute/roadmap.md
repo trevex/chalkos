@@ -44,6 +44,26 @@ reinstalled. The plan adds a flag to `chalkctl upgrade` that updates the boot lo
 A/B scheme of its own, so a boot loader that does not start leaves
 the old one to fall back to.
 
+### Measured boot and attestation
+
+Today the TPM seals the disk keys to PCR 7 alone, the node's key is a file on STATE, and nothing
+outside a node can verify what it booted, as
+[Chain of trust](../how-it-works/node/trust.md#limits) describes. The plan binds the keys to the
+images the key holder signed and lets a verifier check a node, in the roles of RFC 9334, the IETF's
+remote attestation architecture: the node is the attester, which sends evidence, and a verifier
+compares the evidence with reference values. Each item builds on the ones before it:
+
+| Item | What it adds |
+| --- | --- |
+| Boot phase in the policy | Disk keys sealed to the initrd's phase as well, through systemd's PCR 11 phase measurements, so root on a running node cannot unseal them again. |
+| Signed PCR 11 policies | Disk keys sealed to a key that signs each image's PCR 11 values at `chalkbuild sign`, so only images the key holder signed unseal them. |
+| A node key in the TPM | A node key that the TPM generates and never exports, which signs chalkd's TLS handshakes, so the node's identity cannot be copied off the machine. |
+| Evidence through the node API | A method that returns a TPM quote over PCRs 4, 7 and 11 with the event log, signed by an attestation key the TPM certifies. |
+| Reference values with each release | The expected PCR values of each image, computed at build time and published with the release and its signatures, so a verifier needs no node to learn them. |
+| A verifier in chalkctl | chalkctl checks a node's evidence against the reference values before it trusts the node's report of its image. |
+| Bootstrap through TPM attestation | Nodes that install themselves from a management server that verifies their TPM. |
+| Confidential virtual machines | An exploration of AMD SEV-SNP and Intel TDX guests with a vTPM inside the guest, such as one that COCONUT-SVSM runs, so the hypervisor no longer controls the TPM. |
+
 ### More platforms
 
 chalkos defines the platforms `metal` and `kvm`. Planned are ESXi and cloud platforms, PXE and
@@ -65,13 +85,11 @@ address. The plan adds these protocols, each as a feature an image can leave out
 | Item | What it adds |
 | --- | --- |
 | Delta transfers | Upgrades that send only the changed parts of the store, instead of the whole store to every node. |
-| Signed PCR 11 policies | Keys sealed to the signed image as well as to PCR 7. |
 | KMS and SSH unlock | Unlocking encrypted partitions in the initrd through a key management service, or over SSH, besides the TPM and the recovery key. |
 | Adding an IP family | Turning a single-stack cluster into a dual-stack one while it runs. |
 | etcd backup and restore | Snapshots of etcd and a restore into a new control plane. |
 | Replication of the cluster registry | Images pushed to one endpoint of the cluster registry copied to the others, so an endpoint that missed a push, or a new control plane, catches up without another push. |
 | Cilium | A CNI besides flannel. |
-| Bootstrap through TPM attestation | Nodes that install themselves from a management server that verifies their TPM. |
 | External secret sources | The secrets file's contents in Vault or OpenBao. |
 
 ## Known limits
@@ -84,6 +102,14 @@ These limits hold in the current code, grouped by area.
   operator can install any image and it unseals STATE and
   VAR; [Security model](../how-it-works/node/security.md)
   explains the consequence.
+- PCR 7 does not change after the initrd, so root on a running node can unseal the keys of STATE
+  and VAR again.
+- A node's key is a file on STATE, which root on the node can copy.
+- No one outside a node can verify which image it booted. chalkd serves no TPM quote.
+- In a virtual machine with a vTPM that the hypervisor emulates, the hypervisor's admin can unlock
+  the node's disks.
+  [Chain of trust](../how-it-works/node/trust.md#whoever-controls-the-tpm-controls-the-disk-keys)
+  compares bare metal and virtual machines.
 - Single certificates are not revoked. A client file stays valid until it expires or the OS CA is
   rotated with [`chalkctl rotate`](../reference/cli/chalkctl_rotate.md), which retires every
   client file of the old OS CA. With the Kubernetes layer,
