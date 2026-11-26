@@ -44,6 +44,7 @@ in
   imports = [
     ./cni.nix
     ./effects.nix
+    ./features.nix
     ./containerd.nix
     ./registries.nix
     ./firewall.nix

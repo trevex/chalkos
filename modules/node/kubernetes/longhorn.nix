@@ -4,8 +4,8 @@
 # there. open-iscsi and nfs-utils come as copies of the programs alone, without the shell and
 # Python scripts of the originals, which the copies do not reference.
 {
-  chalkosLib,
   config,
+  kubernetesLib,
   lib,
   pkgs,
   ...
@@ -59,7 +59,7 @@ let
   };
 in
 {
-  options.chalkos.kubernetes = chalkosLib.internal.feature "Kubernetes" "longhorn" {
+  options.chalkos.kubernetes = kubernetesLib.feature "longhorn" {
     carries = "what Longhorn runs on the host: iscsid and iscsiadm, the NFS client, the `iscsi_tcp` and `dm_crypt` kernel modules, loaded at boot, and links for `iscsiadm`, `fstrim`, `cryptsetup`, `dmsetup` and `mount` in `/usr/bin` and `/usr/sbin`";
     default = false;
   };

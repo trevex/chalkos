@@ -208,10 +208,10 @@ Whether Kubernetes images carry the kernel modules of KubeVirt's virtual machine
 
 Type: boolean · Default: `false` · Declared in: [modules/node/kubernetes/kubevirt.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/kubevirt.nix)
 
-Whether the kernel turns the IOMMU on in passthrough mode and loads `vfio_pci` at
-boot, as KubeVirt needs to pass PCI devices through to virtual machines. AMD's IOMMU
-is on unless the kernel's command line turns it off; this adds
-`intel_iommu=on iommu=pt`. Only with `chalkos.kubernetes.kubevirt.enable`.
+Whether the kernel turns the IOMMU on in passthrough mode and loads `vfio_pci` at boot, as
+KubeVirt needs to pass PCI devices through to virtual machines. AMD's IOMMU is on unless
+the kernel's command line turns it off; this adds `intel_iommu=on iommu=pt`. Only with
+`chalkos.kubernetes.kubevirt.enable`.
 
 ### `chalkos.kubernetes.longhorn.enable` { #chalkoskuberneteslonghornenable }
 
@@ -229,17 +229,16 @@ Whether Kubernetes images carry NVIDIA's GPU driver, loaded at boot, with its fi
 
 Type: one of `open`, `proprietary` · Default: `"open"` · Declared in: [modules/node/kubernetes/nvidia.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/nvidia.nix)
 
-Which of NVIDIA's kernel modules the image carries: `open`, NVIDIA's open modules,
-which GPUs from Turing on run, or `proprietary`, which GPUs before Turing need.
-Only with `chalkos.kubernetes.nvidia.enable`.
+Which of NVIDIA's kernel modules the image carries: `open`, NVIDIA's open modules, which
+GPUs from Turing on run, or `proprietary`, which GPUs before Turing need. Only with
+`chalkos.kubernetes.nvidia.enable`.
 
 ### `chalkos.kubernetes.nvidia.package` { #chalkoskubernetesnvidiapackage }
 
 Type: package · Default: `config.boot.kernelPackages.nvidiaPackages.stable` · Declared in: [modules/node/kubernetes/nvidia.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/nvidia.nix)
 
 NVIDIA's driver, of the image's kernel packages, whose kernel modules, firmware,
-programs and libraries the image carries. Only with
-`chalkos.kubernetes.nvidia.enable`.
+programs and libraries the image carries. Only with `chalkos.kubernetes.nvidia.enable`.
 
 ### `chalkos.kubernetes.package` { #chalkoskubernetespackage }
 

@@ -6,6 +6,7 @@
 {
   chalkosLib,
   config,
+  kubernetesLib,
   lib,
   pkgs,
   ...
@@ -25,7 +26,7 @@ let
   speaker = c: "size(${cel.documents c apiVersions.kubernetes "BGPSpeaker"}) > 0";
 in
 {
-  options.chalkos.kubernetes = chalkosLib.internal.feature "Kubernetes" "bgp" {
+  options.chalkos.kubernetes = kubernetesLib.feature "bgp" {
     carries = "FRR, which runs BGP and BFD,";
     kinds = lib.attrNames kinds;
   };

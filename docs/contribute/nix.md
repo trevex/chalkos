@@ -94,6 +94,10 @@ Every module of an image gets these arguments in addition to NixOS's own:
   types and CEL of the router kinds, and `routerLib.kinds` loads a part's kinds file.
   `modules/node/router/default.nix` sets it on every image, but it is internal to the router
   layer and not part of the extension API.
+- `kubernetesLib`: the Kubernetes layer's list of features and their option, as `routerLib`
+  holds the router's. `modules/node/kubernetes/features.nix` sets it on every image; it is
+  internal to the Kubernetes layer. The evaluation tests build an image without each feature of
+  either list, so a new feature goes into its layer's list.
 - The `specialArgs` given to mkImage or mkImages.
 
 The flake exports the overlay that adds `pkgs.chalkos` as `overlays.default`. mkImage adds it
