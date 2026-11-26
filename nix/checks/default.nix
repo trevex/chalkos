@@ -50,7 +50,8 @@ let
       ];
   names = lib.attrNames checks ++ [ "ci-tiers" ];
   tiers = import ./tiers.nix { inherit lib names; };
-  # The packages of pkg/ whose names end in test, the shared test helpers, as pkg/<path>.
+  # The shared test helpers as pkg/<path>: the packages of pkg/ whose names end in test, golden and
+  # testwait.
   helpers =
     let
       walk =
@@ -65,7 +66,11 @@ let
           ) (builtins.readDir dir)
         );
     in
-    walk ../../pkg "pkg";
+    walk ../../pkg "pkg"
+    ++ [
+      "pkg/internal/golden"
+      "pkg/internal/testwait"
+    ];
   e2eFiles = lib.filter (lib.hasSuffix "_test.go") (lib.attrNames (builtins.readDir ../../test/e2e));
 in
 checks
@@ -74,7 +79,7 @@ checks
   # the tiers' e2eLabels, which run end-to-end checks on a pull request, and the label ci-failure
   # of the issues CI opens. testing.md or ci.md names each check in code font, but the
   # release-image-<name> checks, which ci.md names by that pattern, and testing.md each end-to-end
-  # test file and each test helper package.
+  # test file and each test helper package in the first column of a table row.
   ci-tiers =
     pkgs.runCommand "chalkos-ci-tiers"
       {
@@ -107,8 +112,8 @@ checks
           }
         done
         for name in $pages; do
-          grep -qF -- "\`$name\`" "$testing" || {
-            echo "error: docs/contribute/testing.md names no $name" >&2
+          awk -F'|' -v name="\`$name\`" '$1 == "" && index($2, name) { found = 1 } END { exit !found }' "$testing" || {
+            echo "error: docs/contribute/testing.md has no table row of $name" >&2
             status=1
           }
         done

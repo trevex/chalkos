@@ -105,7 +105,8 @@ Shared fakes and fixtures live in packages named after the package they serve, w
 | `pkg/internal/golden` | expected output kept in `testdata/`, as [Compare output with a golden file](#compare-output-with-a-golden-file) describes | `pkg/statusview`, `pkg/kubernetes/manifests` |
 | `pkg/internal/testwait` | waits on time or on I/O, as [Wait in tests](#wait-in-tests) describes | `pkg/chalkd` |
 
-The `ci-tiers` check fails when a package of `pkg/` whose name ends in `test` has no row here.
+The `ci-tiers` check fails when `pkg/internal/golden`, `pkg/internal/testwait` or a package of `pkg/`
+whose name ends in `test` has no row here.
 
 A test of chalkd's server in `pkg/chalkd` starts from one of its fixtures, each built on the one
 before. `newTestServer` returns a server in a given mode whose paths point at fixture trees, with
