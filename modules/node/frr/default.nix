@@ -222,12 +222,14 @@ in
             after = [ "frr.service" ] ++ map unit daemon.after;
             before = [ "chalkos-node-addresses.target" ];
             unitConfig = condition;
-            # A daemon starts as root, switches to frr with the capabilities it names and drops the
-            # rest. It writes its socket and PID file to /run/frr and mgmtd its commits to
+            # A daemon starts as root, hands its crash log directory below its private /var/tmp to
+            # frr, which takes CAP_CHOWN, switches to frr with the capabilities it names and drops
+            # the rest. It writes its socket and PID file to /run/frr and mgmtd its commits to
             # /var/lib/frr. vtysh -b loads the config as root, which reads the filled config as its
             # owner and reaches the daemon's socket as a member of frrvty.
             serviceConfig = hardened // {
               CapabilityBoundingSet = [
+                "CAP_CHOWN"
                 "CAP_SETUID"
                 "CAP_SETGID"
               ]
