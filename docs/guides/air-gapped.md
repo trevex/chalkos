@@ -58,8 +58,7 @@ router.
   a client file of the cluster, as [Issue your client file](cluster-on-machines.md#issue-your-client-file)
   shows.
 - A time server answers NTP inside the air gap, such as a clock with a GPS receiver or a chalkos
-  router with a `TimeServer`, as [Serve time with NTP](../router/time-server.md) and the
-  [home lab's router](home-lab.md#run-the-lab-without-internet-access-optional) show. A server
+  router with a `TimeServer`, as [Serve time with NTP](../router/time-server.md) shows. A server
   without a reference clock answers as unsynchronised, at stratum 16, and its clients refuse it,
   unless it serves its own clock, as a `TimeServer` with `localStratum: 10` does. Other chalkos
   nodes run no NTP server for other machines.

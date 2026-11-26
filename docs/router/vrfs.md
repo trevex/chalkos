@@ -459,19 +459,9 @@ refusal fails the delivery, and `chalkctl` prints it in the same form:
 
 ## Limits
 
-- The kernel looks up the router's own addresses before a VRF's table. A VRF's hosts therefore
-  get the kernel's answers from the addresses of the default VRF's links, such as echo replies
-  and TCP resets. No socket of the default VRF takes their connections, so chalkd stays out of
-  their reach. The router's IPv6 echo reply to an address that a VRF and the default VRF both
-  hold leaves through the default VRF.
-- No protected rule covers the router's own connections to its addresses in a VRF. They reach the
-  input chain as connections from the VRF's links, and the VRF's policies to `local` decide them.
-- A VRF instance cannot announce a default route from its `networks`. Use a peer family's
-  `defaultOriginate`.
-- networkd also matches `Name=` against a link's alternative names. The documents do not give
-  them, so the validator `router` cannot tell which link a `Network` matches by an alternative
-  name. Name links by their interface names.
-- Routes leak between VRFs through BGP alone.
+[VRFs on a router](../how-it-works/router/vrfs.md#limits) lists what VRFs do not do. Name links
+by their interface names, as the validator `router` cannot tell which link a `Network` matches by
+an alternative name, and send a VRF's peers a default route with `defaultOriginate`.
 
 ## What next
 

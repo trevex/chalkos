@@ -386,12 +386,29 @@ command on the control socket at a level its config keeps out of the journal.
 
 ## Limits
 
+- Kea reads and answers DHCPv4 on raw sockets, ahead of the router's firewall. A `FirewallPolicy`
+  does not filter DHCPv4 on a served link, and the firewall opens no port for it. DHCPv6 and the
+  relays take UDP sockets, and the firewall opens their ports on their links alone.
 - Kea serves its own links. Requests that another relay forwards from other networks reach no
   subnet of its servers, and a prefix delegated through a relay is not routed.
 - A family relayed and served on one router needs two VRFs other than the default one.
+- DHCPv6 reservations match a client's MAC address only when its DUID or link-local address holds
+  it.
 - The validator `router` and the renderers find a link's address and router advertisements in
-  its `Network` document alone.
-- Kea updates no DNS records and shares its leases with no other server.
+  its `Network` document alone. The validator cannot check an address that a link takes from
+  DHCP or that another program sets, so such a link is refused.
+- The leases live in a file of each server on the node's `/var`. Two routers do not share them,
+  and a reinstall that wipes `/var` forgets them and the routes of their prefixes.
+- Kea tells the router of a release without waiting for it to record the lease before. A release
+  right after its lease can leave the prefix routed until the lease would have ended, the
+  subnet's `leaseTime` at most.
+- The router routes 65 536 delegated prefixes at most, of all its subnets together. The validator
+  `router` refuses subnets that delegate more, such as two ranges of /40 that delegate /56s.
+- A `DHCPSubnet` holds 32 pools, 512 reservations and 16 DNS servers at most, and the schema
+  refuses longer lists. The subnet's rules compare each reservation with each pool, and each pool
+  and reservation with the servers. The bounds keep these checks within the cost a node allows a
+  rule.
+- Kea updates no DNS records for its clients.
 
 ## Related pages
 

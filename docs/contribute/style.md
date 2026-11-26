@@ -174,7 +174,12 @@ description: "Roll a new image through the nodes with chalkctl upgrade, and act 
 
 ## Page templates
 
-Each page is one of four kinds. A section index is a short paragraph and a card per page.
+Each page is one of four kinds. A section index is not one of them: it holds a sentence on its
+readers, a numbered reading path of three to six links and, for each section of the navigation, a
+sentence and a grid of cards. Name the grid's pages in a line `<!-- docgen cards: install.md ... -->`
+followed by `<!-- end docgen cards -->`; `nix run .#docgen` writes the cards between them from
+the pages' `title` and `description`. The `docs-generated` check fails on a card that differs
+from its page, and on a grid of cards written by hand.
 
 ### Tutorial
 
@@ -199,6 +204,10 @@ For a reader who knows the task they want done.
 For a reader who wants the mechanism behind a task. Open with an example of the behaviour, such
 as a status line or a file. Then explain how it works, with the diagram the page needs. End with
 "Limits": what it does not do.
+
+A topic keeps one list of limits, on its explanation page, since a limit belongs with its
+mechanism. The task page of the topic links that list from a short "Limits" section, and states
+there, or in the step it affects, only the limits that change what an operator writes.
 
 ### Reference
 

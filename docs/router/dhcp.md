@@ -453,28 +453,10 @@ delivery or at `chalkctl config apply --dry-run`, and `chalkctl validate` does n
 
 ## Limits
 
-- Kea reads and answers DHCPv4 on raw sockets, ahead of the router's firewall. A `FirewallPolicy`
-  does not filter DHCPv4 on a served link, and the firewall opens no port for it. DHCPv6 and the
-  relays take UDP sockets, and the firewall opens their ports on their links alone.
-- The router serves its own links. Its servers do not answer requests that another relay forwards
-  from other networks, and a prefix delegated through a relay is not routed.
-- A family relayed and served on one router needs two VRFs other than the default one.
-- DHCPv6 reservations match a client's MAC address only when its DUID or link-local address holds
-  it.
-- A link takes its address from a `Network` document. The validator `router` cannot check an
-  address that a link takes from DHCP or that another program sets, so such a link is refused.
-- The leases live in a file of each server on the node's `/var`. Two routers do not share them,
-  and a reinstall that wipes `/var` forgets them and the routes of their prefixes.
-- Kea tells the router of a release without waiting for it to record the lease before. A release
-  right after its lease can leave the prefix routed until the lease would have ended, the
-  subnet's `leaseTime` at most.
-- The router routes 65 536 delegated prefixes at most, of all its subnets together. The validator
-  `router` refuses subnets that delegate more, such as two ranges of /40 that delegate /56s.
-- A `DHCPSubnet` holds 32 pools, 512 reservations and 16 DNS servers at most, and the schema
-  refuses longer lists. The subnet's rules compare each reservation with each pool, and each pool
-  and reservation with the servers. The bounds keep these checks within the cost a node allows a
-  rule.
-- The servers update no DNS records for their clients.
+[DHCP on a router](../how-it-works/router/dhcp.md#limits) lists what the router's DHCP servers
+and relays do not do. Two limits change what you write: give each served link its address in a
+`Network` document, and relay and serve one family on one router only in two VRFs other than the
+default one.
 
 ## What next
 

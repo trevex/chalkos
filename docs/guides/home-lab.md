@@ -22,12 +22,11 @@ the two paths.
 
 !!! info "An advanced IPv6 and BGP setup"
 
-    This lab is a maintainer's own home lab. Its BGP fabric, IPv6-only nodes, NAT64 and WireGuard
-    tunnel are there for fun and to try those features out, not because a home network needs them.
-    The guide shares the setup in case it helps you test chalkos on a similar network. For a first
-    cluster on real machines, follow
-    [Build a cluster on real machines](cluster-on-machines.md) instead: one network, IPv4 and no
-    router of chalkos.
+    The lab's BGP fabric, IPv6-only nodes, NAT64 and WireGuard tunnel show the router layer and
+    the Kubernetes layer's BGP speaker together; a home network does not need them. This guide
+    covers what differs from
+    [Build a cluster on real machines](cluster-on-machines.md), which has one network, IPv4 and no
+    router of chalkos. Follow that guide first: this one links its steps where they are the same.
 
 ## What you build
 
@@ -99,22 +98,11 @@ You need:
 
 ### Secure Boot is optional
 
-The tutorial installs the machines without Secure Boot, with the unsigned images and installer.
-Turn Secure Boot off in each machine's firmware setup. The steps marked optional add Secure Boot
-with keys of your own: [Sign the images](#sign-the-images-optional) and
-[Enrol the Secure Boot keys](#enrol-the-secure-boot-keys-optional). A machine whose firmware is in
-Setup Mode gets the keys from chalkctl. For any other machine, enrol the db certificate in its
-firmware as [Enrol the certificate without Setup Mode](../operate/secure-boot.md#enrol-the-certificate-without-setup-mode)
-describes before you install it.
-
-Without Secure Boot, the TPM still unlocks the disks at every boot. It seals their keys to PCR 7,
-which then measures Secure Boot as off, so a machine that boots another system from a USB stick
-unlocks them too. The encryption protects a disk taken out of its machine, and no longer the
-machine itself. [Security model](../how-it-works/node/security.md) describes what else Secure Boot
-protects.
-
-Decide before you install a machine. Turning Secure Boot on later changes PCR 7: the machine then
-asks for its recovery key at every boot until you install it again.
+The guide installs the machines without Secure Boot, with the unsigned images and installer, as
+[Secure Boot is optional](cluster-on-machines.md#secure-boot-is-optional) in the cluster guide
+describes. Decide before you install a machine: turning Secure Boot on later changes PCR 7, and the
+machine then asks for its recovery key at every boot until you install it again. The steps that
+add Secure Boot are those of the cluster guide, with this lab's three builds in place of its one.
 
 ## Prepare the files
 
@@ -167,21 +155,11 @@ ports='.[] | [.ifname, .address, .operstate,
 
 ### Generate the cluster's secrets
 
-The secrets file holds the cluster's CAs and keys. Generate it encrypted to your key, and to a
-backup key that you keep offline:
-
-```console
-$ chalkctl gen secrets --recipient "$(cat ~/.ssh/id_ed25519.pub)" \
-    --recipient age1nmrqj76cqyf4ft8xtczufd3mtdk0xf2j7tevgwnzjp3zq9tffu3slx5eux
-encrypted secrets.age to ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKMcR1DCFPGSdWXphQ3We8UmkMp2KdufUzVxxC6Hvo9k alice@workstation, age1nmrqj76cqyf4ft8xtczufd3mtdk0xf2j7tevgwnzjp3zq9tffu3slx5eux
-wrote secrets.age and secrets.pub.json
-```
-
-The `age1` recipient here stands for your offline backup
-key's public key. Then give the images and the installer the cluster's OS CA, so
-that a machine waiting for its install accepts only a chalkctl that holds this cluster's secrets
-file or one of its client files.
-Add the line to the arguments of `chalkos.lib.mkImages` in `flake.nix`:
+Generate the secrets file and issue yourself a client file with the operator role, as
+[Generate the cluster's secrets](cluster-on-machines.md#generate-the-clusters-secrets) and
+[Issue your client file](cluster-on-machines.md#issue-your-client-file) describe. Then give the
+images and the installer the cluster's OS CA, so that a machine waiting for its install accepts
+only your chalkctl. Add the line to the arguments of `chalkos.lib.mkImages` in `flake.nix`:
 
 ```nix
 osCA = ./secrets.pub.json;
@@ -189,21 +167,6 @@ osCA = ./secrets.pub.json;
 
 Without it, any machine on your home network could install the router while it waits in the
 installer.
-
-### Issue your client file
-
-The secrets file holds the OS CA's key, so keep it for the commands that need it. Issue yourself
-a client file with the operator role for the others, such as `chalkctl status` and
-`chalkctl node diag`:
-
-```console
-$ chalkctl client new --name=alice --role=operator --secrets=secrets.age
-wrote /home/alice/.config/chalkos/config for alice with the operator role; its certificate expires on 2027-02-20
-```
-
-A command that takes a client file reads it from `~/.config/chalkos/config` when you pass no
-`--secrets`. The commands that install a node, deliver its config, bootstrap the cluster, write a
-kubeconfig or upgrade with config take `--secrets=secrets.age`.
 
 ### Choose your own prefix
 
@@ -261,56 +224,14 @@ nix build .#installer -o installer
 The first build takes a while. The router's image carries the router layer and no Kubernetes; the
 nodes' image carries Kubernetes and its BGP speaker, FRR.
 
-### Sign the images (optional)
-
-Skip this step without Secure Boot. With it, create your Secure Boot keys in `keys/`, and sign
-copies of the three builds with the db key:
-
-```sh
-chalkctl secureboot new keys --name homelab
-chalkbuild sign --key keys/db.key --cert keys/db.crt images/router-metal images/router-metal-signed
-chalkbuild sign --key keys/db.key --cert keys/db.crt images/node-metal images/node-metal-signed
-chalkbuild sign --key keys/db.key --cert keys/db.crt installer installer-signed
-```
-
-The example's `.gitignore` keeps the `.key` files out of git. Keep a backup of `keys/` offline:
-whoever holds its keys decides what the machines boot.
-
-Point the inventory's images at the signed copies. `chalkos.yaml` then reads:
-
-```yaml title="chalkos.yaml"
-apiVersion: chalkctl.chalkos.dev/v1alpha1
-kind: Inventory
-metadata: {name: homelab}
-spec:
-  images:
-    # chalkbuild sign writes the signed copies of the builds here.
-    router-metal: {source: {directory: images/router-metal-signed}}
-    node-metal: {source: {directory: images/node-metal-signed}}
-  groups:
-    router: {imageName: router-metal, files: [router/*.yaml]}
-    nodes: {imageName: node-metal, files: [cluster/*.yaml, bgp/fabric.yaml, bgp/secrets.yaml]}
-  nodes:
-    router: {address: 192.168.1.2, groups: [router]}
-    node1: {address: "fdc8:a1b2:c3d4:ff::11", groups: [nodes], files: [nodes/node1.yaml]}
-    node2: {address: "fdc8:a1b2:c3d4:ff::12", groups: [nodes], files: [nodes/node2.yaml]}
-    node3: {address: "fdc8:a1b2:c3d4:ff::13", groups: [nodes], files: [nodes/node3.yaml]}
-```
-
-### Write the installer to a USB stick
-
-Write the installer's ISO to the USB stick:
-
-```sh
-sudo dd if=installer/chalkos-installer.iso of=/dev/<usb-disk> \
-  bs=4M conv=fsync status=progress
-```
-
-With Secure Boot, write the signed copy, `installer-signed/chalkos-installer.iso`, instead.
-`<usb-disk>` is the stick's device, such as `sdb`; `lsblk` lists the candidates. The command
-overwrites everything on the stick. The installer holds no config of a node: it takes addresses on
-every Ethernet port, by DHCP and from router advertisements, and keeps the kernel's names for the
-ports.
+With Secure Boot, sign copies of the three builds into `images/router-metal-signed`,
+`images/node-metal-signed` and `installer-signed`, and point the inventory's images at the signed
+copies, as [Sign the image and the installer](cluster-on-machines.md#sign-the-image-and-the-installer-optional)
+shows for one image. Write the installer's ISO, `installer/chalkos-installer.iso` or its signed
+copy, to the USB stick as
+[Write the installer to a USB stick](cluster-on-machines.md#write-the-installer-to-a-usb-stick)
+describes. The installer holds no config of a node: it takes addresses on every Ethernet port, by
+DHCP and from router advertisements, and keeps the kernel's names for the ports.
 
 ## Install the router
 
@@ -320,9 +241,9 @@ on the fabric.
 ### Boot the installer
 
 Cable one of the router's ports to the home network and the other to the switch. Which port is
-which does not matter yet: the next step finds out. Boot the router from the USB stick through
-the firmware's boot menu. Once chalkd runs, the screen shows the console. Its header keeps chalkd's fingerprint on screen, and the
-address that the home network's DHCP server gave the port it reaches:
+which does not matter yet: the next step finds out. Boot the router from the USB stick. The
+console's header shows chalkd's fingerprint and the address that the home network's DHCP server
+gave the port it reaches:
 
 ```text
 nixos  installer  up 1m
@@ -332,58 +253,18 @@ fingerprint <fingerprint>
 addresses 192.168.1.57
 ```
 
-Note the address and the fingerprint, 64 hex characters. chalkctl reaches a node that a command
-names at the node's address in `chalkos.yaml`, so put the installer's address there as the
-router's for now, and the commands below need no `--address`:
+Put the installer's address into `chalkos.yaml` as the router's for now, so the commands below
+need no `--address`, and check the machine's certificate with `--fingerprint`:
 
 ```yaml title="chalkos.yaml"
     router: {address: 192.168.1.57, groups: [router]}
 ```
 
-The commands check the machine's certificate with `--fingerprint`.
-
-!!! tip "Find the installer without a screen"
-
-    On a machine without a screen, look for the installer on the home network: chalkd listens on
-    TCP port 50000. The flake's shell holds `arp-scan` and `nc`; this lists the home network's
-    machines that answer on that port:
-
-    ```sh
-    sudo "$(command -v arp-scan)" --localnet --plain --quiet | awk '{print $1}' \
-      | xargs -I {} nc -zv -w 1 {} 50000 2>&1 | grep -E "succeeded|open"
-    ```
-
-!!! note "--insecure in place of --fingerprint"
-
-    When reading the console is impractical, pass `--insecure` in place of `--fingerprint`. chalkctl
-    then accepts any certificate and prints the fingerprint it saw, as
-    `chalkctl: the node's certificate fingerprint is <fingerprint>`. Compare it with the console
-    when you can. `chalkctl install` sends the secrets only over a connection pinned to that
-    fingerprint.
-
-### Enrol the Secure Boot keys (optional)
-
-Skip this step without Secure Boot, or when the router's firmware holds your db certificate
-already. When its firmware is
-in Setup Mode, as after you clear its keys in the firmware setup, it boots the installer without
-checking it. Enrol your keys; `secureboot enroll` names no node, so it takes the address with
-`--address`:
-
-```console
-$ chalkctl secureboot enroll --keys keys --address=192.168.1.57 --fingerprint=<fingerprint> \
-    --secrets=secrets.age
-...
-the node reboots with Secure Boot enforced
-chalkctl: the node's certificate fingerprint is now <new fingerprint>; compare it with the node's console and install with --fingerprint <new fingerprint>
-Secure Boot is on; install the node with chalkctl install
-```
-
-The router reboots into the installer, now with Secure Boot on; pick the USB stick in the boot menu
-if it boots something else. chalkd makes a new certificate at that boot: use the new fingerprint
-from here on.
-
-When the router's network cards carry option ROMs, the node refuses the keys and names them: add
-`--option-roms` to enrol their digests.
+On a machine without a screen, `arp-scan` from the shell finds the home network's machines, and
+`--insecure` in place of `--fingerprint` reaches the installer, as
+[Boot the installer](cluster-on-machines.md#boot-the-installer) in the cluster guide describes. With Secure Boot, enrol the keys
+now, as [Enrol the Secure Boot keys](cluster-on-machines.md#enrol-the-secure-boot-keys-optional)
+describes, and use the new fingerprint from here on.
 
 ### Find the disk and the ports
 
@@ -396,13 +277,9 @@ DEVICE            SIZE    TYPE  MODEL                    SERIAL          WWN    
 ...
 ```
 
-The list goes on with the installer's own stick, whose use is `boot`. Pick the disk for the
-system, and find its path below `/dev/disk/by-id`, which stays the same across boots. For an NVMe
-disk it is `nvme-<model>_<serial>`, and for a SATA disk `ata-<model>_<serial>`, with each space of
-the model as an underscore: `/dev/disk/by-id/nvme-Samsung_SSD_980_512GB_S64DNF0R812345` here. When
-the path is in doubt, select the disk by its serial number instead, with
-`disk: {serial: S64DNF0R812345}` in place of `path`. The installer refuses a disk
-that holds data.
+Pick the system disk and its path below `/dev/disk/by-id`, here
+`/dev/disk/by-id/nvme-Samsung_SSD_980_512GB_S64DNF0R812345`, as
+[Find the disk and the port](cluster-on-machines.md#find-the-disk-and-the-port) explains.
 
 The diagnostic `addresses` lists the ports, and the jq filter of
 "Get the tools" puts each on a line:
@@ -471,8 +348,7 @@ router is installed and reboots
 chalkctl recovery-key router prints the key that unlocks it when its TPM fails
 ```
 
-`<image>` is the start of the image's root hash, and `<n>` the size of what chalkctl sends. The
-router reboots into its image, renames its ports and takes the reserved address on `wan`. Remove
+The router reboots into its image, renames its ports and takes the reserved address on `wan`. Remove
 the USB stick once the console's header shows `normal`, and put the reserved address back into
 `chalkos.yaml`:
 
@@ -480,22 +356,8 @@ the USB stick once the console's header shows `normal`, and put the reserved add
     router: {address: 192.168.1.2, groups: [router]}
 ```
 
-!!! note "Wipe a disk that holds data"
-
-    The installer refuses a disk that holds data, such as a disk from another machine or an
-    earlier install of another image, and names what it found:
-
-    ```text
-    install: the target disk /dev/nvme0n1 (model "Samsung SSD 980 512GB", size 476.9G, serial "S64DNF0R812345") carries data (gpt ext4); pass --wipe-disk to replace it
-    ```
-
-    Check in `chalkctl disks` that the disk is the one you mean, and install again with
-    `--wipe-disk`. The installer then clears the disk's partition tables and lays it out anew.
-    Nothing on the disk can be recovered afterwards:
-
-    ```sh
-    chalkctl install router --secrets=secrets.age --fingerprint=<fingerprint> --wipe-disk
-    ```
+The installer refuses a disk that holds data; `--wipe-disk` replaces it, as
+[Replace what a disk holds](../operate/install.md#replace-what-a-disk-holds) describes.
 
 ### Check the router
 
@@ -608,10 +470,9 @@ YAML needs for an IPv6 address; the workstation reaches it over the tunnel:
 
 !!! tip "Find the installer through the router"
 
-    When the node has no screen, find its ports in the router's neighbour table. Each of the
-    installer's ports takes an address of the fabric's prefix with the same interface ID as its
-    link-local address, so this lists every machine the router sees on `fabric` with its MAC
-    address and its address of the fabric:
+    When the node has no screen, the router's neighbour table lists its ports. Each installer port
+    takes an address of the fabric's prefix with the interface ID of its link-local address, so
+    this prints the MAC address and the fabric address of every port the router sees:
 
     ```sh
     chalkctl node diag router neighbours \
@@ -619,29 +480,10 @@ YAML needs for an IPv6 address; the workstation reaches it over the tunnel:
           | [.lladdr, (.dst | sub("^fe80::"; "fdc8:a1b2:c3d4:1:"))] | @tsv'
     ```
 
-    The output has a line for each port, here the two of node1:
+    Boot one node at a time, so the new lines are its own. Without the console you have no
+    fingerprint to compare: reach the installer with `--insecure` in place of `--fingerprint`.
 
-    ```text
-    02:00:00:00:11:01	fdc8:a1b2:c3d4:1:0:ff:fe00:1101
-    02:00:00:00:11:02	fdc8:a1b2:c3d4:1:0:ff:fe00:1102
-    ```
-
-    The table also holds the ports of nodes installed before, whose MAC addresses the `addresses`
-    diagnostic shows on each of them. A port the router has not talked to yet is missing from the
-    table: boot one node at a time, and look again after a minute. Check that chalkd answers at an
-    address before you use it:
-
-    ```sh
-    chalkctl node diag router tcp-connect \
-      address=fdc8:a1b2:c3d4:1:0:ff:fe00:1101 port=50000
-    ```
-
-    Without the console you have no fingerprint to compare: reach the installer with `--insecure`
-    in place of `--fingerprint`, as the note under the router's "Boot the installer" describes.
-
-With Secure Boot, and when the node's firmware is in Setup Mode, enrol your keys at that address as
-for the router, in "Enrol the Secure Boot keys", and note
-the new fingerprint.
+With Secure Boot, enrol your keys at that address as for the router, and note the new fingerprint.
 
 ### Find the disk and the ports
 
@@ -769,13 +611,7 @@ connected to 64:ff9b::101:101 port 443
 ```
 
 `64:ff9b::101:101` is the IPv4 address `1.1.1.1` in the NAT64's prefix. Pods resolve names through
-CoreDNS, which asks the same resolver, so a pod reaches an IPv4-only host by its name:
-
-```sh
-kubectl run nat64-check --rm -it --restart=Never --image=busybox:1.37 -- nslookup github.com
-```
-
-The answer holds an address in `64:ff9b::/96` beside the host's IPv4 address.
+CoreDNS, which asks the same resolver, so they reach IPv4-only hosts by their names too.
 
 ## Check BGP and failover
 
@@ -868,33 +704,16 @@ chalkctl validate
 chalkctl apply node1 node2 node3 --secrets=secrets.age
 ```
 
-[Change a node's config](../operate/change-config.md) covers previews, trials and rollbacks.
-Deliver a change of the router's `management` interfaces or firewall with `--try`, so that the
-router rolls it back when chalkctl loses it. A delivery renames a router port at once when its
-`Link` document gives it a new name. Change every document that names the port in the same
-delivery, its `Network`, firewall zone and management interfaces, and deliver it with
-`chalkctl config apply router --try`, so that the router rolls it back when chalkctl loses it.
+Deliver a change of the router's ports, `management` interfaces or firewall with
+`chalkctl config apply router --try`, so that the router rolls it back when chalkctl loses it. A
+delivery renames a router port at once when its `Link` document gives it a new name, so change
+every document that names the port in the same delivery.
 
-A new chalkos release or a change to the images' modules in `flake.nix` takes new images. For a
-new release, change the tag in the `chalkos` input's URL and update the flake's lock with
-`nix flake update chalkos`. Enter the shell of [Get the tools](#get-the-tools) again, so that
-chalkctl matches the images. Build the images again, as in
-[Build the images and the installer](#build-the-images-and-the-installer). With Secure Boot, remove
-the signed copies of the old builds, which `chalkbuild sign` does not overwrite, and sign the new
-ones:
-
-```sh
-rm -rf images/router-metal-signed images/node-metal-signed installer-signed
-chalkbuild sign --key keys/db.key --cert keys/db.crt images/router-metal images/router-metal-signed
-chalkbuild sign --key keys/db.key --cert keys/db.crt images/node-metal images/node-metal-signed
-chalkbuild sign --key keys/db.key --cert keys/db.crt installer installer-signed
-```
-
-Then roll the images out to the nodes with `chalkctl upgrade`, as
-[Upgrade nodes](../operate/upgrade.md) describes. chalkctl upgrades the control planes one at a
-time, so the Kubernetes API stays up. While the router reboots, traffic between the nodes'
-routed addresses, to the Kubernetes API, and to the internet is interrupted. Upgrade the router
-in a step of its own, at a time when that pause suits you:
+New images reach the lab as on any cluster: build and sign them again, and roll them out with
+`chalkctl upgrade`, as [Change things later](cluster-on-machines.md#change-things-later) in the
+cluster guide and [Upgrade nodes](../operate/upgrade.md) describe. While the router reboots,
+traffic between the nodes' routed addresses, to the Kubernetes API and to the internet stops, so
+upgrade the router in a step of its own:
 
 ```sh
 chalkctl upgrade node1 node2 node3 --secrets=secrets.age
@@ -903,212 +722,16 @@ chalkctl upgrade router --secrets=secrets.age
 
 ## Run the lab without internet access (optional)
 
-This optional variant cuts the fabric off the internet. The router drops its NAT64, the control
-planes serve the container images from the cluster registry, and the router serves the nodes'
-time. The workstation keeps its tunnel and reaches every node as before. Follow it in place of
-[Bootstrap Kubernetes](#bootstrap-kubernetes) once the three nodes wait for their bootstrap, and
-run its `chalkctl bootstrap` and `chalkctl kubeconfig` commands; its NAT64 checks fail in the
-variant. On a running lab, the bootstrap step drops out.
-[Build an air-gapped cluster](air-gapped.md) explains the approach for any cluster.
-
-### What connects the fabric to the internet
-
-The NAT64 is the fabric's only way out for connections; DNS queries still leave through the
-router's resolver, so the variant is no strict air gap. The fabric holds unique local addresses
-alone, and the router takes no IPv6 route from the home network, so the router has no IPv6 route beyond the lab's
-/48. Its firewall policies forward between the fabric and the tunnel alone. The NAT64's
-connections pass ahead of the policies, out of `wan` from the router's IPv4 address. The router
-sends the nodes no BGP routes: their default route from its advertisements leads to the router
-and no further.
-
-Without the NAT64, the router has no route to `64:ff9b::/96`, so the nodes' connections there fail.
-The resolver stays: it answers names from the root servers over `wan`, as the router's own
-connections still leave there, and DNS64 still answers with addresses in `64:ff9b::/96`, which
-lead nowhere now. CoreDNS keeps a server to forward to. The nodes reach the cluster registry, the
-router's time and each other by their addresses, and need no names. In a real air gap the router
-has no uplink either, and its resolver answers no name outside the lab. Its chrony then has no
-server to follow and answers the nodes as unsynchronised, at stratum 16, which they refuse. Give
-the router a reference clock, or add `localStratum: 10` to its `TimeServer`, which serves the
-router's own clock.
-
-Two things the nodes take from the internet stop with the NAT64:
-
-| What | Through the NAT64 | In the variant |
-| --- | --- | --- |
-| Container images | `registry.k8s.io`, `ghcr.io` and `docker.io` | the cluster registry on the three control planes |
-| Time | `ptbtime1.ptb.de` to `ptbtime3.ptb.de` | the router's chrony at `fdc8:a1b2:c3d4:1::1`, over plain NTP |
-
-The images and the installer need no change: chalkctl reads them from `images/` on the workstation
-and sends them to the nodes.
-
-### Look at the variant's files
-
-The example keeps the variant beside the lab's files, so the default inventory stays as it is.
-`chalkos-air-gapped.yaml` is the variant's inventory. Its router leaves out `router/nat64.yaml`
-and takes `air-gapped/router.yaml`, and its nodes take `air-gapped/nodes.yaml` as well:
-
-```yaml title="chalkos-air-gapped.yaml"
---8<-- "examples/homelab/chalkos-air-gapped.yaml"
-```
-
-Keep its nodes' addresses and its image sources the same as those of `chalkos.yaml`, such as the
-signed copies of [Sign the images](#sign-the-images-optional). `air-gapped/nodes.yaml` turns the
-cluster registry on, with the three control planes' addresses as its endpoints and the hosts of
-the lab's images as its mirrors, and names the router as the nodes' time server:
-
-```yaml title="air-gapped/nodes.yaml"
---8<-- "examples/homelab/air-gapped/nodes.yaml"
-```
-
-`air-gapped/router.yaml` makes the router the fabric's time server:
-
-```yaml title="air-gapped/router.yaml"
---8<-- "examples/homelab/air-gapped/router.yaml"
-```
-
-The `TimeServer` lets the router's chrony answer the lab's addresses, and the firewall accepts NTP
-from them on the fabric's first address alone. The router keeps following the internet's time
-servers over `wan`, so it answers as synchronised. The image needs no change: router images carry
-the time server, as [Serve time with NTP](../router/time-server.md) describes.
-
-### Copy the images to the workstation
-
-The workstation keeps its own internet access, so it fetches the images. Copy every image of the
-`Cluster` document into an OCI image layout of its own with crane, and busybox, which the checks
-below run:
-
-```sh
-mkdir -p images/oci
-for ref in $(yq 'select(.kind == "Cluster") | .spec.images[]' cluster/cluster.yaml); do
-  repo=${ref%%@*}; name=${repo##*/}; name=${name%%:*}
-  rm -rf "images/oci/$name"
-  crane pull --format=oci "$ref" "images/oci/$name"
-done
-rm -rf images/oci/busybox
-crane pull --format=oci docker.io/library/busybox:1.37.0 images/oci/busybox
-```
-
-The copies keep every platform of each image's index and take about 1.2 GiB.
-[Bring the images into the air gap](../kubernetes/cluster-registry.md#bring-the-images-into-the-air-gap)
-explains why the loop uses crane and not skopeo.
-
-### Cut the fabric off
-
-Run chalkctl with the variant's inventory for the rest of this section:
-
-```sh
-export CHALKOSINVENTORY=chalkos-air-gapped.yaml
-chalkctl validate
-```
-
-Have the router check its new config first. The dry run prints the documents that change, the
-NAT64 removed and the `TimeServer` added, and the outputs and effects that follow:
-
-```sh
-chalkctl config apply router --secrets=secrets.age --dry-run
-```
-
-Deliver it on trial, because it changes the router's firewall, and then the nodes' config:
-
-```sh
-chalkctl config apply router --secrets=secrets.age --try 5m
-chalkctl config apply node1 node2 node3 --secrets=secrets.age
-```
-
-The router stops its NAT64 and answers NTP from the fabric. Each control plane starts the cluster
-registry at its node address, and every node's containerd looks there first for the images of
-`registry.k8s.io`, `ghcr.io` and `docker.io`.
-
-### Push the images
-
-Push every image to the three endpoints through the tunnel:
-
-```sh
-for ref in $(yq 'select(.kind == "Cluster") | .spec.images[]' cluster/cluster.yaml); do
-  repo=${ref%%@*}; name=${repo##*/}; name=${name%%:*}
-  chalkctl registry push "images/oci/$name" "$ref" --secrets=secrets.age
-done
-chalkctl registry push images/oci/busybox docker.io/library/busybox:1.37.0 --secrets=secrets.age
-```
-
-Each push prints the image's digest and a line for each endpoint, such as those of the API
-server's image:
-
-```text
-pushing registry.k8s.io/kube-apiserver:v1.37.2@sha256:3e563afb5cb5b72a10bac7012698dd09f5a42bde7d22de8d7d3c12e654df86b4 as registry.k8s.io/kube-apiserver@sha256:3e563afb5cb5b72a10bac7012698dd09f5a42bde7d22de8d7d3c12e654df86b4
-fdc8:a1b2:c3d4:ff::11: pushed [fdc8:a1b2:c3d4:ff::11]:5000/registry.k8s.io/kube-apiserver:v1.37.2 as sha256:3e563afb5cb5b72a10bac7012698dd09f5a42bde7d22de8d7d3c12e654df86b4
-fdc8:a1b2:c3d4:ff::12: pushed [fdc8:a1b2:c3d4:ff::12]:5000/registry.k8s.io/kube-apiserver:v1.37.2 as sha256:3e563afb5cb5b72a10bac7012698dd09f5a42bde7d22de8d7d3c12e654df86b4
-fdc8:a1b2:c3d4:ff::13: pushed [fdc8:a1b2:c3d4:ff::13]:5000/registry.k8s.io/kube-apiserver:v1.37.2 as sha256:3e563afb5cb5b72a10bac7012698dd09f5a42bde7d22de8d7d3c12e654df86b4
-```
-
-Check that every endpoint holds every image:
-
-```console
-$ chalkctl registry list
-REPOSITORY                               TAG      DIGEST               ENDPOINTS
-docker.io/library/busybox                1.37.0   sha256:a7dbc319b143  all
-ghcr.io/flannel-io/flannel               v0.28.9  sha256:708a2c9c1cfb  all
-registry.k8s.io/coredns/coredns          v1.14.6  sha256:900f9c109f7a  all
-registry.k8s.io/etcd                     3.7.0-0  sha256:6ecefbe2510c  all
-registry.k8s.io/kube-apiserver           v1.37.2  sha256:3e563afb5cb5  all
-registry.k8s.io/kube-controller-manager  v1.37.2  sha256:28e62daf706e  all
-registry.k8s.io/kube-proxy               v1.37.2  sha256:b2e075697d7a  all
-registry.k8s.io/kube-scheduler           v1.37.2  sha256:028c847fc321  all
-registry.k8s.io/pause                    3.10.2   sha256:f548e0e8e3dc  all
-```
-
-### Bootstrap and check the cut
-
-On a lab that waits for its bootstrap, bootstrap node1 and write a kubeconfig, as in
-[Bootstrap Kubernetes](#bootstrap-kubernetes). The control planes pull their images from the
-cluster registry. Then check that the nodes run and that a pod pulls busybox from the registry:
-
-```sh
-kubectl get nodes
-kubectl run airgap-check --rm -it --restart=Never --image=busybox:1.37.0 -- true
-```
-
-Check that the fabric no longer reaches the internet. The `tcp-connect` diagnostic to
-`64:ff9b::101:101`, which connects on the connected lab, fails now,
-and `chalkctl status router` shows no `nat64:` table:
-
-```sh
-chalkctl node diag node1 tcp-connect address=64:ff9b::101:101 port=443
-chalkctl status router
-```
-
-`chalkctl status node1` prints a line `time:` that names
-`fdc8:a1b2:c3d4:1::1`, the router, as the server the node's clock follows.
-
-A pod whose image is not in the registry stays in `ImagePullBackOff`. Copy and push its image as
-above;
-[If something goes wrong](../kubernetes/cluster-registry.md#if-something-goes-wrong) covers other
-failures.
-
-### Connect the lab again
-
-Deliver the config of `chalkos.yaml` to the router and the nodes:
-
-```sh
-unset CHALKOSINVENTORY
-chalkctl config apply router --secrets=secrets.age --try 5m
-chalkctl config apply node1 node2 node3 --secrets=secrets.age
-```
-
-The router runs its NAT64 again, the nodes take their time from the internet, and containerd pulls
-from the registries themselves. The pushed images stay on the control planes, in
-`/var/lib/chalkos-registry`, and the registry serves them again when the variant's config returns.
-
-## Switch an existing lab to advertised gateways
-
-If the nodes still take their default route over BGP, apply the new `bgp/fabric.yaml` to the nodes
-one at a time while the router still sends a BGP default. Try the node config with
-`chalkctl config apply node1 --secrets=secrets.age --try 5m --no-confirm`. Use
-`chalkctl node diag node1 routes family=inet6` to check for an IPv6
-default route with protocol `ra` on each connected fabric port. Check management and internet
-access before keeping the trial with `chalkctl config confirm node1 --secrets=secrets.age`.
-After every node uses an advertised gateway, apply the router config to stop announcing the BGP
-default.
+The example holds a variant that cuts the fabric off the internet: `chalkos-air-gapped.yaml`, its
+inventory, gives the router `air-gapped/router.yaml` in place of `router/nat64.yaml`, so the router
+drops its NAT64 and serves the nodes' time, and gives the nodes `air-gapped/nodes.yaml`, which
+turns the cluster registry on. The workstation keeps its tunnel and its own internet access.
+Follow [Build an air-gapped cluster](air-gapped.md) from
+[Prepare on a connected machine](air-gapped.md#prepare-on-a-connected-machine) on, with
+`CHALKOSINVENTORY=chalkos-air-gapped.yaml` and the lab's nodes in place of `cp1` to `cp3`. Deliver
+the router's config with `--try 5m`, as it changes the firewall. DNS queries still leave through
+the router's resolver, so the variant is no strict air gap. To connect the lab again, unset
+`CHALKOSINVENTORY` and deliver the config of `chalkos.yaml` the same way.
 
 ## Troubleshooting
 
@@ -1161,24 +784,10 @@ network's DHCP server.
 ### The router takes another address on the home network
 
 The router identifies itself to the DHCP server with a DUID made from the `wan` port's MAC
-address, the same at every boot, as the installer does for each port. Check that the reservation
-names the MAC address that the `addresses` diagnostic shows for `wan`. A DHCP server that matches
-a reservation against a client identifier of the bare MAC address finds none in a DUID. Have the
-router send its MAC address as the identifier, in the `wan` port's `Network` of
-`router/router.yaml`:
-
-```yaml title="router/router.yaml"
-apiVersion: networkd.chalkos.dev/v1alpha1
-kind: Network
-metadata: {name: 10-wan}
-spec:
-  match: {name: wan}
-  network: {dhcp: ipv4, ipv6AcceptRA: false}
-  dhcpv4: {clientIdentifier: mac}
-```
-
-Until the router has the reserved address, put the address it took, which its console shows, into
-`chalkos.yaml` as the router's.
+address. A DHCP server that matches a reservation against a client identifier of the bare MAC
+address finds none in a DUID. Add `dhcpv4: {clientIdentifier: mac}` to the `wan` port's `Network`
+in `router/router.yaml`, so the router sends its MAC address as the identifier. Until the router
+has the reserved address, put the address it took, which its console shows, into `chalkos.yaml`.
 
 ### The tunnel has no handshake
 
@@ -1196,22 +805,4 @@ network. After a delivery to the router, the tunnel works again once the worksta
   election, and how to replace a control plane.
 - [Announce addresses with BGP](../kubernetes/bgp.md) covers the nodes' BGP speaker: its peers,
   the default route, its diagnostics and the deliveries it refuses.
-- [Declare a config kind](../build/declare-a-kind.md) follows the BIRD extension example, which
-  declares the `Speaker` and `Peer` kinds.
-
-These pages explain the steps of this tutorial in more depth:
-
-- [Generate the cluster's secrets with age](../operate/secrets.md#generate-the-clusters-secrets-with-age)
-  and [Keep the services' secrets in Secret documents](../operate/secrets.md#keep-the-services-secrets-in-secret-documents)
-  explain the secrets file, its backup and the Secret documents.
-- [Sign images for Secure Boot](../build/sign-images.md#create-the-keys) and
-  [Enrol Secure Boot keys](../operate/secure-boot.md) cover the keys, a failed enrolment and the
-  cards' option ROMs.
-- [The console on the machine's screen](../operate/console.md) describes what the installer shows.
-- [Install a node](../operate/install.md#replace-what-a-disk-holds) covers a disk that holds data,
-  and [Write a node's config](../operate/node-config.md#check-that-it-worked) the output of
-  `chalkctl validate`.
-- [Run WireGuard](../router/wireguard.md) covers more peers, preshared keys and key rotation.
-- [Bootstrap and get a kubeconfig](../kubernetes/bootstrap.md) explains each step of the bootstrap.
-- [Route with BGP](../router/bgp.md#deliver-and-check-the-sessions) explains the columns of the
-  router's `bgp:` table and the BGP paths that follow the kernel's routes.
+- [Write a BGP extension](bgp-extension.md) writes a BGP speaker of your own for the lab's nodes.
