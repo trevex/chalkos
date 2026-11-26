@@ -274,7 +274,7 @@ func TestApplyConfigRefusedByEitherImage(t *testing.T) {
 // does not carry, config apply --staged, which sends it for the staged image's storage.
 func TestStagedRefusalNamesTheFallbackSecret(t *testing.T) {
 	s, _ := stagedServer(t, fixtureSchemas(t))
-	refusal := layer.Errorf(connect.CodeInvalidArgument, "volume extra is encrypted and the node's fallback is recovery-key, but %s", storage.NoFallbackSecret)
+	refusal := layer.Reasonf(connect.CodeInvalidArgument, nodev1.ErrorReason_ERROR_REASON_NO_FALLBACK_SECRET, "volume extra is encrypted and the node's fallback is recovery-key, but %s", storage.NoFallbackSecret)
 	err := s.stagedRefusal(stagedImage, refusal, "")
 	want := "the image 333333333333 staged in the inactive slot: volume extra is encrypted and the node's fallback is recovery-key, but no fallback secret was sent; the staged image's storage enrolls the fallback secret on a volume the running image's does not, and chalkctl sends the secret for the running image's storage alone: chalkctl config apply --staged n1 --secrets FILE delivers the config to the staged image with the secret"
 	if codeOf(err) != connect.CodeInvalidArgument || !strings.HasSuffix(err.Error(), want) {
@@ -286,6 +286,8 @@ func TestStagedRefusalNamesTheFallbackSecret(t *testing.T) {
 	}{
 		"with a secret": {refusal, secret},
 		"other":         {layer.Errorf(connect.CodeFailedPrecondition, "the config does not suit the image"), ""},
+		// The reason tells the refusal apart, not its words.
+		"the words alone": {layer.Errorf(connect.CodeInvalidArgument, "volume extra is encrypted, but %s", storage.NoFallbackSecret), ""},
 	} {
 		err := s.stagedRefusal(stagedImage, tc.err, tc.secret)
 		if codeOf(err) != codeOf(tc.err) || strings.Contains(err.Error(), "--staged") || !strings.Contains(err.Error(), "the image 333333333333 staged in the inactive slot: ") {

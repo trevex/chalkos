@@ -171,7 +171,7 @@ func TestRollbackImage(t *testing.T) {
 		{"staged and rebooting", true, upgrade.Result{Entry: "chalkos_3+3.efi"}, nil, true, 0},
 		{"already installed", true, upgrade.Result{AlreadyInstalled: true}, nil, false, 0},
 		{"already staged and rebooting", true, upgrade.Result{AlreadyStaged: true, Entry: "chalkos_3+3.efi"}, nil, true, 0},
-		{"refused", true, upgrade.Result{}, errors.New("the node keeps no image it ran before to roll back to"), false, connect.CodeFailedPrecondition},
+		{"refused", true, upgrade.Result{}, &upgrade.RefusalError{Err: errors.New("the node keeps no image it ran before to roll back to")}, false, connect.CodeFailedPrecondition},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, _ := newTestServer(t, normal, vda)

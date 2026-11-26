@@ -394,10 +394,12 @@ an object with `nodes`, and `chalkctl status <node> -o json` one node's object:
 `healthy` is true when the node answered and shows no problem. `problems` are the summary
 line's, whose wording may change. `inventory` compares the node with the inventory: `config`,
 `stagedConfig` while an image is staged, `image` and `platform`, each `same`, `differs` or
-`unknown`. `error` replaces the rest for a node that did not answer. `info`, `status` and
-`layers` are the node's answers in protojson, as the [node API](../reference/api.md) names their
-fields: in lowerCamelCase, with fields at their zero value left out, 64-bit numbers as strings and
-bytes in base64. The example above leaves most fields out.
+`unknown`. `error` replaces the rest for a node that did not answer. `layerErrors` says, by the
+layer's name, why the status of a layer could not be read; `layers` leaves that layer out.
+`info`, `status` and `layers` are the node's answers in protojson, as the
+[node API](../reference/api.md) names their fields: in lowerCamelCase, with fields at their zero
+value left out, 64-bit numbers as strings and bytes in base64. The example above leaves most
+fields out.
 
 A CI job that gates a release on the cluster checks that every node is healthy and runs the
 inventory's image and config:

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"net"
 	"net/url"
@@ -35,9 +36,9 @@ type controlPlaneNode struct {
 // controlPlane checks that the node is a control plane and reads its cluster, name and share. Its
 // errors carry their codes, which callers such as notRevoked keep rather than give one of their own.
 func (k *side) controlPlane() (controlPlaneNode, error) {
-	c, err := k8s.ReadCluster(k.state.Cluster)
+	c, err := k.cluster()
 	if err != nil {
-		return controlPlaneNode{}, layer.Errorf(connect.CodeInternal, "%w", err)
+		return controlPlaneNode{}, err
 	}
 	if c.Kind != k8s.KindControlPlane {
 		return controlPlaneNode{}, layer.Errorf(connect.CodeFailedPrecondition, "the node is a worker; ask a control-plane node")
@@ -413,4 +414,21 @@ func etcdStopped(ctx context.Context, c k8s.Cluster) error {
 		}
 		return fmt.Errorf("etcd still listens on %s", addr)
 	})
+}
+
+// errNoCluster refuses a request on a node whose config gives no Kubernetes cluster for its image:
+// WriteConfig removes the cluster file then.
+var errNoCluster = layer.Errorf(connect.CodeFailedPrecondition, "the node's config gives no Kubernetes cluster for this image")
+
+// cluster reads the node's cluster file: errNoCluster without one, and an internal error for one
+// that cannot be read.
+func (k *side) cluster() (k8s.Cluster, error) {
+	c, err := k8s.ReadCluster(k.state.Cluster)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return k8s.Cluster{}, errNoCluster
+	case err != nil:
+		return k8s.Cluster{}, layer.Errorf(connect.CodeInternal, "%w", err)
+	}
+	return c, nil
 }

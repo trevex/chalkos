@@ -1,6 +1,7 @@
 // Package constants holds the values that chalkos's Nix library and its Go code share, from
 // constants.json, which lib/kinds/api.nix reads too: the API groups of chalkos's kinds and their
-// version, networkd's kinds, the patterns of names and the normalisers of uniqueness declarations.
+// version, networkd's kinds, the patterns of names, the normalisers of uniqueness declarations and
+// the reasons a change rule may name.
 package constants
 
 import (
@@ -20,6 +21,7 @@ type file struct {
 	DocumentName  string            `json:"documentName"`
 	PlainName     string            `json:"plainName"`
 	Normalisers   []string          `json:"normalisers"`
+	RuleReasons   []string          `json:"ruleReasons"`
 }
 
 var shared = parse(data)
@@ -47,6 +49,9 @@ var (
 	// Normalisers are the names of the normalisers a uniqueness declaration may compare its values
 	// with, which pkg/config implements.
 	Normalisers = shared.Normalisers
+	// RuleReasons are the reasons a change rule may name, which its refusal carries to the client: the
+	// node API's ErrorReason values without their ERROR_REASON_ prefix that chalkd or chalkctl act on.
+	RuleReasons = shared.RuleReasons
 )
 
 // APIVersion is the apiVersion of the group of chalkos's that Groups names group, such as

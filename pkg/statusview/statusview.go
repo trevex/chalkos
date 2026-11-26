@@ -53,12 +53,25 @@ func Table(w io.Writer) *tabwriter.Writer {
 
 // Write writes s as chalkctl status prints it.
 func Write(w io.Writer, s *nodev1.StatusResponse, o Options) error {
-	// A node installed before config documents runs an identity alone.
-	config := "config " + cmp.Or(s.ConfigVersion, "none")
-	if o.Inventory != nil {
-		config += " (" + o.Inventory.ConfigState(s) + ")"
+	unread := sectionErrors(s)
+	// unknown writes the line of a section the node could not read, in its place, and reports
+	// whether it did.
+	unknown := func(section string) bool {
+		msg, ok := unread[section]
+		if ok {
+			fmt.Fprintln(w, SectionErrorLine(section, msg))
+			delete(unread, section)
+		}
+		return ok
 	}
-	fmt.Fprintln(w, config)
+	if !unknown("config") {
+		// A node installed before config documents runs an identity alone.
+		config := "config " + cmp.Or(s.ConfigVersion, "none")
+		if o.Inventory != nil {
+			config += " (" + o.Inventory.ConfigState(s) + ")"
+		}
+		fmt.Fprintln(w, config)
+	}
 	if activation := s.GetConfigActivation(); activation != nil {
 		writeActivation(w, activation)
 	}
@@ -71,7 +84,8 @@ func Write(w io.Writer, s *nodev1.StatusResponse, o Options) error {
 	if s.PreviousConfigVersion != "" {
 		fmt.Fprintf(w, "previous config %s (config rollback restores it)\n", s.PreviousConfigVersion)
 	}
-	if s.Boot.GetStaged() != nil {
+	unknown("previous config")
+	if s.Boot.GetStaged() != nil && !unknown("staged config") {
 		staged := "staged config " + cmp.Or(s.StagedConfigVersion, "none")
 		if o.Inventory != nil {
 			staged += " (" + o.Inventory.StagedConfigState(s) + ")"
@@ -81,6 +95,7 @@ func Write(w io.Writer, s *nodev1.StatusResponse, o Options) error {
 	if p := s.PendingConfig; p != nil {
 		fmt.Fprintln(w, PendingLine(p))
 	}
+	unknown("pending config")
 	if o.Inventory != nil {
 		fmt.Fprintln(w, o.Inventory.PlatformLine(s.Platform))
 	} else {
@@ -97,14 +112,17 @@ func Write(w io.Writer, s *nodev1.StatusResponse, o Options) error {
 	if o.ModulePolicy != nil {
 		fmt.Fprintln(w, ModulePolicyLine(o.ModulePolicy))
 	}
-	t := Table(w)
-	fmt.Fprintln(t, "VOLUME\tDISK\tMOUNT POINT\tSTATE")
-	for _, v := range s.Volumes {
-		fmt.Fprintf(t, "%s\t%s\t%s\t%s\n", v.Name, v.Disk, v.MountPoint, VolumeState(v))
+	if !unknown("volumes") {
+		t := Table(w)
+		fmt.Fprintln(t, "VOLUME\tDISK\tMOUNT POINT\tSTATE")
+		for _, v := range s.Volumes {
+			fmt.Fprintf(t, "%s\t%s\t%s\t%s\n", v.Name, v.Disk, v.MountPoint, VolumeState(v))
+		}
+		if err := t.Flush(); err != nil {
+			return err
+		}
 	}
-	if err := t.Flush(); err != nil {
-		return err
-	}
+	unknown("disks")
 	for _, d := range s.Disks {
 		if d.Error != "" {
 			fmt.Fprintf(w, "disk %s: %s\n", d.Name, d.Error)
@@ -151,7 +169,26 @@ func Write(w io.Writer, s *nodev1.StatusResponse, o Options) error {
 	for _, u := range s.FailedUnits {
 		fmt.Fprintf(w, "failed unit %s\n", u)
 	}
+	unknown("failed units")
+	// Sections a newer node reads that this program does not know of.
+	for _, e := range s.Errors {
+		unknown(e.Section)
+	}
 	return nil
+}
+
+// sectionErrors are the sections of s the node could not read, with why, by section.
+func sectionErrors(s *nodev1.StatusResponse) map[string]string {
+	errs := map[string]string{}
+	for _, e := range s.Errors {
+		errs[e.Section] = e.Message
+	}
+	return errs
+}
+
+// SectionErrorLine is the status line of a section the node could not read.
+func SectionErrorLine(section, message string) string {
+	return section + " unknown: " + message
 }
 
 func writeActivation(w io.Writer, activation *nodev1.ConfigActivation) {

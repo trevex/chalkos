@@ -12,5 +12,6 @@
   "networkdKinds": ["Link", "NetDev", "Network"],
   "documentName": "[a-z0-9]([-a-z0-9.]*[a-z0-9])?",
   "plainName": "[a-z0-9]([-a-z0-9]*[a-z0-9])?",
-  "normalisers": ["cidr", "host", "ip", "lower"]
+  "normalisers": ["cidr", "host", "ip", "lower"],
+  "ruleReasons": ["NO_FALLBACK_SECRET"]
 }

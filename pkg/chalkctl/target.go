@@ -241,18 +241,27 @@ func (s nodeSet) Call(name string, fn func(conn *client.Conn) error) error {
 }
 
 // callNode runs fn on a connection to an installed node and closes the connection. Its error,
-// the connection's or fn's, names the node, as layer.NodeError does.
+// the connection's or fn's, as client.Describe words it, names the node, as layer.NodeError does.
 func callNode(t *target, fn func(conn *client.Conn) error) error {
 	conn, err := dialInstalled(t)
 	if err != nil {
 		return layer.Named(t.name, err)
 	}
 	defer conn.Close()
-	var ours string
-	if r := t.nodes.release; r != nil {
-		ours = r.ours
+	return layer.Named(t.name, client.Describe(fn(conn), t.hints()))
+}
+
+// hints are what client.Describe adds to the errors of calls to t: the role its credentials grant
+// and chalkctl's release.
+func (t *target) hints() client.Hints {
+	h := client.Hints{Client: "chalkctl", Role: t.creds.role(), Credentials: "the secrets file"}
+	if t.creds.secrets == nil && t.creds.config != nil {
+		h.Credentials = "the client file " + t.creds.configPath
 	}
-	return layer.Named(t.name, unimplemented(fn(conn), ours))
+	if r := t.nodes.release; r != nil && knownRelease(r.ours) {
+		h.Release = r.ours
+	}
+	return h
 }
 
 // status reads the status of the installed node name.

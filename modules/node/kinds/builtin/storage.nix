@@ -236,16 +236,19 @@ in
         }
         # New encrypted volumes are enrolled with the fallback secret, which must open the node's
         # existing fallback keyslot, so a mistyped one cannot leave volumes whose fallbacks differ.
-        # The message ends with storage.NoFallbackSecret (pkg/storage/section.go), which chalkd
-        # matches in the refusal of an upgrade that gave the image the pending config.
+        # A refusal for want of the secret carries the reason NO_FALLBACK_SECRET, by which chalkd
+        # tells the refusal of an upgrade that gave the image the pending config apart; its
+        # message is worded as storage.NoFallbackSecret (pkg/storage/section.go) is.
         {
-          description = "A new TPM2-encrypted volume, on a node with a fallback, comes with the fallback secret, which opens the node's fallback keyslot.";
-          rule = ''facts.recorded == null || ${systemDiskSpec}.encryption.fallback == "none" || size(${enrolled}) == 0 || (facts.fallback.sent && facts.fallback.matches != false)'';
-          messageExpression = ''
-            !facts.fallback.sent
-              ? "Volume " + ${enrolled}[0] + " is encrypted and the node's fallback is " + ${systemDiskSpec}.encryption.fallback + ", but no fallback secret was sent"
-              : "the fallback secret does not match the node's existing fallback keyslot"
-          '';
+          description = "A new TPM2-encrypted volume, on a node with a fallback, comes with the fallback secret.";
+          rule = ''facts.recorded == null || ${systemDiskSpec}.encryption.fallback == "none" || size(${enrolled}) == 0 || facts.fallback.sent'';
+          messageExpression = ''"Volume " + ${enrolled}[0] + " is encrypted and the node's fallback is " + ${systemDiskSpec}.encryption.fallback + ", but no fallback secret was sent"'';
+          reason = "NO_FALLBACK_SECRET";
+        }
+        {
+          description = "The fallback secret that comes with a new TPM2-encrypted volume opens the node's fallback keyslot.";
+          rule = ''facts.recorded == null || ${systemDiskSpec}.encryption.fallback == "none" || size(${enrolled}) == 0 || !facts.fallback.sent || facts.fallback.matches != false'';
+          message = "the fallback secret does not match the node's existing fallback keyslot";
         }
       ];
       spec = {

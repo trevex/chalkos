@@ -1,0 +1,5 @@
+dial timeout: reach 10.255.255.1:50000 (from --address): dial tcp 10.255.255.1:50000: i/o timeout; is chalkd running there, and does the address reach it?
+wrapped: upgrade: reach 10.255.255.1:50000 (from --address): dial tcp 10.255.255.1:50000: i/o timeout; is chalkd running there, and does the address reach it?
+permission: /chalkos.node.v1.NodeService/Reboot needs the operator role; the client file reader.json grants the reader role
+unimplemented: chalkos.node.v1.NodeService.Status is not implemented; the node's chalkd may belong to another release than this chalkctl, 0.6.0: use the chalkctl of the node's release
+no answer: chalkd on n1:50000 did not answer within 2m

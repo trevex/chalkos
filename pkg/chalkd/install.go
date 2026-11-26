@@ -292,8 +292,8 @@ func (r idleRequests[M]) Receive() (M, error) {
 	return msg, err
 }
 
-// refused is the error of an install or an upgrade (what) that failed with err: FAILED_PRECONDITION,
-// unless the client's idle bound ended it, which keeps DEADLINE_EXCEEDED.
+// refused is the error of an install (what) that failed with err: FAILED_PRECONDITION, unless the
+// client's idle bound ended it, which keeps DEADLINE_EXCEEDED.
 func refused(what string, err error) error {
 	if layer.CodeOf(err) == connect.CodeDeadlineExceeded {
 		return fmt.Errorf("%s: %w", what, err)

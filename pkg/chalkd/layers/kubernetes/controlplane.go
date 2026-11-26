@@ -130,7 +130,7 @@ func (k *side) runControlPlane(ctx context.Context, share kpki.Share, applied fu
 	var wg sync.WaitGroup
 	defer wg.Wait()
 	defer cancel()
-	c, err := k8s.ReadCluster(k.state.Cluster)
+	c, err := k.cluster()
 	if err != nil {
 		return err
 	}
@@ -271,7 +271,7 @@ func (k *side) watchSplit(ctx context.Context, share kpki.Share) {
 // checkSplit asks the node's etcd member and the other control planes' which cluster they belong
 // to; the split is nil when they agree.
 func (k *side) checkSplit(ctx context.Context, share kpki.Share) (*etcd.SplitError, error) {
-	c, err := k8s.ReadCluster(k.state.Cluster)
+	c, err := k.cluster()
 	if err != nil {
 		return nil, err
 	}

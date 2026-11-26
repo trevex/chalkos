@@ -119,9 +119,9 @@ func (e *CheckError) Error() string { return e.Err.Error() }
 
 func (e *CheckError) Unwrap() error { return e.Err }
 
-// RefusalError is Activate's refusal of the activation, of what the ESP stages or boots next or
-// of the staged UKI, as opposed to a failure to read or change the disk or the ESP. Err is the
-// refusal.
+// RefusalError is a refusal of Install, Activate or Rollback: of the image, of its header or of a
+// UKI, of what the ESP stages or boots next, or of a slot too small, as opposed to a failure to
+// read or change the disk or the ESP, which a node fixes rather than a client. Err is the refusal.
 type RefusalError struct{ Err error }
 
 func (e *RefusalError) Error() string { return e.Err.Error() }
@@ -164,16 +164,17 @@ func (n *Node) Upgrade(ctx context.Context, h Header, stream io.Reader) (Result,
 // the inactive slot and stages it there, for Activate to make it the next boot. Everything is
 // checked before the slot is retired, except what only the received image tells; the slot stays
 // retired until that passed. An image the slot holds already, staged or active, is checked again
-// and stays as it is.
+// and stays as it is. A refusal is a RefusalError, a refusal of the check a CheckError; other
+// errors failed to receive the image or to read or change the disk or the ESP.
 func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result, error) {
 	if err := h.Validate(); err != nil {
-		return Result{}, err
+		return Result{}, refused(err)
 	}
 	if h.BootLoader.Size != 0 {
-		return Result{}, errors.New("an upgrade leaves the boot loader as it is; the image must not bring one")
+		return Result{}, refused(errors.New("an upgrade leaves the boot loader as it is; the image must not bring one"))
 	}
 	if h.Architecture != n.Architecture {
-		return Result{}, fmt.Errorf("the image is built for %s, this machine for %s", h.Architecture, n.Architecture)
+		return Result{}, refused(fmt.Errorf("the image is built for %s, this machine for %s", h.Architecture, n.Architecture))
 	}
 	running, err := uki.RunningHash(n.Cmdline)
 	if err != nil {
@@ -187,7 +188,7 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 			return Result{}, fmt.Errorf("the running image names no %s", field.name)
 		}
 		if field.image != field.node {
-			return Result{}, fmt.Errorf("the image's %s is %s, the node's %s", field.name, field.image, field.node)
+			return Result{}, refused(fmt.Errorf("the image's %s is %s, the node's %s", field.name, field.image, field.node))
 		}
 	}
 	if bytes.Equal(h.RootHash, running) {
@@ -208,7 +209,7 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 	// Names placed by hand or corrupted, such as chalkos_5a.efi or chalkos_7+2147483648.efi, whose
 	// ID is the whole name, may sort above the new entry.
 	if err := checkNames(all, h.ImageID, booted, func(e esp.Entry) bool { return retired(e, h.ImageID, booted, running) }); err != nil {
-		return Result{}, err
+		return Result{}, refused(err)
 	}
 	// Pick the generation before the retirement removes entries, so the new entry never reuses the
 	// ID of one the node booted.
@@ -248,12 +249,12 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 		for _, e := range entries {
 			// A UKI that cannot be read boots no image to fall back to.
 			if fallsBackTo(e, booted, running) {
-				return Result{}, fmt.Errorf("the boot of %s has not been found healthy yet; upgrade once it is, as the upgrade replaces %s, which the node falls back to", booted.File, e.File)
+				return Result{}, refused(fmt.Errorf("the boot of %s has not been found healthy yet; upgrade once it is, as the upgrade replaces %s, which the node falls back to", booted.File, e.File))
 			}
 		}
 	}
 	if err := inactive.Fits(h.Image); err != nil {
-		return Result{}, err
+		return Result{}, refused(err)
 	}
 	if err := n.fitsESP(all, h, booted, running); err != nil {
 		return Result{}, err
@@ -558,7 +559,7 @@ func ExpectEnd(stream io.Reader, last string) error {
 		return fmt.Errorf("receive the %s: %w", last, err)
 	}
 	if extra > 0 {
-		return fmt.Errorf("the stream goes on after the %s", last)
+		return refused(fmt.Errorf("the stream goes on after the %s", last))
 	}
 	return nil
 }

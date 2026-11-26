@@ -6,10 +6,12 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/statusview"
 )
 
 // TestStatusWithABrokenConfig reports the rest of the status when chalkctl cannot read the node's
@@ -162,4 +164,60 @@ func noSOPS(t *testing.T, ta *testApp) string {
 	t.Setenv("PATH", ta.dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	writeFile(t, filepath.Join(ta.dir, "nodes", "fabric.enc.yaml"), "sops: {}\n")
 	return calls
+}
+
+// A section the node could not read counts as a problem in the summary line and in -o json, which
+// carries the node's section error, and the rest of the status prints as before.
+func TestStatusWithASectionError(t *testing.T) {
+	ta := newTestApp(t)
+	s, _ := installedNode(t, ta, []byte(`{}`))
+	writeFile(t, s.Paths.StorageStatus, "{")
+	addr := ta.startNode(t, s)
+	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	out := ta.stdout.String()
+	if !strings.Contains(strings.SplitN(out, "\n", 2)[0], "disks unknown") || !strings.Contains(out, "\ndisks unknown: parse ") || !strings.Contains(out, "platform metal") {
+		t.Errorf("status = %q", out)
+	}
+	ta.stdout.Reset()
+	if err := ta.run(context.Background(), ta.args([]string{"status", "n1", "-o", "json"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if out := ta.stdout.String(); !strings.Contains(out, `"disks unknown"`) || !strings.Contains(out, `"section":"disks"`) && !strings.Contains(out, `"section": "disks"`) {
+		t.Errorf("status -o json = %s", out)
+	}
+}
+
+// A layer whose status could not be read keeps its error in -o json, beside the readable layers.
+func TestStatusJSONKeepsALayerError(t *testing.T) {
+	r := &statusRead{name: "n1", status: &nodev1.StatusResponse{}, info: &nodev1.InfoResponse{},
+		layers: []layerSection{unreadLayer("kubernetes", errors.New("the node is unreachable"))}}
+	s, err := r.json()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.LayerErrors["kubernetes"] != "the node is unreachable" || s.Layers != nil {
+		t.Errorf("layerErrors = %v, layers = %v", s.LayerErrors, s.Layers)
+	}
+}
+
+// A config the node could not read compares as unknown with the inventory's, not as differing.
+func TestCompareUnreadConfig(t *testing.T) {
+	c, err := loadInventory(t.Context(), writeInventory(t, t.TempDir()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := nodeInventory{c: c, name: "n1"}
+	s := &nodev1.StatusResponse{Boot: &nodev1.BootStatus{Staged: &nodev1.BootImage{}}}
+	if got := i.Compare(s); got.Config != statusview.Differs || got.StagedConfig != statusview.Differs {
+		t.Fatalf("Compare of empty versions = %+v, want both differing", got)
+	}
+	s.Errors = []*nodev1.SectionError{{Section: "config", Message: "boom"}, {Section: "staged config", Message: "boom"}}
+	if got := i.Compare(s); got.Config != statusview.Unknown || got.StagedConfig != statusview.Unknown {
+		t.Errorf("Compare = %+v, want both unknown", got)
+	}
+	if p := statusview.Problems(s, statusview.Options{Inventory: i}); slices.Contains(p, "config not the inventory's") || slices.Contains(p, "staged config not the inventory's") {
+		t.Errorf("Problems = %q", p)
+	}
 }

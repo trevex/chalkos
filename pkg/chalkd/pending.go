@@ -13,9 +13,9 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
+	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
-	"github.com/trevex/chalkos/pkg/storage"
 )
 
 // holdPending keeps docs, staged config on a node without a staged image, as the pending config
@@ -186,7 +186,7 @@ func (c imageConfig) refused(err error, name string) error {
 	}
 	// A pending config is kept without the fallback secret, so only an upgrade that carries config
 	// of its own can carry the secret too.
-	if strings.Contains(err.Error(), storage.NoFallbackSecret) {
+	if client.Reason(err) == nodev1.ErrorReason_ERROR_REASON_NO_FALLBACK_SECRET {
 		return fmt.Errorf("the pending config %s does not suit the image: %w; a pending config is kept without the fallback secret, so upgrade with the config from an inventory, which carries the secret and needs the admin role", c.pending, err)
 	}
 	return fmt.Errorf("the pending config %s does not suit the image: %w; chalkctl config apply --staged %s replaces it, and chalkctl config discard %s drops it", c.pending, err, name, name)

@@ -163,7 +163,7 @@ func (k *side) joinOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	c, err := k8s.ReadCluster(k.state.Cluster)
+	c, err := k.cluster()
 	if err != nil {
 		return err
 	}

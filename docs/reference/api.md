@@ -168,7 +168,8 @@ rollback at the deadline that failed after it wrote the config, is finished firs
 delivery of that config, and the change goes ahead; while an Upgrade, a RollbackImage or the
 rollback at a trial's deadline holds the lock that delivery needs, the change is refused with
 ABORTED. A trial whose node runs neither config ends, and the change goes ahead. A trial
-record the node cannot read refuses the change with INTERNAL until RollbackConfig removes it.
+record the node cannot read refuses the change with FAILED_PRECONDITION and the reason
+ERROR_REASON_TRIAL_RECORD_UNREADABLE until RollbackConfig removes it.
 Config for the running image goes to the image staged in the inactive slot too, or replaces
 the pending config, as ApplyConfigRequest.config describes. Available in normal mode to
 admins.
@@ -265,7 +266,8 @@ No fields.
 
 Status reports the state of an installed node: its config versions, storage, failed units,
 certificates, trust, clock, boot and outputs; each layer's own state is its service's Status.
-Available in normal mode to readers. The console may call it.
+A section the node cannot read is left empty and named in StatusResponse.errors, and the others
+answer all the same. Available in normal mode to readers. The console may call it.
 
 Request: StatusRequest. Response: StatusResponse.
 
@@ -299,8 +301,9 @@ The response of Status: the state of an installed node.
 | `trial_error` | string | Why the record of a config's trial cannot be read, while it cannot; trial is unset then. The node refuses every other change until RollbackConfig rolls the config back, which removes the record. Empty otherwise. |
 | `pending_config` | PendingConfig | The config the node holds pending for its next upgrade, unchecked; unset without one. |
 | `config_activation` | ConfigActivation | Progress of live activation for the running image. Older nodes omit this field. |
+| `errors` | list of SectionError | The sections of the status the node could not read, each with why: their fields are left empty, and the other sections answer all the same. Empty while every section was read. |
 
-Field types: [DiskStatus](#message-diskstatus), [VolumeStatus](#message-volumestatus), [CertificateStatus](#message-certificatestatus), [TimeStatus](#message-timestatus), [TrustStatus](#message-truststatus), [BootStatus](#message-bootstatus), [OutputStatus](#message-outputstatus), [ConfigTrial](#message-configtrial), [PendingConfig](#message-pendingconfig), [ConfigActivation](#message-configactivation).
+Field types: [DiskStatus](#message-diskstatus), [VolumeStatus](#message-volumestatus), [CertificateStatus](#message-certificatestatus), [TimeStatus](#message-timestatus), [TrustStatus](#message-truststatus), [BootStatus](#message-bootstatus), [OutputStatus](#message-outputstatus), [ConfigTrial](#message-configtrial), [PendingConfig](#message-pendingconfig), [ConfigActivation](#message-configactivation), [SectionError](#message-sectionerror).
 
 ### Logs { #method-logs }
 
@@ -363,7 +366,8 @@ is of its platform, and, once the store is written and before the image is stage
 image's own checker accepts the config it keeps for the image. It does not check that the
 image is one to trust: without Secure Boot, an operator can run any image as root, with STATE
 and VAR unsealed, as their keys are sealed to PCR 7 alone. Secure Boot is what limits upgrades
-to images signed for db.
+to images signed for db. An image or config the node refuses answers FAILED_PRECONDITION, and a
+failure of the node, such as a full ESP, INTERNAL.
 
 Request: a stream of UpgradeRequest. Response: UpgradeResponse.
 
@@ -578,7 +582,8 @@ deadline, unless the rollback at the deadline failed: while ConfigTrial.error is
 confirmation ends the trial and the rollback's retries. Once such a rollback failed after it
 changed the node, it answers FAILED_PRECONDITION all the same: the node keeps trying to finish
 the rollback, and RollbackConfig to the trial's previous version finishes it at once. It
-answers INTERNAL when the node cannot read the trial's record, which RollbackConfig removes.
+answers FAILED_PRECONDITION with the reason ERROR_REASON_TRIAL_RECORD_UNREADABLE when the node
+cannot read the trial's record, which RollbackConfig removes.
 A confirmation also writes what the trial's delivery held back until then: the config slot of
 the image staged in the inactive slot, or the pending config the config on trial replaces.
 Available in normal mode to admins.
@@ -1053,6 +1058,16 @@ An effect a delivery would take.
 | `fired_by` | list of string | What fires it: "output &lt;name>", "kind &lt;name>" or "rule". |
 | `actions` | list of string | What it does, in the order the node does it: "reload &lt;units>", "run &lt;command>", "restart &lt;units>" and "chalkd &lt;action>". |
 
+### ReasonDetail { #message-reasondetail }
+
+ReasonDetail is an error detail that gives the reason of a refusal.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `reason` | ErrorReason |  |
+
+Field types: [ErrorReason](#enum-errorreason).
+
 ### RegistryImage { #message-registryimage }
 
 A chalkos image in an OCI registry.
@@ -1060,6 +1075,15 @@ A chalkos image in an OCI registry.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `reference` | string | The image's repository and manifest digest, repository@sha256:…, as chalkctl resolved the inventory's reference. The node pulls that manifest and refuses it unless its config is the image the header describes and its store, hash-tree, UKI and, for an install, boot-loader layers have the header's sizes and SHA-256 sums. An upgrade pulls through the Mirror and authenticates with the Registry documents of the config the request delivers, or without one of the running config; an install through those of the config the request delivers. It tries each endpoint of the Mirror of the reference's host, then the host, each with the Registry of its own host, and pulls anonymously from a host without one. |
+
+### SectionError { #message-sectionerror }
+
+A section of the status the node could not read.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `section` | string | The section, in a few words, such as "storage" or "failed units". |
+| `message` | string | Why the node could not read it. |
 
 ### SecureBootDriver { #message-securebootdriver }
 
@@ -1155,6 +1179,17 @@ The state of a live config activation.
 | `ACTIVATION_STATE_INTERRUPTED` | 4 | The activation stopped part way, as when chalkd or the node stopped during it. |
 | `ACTIVATION_STATE_FAILED` | 5 | The activation failed at its failed step. |
 | `ACTIVATION_STATE_COMPLETE` | 6 | The target version is activated. |
+
+### ErrorReason { #enum-errorreason }
+
+Why the node refused a request, where a client acts on more than the code: chalkd attaches it to
+the error as a ReasonDetail. Clients match on the reason, never on the message.
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| `ERROR_REASON_UNSPECIFIED` | 0 | No reason given. |
+| `ERROR_REASON_TRIAL_RECORD_UNREADABLE` | 1 | The record of the config's trial cannot be read. The node refuses other changes until RollbackConfig restores the previous config, which removes the record. The code is FAILED_PRECONDITION. |
+| `ERROR_REASON_NO_FALLBACK_SECRET` | 2 | A new TPM2-encrypted volume needs the fallback secret, and the request sent none. |
 
 ### Mode { #enum-mode }
 
@@ -1650,6 +1685,7 @@ etcd membership.
 | `PHASE_LEFT` | 6 | A control-plane node that left etcd. It joins the cluster again only once reinstalled. |
 | `PHASE_JOINED` | 7 | A worker node whose Kubernetes files are prepared: its kubelet joins the cluster. |
 | `PHASE_PREPARATION_FAILED` | 8 | The preparation of the node's Kubernetes files failed; state says why. |
+| `PHASE_NO_CLUSTER` | 9 | The node's config gives no Kubernetes cluster for its image, so the node takes no part in one. |
 
 ### RotationStep { #kubernetes-enum-rotationstep }
 

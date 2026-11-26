@@ -544,6 +544,14 @@ func TestInterruptedTransfer(t *testing.T) {
 // TestRefusesBeforeChanging checks what is refused before anything changes.
 func TestRefusesBeforeChanging(t *testing.T) {
 	old, img := newImage(t, "a", 3), newImage(t, "b", 3)
+	// What the node itself fails at; Install refuses the rest with a RefusalError.
+	nodeFailures := map[string]bool{
+		"an entry that boots another store":                      true,
+		"no second slot":                                         true,
+		"the inactive slot carrying a UUID of the running store": true,
+		"a generation past a uint64's range":                     true,
+		"no generation after the highest":                        true,
+	}
 	for _, tc := range []struct {
 		name   string
 		header func(h *Header)
@@ -618,6 +626,9 @@ func TestRefusesBeforeChanging(t *testing.T) {
 			_, err := l.node.Install(context.Background(), h, img.Stream())
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("install = %v, want %q", err, tc.want)
+			}
+			if _, refusal := errors.AsType[*RefusalError](err); refusal == nodeFailures[tc.name] {
+				t.Errorf("install = %v, a RefusalError: %v, want %v", err, refusal, !refusal)
 			}
 			for n, p := range l.table() {
 				if before[n] != p {

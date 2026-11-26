@@ -1015,6 +1015,14 @@ var testOSCA = kubernetestest.OSCA
 // codeOf is the code a handler's err answers an RPC with, as errorCodes gives it.
 func codeOf(err error) connect.Code { return domainCodes.Of(err) }
 
+// reasonOf is the reason a handler's err answers an RPC with, as the client reads it.
+func reasonOf(err error) nodev1.ErrorReason {
+	if err == nil {
+		return nodev1.ErrorReason_ERROR_REASON_UNSPECIFIED
+	}
+	return client.Reason(domainCodes.Error(err))
+}
+
 // rpcErr is err as the node answers it, through errorCodes; false for no error.
 func rpcErr(err error) (*connect.Error, bool) {
 	if err == nil {

@@ -6,8 +6,6 @@ import (
 	"io"
 	"sync"
 
-	"connectrpc.com/connect/v2"
-
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
 	"github.com/trevex/chalkos/pkg/client"
@@ -67,17 +65,4 @@ func (c releaseClient) Info(ctx context.Context, req *nodev1.InfoRequest) (*node
 		c.check.check(c.name, resp.GetChalkosVersion())
 	}
 	return resp, err
-}
-
-// unimplemented adds to err, when the node answered that it does not implement the method, that
-// its chalkd may belong to another release than chalkctl's.
-func unimplemented(err error, ours string) error {
-	if connect.CodeOf(err) != connect.CodeUnimplemented {
-		return err
-	}
-	release := ""
-	if knownRelease(ours) {
-		release = ", " + ours
-	}
-	return fmt.Errorf("%w; the node's chalkd may belong to another release than this chalkctl%s: use the chalkctl of the node's release", err, release)
 }

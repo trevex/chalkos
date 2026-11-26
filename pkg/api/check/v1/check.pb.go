@@ -197,7 +197,10 @@ type Refusal struct {
 	// would give it.
 	Message string `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
 	// The change rules the config does not meet, each as a refusal names it, for the stage rules.
-	Failures      []string `protobuf:"bytes,3,rep,name=failures,proto3" json:"failures,omitempty"`
+	Failures []string `protobuf:"bytes,3,rep,name=failures,proto3" json:"failures,omitempty"`
+	// The reason the failed rule names, for the stage rules, as constants.RuleReasons in
+	// pkg/constants names it, such as NO_FALLBACK_SECRET; empty when it names none.
+	Reason        string `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -251,6 +254,13 @@ func (x *Refusal) GetFailures() []string {
 		return x.Failures
 	}
 	return nil
+}
+
+func (x *Refusal) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
 }
 
 // FactRequest asks for the fact called name. input is the JSON object a command fact reads on
@@ -367,11 +377,12 @@ const file_chalkos_check_v1_check_proto_rawDesc = "" +
 	"\tdocuments\x18\x02 \x03(\tR\tdocuments\x12\x1a\n" +
 	"\bidentity\x18\x03 \x01(\tR\bidentity\x12\x1a\n" +
 	"\bwarnings\x18\x04 \x03(\tR\bwarnings\x12\x14\n" +
-	"\x05error\x18\x05 \x01(\tR\x05error\"U\n" +
+	"\x05error\x18\x05 \x01(\tR\x05error\"m\n" +
 	"\aRefusal\x12\x14\n" +
 	"\x05stage\x18\x01 \x01(\tR\x05stage\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1a\n" +
-	"\bfailures\x18\x03 \x03(\tR\bfailures\"7\n" +
+	"\bfailures\x18\x03 \x03(\tR\bfailures\x12\x16\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\"7\n" +
 	"\vFactRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05input\x18\x02 \x01(\tR\x05input\"$\n" +

@@ -2,11 +2,8 @@ package chalkctl
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"testing"
-
-	"connectrpc.com/connect/v2"
 )
 
 // A command that meets a node of another release warns once, though it asks the node's Info
@@ -32,17 +29,5 @@ func TestReleaseWarning(t *testing.T) {
 	}
 	if strings.Contains(ta.stderr.String(), "warning") {
 		t.Errorf("status of a node of chalkctl's release warns:\n%s", ta.stderr.String())
-	}
-}
-
-// A method the node does not implement is put down to another release, with the code kept.
-func TestUnimplementedNamesTheRelease(t *testing.T) {
-	err := unimplemented(connect.NewError(connect.CodeUnimplemented, "nope"), "0.6.0")
-	if connect.CodeOf(err) != connect.CodeUnimplemented || !strings.HasSuffix(err.Error(), "; the node's chalkd may belong to another release than this chalkctl, 0.6.0: use the chalkctl of the node's release") {
-		t.Errorf("unimplemented = %v", err)
-	}
-	other := errors.New("other")
-	if got := unimplemented(other, "0.6.0"); got != other {
-		t.Errorf("another error became %v", got)
 	}
 }

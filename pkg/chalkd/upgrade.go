@@ -126,11 +126,13 @@ func (s *Server) upgrade(ctx context.Context, stream requests[*nodev1.UpgradeReq
 		// of a resend, came before the recheck or wrote the image anew, and name no staged image.
 		if retired, ok := errors.AsType[*upgrade.StagedRetiredError](err); ok {
 			if _, ok := errors.AsType[*upgrade.CheckError](retired.Err); !ok {
-				return nil, layer.Errorf(connect.CodeFailedPrecondition, "upgrade: %w; the staged image was retired with it", err)
+				return nil, fmt.Errorf("upgrade: %w; the staged image was retired with it", err)
 			}
-			return nil, layer.Errorf(connect.CodeFailedPrecondition, "upgrade: %w; the staged image was retired with it: chalkctl config apply --staged %s changes a staged image's config without retiring the image on a refusal", err, s.nodeName())
+			return nil, fmt.Errorf("upgrade: %w; the staged image was retired with it: chalkctl config apply --staged %s changes a staged image's config without retiring the image on a refusal", err, s.nodeName())
 		}
-		return nil, refused("upgrade", err)
+		// A refusal of the image fails the precondition, and a failure to receive it or to read or
+		// change the disk or the ESP is internal: see domainCodes.
+		return nil, fmt.Errorf("upgrade: %w", err)
 	}
 	s.recordImages(&header)
 	// The image is staged, or boots next, with the config stageConfig gave it, so the pending config

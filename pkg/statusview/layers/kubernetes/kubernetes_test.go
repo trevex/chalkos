@@ -100,3 +100,14 @@ func TestProblems(t *testing.T) {
 		}
 	}
 }
+
+// A node whose config gives no cluster has one line, and no problem.
+func TestNoCluster(t *testing.T) {
+	k := &kubernetesv1.StatusResponse{Phase: kubernetesv1.Phase_PHASE_NO_CLUSTER, State: "no cluster: the node's config gives none for this image"}
+	if got, want := StatusLines(k), []string{"kubernetes: no cluster: the node's config gives none for this image"}; !slices.Equal(got, want) {
+		t.Errorf("lines = %q, want %q", got, want)
+	}
+	if p := Problems(k); len(p) != 0 {
+		t.Errorf("problems = %q", p)
+	}
+}

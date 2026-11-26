@@ -70,7 +70,8 @@ cel.bind(sd, documents.map(n, documents[n].spec)[0], cel.bind(r, facts.recorded.
 | 4 | — | A volume keeps its format and encryption, also the encryption it inherits from the SystemDisk, and does not shrink or take a fixed size where it filled its disk. | `reset` | after the table | after the table |
 | 5 | — | The pinned disk of a volume that the config creates or changes is plugged in. | `refuse` | after the table | after the table |
 | 6 | — | No volume the machine records is left out of the config. | `reinstall` | `facts.recorded == null || facts.recorded.volumes.all(n, n == "var" || n in documents)` | after the table |
-| 7 | — | A new TPM2-encrypted volume, on a node with a fallback, comes with the fallback secret, which opens the node's fallback keyslot. | `refuse` | after the table | after the table |
+| 7 | — | A new TPM2-encrypted volume, on a node with a fallback, comes with the fallback secret. | `refuse` | after the table | after the table |
+| 8 | — | The fallback secret that comes with a new TPM2-encrypted volume opens the node's fallback keyslot. | `refuse` | after the table | the fallback secret does not match the node's existing fallback keyslot |
 
 Expression of rule 1:
 
@@ -156,15 +157,19 @@ facts.recorded.volumes.filter(n, n != "var" && !(n in documents)).map(n, n in ol
 Expression of rule 7:
 
 ```text
-facts.recorded == null || config["storage.chalkos.dev/v1alpha1"].SystemDisk.map(k, config["storage.chalkos.dev/v1alpha1"].SystemDisk[k].spec)[0].encryption.fallback == "none" || size(documents.filter(n, !(n in facts.recorded.volumes) && cel.bind(v, documents[n].spec, cel.bind(sd, config["storage.chalkos.dev/v1alpha1"].SystemDisk.map(k, config["storage.chalkos.dev/v1alpha1"].SystemDisk[k].spec)[0], cel.bind(r, n in facts.recorded.volumes ? facts.recorded.volumes[n] : null, (v.encryption.mode != null ? v.encryption.mode : sd.encryption.mode) == "tpm2"))))) == 0 || (facts.fallback.sent && facts.fallback.matches != false)
+facts.recorded == null || config["storage.chalkos.dev/v1alpha1"].SystemDisk.map(k, config["storage.chalkos.dev/v1alpha1"].SystemDisk[k].spec)[0].encryption.fallback == "none" || size(documents.filter(n, !(n in facts.recorded.volumes) && cel.bind(v, documents[n].spec, cel.bind(sd, config["storage.chalkos.dev/v1alpha1"].SystemDisk.map(k, config["storage.chalkos.dev/v1alpha1"].SystemDisk[k].spec)[0], cel.bind(r, n in facts.recorded.volumes ? facts.recorded.volumes[n] : null, (v.encryption.mode != null ? v.encryption.mode : sd.encryption.mode) == "tpm2"))))) == 0 || facts.fallback.sent
 ```
 
 Message of rule 7:
 
 ```text
-!facts.fallback.sent
-  ? "Volume " + documents.filter(n, !(n in facts.recorded.volumes) && cel.bind(v, documents[n].spec, cel.bind(sd, config["storage.chalkos.dev/v1alpha1"].SystemDisk.map(k, config["storage.chalkos.dev/v1alpha1"].SystemDisk[k].spec)[0], cel.bind(r, n in facts.recorded.volumes ? facts.recorded.volumes[n] : null, (v.encryption.mode != null ? v.encryption.mode : sd.encryption.mode) == "tpm2"))))[0] + " is encrypted and the node's fallback is " + config["storage.chalkos.dev/v1alpha1"].SystemDisk.map(k, config["storage.chalkos.dev/v1alpha1"].SystemDisk[k].spec)[0].encryption.fallback + ", but no fallback secret was sent"
-  : "the fallback secret does not match the node's existing fallback keyslot"
+"Volume " + documents.filter(n, !(n in facts.recorded.volumes) && cel.bind(v, documents[n].spec, cel.bind(sd, config["storage.chalkos.dev/v1alpha1"].SystemDisk.map(k, config["storage.chalkos.dev/v1alpha1"].SystemDisk[k].spec)[0], cel.bind(r, n in facts.recorded.volumes ? facts.recorded.volumes[n] : null, (v.encryption.mode != null ? v.encryption.mode : sd.encryption.mode) == "tpm2"))))[0] + " is encrypted and the node's fallback is " + config["storage.chalkos.dev/v1alpha1"].SystemDisk.map(k, config["storage.chalkos.dev/v1alpha1"].SystemDisk[k].spec)[0].encryption.fallback + ", but no fallback secret was sent"
+```
+
+Expression of rule 8:
+
+```text
+facts.recorded == null || config["storage.chalkos.dev/v1alpha1"].SystemDisk.map(k, config["storage.chalkos.dev/v1alpha1"].SystemDisk[k].spec)[0].encryption.fallback == "none" || size(documents.filter(n, !(n in facts.recorded.volumes) && cel.bind(v, documents[n].spec, cel.bind(sd, config["storage.chalkos.dev/v1alpha1"].SystemDisk.map(k, config["storage.chalkos.dev/v1alpha1"].SystemDisk[k].spec)[0], cel.bind(r, n in facts.recorded.volumes ? facts.recorded.volumes[n] : null, (v.encryption.mode != null ? v.encryption.mode : sd.encryption.mode) == "tpm2"))))) == 0 || !facts.fallback.sent || facts.fallback.matches != false
 ```
 
 ### Images with Kubernetes { #rules-kubernetes }

@@ -17,7 +17,7 @@ import (
 
 func (p *Plugin) Bootstrap(ctx context.Context, _ *kubernetesv1.BootstrapRequest) (*kubernetesv1.BootstrapResponse, error) {
 	k := p.k
-	c, err := k8s.ReadCluster(k.state.Cluster)
+	c, err := k.cluster()
 	if err != nil {
 		return nil, err
 	}

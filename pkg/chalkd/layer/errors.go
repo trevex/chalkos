@@ -4,6 +4,10 @@ import (
 	"fmt"
 
 	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connectproto"
+
+	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/client"
 )
 
 // Errorf is an error that answers an RPC with code: the handlers of chalkd and of its plugins
@@ -13,10 +17,17 @@ func Errorf(code connect.Code, format string, args ...any) error {
 	return &codedError{code: code, err: fmt.Errorf(format, args...)}
 }
 
-// codedError is an error and the code it answers an RPC with.
+// Reasonf is Errorf with a reason, for a refusal a client acts on: the client reads the reason, as
+// client.Reason does, and never matches the message.
+func Reasonf(code connect.Code, reason nodev1.ErrorReason, format string, args ...any) error {
+	return &codedError{code: code, reason: reason, err: fmt.Errorf(format, args...)}
+}
+
+// codedError is an error, the code it answers an RPC with and its reason, if any.
 type codedError struct {
-	code connect.Code
-	err  error
+	code   connect.Code
+	reason nodev1.ErrorReason
+	err    error
 }
 
 func (e *codedError) Error() string { return e.err.Error() }
@@ -24,6 +35,16 @@ func (e *codedError) Error() string { return e.err.Error() }
 func (e *codedError) Unwrap() error { return e.err }
 
 func (e *codedError) Code() connect.Code { return e.code }
+
+func (e *codedError) ErrorReason() string { return client.ReasonName(e.reason) }
+
+// Reasoned is an error that gives the reason of a refusal, such as an error of Reasonf or an image's
+// refusal of config by a rule that names one: the reason's name in the node API without its
+// ERROR_REASON_ prefix, as client.ReasonName gives it; empty for none.
+type Reasoned interface {
+	error
+	ErrorReason() string
+}
 
 // Coded is an error that carries its code: a *connect.Error, an error of Errorf, or a domain error
 // of a layer with a Code method.
@@ -94,8 +115,9 @@ type Detailed interface {
 
 // Error is err as connect sends it: a *connect.Error of the handler as it is, one of a peer, such
 // as another node, with its code, message and details, and any other error with the code Of finds,
-// its whole text and the details of the first error in its tree with that code. connect sends no
-// other error's text, and answers with a peer's error as CodeInternal without its message.
+// its whole text, the details of the first error in its tree with that code and, as a
+// nodev1.ReasonDetail, the reason of the first Reasoned error in its tree that gives one. connect
+// sends no other error's text, and answers with a peer's error as CodeInternal without its message.
 func (c Codes) Error(err error) *connect.Error {
 	if ce, ok := err.(*connect.Error); ok {
 		if !ce.IsRemote() {
@@ -110,6 +132,14 @@ func (c Codes) Error(err error) *connect.Error {
 		return ok && d.Code() == code
 	}).(Detailed); ok {
 		ce = withDetails(ce, d.Details())
+	}
+	if r, ok := firstIn(err, func(e error) bool {
+		r, ok := e.(Reasoned)
+		return ok && client.ReasonNamed(r.ErrorReason()) != nodev1.ErrorReason_ERROR_REASON_UNSPECIFIED
+	}).(Reasoned); ok {
+		if detail, err := connectproto.NewErrorDetail(&nodev1.ReasonDetail{Reason: client.ReasonNamed(r.ErrorReason())}); err == nil {
+			ce = ce.WithDetail(detail)
+		}
 	}
 	return ce
 }

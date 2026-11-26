@@ -41,7 +41,7 @@ func (o *overview) View(width, height int) string {
 	info := o.info.Value
 	switch {
 	case o.status.Value == nil && o.info.Err != nil:
-		b.WriteString("Waiting for chalkd, which does not answer: " + OneLine(o.info.Err.Error()) + "\n")
+		b.WriteString("Waiting for chalkd, which does not answer: " + OneLine(Describe(o.info.Err).Error()) + "\n")
 	case info.GetInstaller():
 		b.WriteString("The installer writes nodes' images to other disks; it has no status of its own.\n")
 		b.WriteString("The Storage tab lists the disks it can install onto.\n")

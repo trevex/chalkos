@@ -16,6 +16,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/askpassword"
+	"github.com/trevex/chalkos/pkg/client"
 )
 
 // Tab is one tab of the console.
@@ -58,6 +59,9 @@ func (s *Source[T]) Set(v T, err error, now time.Time) {
 	s.Value, s.At, s.Err = v, now, nil
 }
 
+// Describe is err, of a call to chalkd, as the console shows it: as client.Describe words it.
+func Describe(err error) error { return client.Describe(err, client.Hints{}) }
+
 // Problem says why the source fails and since when its data is old, on one line; empty while it
 // does not.
 func (s Source[T]) Problem(what string) string {
@@ -65,9 +69,9 @@ func (s Source[T]) Problem(what string) string {
 	case s.Err == nil:
 		return ""
 	case s.At.IsZero():
-		return OneLine(fmt.Sprintf("%s: %v", what, s.Err))
+		return OneLine(fmt.Sprintf("%s: %v", what, Describe(s.Err)))
 	}
-	return OneLine(fmt.Sprintf("%s: %v; shown as of %s", what, s.Err, s.At.Local().Format(time.TimeOnly)))
+	return OneLine(fmt.Sprintf("%s: %v; shown as of %s", what, Describe(s.Err), s.At.Local().Format(time.TimeOnly)))
 }
 
 // NodeMsg is what the console read of the node, which every tab gets after each read.

@@ -45,9 +45,10 @@ func (c *Conn) bounded(next connect.ClientFunc) connect.ClientFunc {
 
 // noAnswer replaces err when CallTimeout ended the call. The node learns the deadline in whole
 // milliseconds, rounded down, so its own deadline_exceeded can arrive before the call's context
-// ends; the call has no other deadline, so that answer also means CallTimeout ran out.
+// ends; the call has no other deadline, so that answer also means CallTimeout ran out. A dial that
+// timed out before the node was reached keeps its own error.
 func (c *Conn) noAnswer(ctx context.Context, err error) error {
-	if err == nil || errors.Is(err, io.EOF) || context.Cause(ctx) != errNoAnswer && connect.CodeOf(err) != connect.CodeDeadlineExceeded {
+	if err == nil || errors.Is(err, io.EOF) || context.Cause(ctx) != errNoAnswer && !(connect.CodeOf(err) == connect.CodeDeadlineExceeded && FromNode(err)) {
 		return err
 	}
 	return connect.NewError(connect.CodeDeadlineExceeded, fmt.Sprintf("chalkd on %s did not answer within %s", c.endpoint, minutes(c.callTimeout))).WithCause(err)

@@ -247,7 +247,8 @@ type NodeServiceClient interface {
 	// delivery of that config, and the change goes ahead; while an Upgrade, a RollbackImage or the
 	// rollback at a trial's deadline holds the lock that delivery needs, the change is refused with
 	// ABORTED. A trial whose node runs neither config ends, and the change goes ahead. A trial
-	// record the node cannot read refuses the change with INTERNAL until RollbackConfig removes it.
+	// record the node cannot read refuses the change with FAILED_PRECONDITION and the reason
+	// ERROR_REASON_TRIAL_RECORD_UNREADABLE until RollbackConfig removes it.
 	// Config for the running image goes to the image staged in the inactive slot too, or replaces
 	// the pending config, as ApplyConfigRequest.config describes. Available in normal mode to
 	// admins.
@@ -262,7 +263,8 @@ type NodeServiceClient interface {
 	ResetVolume(context.Context, *v1.ResetVolumeRequest) (*v1.ResetVolumeResponse, error)
 	// Status reports the state of an installed node: its config versions, storage, failed units,
 	// certificates, trust, clock, boot and outputs; each layer's own state is its service's Status.
-	// Available in normal mode to readers. The console may call it.
+	// A section the node cannot read is left empty and named in StatusResponse.errors, and the others
+	// answer all the same. Available in normal mode to readers. The console may call it.
 	Status(context.Context, *v1.StatusRequest) (*v1.StatusResponse, error)
 	// Logs streams the journal of the current boot, or of one unit in it. Available in maintenance
 	// and normal mode to readers. The console may call it.
@@ -283,7 +285,8 @@ type NodeServiceClient interface {
 	// image's own checker accepts the config it keeps for the image. It does not check that the
 	// image is one to trust: without Secure Boot, an operator can run any image as root, with STATE
 	// and VAR unsealed, as their keys are sealed to PCR 7 alone. Secure Boot is what limits upgrades
-	// to images signed for db.
+	// to images signed for db. An image or config the node refuses answers FAILED_PRECONDITION, and a
+	// failure of the node, such as a full ESP, INTERNAL.
 	Upgrade(context.Context) (NodeServiceUpgradeClientStream, error)
 	// ActivateImage makes the image staged in the node's inactive slot boot next: it gives the
 	// image's UKI its boot entry's name, one generation above the others, with the tries the UKI
@@ -352,7 +355,8 @@ type NodeServiceClient interface {
 	// confirmation ends the trial and the rollback's retries. Once such a rollback failed after it
 	// changed the node, it answers FAILED_PRECONDITION all the same: the node keeps trying to finish
 	// the rollback, and RollbackConfig to the trial's previous version finishes it at once. It
-	// answers INTERNAL when the node cannot read the trial's record, which RollbackConfig removes.
+	// answers FAILED_PRECONDITION with the reason ERROR_REASON_TRIAL_RECORD_UNREADABLE when the node
+	// cannot read the trial's record, which RollbackConfig removes.
 	// A confirmation also writes what the trial's delivery held back until then: the config slot of
 	// the image staged in the inactive slot, or the pending config the config on trial replaces.
 	// Available in normal mode to admins.
@@ -519,7 +523,8 @@ type NodeServiceHandler interface {
 	// delivery of that config, and the change goes ahead; while an Upgrade, a RollbackImage or the
 	// rollback at a trial's deadline holds the lock that delivery needs, the change is refused with
 	// ABORTED. A trial whose node runs neither config ends, and the change goes ahead. A trial
-	// record the node cannot read refuses the change with INTERNAL until RollbackConfig removes it.
+	// record the node cannot read refuses the change with FAILED_PRECONDITION and the reason
+	// ERROR_REASON_TRIAL_RECORD_UNREADABLE until RollbackConfig removes it.
 	// Config for the running image goes to the image staged in the inactive slot too, or replaces
 	// the pending config, as ApplyConfigRequest.config describes. Available in normal mode to
 	// admins.
@@ -534,7 +539,8 @@ type NodeServiceHandler interface {
 	ResetVolume(context.Context, *v1.ResetVolumeRequest) (*v1.ResetVolumeResponse, error)
 	// Status reports the state of an installed node: its config versions, storage, failed units,
 	// certificates, trust, clock, boot and outputs; each layer's own state is its service's Status.
-	// Available in normal mode to readers. The console may call it.
+	// A section the node cannot read is left empty and named in StatusResponse.errors, and the others
+	// answer all the same. Available in normal mode to readers. The console may call it.
 	Status(context.Context, *v1.StatusRequest) (*v1.StatusResponse, error)
 	// Logs streams the journal of the current boot, or of one unit in it. Available in maintenance
 	// and normal mode to readers. The console may call it.
@@ -555,7 +561,8 @@ type NodeServiceHandler interface {
 	// image's own checker accepts the config it keeps for the image. It does not check that the
 	// image is one to trust: without Secure Boot, an operator can run any image as root, with STATE
 	// and VAR unsealed, as their keys are sealed to PCR 7 alone. Secure Boot is what limits upgrades
-	// to images signed for db.
+	// to images signed for db. An image or config the node refuses answers FAILED_PRECONDITION, and a
+	// failure of the node, such as a full ESP, INTERNAL.
 	Upgrade(context.Context, NodeServiceUpgradeServerStream) (*v1.UpgradeResponse, error)
 	// ActivateImage makes the image staged in the node's inactive slot boot next: it gives the
 	// image's UKI its boot entry's name, one generation above the others, with the tries the UKI
@@ -624,7 +631,8 @@ type NodeServiceHandler interface {
 	// confirmation ends the trial and the rollback's retries. Once such a rollback failed after it
 	// changed the node, it answers FAILED_PRECONDITION all the same: the node keeps trying to finish
 	// the rollback, and RollbackConfig to the trial's previous version finishes it at once. It
-	// answers INTERNAL when the node cannot read the trial's record, which RollbackConfig removes.
+	// answers FAILED_PRECONDITION with the reason ERROR_REASON_TRIAL_RECORD_UNREADABLE when the node
+	// cannot read the trial's record, which RollbackConfig removes.
 	// A confirmation also writes what the trial's delivery held back until then: the config slot of
 	// the image staged in the inactive slot, or the pending config the config on trial replaces.
 	// Available in normal mode to admins.

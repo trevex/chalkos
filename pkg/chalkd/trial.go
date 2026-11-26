@@ -381,10 +381,10 @@ func (s *Server) trialStatus() (*nodev1.ConfigTrial, string) {
 }
 
 // unreadableTrial refuses a request for err, which kept the trial's record from being read. The
-// record stays until RollbackConfig removes it: every trial may end in a rollback. chalkctl tells
-// this refusal from other internal errors by its message's start, so it stays as it is.
+// record stays until RollbackConfig removes it: every trial may end in a rollback. Its reason tells
+// clients, such as chalkctl, that only a rollback helps.
 func (s *Server) unreadableTrial(err error) error {
-	return fmt.Errorf("read the record of the config's trial: %w; other changes are refused until chalkctl config rollback %s restores the previous config, which removes the record", err, s.nodeName())
+	return layer.Reasonf(connect.CodeFailedPrecondition, nodev1.ErrorReason_ERROR_REASON_TRIAL_RECORD_UNREADABLE, "read the record of the config's trial: %w; other changes are refused until chalkctl config rollback %s restores the previous config, which removes the record", err, s.nodeName())
 }
 
 // lockSlots takes s.upgrading for what, a change of the image slots: it refuses the change with

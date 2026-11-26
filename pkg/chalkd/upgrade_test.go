@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -57,7 +59,7 @@ func TestUpgrade(t *testing.T) {
 		{"installed and rebooting", true, upgrade.Result{Entry: "chalkos_2+3.efi"}, nil, true, 0},
 		{"already installed", true, upgrade.Result{AlreadyInstalled: true}, nil, false, 0},
 		{"already staged and rebooting", true, upgrade.Result{AlreadyStaged: true, Entry: "chalkos_2+3.efi"}, nil, true, 0},
-		{"refused", true, upgrade.Result{}, errors.New("the image's platform is kvm, the node's metal"), false, connect.CodeFailedPrecondition},
+		{"refused", true, upgrade.Result{}, &upgrade.RefusalError{Err: errors.New("the image's platform is kvm, the node's metal")}, false, connect.CodeFailedPrecondition},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, _ := newTestServer(t, normal, vda)
@@ -664,7 +666,7 @@ func TestUpgradeRetiresConfigSlots(t *testing.T) {
 		if err := os.Remove(filepath.Join(s.Paths.ESP, "EFI", "Linux", "chalkos_3+3.efi")); err != nil {
 			t.Error(err)
 		}
-		return upgrade.Result{}, imageConfig{}, errors.New("the node's config does not suit the image")
+		return upgrade.Result{}, imageConfig{}, &upgrade.RefusalError{Err: errors.New("the node's config does not suit the image")}
 	}
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator])
 	stream := openUpgrade(t, conn)
@@ -777,5 +779,27 @@ func TestStageConfigNamesNoOtherImageForItsOwnVolume(t *testing.T) {
 	}
 	if got, _ := staged(t, s); got.Version != hashOf(t, extraConfig("ext4")) {
 		t.Errorf("staged version = %q, want the earlier config's", got.Version)
+	}
+}
+
+// TestUpgradeCodes answers an upgrade whose install failed by what failed: an image the node
+// refuses fails the precondition, and a disk that is full is the node's own failure.
+func TestUpgradeCodes(t *testing.T) {
+	c := newCreds(t)
+	for name, tc := range map[string]struct {
+		err  error
+		code connect.Code
+	}{
+		"a refused header": {&upgrade.RefusalError{Err: errors.New("the image is built for arm64, this machine for x86-64")}, connect.CodeFailedPrecondition},
+		"a full ESP":       {fmt.Errorf("write the UKI to the ESP: %w", syscall.ENOSPC), connect.CodeInternal},
+	} {
+		s, _ := newTestServer(t, normal, vda)
+		fakeImageSlots(t, s).installs(upgrade.Result{}, tc.err)
+		conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator])
+		h := &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{ImageId: "chalkos", RootHash: []byte{1, 2}}}
+		_, err := sendAll(t, openUpgrade(t, conn), &nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: h}})
+		if connect.CodeOf(err) != tc.code || !strings.Contains(err.Error(), "upgrade: "+tc.err.Error()) {
+			t.Errorf("%s: upgrade = %v, want %v", name, err, tc.code)
+		}
 	}
 }

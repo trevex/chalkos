@@ -27,12 +27,15 @@ type Comparison struct {
 	Platform string `json:"platform"`
 }
 
-// Problems are what the status s of a node shows wrong, each in a few words, in the order Write
-// prints them: the config's trial and activation, the boot, the inventory's comparisons, the
-// module policy, volumes, disks, outputs, certificates, the clock and failed units. None is a
-// healthy node.
+// Problems are what the status s of a node shows wrong, each in a few words: the sections the node
+// could not read, and then, in the order Write prints them, the config's trial and activation, the
+// boot, the inventory's comparisons, the module policy, volumes, disks, outputs, certificates, the
+// clock and failed units. None is a healthy node.
 func Problems(s *nodev1.StatusResponse, o Options) []string {
 	var p []string
+	for _, e := range s.Errors {
+		p = append(p, e.Section+" unknown")
+	}
 	if a := s.GetConfigActivation(); a != nil {
 		switch a.GetState() {
 		case nodev1.ActivationState_ACTIVATION_STATE_FAILED:
