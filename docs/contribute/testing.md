@@ -73,6 +73,52 @@ go test ./pkg/statusview/ -run TestX -update
 The router's renderers in `cmd/chalkos-render` keep their golden files in
 `cmd/chalkos-render/testdata/router` and take `-update` the same way.
 
+### Test helpers
+
+Shared fakes and fixtures live in packages named after the package they serve, with the suffix
+`test`. Use one of them before you write a fake of your own:
+
+| Package | Stands in for | Used by |
+| --- | --- | --- |
+| `pkg/tool/tooltest` | the programs a `tool.Runner` runs, such as systemctl, sfdisk and vtysh: records each command line and answers it by rules | `pkg/chalkd`, `pkg/install` |
+| `pkg/storage/hostops/hostopstest` | `hostops.Ops`: mounts, LUKS and device-mapper volumes | `pkg/install`, `pkg/upgrade` |
+| `pkg/storage/storagetest` | the sysfs, udev database and `/dev` trees a `storage.Host` reads | `pkg/chalkd`, `pkg/install` |
+| `pkg/upgrade/upgradetest` | an image of random data that a UKI boots, and a partition of a disk image file | `pkg/upgrade`, `pkg/install` |
+| `pkg/image/imagetest` | a small chalkos disk image: an ESP with systemd-boot and a UKI, the hash tree and the store | `pkg/chalkctl`, `pkg/chalkbuild` |
+| `pkg/uki/ukitest` | a PE image with the sections of a UKI | `pkg/chalkd`, `pkg/chalkctl` |
+| `pkg/ociimage/ocitest` | OCI registries served from memory, with or without credentials, and small chalkos images to push to them | `pkg/chalkctl`, `pkg/chalkbuild` |
+| `pkg/registry/registrytest` | the cluster registry of `pkg/registry` on loopback, with a node certificate of a given OS CA | `pkg/chalkctl` |
+| `pkg/secureboot/secureboottest` | TPM event logs as firmware writes them | `pkg/chalkd`, `pkg/chalkctl` |
+| `pkg/pki/pkitest` | the cluster's CAs | `pkg/kubernetes/pki` |
+| `pkg/schema/schematest` | the fixture schemas of `test/fixtures`, loaded or copied | `pkg/chalkctl`, `cmd/chalkos-rules` |
+| `pkg/chalkd/chalkdtest` | the layers chalkd compiles in and the Kubernetes image's effects, for tests that run chalkd's server | `pkg/chalkctl`, `pkg/chalkd` |
+| `pkg/chalkd/layer/layertest` | a layer's API checked against its plugin's permissions, and the arguments its commands refuse | `cmd/chalkd`, the layers of `pkg/chalkd/layers` |
+| `pkg/chalkd/layers/kubernetes/kubernetestest` | a node's Kubernetes files, shares and CAs, and stand-ins for the preparation, the API server's Node and chalkd | `pkg/chalkd`, `pkg/chalkctl` |
+| `pkg/chalkd/renewal/renewaltest` | the waits of a `Renewal`, run in the test's synctest bubble, which hands the test each check | `pkg/chalkd` |
+| `pkg/kubernetes/kubetest` | a cluster and its images, a node, and the `Cluster` and `Node` documents that describe them | `pkg/chalkd`, `pkg/chalkctl` |
+| `pkg/kubernetes/etcd/etcdtest` | etcd members in the test's process, with mutual TLS from a test CA | `pkg/chalkd/layers/kubernetes`, `pkg/chalkctl` |
+| `pkg/router/derive/derivetest` | a router's documents as its outputs and validator take them, and the scenarios both test | `cmd/chalkos-render`, `pkg/router` |
+| `pkg/console/consoletest` | the console's node: a fake client, the nodes it shows, and a terminal of 80 by 25 to compare its screen | `pkg/console` |
+| `pkg/askpassword/askpasswordtest` | systemd's password requests: an `ask.*` file and the socket that records the answers | `pkg/askpassword`, `pkg/console` |
+| `pkg/internal/cli/clitest` | checks of a program's cobra command tree | `pkg/chalkctl`, `pkg/chalkbuild` |
+| `pkg/internal/netnstest` | the host's network: runs the test in a user and network namespace of its own | `pkg/kubernetes/vip`, `pkg/router` |
+| `pkg/internal/golden` | expected output kept in `testdata/`, as [Compare output with a golden file](#compare-output-with-a-golden-file) describes | `pkg/statusview`, `pkg/kubernetes/manifests` |
+| `pkg/internal/testwait` | waits on time or on I/O, as [Wait in tests](#wait-in-tests) describes | `pkg/chalkd` |
+
+The `ci-tiers` check fails when `pkg/internal/golden`, `pkg/internal/testwait` or a package of `pkg/`
+whose name ends in `test` has no row here.
+
+A test of chalkd's server in `pkg/chalkd` starts from one of its fixtures, each built on the one
+before. `newTestServer` returns a server in a given mode whose paths point at fixture trees, with
+`vda` as the boot disk. `installedServer` is a normal-mode server of node `n1` whose STATE records
+its storage section, and `configServer` one that runs the base config with a demo output and
+effect. `trialServer` is `configServer` whose trial deadlines stop with the test, and
+`stagedServer` is `configServer` after an upgrade without a reboot. `clusterServer` builds on
+`configServer` with a Kubernetes share, and `kubernetesServer` and `routerServer` build on
+`installedServer` with the files of their layer. `enrolServer` is a maintenance server with
+firmware in Setup Mode or not. Each returns the server and its `tooltest.Runner`, except
+`trialServer` and `enrolServer`.
+
 ## Wait in tests
 
 A test waits for an event: no test calls `time.Sleep` to let something happen.
@@ -160,12 +206,14 @@ attribute has an `expr` and an `expected` value. They evaluate images with `mkIm
 their arguments, the images' options and assertions, and what the images set; a test that an
 evaluation fails uses `builtins.tryEval`. The `eval` check fails its build with the tests that
 failed, each with its expected value and its result, and `eval-kinds` does the same for
-`test/nix/kinds.nix`, the tests of config kinds, outputs, effects, facts and validators. A failed
+`test/nix/kinds.nix`, the tests of config kinds, outputs, effects, facts and validators, and
+`release-eval` for `test/nix/release.nix`, the tests of the release images. A failed
 test fails only its check, so a `nix build` of several checks still builds the others. A test
 whose expression throws fails as well, but another evaluation error, such as a missing
-attribute, fails the evaluation of every check. Both take their helpers from `test/nix/lib.nix`: `fails`,
-`refuses`, `worker`, `router`, `routerWithout`, `installer`, `etcJSON` and `hasPackage`. Here
-`w` is the plain worker image, which eval.nix evaluates once:
+attribute, fails the evaluation of every check. `eval.nix` and `kinds.nix` take their
+helpers from `test/nix/lib.nix`: `fails`, `refuses`, `worker`, `router`, `routerWithout`,
+`installer`, `etcJSON` and `hasPackage`. Here `w` is the plain worker image, which eval.nix
+evaluates once:
 
 ```nix
 testStateHasItsOwnPartitionType = {
@@ -177,8 +225,10 @@ testStateHasItsOwnPartitionType = {
 Build checks test what an image build produces, without booting it. They live in `nix/checks/`:
 `image.nix` checks an image's files, `units/` runs an image's unit scripts in namespaces, one file
 a check, and `repo.nix` validates the lab template and the examples. `units/` also holds
-`image-checker`, which boots one NixOS VM, as an image's checker needs systemd. `e2e.nix` holds
-the end-to-end checks, `eval.nix` the evaluation tests, and `lib.nix` what they share, with the
+`image-checker`, which boots one NixOS VM, as an image's checker needs systemd. `release.nix`
+holds the checks of the release images and the SBOMs, `e2e.nix` the end-to-end checks, `eval.nix`
+the evaluation tests, `tiers.nix` the tiers CI runs the checks in, `default.nix` the `ci-tiers`
+check, and `lib.nix` what they share, with the
 shell functions the check scripts call: `fail`, `retry` and `refuses`, and for the unit checks
 `netns`, `veth`, `forwarding`, `document` and `stub`. The test scripts of
 `units/` are `writeShellApplication` scripts, so shellcheck runs on them when they build.
@@ -186,10 +236,12 @@ shell functions the check scripts call: `fail`, `retry` and `refuses`, and for t
 | Check | What it checks |
 | --- | --- |
 | `kernel-modules` | An image's module tree holds its groups' modules and no others, and its out-of-tree modules as files rather than links. The tool refuses unknown modules and missing dependencies. |
-| `image-size` | The test images stay within the ceilings in `nix/testing/image-sizes.nix`, and the fit check every image build runs refuses images that leave no room. Its measure of each image agrees with `pkg/verity`. |
+| `image-size` | The test images and the installer stay within the ceilings in `nix/testing/image-sizes.nix` and hold no Python, and the fit check every image build runs refuses images that leave no room. Its measure of each image agrees with `pkg/verity`. |
 | `bootspec` | An image's bootspec names the UKI on the ESP and no initrd. |
-| `no-shell` | The test and release images link no `/bin/sh`, have no activation script and no shell on the system path, and the release images build without the debug tools or `chalkos.shell.allow`, so no shell is in their systems or their initrds. |
-| `no-shell-calls` | No ELF file of the release images' systems and initrds imports `system`, `popen` or `wordexp` or holds `/bin/sh`, unless the allow-list in `nix/checks/image.nix` gives the reason it never runs a shell on a node. The images' console keymaps load with the decompression tools disabled, and their initrds carry the zlib that kbd opens for gzipped keymaps and fonts. |
+| `no-shell` | The test images, the release images and the feature images, which carry the Kubernetes features that are off by default, link no `/bin/sh`, have no activation script and no shell on the system path, and the release images build without the debug tools or `chalkos.shell.allow`, so no shell is in their systems or their initrds. |
+| `no-shell-calls` | No ELF file of the release and feature images' systems and initrds imports `system`, `popen` or `wordexp` or holds `/bin/sh`, unless the allow-list in `nix/checks/image.nix` gives the reason it never runs a shell on a node. The images' console keymaps load with the decompression tools disabled, and their initrds carry the zlib that kbd opens for gzipped keymaps and fonts. |
+| `noexec-mounts` | No writable file system of the worker or the router lets a file run, take set-user-ID effect or open as a device, and every unit of chalkos's node modules runs programs from the store alone, through `chalkosLib.internal.noExec`, or is on the list `mayExec` of `nix/checks/image.nix` with its reason. |
+| `module-policy` | The worker's UKI carries the module policy in its first archive, with the store's root hash, padded to its slot's size. |
 | `vxlan-rule` | The VXLAN firewall rule, in network namespaces. |
 | `router-firewall` | A router's firewall unit and rulesets, in network namespaces. |
 | `router-policy-routing` | A router's policy routing: the example's ruleset with the kernel's rules and next-hop tables, in network namespaces. |
@@ -204,14 +256,15 @@ shell functions the check scripts call: `fail`, `retry` and `refuses`, and for t
 | `rules` | The images' rules compile, the outputs' checks pass the files they should and refuse broken ones, and a broken rule, effect, output or diagnostic fails its image. |
 | `sbom` | The SBOMs of the router test image, chalkctl and chalkbuild build and are valid SPDX 2.3 and CycloneDX, with licences, as [Release images](ci.md#release-images) describes. |
 | `image-tests` | The image tests of the test image, the router images and the examples' image pass: their outputs render the golden files, and their refusals and effects are those expected. |
-| `template-lab` | The lab template's image builds, and `chalkctl validate` accepts the template's YAML with it in place of the published image its inventory names, which must be one of this release. |
+| `template-lab` | The lab template's image builds, and `chalkctl validate` accepts the template's YAML with it in place of the published image its inventory names, which must be one of this release. Its `Cluster` document names the images of the newest pinned Kubernetes release by digest. |
 | `template-router-lab` | The router lab template's two images build, and `chalkctl validate` accepts the template's YAML with its router image in place of the published one its inventory names, which must be one of this release. |
-| `template-cluster-metal` | The metal cluster template's image and installer build, and `chalkctl validate` accepts the template's YAML with the image. |
-| `example-homelab` | The homelab images build, and `chalkctl validate` accepts their inventory with the built-in `BGPSpeaker` and `BGPPeer` documents. |
+| `template-cluster-metal` | The metal cluster template's image and installer build, and `chalkctl validate` accepts the template's YAML with the image. Its `Cluster` document names the images of the newest pinned Kubernetes release by digest. |
+| `example-homelab` | The homelab images build, and `chalkctl validate` accepts their inventory with the built-in `BGPSpeaker` and `BGPPeer` documents, and the inventory of its air-gapped variant. Its `Cluster` document names the images of the newest pinned Kubernetes release by digest. |
 | `example-bgp-extension` | The standalone BIRD image evaluates and its extension tests pass. |
+| `example-bgp-extension-validator-docs` | The BGP guide shows the refusals that two of the extension's tests expect, as their `refusals.json` holds them. |
 | `example-extensions` | The extensions example's image builds, and `chalkctl validate` accepts its YAML, `Rack` and `Hardware` documents included, with it. |
 | `image-contract` | An image directory describes itself and carries a schema for each kind it lists. |
-| `image-oci` | The test image's OCI layout: one manifest of the chalkos artifact type, whose header names the image directory's root hash and platform, whose layers are the image's parts and contract in order, and whose contract holds the directory's `metadata.json`. |
+| `image-oci` | The test image's OCI layout: one manifest of the chalkos artifact type, whose header names the image directory's root hash and platform, whose layers are the image's parts and contract in order, whose annotations are those `metadata.json` names, and whose contract holds the directory's `metadata.json`. |
 | `chrony-dhcp` | The `chalkos-chrony-dhcp` unit's command: the time servers networkd learned are chrony's when the node's `TimeSync` takes them, and none are otherwise. chrony's effect reloads the sources of a chronyd that runs alone. |
 | `containerd-config` | containerd's merged config takes the sandbox image from the file `chalkos-containerd-config` writes from the `Cluster` document, and keeps its own without one. |
 | `kubernetes-bgp-nht` | A numbered peer over a `noprefixroute` fabric address and an RA subnet route: the old next-hop check fails, the rendered config establishes BGP, learns a default route and announces the node's address, and link loss removes the default, in network namespaces. |
@@ -220,7 +273,14 @@ shell functions the check scripts call: `fail`, `retry` and `refuses`, and for t
 | `fixtures` | Every node of the end-to-end fixtures has config its image accepts, as `chalkctl validate` checks it, and the inventories the tests want refused are refused with their message. |
 | `nix-lint` | The Nix files are formatted as `nix fmt` formats them, hold no unused binding or argument (deadnix) and pass statix, except for the lints `statix.toml` leaves out. |
 | `security-insights` | `security-insights.yml` is valid against the schema of the OpenSSF Security Insights version it names. |
-| `ci-tiers` | Every check is in exactly one tier of `nix/checks/tiers.nix`, and `.github/labels.yml` has a label for each end-to-end check and the label `ci-failure`. See [Continuous integration](ci.md#tiers). |
+| `ci-tiers` | Every check is in exactly one tier of `nix/checks/tiers.nix`, and `.github/labels.yml` has a label for each end-to-end check and the label `ci-failure`. This page or `ci.md` names every check other than the `release-image-<name>` checks, and this page names every file of `test/e2e/*_test.go` and every test helper package of `pkg/`. See [Continuous integration](ci.md#tiers). |
+| `api-generated` | The generated API code is what buf generates from the proto files. |
+| `docs` | The documentation site builds strictly, the commands, config documents and Nix files its pages show are valid, and `docs/contribute/packages.md` has a row for each directory of Go code. |
+| `docs-generated` | The pages generated from the code are those in the repository. |
+| `workflows` | The GitHub workflows pass actionlint, with shellcheck for their scripts, and the scripts of `.github/scripts` pass shellcheck and their test. |
+| `renovate` | Renovate's configuration passes its validator, as [Dependencies](dependencies.md) describes. |
+| `release-eval` | The evaluation tests of `test/nix/release.nix`: every release image's repository, tag, provenance and annotations, without a build. |
+| `release-image-<name>` | One release image builds, with its OCI image layout and SBOM, as [Release images](ci.md#release-images) describes. |
 
 ## Image tests
 
@@ -280,17 +340,78 @@ test or a group of them:
 
 | Check | Test | VMs |
 | --- | --- | --- |
-| `e2e-image` | The test image boots without Secure Boot, then without its serial port and TPM: STATE asks for the recovery key on the screen, which the test reads with the test image's console font and answers on the keyboard, and the console answers a password request after the boot. systemd-vconsole-setup loads the keymap and the font without warnings. A second test installs volumes on the system disk and a data disk. | 1 per test |
+| `e2e-image` | The test image without Secure Boot, then without its serial port and TPM; volumes on a second disk. | 1 per test |
 | `e2e-secureboot` | Secure Boot refuses an unsigned image, and dm-verity a tampered store. | 1 per test |
-| `e2e-install` | An install in place, with a second disk. | 1 |
-| `e2e-installer` | The installer installs a node under Secure Boot onto a disk that holds an LVM volume group: an install streamed from a directory that wipes the disk and is cancelled while it writes slot A, one whose config the image's validator refuses once the store is on the disk, and one that continues on the disk, which the installer pulls from a registry the test serves, with credentials. | 1 |
-| `e2e-iso` | The installer's ISO, signed as chalkbuild signs it, boots. | 1 |
-| `e2e-upgrade` | Under Secure Boot, an upgrade that the node pulls through a mirror endpoint, a registry the test serves, with the endpoint's credentials, that boots from slot B and is found healthy, then one streamed from a directory that never becomes healthy and falls back. | 1 |
-| `e2e-kubernetes` | A dual-stack cluster of a control plane and a worker through chalklab: networking, DNS, a private image pulled through a mirror with the node's credentials, an image pushed to the control plane's cluster registry and run on the worker, renewals and rotations, a reboot. | 2 |
-| `e2e-kubernetes-ha` | Three control planes of an IPv6-only cluster behind a VIP: joins, failover, reinstalls and a rolling upgrade. | 3 |
-| `e2e-router` | Two routers through chalklab, peering unnumbered over BGP with BFD and a password: the session in their status, a default route and the NAT64 prefix learned, a diagnostic, a delivery FRR reloads without ending the session, DNS64's answer for `ipv4only.arpa`, and a connection through a NAT64 with an empty pool, in its own namespace, and QEMU's user-mode network to a listener of the test, with its session in the status and in `nat64-sessions`, both routers' session in a VRF with its table, a route imported into the default VRF, the unreachable defaults that end its table, a resolver of the VRF running before and after a change of the VRF's table, chalkd still reachable, and a policy's rules, next-hop table and chain on a router before and after its boot, and a DHCP server in a VRF that leases the other router its reserved address on a macvlan link, with the lease kept and renewed across the server's boot, and a DHCPv6 server there that delegates it a prefix, which the server's router routes to it before and after its boot, and a Kubernetes control plane on the routers' switch whose BGP speaker announces its address and the VIP to one router over an address session with BFD and a password: the router's route to the VIP and a connection to the API server through it, the router's default route in the node's BGP table but not in its kernel, which keeps the default route of its router advertisements, and a delivery that adds an interface to announce, which `chalkos-frr-reload` applies in one pass without ending the session. | 3 |
+| `e2e-install` | An install in place after the enrolment of Secure Boot keys, with a second disk. | 1 |
+| `e2e-installer` | The installer installs onto a disk that holds an LVM volume group, three times. | 1 |
+| `e2e-iso` | The installer's ISO, signed as chalkbuild signs it, boots and enrols Secure Boot keys. | 1 |
+| `e2e-upgrade` | Upgrades through a mirror with credentials, a rollback, and a fallback from an image that never turns healthy. | 1 |
+| `e2e-kubernetes` | Phases: ready, pods, host-integration, cluster-registry, reboot, renewals, rotations, revocation, restart. | 2 |
+| `e2e-kubernetes-ha` | Phases: bootstrap, vip, pinned address, rejoin, stale member, control plane rollout, rolling upgrade. | 3 |
+| `e2e-router` | Phases: bgp, reload, nat64, trial, vrf, default, wireguard, dhcp, kubernetes. | 3 |
 
-Each test lives in a file of its own in `test/e2e`; the other files hold the steps the tests share:
+`e2e-image` runs two tests. The first boots the unsigned test image, installs it in place and
+checks the store, the root, STATE, VAR and the console's keymap and font. It then boots the node
+without its serial port and its TPM: STATE asks for the recovery key on the screen, which the test
+reads with the test image's console font and answers on the keyboard, and the console on tty1
+answers a password request. The second test checks each volume of a layout on the system disk and
+a data disk, before and after a reset.
+
+`e2e-installer` installs under Secure Boot three times: streamed from the host with
+`--wipe-disk` and cancelled while it writes slot A, refused by the image's validator once the
+store is on the disk, and continued on the disk from a registry the test serves, with the node's
+credentials. `e2e-upgrade` pulls each upgrade through a mirror endpoint that asks for credentials,
+rolls back, takes an operator's upgrade with a pending config, and falls back from an image that
+never turns healthy.
+
+A test of several phases runs them in order as subtests, and a failed phase stops the rest.
+`TestKubernetesCluster` brings up a dual-stack cluster of a control plane and a worker through
+chalklab. Its phases:
+
+- ready: both nodes turn Ready, their clocks synchronise, and a private image pulls through a
+  mirror with the node's credentials.
+- pods: pods reach each other and resolve names, and a CNI's exec paths work.
+- host-integration: the worker's module policy, its Longhorn tools, and the status of a policy
+  that the host has tampered with.
+- cluster-registry: an image pushed to the control plane's cluster registry runs on the worker,
+  then is deleted and collected.
+- reboot: the control plane reboots and serves a new certificate, and the networking works again.
+- renewals: node certificates renew in place, and the cluster registry serves the renewed one.
+- rotations: the OS CA, the Kubernetes CAs, the service-account key and the encryption key rotate.
+- revocation: the revoked worker's kubelet is denied, unrevoking it needs `--force`, and it
+  registers again after a reboot.
+- restart: the worker shuts down through its guest agent, and `chalklab start` starts it alone.
+
+`TestKubernetesHA` runs three control planes of an IPv6-only cluster behind a VIP. Its phases:
+
+- bootstrap: the first control plane bootstraps and the others join.
+- vip: the VIP moves when its holder's link is cut.
+- pinned address: a node without its pinned address fails its preparation with a remedy.
+- rejoin: a node leaves etcd, is reinstalled and joins again.
+- stale member: a node reinstalled without leaving finds its old member and waits for its removal.
+- control plane rollout: config rolls the control plane out to another patch release, one node at
+  a time on trial.
+- rolling upgrade: two control planes upgrade one at a time while the API server keeps answering.
+
+`TestRouterLab` runs two routers that peer unnumbered over BGP with BFD and a password, and a
+Kubernetes control plane on their switch. Its phases:
+
+- bgp: the session comes up, and the routers' status and `bgp-summary` show it.
+- reload: a delivery that FRR reloads in one pass reaches the peer while the session stays up.
+- nat64: DNS64 answers for `ipv4only.arpa`, and a connection runs through the NAT64 to a
+  listener of the test.
+- trial: a trial that cuts the host off rolls back at its deadline.
+- vrf: the sessions move into a VRF, with its routes, resolver and policy routing, before and
+  after a boot, and back.
+- default: a router sends its default route only while it routes a tracked prefix.
+- wireguard: a WireGuard tunnel between the routers, its diagnostic and its removal.
+- dhcp: DHCPv4 and DHCPv6 servers in a VRF lease an address and delegate a prefix, before and
+  after the server's boot.
+- kubernetes: the node's BGP speaker announces its address and the VIP to a router, which reaches
+  the API server through it, and a delivery adds an address to announce and a time server.
+
+Each test lives in a file of its own in `test/e2e`; the other files hold the steps the tests
+share. The `ci-tiers` check fails when a file of `test/e2e/*_test.go` has no row here:
 
 | File | Holds | Run by |
 | --- | --- | --- |
@@ -300,18 +421,20 @@ Each test lives in a file of its own in `test/e2e`; the other files hold the ste
 | `installer_test.go` | `TestInstallerInstallsOntoLVMDisk`, `TestInstallerISOBoots` | `e2e-installer`, `e2e-iso` |
 | `upgrade_test.go` | `TestUpgrade` | `e2e-upgrade` |
 | `kubernetes_test.go` | `TestKubernetesCluster` | `e2e-kubernetes` |
-| `cluster_registry_test.go` | the cluster registry's phase of `TestKubernetesCluster`: a push, a list, a pod that pulls, a delete and a garbage collection | `e2e-kubernetes` |
+| `host_integration_test.go` | the host-integration phase of `TestKubernetesCluster`: the module policy and Longhorn's tools, through privileged pods on the worker | `e2e-kubernetes` |
+| `cluster_registry_test.go` | the cluster-registry phase of `TestKubernetesCluster`: a push, a list, a pod that pulls, a delete and a garbage collection | `e2e-kubernetes` |
 | `kubernetes_ha_test.go` | `TestKubernetesHA` | `e2e-kubernetes-ha` |
 | `router_test.go` | `TestRouterLab` | `e2e-router` |
 | `helpers_test.go`, `chalkd_test.go` | `TestMain`, starting a node's VM, reaching its chalkd and running chalkctl | every check |
 | `lab_test.go` | labs that chalklab runs | `e2e-kubernetes`, `e2e-router` |
-| `registry_test.go` | registries the tests serve, of container images and of chalkos images | `e2e-installer`, `e2e-upgrade`, `e2e-kubernetes`, `e2e-kubernetes-ha` |
+| `registry_test.go` | registries the tests serve, of container images and of chalkos images | `e2e-installer`, `e2e-upgrade`, `e2e-kubernetes`, `e2e-kubernetes-ha`, `e2e-router` |
 | `ntp_test.go` | an NTP server for the nodes' clocks | `e2e-kubernetes`, `e2e-router` |
-| `certificates_test.go`, `rotation_test.go` | certificate renewals and CA rotations, and chalkctl run with a client file | `e2e-kubernetes`, `e2e-upgrade` |
+| `certificates_test.go`, `rotation_test.go` | certificate renewals and CA rotations, a node's clock, and chalkctl run with a client file | `e2e-kubernetes`, `e2e-upgrade`, `e2e-router` |
 
 A VM gets 2 CPUs and 2 GiB of memory unless its test asks for less, on a 16 GiB sparse disk.
 The Kubernetes test gives its control plane 2048 MiB and its worker 1024 MiB; the HA test gives
-each control plane 1536 MiB, 4.5 GiB for the three. The router test gives each router 768 MiB.
+each control plane 1536 MiB, 4.5 GiB for the three. The router test gives each router 768 MiB
+and its Kubernetes control plane 1536 MiB.
 
 The Kubernetes checks pull their container images from a registry the test serves from the Nix
 store. The `e2e-kubernetes-online` app runs the Kubernetes test with images pulled from the
@@ -351,6 +474,8 @@ Every check builds with `nix build`, and a change runs the checks of the parts i
 | `examples/bgp-extension` | `example-bgp-extension`, `example-bgp-extension-validator-docs`, `image-tests` |
 | `examples/extensions` | `example-extensions`, `image-tests` |
 | Kernel modules, closure, image size | `kernel-modules`, `image-size`, `bootspec`, `no-shell`, `no-shell-calls` |
+| The module policy: `pkg/modulepolicy`, `modules/node/base/module-policy.nix` | `module-policy`, `kernel-modules`, `go-unit`, `e2e-kubernetes` |
+| Mount options, exec paths and units' sandboxes: `modules/node/base/exec-paths.nix`, `chalkosLib.internal.noExec` | `noexec-mounts`, `eval`, `e2e-kubernetes` |
 | The firewall or VXLAN rule | `vxlan-rule`, `go-unit`, `e2e-kubernetes` |
 | The router's kinds, outputs or firewall | `router-firewall`, `rules`, `image-tests`, `eval`, `eval-kinds`, `go-unit` |
 | The router's BGP: its kinds, `frr` output, FRR's units, `pkg/router` | `rules`, `image-tests`, `frr-credentials`, `frr-reload`, `eval`, `eval-kinds`, `go-unit`, `e2e-router` |
@@ -373,7 +498,9 @@ Every check builds with `nix build`, and a change runs the checks of the parts i
 | `templates/cluster-metal` | `template-cluster-metal` |
 | `.github/workflows` | `workflows` |
 | `security-insights.yml` | `security-insights` |
-| `nix/checks/tiers.nix`, `.github/labels.yml`, a new check | `ci-tiers` |
+| The release images: `nix/release.nix`, `version.nix` | `release-eval`, and the `release-image-<name>` checks |
+| `.github/renovate.json5` | `renovate` |
+| `nix/checks/tiers.nix`, `.github/labels.yml`, a new check, a new end-to-end test file or test helper package | `ci-tiers` |
 
 Run one check, with its log:
 

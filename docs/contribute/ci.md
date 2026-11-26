@@ -117,6 +117,8 @@ no VM, and in `images` when it builds or boots images that other checks share.
 
 The `ci-tiers` check also wants each label of `e2eLabels` in `.github/labels.yml`, so a new
 end-to-end check needs its label there too, and the label `ci-failure`.
+Every check other than the `release-image-<name>` checks must be named in code font on this page
+or on [Testing](testing.md), and every end-to-end test file and test helper package on Testing.
 
 ## End-to-end labels
 
@@ -288,7 +290,7 @@ images are too heavy for every pull request.
 
 Each release image's `sbom` attribute builds its SPDX 2.3 SBOM, the release asset
 `<name>.spdx.json`. It is the image's own `sbom`, which every image of `mkImage` has, named after
-the repository and created at the commit's time. `chalkctl.sbom` and `chalkctl.sbom` and `chalkbuild.sbom` build the CycloneDX SBOMs of the
+the repository and created at the commit's time. `chalkctl.sbom` and `chalkbuild.sbom` build the CycloneDX SBOMs of the
 programs. `nix/sbom.nix` builds them all within Nix, so CI, a dry run and a local build write the
 same files:
 
