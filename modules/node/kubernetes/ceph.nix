@@ -2,8 +2,8 @@
 # /sys/module before it runs modprobe, finds them loaded, and LVM stays for Rook's OSDs on
 # encrypted or metadata devices.
 {
-  chalkosLib,
   config,
+  kubernetesLib,
   lib,
   ...
 }:
@@ -11,7 +11,7 @@ let
   k = config.chalkos.kubernetes;
 in
 {
-  options.chalkos.kubernetes = chalkosLib.internal.feature "Kubernetes" "ceph" {
+  options.chalkos.kubernetes = kubernetesLib.feature "ceph" {
     carries = "the `rbd`, `ceph` and `nbd` kernel modules, loaded at boot, and LVM for Rook's OSDs";
   };
 

@@ -29,20 +29,20 @@ and checks it.
 
 | Path | What it holds |
 | --- | --- |
-| `nix/overlay/` | `default.nix`, the overlay that adds `pkgs.chalkos`, the scope of chalkos's packages, and the scope's helpers: `build-go-program.nix` (`buildGoProgram`) and `go-paths.nix` (`treeGoPaths`). |
+| `nix/overlay/` | `default.nix`, the overlay that adds `pkgs.chalkos`, the scope of chalkos's packages, and the scope's helpers: `build-go-program.nix` (`buildGoProgram`), `go-paths.nix` (`treeGoPaths`) and `trim-package.nix` (`trimPackage`). |
 | `nix/packages/` | The scope's packages, one file each, named as the package. The overlay finds them with `lib.packagesFromDirectoryRecursive`. |
 | `nix/outputs/` | The flake outputs that one file builds: `packages.nix`, `apps.nix` and `shell.nix`, the development shell. |
 | `nix/release.nix` | The images a release publishes, the flake output `releaseImages`. [Continuous integration](ci.md#release-images) describes them. |
 | `nix/sbom.nix`, `nix/sbom-spdx.jq` | The SBOMs of the images, which `mkImage` attaches as `sbom`, and of chalkctl and chalkbuild, and the conversion of bombon's CycloneDX to SPDX. |
 | `nix/docs/` | The docs output: `default.nix` builds the site and the generated reference pages, `nav.py` checks the site's navigation, and `templates/` holds the openings of the options pages and the end of the extension API's. |
-| `nix/checks/` | The flake's checks. |
+| `nix/checks/` | The flake's checks. `hardening.nix` holds those of the shell-free and noexec images and the units' sandboxes, with the allow-lists a new unit or package may need an entry in. |
 | `nix/testing/` | The test images, their fixtures and the test environment that the checks, the apps and the development shell share. |
 
 ## What the modules and lib hold
 
 | Directory | What it holds |
 | --- | --- |
-| `modules/node/` | The NixOS modules of every image: `base/` (appliance, closure, diagnostics, disk, image directory, storage), `kinds/` (`chalkos.kinds`, `chalkos.facts`, networkd's kinds and the kinds every image accepts), `runtime/` (grants, `chalkos.outputs`, `chalkos.validators`, `chalkos.effects`, `chalkos.tests`, chalkcfg on the system path), `kubernetes/` (the kubelet, its kinds, effects, the CNI, containerd, registries, firewall), `router/` (the router layer), `frr/` (FRR's unit, user, credentials fill, output check and diagnostics, which a layer's BGP feature turns on through the internal options `chalkos.frr`), and a file each for the kernel, chalkd, the console, the kernel's consoles, diagnostics, the network, time, the layers' markers and upgrades. |
+| `modules/node/` | The NixOS modules of every image: `base/` (appliance, closure, diagnostics, disk, image directory, storage, the links below `/usr`), `kinds/` (`chalkos.kinds`, `chalkos.facts`, networkd's kinds and the kinds every image accepts), `runtime/` (grants, `chalkos.outputs`, `chalkos.validators`, `chalkos.effects`, `chalkos.tests`, chalkcfg on the system path), `kubernetes/` (the kubelet, its kinds, effects, the CNI, containerd, registries, firewall), `router/` (the router layer), `frr/` (FRR's unit, user, credentials fill, output check and diagnostics, which a layer's BGP feature turns on through the internal options `chalkos.frr`), and a file each for the kernel, chalkd, the console, the kernel's consoles, diagnostics, the network, time, the layers' markers and upgrades. |
 | `modules/node/router/` | The router layer: `default.nix` (its option, marker and forwarding), the Router kind (`kinds.nix`) and its output `router-sysctl` (`sysctl.nix`), `lib.nix`, traceroute (`diagnostics.nix`) and the validator router (`validator.nix`). `lib.nix` holds what the router's parts share, which they get as the module argument `routerLib`: the enable option of a feature, the kinds the image declares, the sandbox of the units, the loader of a part's kinds file and, as `routerLib.types`, the types the router kinds share from `types.nix`. `routerLib` belongs to the router layer and is not part of the extension API, although every image's modules can read it. |
 | `modules/platforms/` | `metal` and `kvm`. |
 | `modules/installer/` | The installer image and its ISO. |
@@ -86,12 +86,18 @@ Every module of an image gets these arguments in addition to NixOS's own:
   argument, the same way it uses `pkgs` and `config`. mkImage refuses a `specialArgs.chalkosLib`
   of its caller.
 - `pkgs`, with `pkgs.chalkos`: chalkos's programs, its Go toolchain `pkgs.chalkos.go`, the Go
-  program builder `pkgs.chalkos.buildGoProgram` and `pkgs.chalkos.treeGoPaths`, the source paths
-  of the whole Go tree.
+  program builder `pkgs.chalkos.buildGoProgram`, `pkgs.chalkos.treeGoPaths`, the source paths
+  of the whole Go tree, and `pkgs.chalkos.trimPackage`, which copies the programs and libraries
+  of a package that an image runs, without its shell scripts and without a reference to the
+  original. A module that leaves part of a package out of the image uses it.
 - `routerLib`: what the router layer's parts have in common. `routerLib.types` holds the option
   types and CEL of the router kinds, and `routerLib.kinds` loads a part's kinds file.
   `modules/node/router/default.nix` sets it on every image, but it is internal to the router
   layer and not part of the extension API.
+- `kubernetesLib`: the Kubernetes layer's list of features and their option, as `routerLib`
+  holds the router's. `modules/node/kubernetes/features.nix` sets it on every image; it is
+  internal to the Kubernetes layer. The evaluation tests build an image without each feature of
+  either list, so a new feature goes into its layer's list.
 - The `specialArgs` given to mkImage or mkImages.
 
 The flake exports the overlay that adds `pkgs.chalkos` as `overlays.default`. mkImage adds it

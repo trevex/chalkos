@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -443,8 +444,8 @@ func TestFacts(t *testing.T) {
 }
 
 // A messageExpression that fails falls back to the rule's message, and without one to a message
-// that names the kind or field and what kind of error it is, without the values it read or the
-// rule, which can be long.
+// that names the kind or field, the rule, cut to its first 80 runes, and what kind of error it is,
+// without the values it read.
 func TestMessageExpressionFallsBack(t *testing.T) {
 	long := strings.Repeat("x", 2000)
 	set := compiled(t, kindSchema("Demo", true, object(map[string]any{
@@ -461,26 +462,27 @@ func TestMessageExpressionFallsBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The rule's text, cut to 80 runes.
+	cut := `the rule "self.secret == \"` + strings.Repeat("x", 63) + `…"`
 	want := []string{
 		"the static message",
-		"the config does not meet a rule of Demo, whose messageExpression fails: no such key",
-		`Demo/a: spec.x: the config does not meet a rule of Demo spec.x, whose messageExpression fails: no such key`,
-		`Demo/a: spec.x: the config does not meet a rule of Demo spec.x, whose messageExpression fails: it yields int, not a string`,
-		`Demo/a: spec.x: the config does not meet a rule of Demo spec.x`,
+		`the config does not meet the rule "size(documents) == 0 || documents.a.spec.x.secret == \"` + strings.Repeat("x", 25) + `…" of Demo, whose messageExpression fails: no such key`,
+		`Demo/a: spec.x: the config does not meet ` + cut + ` of Demo spec.x, whose messageExpression fails: no such key`,
+		`Demo/a: spec.x: the config does not meet ` + cut + ` of Demo spec.x, whose messageExpression fails: it yields int, not a string`,
+		`Demo/a: spec.x: the config does not meet ` + cut + ` of Demo spec.x`,
 	}
 	if got := messages(failures); !slices.Equal(got, want) {
 		t.Errorf("failures = %q", got)
 	}
 	for _, f := range failures {
-		if strings.Contains(f.Message, "s3cret") || strings.Contains(f.Message, "7777") || len(f.Message) > 200 {
-			t.Errorf("message %q shows a value or the rule", f.Message)
+		if strings.Contains(f.Message, "s3cret") || strings.Contains(f.Message, "7777") || len(f.Message) > 250 {
+			t.Errorf("message %q shows a value or the whole rule", f.Message)
 		}
 	}
 }
 
 // A rule that cannot be evaluated refuses the config with an error that names the field or kind
-// that declares the rule and what kind of error it is: neither the rule, which can be long, nor
-// the values it read. An error of a kind it does not know says only that the rule cannot be
+// that declares the rule, the rule and what kind of error it is, without the values it read. An error of a kind it does not know says only that the rule cannot be
 // evaluated.
 func TestEvaluateErrors(t *testing.T) {
 	items := make([]string, 2000)
@@ -491,32 +493,32 @@ func TestEvaluateErrors(t *testing.T) {
 	for name, tc := range map[string]struct {
 		rule, spec, want string
 	}{
-		"no such key":         {`self.m[self.s] == 1`, spec, "a rule cannot be evaluated: no such key"},
-		"index out of bounds": {`self.l[self.i] == 1`, spec, "a rule cannot be evaluated: index out of bounds"},
-		"index out of range":  {`self.s.charAt(self.i) == ""`, spec, "a rule cannot be evaluated: index out of bounds"},
-		"no such overload":    {`self.s + self.i == 1`, spec, "a rule cannot be evaluated: no such overload"},
-		"overload signature":  {`sets.contains([1], self.s)`, spec, "a rule cannot be evaluated: no such overload"},
-		"unknown time zone":   {`timestamp("2020-01-01T00:00:00Z").getHours(self.tz) == 1`, spec, "a rule cannot be evaluated: unknown time zone"},
-		"invalid input":       {`self.l.join(",") == ""`, spec, "a rule cannot be evaluated: invalid input to a function"},
-		"cost":                {`self.list.all(a, self.list.all(b, a == b))`, `{"list": [` + strings.Join(items, ",") + `]}`, "a rule cannot be evaluated: the image's rule is too costly for this config"},
-		"overflow":            {`self.max + self.i == 1`, spec, "a rule cannot be evaluated: overflow"},
-		"unsigned overflow":   {`uint(-self.i) == 1u`, spec, "a rule cannot be evaluated: overflow"},
-		"division by zero":    {`self.i / self.z == 1`, spec, "a rule cannot be evaluated: division by zero"},
-		"modulus by zero":     {`self.i % self.z == 1`, spec, "a rule cannot be evaluated: division by zero"},
-		"conversion":          {`int(self.s) > 0`, spec, "a rule cannot be evaluated: conversion error"},
-		"timestamp":           {`timestamp(self.s) > timestamp(0)`, spec, "a rule cannot be evaluated: conversion error"},
-		"library":             {`bytes(self.size) > 0`, spec, "a rule cannot be evaluated: " + errNotSize},
-		"unknown":             {`self.s.matches(self.s + "(")`, spec, "a rule cannot be evaluated"},
-		"unknown slice":       {`self.l.slice(0, self.i) == []`, spec, "a rule cannot be evaluated"},
-		"not a bool":          {`self.s`, spec, "a rule yields string, not a bool"},
+		"no such key":         {`self.m[self.s] == 1`, spec, "cannot be evaluated: no such key"},
+		"index out of bounds": {`self.l[self.i] == 1`, spec, "cannot be evaluated: index out of bounds"},
+		"index out of range":  {`self.s.charAt(self.i) == ""`, spec, "cannot be evaluated: index out of bounds"},
+		"no such overload":    {`self.s + self.i == 1`, spec, "cannot be evaluated: no such overload"},
+		"overload signature":  {`sets.contains([1], self.s)`, spec, "cannot be evaluated: no such overload"},
+		"unknown time zone":   {`timestamp("2020-01-01T00:00:00Z").getHours(self.tz) == 1`, spec, "cannot be evaluated: unknown time zone"},
+		"invalid input":       {`self.l.join(",") == ""`, spec, "cannot be evaluated: invalid input to a function"},
+		"cost":                {`self.list.all(a, self.list.all(b, a == b))`, `{"list": [` + strings.Join(items, ",") + `]}`, "cannot be evaluated: the image's rule is too costly for this config"},
+		"overflow":            {`self.max + self.i == 1`, spec, "cannot be evaluated: overflow"},
+		"unsigned overflow":   {`uint(-self.i) == 1u`, spec, "cannot be evaluated: overflow"},
+		"division by zero":    {`self.i / self.z == 1`, spec, "cannot be evaluated: division by zero"},
+		"modulus by zero":     {`self.i % self.z == 1`, spec, "cannot be evaluated: division by zero"},
+		"conversion":          {`int(self.s) > 0`, spec, "cannot be evaluated: conversion error"},
+		"timestamp":           {`timestamp(self.s) > timestamp(0)`, spec, "cannot be evaluated: conversion error"},
+		"library":             {`bytes(self.size) > 0`, spec, "cannot be evaluated: " + errNotSize},
+		"unknown":             {`self.s.matches(self.s + "(")`, spec, "cannot be evaluated"},
+		"unknown slice":       {`self.l.slice(0, self.i) == []`, spec, "cannot be evaluated"},
+		"not a bool":          {`self.s`, spec, "yields string, not a bool"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			set := compiled(t, kindSchema("Demo", true, object(map[string]any{
 				"x": withRules(map[string]any{"type": "object"}, rule(tc.rule, "")),
 			}), nil))
 			_, err := set.Evaluate(Input{Documents: config.Redact([]config.Document{doc(t, "Demo", "a", `{"x": `+tc.spec+`}`)})})
-			if err == nil || err.Error() != `cannot check: Demo/a: spec.x: `+tc.want {
-				t.Fatalf("err = %v, want %q", err, tc.want)
+			if want := `cannot check: Demo/a: spec.x: the rule ` + strconv.Quote(tc.rule) + " " + tc.want; err == nil || err.Error() != want {
+				t.Fatalf("err = %v, want %q", err, want)
 			}
 			for _, v := range []string{"s3cret", "7777", "9223372036854775807"} {
 				if strings.Contains(err.Error(), v) {
@@ -527,11 +529,11 @@ func TestEvaluateErrors(t *testing.T) {
 	}
 }
 
-// A kind's rule that cannot be evaluated names the kind.
+// A kind's rule that cannot be evaluated names the kind and the rule, by its description.
 func TestEvaluateKindRuleError(t *testing.T) {
-	set := compiled(t, kindSchema("Demo", true, object(nil), []any{rule(`documents.a.spec.missing == 1`, "")}))
+	set := compiled(t, kindSchema("Demo", true, object(nil), []any{rule(`documents.a.spec.missing == 1`, "", "description", "Demo a keeps its missing field.")}))
 	_, err := set.Evaluate(Input{Documents: config.Redact([]config.Document{doc(t, "Demo", "a", `{}`)})})
-	if err == nil || err.Error() != "cannot check: Demo: a rule cannot be evaluated: no such key" {
+	if err == nil || err.Error() != `cannot check: Demo: the rule "Demo a keeps its missing field." cannot be evaluated: no such key` {
 		t.Errorf("err = %v", err)
 	}
 }
@@ -547,12 +549,12 @@ func TestEvaluateNamesMissingField(t *testing.T) {
 	})
 	const named = "no such key: address, a field the config leaves out; test it with has() first"
 	for name, tc := range map[string]struct{ rule, kindRule, want string }{
-		"field":       {rule: `self.peer.address != ""`, want: "spec: a rule cannot be evaluated: " + named},
-		"index":       {rule: `self.peer["address"] != ""`, want: "spec: a rule cannot be evaluated: " + named},
-		"map key":     {rule: `self.labels[self.name] != ""`, want: "spec: a rule cannot be evaluated: no such key"},
-		"field name":  {rule: `self.labels[self.name] != "" || self.peer.address != ""`, want: "spec: a rule cannot be evaluated: no such key"},
-		"map literal": {rule: `self.labels.s3cret != "" || self.peer.address != ""`, want: "spec: a rule cannot be evaluated: no such key"},
-		"kind rule":   {kindRule: `documents.all(n, documents[n].spec.peer.address != "")`, want: "a rule cannot be evaluated: " + named},
+		"field":       {rule: `self.peer.address != ""`, want: "spec: the rule %q cannot be evaluated: " + named},
+		"index":       {rule: `self.peer["address"] != ""`, want: "spec: the rule %q cannot be evaluated: " + named},
+		"map key":     {rule: `self.labels[self.name] != ""`, want: "spec: the rule %q cannot be evaluated: no such key"},
+		"field name":  {rule: `self.labels[self.name] != "" || self.peer.address != ""`, want: "spec: the rule %q cannot be evaluated: no such key"},
+		"map literal": {rule: `self.labels.s3cret != "" || self.peer.address != ""`, want: "spec: the rule %q cannot be evaluated: no such key"},
+		"kind rule":   {kindRule: `documents.all(n, documents[n].spec.peer.address != "")`, want: "the rule %q cannot be evaluated: " + named},
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, kindRules := maps.Clone(spec), []any(nil)
@@ -567,7 +569,7 @@ func TestEvaluateNamesMissingField(t *testing.T) {
 			if tc.kindRule != "" {
 				where = "Demo: "
 			}
-			if want := "cannot check: " + where + tc.want; err == nil || err.Error() != want {
+			if want := "cannot check: " + where + fmt.Sprintf(tc.want, tc.rule+tc.kindRule); err == nil || err.Error() != want {
 				t.Errorf("err = %v, want %q", err, want)
 			}
 		})
@@ -595,8 +597,9 @@ func TestEvaluateNullSubmodule(t *testing.T) {
 	}
 }
 
-// A rule's description annotates it for the reference: the rule neither reads it nor says it.
-func TestDescriptionIgnored(t *testing.T) {
+// A rule's description annotates it for the reference and names it in a refusal without a
+// message; the rule never reads it.
+func TestDescriptionNamesRule(t *testing.T) {
 	set := compiled(t, kindSchema("Demo", true, object(nil), []any{
 		rule("size(documents) <= 1", "", "description", "A node holds one Demo at most."),
 	}))
@@ -604,7 +607,7 @@ func TestDescriptionIgnored(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := messages(failures); !slices.Equal(got, []string{"the config does not meet a rule of Demo"}) {
+	if got := messages(failures); !slices.Equal(got, []string{`the config does not meet the rule "A node holds one Demo at most." of Demo`}) {
 		t.Errorf("failures = %q", got)
 	}
 }

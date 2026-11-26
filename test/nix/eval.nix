@@ -75,6 +75,29 @@ let
   edge = layered.edge-metal.config;
   inherit (layered.edge-metal._module.args.routerLib) features;
   without = lib.genAttrs features (f: routerWithout [ f ]);
+  # The features of the Kubernetes layer, and the worker with and without each, by the feature's
+  # name: w itself on the side of the feature's default. A worker with a feature allows unfree
+  # packages, as NVIDIA's driver needs.
+  kubernetesFeatures = layered.node-metal._module.args.kubernetesLib.features;
+  kubernetesWith = lib.genAttrs kubernetesFeatures (
+    f:
+    if w.chalkos.kubernetes.${f}.enable then
+      w
+    else
+      worker [
+        {
+          nixpkgs.config.allowUnfree = true;
+          chalkos.kubernetes.${f}.enable = true;
+        }
+      ]
+  );
+  kubernetesWithout = lib.genAttrs kubernetesFeatures (
+    f:
+    if w.chalkos.kubernetes.${f}.enable then
+      worker [ { chalkos.kubernetes.${f}.enable = false; } ]
+    else
+      w
+  );
   # The example files of a router image's tests, chalkos.tests.router-<name>.
   examplesOf = c: lib.attrNames (builtins.readDir c.chalkos.router.examples);
   # The users and groups of an image whose IDs its build allocates from 999 down, in the order of
@@ -2742,7 +2765,7 @@ in
             dir = c.system.build.chalkosCNIPlugins;
           in
           {
-            plugins = map baseNameOf dir.plugins;
+            plugins = map baseNameOf dir.programs;
             binDirs = c.virtualisation.containerd.settings.plugins."io.containerd.cri.v1.runtime".cni.bin_dirs;
             inherit (dir) name;
           };
@@ -2936,7 +2959,7 @@ in
         icu = hasPackage "icu4c" (
           xfsprogs.buildInputs ++ xfsprogs.propagatedBuildInputs ++ xfsprogs.nativeBuildInputs
         );
-        inherit (containerd) binaries;
+        binaries = containerd.programs;
         containerdOutputs = containerd.meta.outputsToInstall;
         # NixOS would generate xfs_scrub_all with a PATH alone.
         scrubUnit = lib.elem "xfs_scrub_all.service" c.systemd.suppressedSystemUnits;
@@ -4318,6 +4341,71 @@ in
   # BGP's kinds, outputs, effects and tests, FRR's units, user, groups, package, files and
   # diagnostics, the firewall's rule for BFD's mark and networkd's leave of zebra's routes;
   # nothing else changes, and its build allocates the IDs of the same users and groups.
+  # Each feature of kubernetesLib.features leaves the image when an image leaves it out, and
+  # nothing comes in its place: the image without it lacks some of the parts of the image with it,
+  # holds none they lack and allocates the same IDs. testKubernetesBGPOptional and
+  # testKubernetesRegistryOptional name what BGP and the cluster registry take with them.
+  testKubernetesWithoutEachFeature =
+    let
+      names = lib.attrNames;
+      parts = c: {
+        kinds = names c.chalkos.kinds;
+        outputs = names c.chalkos.outputs;
+        effects = names c.chalkos.effects;
+        tests = names c.chalkos.tests;
+        services = names c.systemd.services;
+        sockets = names c.systemd.sockets;
+        paths = names c.systemd.paths;
+        users = names c.users.users;
+        groups = names c.users.groups;
+        diagnostics = names c.chalkos.diagnostics;
+        packages = map lib.getName c.environment.systemPackages;
+        etc = names c.environment.etc;
+        modules = c.boot.kernelModules;
+        moduleGroups = c.chalkos.kernel.moduleGroups;
+        links = names c.chalkos.usr.links;
+        runtimes = names c.chalkos.kubernetes.containerd.runtimes;
+      };
+      added =
+        f:
+        let
+          with' = parts kubernetesWith.${f};
+        in
+        lib.filterAttrs (_: v: v != [ ]) (
+          lib.mapAttrs (k: v: lib.subtractLists with'.${k} v) (parts kubernetesWithout.${f})
+        );
+      removed =
+        f:
+        let
+          without' = parts kubernetesWithout.${f};
+        in
+        lib.any (k: lib.subtractLists without'.${k} (parts kubernetesWith.${f}).${k} != [ ]) (
+          names without'
+        );
+    in
+    {
+      expr = {
+        features = kubernetesFeatures;
+        added = lib.genAttrs kubernetesFeatures added;
+        removed = lib.genAttrs kubernetesFeatures removed;
+        ids = lib.all (
+          f: unpinned kubernetesWithout.${f} == unpinned kubernetesWith.${f}
+        ) kubernetesFeatures;
+      };
+      expected = {
+        features = [
+          "bgp"
+          "ceph"
+          "kubevirt"
+          "longhorn"
+          "nvidia"
+          "registry"
+        ];
+        added = lib.genAttrs kubernetesFeatures (_: { });
+        removed = lib.genAttrs kubernetesFeatures (_: true);
+        ids = true;
+      };
+    };
   testKubernetesBGPOptional =
     let
       names = lib.attrNames;
@@ -4338,7 +4426,7 @@ in
           lib.filterAttrs (n: _: lib.hasPrefix "ManageForeign" n) c.systemd.network.config.networkConfig
         );
       };
-      without = worker [ { chalkos.kubernetes.bgp.enable = false; } ];
+      without = kubernetesWithout.bgp;
       diff = a: b: lib.filterAttrs (_: v: v != [ ]) (lib.mapAttrs (k: v: lib.subtractLists b.${k} v) a);
     in
     {
@@ -4436,7 +4524,7 @@ in
         kubernetesAfter = c.chalkos.effects.kubernetes.after;
         firewall = lib.filter (l: l != "") (lib.splitString "\n" c.networking.firewall.extraInputRules);
       };
-      without = worker [ { chalkos.kubernetes.registry.enable = false; } ];
+      without = kubernetesWithout.registry;
       diff = a: b: lib.filterAttrs (_: v: v != [ ]) (lib.mapAttrs (k: v: lib.subtractLists b.${k} v) a);
     in
     {
@@ -4741,7 +4829,8 @@ in
   # no kinds. The descriptions of the existing features stay as they were.
   testFeatureOption =
     let
-      f = (import ../../lib/chalkos.nix { inherit lib; }).internal.feature;
+      inherit (import ../../lib/chalkos.nix { inherit lib; }) internal;
+      f = internal.feature;
       opt = args: (f "Kubernetes" "x" args).x.enable;
     in
     {
@@ -4766,8 +4855,28 @@ in
             carries = "X";
             default = false;
           }).description;
+        # A feature's other options sit beside its enable.
+        options =
+          lib.attrNames
+            (f "Kubernetes" "x" {
+              carries = "X";
+              options.mode = lib.mkOption { type = lib.types.str; };
+            }).x;
+        # A layer's feature must be one of its list.
+        listed = lib.attrNames (
+          internal.layerFeature "Kubernetes" "xLib.features" [ "x" ] "x" { carries = "X"; }
+        );
+        unlisted = fails (
+          internal.layerFeature "Kubernetes" "xLib.features" [ "x" ] "y" { carries = "X"; }
+        );
       };
       expected = {
+        options = [
+          "enable"
+          "mode"
+        ];
+        listed = [ "x" ];
+        unlisted = true;
         onDefault = true;
         onText = "Whether Kubernetes images carry X and accept the kind `A`. Only with the Kubernetes layer; set it false in an image's modules to leave the feature out of it.";
         offDefault = false;
@@ -4819,6 +4928,32 @@ in
           "/sbin"
         ];
         usrIsStore = "/usr/nix/store";
+        stored = true;
+      };
+    };
+  # chalkos.usr.links belongs to the base: a link set on a router image is in its store partition
+  # and referenced by its system, as on a Kubernetes image.
+  testUsrLinksOnRouter =
+    let
+      c = router [
+        (
+          { pkgs, ... }:
+          {
+            chalkos.usr.links."bin/fstrim" = "${pkgs.util-linux}/bin/fstrim";
+          }
+        )
+      ];
+      contents = c.image.repart.partitions.${c.image.repart.verityStore.partitionIds.store}.contents;
+    in
+    {
+      expr = {
+        tops = lib.attrNames contents;
+        source = lib.hasInfix "chalkos-usr-links" contents."/bin".source;
+        stored = lib.any (p: lib.hasInfix "chalkos-usr-links" (toString p)) c.system.extraDependencies;
+      };
+      expected = {
+        tops = [ "/bin" ];
+        source = true;
         stored = true;
       };
     };

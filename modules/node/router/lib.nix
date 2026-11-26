@@ -48,13 +48,7 @@ let
     # The option chalkos.router.<name>.enable of a feature, true unless an image leaves the
     # feature out; name must be one of features. Its description says that the images carry
     # `carries` and accept the kinds named.
-    feature =
-      name: args:
-      chalkosLib.internal.refuse
-        (lib.optional (
-          !lib.elem name routerLib.features
-        ) "the router feature ${name} is missing from routerLib.features")
-        (chalkosLib.internal.feature "router" name args);
+    feature = chalkosLib.internal.layerFeature "router" "routerLib.features" routerLib.features;
 
     # Keeps the kinds of a list that the image accepts, in order, so an output reads the kinds of
     # another feature only on images that carry it.

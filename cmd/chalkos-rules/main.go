@@ -25,7 +25,8 @@ directory of its schemas; facts.json, effects.json, outputs.json, validators.jso
 diagnostics.json, the image's own; and units/, its systemd units. Every rule of the schemas and of
 the effects compiles and reads only facts facts.json declares, every unit an effect restarts or
 reloads is one of units/, the programs of every output and validator are of the image's store,
-and every definition, diagnostics among them, is one chalkd can run.
+and every definition, diagnostics among them, is one chalkd can run. A rule without message or
+messageExpression gets a warning line.
 
 test runs the tests of TESTS, chalkos.tests as the image's build writes them, against the image
 IMAGE, and writes what each got to OUT, which should be new or empty, as the files of an earlier
@@ -82,6 +83,9 @@ func checkImage(image string, out io.Writer) error {
 	} else {
 		for _, p := range set.Programs {
 			reads(p.Where(), p.Rule.Rule, p.Facts)
+			if p.Message == "" && p.MessageExpression == "" {
+				fmt.Fprintf(out, "warning: %s: rule %q has neither message nor messageExpression, so its refusals say only which rule refused; give it a message that says why and what to do instead\n", p.Where(), p.Rule.Rule)
+			}
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(c.Effects)) {

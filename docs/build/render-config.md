@@ -337,16 +337,16 @@ nothing in the status.
 
 After `chalkctl config apply`, a render or check that fails refuses the delivery, and nothing on
 the node changes. A renderer's refusal shows as `the config is refused:` and the refusals. Any
-other failure names the output and the exit status, such as
-`output <name>: its check refused the rendered files (exit 1); see the node's journal`.
+other failure names the output, the exit status and the command that shows the program's
+journal, such as
+`output <name>: its check refused the rendered files (exit 1); see chalkctl logs server1 --unit=chalkos-render-<name>-<n>.service`.
 
 That message leaves out what the program printed, because a program can echo the documents it
-read. Each program runs as a transient unit, `chalkos-render-<n>.service`. Its journal holds the
-program's standard error, and the journal of `chalkd.service` names the unit beside the failure:
+read. Each program runs as a transient unit, `chalkos-render-<name>-<n>.service`, named after the
+output with a number unique to the run. Its journal holds the program's standard error:
 
 ```sh
-chalkctl logs server1 --unit=chalkd.service
-chalkctl logs server1 --unit=chalkos-render-<n>.service
+chalkctl logs server1 --unit=chalkos-render-<name>-<n>.service
 ```
 
 `chalkctl config apply` while an image is staged, with or without `--staged` and `--dry-run`, and

@@ -681,13 +681,12 @@ printed.
 
 `chalkctl status node1` lists the outputs, `bird-conf` among them, each with
 the hash of the files the node serves and its state. `failed:` names the last failure. The refusal
-names the output and the exit status alone, as in the tests. The render ran as a transient unit,
-`chalkos-render-<n>.service`, which chalkd's journal names beside the failure, and that unit's
+names the output and the exit status, as in the tests, and ends with the command that shows the
+journal of the transient unit the render ran as, `chalkos-render-bird-conf-<n>.service`. That
 journal holds what the renderer or the check printed:
 
 ```sh
-chalkctl logs node1 --unit=chalkd.service
-chalkctl logs node1 --unit=chalkos-render-<n>.service
+chalkctl logs node1 --unit=chalkos-render-bird-conf-<n>.service
 ```
 
 A node renders every output again at boot, from the config it boots with. A renderer reads its

@@ -9,5 +9,6 @@
     ./module-policy.nix
     ./nftables.nix
     ./storage.nix
+    ./usr-links.nix
   ];
 }

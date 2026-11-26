@@ -10,7 +10,7 @@ A delivery of config to a node either changes nothing or changes everything it c
 `chalkctl config apply` fails, and its error names the output:
 
 ```text
-output bird-conf: its check refused the rendered files (exit 1); see the node's journal
+output bird-conf: its check refused the rendered files (exit 1); see chalkctl logs node1 --unit=chalkos-render-bird-conf-1234.service
 ```
 
 The node then still runs its old documents, its old `bird.conf` and an unreloaded bird. This page

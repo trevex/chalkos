@@ -173,12 +173,11 @@ as `failed unit <unit>`.
 chalkctl logs cp1 --unit=hardware-info.service
 ```
 
-A render or a check runs as a transient unit, `chalkos-render-<n>.service`, which keeps the
-program's standard error. The journal of `chalkd.service` names that unit beside the failure:
+A render or a check runs as a transient unit, `chalkos-render-<output>-<n>.service`, which keeps
+the program's standard error. The failure ends with the command that shows that unit's journal:
 
 ```sh
-chalkctl logs cp1 --unit=chalkd.service
-chalkctl logs cp1 --unit=chalkos-render-<n>.service
+chalkctl logs cp1 --unit=chalkos-render-<output>-<n>.service
 ```
 
 `--follow` keeps printing new entries until you interrupt it.

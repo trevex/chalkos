@@ -20,12 +20,14 @@ five attributes:
 | --- | --- |
 | `rule` | CEL that is true for every config the node accepts. |
 | `message` | What the node says when the rule is false: why, and what to do instead. |
-| `messageExpression` | CEL that yields the message. When it fails, the node says `message`, or names the rule's kind or field without one. |
+| `messageExpression` | CEL that yields the message. When it fails, the node says `message`, or names the rule and its kind or field without one. |
 | `takes` | What the refused change needs instead: `refuse`, the default, `reset` or `reinstall`. |
-| `description` | One sentence on what the rule guards, which the reference pages show. The node never reads it. |
+| `description` | One sentence on what the rule guards. The reference pages show it, and errors and refusals without a message name the rule by it. The rule never reads it. |
 
-A rule without either message says `the config does not meet a rule of` and the kind or field
-that declares it, such as `the config does not meet a rule of Peer spec.asn`.
+A rule without either message names the rule and the kind or field that declares it, such as
+`the config does not meet the rule "A Peer keeps its AS number." of Peer spec.asn`. The rule's
+`description` names it, or else its text, cut to 80 characters. The image's build warns of such a
+rule.
 
 ## CEL variables { #cel-variables }
 
@@ -184,16 +186,17 @@ error.
 
 A refusal does not leak a secret or a fact's content that the rule only compared:
 
-- A rule that cannot be evaluated refuses the delivery with the kind of error alone, such as
-  `cannot check: Peer/router: spec.asn: a rule cannot be evaluated: no such key`. The kind is
+- A rule that cannot be evaluated refuses the delivery with the rule, named as a refusal without
+  a message names it, and the kind of error alone, such as
+  `cannot check: Peer/router: spec.asn: the rule "A Peer keeps its AS number." cannot be evaluated: no such key`. The kind is
   one of `no such key`, `index out of bounds`, `no such overload`, `unknown time zone`,
   `invalid input to a function`, `the image's rule is too costly for this config`, `overflow`,
   `division by zero` and `conversion error`. An error of chalkos's functions names the
   function, such as `ip: the argument is not an address`. Of any other error the refusal says only
-  `a rule cannot be evaluated`.
+  that the rule cannot be evaluated.
 - A rule that reads a field the schema declares and the document lacks names the field, a name
   from the schema rather than a value:
-  `cannot check: Peer/router: spec: a rule cannot be evaluated: no such key: asn, a field the config leaves out; test it with has() first`.
+  `cannot check: Peer/router: spec: the rule "self.asn > 0" cannot be evaluated: no such key: asn, a field the config leaves out; test it with has() first`.
   A rule that looks a key up by a value, as `self.labels[self.name]` does, names no missing key,
   since the key can be a value. A loop's lookup of `documents[n]` or `oldDocuments[n]` counts as
   none.
@@ -334,8 +337,9 @@ These rules decide what a report does:
 
 chalkd reports each refusal after `the config is refused:`, as it reports a rule's refusal, and
 reports a refusal that several outputs print once. A failed validator refuses the delivery with
-`validator <name>: its program failed (exit <n>); see the node's journal`, and a failed renderer
-or check with a message that names the output and the exit status. A refusal can quote any value
+`validator <name>: its program failed (exit <n>); see chalkctl logs <node> --unit=chalkos-render-<name>-<n>.service`,
+and a failed renderer or check with a message that names the output, the exit status and the
+command that shows the program's journal. A refusal can quote any value
 of the documents. It cannot carry a secret's value, because no program reads one.
 
 A jq renderer cannot refuse: what the program prints is the output's file. Its `error` fails the

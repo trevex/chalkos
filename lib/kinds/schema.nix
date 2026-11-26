@@ -246,10 +246,61 @@ let
   # the schema.
   leaksNamePlaceholder = v: lib.hasInfix "‹name›" (builtins.toJSON v);
 
+  # Why the rule r at `at`, such as chalkos.kinds.Rack.spec.location.rules[0], is none chalkd can
+  # read, or null. Kind rules come typed by chalkos.kinds; a field's come raw from
+  # chalkosLib.mkOption, so a misspelt attribute is caught here, with the option path, rather than
+  # by chalkos-rules in the image's build log.
+  ruleRefusal =
+    at: r:
+    let
+      attributes = [
+        "rule"
+        "message"
+        "messageExpression"
+        "takes"
+        "reason"
+        "description"
+      ];
+      unknown = lib.subtractLists attributes (lib.attrNames r);
+      takes = r.takes or null;
+      reason = r.reason or null;
+    in
+    if !lib.isAttrs r then
+      "${at} is no rule; give { rule = \"<CEL>\"; message = \"...\"; }"
+    else if unknown != [ ] then
+      "${at}: ${lib.concatStringsSep ", " unknown} ${
+        if lib.length unknown == 1 then "is" else "are"
+      } none of rule, message, messageExpression, takes, reason and description"
+    else if !lib.isString (r.rule or null) || r.rule == "" then
+      "${at} has no rule; set rule to the CEL expression that is true for every change the node accepts"
+    else if
+      takes != null
+      && !lib.elem takes [
+        "refuse"
+        "reset"
+        "reinstall"
+      ]
+    then
+      "${at}.takes: ${builtins.toJSON takes} is none of refuse, reset and reinstall"
+    else if reason != null && !lib.elem reason api.ruleReasons then
+      "${at}.reason: ${builtins.toJSON reason} is none of ${lib.concatStringsSep ", " api.ruleReasons}"
+    else
+      null;
+
   # A rule as the schema carries it: as declared, without the attributes left null and with takes
-  # defaulted, so Go reads one shape whether a field or a kind declares it. Other attributes, as a
-  # misspelt message, reach the schema, where the rules check refuses them.
-  ruleSchema = r: lib.filterAttrs (_: v: v != null) ({ takes = "refuse"; } // r);
+  # defaulted, so Go reads one shape whether a field or a kind declares it.
+  ruleSchema =
+    at: r:
+    let
+      refusal = ruleRefusal at r;
+    in
+    if refusal != null then
+      throw refusal
+    else
+      lib.filterAttrs (_: v: v != null) ({ takes = "refuse"; } // r);
+
+  # The rules at `at`, such as chalkos.kinds.Rack.rules, as the schema carries them.
+  rulesSchema = at: lib.imap0 (i: ruleSchema "${at}[${toString i}]");
 
   # The normalisers a key's values compare through, which chalkd implements: ip and cidr as the
   # rules' ip() and cidr() compare, host as registry hosts compare, lower in lower case.
@@ -450,25 +501,36 @@ let
     }
     # A field's change rules, which chalkosLib.mkOption puts under x-chalkos-rules.
     // lib.optionalAttrs (opt ? "x-chalkos-rules") {
-      "x-chalkos-rules" = map ruleSchema opt."x-chalkos-rules";
+      "x-chalkos-rules" = rulesSchema "${at}.rules" opt."x-chalkos-rules";
     };
+
+  # Why v at `at`, which is no option declaration, is no group of them either, or null: a type,
+  # such as lib.types.int, is an attribute set too, and a common slip for an option of that type.
+  groupRefusal =
+    at: v:
+    if (v._type or null) == "option-type" then
+      "${at} is a type; declare the field as lib.mkOption { type = ...; }"
+    else if !lib.isAttrs v then
+      "${at} is neither an option declaration nor a group of them"
+    else
+      null;
 
   # An option without a default must be given; a group must be given when one of its options must.
   isRequired =
     at: v:
     if lib.isOption v then
       !(v ? default)
-    else if lib.isAttrs v then
-      lib.any (name: isRequired "${at}.${name}" v.${name}) (lib.attrNames v)
+    else if groupRefusal at v != null then
+      throw (groupRefusal at v)
     else
-      throw "${at} is neither an option declaration nor a group of them";
+      lib.any (name: isRequired "${at}.${name}" v.${name}) (lib.attrNames v);
 
   # An attribute set of option declarations, nested as in a module's options, is an object that
   # accepts its options alone.
   groupSchema =
     at: tree:
-    if !(lib.isAttrs tree) then
-      throw "${at} is neither an option declaration nor a group of them"
+    if groupRefusal at tree != null then
+      throw (groupRefusal at tree)
     else
       let
         options = removeAttrs tree [ "_module" ];
@@ -484,7 +546,7 @@ let
       // lib.optionalAttrs (required != [ ]) { inherit required; };
 in
 rec {
-  inherit uniqueRefusal;
+  inherit uniqueRefusal ruleRefusal groupRefusal;
 
   # The schema of a whole document of a kind, around the schema of its spec. The kind's rules
   # over its documents go into x-chalkos-kind, where a kind without rules has none, and its
@@ -533,7 +595,7 @@ rec {
           multiple
           ;
       }
-      // lib.optionalAttrs (rules != [ ]) { rules = map ruleSchema rules; }
+      // lib.optionalAttrs (rules != [ ]) { rules = rulesSchema "chalkos.kinds.${kind}.rules" rules; }
       // lib.optionalAttrs withheld { withheld = true; };
     }
     // lib.optionalAttrs (description != null) { inherit description; };
@@ -580,7 +642,9 @@ rec {
           // lib.optionalAttrs (unique != [ ]) {
             "x-chalkos-unique" = uniqueSchema "${at}.unique" "${at}.spec" specSchema unique;
           }
-          // lib.optionalAttrs (specRules != [ ]) { "x-chalkos-rules" = map ruleSchema specRules; };
+          // lib.optionalAttrs (specRules != [ ]) {
+            "x-chalkos-rules" = rulesSchema "${at}.specRules" specRules;
+          };
       };
 
   fileName =

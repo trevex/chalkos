@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -417,6 +418,19 @@ func TestRenderTimeout(t *testing.T) {
 	}
 }
 
+// A unit is named after its definition and its directory's suffix, and a long name is cut so the
+// unit name stays within the 255 bytes systemd allows.
+func TestUnitOf(t *testing.T) {
+	if got := unitOf("/run/chalkos/outputs/.staging/bird-conf.1234"); got != "chalkos-render-bird-conf-1234.service" {
+		t.Fatalf("unitOf = %q", got)
+	}
+	name := strings.Repeat("a", 240)
+	got := unitOf("/staging/" + name + ".4294967295")
+	if len(got) > 255 || !strings.HasSuffix(got, "a-4294967295.service") || !strings.HasPrefix(got, "chalkos-render-aaa") {
+		t.Fatalf("unitOf = %q (%d bytes)", got, len(got))
+	}
+}
+
 // A renderer runs as the unprivileged user in command.Hardened, without capabilities or devices
 // and with STATE, /var and all of /run/chalkos but $OUT hidden; it may write $OUT alone and open
 // Unix sockets alone, and prints its report of refusals into a file of chalkd's, which the manager
@@ -566,5 +580,29 @@ func TestDirectReportsRestoreFailure(t *testing.T) {
 	p := Program{Argv: []string{script(t, `chmod u+w "$OUT"; rm -f "$OUT/file"`)}, Out: out, Timeout: 30 * time.Second}
 	if _, err := (Direct{}).Run(context.Background(), p); err == nil {
 		t.Error("Run succeeded although the file's mode was not given back")
+	}
+}
+
+// failsInUnit is a runner that runs no program and fails each as the sandbox's unit would.
+type failsInUnit struct{}
+
+func (failsInUnit) Run(_ context.Context, p Program) ([]byte, error) {
+	return nil, &ProgramError{Status: "exit 1", Unit: unitOf(p.Out)}
+}
+
+// A program that fails in the sandbox names its unit, after the output and unique to the run, and
+// the command that shows its journal on the node; off the node the failure names neither.
+func TestFailureNamesUnit(t *testing.T) {
+	r := Renderer{Root: t.TempDir(), Run: failsInUnit{}}
+	_, failures := r.Render(context.Background(), map[string]Definition{"web-conf": def(t, r.Root, "/nix/store/x/bin/render", "")}, input(t, demos))
+	if len(failures) != 1 {
+		t.Fatalf("failures = %v", failures)
+	}
+	want := regexp.MustCompile(`^output web-conf: its renderer failed \(exit 1\); see chalkctl logs cp1 --unit=chalkos-render-web-conf-[0-9]+\.service$`)
+	if got := failures[0].Error(); !want.MatchString(got) {
+		t.Errorf("failure = %q, want a match of %s", got, want)
+	}
+	if got := failures[0].OffNode(); got != "output web-conf: its renderer failed (exit 1)" {
+		t.Errorf("off the node = %q", got)
 	}
 }

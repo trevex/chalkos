@@ -8,6 +8,7 @@
 {
   chalkosLib,
   config,
+  kubernetesLib,
   lib,
   pkgs,
   ...
@@ -53,7 +54,7 @@ let
     }.filter(s, s.mountPoint != null && (s.mountPoint == "${storage}" || "${storage}".startsWith(s.mountPoint + "/")))'';
 in
 {
-  options.chalkos.kubernetes = chalkosLib.internal.feature "Kubernetes" "registry" {
+  options.chalkos.kubernetes = kubernetesLib.feature "registry" {
     carries = "chalkos-registry, the cluster registry,";
     kinds = [ "ClusterRegistry" ];
   };

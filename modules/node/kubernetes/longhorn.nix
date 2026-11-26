@@ -4,8 +4,8 @@
 # there. open-iscsi and nfs-utils come as copies of the programs alone, without the shell and
 # Python scripts of the originals, which the copies do not reference.
 {
-  chalkosLib,
   config,
+  kubernetesLib,
   lib,
   pkgs,
   ...
@@ -24,50 +24,10 @@ let
   # The node's initiator name, made on its first boot from that boot's machine ID: every node
   # boots the same image.
   initiatorName = "${db}/initiatorname.iscsi";
-  # Copies of ELF programs and libraries whose run paths name the copy's libraries in place of
-  # the original's, and each package of relink in place of the one it replaces, which the copy
-  # must not reference; fix runs on the copy, before the reference check.
-  copyPrograms =
-    {
-      pname,
-      from,
-      programs,
-      libs ? [ ],
-      relink ? [ ],
-      fix ? "",
-    }:
-    pkgs.runCommand "${pname}-${from.version}"
-      {
-        inherit pname;
-        inherit (from) version;
-        nativeBuildInputs = [
-          pkgs.patchelf
-          pkgs.removeReferencesTo
-        ];
-        disallowedReferences = [ from ] ++ map (r: r.from) relink;
-      }
-      ''
-        mkdir -p $out/bin $out/lib
-        ${lib.concatMapStrings (p: "cp ${from}/bin/${p} $out/bin/\n") programs}
-        ${lib.concatMapStrings (l: "cp -P ${from}/lib/${l} $out/lib/\n") libs}
-        chmod -R u+w $out
-        for f in $out/bin/* $out/lib/*; do
-          [ -L "$f" ] && continue
-          rpath=$(patchelf --print-rpath "$f")
-          old=${from}/lib
-          rpath=''${rpath//"$old"/$out/lib}
-          ${lib.concatMapStrings (r: ''
-            old=${r.from}/lib
-            rpath=''${rpath//"$old"/${r.to}/lib}
-          '') relink}
-          patchelf --set-rpath "$rpath" "$f"
-        done
-        ${fix}
-      '';
-  iscsi = copyPrograms {
+  iscsi = pkgs.chalkos.trimPackage {
     pname = "open-iscsi-chalkos";
     from = pkgs.openiscsi;
-    programs = [
+    keep = [
       "iscsiadm"
       "iscsid"
     ];
@@ -86,10 +46,10 @@ let
   # mount.nfs names start-statd, a shell script that starts rpc.statd for the locks of NFSv3,
   # which the copy leaves out; Longhorn mounts its RWX volumes with NFSv4.1, which needs no
   # statd.
-  nfs = copyPrograms {
+  nfs = pkgs.chalkos.trimPackage {
     pname = "nfs-utils-chalkos";
     from = pkgs.nfs-utils;
-    programs = [ "mount.nfs" ];
+    keep = [ "mount.nfs" ];
     fix = ''
       remove-references-to -t ${pkgs.nfs-utils} $out/bin/mount.nfs
       for name in mount.nfs4 umount.nfs umount.nfs4; do
@@ -99,7 +59,7 @@ let
   };
 in
 {
-  options.chalkos.kubernetes = chalkosLib.internal.feature "Kubernetes" "longhorn" {
+  options.chalkos.kubernetes = kubernetesLib.feature "longhorn" {
     carries = "what Longhorn runs on the host: iscsid and iscsiadm, the NFS client, the `iscsi_tcp` and `dm_crypt` kernel modules, loaded at boot, and links for `iscsiadm`, `fstrim`, `cryptsetup`, `dmsetup` and `mount` in `/usr/bin` and `/usr/sbin`";
     default = false;
   };

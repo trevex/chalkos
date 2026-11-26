@@ -157,7 +157,7 @@ in
   internal =
     refuseLib
     // kindCheck
-    // {
+    // rec {
       inherit
         api
         kindTypes
@@ -174,17 +174,18 @@ in
         inherit (api) version;
         builtin = true;
       };
-      # The option <name>.enable of a feature of a layer's images, on unless default is false.
-      # Its description says that the layer's images carry `carries` and accept the kinds named,
-      # if any; layer is the layer as the description names it, such as router. The option also
-      # carries the declaration as chalkosFeature, from which the documentation's features tables
-      # are generated.
+      # The option <name>.enable of a feature of a layer's images, on unless default is false,
+      # beside options, the feature's other options. Its description says that the layer's images
+      # carry `carries` and accept the kinds named, if any; layer is the layer as the description
+      # names it, such as router. enable also carries the declaration as chalkosFeature, from which
+      # the documentation's features tables are generated.
       feature =
         layer: name:
         {
           carries,
           kinds ? [ ],
           default ? true,
+          options ? { },
         }:
         let
           names = map (k: "`${k}`") kinds;
@@ -201,18 +202,28 @@ in
               "set it true in an image's modules to add the feature to it.";
         in
         {
-          ${name}.enable =
-            lib.mkOption {
-              type = lib.types.bool;
-              inherit default;
-              description = "Whether ${layer} images carry ${carries}${accepts}. Only with the ${layer} layer; ${how}";
-            }
-            // {
-              chalkosFeature = {
-                inherit carries kinds default;
+          ${name} = options // {
+            enable =
+              lib.mkOption {
+                type = lib.types.bool;
+                inherit default;
+                description = "Whether ${layer} images carry ${carries}${accepts}. Only with the ${layer} layer; ${how}";
+              }
+              // {
+                chalkosFeature = {
+                  inherit carries kinds default;
+                };
               };
-            };
+          };
         };
+      # feature of a layer whose features an image may leave out are those of the list features,
+      # which listName names, such as routerLib.features: the tests build an image without each.
+      # A name missing from the list fails the evaluation.
+      layerFeature =
+        layer: listName: features: name: args:
+        refuseLib.refuse (lib.optional (
+          !lib.elem name features
+        ) "the ${layer} feature ${name} is missing from ${listName}") (feature layer name args);
       # The sandbox of a unit that runs as root but needs no capability and no network: Unix
       # sockets alone, which stay reachable on a read-only system and from the private network
       # namespace, as it hides abstract sockets alone; no home; kernel tunables, modules and

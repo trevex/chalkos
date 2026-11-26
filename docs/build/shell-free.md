@@ -359,3 +359,6 @@ image they are in carries a shell.
 - [Render config files](render-config.md) and [React to changes](react-to-changes.md) give the
   rules of outputs and effects.
 - [The image](../how-it-works/node/image.md) explains how a node runs its image.
+- chalkos holds its own images to these limits with the checks in `nix/checks/hardening.nix`,
+  whose allow-lists give the reason for each exception; [Testing](../contribute/testing.md)
+  describes them.
