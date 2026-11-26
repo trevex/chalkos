@@ -132,6 +132,7 @@ which have no logins, so it has no `completion` command.
 | --- | --- |
 | `config` | Config documents: parsing, the rules of a set, defaults, the redacted form that programs read, the hash, and the translation into the identity the node applies, which runs the translators of the image's layers after the common part. |
 | `config/slot` | Keeps a node's config on STATE, a slot per image with its identity, and writes it for the node's units: the documents below `/run/chalkos/config` and the secrets the granted units load as credentials. |
+| `constants` | The values chalkos's Nix library and its Go code share, from `constants.json`, which `lib/kinds/api.nix` reads too: the API groups and their version, networkd's kinds, the patterns of document and output names and the normalisers of uniqueness declarations. |
 | `identity` | The node's identity, the form its config translates to, which the node applies at boot: the hostname, platform, network and storage every image has, and a part for each layer that adds one, by the layer's name. The package does not interpret the layers' parts. |
 | `schema` | Reads an image's `metadata.json` and the JSON Schemas of its kinds, checks documents against them and fills in their defaults. |
 | `frr` | Reloads FRR: parses `frr.conf` and the running config into contexts, works out the commands that turn one into the other, and applies them with `vtysh -f`, then reads the running config again. It knows the commands the router and Kubernetes renderers write and refuses a config that holds another. |

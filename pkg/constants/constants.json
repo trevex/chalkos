@@ -1,0 +1,16 @@
+{
+  "version": "v1alpha1",
+  "groups": {
+    "core": "chalkos.dev",
+    "oci": "oci.chalkos.dev",
+    "storage": "storage.chalkos.dev",
+    "time": "time.chalkos.dev",
+    "kubernetes": "kubernetes.chalkos.dev",
+    "router": "router.chalkos.dev",
+    "networkd": "networkd.chalkos.dev"
+  },
+  "networkdKinds": ["Link", "NetDev", "Network"],
+  "documentName": "[a-z0-9]([-a-z0-9.]*[a-z0-9])?",
+  "plainName": "[a-z0-9]([-a-z0-9]*[a-z0-9])?",
+  "normalisers": ["cidr", "host", "ip", "lower"]
+}

@@ -968,6 +968,21 @@ in
     });
     expected = true;
   };
+  # The values Nix shares with Go come from pkg/constants/constants.json, which Go embeds: the API
+  # groups, networkd's kinds, the patterns of names and the normalisers.
+  testSharedConstants = {
+    expr = {
+      inherit (chalkosLib.internal.api)
+        version
+        groups
+        networkdKinds
+        normalisers
+        ;
+      inherit (kindTypes) documentName;
+      inherit (chalkosLib.internal) plainName;
+    };
+    expected = builtins.fromJSON (builtins.readFile ../../pkg/constants/constants.json);
+  };
   testKindDir = {
     expr = withDemo.chalkos.kinds.Demo.dir;
     expected = "/run/chalkos/config/demo.example.org/Demo";

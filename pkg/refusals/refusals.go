@@ -18,6 +18,8 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+
+	"github.com/trevex/chalkos/pkg/constants"
 )
 
 // A Refusal is a document's field that a program refuses, and why.
@@ -102,7 +104,7 @@ func holdsError(err error) bool {
 }
 
 // DocumentName is a document's name, as every kind's schema holds metadata.name to it.
-var DocumentName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`)
+var DocumentName = constants.DocumentName
 
 var (
 	// kind is a kind's name, as a kind's schema declares it.

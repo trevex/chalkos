@@ -1,22 +1,19 @@
-# The API groups of chalkos's own kinds, their version and apiVersions, and networkd's kinds.
-# Rules name kinds by apiVersion from here rather than from config.chalkos.kinds.<Kind>, since
-# some kinds, such as Flannel, exist only on some images.
-rec {
-  version = "v1alpha1";
-  groups = {
-    core = "chalkos.dev";
-    oci = "oci.chalkos.dev";
-    storage = "storage.chalkos.dev";
-    time = "time.chalkos.dev";
-    kubernetes = "kubernetes.chalkos.dev";
-    router = "router.chalkos.dev";
-    networkd = "networkd.chalkos.dev";
-  };
-  apiVersions = builtins.mapAttrs (_: group: "${group}/${version}") groups;
-  # networkd's kinds, whose schemas come from the tables of the image's systemd.
-  networkdKinds = [
-    "Link"
-    "NetDev"
-    "Network"
-  ];
+# The API groups of chalkos's own kinds, their version and apiVersions, networkd's kinds, the
+# patterns of names and the normalisers of uniqueness declarations, from
+# pkg/constants/constants.json, which chalkos's Go code embeds too. Rules name kinds by apiVersion
+# from here rather than from config.chalkos.kinds.<Kind>, since some kinds, such as Flannel, exist
+# only on some images.
+let
+  constants = builtins.fromJSON (builtins.readFile ../../pkg/constants/constants.json);
+in
+{
+  inherit (constants)
+    version
+    groups
+    networkdKinds
+    documentName
+    plainName
+    normalisers
+    ;
+  apiVersions = builtins.mapAttrs (_: group: "${group}/${constants.version}") constants.groups;
 }

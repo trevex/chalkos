@@ -118,5 +118,5 @@ rec {
     };
 
   # A document's metadata.name, as chalkcfg reads it.
-  documentName = "[a-z0-9]([-a-z0-9.]*[a-z0-9])?";
+  inherit (import ./api.nix) documentName;
 }

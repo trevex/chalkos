@@ -253,12 +253,7 @@ let
 
   # The normalisers a key's values compare through, which chalkd implements: ip and cidr as the
   # rules' ip() and cidr() compare, host as registry hosts compare, lower in lower case.
-  normalisers = [
-    "cidr"
-    "host"
-    "ip"
-    "lower"
-  ];
+  inherit (api) normalisers;
 
   # The schema s without its null branch, as nullOr writes it.
   nonNull =

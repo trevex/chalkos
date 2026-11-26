@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/trevex/chalkos/pkg/constants"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/schema"
 )
@@ -66,7 +67,7 @@ func (s *Set) Identity(name, platform string) (identity.Identity, error) {
 		return identity.Identity{}, err
 	}
 	var networkDocs []Document
-	for _, kind := range []string{"Link", "NetDev", "Network"} {
+	for _, kind := range constants.NetworkdKinds {
 		networkDocs = append(networkDocs, s.docs.Of(NetworkdAPI, kind)...)
 	}
 	id := identity.Identity{

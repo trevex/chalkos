@@ -10,11 +10,11 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/constants"
 	"github.com/trevex/chalkos/pkg/refusals"
 	"github.com/trevex/chalkos/pkg/schema"
 )
@@ -203,8 +203,8 @@ func scratch(parent, name string) (string, error) {
 }
 
 // plainName is the name of an output or a validator, which names it in refusals, in its directories
-// and in a validator's argv: lower-case letters, digits and dashes.
-var plainName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+// and in a validator's argv.
+var plainName = constants.PlainName
 
 // checkDefinition refuses a definition of the image chalkd could not run: a name that is not
 // plain, an input of Secret, or a program that is no absolute path. The image's build checks what
