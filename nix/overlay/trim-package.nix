@@ -6,7 +6,9 @@
 # libraries name the copy's lib in place of from's, and the to of each { from; to; } of relink in
 # place of its from. fix runs last, in the copy. The copy keeps from's version and meta, and its
 # pname unless pname is given, with out as its only output, and must not reference from or a
-# package relink replaces, so it never brings the original into the image.
+# package relink replaces, so it never brings the original into the image. A pattern of libs that
+# matches nothing fails the build, as does a program or library that needs a library its run path
+# lacks.
 {
   lib,
   runCommand,
@@ -56,11 +58,15 @@ runCommand "${pname}-${from.version}"
           done
         ''
     )
+    # stdenv sets nullglob, which drops a pattern that matches nothing; failglob fails on it, and
+    # the patterns match in from's lib.
     + lib.optionalString (libs != [ ]) ''
       mkdir -p $out/lib
-      for l in $libs; do
-        cp -P ${from}/lib/$l $out/lib/
-      done
+      (
+        cd ${from}/lib
+        shopt -s failglob
+        cp -P $libs $out/lib/
+      )
     ''
     + ''
       chmod -R u+w $out
@@ -75,6 +81,8 @@ runCommand "${pname}-${from.version}"
       find $out/bin -xtype l -delete
     ''
     # A file that is no dynamically linked ELF, as a script or a static program, has no run path.
+    # Each library a program or library needs lies on its run path or in its interpreter's
+    # directory, glibc's, so the copy runs.
     + ''
       find $out -type f | while read -r f; do
         rpath=$(patchelf --print-rpath "$f" 2>/dev/null) || continue
@@ -85,6 +93,17 @@ runCommand "${pname}-${from.version}"
           new=''${new//"$old"/${r.to}/lib}
         '') relink}
         [ "$new" = "$rpath" ] || patchelf --set-rpath "$new" "$f"
+        interp=$(patchelf --print-interpreter "$f" 2>/dev/null) || interp=
+        for n in $(patchelf --print-needed "$f"); do
+          (
+            IFS=:
+            for d in $new ''${interp%/*}; do [ -e "$d/$n" ] && exit 0; done
+            exit 1
+          ) || {
+            echo "error: $f needs $n, which is not on its run path $new" >&2
+            exit 1
+          }
+        done
       done
     ''
     + fix
