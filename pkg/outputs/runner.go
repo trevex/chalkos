@@ -209,7 +209,8 @@ func readOutput(path string) ([]byte, error) {
 
 // Direct runs programs as they are, as the image's build, its checker and tests do. A program
 // without Write finds $OUT read-only, as in the sandbox: Direct takes the write permission from
-// the files and directories below it while the program runs. Root writes despite the modes.
+// the files and directories below it while the program runs. Root, and a program that gives
+// itself the permission back, write despite the modes.
 type Direct struct{}
 
 func (Direct) Run(ctx context.Context, p Program) (printed []byte, err error) {
