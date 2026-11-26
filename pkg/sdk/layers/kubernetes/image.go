@@ -9,11 +9,12 @@ import (
 )
 
 // ImageOf is the Kubernetes part of an image's contract, read from a registry: the kubelet
-// release and the pod network its image.json names. ok is false for an image without the
-// Kubernetes layer.
+// release and the pod network its facts/kubernetes.json names. ok is false for an image without
+// the Kubernetes layer, whose contract holds no such file or an empty one, as Layer.ContractFacts
+// reads it.
 func ImageOf(c ociimage.Contract) (img k8s.Image, ok bool, err error) {
 	data, err := c.ReadFile(k8s.ContractFactsFile)
-	if errors.Is(err, fs.ErrNotExist) {
+	if errors.Is(err, fs.ErrNotExist) || err == nil && len(data) == 0 {
 		return k8s.Image{}, false, nil
 	}
 	if err != nil {

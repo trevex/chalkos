@@ -42,14 +42,17 @@ func TestImageOfReadsTheKubeletRelease(t *testing.T) {
 }
 
 // TestImageOfRefusesAnImageWithoutKubernetes reports no Kubernetes layer for an image whose
-// contract carries no facts/kubernetes.json.
+// contract carries no facts/kubernetes.json, or an empty one.
 func TestImageOfRefusesAnImageWithoutKubernetes(t *testing.T) {
-	ref := imageRef(t, ocitest.Contract())
-	art, err := ociimage.Read(context.Background(), ref, authn.DefaultKeychain)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok, err := ImageOf(art.Contract); err != nil || ok {
-		t.Errorf("ImageOf = ok %v, err %v; want ok false, err nil", ok, err)
+	empty := ocitest.Contract()
+	empty.Facts = map[string][]byte{"kubernetes": {}}
+	for name, c := range map[string]ociimage.Contract{"no facts": ocitest.Contract(), "empty facts": empty} {
+		art, err := ociimage.Read(context.Background(), imageRef(t, c), authn.DefaultKeychain)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok, err := ImageOf(art.Contract); err != nil || ok {
+			t.Errorf("%s: ImageOf = ok %v, err %v; want ok false, err nil", name, ok, err)
+		}
 	}
 }

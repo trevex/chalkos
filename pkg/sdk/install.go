@@ -40,8 +40,9 @@ func NodeNames(node string, docs []config.Document) pki.NodeNames {
 type InstallRequest struct {
 	// Node is the node's name, which its node certificate carries.
 	Node string
-	// Documents are the node's config documents, as NodeDocuments leaves them. Secret documents
-	// carry their values and no sources: the SDK resolves no sources.
+	// Documents are the node's config documents. Install keeps those that NodeDocuments leaves
+	// the node, so documents a caller filtered already stay the same. Secret documents carry
+	// their values and no sources: the SDK resolves no sources.
 	Documents []config.Document
 	// Secrets are the cluster's secrets, which issue the node's certificate, its recovery key and
 	// the layers' payloads.
@@ -77,7 +78,8 @@ type InstallRequest struct {
 
 // NewInstallHeader returns the header of an install of the request: the checked config, the
 // node's certificate, the OS CA bundle, the fallback secret and the layers' payloads. d is what
-// Check returned for r.Documents. The caller sets the target.
+// Check returned for r.Documents. The caller sets the target and the image; NewInstallHeader
+// ignores r.Image and r.Keychain, and takes r.Documents as they are, without NodeDocuments.
 func NewInstallHeader(r InstallRequest, d Delivery) (*nodev1.InstallHeader, error) {
 	now := r.Now
 	if now.IsZero() {
@@ -126,6 +128,7 @@ func fallbackSecret(r InstallRequest, fallback string) (string, error) {
 // or with r.Image. A config the image refuses, as Install checks it first or as the node checks
 // it, is Refused. An install that failed continues when it is run again.
 func Install(ctx context.Context, conn *client.Conn, r InstallRequest) error {
+	r.Documents = NodeDocuments(r.Layers, r.Documents)
 	var (
 		c   Contract
 		img *nodev1.ImageHeader

@@ -46,8 +46,12 @@ const (
 	w1SystemDisk = "apiVersion: storage.chalkos.dev/v1alpha1\nkind: SystemDisk\nmetadata: {name: system}\nspec: {disk: {serial: chalk-target}}\n"
 	w1Network    = "apiVersion: networkd.chalkos.dev/v1alpha1\nkind: Network\nmetadata: {name: 10-uplink}\nspec: {network: {address: [10.0.0.21/24]}}\n"
 	w1Host       = "apiVersion: chalkos.dev/v1alpha1\nkind: Host\nmetadata: {name: default}\nspec: {hostname: w1.lab}\n"
+	// monitoringAddon is an Addon, which control planes alone get.
+	monitoringAddon = "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Addon\nmetadata: {name: monitoring}\nspec: {objects: []}\n"
 )
 
+// An install in place sends the node its certificate, the OS CA bundle, its fallback secret, its
+// layers' payloads and the documents a worker gets, without the Addon documents.
 func TestInstallInPlaceSendsWhatTheNodeNeeds(t *testing.T) {
 	secrets := generateSecrets(t)
 	var got install.Request
@@ -55,7 +59,7 @@ func TestInstallInPlaceSendsWhatTheNodeNeeds(t *testing.T) {
 	s.InPlace = func(_ context.Context, r install.Request, _ []byte) error { got = r; return nil }
 	kubernetesImage(t, s)
 	conn := dialInstall(t, s, secrets)
-	docs := parseDocuments(t, w1SystemDisk, w1Network, w1Host, kubetest.ClusterDoc("default", "{}"), kubetest.NodeDoc("default", "{type: worker}"))
+	docs := parseDocuments(t, w1SystemDisk, w1Network, w1Host, kubetest.ClusterDoc("default", "{}"), kubetest.NodeDoc("default", "{type: worker}"), monitoringAddon)
 	if err := sdk.Install(context.Background(), conn, installRequest(secrets, docs)); err != nil {
 		t.Fatal(err)
 	}
@@ -79,6 +83,11 @@ func TestInstallInPlaceSendsWhatTheNodeNeeds(t *testing.T) {
 	key, _ := clustersecrets.RecoveryKey(secrets.RecoverySecret, "w1")
 	if got.FallbackSecret != key {
 		t.Errorf("fallback secret = %q, want the node's recovery key", got.FallbackSecret)
+	}
+	for _, d := range got.Config.Delivered {
+		if d.Kind == "Addon" {
+			t.Errorf("the worker gets the Addon %s", d.Name)
+		}
 	}
 	if len(got.Layers) != 1 {
 		t.Errorf("%d layer payloads, want the Kubernetes share", len(got.Layers))
