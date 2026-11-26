@@ -24,13 +24,13 @@
     unitConfig.ConditionVirtualization = "kvm";
     # The agent needs no capability: it opens its device as root, and systemd, which the shutdown
     # asks over its socket, powers the node off. It shuts the node down with /sbin/poweroff, halt,
-    # reboot or shutdown, which systemd gives, on a tmpfs of its own: an image with links below
-    # /usr has /sbin lead to the read-only /usr/sbin, where no mount point can be made. Programs
-    # run from the store alone: the programs below /sbin are mounts of their own from the store,
-    # which keep its exec flag.
+    # reboot or shutdown, which systemd gives, on a read-only tmpfs of its own: an image with
+    # links below /usr has /sbin lead to the read-only /usr/sbin, where no mount point can be made.
+    # Programs run from the store alone: the programs below /sbin are mounts of their own from the
+    # store, which keep its exec flag.
     serviceConfig = chalkosLib.sandbox.noExec // {
       CapabilityBoundingSet = [ "" ];
-      TemporaryFileSystem = "/sbin";
+      TemporaryFileSystem = "/sbin:ro";
       BindReadOnlyPaths = map (b: "${config.systemd.package}/bin/${b}:/sbin/${b}") [
         "poweroff"
         "halt"
