@@ -98,12 +98,12 @@ var (
 	vdb = storagetest.Disk{Name: "vdb", Devnum: "253:16", Props: map[string]string{"ID_PATH": "pci-0000:00:05.0", "ID_SERIAL": "chalk-extra"}}
 )
 
-// newTestServer returns a server in the mode whose paths point at fixture trees: vda is the
-// boot disk and carries VAR as vda7.
 // stayUp is a reboot or shutdown of a test node that does not start, so the node keeps serving
 // and its change locks stay free.
 func stayUp() error { return errors.New("the test node stays up") }
 
+// newTestServer returns a server in the mode whose paths point at fixture trees: vda is the
+// boot disk and carries VAR as vda7.
 func newTestServer(t *testing.T, mode nodev1.Mode, disks ...storagetest.Disk) (*Server, *tooltest.Runner) {
 	t.Helper()
 	root := t.TempDir()
@@ -239,7 +239,8 @@ const storageCommand = "/nix/store/x-chalkos-storage/bin/chalkos-storage"
 // against the test server's disks and with its runner.
 type storageFacts struct{ s *Server }
 
-func (f storageFacts) Run(ctx context.Context, argv []string, stdin []byte, _ int) ([]byte, error) {
+func (f storageFacts) Run(ctx context.Context, c facts.Command, stdin []byte, _ int) ([]byte, error) {
+	argv := c.Argv
 	if len(argv) != 3 || argv[0] != storageCommand || argv[1] != "facts" {
 		return nil, fmt.Errorf("the test runs no command %v", argv)
 	}
@@ -967,7 +968,8 @@ func TestCompressionRefused(t *testing.T) {
 	}
 }
 
-// A node serves maxLogStreams Logs calls at a time, and a call that ends frees its slot.
+// A node serves maxLogStreams Logs calls of its network's clients at a time, and a call that ends
+// frees its slot.
 func TestLogsLimitsStreams(t *testing.T) {
 	c := newCreds(t)
 	s, _ := newTestServer(t, normal, vda)
@@ -984,18 +986,19 @@ func TestLogsLimitsStreams(t *testing.T) {
 		}
 		return drain(stream)
 	}
-	s.logStreams.Store(maxLogStreams)
+	released := fill(t, &s.logStreams, peerContext("a"), logLimits, maxLogStreams/2)
+	fill(t, &s.logStreams, peerContext("b"), logLimits, maxLogStreams/2)
 	if err := logs(); connect.CodeOf(err) != connect.CodeResourceExhausted || journal.Load() != 0 {
 		t.Errorf("over the limit: err = %v, journal read %d times", err, journal.Load())
 	}
-	if n := s.logStreams.Load(); n != maxLogStreams {
+	if n := s.logStreams.running(); n != maxLogStreams {
 		t.Errorf("%d streams counted after a refused call", n)
 	}
-	s.logStreams.Store(maxLogStreams - 1)
+	released[0]()
 	if err := logs(); err != nil || journal.Load() != 1 {
 		t.Errorf("below the limit: err = %v, journal read %d times", err, journal.Load())
 	}
-	if n := s.logStreams.Load(); n != maxLogStreams-1 {
+	if n := s.logStreams.running(); n != maxLogStreams-1 {
 		t.Errorf("%d streams counted after the call ended", n)
 	}
 }

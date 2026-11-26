@@ -258,7 +258,7 @@ func TestDiagnosticSlotFreeOnceTheRunEnds(t *testing.T) {
 		done <- s.runDiagnostic(ctx, &nodev1.RunDiagnosticRequest{Name: "route-get", Arguments: map[string]string{"address": "192.0.2.1"}}, stream)
 	}()
 	<-stream.sending
-	testwait.Eventually(t, "the diagnostic's slot is free", func() bool { return s.diagnosticRuns.Load() == 0 })
+	testwait.Eventually(t, "the diagnostic's slot is free", func() bool { return s.diagnosticRuns.running() == 0 })
 	select {
 	case err := <-done:
 		t.Fatalf("the call ended while a send blocks: %v", err)

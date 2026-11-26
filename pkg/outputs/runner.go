@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"time"
 
@@ -53,11 +54,11 @@ func (e *ProgramError) Error() string { return "the program failed (" + e.Status
 const RenderUser = "chalkos-render"
 
 // Sandbox runs programs as oneshot transient units, standard error to the journal and a report to a
-// file of chalkd's, as RenderUser without capabilities, devices or network, on a read-only system
-// without STATE, /var or the config, credentials and Kubernetes keys chalkd writes below
-// /run/chalkos, so a program reads no Secret's value. A renderer may write $OUT alone; only a check
-// may open netlink sockets besides Unix ones. Through netlink a check reaches only its own network
-// namespace, but nf_tables there loads the modules a ruleset uses despite ProtectKernelModules.
+// file of chalkd's, as RenderUser without capabilities, devices or network, in command.Hardened
+// without STATE or /var, so a program reads no Secret's value. A renderer may write $OUT alone;
+// only a check may open netlink sockets besides Unix ones. Through netlink a check reaches only its
+// own network namespace, but nf_tables there loads the modules a ruleset uses despite
+// ProtectKernelModules.
 // Renders at boot run before the system bus, so systemd-run uses the manager's private socket,
 // which cannot follow a unit as --wait and --pipe do: stdin comes from a file, the oneshot's start
 // job ends with the program and its exit status is the unit's. The units have no default
@@ -72,15 +73,11 @@ const stopMargin = 10 * time.Second
 // outputs and runs its validators under the config lock.
 const DefaultTimeout = 30 * time.Second
 
-// sandbox holds the properties of the units Sandbox runs, which run programs from the store alone.
-var sandbox = append([]string{
-	"--property=User=" + RenderUser,
+// sandbox holds the properties of the units Sandbox runs, command.Hardened and its own.
+var sandbox = append(slices.Clone(command.Hardened),
+	"--property=User="+RenderUser,
 	"--property=CapabilityBoundingSet=",
 	"--property=AmbientCapabilities=",
-	"--property=NoNewPrivileges=yes",
-	"--property=ProtectSystem=strict",
-	"--property=ProtectHome=yes",
-	"--property=ProtectProc=invisible",
 	// A private /tmp, small enough that a renderer cannot fill memory through it.
 	"--property=TemporaryFileSystem=/tmp:size=16M,mode=1777",
 	// No file the program writes, its standard output among them, grows past MaxSize: a renderer
@@ -88,18 +85,14 @@ var sandbox = append([]string{
 	fmt.Sprintf("--property=LimitFSIZE=%d", MaxSize),
 	"--property=PrivateDevices=yes",
 	"--property=PrivateNetwork=yes",
-	"--property=ProtectKernelTunables=yes",
-	"--property=ProtectKernelModules=yes",
-	"--property=ProtectKernelLogs=yes",
-	"--property=ProtectControlGroups=yes",
-	"--property=InaccessiblePaths=-/state -/var -/run/chalkos/config -/run/chalkos/credentials -/run/chalkos/kubernetes",
+	// A check's unshare --map-root-user --net, which nft --check takes.
+	"--property=RestrictNamespaces=user net",
+	"--property=InaccessiblePaths=-/state -/var",
 	// A program that loops cannot starve the node while chalkd holds the config lock or boots. The
-	// largest, vtysh's and Kea's checks, peak near 24 MiB; a Go renderer starts a thread for
-	// every four CPUs while it collects garbage.
+	// largest, vtysh's and Kea's checks, peak near 24 MiB.
 	"--property=MemoryMax=256M",
-	"--property=TasksMax=256",
 	"--property=DefaultDependencies=no",
-}, command.StoreOnly...)
+)
 
 // sandboxArgs is the systemd-run command line that runs p as unit, reading input and, for a
 // program that reports refusals, printing into output.
@@ -121,8 +114,12 @@ func sandboxArgs(unit string, p Program, input, output string) []string {
 		"--property=StandardOutput="+stdout,
 		"--property=StandardError=journal",
 	)
+	//  is below /run/chalkos, which command.Hardened hides: the unit binds it back, writable
+	// for a renderer alone.
 	if p.Write {
-		args = append(args, "--property=ReadWritePaths="+p.Out)
+		args = append(args, "--property=BindPaths="+p.Out)
+	} else {
+		args = append(args, "--property=BindReadOnlyPaths="+p.Out)
 	}
 	families := "AF_UNIX"
 	if p.Netlink {

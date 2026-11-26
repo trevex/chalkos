@@ -116,9 +116,15 @@ Two methods need the admin role for what they reveal or carry. Config names a no
 volumes and `Addon` documents, and a control plane applies the objects of `Addon` documents to the
 cluster. So an Upgrade that carries config or a fallback secret needs the admin role, as
 ApplyConfig does: config an operator may not deliver to the running image it may not deliver with
-the next one either. GetConfig returns a node's config with its secret values hashed, and needs the
-admin role too, because names, addresses and the shape of the config tell an attacker much about
-the node.
+the next one either. GetConfig returns a node's whole config with its secret values hashed, and
+needs the admin role too: whoever holds the hash of a weak Secret value can test guesses of it.
+
+A reader sees config values elsewhere. Status reports why the node's config failed, and the
+journal, which the Logs method serves to readers, holds the refusals chalkd logs and what a
+renderer, a check or a command fact that failed wrote to standard error. Each of them may quote
+the config. No Secret value reaches either: renderers, checks, validators, rules and command facts
+read every Secret value hashed. Of a command fact that reads the fallback secret, chalkd logs how
+many bytes it wrote to standard error and nothing of what it wrote.
 
 chalkd serves the same API a second time to the console on the machine's screen, through the
 socket `/run/chalkd/console.sock` without TLS. The socket and its directory belong to root, and
@@ -232,8 +238,14 @@ and a client passes only values that chalkd checks against each parameter's type
 them. chalkd runs each command as a transient systemd unit under a user of its own, without new
 privileges and with only the capabilities the diagnostic names, in the node's network or in the
 network namespace the diagnostic names. The unit sees a read-only file system without STATE,
-`/var/lib`, or the config and credentials chalkd writes. Each diagnostic names the least role
-that runs it, so a reader sees the node's addresses but cannot ping from it.
+`/var/lib`, or the config and credentials chalkd and the layers keep below `/run/chalkos`. Each
+diagnostic names the least role that runs it, so a reader sees the node's addresses but cannot
+ping from it. Only a diagnostic of the admin role may take a capability that reaches past the
+sandbox, such as `CAP_DAC_READ_SEARCH`, which reads every file.
+
+A node runs eight Logs streams and four diagnostics of its network's clients at a time, half of
+them for one client certificate, and two Logs streams and a diagnostic of the console besides. A
+reader's client file, handed to monitoring, cannot take every slot, and the console keeps its own.
 
 The `kvm` platform's images run the QEMU guest agent, which a hypervisor reaches through a
 virtio-serial channel. It answers only `guest-sync-delimited`, `guest-sync`, `guest-ping`,

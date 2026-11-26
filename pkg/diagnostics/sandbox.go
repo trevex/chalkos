@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -19,8 +20,7 @@ import (
 )
 
 // Sandbox runs a diagnostic as a transient unit under systemd-run --pipe: a dynamic user with only
-// the capabilities and groups it names, a read-only system without devices, home directories,
-// STATE, /var/lib or the config, credentials and Kubernetes keys chalkd writes below /run/chalkos,
+// the capabilities and groups it names, in command.Hardened without devices, STATE or /var/lib,
 // Unix, IP and netlink sockets alone in the host's network or the namespace it names, and at most
 // its timeout. A failed unit stays loaded, so its result tells a timeout apart from an exit status;
 // chalkd resets it after reading it.
@@ -49,33 +49,20 @@ func (s Sandbox) namespaces() string {
 }
 
 // stopMargin is how much longer than a run's timeout chalkd waits for systemd-run, so the unit's
-// own limit stops the program first and its result says so; it also bounds each systemctl call.
+// own limit stops the program first and its result says so.
 const stopMargin = 10 * time.Second
 
-// sandbox holds the properties of every run's unit, which runs programs from the store alone.
-var sandbox = append([]string{
+// sandbox holds the properties of every run's unit, command.Hardened and its own.
+var sandbox = append(slices.Clone(command.Hardened),
 	"--property=DynamicUser=yes",
-	"--property=NoNewPrivileges=yes",
-	"--property=ProtectSystem=strict",
-	"--property=ProtectHome=yes",
 	"--property=PrivateTmp=yes",
 	"--property=PrivateDevices=yes",
-	"--property=ProtectKernelTunables=yes",
-	"--property=ProtectKernelModules=yes",
-	"--property=ProtectKernelLogs=yes",
-	"--property=ProtectControlGroups=yes",
-	"--property=ProtectClock=yes",
-	"--property=ProtectHostname=yes",
 	"--property=RestrictNamespaces=yes",
-	"--property=RestrictRealtime=yes",
-	"--property=LockPersonality=yes",
-	"--property=SystemCallArchitectures=native",
 	"--property=RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK",
-	"--property=InaccessiblePaths=-/state -/var/lib -/run/chalkos/config -/run/chalkos/credentials -/run/chalkos/kubernetes",
+	"--property=InaccessiblePaths=-/state -/var/lib",
 	// A run cannot starve the node it diagnoses.
 	"--property=MemoryMax=256M",
-	"--property=TasksMax=64",
-}, command.StoreOnly...)
+)
 
 // args are the arguments of systemd-run that run r as unit.
 func (s Sandbox) args(unit string, r Run) []string {
@@ -106,13 +93,6 @@ func unitName(diagnostic string) string {
 	return "chalkos-diagnostic-" + diagnostic + "-" + hex.EncodeToString(b) + ".service"
 }
 
-// systemctl asks the manager about a unit, for as long as it answers within stopMargin.
-func systemctl(args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), stopMargin)
-	defer cancel()
-	return command.Run(ctx, append([]string{"systemctl"}, args...), nil, command.MaxOutput)
-}
-
 func (s Sandbox) Run(ctx context.Context, r Run, stdout, stderr io.Writer) (Exit, error) {
 	if r.Timeout <= 0 {
 		return Exit{}, fmt.Errorf("diagnostic %s: its timeout %v is not positive", r.Name, r.Timeout)
@@ -134,14 +114,18 @@ func (s Sandbox) Run(ctx context.Context, r Run, stdout, stderr io.Writer) (Exit
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	// The unit's program holds the pipes, so the unit stops first, then systemd-run.
+	stopped := false
 	cmd.Cancel = func() error {
-		systemctl("stop", unit)
+		stopped = true
+		command.StopUnit(unit)
 		return cmd.Process.Kill()
 	}
 	cmd.WaitDelay = stopMargin
 	err := cmd.Run()
 	if ctx.Err() != nil || waitCtx.Err() != nil {
-		systemctl("reset-failed", unit)
+		if !stopped {
+			command.StopUnit(unit)
+		}
 		if ctx.Err() != nil {
 			return Exit{}, ctx.Err()
 		}
@@ -154,26 +138,16 @@ func (s Sandbox) Run(ctx context.Context, r Run, stdout, stderr io.Writer) (Exit
 	if !ok {
 		return Exit{}, err
 	}
-	show, serr := systemctl("show", "--property=Result", "--property=ExecMainStatus", unit)
-	systemctl("reset-failed", unit)
-	if serr != nil {
-		return Exit{Code: exit.ExitCode()}, nil
-	}
-	props := map[string]string{}
-	for line := range strings.Lines(string(show)) {
-		if k, v, ok := strings.Cut(strings.TrimSpace(line), "="); ok {
-			props[k] = v
-		}
-	}
-	switch props["Result"] {
-	case "exit-code":
-		code, _ := strconv.Atoi(props["ExecMainStatus"])
+	result, status, ok := command.FailedUnit(unit)
+	code, codeErr := strconv.Atoi(strings.TrimPrefix(status, "exit "))
+	switch {
+	case ok && result == "exit-code" && codeErr == nil:
 		return Exit{Code: code}, nil
-	case "success", "":
-		// systemd-run failed itself, as when the unit could not be started, and said why on
-		// standard error.
+	case !ok || result == "exit-code" || result == "success" || result == "":
+		// The manager did not answer, or systemd-run failed itself, as when the unit could not be
+		// started, and said why on standard error.
 		return Exit{Code: exit.ExitCode()}, nil
 	default:
-		return Exit{Stopped: props["Result"]}, nil
+		return Exit{Stopped: result}, nil
 	}
 }

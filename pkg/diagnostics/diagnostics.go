@@ -66,6 +66,14 @@ var capabilities = []string{
 	"CAP_BLOCK_SUSPEND", "CAP_AUDIT_READ", "CAP_PERFMON", "CAP_BPF", "CAP_CHECKPOINT_RESTORE",
 }
 
+// adminCapabilities are the capabilities that reach past the sandbox: files whatever their modes,
+// such as the units' credentials, other processes, raw devices, kernel modules and BPF, mounts,
+// another user's identity, and device nodes. Only a diagnostic of the admin role takes them.
+var adminCapabilities = []string{
+	"CAP_DAC_OVERRIDE", "CAP_DAC_READ_SEARCH", "CAP_SYS_ADMIN", "CAP_SYS_PTRACE", "CAP_SYS_RAWIO",
+	"CAP_SYS_MODULE", "CAP_SETUID", "CAP_SETGID", "CAP_SETPCAP", "CAP_BPF", "CAP_MKNOD",
+}
+
 var (
 	namePattern = regexp.MustCompile("^" + nameForm + "$")
 	// placeholder is a parameter's place in an argument of a command.
@@ -124,7 +132,8 @@ func Read(path string) (map[string]Definition, error) {
 }
 
 // Check refuses a diagnostic chalkd could not run as declared: a command outside the image's
-// store, a role, timeout, capability or group chalkd does not know, a namespace no call could fill
+// store, a role, timeout, capability or group chalkd does not know, a capability of
+// adminCapabilities below the admin role, a namespace no call could fill
 // to a name below NamespaceDir, a placeholder and parameter that do not match, an optional
 // parameter the namespace names, or a declaration that does not fit its type.
 func (d Definition) Check() error {
@@ -143,6 +152,9 @@ func (d Definition) Check() error {
 	for _, c := range d.Capabilities {
 		if !slices.Contains(capabilities, c) {
 			return fmt.Errorf("%q is no capability, such as CAP_NET_RAW", c)
+		}
+		if d.Role != "admin" && slices.Contains(adminCapabilities, c) {
+			return fmt.Errorf("%s reaches past the sandbox, so only a diagnostic of the admin role takes it, not one of the %s role", c, d.Role)
 		}
 	}
 	for _, g := range d.Groups {

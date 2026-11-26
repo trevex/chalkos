@@ -145,7 +145,7 @@ let
         type = types.listOf (types.strMatching "CAP_[A-Z_]+");
         default = [ ];
         example = [ "CAP_NET_RAW" ];
-        description = "Capabilities of the run's process, as its bounding and ambient sets; it has no other.";
+        description = "Capabilities of the run's process, as its bounding and ambient sets; it has no other. Only a diagnostic of the admin role takes one that reaches past the sandbox: `CAP_DAC_OVERRIDE`, `CAP_DAC_READ_SEARCH`, `CAP_SYS_ADMIN`, `CAP_SYS_PTRACE`, `CAP_SYS_RAWIO`, `CAP_SYS_MODULE`, `CAP_SETUID`, `CAP_SETGID`, `CAP_SETPCAP`, `CAP_BPF` or `CAP_MKNOD`.";
       };
       groups = mkOption {
         type = types.listOf types.nonEmptyStr;
@@ -261,9 +261,9 @@ in
       systemd unit, in the host's network or in the network namespace that `networkNamespace`
       names. The unit runs under a dynamic user, without new privileges, with only the
       `capabilities` and `groups` given. It sees a read-only file system with a private `/tmp`,
-      without STATE, `/var/lib`, or the config and credentials chalkd writes, and runs for at
-      most `timeout`. chalkd sends at most 1 MiB of what the command prints. Every image declares
-      the base diagnostics, whose names are taken.
+      without STATE, `/var/lib`, what chalkd and the layers keep below `/run/chalkos`, or the
+      services' credentials, and runs for at most `timeout`. chalkd sends at most 1 MiB of what
+      the command prints. Every image declares the base diagnostics, whose names are taken.
     '';
   };
 

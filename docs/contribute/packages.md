@@ -83,7 +83,7 @@ which have no logins, so it has no `completion` command.
 | `askpassword` | A systemd password agent: answers the password requests that `ask.*` files in `/run/systemd/ask-password` name. |
 | `tool` | Runs the command-line tools chalkd, the installer and the storage code drive, such as cryptsetup, sfdisk and systemctl. |
 | `tool/systemctl` | Asks systemd about units through the tool runner: their properties, whether they are active, the failed units and the units of a target. |
-| `command` | Runs a program of the image's store with bounded output, for command facts and outputs; a failure keeps standard error out of its error. It also follows a path's links within an image's store, and stops a transient unit or reads why one failed. |
+| `command` | Runs a program of the image's store with bounded output, for command facts and outputs; a failure keeps standard error out of its error. It also follows a path's links within an image's store, stops a transient unit or reads why one failed, and holds the properties every sandbox of the image's programs shares. |
 
 ## Image, install and upgrade
 

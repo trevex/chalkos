@@ -24,6 +24,7 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/contract"
+	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/internal/testwait"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
@@ -375,7 +376,7 @@ func TestApplyConfigUndoesAFailedDeliveryOnItsFacts(t *testing.T) {
 // others follow.
 type factSequence struct{ values []string }
 
-func (f *factSequence) Run(context.Context, []string, []byte, int) ([]byte, error) {
+func (f *factSequence) Run(context.Context, facts.Command, []byte, int) ([]byte, error) {
 	v := f.values[0]
 	if len(f.values) > 1 {
 		f.values = f.values[1:]

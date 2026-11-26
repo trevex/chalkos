@@ -84,20 +84,32 @@ default of `4` does for the base diagnostic `ping`. A parameter has one or the o
 
 ## The run gets a sandbox of its own
 
-chalkd runs each call as a transient systemd unit. The unit runs:
+chalkd runs each call as a transient systemd unit in the
+[shared sandbox](../reference/extension-runtime.md#shared-sandbox) of the image's programs. The
+unit runs:
 
 - under a dynamic user, without new privileges;
 - with only the `capabilities` given, as its bounding and ambient sets, and the `groups` given;
 - on a read-only file system with a private `/tmp`, without home directories, devices, STATE,
-  `/var/lib`, or the config, credentials and Kubernetes keys chalkd writes below `/run/chalkos`;
+  `/var/lib`, anything chalkd and the layers keep below `/run/chalkos`, or the services'
+  credentials;
 - in the node's network, or in the network namespace that `networkNamespace` names, with Unix,
   IPv4, IPv6 and netlink sockets alone;
-- with at most 256 MiB of memory and 64 tasks;
+- with at most 256 MiB of memory and 256 processes and threads;
 - for at most `timeout`, `30s` by default and `10m` at most, after which systemd stops it.
 
+A capability that reaches past the sandbox needs the admin role: `CAP_DAC_OVERRIDE`,
+`CAP_DAC_READ_SEARCH`, `CAP_SYS_ADMIN`, `CAP_SYS_PTRACE`, `CAP_SYS_RAWIO`, `CAP_SYS_MODULE`,
+`CAP_SETUID`, `CAP_SETGID`, `CAP_SETPCAP`, `CAP_BPF` and `CAP_MKNOD`. The build refuses a reader's
+or an operator's diagnostic that names one, as in
+`CAP_DAC_READ_SEARCH reaches past the sandbox, so only a diagnostic of the admin role takes it, not one of the reader role`.
+
 chalkd sends at most 1 MiB of what the command prints, then stops it. A node runs four
-diagnostics at a time. A fifth call fails with
-`resource_exhausted: 4 diagnostics run already; wait for one to end`.
+diagnostics of its network's clients at a time, two of them for one client certificate, and one
+of the console's besides. A fifth call fails with
+`resource_exhausted: 4 diagnostics run already; wait for one to end`, and a third of one client
+certificate with
+`resource_exhausted: 2 diagnostics run for this client certificate already, as many as one client may have; wait for one to end`.
 
 A daemon's control socket that its group may write is reachable through `groups`, which adds the
 run to that group of the image. A daemon whose socket only root may use needs another way in. The

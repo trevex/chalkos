@@ -71,13 +71,12 @@ func (s *Server) runDiagnostic(ctx context.Context, req *nodev1.RunDiagnosticReq
 	if err != nil {
 		return layer.Errorf(connect.CodeInvalidArgument, "diagnostic %s: %w", name, err)
 	}
-	if s.diagnosticRuns.Add(1) > maxDiagnosticRuns {
-		s.diagnosticRuns.Add(-1)
-		return layer.Errorf(connect.CodeResourceExhausted, "%d diagnostics run already; wait for one to end", maxDiagnosticRuns)
-	}
 	// The run's slot is free once its unit ended: a client that stops reading blocks the stream's
 	// last sends, but holds no slot.
-	release := sync.OnceFunc(func() { s.diagnosticRuns.Add(-1) })
+	release, err := s.diagnosticRuns.take(ctx, diagnosticLimits)
+	if err != nil {
+		return err
+	}
 	defer release()
 
 	runCtx, stop := context.WithCancel(ctx)

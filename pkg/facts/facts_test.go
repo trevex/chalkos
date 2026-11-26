@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -23,16 +24,19 @@ import (
 
 // fakeRunner answers commands from out, by program, and records what each read.
 type fakeRunner struct {
-	out    map[string]string
-	err    error
-	block  bool
-	argv   [][]string
-	stdins []map[string]any
-	limits []int
+	out      map[string]string
+	err      error
+	block    bool
+	argv     [][]string
+	stdins   []map[string]any
+	limits   []int
+	commands []Command
 }
 
-func (f *fakeRunner) Run(ctx context.Context, argv []string, stdin []byte, limit int) ([]byte, error) {
+func (f *fakeRunner) Run(ctx context.Context, c Command, stdin []byte, limit int) ([]byte, error) {
+	argv := c.Argv
 	f.argv = append(f.argv, argv)
+	f.commands = append(f.commands, c)
 	f.limits = append(f.limits, limit)
 	var in map[string]any
 	if err := json.Unmarshal(stdin, &in); err != nil {
@@ -257,6 +261,9 @@ func TestCommandFact(t *testing.T) {
 	if !slices.Equal(r.limits, []int{command.MaxOutput, command.MaxOutput}) {
 		t.Errorf("limits = %v", r.limits)
 	}
+	if want := []Command{{Name: "disks", Argv: []string{"/bin/disks", "facts", "disks"}}, {Name: "fallback", Argv: []string{"/bin/fallback"}, Secret: true}}; !reflect.DeepEqual(r.commands, want) {
+		t.Errorf("ran %v, want %v", r.commands, want)
+	}
 }
 
 // An override replaces a fact for the delivery and loads nothing.
@@ -269,20 +276,50 @@ func TestOverride(t *testing.T) {
 	}
 }
 
-// The sandbox runs the command as a transient unit that cannot change the node.
+// The sandbox runs the command as a transient unit of its own that cannot change the node, in
+// command.Hardened as root without capabilities, devices or memory beyond 256 MiB; a fact that
+// reads the fallback secret keeps CAP_SYS_ADMIN, the block devices and the device mapper, and
+// cryptsetup's lock directory, for the passphrase test.
 func TestSandboxed(t *testing.T) {
-	want := []string{"systemd-run", "--pipe", "--wait", "--quiet", "--collect",
-		"--property=ProtectSystem=strict", "--property=ReadOnlyPaths=-/state",
-		"--property=ProtectHome=yes",
-		"--property=PrivateTmp=yes", "--property=ProtectKernelTunables=yes",
-		"--property=ProtectKernelModules=yes", "--property=ProtectControlGroups=yes",
-		"--property=PrivateNetwork=yes", "--property=RestrictAddressFamilies=AF_UNIX AF_ALG",
-		"--property=NoNewPrivileges=yes", "--property=NoExecPaths=/", "--property=ExecPaths=/nix/store",
-		"--property=RuntimeMaxSec=30",
-		"--property=ReadWritePaths=-/run/cryptsetup", "--",
-		"/nix/store/x/bin/chalkos-storage", "facts", "disks"}
-	if got, err := (Sandbox{}).command([]string{"/nix/store/x/bin/chalkos-storage", "facts", "disks"}); err != nil || !slices.Equal(got, want) {
-		t.Errorf("command = %v, %v", got, err)
+	unit := "chalkos-fact-disks-0123456789ab.service"
+	start := append([]string{"systemd-run", "--pipe", "--wait", "--quiet", "--collect", "--unit=" + unit}, command.Hardened...)
+	own := []string{
+		"--property=ReadOnlyPaths=-/state",
+		"--property=PrivateTmp=yes",
+		"--property=PrivateNetwork=yes",
+		"--property=RestrictNamespaces=yes",
+		"--property=RestrictAddressFamilies=AF_UNIX AF_ALG",
+		"--property=DevicePolicy=closed",
+	}
+	disks := Command{Name: "disks", Argv: []string{"/nix/store/x/bin/chalkos-storage", "facts", "disks"}}
+	want := slices.Concat(start, own, []string{
+		"--property=CapabilityBoundingSet=",
+		"--property=AmbientCapabilities=",
+		"--property=MemoryMax=256M",
+		"--property=RuntimeMaxSec=30000ms",
+		"--", "/nix/store/x/bin/chalkos-storage", "facts", "disks",
+	})
+	if got, err := (Sandbox{}).command(unit, disks, Timeout); err != nil || !slices.Equal(got, want) {
+		t.Errorf("command = %q, %v\nwant %q", got, err, want)
+	}
+	fallback := Command{Name: "fallback", Argv: []string{"/nix/store/x/bin/chalkos-storage", "facts", "fallback"}, Secret: true}
+	wantFallback := slices.Concat(start, own, []string{
+		"--property=CapabilityBoundingSet=CAP_SYS_ADMIN",
+		"--property=AmbientCapabilities=",
+		"--property=DeviceAllow=block-* rw",
+		"--property=DeviceAllow=/dev/mapper/control rw",
+		"--property=ReadWritePaths=-/run/cryptsetup",
+		"--property=RuntimeMaxSec=5000ms",
+		"--", "/nix/store/x/bin/chalkos-storage", "facts", "fallback",
+	})
+	if got, err := (Sandbox{}).command(unit, fallback, 5*time.Second); err != nil || !slices.Equal(got, wantFallback) {
+		t.Errorf("command = %q, %v\nwant %q", got, err, wantFallback)
+	}
+	// No property names a directory of a layer: command.Hardened hides /run/chalkos whole.
+	for _, arg := range slices.Concat(want, wantFallback) {
+		if strings.Contains(arg, "/run/chalkos/") {
+			t.Errorf("the sandbox names %s", arg)
+		}
 	}
 	// A fact of an image that does not run: its store over /nix/store, its program run from where
 	// the store is on the node, which systemd-run finds, its links followed within that store as
@@ -304,12 +341,49 @@ func TestSandboxed(t *testing.T) {
 	want = append(slices.Clone(want[:len(want)-4]), "--property=BindReadOnlyPaths="+store+":/nix/store",
 		"--property=ExecPaths="+store, "--",
 		store+"/y/bin/chalkos-storage", "facts", "disks")
-	if got, err := (Sandbox{Store: store}).command([]string{"/nix/store/x/bin/chalkos-storage", "facts", "disks"}); err != nil || !slices.Equal(got, want) {
+	if got, err := (Sandbox{Store: store}).command(unit, disks, Timeout); err != nil || !slices.Equal(got, want) {
 		t.Errorf("command = %v, %v\nwant %v", got, err, want)
 	}
 	// A link out of the image's store leads nowhere: the node's own file is no file of the image.
-	if _, err := (Sandbox{Store: store}).command([]string{"/nix/store/x/bin/out"}); !errors.Is(err, fs.ErrNotExist) {
+	if _, err := (Sandbox{Store: store}).command(unit, Command{Name: "out", Argv: []string{"/nix/store/x/bin/out"}}, Timeout); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("a link out of the store: err = %v", err)
+	}
+}
+
+// A run gets a unit of its own, which runs until the run's deadline, and is stopped and reset when
+// the run ends before its program.
+func TestSandboxStopsTheUnit(t *testing.T) {
+	bin := t.TempDir()
+	calls := filepath.Join(bin, "calls")
+	for name, body := range map[string]string{
+		"systemd-run": `for a; do case $a in --unit=*|--property=RuntimeMaxSec=*) echo "$a" >>` + calls + ` ;; esac; done
+exec sleep 30`,
+		"systemctl": `echo "systemctl $*" >>` + calls,
+	} {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\n"+body+"\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if _, err := (Sandbox{}).Run(ctx, Command{Name: "disks", Argv: []string{"/nix/store/x/bin/disks"}}, nil, 100); err == nil {
+		t.Fatal("a run past its deadline succeeded")
+	}
+	data, err := os.ReadFile(calls)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	unit, ok := strings.CutPrefix(lines[0], "--unit=")
+	if !ok || !regexp.MustCompile(`^chalkos-fact-disks-[0-9a-f]{12}\.service$`).MatchString(unit) {
+		t.Fatalf("systemd-run got %q", lines)
+	}
+	if runFor, ok := strings.CutPrefix(lines[1], "--property=RuntimeMaxSec="); !ok || !strings.HasSuffix(runFor, "ms") || len(runFor) > 6 {
+		t.Errorf("the unit runs for %q, want at most the run's second", runFor)
+	}
+	if want := []string{"systemctl stop " + unit, "systemctl reset-failed " + unit}; !slices.Equal(lines[2:], want) {
+		t.Errorf("systemctl ran %q, want %q", lines[2:], want)
 	}
 }
 
@@ -361,5 +435,24 @@ func TestCommandFailures(t *testing.T) {
 				t.Errorf("logged %q, want %q", logged.String(), tc.log)
 			}
 		})
+	}
+}
+
+// Of a command that reads an input, such as the fallback secret, and fails, the journal gets the
+// length of what it wrote to standard error alone, since readers read the journal.
+func TestCommandWithInputsFails(t *testing.T) {
+	var logged bytes.Buffer
+	log.SetOutput(&logged)
+	defer log.SetOutput(os.Stderr)
+	echo := `{"config":{"a":"b"},"fallbackSecret":"s3cret"}`
+	r := &fakeRunner{err: &command.Error{Status: "exit 1", Stderr: "cannot read " + echo}}
+	l := NewLoader(context.Background(), map[string]Definition{"fallback": {Command: "/bin/fallback", Inputs: []string{FallbackSecret}}}, r)
+	l.Inputs = map[string]any{FallbackSecret: "s3cret"}
+	if _, err := l.Fact("fallback"); err == nil || err.Error() != "the command failed (exit 1); see the node's journal" {
+		t.Errorf("err = %v", err)
+	}
+	want := "fact fallback: /bin/fallback failed (exit 1) and wrote 58 bytes to standard error, which chalkd does not log, since the program reads fallbackSecret"
+	if !strings.Contains(logged.String(), want) || strings.Contains(logged.String(), "s3cret") {
+		t.Errorf("logged %q, want %q", logged.String(), want)
 	}
 }

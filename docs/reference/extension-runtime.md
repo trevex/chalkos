@@ -201,24 +201,49 @@ A refusal does not leak a secret or a fact's content that the rule only compared
 - A rule that yields no bool says which type it yields.
 - A command fact that fails shows its exit status alone: `cannot check: fact disks: the command
   failed (exit 1); see the node's journal`. Its standard error goes to the node's journal, cut to
-  4 KiB. An output that is no JSON, and a file that is not JSON, show nothing of their content.
+  4 KiB. Of a command that reads an input, such as `fallbackSecret`, the journal gets only how many
+  bytes it wrote there. An output that is no JSON, and a file that is not JSON, show nothing of
+  their content.
+
+## Shared sandbox { #shared-sandbox }
+
+chalkd runs every program of the image that reads config or serves a client as a transient
+systemd unit: renderers, checks and validators, command facts, diagnostics and the checker of an
+image that does not run. Each unit adds its own user, capabilities, devices and network to these
+limits, which all of them share:
+
+- The file system is read-only, and only programs of the store run. No program gains privileges.
+- `/run/chalkos`, where chalkd and the layers keep the node's config, credentials and keys, is an
+  empty read-only directory. A unit gets back the one path below it that it needs, such as a
+  renderer's `$OUT`. The credentials of the node's services below `/run/credentials` are hidden
+  too. A program cannot read a secret even by its path.
+- Home directories are hidden. Kernel tunables, kernel logs and control groups are read-only or
+  hidden, and other users' processes are invisible.
+- The program cannot load a kernel module, set the clock, change the hostname, change its
+  personality, schedule itself in real time or map memory that is writable and executable.
+- It makes only the system calls of systemd's `@system-service` set: those of files, sockets,
+  processes and namespaces, signals, timers, IPC and the key ring, for the native architecture.
+  Mounts, module loading, the clock, raw I/O, reboots, swap, tracing, BPF and seccomp filters
+  are not among them. A call outside the set fails with `EPERM`, and the journal names it.
+- It runs 256 processes and threads at most, together.
 
 ## Command fact sandbox { #command-fact-sandbox }
 
-chalkd runs a command fact through `systemd-run --pipe --wait` as a transient unit, as root
-without `CAP_SYS_MODULE`:
+chalkd runs a command fact through `systemd-run --pipe --wait` as a transient unit of its own, as
+root in the [sandbox every program of the image shares](#shared-sandbox):
 
-- The file system is read-only, STATE among it, apart from `/dev`, the unit's own empty `/tmp`
-  and `/var/tmp`, and `/run/cryptsetup`, cryptsetup's lock directory, which the passphrase test
-  writes.
-- Home directories are hidden, and kernel tunables and control groups are read-only.
-- The unit cannot load a kernel module itself. The kernel still loads one on request, as for a
-  socket family or a cipher the unit uses.
+- The file system is read-only, STATE among it, apart from the unit's own empty `/tmp` and
+  `/var/tmp`.
 - It has no network and no socket beyond Unix sockets and the kernel crypto API's.
-- Devices stay accessible, because the storage facts resolve disks and test passphrases on block
-  devices. cryptsetup may set up a temporary device-mapper mapping for a cipher the kernel crypto
-  API lacks.
-- It gains no privileges.
+- It has no capabilities, opens no device and may use 256 MiB of memory. It still reads the files
+  of STATE that root owns, sysfs, the udev database and the links below `/dev`, as the storage
+  facts do to resolve disks.
+- A fact that reads the `fallbackSecret` input tests a passphrase instead. It keeps
+  `CAP_SYS_ADMIN`, may read and write block devices and `/dev/mapper/control`, and may write
+  `/run/cryptsetup`, cryptsetup's lock directory. cryptsetup may set up a temporary device-mapper
+  mapping for a cipher the kernel crypto API lacks. Its memory has no limit, because cryptsetup's
+  argon2 takes up to half of the node's memory.
+- The kernel still loads a module on request, as for a socket family or a cipher the unit uses.
 
 A command that exits with an error, takes longer than 30 seconds, prints more than 1 MiB or prints
 no JSON refuses the delivery.
@@ -346,13 +371,14 @@ An output without `check` has its files served as the renderer wrote them.
 
 ### Sandbox and limits { #sandbox }
 
-chalkd runs every renderer, check and validator as a transient unit with these limits:
+chalkd runs every renderer, check and validator as a transient unit in the
+[shared sandbox](#shared-sandbox), with these limits besides:
 
 - It runs as the unprivileged system user `chalkos-render`, without capabilities, devices or
   network. A check may open netlink sockets, which reach no network but a namespace's own. A
-  renderer or a validator opens none.
-- The system is read-only. STATE, `/var`, and the config, credentials and Kubernetes keys chalkd
-  writes below `/run/chalkos` are hidden, so a program cannot read a secret even by its path.
+  renderer or a validator opens none. A program may create a user and a network namespace, as a
+  check's `unshare --map-root-user --net` does, and no other.
+- STATE and `/var` are hidden. Of `/run/chalkos`, the program sees its `$OUT` alone.
 - A renderer may write `$OUT` and a private `/tmp` of 16 MiB alone. A validator writes no
   output's files, so it may write no path but its private `/tmp` of 16 MiB.
 - It must finish within 30 seconds. The validators of a delivery run one after another.

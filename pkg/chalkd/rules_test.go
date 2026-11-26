@@ -13,6 +13,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/contract"
+	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/install"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 )
@@ -34,7 +35,7 @@ func TestApplyConfigRefusesWhenAFactCannotBeLoaded(t *testing.T) {
 // stdinRecorder answers every command fact with null and keeps what it read.
 type stdinRecorder struct{ stdin []byte }
 
-func (r *stdinRecorder) Run(_ context.Context, _ []string, stdin []byte, _ int) ([]byte, error) {
+func (r *stdinRecorder) Run(_ context.Context, _ facts.Command, stdin []byte, _ int) ([]byte, error) {
 	r.stdin = stdin
 	return []byte("null"), nil
 }
