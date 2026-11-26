@@ -147,9 +147,17 @@ func TestCAVerifiesNodeName(t *testing.T) {
 	otherCert, _ := pki.ParseCertificate([]byte(otherCA.Certificate))
 	otherPool := x509.NewCertPool()
 	otherPool.AddCert(otherCert)
-	foreign, _ := Dial(addr, Options{Verify: ByCA(otherPool, "n1")})
-	if err := info(foreign); err == nil {
-		t.Error("accepted a node certificate from another CA")
+	// A node of the CA under another name fails for its name, and a node of another CA for its
+	// issuer, whichever name it has.
+	if _, ok := errors.AsType[x509.HostnameError](info(wrong)); !ok {
+		t.Errorf("another node's certificate: %v, want a hostname error", info(wrong))
+	}
+	for _, name := range []string{"n1", "n2"} {
+		foreign, _ := Dial(addr, Options{Verify: ByCA(otherPool, name)})
+		err := info(foreign)
+		if _, ok := errors.AsType[x509.HostnameError](err); ok || err == nil {
+			t.Errorf("a node of another CA as %s: %v, want its issuer refused", name, err)
+		}
 	}
 }
 

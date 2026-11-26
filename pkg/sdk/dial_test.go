@@ -83,28 +83,65 @@ func TestDialMaintenanceRefusesAnInstalledNodeByFingerprint(t *testing.T) {
 	}
 }
 
-func TestDialByOSCAChecksTheName(t *testing.T) {
+// An installed node is reached by the secrets' OS CAs under its own name alone.
+func TestDialInstalledChecksTheName(t *testing.T) {
 	addr, _, secrets := serveNormal(t)
-	cert, err := sdk.AdminCertificate(secrets, "chalkctl", time.Now())
+	cert, err := sdk.AdminCertificate(secrets, "sdk-test", time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	pool := osCAPool(t, secrets)
-	conn, err := sdk.Dial(addr, sdk.Trust{OSCAs: pool, Name: "n1"}, cert)
+	conn, info, err := sdk.DialInstalled(context.Background(), addr, secrets, "n1", cert)
 	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := conn.Info(context.Background(), &nodev1.InfoRequest{}); err != nil {
 		t.Fatal(err)
 	}
 	conn.Close()
-	conn, err = sdk.Dial(addr, sdk.Trust{OSCAs: pool, Name: "n2"}, cert)
+	if info.NodeName != "n1" || len(info.RootHash) == 0 {
+		t.Errorf("info = %v, want n1's with its root hash", info)
+	}
+	conn, info, err = sdk.DialInstalled(context.Background(), addr, secrets, "n2", cert)
+	if !errors.Is(err, sdk.ErrOtherNode) || conn != nil || info != nil {
+		t.Fatalf("n1 dialled as n2: %v, %v", info, err)
+	}
+}
+
+// A node in maintenance mode, whose certificate no OS CA issued, is not installed, as it answers
+// unverified, and the error keeps the verification's failure.
+func TestDialInstalledRefusesANodeInMaintenance(t *testing.T) {
+	secrets, err := clustersecrets.Generate(time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
-	if _, err := conn.Info(context.Background(), &nodev1.InfoRequest{}); err == nil {
-		t.Fatal("verified n1 as n2")
+	addr := sdktest.Serve(t, sdktest.Maintenance(), secrets.OSCA, pki.CertKey{}, "", nil).Addr
+	cert, err := sdk.AdminCertificate(secrets, "sdk-test", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, info, err := sdk.DialInstalled(context.Background(), addr, secrets, "n1", cert)
+	if !errors.Is(err, sdk.ErrNotInstalled) || conn != nil || info != nil {
+		t.Fatalf("dialled a node in maintenance mode as installed: %v, %v", info, err)
+	}
+	if _, ok := errors.AsType[x509.UnknownAuthorityError](err); !ok {
+		t.Errorf("err %v, want it to wrap the verification's failure", err)
+	}
+}
+
+// A node whose certificate another cluster's OS CA issued, under the name dialled or another, is
+// neither installed under another name nor in maintenance mode.
+func TestDialInstalledRefusesAnotherCluster(t *testing.T) {
+	addr, _, _ := serveNormal(t)
+	other, err := clustersecrets.Generate(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := sdk.AdminCertificate(other, "sdk-test", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"n1", "n2"} {
+		_, _, err = sdk.DialInstalled(context.Background(), addr, other, name, cert)
+		if err == nil || errors.Is(err, sdk.ErrNotInstalled) || errors.Is(err, sdk.ErrOtherNode) {
+			t.Errorf("as %s: err %v, want the verification's failure", name, err)
+		}
 	}
 }
 
@@ -216,14 +253,4 @@ func serveNormal(t *testing.T) (addr, fingerprint string, secrets clustersecrets
 	s := &chalkd.Server{Mode: nodev1.Mode_MODE_NORMAL, AnyClient: true}
 	node := sdktest.Serve(t, s, secrets.OSCA, secrets.NodeCA, "n1", nil)
 	return node.Addr, node.Fingerprint, secrets
-}
-
-// osCAPool is the pool secrets' OS CA bundle verifies an installed node's certificate with.
-func osCAPool(t *testing.T, secrets clustersecrets.Secrets) *x509.CertPool {
-	t.Helper()
-	pool, err := pki.BundlePool(secrets.OSCABundle())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return pool
 }

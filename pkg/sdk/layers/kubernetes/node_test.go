@@ -71,11 +71,7 @@ func controlPlane(t *testing.T, options func(o *kubernetesplugin.Options, s knod
 	if err != nil {
 		t.Fatal(err)
 	}
-	pool, err := pki.BundlePool(secrets.OSCABundle())
-	if err != nil {
-		t.Fatal(err)
-	}
-	conn, err := sdk.Dial(node.Addr, sdk.Trust{OSCAs: pool, Name: "n1"}, cert)
+	conn, _, err := sdk.DialInstalled(context.Background(), node.Addr, secrets, "n1", cert)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -91,15 +91,22 @@ func (v byCA) verify(chain []*x509.Certificate, _ string) error {
 	for _, cert := range chain[1:] {
 		intermediates.AddCert(cert)
 	}
-	opts := x509.VerifyOptions{Roots: v.ca, Intermediates: intermediates, DNSName: v.name,
+	opts := x509.VerifyOptions{Roots: v.ca, Intermediates: intermediates,
 		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
 	if v.ignoreValidity {
 		// Each CA's validity covers the start of what it issued.
 		opts.CurrentTime = leaf.NotBefore
 	}
+	// The chain first, then the name, which x509 checks the other way round: a
+	// x509.HostnameError then means a node of the CA under another name, never a stranger.
 	chains, err := leaf.Verify(opts)
 	if err != nil {
 		return err
+	}
+	if v.name != "" {
+		if err := leaf.VerifyHostname(v.name); err != nil {
+			return err
+		}
 	}
 	if role, _ := pki.ClientRole(chains); v.anyNode && role != pki.RoleNode {
 		return errors.New("the peer's certificate is not a node certificate")

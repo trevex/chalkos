@@ -9,6 +9,8 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/clustersecrets"
+	"github.com/trevex/chalkos/pkg/pki"
 )
 
 // ErrInstalled is the error of DialMaintenance at a node that runs in normal mode: it is
@@ -133,6 +135,73 @@ func DialMaintenance(ctx context.Context, addr string, t Trust, cert *tls.Certif
 func maintenanceError(ctx context.Context, addr string, cert *tls.Certificate, err error) error {
 	if cert != nil && client.RefusesCertificate(ctx, err, addr, cert) {
 		return fmt.Errorf("%w: %w", ErrOSCARefused, err)
+	}
+	return err
+}
+
+// ErrNotInstalled is the error of DialInstalled at a node that runs in maintenance mode: it is
+// not installed yet, or the image it installed boots in maintenance mode until the install ends.
+var ErrNotInstalled = errors.New("the node is not installed: it runs in maintenance mode")
+
+// ErrOtherNode is the error of DialInstalled at a node installed under another name than the one
+// dialled.
+var ErrOtherNode = errors.New("the node is installed under another name")
+
+// DialInstalled connects to the installed node called name at addr, verified by the OS CAs s
+// trusts, those that issue and those accepted during a rotation, and presenting cert. It returns
+// the connection and the node's Info, whose RootHash names the image the node runs. A node whose
+// certificate the OS CAs issued for another node, or whose Info names another node, fails with
+// ErrOtherNode. A node whose certificate the OS CAs did not issue fails with the client's
+// verification error, unless it says over an unverified connection that it runs in maintenance
+// mode: then the error wraps ErrNotInstalled and the verification error. That answer is not
+// authenticated; a caller that acts on it continues with DialMaintenance, which pins the node's
+// fingerprint. No error returns a connection or Info. A node that fell back to the image it
+// booted from, because the first boot of an image it installed was never found healthy, answers
+// in normal mode with the RootHash of that other image.
+func DialInstalled(ctx context.Context, addr string, s clustersecrets.Secrets, name string, cert *tls.Certificate) (*client.Conn, *nodev1.InfoResponse, error) {
+	pool, err := pki.BundlePool(s.OSCABundle())
+	if err != nil {
+		return nil, nil, fmt.Errorf("the secrets' OS CAs: %w", err)
+	}
+	conn, err := Dial(addr, Trust{OSCAs: pool, Name: name}, cert)
+	if err != nil {
+		return nil, nil, err
+	}
+	info, err := conn.Info(ctx, &nodev1.InfoRequest{})
+	if err != nil {
+		conn.Close()
+		return nil, nil, installedError(ctx, addr, name, cert, err)
+	}
+	switch {
+	case info.Mode != nodev1.Mode_MODE_NORMAL:
+		conn.Close()
+		return nil, nil, fmt.Errorf("%s: %w", addr, ErrNotInstalled)
+	case info.NodeName != name:
+		conn.Close()
+		return nil, nil, fmt.Errorf("%w: the node at %s is %s, not %s", ErrOtherNode, addr, info.NodeName, name)
+	}
+	return conn, info, nil
+}
+
+// installedError maps the error of an Info call to a node DialInstalled verified by the OS CAs. A
+// certificate not valid for name chained to the OS CAs, as the client checks the chain first, so
+// the node is another node of the cluster: ErrOtherNode. When the OS CAs did not issue the
+// certificate, it asks the node without verifying it, and a node that says it runs in maintenance
+// mode is ErrNotInstalled. It returns err as is otherwise.
+func installedError(ctx context.Context, addr, name string, cert *tls.Certificate, err error) error {
+	if _, ok := errors.AsType[x509.HostnameError](err); ok {
+		return fmt.Errorf("%w: the node at %s has no certificate for %s: %w", ErrOtherNode, addr, name, err)
+	}
+	if _, ok := errors.AsType[x509.UnknownAuthorityError](err); !ok {
+		return err
+	}
+	probe, perr := Dial(addr, Trust{Insecure: true}, cert)
+	if perr != nil {
+		return err
+	}
+	defer probe.Close()
+	if info, perr := probe.Info(ctx, &nodev1.InfoRequest{}); perr == nil && info.Mode == nodev1.Mode_MODE_MAINTENANCE {
+		return fmt.Errorf("%s: %w: %w", addr, ErrNotInstalled, err)
 	}
 	return err
 }
