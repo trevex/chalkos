@@ -100,6 +100,10 @@ var (
 
 // newTestServer returns a server in the mode whose paths point at fixture trees: vda is the
 // boot disk and carries VAR as vda7.
+// stayUp is a reboot or shutdown of a test node that does not start, so the node keeps serving
+// and its change locks stay free.
+func stayUp() error { return errors.New("the test node stays up") }
+
 func newTestServer(t *testing.T, mode nodev1.Mode, disks ...storagetest.Disk) (*Server, *tooltest.Runner) {
 	t.Helper()
 	root := t.TempDir()
@@ -118,8 +122,8 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...storagetest.Disk) (*
 		Journal: func(context.Context, string, bool, uint32) (io.ReadCloser, error) {
 			return io.NopCloser(strings.NewReader("")), nil
 		},
-		RebootNode:   func() error { return nil },
-		PowerOffNode: func() error { return nil },
+		RebootNode:   stayUp,
+		PowerOffNode: stayUp,
 		// Tests never read the host's file systems.
 		Statfs: func(string) (uint64, uint64, error) { return 0, 0, errors.New("no file system to read") },
 		// The node reboots or powers off before it answers, so a test sees whether it did once

@@ -267,12 +267,16 @@ func serveTLS(t *testing.T, h http.Handler, cfg *tls.Config) string {
 	return ln.Addr().String()
 }
 
+// stayUp is a reboot or shutdown of a test node that does not start, so the node keeps serving
+// and its change locks stay free.
+func stayUp() error { return errors.New("the test node stays up") }
+
 func maintenanceNode() *chalkd.Server {
 	return &chalkd.Server{
 		Mode:       nodev1.Mode_MODE_MAINTENANCE,
 		InPlace:    func(context.Context, install.Request, []byte) error { return errors.New("unexpected install in place") },
 		FromParts:  func(context.Context, install.PartsRequest) error { return errors.New("unexpected install onto a disk") },
-		RebootNode: func() error { return nil },
+		RebootNode: stayUp,
 	}
 }
 
@@ -346,7 +350,7 @@ func installedNode(t *testing.T, ta *testApp, recorded []byte) (*chalkd.Server, 
 		Paths:      chalkd.PathsUnder(root),
 		Run:        r,
 		Host:       storage.Host{SysRoot: filepath.Join(root, "sys"), UdevRoot: filepath.Join(root, "udev"), DevRoot: filepath.Join(root, "dev")},
-		RebootNode: func() error { return nil },
+		RebootNode: stayUp,
 	}
 	s.Loader = nodeconfig.LoaderUnder(root)
 	s.Loader.Render.Run = outputs.Direct{}
