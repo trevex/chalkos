@@ -194,7 +194,7 @@ in
       ];
       # No LD_LIBRARY_PATH: nixpkgs's nvidia-ctk tries dlopen before the driver root and aborts
       # when dlopen finds the library.
-      serviceConfig = chalkosLib.internal.noExec // {
+      serviceConfig = chalkosLib.sandbox.noExec // {
         Type = "oneshot";
         RemainAfterExit = true;
         ExecStartPre = "${ctk} system create-device-nodes --control-devices";

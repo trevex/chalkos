@@ -18,7 +18,7 @@
 let
   cfg = config.chalkos.frr;
   inherit (pkgs.chalkos) frr;
-  inherit (chalkosLib.internal) noExec;
+  inherit (chalkosLib.sandbox) noExec;
   # vtysh reads vtysh.conf from its config directory; the check's own holds no more, so vtysh
   # checks the rendered file alone.
   checkDir = pkgs.writeTextDir "vtysh.conf" "service integrated-vtysh-config\n";

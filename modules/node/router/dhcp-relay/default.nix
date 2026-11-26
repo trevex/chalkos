@@ -3,6 +3,7 @@
 # for a VRF (dnsmasq-relay@<vrf>.service). A relay keeps no state and finds its links' addresses as
 # requests come, so it starts before its links exist.
 {
+  chalkosLib,
   config,
   lib,
   pkgs,
@@ -11,7 +12,7 @@
 }:
 let
   cfg = config.chalkos.router.dhcpRelay;
-  inherit (routerLib) hardened;
+  inherit (chalkosLib.sandbox) hardened;
   kinds = routerLib.kinds ./kinds.nix;
   inherit (pkgs) dnsmasq;
   dir = config.chalkos.outputs.dhcp-relay.dir;

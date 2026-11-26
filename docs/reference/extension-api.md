@@ -348,8 +348,9 @@ code outside an image.
 
 `chalkosLib` holds the type and the `mkOption` of an extension kind's fields, the renderers of
 `chalkos.outputs.<name>.render`, the checks of `chalkos.outputs.<name>.check`, the validators of
-`chalkos.validators.<name>.program` and the common effects. `chalkosLib.internal` holds
-chalkos's own helpers; it is not part of the extension API and changes without notice.
+`chalkos.validators.<name>.program`, the common effects and the sandboxes of units.
+`chalkosLib.internal` holds chalkos's own helpers; it is not part of the extension API and changes
+without notice.
 
 | Helper | Arguments | Result |
 | --- | --- | --- |
@@ -368,6 +369,8 @@ chalkos's own helpers; it is not part of the extension API and changes without n
 | `chalkosLib.validate.jq`{ #chalkoslibvalidatejq } | a path to a jq program | Validator that runs the jq program on its input, the documents by kind as a renderer reads them; what the program outputs is the report of refusals. |
 | `chalkosLib.restartOn`{ #chalkoslibrestarton } | `{ outputs ? [ ], kinds ? [ ] }`, then a list of units | Effect that restarts the units when one of the outputs, the documents of one of the kinds or a value of a Secret they reference changed. |
 | `chalkosLib.reloadOn`{ #chalkoslibreloadon } | `{ outputs ? [ ], kinds ? [ ] }`, then a list of units | Effect that reloads the units when one of the outputs, the documents of one of the kinds or a value of a Secret they reference changed. |
+| `chalkosLib.sandbox.noExec`{ #chalkoslibsandboxnoexec } | — | A unit's `serviceConfig` in which programs run from the store alone: `NoExecPaths=/` and `ExecPaths=/nix/store`. Merge it into the unit's own with `//`. |
+| `chalkosLib.sandbox.hardened`{ #chalkoslibsandboxhardened } | — | A service's `serviceConfig` sandbox that starts from nothing: `noExec`, an empty capability bounding set, Unix sockets alone, no new privileges, a read-only system (`ProtectSystem=strict`), no devices, no home, a private `/tmp`, kernel settings, modules, logs, cgroups, clock and host name out of reach, no namespaces and the system calls of `@system-service`. Widen `CapabilityBoundingSet` and `RestrictAddressFamilies` to what the service needs, and name the paths it writes in `ReadWritePaths`. [Write units without a shell](../build/shell-free.md#write-units-without-a-shell) shows it on a unit. |
 
 Sources: the option declarations of the node modules in `modules/node/`, through
 nixosOptionsDoc, and `lib/chalkos.nix`.

@@ -2369,7 +2369,8 @@ in
     ];
   };
   # The Extension API page, whose table of chalkosLib is in nix/docs/templates, lists each
-  # helper of chalkosLib: a function, or a type, as the leaves of its attribute sets.
+  # helper of chalkosLib: a function, or a type, as the leaves of its attribute sets, and each
+  # sandbox.
   testExtensionAPIListsEveryHelper = {
     expr =
       let
@@ -2387,7 +2388,8 @@ in
           lib.concatLists (
             lib.mapAttrsToList (
               name: v:
-              if lib.isAttrs v && !lib.isType "option-type" v then
+              # A sandbox is a value: the settings of a unit's serviceConfig.
+              if lib.isAttrs v && !lib.isType "option-type" v && prefix != "sandbox." then
                 leaves "${prefix}${name}." v
               else
                 [ "${prefix}${name}" ]

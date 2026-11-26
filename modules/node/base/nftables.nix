@@ -53,7 +53,7 @@ in
         message = "modules/node/base/nftables.nix: nixpkgs's nftables ruleset includes deletions other than the module's; update the module to nixpkgs's nftables.nix";
       }
     ];
-    systemd.services.nftables.serviceConfig = chalkosLib.internal.noExec // {
+    systemd.services.nftables.serviceConfig = chalkosLib.sandbox.noExec // {
       ExecStart = lib.mkForce [
         ensure
         rules

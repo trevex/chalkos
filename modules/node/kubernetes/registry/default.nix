@@ -17,8 +17,8 @@ let
   inherit (chalkosLib.internal)
     builtin
     cel
-    hardened
     ;
+  inherit (chalkosLib.sandbox) hardened;
   inherit (chalkosLib.internal.api) groups apiVersions;
   inherit (chalkosLib.types) address;
   k = config.chalkos.kubernetes;
@@ -185,7 +185,6 @@ in
           RuntimeDirectoryMode = "0750";
           Restart = "on-failure";
           RestartSec = 5;
-          CapabilityBoundingSet = [ "" ];
           RestrictAddressFamilies = [
             "AF_INET"
             "AF_INET6"
@@ -215,7 +214,7 @@ in
       # --no-block queues the restart and ends the service at once: a path unit does not start
       # an active service again, so waiting for the registry's restart would miss a change of
       # the other file during it.
-      serviceConfig = chalkosLib.internal.noExec // {
+      serviceConfig = chalkosLib.sandbox.noExec // {
         Type = "oneshot";
         ExecStart = "${config.systemd.package}/bin/systemctl --no-block try-restart chalkos-registry.service";
       };

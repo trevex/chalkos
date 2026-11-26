@@ -4284,7 +4284,7 @@ in
                 { routerLib, ... }:
                 {
                   environment.etc."chalkos-test/router-lib.json".text = builtins.toJSON {
-                    hardened = routerLib.hardened.NoNewPrivileges;
+                    kinds = routerLib ? kinds;
                     types = routerLib.types ? interface;
                     feature = routerLib ? feature;
                     declared = routerLib.declared [
@@ -4302,7 +4302,7 @@ in
       };
     expected = {
       router = {
-        hardened = true;
+        kinds = true;
         types = true;
         feature = true;
         declared = [ "NAT64" ];

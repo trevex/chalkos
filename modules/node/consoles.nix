@@ -94,7 +94,7 @@ in
             TERM = "dumb";
           };
           # As root it owns the journal's files; it writes only its cursor.
-          serviceConfig = chalkosLib.internal.unprivileged // {
+          serviceConfig = chalkosLib.internal.rootNoCaps // {
             ExecStart = lib.concatStringsSep " " [
               "${config.systemd.package}/bin/journalctl"
               "--follow"

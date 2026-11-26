@@ -5,6 +5,7 @@
 # with their members. networkd keeps a WireGuard device whose unit went too, with its keys and
 # peers, so chalkos-vrf removes those as well.
 {
+  chalkosLib,
   config,
   lib,
   pkgs,
@@ -45,7 +46,7 @@ in
       wantedBy = [ "multi-user.target" ];
       unitConfig.DefaultDependencies = false;
       path = [ pkgs.chalkos.iproute2-ip ];
-      serviceConfig = routerLib.hardened // {
+      serviceConfig = chalkosLib.sandbox.hardened // {
         Type = "oneshot";
         RemainAfterExit = true;
         ExecStart = prune;

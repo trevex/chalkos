@@ -152,7 +152,7 @@ in
         "chalkos-node-addresses.target"
       ];
       before = [ "kubelet.service" ];
-      serviceConfig = chalkosLib.internal.noExec // {
+      serviceConfig = chalkosLib.sandbox.noExec // {
         Type = "oneshot";
         RemainAfterExit = true;
         ExecStart = lib.mkDefault "${lib.getExe chalkd} kubernetes prepare";

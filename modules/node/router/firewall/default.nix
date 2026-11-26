@@ -128,7 +128,7 @@ in
       ];
       wantedBy = [ "multi-user.target" ];
       path = [ pkgs.nftables ];
-      serviceConfig = chalkosLib.internal.noExec // {
+      serviceConfig = chalkosLib.sandbox.noExec // {
         Type = "oneshot";
         RemainAfterExit = true;
         ExecStart = load;

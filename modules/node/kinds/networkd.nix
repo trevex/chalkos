@@ -111,7 +111,7 @@ in
       DefaultDependencies = false;
       ConditionPathExistsGlob = "/run/systemd/network/*.link";
     };
-    serviceConfig = chalkosLib.internal.noExec // {
+    serviceConfig = chalkosLib.sandbox.noExec // {
       Type = "oneshot";
       RemainAfterExit = true;
       # udev settles within seconds; a unit that hangs fails instead of holding up the boot.

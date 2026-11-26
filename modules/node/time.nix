@@ -15,7 +15,8 @@ let
   sources = config.chalkos.outputs.chrony.dir;
   dhcpSources = "/run/chalkos/chrony-dhcp";
   inherit (config.services.chrony) package;
-  inherit (chalkosLib.internal) cel noExec;
+  inherit (chalkosLib.internal) cel;
+  inherit (chalkosLib.sandbox) noExec;
   inherit (chalkosLib.internal.api) apiVersions;
   # A server as a line of chrony's sources file.
   server =

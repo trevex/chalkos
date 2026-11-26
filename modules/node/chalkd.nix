@@ -48,7 +48,7 @@ in
       ];
       wants = [ "network-pre.target" ];
       unitConfig.DefaultDependencies = false;
-      serviceConfig = chalkosLib.internal.noExec // {
+      serviceConfig = chalkosLib.sandbox.noExec // {
         Type = "oneshot";
         RemainAfterExit = true;
         ExecStart = "${lib.getExe chalkd} load-config";

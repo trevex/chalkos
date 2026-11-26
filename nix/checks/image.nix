@@ -519,7 +519,7 @@ in
   # worker's exec paths, containerd's and the kubelet's roots, reach chalkos-storage's generator,
   # which mounts them, and containerd and the kubelet wait for them; the router has none. Every
   # unit that chalkos's node modules define or change runs programs from the store alone, through
-  # chalkosLib.internal.noExec, or is one of mayExec, with the reason it may not.
+  # chalkosLib.sandbox.noExec, or is one of mayExec, with the reason it may not.
   noexec-mounts =
     let
       images = {
@@ -561,7 +561,7 @@ in
         name: own:
         map (
           unit:
-          "the ${name}'s ${unit} may run programs from outside the store: give it chalkosLib.internal.noExec, or list it in mayExec in nix/checks/image.nix with the reason"
+          "the ${name}'s ${unit} may run programs from outside the store: give it chalkosLib.sandbox.noExec, or list it in mayExec in nix/checks/image.nix with the reason"
         ) (lib.filter (unit: !(mayExec ? ${unit}) && !noExec images.${name}.systemd.services.${unit}) own);
       allOwn = lib.unique (lib.concatLists (lib.attrValues units));
       stale = lib.filter (

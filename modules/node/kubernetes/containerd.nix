@@ -186,7 +186,7 @@ in
       wantedBy = [ "containerd.service" ];
       before = [ "containerd.service" ];
       after = [ "chalkos-config.service" ];
-      serviceConfig = chalkosLib.internal.noExec // {
+      serviceConfig = chalkosLib.sandbox.noExec // {
         Type = "oneshot";
         RemainAfterExit = true;
         ExecStart = "${lib.getExe pkgs.chalkos.chalkd} kubernetes containerd-config ${clusterSettings}";
