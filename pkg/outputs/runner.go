@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/trevex/chalkos/pkg/command"
@@ -19,9 +20,9 @@ import (
 
 // A Program is a renderer, a check or a validator to run, with Out as its $OUT, which a renderer
 // may write and a check only read; a validator gets an empty directory of its own. The sandbox
-// keeps the input and output in files beside Out and names the unit after Out's extension, which
-// makes it unique. Report keeps standard output, up to refusals.MaxReport bytes, as a report of
-// refusals; any other program's is discarded. Netlink allows the netlink sockets a check such as
+// keeps the input and output in files beside Out and names the unit after Out's base name, the
+// definition's name and a suffix that makes it unique. Report keeps standard output, up to
+// refusals.MaxReport bytes, as a report of refusals; any other program's is discarded. Netlink allows the netlink sockets a check such as
 // nft --check needs. Timeout bounds the program.
 type Program struct {
 	Argv    []string
@@ -155,7 +156,7 @@ func (Sandbox) Run(ctx context.Context, p Program) ([]byte, error) {
 			return nil, err
 		}
 	}
-	unit := "chalkos-render-" + filepath.Ext(p.Out)[1:] + ".service"
+	unit := unitOf(p.Out)
 	waitCtx, cancel := context.WithTimeout(ctx, p.Timeout+stopMargin)
 	defer cancel()
 	_, err := command.Run(waitCtx, sandboxArgs(unit, p, input, output), nil, command.MaxOutput, command.Manager)
@@ -184,6 +185,12 @@ func (Sandbox) Run(ctx context.Context, p Program) ([]byte, error) {
 		return nil, fmt.Errorf("%s: %w", unit, context.DeadlineExceeded)
 	}
 	return printed, &ProgramError{Status: status, Unit: unit}
+}
+
+// unitOf is the transient unit of a program whose $OUT is out, a directory scratch made: named after
+// the definition and the directory's unique suffix, such as chalkos-render-bird-conf-1234.service.
+func unitOf(out string) string {
+	return "chalkos-render-" + strings.ReplaceAll(filepath.Base(out), ".", "-") + ".service"
 }
 
 // readOutput reads what a program printed into the file at path, and refuses more than

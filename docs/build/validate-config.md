@@ -173,13 +173,12 @@ layer's `router` on router images, and an image's own validator runs on the node
 
 ## If it fails
 
-A validator that fails names itself and its exit status. Each run is a transient unit,
-`chalkos-render-<n>.service`, whose journal holds what the program wrote to standard error, and
-the journal of `chalkd.service` names the unit beside the failure:
+A validator that fails names itself, its exit status and the command that shows its journal.
+Each run is a transient unit, `chalkos-render-<name>-<n>.service`, whose journal holds what the
+program wrote to standard error:
 
 ```sh
-chalkctl logs server1 --unit=chalkd.service
-chalkctl logs server1 --unit=chalkos-render-<n>.service
+chalkctl logs server1 --unit=chalkos-render-<name>-<n>.service
 ```
 
 `chalkctl config apply` while an image is staged, with or without `--staged`, and

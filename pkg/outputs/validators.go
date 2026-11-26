@@ -64,7 +64,7 @@ func (r Renderer) Validate(ctx context.Context, defs map[string]Validator, in In
 			return nil, fmt.Errorf("validator %s: %w", name, err)
 		}
 		argv := append(slices.Clip(v.Program), "validate", name)
-		err = r.run(ctx, RoleValidator, name, partProgram, Program{Argv: argv, Stdin: stdin, Out: out, Report: true})
+		err = r.run(ctx, in.Node, RoleValidator, name, partProgram, Program{Argv: argv, Stdin: stdin, Out: out, Report: true})
 		os.RemoveAll(out)
 		if err != nil {
 			failures = append(failures, failure(RoleValidator, name, err))

@@ -78,14 +78,32 @@ type Failure struct {
 
 func (f Failure) Error() string { return string(f.Role) + " " + f.Name + ": " + f.Problem }
 
-// OffNode is the failure as Error says it without the pointer to the node's journal, for a caller
-// that runs the programs elsewhere and logs what they write to standard error itself, as an
-// image's build does.
-func (f Failure) OffNode() string { return strings.TrimSuffix(f.Error(), journalHint) }
+// OffNode is the failure as Error says it without the pointer to the journal, for a caller that
+// runs the programs elsewhere and logs what they write to standard error itself, as an image's
+// build does.
+func (f Failure) OffNode() string {
+	s := f.Error()
+	if i := strings.LastIndex(s, logsHint); i >= 0 {
+		return s[:i]
+	}
+	return strings.TrimSuffix(s, journalHint)
+}
 
-// journalHint ends the problem of a program that failed, which wrote what says why to standard
-// error, and so to the node's journal.
-const journalHint = "; see the node's journal"
+// The endings of the problem of a program that failed, which wrote what says why to standard
+// error: in the sandbox, logsHint, the command that shows its unit's journal; else journalHint.
+const (
+	logsHint    = "; see chalkctl logs "
+	journalHint = "; see the node's journal"
+)
+
+// seeJournal is the ending of the problem of a program of the node that failed in unit, or
+// outside a unit of its own where unit is empty.
+func seeJournal(node, unit string) string {
+	if unit == "" {
+		return journalHint
+	}
+	return logsHint + cmp.Or(node, "<node>") + " --unit=" + unit
+}
 
 // Message is the message a config the failures refuse is refused with: the refusals first, each
 // once, since programs that share a check can report the same one, then the other failures, all
@@ -144,12 +162,13 @@ const (
 	partProgram  = "program"
 )
 
-// run runs p, the part of the role's definition name, with the runner and timeout of r. A
+// run runs p, the part of the role's definition name, with the runner and timeout of r, on the
+// node node. A
 // renderer's or validator's refusals on standard output make a *refused whatever its exit status.
 // One that exits 0 and prints anything else fails for what it printed. A check's standard output
 // is discarded, because a service's own check can echo the files. A failed program's standard
 // error, or the unit whose journal holds it, is logged.
-func (r Renderer) run(ctx context.Context, role Role, name, part string, p Program) error {
+func (r Renderer) run(ctx context.Context, node string, role Role, name, part string, p Program) error {
 	p.Timeout = cmp.Or(r.Timeout, DefaultTimeout)
 	printed, err := r.Run.Run(ctx, p)
 	failed, _ := errors.AsType[*ProgramError](err)
@@ -178,9 +197,9 @@ func (r Renderer) run(ctx context.Context, role Role, name, part string, p Progr
 	case errors.Is(err, context.DeadlineExceeded):
 		return fmt.Errorf("its %s did not finish within %s", part, p.Timeout)
 	case failed != nil && part == partCheck:
-		return fmt.Errorf("its check refused the rendered files (%s)%s", failed.Status, journalHint)
+		return fmt.Errorf("its check refused the rendered files (%s)%s", failed.Status, seeJournal(node, failed.Unit))
 	case failed != nil:
-		return fmt.Errorf("its %s failed (%s)%s", part, failed.Status, journalHint)
+		return fmt.Errorf("its %s failed (%s)%s", part, failed.Status, seeJournal(node, failed.Unit))
 	}
 	return fmt.Errorf("its %s: %w", part, err)
 }
