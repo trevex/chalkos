@@ -968,7 +968,8 @@ func TestCompressionRefused(t *testing.T) {
 	}
 }
 
-// A node serves maxLogStreams Logs calls at a time, and a call that ends frees its slot.
+// A node serves maxLogStreams Logs calls of its network's clients at a time, and a call that ends
+// frees its slot.
 func TestLogsLimitsStreams(t *testing.T) {
 	c := newCreds(t)
 	s, _ := newTestServer(t, normal, vda)
@@ -985,18 +986,19 @@ func TestLogsLimitsStreams(t *testing.T) {
 		}
 		return drain(stream)
 	}
-	s.logStreams.Store(maxLogStreams)
+	released := fill(t, &s.logStreams, peerContext("a"), logLimits, maxLogStreams/2)
+	fill(t, &s.logStreams, peerContext("b"), logLimits, maxLogStreams/2)
 	if err := logs(); connect.CodeOf(err) != connect.CodeResourceExhausted || journal.Load() != 0 {
 		t.Errorf("over the limit: err = %v, journal read %d times", err, journal.Load())
 	}
-	if n := s.logStreams.Load(); n != maxLogStreams {
+	if n := s.logStreams.running(); n != maxLogStreams {
 		t.Errorf("%d streams counted after a refused call", n)
 	}
-	s.logStreams.Store(maxLogStreams - 1)
+	released[0]()
 	if err := logs(); err != nil || journal.Load() != 1 {
 		t.Errorf("below the limit: err = %v, journal read %d times", err, journal.Load())
 	}
-	if n := s.logStreams.Load(); n != maxLogStreams-1 {
+	if n := s.logStreams.running(); n != maxLogStreams-1 {
 		t.Errorf("%d streams counted after the call ended", n)
 	}
 }

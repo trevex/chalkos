@@ -8,19 +8,16 @@ import (
 	"os/exec"
 	"strconv"
 
-	"connectrpc.com/connect/v2"
-
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
-	"github.com/trevex/chalkos/pkg/chalkd/layer"
 )
 
 func (s *Server) Logs(ctx context.Context, req *nodev1.LogsRequest, stream nodev1connect.NodeServiceLogsServerStream) error {
-	if s.logStreams.Add(1) > maxLogStreams {
-		s.logStreams.Add(-1)
-		return layer.Errorf(connect.CodeResourceExhausted, "%d log streams are open already; close one first", maxLogStreams)
+	release, err := s.logStreams.take(ctx, logLimits)
+	if err != nil {
+		return err
 	}
-	defer s.logStreams.Add(-1)
+	defer release()
 	// chalkd does not wait for a stream that follows the journal when it stops.
 	if s.Stopping != nil {
 		var cancel context.CancelFunc

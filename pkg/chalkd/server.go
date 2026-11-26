@@ -51,11 +51,11 @@ const (
 	// repart definitions and, from the installer, the target image's schemas, under 1 MiB
 	// together; an image chunk from chalkctl is 1 MiB.
 	maxMessageBytes = 4 << 20
-	// maxLogStreams limits concurrent Logs calls, each of which holds a journalctl process
-	// until the client goes away.
+	// maxLogStreams limits concurrent Logs calls of the network's clients, each of which holds a
+	// journalctl process until the client goes away; logLimits has the others.
 	maxLogStreams = 8
-	// maxDiagnosticRuns limits concurrent RunDiagnostic calls, each of which holds a transient
-	// unit until its command ends.
+	// maxDiagnosticRuns limits concurrent RunDiagnostic calls of the network's clients, each of
+	// which holds a transient unit until its command ends; diagnosticLimits has the others.
 	maxDiagnosticRuns = 4
 )
 
@@ -226,9 +226,9 @@ type Server struct {
 	// trial rolls the config on trial back at its deadline; s.mu guards it.
 	trial trialDeadline
 	// logStreams counts the Logs calls running.
-	logStreams atomic.Int32
+	logStreams quota
 	// diagnosticRuns counts the RunDiagnostic calls running.
-	diagnosticRuns atomic.Int32
+	diagnosticRuns quota
 	// streamIdle bounds how long the client of an install or an upgrade may send nothing; zero is
 	// idleStream. Tests shorten it.
 	streamIdle time.Duration

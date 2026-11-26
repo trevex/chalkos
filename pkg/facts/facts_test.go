@@ -438,3 +438,21 @@ func TestCommandFailures(t *testing.T) {
 	}
 }
 
+// Of a command that reads an input, such as the fallback secret, and fails, the journal gets the
+// length of what it wrote to standard error alone, since readers read the journal.
+func TestCommandWithInputsFails(t *testing.T) {
+	var logged bytes.Buffer
+	log.SetOutput(&logged)
+	defer log.SetOutput(os.Stderr)
+	echo := `{"config":{"a":"b"},"fallbackSecret":"s3cret"}`
+	r := &fakeRunner{err: &command.Error{Status: "exit 1", Stderr: "cannot read " + echo}}
+	l := NewLoader(context.Background(), map[string]Definition{"fallback": {Command: "/bin/fallback", Inputs: []string{FallbackSecret}}}, r)
+	l.Inputs = map[string]any{FallbackSecret: "s3cret"}
+	if _, err := l.Fact("fallback"); err == nil || err.Error() != "the command failed (exit 1); see the node's journal" {
+		t.Errorf("err = %v", err)
+	}
+	want := "fact fallback: /bin/fallback failed (exit 1) and wrote 58 bytes to standard error, which chalkd does not log, since the program reads fallbackSecret"
+	if !strings.Contains(logged.String(), want) || strings.Contains(logged.String(), "s3cret") {
+		t.Errorf("logged %q, want %q", logged.String(), want)
+	}
+}

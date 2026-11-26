@@ -265,10 +265,11 @@ func TestRunDiagnosticLimitsAndFailures(t *testing.T) {
 	if _, _, _, err := runDiagnostic(conn, "route-get", map[string]string{"address": "192.0.2.1"}); connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "run the diagnostic route-get: no bus") {
 		t.Errorf("err = %v", err)
 	}
-	if n := s.diagnosticRuns.Load(); n != 0 {
+	if n := s.diagnosticRuns.running(); n != 0 {
 		t.Errorf("%d runs counted after the run ended", n)
 	}
-	s.diagnosticRuns.Store(maxDiagnosticRuns)
+	fill(t, &s.diagnosticRuns, peerContext("a"), diagnosticLimits, maxDiagnosticRuns/2)
+	fill(t, &s.diagnosticRuns, peerContext("b"), diagnosticLimits, maxDiagnosticRuns/2)
 	if _, _, _, err := runDiagnostic(conn, "route-get", map[string]string{"address": "192.0.2.1"}); connect.CodeOf(err) != connect.CodeResourceExhausted {
 		t.Errorf("err = %v, want resource exhausted", err)
 	}
@@ -363,5 +364,5 @@ func TestRunDiagnosticStopsWhenTheClientGoesAway(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("the run was not stopped")
 	}
-	testwait.Eventually(t, "no runs counted after the client went away", func() bool { return s.diagnosticRuns.Load() == 0 })
+	testwait.Eventually(t, "no runs counted after the client went away", func() bool { return s.diagnosticRuns.running() == 0 })
 }

@@ -247,7 +247,8 @@ func (l *Loader) stdin(def Definition) ([]byte, error) {
 
 // command runs the command fact name with stdin. What a program that fails wrote to standard error
 // and why what it printed is no JSON go to the journal, not into the error, since the program can
-// echo the config it reads.
+// echo the config it reads. Readers read the journal, so of a program that reads an input, such as
+// the fallback secret, only the length of what it wrote goes there.
 func (l *Loader) command(name string, def Definition, stdin []byte) (any, error) {
 	argv := strings.Fields(def.Command)
 	if len(argv) == 0 {
@@ -269,7 +270,11 @@ func (l *Loader) command(name string, def Definition, stdin []byte) (any, error)
 		return nil, fmt.Errorf("%s did not finish within %s", argv[0], timeout)
 	case err != nil:
 		if failed, ok := errors.AsType[*command.Error](err); ok {
-			log.Printf("fact %s: %s failed (%s): %q", name, argv[0], failed.Status, failed.Stderr)
+			if len(def.Inputs) > 0 {
+				log.Printf("fact %s: %s failed (%s) and wrote %d bytes to standard error, which chalkd does not log, since the program reads %s", name, argv[0], failed.Status, len(failed.Stderr), strings.Join(def.Inputs, ", "))
+			} else {
+				log.Printf("fact %s: %s failed (%s): %q", name, argv[0], failed.Status, failed.Stderr)
+			}
 		}
 		return nil, err
 	case len(out) > command.MaxOutput:

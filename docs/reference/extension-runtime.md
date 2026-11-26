@@ -201,7 +201,9 @@ A refusal does not leak a secret or a fact's content that the rule only compared
 - A rule that yields no bool says which type it yields.
 - A command fact that fails shows its exit status alone: `cannot check: fact disks: the command
   failed (exit 1); see the node's journal`. Its standard error goes to the node's journal, cut to
-  4 KiB. An output that is no JSON, and a file that is not JSON, show nothing of their content.
+  4 KiB. Of a command that reads an input, such as `fallbackSecret`, the journal gets only how many
+  bytes it wrote there. An output that is no JSON, and a file that is not JSON, show nothing of
+  their content.
 
 ## Shared sandbox { #shared-sandbox }
 

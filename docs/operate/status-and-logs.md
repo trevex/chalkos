@@ -344,6 +344,11 @@ alone. `-f` follows it:
 chalkctl logs node1 --unit=chalkd.service -f
 ```
 
+A node serves eight journal streams to the clients of its network at a time, four of them to one
+client certificate, and two to the console besides. One more call fails with
+`resource_exhausted: 8 log streams are open already; close one first`, or with
+`resource_exhausted: 4 log streams are open for this client certificate already, as many as one client may have; close one first`.
+
 These units cover most of a node's own work:
 
 | Unit | Does |

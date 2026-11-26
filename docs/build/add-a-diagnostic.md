@@ -105,8 +105,11 @@ or an operator's diagnostic that names one, as in
 `CAP_DAC_READ_SEARCH reaches past the sandbox, so only a diagnostic of the admin role takes it, not one of the reader role`.
 
 chalkd sends at most 1 MiB of what the command prints, then stops it. A node runs four
-diagnostics at a time. A fifth call fails with
-`resource_exhausted: 4 diagnostics run already; wait for one to end`.
+diagnostics of its network's clients at a time, two of them for one client certificate, and one
+of the console's besides. A fifth call fails with
+`resource_exhausted: 4 diagnostics run already; wait for one to end`, and a third of one client
+certificate with
+`resource_exhausted: 2 diagnostics run for this client certificate already, as many as one client may have; wait for one to end`.
 
 A daemon's control socket that its group may write is reachable through `groups`, which adds the
 run to that group of the image. A daemon whose socket only root may use needs another way in. The
