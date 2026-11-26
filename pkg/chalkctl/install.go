@@ -12,6 +12,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
+	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/sdk"
 	"github.com/trevex/chalkos/pkg/storage"
@@ -123,40 +124,55 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 			return err
 		}
 	}
+	if img == nil {
+		// sdk.Install reads the node's contract and checks the config once more; chalkctl checked
+		// it above to warn of unpinned images and learn whether the storage needs a password.
+		fmt.Fprintf(a.stdout, "installing %s in place\n", t.name)
+		if err := sdk.Install(ctx, conn, r); err != nil {
+			return err
+		}
+	} else if err := a.installOnto(ctx, conn, t, f.wipeDisk, r, d, img, definitions); err != nil {
+		return err
+	}
+	fmt.Fprintf(a.stdout, "%s is installed and reboots\n", t.name)
+	if fallback == storage.FallbackRecoveryKey {
+		fmt.Fprintf(a.stdout, "chalkctl recovery-key %s prints the key that unlocks it when its TPM fails\n", t.name)
+	}
+	return nil
+}
+
+// installOnto has the installer that conn reaches install img onto the node's system disk with
+// the request r and the checked config d: from the registry the image's source names, or from
+// img's files, which it sends with its contract's repart definitions, definitions.
+func (a *app) installOnto(ctx context.Context, conn *client.Conn, t *target, wipeDisk bool, r sdk.InstallRequest, d sdk.Delivery, img *diskImage, definitions map[string]string) error {
 	header, err := sdk.NewInstallHeader(r, d)
 	if err != nil {
 		return err
 	}
-	header.WipeDisk = f.wipeDisk
-	if img == nil {
-		header.Target = &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}
-		fmt.Fprintf(a.stdout, "installing %s in place\n", t.name)
+	header.WipeDisk = wipeDisk
+	header.Image = img.header
+	if img.source != nil {
+		header.Origin = &nodev1.InstallHeader_Source{Source: img.source}
 	} else {
-		header.Image = img.header
-		if img.source != nil {
-			header.Origin = &nodev1.InstallHeader_Source{Source: img.source}
-		} else {
-			header.Origin = &nodev1.InstallHeader_Contract{Contract: &nodev1.ImageContract{
-				SystemDefinitions: definitions, Schemas: c.Image.Schemas.Files(), LayerFacts: c.Facts,
-			}}
-		}
-		ref := d.Identity.Storage.Disks[storage.SystemDisk].Ref
-		header.Target = &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{
-			Path: ref.Path, Model: ref.Selector.Model, Serial: ref.Selector.Serial,
-			Wwn: ref.Selector.WWN, Size: ref.Selector.Size, Type: ref.Selector.Type,
+		header.Origin = &nodev1.InstallHeader_Contract{Contract: &nodev1.ImageContract{
+			SystemDefinitions: definitions, Schemas: img.contract.Image.Schemas.Files(), LayerFacts: img.contract.Facts,
 		}}
-		if src := img.source.GetOci().GetReference(); src != "" {
-			fmt.Fprintf(a.stdout, "installing %s onto %s: %s %s, which the installer pulls from %s\n", t.name, ref, img.header.GetImageId(), img.name(), src)
-		} else {
-			fmt.Fprintf(a.stdout, "installing %s onto %s from %s: %s %s, sending %s of store, hash tree, UKI and boot loader\n", t.name, ref, img.path, img.header.GetImageId(), img.name(), binarySize(img.size()))
-		}
-		if f.wipeDisk {
-			if err := a.confirm(ctx, fmt.Sprintf("with --wipe-disk, the installer replaces whatever the disk %s of the machine at %s holds, an installed node included", ref, t.addr), t.name); err != nil {
-				return err
-			}
+	}
+	ref := d.Identity.Storage.Disks[storage.SystemDisk].Ref
+	header.Target = &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{
+		Path: ref.Path, Model: ref.Selector.Model, Serial: ref.Selector.Serial,
+		Wwn: ref.Selector.WWN, Size: ref.Selector.Size, Type: ref.Selector.Type,
+	}}
+	if src := img.source.GetOci().GetReference(); src != "" {
+		fmt.Fprintf(a.stdout, "installing %s onto %s: %s %s, which the installer pulls from %s\n", t.name, ref, img.header.GetImageId(), img.name(), src)
+	} else {
+		fmt.Fprintf(a.stdout, "installing %s onto %s from %s: %s %s, sending %s of store, hash tree, UKI and boot loader\n", t.name, ref, img.path, img.header.GetImageId(), img.name(), binarySize(img.size()))
+	}
+	if wipeDisk {
+		if err := a.confirm(ctx, fmt.Sprintf("with --wipe-disk, the installer replaces whatever the disk %s of the machine at %s holds, an installed node included", ref, t.addr), t.name); err != nil {
+			return err
 		}
 	}
-
 	stream, err := conn.Install(ctx)
 	if err != nil {
 		return err
@@ -164,7 +180,7 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 	if err := stream.Send(&nodev1.InstallRequest{Message: &nodev1.InstallRequest_Header{Header: header}}); err != nil && !errors.Is(err, io.EOF) {
 		return err
 	}
-	if img != nil && img.source == nil {
+	if img.source == nil {
 		parts, done, err := img.stream()
 		if err != nil {
 			return err
@@ -178,10 +194,6 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 	}
 	if _, err := stream.CloseAndReceive(); err != nil {
 		return fmt.Errorf("install %s: %w", t.name, err)
-	}
-	fmt.Fprintf(a.stdout, "%s is installed and reboots\n", t.name)
-	if fallback == storage.FallbackRecoveryKey {
-		fmt.Fprintf(a.stdout, "chalkctl recovery-key %s prints the key that unlocks it when its TPM fails\n", t.name)
 	}
 	return nil
 }
