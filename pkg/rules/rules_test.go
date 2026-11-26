@@ -263,7 +263,10 @@ func TestSchemaBoundsLowerTheEstimate(t *testing.T) {
 		t.Fatal(iss.Err())
 	}
 	items, length := 16, 8
-	bounded := &jsonschema.Schema{MaxItems: &items, Items2020: &jsonschema.Schema{MaxLength: &length}}
+	array, str := new(jsonschema.Types(0)), new(jsonschema.Types(0))
+	array.Add("array")
+	str.Add("string")
+	bounded := &jsonschema.Schema{Types: array, MaxItems: &items, Items2020: &jsonschema.Schema{Types: str, MaxLength: &length}}
 	estimates := map[string]uint64{}
 	for name, est := range map[string]estimator{"unbounded": {}, "bounded": fieldEstimator(bounded)} {
 		c, err := e.EstimateCost(ast, est)
@@ -869,5 +872,31 @@ func TestCompileRefusesUnknownField(t *testing.T) {
 	byName := rule(`documents.all(n, cel.bind(r, n in facts.recorded ? facts.recorded[n] : null, r == null || r.format == ""))`, "")
 	if _, err := Compile(schemasOf(t, kindSchema("Open", true, object(nil), []any{byName}))); err != nil {
 		t.Error(err)
+	}
+}
+
+// A value is estimated at the bound of each type its schema allows, and at sizeHint for a type
+// it allows without a bound: maxLength bounds no list.
+func TestSizeTakesTheBoundOfTheType(t *testing.T) {
+	typed := func(maxItems, maxLength int, types ...string) *jsonschema.Schema {
+		s := &jsonschema.Schema{Types: new(jsonschema.Types(0)), MaxItems: &maxItems, MaxLength: &maxLength}
+		for _, typ := range types {
+			s.Types.Add(typ)
+		}
+		return s
+	}
+	for _, c := range []struct {
+		s    *jsonschema.Schema
+		want uint64
+	}{
+		{typed(2000, 1, "array"), 2000},
+		{typed(1, 2000, "string"), 2000},
+		{typed(4, 8, "array", "string"), 8},
+		{typed(4, 8, "array", "object"), sizeHint},
+		{&jsonschema.Schema{MaxItems: new(4)}, sizeHint},
+	} {
+		if got := sizeOf(c.s, 0).Max; got != c.want {
+			t.Errorf("sizeOf(%v) = %d, want %d", c.s.Types, got, c.want)
+		}
 	}
 }

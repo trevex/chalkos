@@ -276,11 +276,7 @@ func sizeOf(s *jsonschema.Schema, depth int) *cost.SizeEstimate {
 	size := &cost.SizeEstimate{Min: 0, Max: sizeHint}
 	var elem *jsonschema.Schema
 	if s != nil {
-		for _, bound := range []*int{s.MaxItems, s.MaxLength, s.MaxProperties} {
-			if bound != nil {
-				size.Max = uint64(max(*bound, 0))
-			}
-		}
+		size.Max = boundOf(s)
 		elem = s.Items2020
 		if extra, ok := s.AdditionalProperties.(*jsonschema.Schema); ok {
 			elem = extra
@@ -291,6 +287,33 @@ func sizeOf(s *jsonschema.Schema, depth int) *cost.SizeEstimate {
 		size.Elem = sizeOf(elem, depth-1)
 	}
 	return size
+}
+
+// boundOf is the most elements of a value of s: the largest bound of the types s allows, a list's
+// maxItems, a string's maxLength and an object's maxProperties, sizeHint for one it does not bound,
+// and sizeHint where s allows none of them.
+func boundOf(s *jsonschema.Schema) uint64 {
+	types := []string{"array", "string", "object"}
+	if s.Types != nil {
+		types = s.Types.ToStrings()
+	}
+	bounds := map[string]*int{"array": s.MaxItems, "string": s.MaxLength, "object": s.MaxProperties}
+	most, sized := uint64(0), false
+	for _, t := range types {
+		bound, ok := bounds[t]
+		if !ok {
+			continue
+		}
+		sized = true
+		if bound == nil {
+			return sizeHint
+		}
+		most = max(most, uint64(max(*bound, 0)))
+	}
+	if !sized {
+		return sizeHint
+	}
+	return most
 }
 
 // stepInto is the schema below s at a step of a CEL cost path: a field's name, @items, @values,
