@@ -282,11 +282,14 @@ func TestClusterValidateRefusesProtectedFlags(t *testing.T) {
 		}
 	}
 	// The kubelet's flags reach it through an environment variable that ExecStart splits at
-	// whitespace, from an environment file that drops backslashes.
-	for name, value := range map[string]string{"space": "a=b c=d", "tab": "2\t", "newline": "2\nX=1", "carriage return": "2\r", "control character": "2\x1b", "backslash": `a=b\c`} {
+	// whitespace and then strips quotes from, from an environment file that drops backslashes.
+	for name, value := range map[string]string{
+		"space": "a=b c=d", "tab": "2\t", "newline": "2\nX=1", "carriage return": "2\r", "control character": "2\x1b",
+		"backslash": `a=b\c`, "single quote": `a='b'`, "double quote": `a="b"`,
+	} {
 		c := valid
 		c.ExtraArgs = map[string]map[string]string{"kubelet": {"eviction-hard": value}}
-		if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "cannot hold whitespace, control characters or backslashes") {
+		if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "cannot hold whitespace, quotes, control characters or backslashes") {
 			t.Errorf("kubelet flag with a %s: err = %v", name, err)
 		}
 	}

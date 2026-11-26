@@ -71,12 +71,13 @@ func kubelet(s *config.Set, id *identity.Identity, name string, c kubernetes.Clu
 }
 
 // checkProviderID refuses a provider ID that the kubelet's arguments would not carry as one
-// argument, --provider-id: it would add arguments of its own, or lose its backslashes.
+// argument, --provider-id: it would add arguments of its own, lose its quotes, or lose its
+// backslashes.
 func checkProviderID(id string) []string {
 	if kubernetes.KubeletArgument(id) {
 		return nil
 	}
-	return []string{fmt.Sprintf("Node: providerID %q: a provider ID cannot hold whitespace, control characters or backslashes, as it is one of the kubelet's arguments", id)}
+	return []string{fmt.Sprintf("Node: providerID %q: a provider ID cannot hold whitespace, quotes, control characters or backslashes, as it is one of the kubelet's arguments", id)}
 }
 
 // checkLabels refuses the labels a kubelet may not set on its own Node, by key.

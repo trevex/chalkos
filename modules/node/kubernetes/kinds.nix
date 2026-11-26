@@ -171,7 +171,7 @@ in
           providerID = chalkosLib.mkOption {
             type = types.nullOr types.nonEmptyStr;
             default = null;
-            description = "Provider ID the node registers with, such as kubevirt://w1, by which Cluster API finds the node of a Machine; null registers the node without one. It holds no whitespace, control characters or backslashes, as it is one of the kubelet's arguments. It is fixed once the node holds a Kubernetes share.";
+            description = "Provider ID the node registers with, such as kubevirt://w1, by which Cluster API finds the node of a Machine; null registers the node without one. It holds no whitespace, quotes, control characters or backslashes, as it is one of the kubelet's arguments. It is fixed once the node holds a Kubernetes share.";
             rules = [
               (registered {
                 description = "The node keeps its provider ID once it holds a Kubernetes share.";

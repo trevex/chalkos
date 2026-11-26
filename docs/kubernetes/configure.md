@@ -323,12 +323,12 @@ A refused flag names its replacement where there is one:
 node w1: the Kubernetes cluster the documents give: Node "default": kubeletExtraArgs: --register-with-taints is set by chalkos and cannot be overridden; give the node's labels and taints in the Node document's labels and taints
 ```
 
-A kubelet flag's name and value hold no whitespace and no backslash, because the flags reach the
-kubelet through an environment file that systemd splits at whitespace. A flag that needs a list
-separated by spaces is refused:
+A kubelet flag's name and value hold no whitespace, quotes, control characters or backslashes,
+because the flags reach the kubelet through an environment file that systemd splits at whitespace
+and strips quotes from. A flag that needs a list separated by spaces is refused:
 
 ```text
-node w1: the Kubernetes cluster the documents give: Node "default": kubeletExtraArgs: --eviction-hard="memory.available<500Mi nodefs.available<10%": the kubelet's flags cannot hold whitespace, control characters or backslashes
+node w1: the Kubernetes cluster the documents give: Node "default": kubeletExtraArgs: --eviction-hard="memory.available<500Mi nodefs.available<10%": the kubelet's flags cannot hold whitespace, quotes, control characters or backslashes
 ```
 
 ## Choose how clients authenticate to the API server

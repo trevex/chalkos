@@ -81,8 +81,9 @@ instead, and a refused `provider-id` names its `providerID`.
 - `tls-cert-file`
 - `tls-private-key-file`
 
-A kubelet flag's name and value also hold no whitespace and no backslash, because the flags reach
-the kubelet through an environment file that systemd splits at whitespace.
+A kubelet flag's name and value also hold no whitespace, quotes, control characters or
+backslashes, because the flags reach the kubelet through an environment file that systemd splits
+at whitespace and strips quotes from.
 
 ## Conflicting API server flags
 

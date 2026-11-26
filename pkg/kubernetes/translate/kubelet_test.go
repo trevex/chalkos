@@ -397,9 +397,9 @@ func TestNodeProviderID(t *testing.T) {
 	}
 }
 
-// TestNodeProviderIDIsOneKubeletArgument refuses a providerID with whitespace, a control
-// character or a backslash, which would split --provider-id into more of the kubelet's
-// arguments or lose its backslashes.
+// TestNodeProviderIDIsOneKubeletArgument refuses a providerID with whitespace, a quote, a
+// control character or a backslash, which would split --provider-id into more of the kubelet's
+// arguments, lose its quotes, or lose its backslashes.
 func TestNodeProviderIDIsOneKubeletArgument(t *testing.T) {
 	for name, id := range map[string]string{
 		"space":             `"kubevirt://w1 --kubeconfig=/nonexistent"`,
@@ -407,10 +407,12 @@ func TestNodeProviderIDIsOneKubeletArgument(t *testing.T) {
 		"newline":           `"kubevirt://w1\nX=1"`,
 		"control character": `"kubevirt://w1\x1b"`,
 		"backslash":         `"kubevirt://w1\\x"`,
+		"single quote":      `"kubevirt://w1'x"`,
+		"double quote":      `"kubevirt://w1\"x"`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := identityOn(kubernetesNodeSet(t, "{}", "providerID: "+id, ""), "n1", "")
-			if err == nil || !strings.Contains(err.Error(), "Node: providerID ") || !strings.Contains(err.Error(), "cannot hold whitespace, control characters or backslashes") {
+			if err == nil || !strings.Contains(err.Error(), "Node: providerID ") || !strings.Contains(err.Error(), "cannot hold whitespace, quotes, control characters or backslashes") {
 				t.Fatalf("err = %v, want the provider ID refused", err)
 			}
 		})

@@ -107,8 +107,8 @@ func (c Cluster) validateExtraArgs() error {
 // flagNamePattern refuses, that are protected in any spelling, or that conflict with chalkos's;
 // errors start with the flag. The API server's disable-admission-plugins must not name
 // requiredAdmissionPlugins. Kubelet flags reach it through KUBELET_ARGS, which systemd reads from
-// an environment file that drops backslashes and ExecStart splits at whitespace, so they hold
-// neither.
+// an environment file that drops backslashes, and ExecStart splits at whitespace and then drops
+// quotes, so they hold none of those.
 func ValidateFlags(component string, flags map[string]string) error {
 	protected := map[string]func(string) bool{
 		"kube-apiserver": protectedAPIServerFlag,
@@ -134,7 +134,7 @@ func ValidateFlags(component string, flags map[string]string) error {
 		}
 		if component != "kube-apiserver" {
 			if component == "kubelet" && !KubeletArgument(name+flags[name]) {
-				return fmt.Errorf("--%s=%q: the kubelet's flags cannot hold whitespace, control characters or backslashes", name, flags[name])
+				return fmt.Errorf("--%s=%q: the kubelet's flags cannot hold whitespace, quotes, control characters or backslashes", name, flags[name])
 			}
 			continue
 		}
@@ -153,10 +153,13 @@ func ValidateFlags(component string, flags map[string]string) error {
 }
 
 // KubeletArgument reports whether s can be part of one of the kubelet's arguments, which reach it
-// through an environment variable that ExecStart splits at whitespace, from an environment file
-// that drops backslashes: s holds no whitespace, control character or backslash.
+// through an environment variable that ExecStart splits at whitespace and then strips quotes
+// from, from an environment file that drops backslashes: s holds no whitespace, quote, control
+// character or backslash.
 func KubeletArgument(s string) bool {
-	return !strings.ContainsFunc(s, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) || r == '\\' })
+	return !strings.ContainsFunc(s, func(r rune) bool {
+		return unicode.IsSpace(r) || unicode.IsControl(r) || r == '\\' || r == '\'' || r == '"'
+	})
 }
 
 // MergeFlags returns a component's flags: base with the extra flags on top. The API server's
