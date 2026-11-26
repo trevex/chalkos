@@ -94,10 +94,13 @@ runCommand "${pname}-${from.version}"
         '') relink}
         [ "$new" = "$rpath" ] || patchelf --set-rpath "$new" "$f"
         interp=$(patchelf --print-interpreter "$f" 2>/dev/null) || interp=
+        # The loader reads $ORIGIN, in either spelling, as the file's directory.
+        dirs=''${new//'$ORIGIN'/''${f%/*}}
+        dirs=''${dirs//"\''${ORIGIN}"/''${f%/*}}
         for n in $(patchelf --print-needed "$f"); do
           (
             IFS=:
-            for d in $new ''${interp%/*}; do [ -e "$d/$n" ] && exit 0; done
+            for d in $dirs ''${interp%/*}; do [ -e "$d/$n" ] && exit 0; done
             exit 1
           ) || {
             echo "error: $f needs $n, which is not on its run path $new" >&2
