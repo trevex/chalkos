@@ -34,10 +34,12 @@ type Trust struct {
 	Name string
 	// IgnoreValidity accepts an expired node certificate, as a renewal needs.
 	IgnoreValidity bool
-	// Source says where the address came from, such as --address, for errors.
+	// Source says where the address came from, for errors that name it; it serves a client that
+	// names its own inputs in errors, such as chalkctl and its flags. Empty names none.
 	Source string
 	// Untrusted, when set, replaces the error of a call whose TLS handshake failed for want of
-	// trust in either direction, as client.Options.Untrusted does.
+	// trust in either direction, as client.Options.Untrusted does. It serves a client that
+	// rewrites such errors into its own advice, such as chalkctl; nil keeps the client's errors.
 	Untrusted func(err error, refused bool) error
 }
 
@@ -85,10 +87,12 @@ func Dial(addr string, t Trust, cert *tls.Certificate) (*client.Conn, error) {
 // on first use: it reads the fingerprint over an unverified connection and dials again pinned to
 // it, so what follows goes to that certificate alone. It returns the connection, the node's Info
 // and its certificate's fingerprint, which a caller such as a Cluster API provider records. A
-// node in normal mode fails with ErrInstalled, with the connection closed but its Info and
-// fingerprint still returned, so a caller can act on what the node answered, such as a warning of
-// its release, before saying it is installed. A node whose image refuses cert fails with
-// ErrOSCARefused and no Info.
+// node in normal mode that answers fails with ErrInstalled, with the connection closed but its
+// Info and fingerprint still returned, so a caller can act on what the node answered, such as a
+// warning of its release, before saying it is installed. A node pinned by t.Fingerprint, the
+// fingerprint of its certificate in maintenance mode, presents its node certificate once it is
+// installed and fails with the client's fingerprint error instead, not ErrInstalled; DialInstalled
+// reaches it then. A node whose image refuses cert fails with ErrOSCARefused and no Info.
 func DialMaintenance(ctx context.Context, addr string, t Trust, cert *tls.Certificate) (*client.Conn, *nodev1.InfoResponse, string, error) {
 	switch {
 	case t.OSCAs != nil || t.Name != "" || t.IgnoreValidity:

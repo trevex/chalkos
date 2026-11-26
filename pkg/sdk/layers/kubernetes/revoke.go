@@ -16,7 +16,7 @@ type EtcdMemberError struct {
 	Node string
 }
 
-func (e EtcdMemberError) Error() string {
+func (e *EtcdMemberError) Error() string {
 	return fmt.Sprintf("%s is still an etcd member; revoking a control plane does not cut it off, because it holds the CA keys", e.Node)
 }
 
@@ -38,11 +38,12 @@ func RevokeNode(ctx context.Context, via *client.Conn, node string, allowControl
 	return Client(via).RevokeNode(ctx, &kubernetesv1.RevokeNodeRequest{Node: node})
 }
 
-// etcdMemberRefusal refuses to revoke a node that is still an etcd member, a control plane.
+// etcdMemberRefusal refuses to revoke a node that is still an etcd member, a control plane. A
+// member that has not started has no name yet and is no node's.
 func etcdMemberRefusal(name string, members []*kubernetesv1.EtcdMember) error {
 	for _, m := range members {
-		if name != "" && m.Name == name {
-			return EtcdMemberError{Node: name}
+		if m.Name != "" && m.Name == name {
+			return &EtcdMemberError{Node: name}
 		}
 	}
 	return nil

@@ -118,7 +118,7 @@ func everyControlPlaneReads(ctx context.Context, controlPlanes []string, name st
 // revocationRefusal says what to do instead when err refuses to revoke the node called name
 // because it is still an etcd member; other errors it returns as they are.
 func revocationRefusal(name string, err error) error {
-	if _, ok := errors.AsType[sdkkubernetes.EtcdMemberError](err); ok {
+	if _, ok := errors.AsType[*sdkkubernetes.EtcdMemberError](err); ok {
 		return fmt.Errorf("%s is still an etcd member; %s", name, controlPlaneRevocation(name))
 	}
 	return err

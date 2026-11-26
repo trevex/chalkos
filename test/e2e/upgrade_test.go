@@ -17,8 +17,7 @@ import (
 	"github.com/trevex/chalkos/pkg/lab"
 	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/sdk"
-	sdkkubernetes "github.com/trevex/chalkos/pkg/sdk/layers/kubernetes"
-	sdkrouter "github.com/trevex/chalkos/pkg/sdk/layers/router"
+	sdklayers "github.com/trevex/chalkos/pkg/sdk/layers"
 )
 
 // TestUpgrade installs the signed test image under Secure Boot and upgrades it step by step to the
@@ -219,7 +218,7 @@ func installFromRegistry(t *testing.T, n *node, inventoryFile, ref string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	layers := []sdk.Layer{sdkkubernetes.Layer{}, sdkrouter.Layer{}}
+	layers := sdklayers.All()
 	inv, err := inventory.Load(inventoryFile, func(docs []config.Document) []config.Document { return sdk.NodeDocuments(layers, docs) })
 	if err != nil {
 		t.Fatal(err)

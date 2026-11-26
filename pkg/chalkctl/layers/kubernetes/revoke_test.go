@@ -38,7 +38,7 @@ func reregister(name string) string {
 // A refusal to revoke an etcd member says how to cut the control plane off instead; other errors
 // pass unchanged.
 func TestRevocationRefusal(t *testing.T) {
-	err := revocationRefusal("cp1", fmt.Errorf("cp2: %w", sdkkubernetes.EtcdMemberError{Node: "cp1"}))
+	err := revocationRefusal("cp1", fmt.Errorf("cp2: %w", &sdkkubernetes.EtcdMemberError{Node: "cp1"}))
 	if err == nil || !strings.HasPrefix(err.Error(), "cp1 is still an etcd member; ") ||
 		!strings.Contains(err.Error(), "chalkctl etcd remove-member cp1") || !strings.Contains(err.Error(), "chalkctl rotate os-ca") ||
 		!strings.Contains(err.Error(), "pass --allow-control-plane") {

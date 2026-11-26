@@ -14,7 +14,7 @@ func TestRevokeNodeRefusesAnEtcdMember(t *testing.T) {
 	t.Parallel()
 	conn, _ := etcdMember(t)
 	_, err := RevokeNode(context.Background(), conn, "n1", false)
-	if e, ok := errors.AsType[EtcdMemberError](err); !ok || e.Node != "n1" {
+	if e, ok := errors.AsType[*EtcdMemberError](err); !ok || e.Node != "n1" {
 		t.Errorf("revoking the etcd member n1: %v", err)
 	}
 	if resp, err := RevokeNode(context.Background(), conn, "w1", false); err != nil || resp.GetRevokedAt() == nil {
@@ -34,7 +34,7 @@ func TestEtcdMemberRefusal(t *testing.T) {
 		if (err != nil) != want {
 			t.Errorf("%q: %v, want refused %v", name, err, want)
 		}
-		if e, ok := errors.AsType[EtcdMemberError](err); err != nil && (!ok || e.Node != name) {
+		if e, ok := errors.AsType[*EtcdMemberError](err); err != nil && (!ok || e.Node != name) {
 			t.Errorf("%q: %v, want an EtcdMemberError for it", name, err)
 		}
 	}
