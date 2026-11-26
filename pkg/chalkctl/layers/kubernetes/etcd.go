@@ -99,7 +99,7 @@ func etcdMembersCommand(h layer.Host) *cobra.Command {
 		Args:    cli.NoArgs,
 	}, func(h layer.Host, ctx context.Context, pos []string) error { return etcdMembers(h, ctx, f) })
 	f.node.RegisterClient(cmd.Flags())
-	cmd.Flags().StringVar(&f.via, "via", "", "control plane to ask (default the first one that answers)")
+	cmd.Flags().StringVar(&f.via, "via", "", "control plane to ask, which a bare --address reaches (default the first one that answers)")
 	return cmd
 }
 
@@ -140,7 +140,7 @@ func etcdRemoveMemberCommand(h layer.Host) *cobra.Command {
 	}, func(h layer.Host, ctx context.Context, pos []string) error { return etcdRemoveMember(h, ctx, f, pos) })
 	fs := cmd.Flags()
 	f.node.RegisterClient(fs)
-	fs.StringVar(&f.via, "via", "", "control plane that removes the member (default the first other one that answers)")
+	fs.StringVar(&f.via, "via", "", "control plane that removes the member, which a bare --address reaches (default the first other one that answers)")
 	fs.BoolVar(&f.force, "force", false, "remove the member even when the voters left would have no healthy quorum")
 	return cmd
 }

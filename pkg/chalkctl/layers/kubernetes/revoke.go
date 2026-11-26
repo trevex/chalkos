@@ -27,7 +27,7 @@ func nodeRevokeCommand(h layer.Host) *cobra.Command {
 	}, func(h layer.Host, ctx context.Context, pos []string) error { return nodeRevoke(h, ctx, f, pos) })
 	f.node.RegisterClient(cmd.Flags())
 	fs := cmd.Flags()
-	fs.StringVar(&f.via, "via", "", "control plane that revokes the node (default the first other one that answers)")
+	fs.StringVar(&f.via, "via", "", "control plane that revokes the node, which a bare --address reaches (default the first other one that answers)")
 	fs.BoolVar(&f.force, "force", false, "revoke the node although it is a control plane, an etcd member or the one --via names, or although a control plane cannot read the revoked nodes")
 	return cmd
 }

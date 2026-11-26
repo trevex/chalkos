@@ -192,11 +192,14 @@ how to go on. The run also stops with one of these messages:
   starting at `--timeout` ends with
   `node3: waiting for <image> to be found healthy: its boot is not healthy yet: ...` instead. When
   the node's status gave no boot ID before the reboot, chalkctl cannot tell the new boot from the
-  old one and waits until `--timeout`, ending with `its boot settled and is not healthy: ...`.
-- `node3: activate: ...; <image> boots next all the same, so it stays cordoned: ...`: the node's
-  activation failed after it made the image boot next. Uncordoned, the node would boot the image
-  at its next reboot without a drain, so it stays cordoned. `chalkctl node reboot node3` boots the
-  image and uncordons the node.
+  old one and waits until `--timeout`, ending with `its boot settled and is not healthy: ...`. On
+  a node its layers hold, each of these ends with
+  `it stays held by its layers; run the command again to wait for it and release it`: the same
+  command run again releases the node once its boot is healthy.
+- `node3: activate: ...; <image> boots next all the same, so it stays held by its layers: ...`: the
+  node's activation failed after it made the image boot next. Released, the node would boot the
+  image at its next reboot without a drain, so its layers hold it, as Kubernetes keeps it
+  cordoned. `chalkctl node reboot node3` boots the image and releases the node.
 - `no node keeps a previous image to roll back to: ...`: `--rollback` found no node with an image
   to boot again. A node keeps none after an install, after an upgrade or rollback it fell back
   from, and while an image staged or activated with `--until` holds its inactive slot. Make a

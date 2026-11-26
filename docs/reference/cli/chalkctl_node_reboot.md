@@ -21,8 +21,9 @@ the image's health timeout, 300 seconds by default, passed since. A check that f
 etcd answering late, does not stop the command, and a healthy look starts the minute over. When
 the node's status gave no ID of the boot before the reboot, chalkctl cannot tell the new boot from
 that one and waits for --timeout instead. A boot not found healthy within --timeout stops the
-command too. --no-drain reboots the node without its layers holding or releasing it, and still
-waits. Draining a node goes through the cluster's control planes, which the inventory names.
+command too and leaves the node held; the command run again waits for it and releases it.
+--no-drain reboots the node without its layers holding or releasing it, and still waits. Draining
+a node goes through the cluster's control planes, which the inventory names.
 
 A node in maintenance mode, reached with --fingerprint or --insecure, reboots without more. The
 command needs an operator client file or the secrets file.
@@ -31,7 +32,7 @@ command needs an operator client file or the secrets file.
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
-| `--address`{ #flag-address } | list of [NODE=]ADDR | each node's address in the inventory | Address of the node's chalkd, host or host:port, or NODE=ADDR of another node of the cluster, such as a control plane the drain goes through; repeat it for several. |
+| `--address`{ #flag-address } | list of [NODE=]ADDR | each node's address in the inventory | Address of a node's chalkd: ADDR for the one node the command reaches, or NODE=ADDR for any node, where ADDR is host or host:port; may be repeated. |
 | `--allow-downtime`{ #flag-allow-downtime } | boolean | `false` | Reboot a control plane of a cluster with one or two, whose etcd loses its quorum and API server is down while it reboots. |
 | `--config`{ #flag-config } | string | $CHALKOSCONFIG, else ~/.config/chalkos/config, unless --secrets is given | Client file to authenticate with instead of the secrets file. |
 | `--delete-emptydir-data`{ #flag-delete-emptydir-data } | boolean | `false` | Evict pods with emptyDir volumes too, deleting their data. |

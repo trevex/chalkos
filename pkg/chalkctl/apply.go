@@ -80,7 +80,7 @@ func (a *app) applyConfigCommand(short bool) *cobra.Command {
 	a.command(cmd, func(a *app, ctx context.Context, pos []string) error { return a.applyConfig(ctx, f, pos) })
 	fs := cmd.Flags()
 	f.node.Register(fs)
-	fs.Lookup("address").Usage = "address of the node's chalkd, host or host:port, or NODE=ADDR of any node of the cluster; repeat it for several (default each node's address in the inventory)"
+	fs.Lookup("address").Usage = nodeAddressesUsage
 	registerPasswordFile(fs, &f.passwordFile)
 	var payloadFlags, payloadNames []string
 	for _, d := range compiled[layer.Delivery]() {

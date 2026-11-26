@@ -115,15 +115,33 @@ func TestExecuteFlags(t *testing.T) {
 	}
 }
 
-// The help names the value of --address [NODE=]ADDR, in every command that takes it.
+// The help names the value of --address [NODE=]ADDR, or NODE=ADDR for rotate, which takes no bare
+// ADDR, and says which node a bare ADDR reaches.
 func TestAddressValueName(t *testing.T) {
-	for _, args := range [][]string{{"status"}, {"config", "apply"}, {"rotate"}, {"upgrade"}} {
+	single := "address of a node's chalkd: ADDR for the one node the command reaches, or NODE=ADDR for any node, where ADDR is host or host:port; may be repeated"
+	several := "address of a node's chalkd as NODE=ADDR, or as ADDR alone when the command names one node, where ADDR is host or host:port; may be repeated"
+	named := "address of a node's chalkd as NODE=ADDR, where ADDR is host or host:port; may be repeated"
+	for _, c := range []struct {
+		args  []string
+		value string
+		usage string
+	}{
+		{[]string{"status"}, "[NODE=]ADDR", single},
+		{[]string{"node", "reboot"}, "[NODE=]ADDR", single},
+		{[]string{"config", "apply"}, "[NODE=]ADDR", several},
+		{[]string{"rotate"}, "NODE=ADDR", named},
+		{[]string{"upgrade"}, "[NODE=]ADDR", several},
+	} {
 		ta := newTestApp(t)
-		if got := ta.execute(context.Background(), append(args, "--help")...); got != 0 {
-			t.Fatalf("%v --help exits with %d", args, got)
+		if got := ta.execute(context.Background(), append(c.args, "--help")...); got != 0 {
+			t.Fatalf("%v --help exits with %d", c.args, got)
 		}
-		if !strings.Contains(ta.stdout.String(), "--address [NODE=]ADDR ") {
-			t.Errorf("%v --help does not show --address [NODE=]ADDR:\n%s", args, ta.stdout.String())
+		out := ta.stdout.String()
+		if !strings.Contains(out, "--address "+c.value+" ") {
+			t.Errorf("%v --help does not show --address %s:\n%s", c.args, c.value, out)
+		}
+		if !strings.Contains(out, c.usage) {
+			t.Errorf("%v --help does not describe --address as %q:\n%s", c.args, c.usage, out)
 		}
 	}
 }

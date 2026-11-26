@@ -195,6 +195,7 @@ var flagTypes = map[string]string{
 	"stringSlice":    "list of string",
 	"stringToString": "map of string",
 	"[NODE=]ADDR":    "list of [NODE=]ADDR",
+	"NODE=ADDR":      "list of NODE=ADDR",
 }
 
 func flagType(f *pflag.Flag) string {

@@ -315,11 +315,12 @@ is a rollback: a node that fell back from the new image. The error names the nod
 runs again, and the journal lines its failed boot recorded follow it:
 
 ```text
-chalkctl: w2: upgrade to 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6) failed: rolled back to 81bd02c4a9e1 (v1.4.0, 0f1e2d3c4b5a); it stays cordoned; its boots logged:
+chalkctl: w2: upgrade to 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6) failed: rolled back to 81bd02c4a9e1 (v1.4.0, 0f1e2d3c4b5a); it stays held by its layers; its boots logged:
 ```
 
 A run also stops when a node does not come back healthy within `--timeout`, 30 minutes by
-default.
+default. On a node its layers hold, the error then ends with
+`it stays held by its layers; run the command again to wait for it and release it`.
 
 ## Running the command again continues
 

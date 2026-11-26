@@ -142,11 +142,7 @@ func (b *rebooter) reboot(ctx context.Context, n *rebootNode, t bootTarget, hold
 				return err
 			}
 			if rerr := b.hooks(ctx, n, layer.Upgrade.After); rerr != nil {
-				msg := "releasing it failed"
-				if n.roles.member() {
-					msg = "it stays cordoned, as releasing it failed"
-				}
-				return fmt.Errorf("%w; %s: %w", err, msg, rerr)
+				return n.stillHeld(fmt.Errorf("%w; releasing it failed: %w", err, rerr))
 			}
 			n.held = false
 			return err
@@ -156,7 +152,7 @@ func (b *rebooter) reboot(ctx context.Context, n *rebootNode, t bootTarget, hold
 		_, err := conn.Reboot(ctx, &nodev1.RebootRequest{})
 		return err
 	}); err != nil {
-		return err
+		return n.stillHeld(err)
 	}
 	b.Say("%s: rebooting into %s", n.name, t.image)
 	return b.release(ctx, n, t, hold)
@@ -168,7 +164,7 @@ func (b *rebooter) reboot(ctx context.Context, n *rebootNode, t bootTarget, hold
 func (b *rebooter) heldForActivation(ctx context.Context, n *rebootNode, t bootTarget, err error) error {
 	held := "it stays held"
 	if n.roles.member() {
-		held = "it stays cordoned"
+		held = heldNote
 	}
 	st, serr := b.reach.status(ctx, n.name)
 	if serr != nil {
@@ -182,15 +178,31 @@ func (b *rebooter) heldForActivation(ctx context.Context, n *rebootNode, t bootT
 
 // release waits until the node runs the target's image in another boot than the one before, its
 // boot was found healthy, and it serves the clusters of its layers again, then has its layers
-// release it, unless held is false.
+// release it, unless held is false. While the node is held, each error notes that it stays held.
 func (b *rebooter) release(ctx context.Context, n *rebootNode, t bootTarget, held bool) error {
+	n.held = held
 	if err := b.waitHealthy(ctx, n, t); err != nil {
 		return err
 	}
 	if !held {
 		return nil
 	}
-	return b.hooks(ctx, n, layer.Upgrade.After)
+	if err := b.hooks(ctx, n, layer.Upgrade.After); err != nil {
+		return n.stillHeld(err)
+	}
+	return nil
+}
+
+// heldNote says that a node stays held after an error.
+const heldNote = "it stays held by its layers"
+
+// stillHeld adds to err, when the node's layers hold it, that it stays held and that the command
+// run again waits for it and releases it.
+func (n *rebootNode) stillHeld(err error) error {
+	if n.held && n.roles.member() {
+		return fmt.Errorf("%w; %s; run the command again to wait for it and release it", err, heldNote)
+	}
+	return err
 }
 
 // waitHealthy waits for a healthy boot of t, other than the one before, that serves the node's
@@ -274,7 +286,7 @@ func (b *rebooter) waitHealthy(ctx context.Context, n *rebootNode, t bootTarget)
 	case unhealthy != nil:
 		return unhealthy
 	case err != nil:
-		return fmt.Errorf("%s: waiting for %s to be found healthy: %w", n.name, t.image, err)
+		return n.stillHeld(fmt.Errorf("%s: waiting for %s to be found healthy: %w", n.name, t.image, err))
 	}
 	if n.uncounted {
 		// The entry is blessed from the start, so the boot loader counts none of its boots: only
@@ -298,14 +310,14 @@ func (b *rebooter) failed(n *rebootNode, boot *nodev1.BootStatus) error {
 // unhealthyError is the error of a node whose boot of the target's image settled without being
 // found healthy, for why, with whether it stays held.
 func unhealthyError(n *rebootNode, t bootTarget, why string) error {
-	return fellBackError(n, fmt.Sprintf("%s: its boot of %s settled and is not healthy: %s", n.name, t.image, why), &nodev1.BootStatus{})
+	return n.stillHeld(fmt.Errorf("%s: its boot of %s settled and is not healthy: %s", n.name, t.image, why))
 }
 
 // fellBackError is the error msg says of a node whose boot failed, with whether it stays held and
 // what its boots logged.
 func fellBackError(n *rebootNode, msg string, boot *nodev1.BootStatus) error {
-	if n.roles.member() && n.held {
-		msg += "; it stays cordoned"
+	if n.held && n.roles.member() {
+		msg += "; " + heldNote
 	}
 	if len(boot.Journal) > 0 {
 		msg += "; its boots logged:\n  " + strings.Join(boot.Journal, "\n  ")
@@ -457,7 +469,6 @@ func (a *app) nodeRebootCommand() *cobra.Command {
 	}, func(a *app, ctx context.Context, pos []string) error { return a.nodeReboot(ctx, f, pos[0]) })
 	fs := cmd.Flags()
 	f.node.RegisterClient(fs)
-	fs.Lookup("address").Usage = "address of the node's chalkd, host or host:port, or NODE=ADDR of another node of the cluster, such as a control plane the drain goes through; repeat it for several (default each node's address in the inventory)"
 	f.pin.register(fs)
 	fs.BoolVar(&f.noDrain, "no-drain", false, "reboot the node without its layers holding it before and releasing it after, such as without draining a Kubernetes node")
 	fs.DurationVar(&f.timeout, "timeout", 30*time.Minute, "how long to wait for the node to come back healthy and for its drain")
