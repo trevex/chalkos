@@ -6,6 +6,7 @@ buildGoProgram {
   paths = [
     ../../cmd/chalkcfg
     ../../pkg/atomicfile
+    ../../pkg/constants
     ../../pkg/chalkcfg
     ../../pkg/config
     ../../pkg/identity

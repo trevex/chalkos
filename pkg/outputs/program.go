@@ -10,11 +10,11 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/constants"
 	"github.com/trevex/chalkos/pkg/refusals"
 	"github.com/trevex/chalkos/pkg/schema"
 )
@@ -203,13 +203,13 @@ func scratch(parent, name string) (string, error) {
 }
 
 // plainName is the name of an output or a validator, which names it in refusals, in its directories
-// and in a validator's argv: lower-case letters, digits and dashes.
-var plainName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+// and in a validator's argv.
+var plainName = constants.PlainName
 
 // checkDefinition refuses a definition of the image chalkd could not run: a name that is not
 // plain, an input of Secret, or a program that is no absolute path. The image's build checks what
 // needs the store: that the programs are of it and the kinds are declared.
-func checkDefinition(n string, inputs []string, programs map[string]string) error {
+func checkDefinition(n string, inputs []string, programs map[string][]string) error {
 	if !plainName.MatchString(n) {
 		return errors.New("the name is not lower-case letters, digits and dashes")
 	}
@@ -217,8 +217,8 @@ func checkDefinition(n string, inputs []string, programs map[string]string) erro
 		return errors.New("it reads Secret documents, whose values no program reads")
 	}
 	for _, part := range slices.Sorted(maps.Keys(programs)) {
-		if argv := strings.Fields(programs[part]); len(argv) == 0 || !filepath.IsAbs(argv[0]) {
-			return fmt.Errorf("the %s %q names no program by its absolute path", part, programs[part])
+		if argv := programs[part]; len(argv) == 0 || !filepath.IsAbs(argv[0]) {
+			return fmt.Errorf("the %s %q names no program by its absolute path", part, strings.Join(argv, " "))
 		}
 	}
 	return nil

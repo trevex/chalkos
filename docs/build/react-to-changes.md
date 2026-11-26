@@ -107,9 +107,9 @@ evaluation fails. `start` changes what `restart` does, and `hint` what a failed 
 `start` is for a unit that only the delivery lets start, such as a unit whose condition the
 delivered config meets for the first time. Without it, a stopped unit stays stopped.
 
-`run` names a program and its arguments. chalkd splits the command on spaces, with no shell
-quoting, and runs its first word: a program of the image's store by its absolute path, or a bare
-name on chalkd's `PATH`. A module adds a program to that `PATH` with
+`run` names a program and its arguments, as a list or as a string that the image's build splits at
+white space. chalkd runs it without a shell. The program is one of the image's store by its
+absolute path, or a bare name on chalkd's `PATH`. A module adds a program to that `PATH` with
 `systemd.services.chalkd.path`, as chalkos's chrony effect does. chalkd runs the command whether
 or not any unit runs. A command that fails fails the delivery, so a command that talks to a
 service that may be stopped first checks that the service runs.

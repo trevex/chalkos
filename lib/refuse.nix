@@ -10,7 +10,7 @@
   # The form of a name that names files and directories on the node and appears in commands, such
   # as an output's or a validator's: lower-case letters, digits and dashes, starting and ending with
   # a letter or digit.
-  plainName = "[a-z0-9]([-a-z0-9]*[a-z0-9])?";
+  inherit (import ./kinds/api.nix) plainName;
 
   # An attribute set given where another value was expected, by its attributes' names.
   attrsetText =

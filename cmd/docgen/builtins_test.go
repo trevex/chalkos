@@ -150,7 +150,7 @@ func TestWriteBuiltins(t *testing.T) {
 
 func TestWriteBuiltinsRefusesWhatOnlyThePlainImageHas(t *testing.T) {
 	plain := editedImage(t, "plain", "effects.json", func(string) string {
-		return `{"ntp":{"chalkd":"","kinds":["TimeSync"],"outputs":[],"reload":[],"restart":["ntp.service"],"run":"","start":false,"when":""}}`
+		return `{"ntp":{"chalkd":"","kinds":["TimeSync"],"outputs":[],"reload":[],"restart":["ntp.service"],"run":[],"start":false,"when":""}}`
 	})
 	err := writeBuiltins(filepath.Join(t.TempDir(), "builtins.md"), "testdata/builtins/default", plain, "testdata/builtins/router")
 	if err == nil || !strings.Contains(err.Error(), "effect ntp") {

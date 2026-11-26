@@ -40,7 +40,7 @@ type Definition struct {
 	// HashOthers keeps the object's other keys too, each as the SHA-256 of its value, so a rule
 	// can tell that the keys of a share changed without seeing them.
 	HashOthers bool     `json:"hashOthers,omitempty"`
-	Command    string   `json:"command,omitempty"`
+	Command    []string `json:"command,omitempty"`
 	Inputs     []string `json:"inputs,omitempty"`
 }
 
@@ -62,14 +62,14 @@ func check(_ string, d Definition) error { return d.Check() }
 // that takes inputs a file does not, or keeps or hashes fields a command does not.
 func (d Definition) Check() error {
 	switch {
-	case (d.File == "") == (d.Command == ""):
+	case (d.File == "") == (len(d.Command) == 0):
 		return errors.New("it has either a file or a command")
-	case d.Command != "" && (len(d.Fields) > 0 || d.HashOthers):
+	case len(d.Command) > 0 && (len(d.Fields) > 0 || d.HashOthers):
 		return errors.New("only a file keeps fields or hashes them")
 	case d.File != "" && len(d.Inputs) > 0:
 		return errors.New("only a command takes inputs")
-	case d.Command != "" && !programInStore(d.Command):
-		return fmt.Errorf("the command %q is no program of the image's store", d.Command)
+	case len(d.Command) > 0 && !command.InStore(d.Command[0]):
+		return fmt.Errorf("the command %q is no program of the image's store", strings.Join(d.Command, " "))
 	}
 	for _, in := range d.Inputs {
 		if in != FallbackSecret {
@@ -77,13 +77,6 @@ func (d Definition) Check() error {
 		}
 	}
 	return nil
-}
-
-// programInStore tells whether the program a command line runs, its first word, is of the
-// image's store; its arguments need not be store paths.
-func programInStore(cmd string) bool {
-	argv := strings.Fields(cmd)
-	return len(argv) > 0 && command.InStore(argv[0])
 }
 
 // Runner runs a command fact's program with stdin and returns what it prints, at most limit
@@ -250,7 +243,7 @@ func (l *Loader) stdin(def Definition) ([]byte, error) {
 // echo the config it reads. Readers read the journal, so of a program that reads an input, such as
 // the fallback secret, only the length of what it wrote goes there.
 func (l *Loader) command(name string, def Definition, stdin []byte) (any, error) {
-	argv := strings.Fields(def.Command)
+	argv := def.Command
 	if len(argv) == 0 {
 		return nil, errors.New("the fact names no command")
 	}

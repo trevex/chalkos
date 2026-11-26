@@ -37,7 +37,7 @@ func writeValidators(t *testing.T, s *Server, programs map[string]string) {
 	t.Helper()
 	defs := map[string]outputs.Validator{}
 	for name, commands := range programs {
-		defs[name] = outputs.Validator{Inputs: []string{"Demo"}, Program: shellScript(t, commands)}
+		defs[name] = outputs.Validator{Inputs: []string{"Demo"}, Program: []string{shellScript(t, commands)}}
 	}
 	data, err := json.Marshal(defs)
 	if err != nil {

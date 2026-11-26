@@ -217,17 +217,6 @@ func TestLoadWithoutConfigMakesCredentialDirectories(t *testing.T) {
 	}
 }
 
-func TestApplyWritesNoKeyCredentials(t *testing.T) {
-	l, _ := newTestLoader(t)
-	writeContract(t, &l, contract.ServicesFile, `{"report": {"keys": ["hostname"]}}`)
-	if err := l.Apply([]byte(nodeIdentity)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(l.RunDir, "credentials", "hostname")); !os.IsNotExist(err) {
-		t.Errorf("wrote the credential of an identity key: %v", err)
-	}
-}
-
 // recordingLayer records the documents the loader has it write from, and fails with err.
 type recordingLayer struct {
 	calls int
@@ -284,7 +273,7 @@ func outputLoader(t *testing.T, render string) Loader {
 		t.Fatal(err)
 	}
 	defs, _ := json.Marshal(map[string]outputs.Definition{"demo": {
-		Inputs: []string{"Demo"}, Render: script, Dir: filepath.Join(l.RunDir, "outputs", "demo"),
+		Inputs: []string{"Demo"}, Render: []string{script}, Dir: filepath.Join(l.RunDir, "outputs", "demo"),
 		User: strconv.Itoa(os.Getuid()), Group: strconv.Itoa(os.Getgid()), Mode: "0644",
 	}})
 	writeContract(t, &l, contract.OutputsFile, string(defs))
@@ -353,7 +342,7 @@ echo '{"refusals": [{"kind": "Demo", "name": "one", "path": "spec.name", "messag
 	if err := os.Chmod(script, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeContract(t, &l, contract.ValidatorsFile, `{"demo": {"inputs": ["Demo"], "program": "`+script+`"}}`)
+	writeContract(t, &l, contract.ValidatorsFile, `{"demo": {"inputs": ["Demo"], "program": ["`+script+`"]}}`)
 	if err := l.Load(); err != nil {
 		t.Fatal(err)
 	}

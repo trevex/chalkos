@@ -20,6 +20,8 @@ buildGoProgram {
     ../../pkg/kubernetes/clusterregistry
     # Writes the networkd kinds' schemas, whose names it reads.
     ../../pkg/networkdschema
+    # The values Nix and Go share, which the refusals and the router's model read.
+    ../../pkg/constants
     # The format of the refusals chalkd reads.
     ../../pkg/refusals
     # The router's model of a node's config, which chalkctl links for the validator router.

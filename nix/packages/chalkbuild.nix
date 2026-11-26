@@ -10,6 +10,7 @@ buildGoProgram {
     ../../cmd/chalkbuild
     ../../pkg/arch
     ../../pkg/atomicfile
+    ../../pkg/constants
     ../../pkg/chalkbuild
     ../../pkg/fatfs
     ../../pkg/image

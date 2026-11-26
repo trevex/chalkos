@@ -20,7 +20,7 @@ func TestApply(t *testing.T) {
 	}}
 	a := ActionsOf(map[string]Definition{
 		"one": {Kinds: []string{"K"}, Reload: []string{"r.service"}},
-		"two": {Kinds: []string{"K"}, Restart: []string{"a.service", "b.service", "c.service"}, Run: "true now"},
+		"two": {Kinds: []string{"K"}, Restart: []string{"a.service", "b.service", "c.service"}, Run: []string{"true", "now"}},
 	}, []string{"one", "two"})
 	restarted, err := Apply(context.Background(), r, a)
 	if err != nil || !reflect.DeepEqual(restarted, []string{"a.service", "b.service", "c.service"}) {
@@ -54,5 +54,15 @@ func TestApplyFails(t *testing.T) {
 	if !ok || ae.Why != "a needs a disk" || !reflect.DeepEqual(ae.ByHand.Restart, []string{"a.service"}) ||
 		err.Error() != "try-restart a.service: exit status 1; a needs a disk; the delivery is applied, so restart a.service by hand once that is fixed, or deliver it again" {
 		t.Errorf("err = %v", err)
+	}
+}
+
+// ByHand quotes the arguments of a command to run that white space, quotes or an empty argument
+// would change, so the operator runs the command's own arguments.
+func TestByHandQuotesArguments(t *testing.T) {
+	a := Actions{Run: [][]string{{"/bin/task", "--label", "blue green", "", "it's"}}}
+	want := `; the delivery is applied, so run /bin/task --label 'blue green' '' 'it'\''s' by hand once that is fixed, or deliver it again`
+	if got := a.ByHand(); got != want {
+		t.Errorf("ByHand = %s\nwant %s", got, want)
 	}
 }

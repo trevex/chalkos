@@ -58,16 +58,16 @@ func TestCheck(t *testing.T) {
 		"a misspelt key":                       {greeting(`[{"rule": "true", "mesage": "x"}]`, kindRule), lock, restarts, `unknown field "mesage"`},
 		"an undeclared fact":                   {greeting(`[{"rule": "facts.locked == null", "message": "x"}]`, kindRule), lock, restarts, "reads facts.locked, which the image does not declare; it declares lock, share"},
 		"a costly rule":                        {greeting(fieldRule, `[{"rule": "documents.all(a, documents.all(b, documents.all(c, a + b + c != \"\")))"}]`), lock, restarts, "more than the limit"},
-		"a command outside the store":          {greeting(fieldRule, kindRule), `{"lock": {"command": "/usr/bin/lock"}}`, restarts, "is no program of the image's store"},
-		"an unknown input":                     {greeting(fieldRule, kindRule), `{"lock": {"command": "/nix/store/x/bin/lock", "inputs": ["token"]}}`, restarts, `there is no input "token"`},
-		"a command that keeps fields":          {greeting(fieldRule, kindRule), `{"lock": {"command": "/nix/store/x/bin/lock", "fields": ["kind"]}}`, restarts, "only a file keeps fields"},
-		"a command that hashes":                {greeting(fieldRule, kindRule), `{"lock": {"command": "/nix/store/x/bin/lock", "hashOthers": true}}`, restarts, "only a file keeps fields or hashes them"},
+		"a command outside the store":          {greeting(fieldRule, kindRule), `{"lock": {"command": ["/usr/bin/lock"]}}`, restarts, "is no program of the image's store"},
+		"an unknown input":                     {greeting(fieldRule, kindRule), `{"lock": {"command": ["/nix/store/x/bin/lock"], "inputs": ["token"]}}`, restarts, `there is no input "token"`},
+		"a command that keeps fields":          {greeting(fieldRule, kindRule), `{"lock": {"command": ["/nix/store/x/bin/lock"], "fields": ["kind"]}}`, restarts, "only a file keeps fields"},
+		"a command that hashes":                {greeting(fieldRule, kindRule), `{"lock": {"command": ["/nix/store/x/bin/lock"], "hashOthers": true}}`, restarts, "only a file keeps fields or hashes them"},
 		"an effect rule that does not compile": {greeting(fieldRule, kindRule), lock, effect(`config ==`, `false`), `effect greeter: rule "config =="`},
 		"an effect rule of a kind's variable":  {greeting(fieldRule, kindRule), lock, effect(`false`, `size(documents) > 0`), "undeclared reference to 'documents'"},
 		"an effect rule's undeclared fact":     {greeting(fieldRule, kindRule), lock, effect(`oldFacts.locked == null`, `false`), `effect greeter: rule "oldFacts.locked == null" reads facts.locked, which the image does not declare`},
 		"an undefined unit":                    {greeting(fieldRule, kindRule), lock, `{"e": {"when": "true", "restart": ["bird.service"]}}`, "effect e: the image defines no unit bird.service"},
 		"a unit without its suffix":            {greeting(fieldRule, kindRule), lock, `{"e": {"when": "true", "reload": ["greeter"]}}`, `"greeter" is no unit name, such as bird.service`},
-		"an empty command":                     {greeting(fieldRule, kindRule), lock, `{"e": {"when": "true", "run": " "}}`, "effect e: the command to run is empty"},
+		"an empty program":                     {greeting(fieldRule, kindRule), lock, `{"e": {"when": "true", "run": [""]}}`, "effect e: the command to run names no program"},
 		"an effect that does nothing":          {greeting(fieldRule, kindRule), lock, `{"e": {"when": "true"}}`, "effect e: it restarts, reloads and runs nothing"},
 		"an effect nothing triggers":           {greeting(fieldRule, kindRule), lock, `{"e": {"restart": ["greeter.service"]}}`, "effect e: it has none of outputs, kinds and when"},
 	} {
@@ -123,16 +123,15 @@ func withOutput(t *testing.T, files map[string]string, render, check string) map
 	scripts := t.TempDir()
 	os.WriteFile(filepath.Join(scripts, "render"), []byte("set -e\n"+render+"\n"), 0o644)
 	os.WriteFile(filepath.Join(scripts, "check"), []byte("set -e\n"+check+"\n"), 0o644)
-	files["outputs.json"] = `{"greeting": {"inputs": ["Greeting"], "render": "` + sh + " " + filepath.Join(scripts, "render") + `",
-	  "check": "` + sh + " " + filepath.Join(scripts, "check") + `", "dir": "/run/chalkos/outputs/greeting", "user": "nobody", "group": "nobody", "mode": "0644"}}`
+	files["outputs.json"] = `{"greeting": {"inputs": ["Greeting"], "render": ["` + sh + `", "` + filepath.Join(scripts, "render") + `"],
+	  "check": ["` + sh + `", "` + filepath.Join(scripts, "check") + `"], "dir": "/run/chalkos/outputs/greeting", "user": "nobody", "group": "nobody", "mode": "0644"}}`
 	files["effects.json"] = `{"greeter": {"outputs": ["greeting"], "restart": ["greeter.service"]}}`
 	return files
 }
 
 const hello = "apiVersion: greeting.example.org/v1alpha1\nkind: Greeting\nmetadata: {name: g}\nspec: {message: hello}\n"
 
-// The image's build refuses an output it could not run on a node and an effect on an output the
-// image lacks.
+// The image's build refuses an output it could not run on a node.
 func TestCheckOutputs(t *testing.T) {
 	render := `sed -n 's/.*"message":"\([^"]*\)".*/\1/p' > "$OUT/message"`
 	accepts := `grep -qx hello "$OUT/message"`
@@ -153,11 +152,6 @@ func TestCheckOutputs(t *testing.T) {
 		files map[string]string
 		want  string
 	}{
-		"an undeclared kind": {func() map[string]string {
-			f := withOutput(t, base(), render, accepts)
-			f["outputs.json"] = strings.Replace(f["outputs.json"], `["Greeting"]`, `["Peer"]`, 1)
-			return f
-		}(), "output greeting: the image declares no kind Peer"},
 		"a renderer outside the store": {func() map[string]string {
 			f := withOutput(t, base(), render, accepts)
 			f["outputs.json"] = strings.Replace(f["outputs.json"], storeShell(t), "/bin/sh", 1)
@@ -168,31 +162,11 @@ func TestCheckOutputs(t *testing.T) {
 			f["outputs.json"] = strings.Replace(f["outputs.json"], "/nix/store/", "/nix/store//", 1)
 			return f
 		}(), `output greeting: the renderer "/nix/store//`},
-		"an effect on no output": {func() map[string]string {
-			f := withOutput(t, base(), render, accepts)
-			f["effects.json"] = `{"greeter": {"outputs": ["greting"], "restart": ["greeter.service"]}}`
-			return f
-		}(), "effect greeter: outputs names greting, which is no output of the image; its outputs are greeting"},
-		"an effect on an undeclared kind": {func() map[string]string {
-			f := withOutput(t, base(), render, accepts)
-			f["effects.json"] = `{"greeter": {"kinds": ["Peer"], "restart": ["greeter.service"]}}`
-			return f
-		}(), "effect greeter: the image declares no kind Peer"},
-		"an effect on Secret documents": {func() map[string]string {
-			f := withOutput(t, base(), render, accepts)
-			f["effects.json"] = `{"greeter": {"kinds": ["Secret"], "restart": ["greeter.service"]}}`
-			return f
-		}(), "effect greeter: an effect does not fire on Secret documents"},
-		"an effect on a withheld kind": {func() map[string]string {
-			f := withBundle(withOutput(t, base(), render, accepts))
-			f["effects.json"] = `{"greeter": {"kinds": ["Bundle"], "restart": ["greeter.service"]}}`
-			return f
-		}(), "effect greeter: an effect does not fire on Bundle documents"},
 		"an output of a withheld kind": {func() map[string]string {
 			f := withBundle(withOutput(t, base(), render, accepts))
 			f["outputs.json"] = strings.Replace(f["outputs.json"], `["Greeting"]`, `["Bundle"]`, 1)
 			return f
-		}(), "output greeting: the image withholds Bundle documents from its programs"},
+		}(), "output greeting: the image withholds Bundle documents from its units and programs"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := checkImage(image(t, tc.files), &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -215,7 +189,7 @@ func withValidator(t *testing.T, files map[string]string, commands string) map[s
 	sh := storeShell(t)
 	scripts := t.TempDir()
 	os.WriteFile(filepath.Join(scripts, "validate"), []byte("set -e\n"+commands+"\n"), 0o644)
-	files["validators.json"] = `{"greeting": {"inputs": ["Greeting"], "program": "` + sh + " " + filepath.Join(scripts, "validate") + `"}}`
+	files["validators.json"] = `{"greeting": {"inputs": ["Greeting"], "program": ["` + sh + `", "` + filepath.Join(scripts, "validate") + `"]}}`
 	return files
 }
 
@@ -232,16 +206,11 @@ func TestCheckValidators(t *testing.T) {
 		files map[string]string
 		want  string
 	}{
-		"an undeclared kind": {func() map[string]string {
-			f := withValidator(t, base(), validate)
-			f["validators.json"] = strings.Replace(f["validators.json"], `["Greeting"]`, `["Peer"]`, 1)
-			return f
-		}(), "validator greeting: the image declares no kind Peer"},
 		"a withheld kind": {func() map[string]string {
 			f := withBundle(withValidator(t, base(), validate))
 			f["validators.json"] = strings.Replace(f["validators.json"], `["Greeting"]`, `["Bundle"]`, 1)
 			return f
-		}(), "validator greeting: the image withholds Bundle documents from its programs"},
+		}(), "validator greeting: the image withholds Bundle documents from its units and programs"},
 		"a program outside the store": {func() map[string]string {
 			f := withValidator(t, base(), validate)
 			f["validators.json"] = strings.Replace(f["validators.json"], storeShell(t), "/bin/sh", 1)

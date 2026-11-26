@@ -25,10 +25,10 @@ func TestValidate(t *testing.T) {
 	r := renderer(t)
 	seen := filepath.Join(t.TempDir(), "seen")
 	defs := map[string]Validator{
-		"passes": {Inputs: []string{"Demo"}, Program: script(t, `cat >`+seen+`.json; echo "$*" >`+seen+`.args; ls -A "$OUT" >`+seen+`.out`)},
-		"quiet":  {Inputs: []string{"Demo"}, Program: script(t, `echo '{"refusals": []}'`)},
-		"one":    {Inputs: []string{"Demo"}, Program: script(t, refuse("one", "is taken"))},
-		"again":  {Inputs: []string{"Demo"}, Program: script(t, refuse("one", "is taken")+`; echo detail >&2`)},
+		"passes": {Inputs: []string{"Demo"}, Program: []string{script(t, `cat >`+seen+`.json; echo "$*" >`+seen+`.args; ls -A "$OUT" >`+seen+`.out`)}},
+		"quiet":  {Inputs: []string{"Demo"}, Program: []string{script(t, `echo '{"refusals": []}'`)}},
+		"one":    {Inputs: []string{"Demo"}, Program: []string{script(t, refuse("one", "is taken"))}},
+		"again":  {Inputs: []string{"Demo"}, Program: []string{script(t, refuse("one", "is taken")+`; echo detail >&2`)}},
 	}
 	in := input(t, demos)
 	failures, err := r.Validate(context.Background(), defs, in)
@@ -75,12 +75,12 @@ func TestValidateFailures(t *testing.T) {
 	r := renderer(t)
 	r.Timeout = time.Second
 	defs := map[string]Validator{
-		"exits":     {Inputs: []string{"Demo"}, Program: script(t, `echo detail >&2; exit 3`)},
-		"refuses":   {Inputs: []string{"Demo"}, Program: script(t, refuse("one", "is taken")+`; exit 1`)},
-		"rambles":   {Inputs: []string{"Demo"}, Program: script(t, `echo checked`)},
-		"malformed": {Inputs: []string{"Demo"}, Program: script(t, refuse("One", "is taken"))},
-		"sleeps":    {Inputs: []string{"Demo"}, Program: script(t, `exec sleep 10`)},
-		"passes":    {Inputs: []string{"Demo"}, Program: script(t, `true`)},
+		"exits":     {Inputs: []string{"Demo"}, Program: []string{script(t, `echo detail >&2; exit 3`)}},
+		"refuses":   {Inputs: []string{"Demo"}, Program: []string{script(t, refuse("one", "is taken")+`; exit 1`)}},
+		"rambles":   {Inputs: []string{"Demo"}, Program: []string{script(t, `echo checked`)}},
+		"malformed": {Inputs: []string{"Demo"}, Program: []string{script(t, refuse("One", "is taken"))}},
+		"sleeps":    {Inputs: []string{"Demo"}, Program: []string{script(t, `exec sleep 10`)}},
+		"passes":    {Inputs: []string{"Demo"}, Program: []string{script(t, `true`)}},
 	}
 	failures, err := r.Validate(context.Background(), defs, input(t, demos))
 	if err != nil {
@@ -118,7 +118,7 @@ func (r *recorder) Run(_ context.Context, p Program) ([]byte, error) {
 func TestValidateProgram(t *testing.T) {
 	rec := &recorder{}
 	r := Renderer{Root: t.TempDir(), Run: rec}
-	defs := map[string]Validator{"peers": {Inputs: []string{"Demo"}, Program: "/nix/store/x/bin/v --strict"}}
+	defs := map[string]Validator{"peers": {Inputs: []string{"Demo"}, Program: []string{"/nix/store/x/bin/v", "--strict"}}}
 	if failures, err := r.Validate(context.Background(), defs, input(t, demos)); err != nil || failures != nil {
 		t.Fatal(err, failures)
 	}
@@ -139,11 +139,11 @@ func TestReadValidators(t *testing.T) {
 		t.Fatalf("a missing file: %v, %v", defs, err)
 	}
 	for text, want := range map[string]string{
-		`{"peers": {"inputs": ["Peer"], "program": "/nix/store/x/bin/v --strict"}}`: "",
-		`{"Peers": {"inputs": ["Peer"], "program": "/nix/store/x/bin/v"}}`:          "validator Peers: the name is not lower-case letters, digits and dashes",
-		`{"peers": {"inputs": ["Peer"], "program": "v"}}`:                           `the program "v" names no program by its absolute path`,
-		`{"peers": {"inputs": [], "program": "/nix/store/x/bin/v"}}`:                "it reads no kind",
-		`{"peers": {"inputs": ["Secret"], "program": "/nix/store/x/bin/v"}}`:        "it reads Secret documents, whose values no program reads",
+		`{"peers": {"inputs": ["Peer"], "program": ["/nix/store/x/bin/v", "--strict"]}}`: "",
+		`{"Peers": {"inputs": ["Peer"], "program": ["/nix/store/x/bin/v"]}}`:             "validator Peers: the name is not lower-case letters, digits and dashes",
+		`{"peers": {"inputs": ["Peer"], "program": ["v"]}}`:                              `the program "v" names no program by its absolute path`,
+		`{"peers": {"inputs": [], "program": ["/nix/store/x/bin/v"]}}`:                   "it reads no kind",
+		`{"peers": {"inputs": ["Secret"], "program": ["/nix/store/x/bin/v"]}}`:           "it reads Secret documents, whose values no program reads",
 	} {
 		path := filepath.Join(dir, "validators.json")
 		if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
@@ -151,7 +151,7 @@ func TestReadValidators(t *testing.T) {
 		}
 		defs, err := ReadValidators(path)
 		switch {
-		case want == "" && (err != nil || defs["peers"].Program != "/nix/store/x/bin/v --strict"):
+		case want == "" && (err != nil || !slices.Equal(defs["peers"].Program, []string{"/nix/store/x/bin/v", "--strict"})):
 			t.Errorf("%s: %v, %v", text, defs, err)
 		case want != "" && (err == nil || !strings.HasSuffix(err.Error(), want)):
 			t.Errorf("%s: %v, want an error ending in %q", text, err, want)
@@ -209,7 +209,7 @@ func TestValidateDirectoryError(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := Renderer{Root: root, Run: rec}
-	defs := map[string]Validator{"peers": {Inputs: []string{"Demo"}, Program: "/nix/store/x/bin/v"}}
+	defs := map[string]Validator{"peers": {Inputs: []string{"Demo"}, Program: []string{"/nix/store/x/bin/v"}}}
 	failures, err := r.Validate(context.Background(), defs, input(t, demos))
 	if err == nil || failures != nil || len(rec.programs) != 0 {
 		t.Errorf("Validate = %v, %v; programs %v", failures, err, rec.programs)

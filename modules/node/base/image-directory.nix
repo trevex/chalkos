@@ -42,7 +42,6 @@ let
       inherit (config.chalkos.provenance) revision tag;
       name = config.chalkos.image.name;
       platform = config.chalkos.platform.name;
-      kinds = config.system.build.chalkosKinds;
       inherit (config.chalkos.imageDirectory) annotations;
     }
   );

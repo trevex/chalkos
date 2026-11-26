@@ -13,6 +13,7 @@ import (
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
+	"github.com/trevex/chalkos/pkg/constants"
 	"github.com/trevex/chalkos/pkg/jsonfile"
 	"github.com/trevex/chalkos/pkg/networkdschema"
 )
@@ -84,7 +85,7 @@ type KeyField struct {
 
 // Normalisers are the names of the normalisers a uniqueness declaration may compare its values
 // with, which pkg/config implements.
-var Normalisers = []string{"cidr", "host", "ip", "lower"}
+var Normalisers = constants.Normalisers
 
 // Takes is what a change a rule refuses needs instead.
 type Takes string

@@ -30,7 +30,7 @@ func TestDue(t *testing.T) {
 	fx := Effects{Defs: map[string]effects.Definition{
 		"demo":  {Outputs: []string{"demo"}, Restart: []string{"demo.service"}},
 		"disks": {Kinds: []string{"SystemDisk"}, Restart: []string{"disks.service"}},
-		"names": {Kinds: []string{"Demo"}, Reload: []string{"names.service"}, Run: "/bin/true", Chalkd: "demo:names"},
+		"names": {Kinds: []string{"Demo"}, Reload: []string{"names.service"}, Run: []string{"/bin/true"}, Chalkd: "demo:names"},
 		"named": {When: when.When, Restart: []string{"a.service", "b.service"}},
 	}, Rules: []*rules.EffectRule{when}}
 	old := translate(base)
@@ -71,7 +71,7 @@ func TestPlanOfAnUnorderedDelivery(t *testing.T) {
 	plan, err := PlanOf(Effects{Defs: map[string]effects.Definition{
 		"resolver": {Reload: []string{"resolver.service"}},
 		"dns":      {Restart: []string{"resolver.service"}},
-		"chrony":   {Run: "reload-sources"},
+		"chrony":   {Run: []string{"reload-sources"}},
 	}}, Outcome{Effects: []Fired{{Name: "chrony", By: []string{"output chrony"}}, {Name: "dns"}, {Name: "resolver"}}})
 	if err != nil {
 		t.Fatal(err)
@@ -88,10 +88,10 @@ func TestPlanOfAnUnorderedDelivery(t *testing.T) {
 
 func TestPlanShowsRuntimePrerequisitesAndReadiness(t *testing.T) {
 	plan, err := PlanOf(Effects{Defs: map[string]effects.Definition{
-		"resolver": {After: []string{"vrf"}, Run: "reconcile", WaitFor: &effects.Readiness{
+		"resolver": {After: []string{"vrf"}, Run: []string{"reconcile"}, WaitFor: &effects.Readiness{
 			Description: "VRF to exist", Argv: []string{"/nix/store/demo/bin/check-vrf"}, TimeoutSeconds: 15,
 		}},
-		"vrf": {Run: "replace-vrf"},
+		"vrf": {Run: []string{"replace-vrf"}},
 	}}, Outcome{Effects: []Fired{{Name: "resolver"}, {Name: "vrf"}}})
 	if err != nil {
 		t.Fatal(err)

@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -70,7 +69,7 @@ func (r Renderer) render(ctx context.Context, name string, d Definition, in Inpu
 		return dir, State{}, err
 	}
 	// The renderer writes $OUT and reports refusals.
-	if err := r.run(ctx, RoleOutput, name, partRenderer, Program{Argv: strings.Fields(d.Render), Stdin: stdin, Out: dir, Write: true, Report: true}); err != nil {
+	if err := r.run(ctx, RoleOutput, name, partRenderer, Program{Argv: d.Render, Stdin: stdin, Out: dir, Write: true, Report: true}); err != nil {
 		return dir, State{}, err
 	}
 	if err := checkFiles(dir); err != nil {
@@ -78,8 +77,8 @@ func (r Renderer) render(ctx context.Context, name string, d Definition, in Inpu
 	}
 	// The check reads the files as the renderer wrote them, which the output's owner and mode may
 	// keep from the sandbox's user, and may open netlink sockets, as nft --check needs.
-	if d.Check != "" {
-		if err := r.run(ctx, RoleOutput, name, partCheck, Program{Argv: strings.Fields(d.Check), Stdin: stdin, Out: dir, Netlink: true}); err != nil {
+	if len(d.Check) > 0 {
+		if err := r.run(ctx, RoleOutput, name, partCheck, Program{Argv: d.Check, Stdin: stdin, Out: dir, Netlink: true}); err != nil {
 			return dir, State{}, err
 		}
 	}

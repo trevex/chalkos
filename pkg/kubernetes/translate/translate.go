@@ -10,12 +10,13 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/constants"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 )
 
 // API is the apiVersion of the Kubernetes layer's kinds.
-const API = "kubernetes.chalkos.dev/v1alpha1"
+var API = constants.APIVersion("kubernetes")
 
 // Target claims facts that are Kubernetes facts and adds the translation of their image to t;
 // it leaves the facts of another layer unclaimed. Claimed facts whose image.json does not parse

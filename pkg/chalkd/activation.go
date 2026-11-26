@@ -269,7 +269,7 @@ func (a *activation) hooks(ctx context.Context, defs map[string]effects.Definiti
 		}
 		for _, name := range batch.Effects {
 			d := defs[name]
-			if d.Run != "" || d.Chalkd != "" || d.When != "" || d.WaitFor != nil {
+			if len(d.Run) > 0 || d.Chalkd != "" || d.When != "" || d.WaitFor != nil {
 				return false
 			}
 			for _, units := range [][]string{d.Reload, d.Restart} {

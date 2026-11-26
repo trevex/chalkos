@@ -164,8 +164,8 @@ func actionKeys(d Definition) []string {
 	for _, unit := range slices.Concat(d.Reload, d.Restart) {
 		keys = append(keys, "unit:"+unit)
 	}
-	if d.Run != "" {
-		keys = append(keys, "run:"+d.Run)
+	if len(d.Run) > 0 {
+		keys = append(keys, "run:"+strings.Join(d.Run, "\x00"))
 	}
 	if d.Chalkd != "" {
 		keys = append(keys, "chalkd:"+d.Chalkd)
@@ -296,7 +296,9 @@ func actionFailed(err error, a Actions) bool {
 	units := slices.Concat(b.Reload, b.Restart)
 	return slices.ContainsFunc(slices.Concat(a.Reload, a.Restart), func(unit string) bool {
 		return slices.Contains(units, unit)
-	}) || slices.ContainsFunc(a.Run, func(run string) bool { return slices.Contains(b.Run, run) })
+	}) || slices.ContainsFunc(a.Run, func(run []string) bool {
+		return slices.ContainsFunc(b.Run, func(other []string) bool { return slices.Equal(run, other) })
+	})
 }
 
 // Readiness probes are tried every probeInterval, and an attempt that runs longer than probeAttempt

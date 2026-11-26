@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 
 	"github.com/trevex/chalkos/pkg/jsonfile"
 	"github.com/trevex/chalkos/pkg/refusals"
@@ -18,9 +17,9 @@ import (
 type Validator struct {
 	// Inputs are the kinds, by name, whose documents the program reads.
 	Inputs []string `json:"inputs"`
-	// Program is a program of the image's store with its arguments, to which chalkd appends
+	// Program is a program of the image's store and its arguments, to which chalkd appends
 	// "validate" and the validator's name.
-	Program string `json:"program"`
+	Program []string `json:"program"`
 }
 
 // ReadValidators reads the validators an image declares; a missing file declares none.
@@ -31,7 +30,7 @@ func ReadValidators(path string) (map[string]Validator, error) {
 // check refuses a definition of the validator name chalkd could not run: one checkDefinition
 // refuses, or one that reads no kind.
 func (v Validator) check(name string) error {
-	if err := checkDefinition(name, v.Inputs, map[string]string{partProgram: v.Program}); err != nil {
+	if err := checkDefinition(name, v.Inputs, map[string][]string{partProgram: v.Program}); err != nil {
 		return err
 	}
 	if len(v.Inputs) == 0 {
@@ -64,7 +63,7 @@ func (r Renderer) Validate(ctx context.Context, defs map[string]Validator, in In
 		if err != nil {
 			return nil, fmt.Errorf("validator %s: %w", name, err)
 		}
-		argv := append(strings.Fields(v.Program), "validate", name)
+		argv := append(slices.Clip(v.Program), "validate", name)
 		err = r.run(ctx, RoleValidator, name, partProgram, Program{Argv: argv, Stdin: stdin, Out: out, Report: true})
 		os.RemoveAll(out)
 		if err != nil {

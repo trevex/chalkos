@@ -36,7 +36,6 @@ type Metadata struct {
 	Platform string `json:"platform"`
 	// RootHash is the store's dm-verity root hash, in hex; it identifies the image's content.
 	RootHash string `json:"rootHash"`
-	Kinds    []Kind `json:"kinds"`
 	// Annotations are the annotations of the image's OCI manifest, such as its git revision and
 	// tag and its layer's version, as chalkos.imageDirectory.annotations names them.
 	Annotations map[string]string `json:"annotations,omitempty"`

@@ -60,11 +60,11 @@ func write(t *testing.T, path, content string) {
 func TestRead(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "facts.json")
-	write(t, path, `{"share": {"file": "/state/kubernetes/share.json"}, "disks": {"command": "/nix/store/x/bin/chalkos-storage facts disks", "inputs": ["fallbackSecret"]}}`)
+	write(t, path, `{"share": {"file": "/state/kubernetes/share.json"}, "disks": {"command": ["/nix/store/x/bin/chalkos-storage", "facts", "disks"], "inputs": ["fallbackSecret"]}}`)
 	defs, err := Read(path)
 	want := map[string]Definition{
 		"share": {File: "/state/kubernetes/share.json"},
-		"disks": {Command: "/nix/store/x/bin/chalkos-storage facts disks", Inputs: []string{FallbackSecret}},
+		"disks": {Command: []string{"/nix/store/x/bin/chalkos-storage", "facts", "disks"}, Inputs: []string{FallbackSecret}},
 	}
 	if err != nil || !reflect.DeepEqual(defs, want) {
 		t.Errorf("Read = %+v, %v", defs, err)
@@ -73,14 +73,14 @@ func TestRead(t *testing.T) {
 		t.Errorf("a missing file: %v, %v; want no facts", defs, err)
 	}
 	// The content of an image's facts.json reads the same, as from an image that does not run.
-	if parsed, err := Parse(path, []byte(`{"share": {"file": "/state/kubernetes/share.json"}, "disks": {"command": "/nix/store/x/bin/chalkos-storage facts disks", "inputs": ["fallbackSecret"]}}`)); err != nil || !reflect.DeepEqual(parsed, want) {
+	if parsed, err := Parse(path, []byte(`{"share": {"file": "/state/kubernetes/share.json"}, "disks": {"command": ["/nix/store/x/bin/chalkos-storage", "facts", "disks"], "inputs": ["fallbackSecret"]}}`)); err != nil || !reflect.DeepEqual(parsed, want) {
 		t.Errorf("Parse = %+v, %v", parsed, err)
 	}
 	if _, err := Parse(path, []byte(`[]`)); err == nil {
 		t.Error("Parse of no object: no error")
 	}
 	// Each definition is checked as it is read.
-	write(t, path, `{"a": {"command": "probe"}, "b": {"file": "/x", "inputs": ["fallbackSecret"]}}`)
+	write(t, path, `{"a": {"command": ["probe"]}, "b": {"file": "/x", "inputs": ["fallbackSecret"]}}`)
 	if _, err := Read(path); err == nil || !strings.Contains(err.Error(), path+": fact a: ") || !strings.Contains(err.Error(), path+": fact b: ") {
 		t.Errorf("Read of facts chalkd could not load: %v", err)
 	}
@@ -95,16 +95,16 @@ func TestDefinitionCheck(t *testing.T) {
 		want string
 	}{
 		"a file":                {Definition{File: "/state/x.json", Fields: []string{"kind"}, HashOthers: true}, ""},
-		"a command":             {Definition{Command: lock, Inputs: []string{FallbackSecret}}, ""},
+		"a command":             {Definition{Command: []string{lock}, Inputs: []string{FallbackSecret}}, ""},
 		"neither":               {Definition{}, "it has either a file or a command"},
-		"both":                  {Definition{File: "/state/x.json", Command: lock}, "it has either a file or a command"},
-		"a command with fields": {Definition{Command: lock, Fields: []string{"kind"}}, "only a file keeps fields or hashes them"},
+		"both":                  {Definition{File: "/state/x.json", Command: []string{lock}}, "it has either a file or a command"},
+		"a command with fields": {Definition{Command: []string{lock}, Fields: []string{"kind"}}, "only a file keeps fields or hashes them"},
 		"a file with inputs":    {Definition{File: "/state/x.json", Inputs: []string{FallbackSecret}}, "only a command takes inputs"},
-		"outside the store":     {Definition{Command: "/usr/bin/lock"}, `the command "/usr/bin/lock" is no program of the image's store`},
-		"arguments with paths":  {Definition{Command: lock + " --dir /var/lib/ --at /run//x"}, ""},
-		"an unclean program":    {Definition{Command: "/nix/store/x/../../usr/bin/lock --dir /var/lib/"}, `the command "/nix/store/x/../../usr/bin/lock --dir /var/lib/" is no program of the image's store`},
-		"a blank command":       {Definition{Command: " "}, `the command " " is no program of the image's store`},
-		"an unknown input":      {Definition{Command: lock, Inputs: []string{"token"}}, `there is no input "token"; the inputs are fallbackSecret`},
+		"outside the store":     {Definition{Command: []string{"/usr/bin/lock"}}, `the command "/usr/bin/lock" is no program of the image's store`},
+		"arguments with paths":  {Definition{Command: []string{lock, "--dir", "/var/lib/", "--at", "/run//x"}}, ""},
+		"an unclean program":    {Definition{Command: []string{"/nix/store/x/../../usr/bin/lock", "--dir", "/var/lib/"}}, `the command "/nix/store/x/../../usr/bin/lock --dir /var/lib/" is no program of the image's store`},
+		"an empty program":      {Definition{Command: []string{""}}, `the command "" is no program of the image's store`},
+		"an unknown input":      {Definition{Command: []string{lock}, Inputs: []string{"token"}}, `there is no input "token"; the inputs are fallbackSecret`},
 	} {
 		err := tc.def.Check()
 		if got := fmt.Sprint(err); (tc.want == "" && err != nil) || (tc.want != "" && got != tc.want) {
@@ -135,7 +135,7 @@ func TestFileFact(t *testing.T) {
 		t.Errorf("broken: err = %v", err)
 	}
 	r := &fakeRunner{out: map[string]string{"/bin/disks": `{"extra": {}}`}}
-	defs["disks"] = Definition{Command: "/bin/disks"}
+	defs["disks"] = Definition{Command: []string{"/bin/disks"}}
 	install := NewLoader(context.Background(), defs, r)
 	install.Install = true
 	for _, name := range []string{"share", "broken", "disks"} {
@@ -198,7 +198,7 @@ func TestLoaderFor(t *testing.T) {
 	l := NewLoader(context.Background(), map[string]Definition{
 		"recorded": {File: path},
 		"share":    {File: filepath.Join(dir, "share.json")},
-		"disks":    {Command: "/bin/disks"},
+		"disks":    {Command: []string{"/bin/disks"}},
 	}, r)
 	l.Input = map[string]any{"config": map[string]any{"a": "b"}}
 	l.Override("share", "overridden")
@@ -233,8 +233,8 @@ func TestLoaderFor(t *testing.T) {
 func TestCommandFact(t *testing.T) {
 	r := &fakeRunner{out: map[string]string{"/bin/disks": `{"extra": {"present": true}}`, "/bin/fallback": `{"matches": true}`}}
 	l := NewLoader(context.Background(), map[string]Definition{
-		"disks":    {Command: "/bin/disks facts disks"},
-		"fallback": {Command: "/bin/fallback", Inputs: []string{FallbackSecret}},
+		"disks":    {Command: []string{"/bin/disks", "facts", "disks"}},
+		"fallback": {Command: []string{"/bin/fallback"}, Inputs: []string{FallbackSecret}},
 	}, r)
 	l.Input = map[string]any{"config": map[string]any{"a": "b"}, "oldConfig": map[string]any{}}
 	l.Inputs = map[string]any{FallbackSecret: "s3cret"}
@@ -269,7 +269,7 @@ func TestCommandFact(t *testing.T) {
 // An override replaces a fact for the delivery and loads nothing.
 func TestOverride(t *testing.T) {
 	r := &fakeRunner{}
-	l := NewLoader(context.Background(), map[string]Definition{"disks": {Command: "/bin/disks"}}, r)
+	l := NewLoader(context.Background(), map[string]Definition{"disks": {Command: []string{"/bin/disks"}}}, r)
 	l.Override("disks", map[string]any{"x": true})
 	if v, err := l.Fact("disks"); err != nil || !reflect.DeepEqual(v, map[string]any{"x": true}) || len(r.argv) != 0 {
 		t.Errorf("disks = %v, %v; ran %v", v, err, r.argv)
@@ -398,7 +398,7 @@ func TestCommandInStore(t *testing.T) {
 		"/nix/store/":                      false,
 		"/usr/bin/disks":                   false,
 	} {
-		if err := (Definition{Command: cmd}).Check(); (err == nil) != ok {
+		if err := (Definition{Command: []string{cmd}}).Check(); (err == nil) != ok {
 			t.Errorf("%s: err = %v", cmd, err)
 		}
 	}
@@ -407,7 +407,7 @@ func TestCommandInStore(t *testing.T) {
 // A command that fails, or prints no JSON, refuses with an error that shows nothing of what it
 // wrote, which can echo the config it reads; what it wrote goes to the journal.
 func TestCommandFailures(t *testing.T) {
-	defs := map[string]Definition{"disks": {Command: "/bin/disks"}}
+	defs := map[string]Definition{"disks": {Command: []string{"/bin/disks"}}}
 	for name, tc := range map[string]struct {
 		r         *fakeRunner
 		want, log string
@@ -446,7 +446,7 @@ func TestCommandWithInputsFails(t *testing.T) {
 	defer log.SetOutput(os.Stderr)
 	echo := `{"config":{"a":"b"},"fallbackSecret":"s3cret"}`
 	r := &fakeRunner{err: &command.Error{Status: "exit 1", Stderr: "cannot read " + echo}}
-	l := NewLoader(context.Background(), map[string]Definition{"fallback": {Command: "/bin/fallback", Inputs: []string{FallbackSecret}}}, r)
+	l := NewLoader(context.Background(), map[string]Definition{"fallback": {Command: []string{"/bin/fallback"}, Inputs: []string{FallbackSecret}}}, r)
 	l.Inputs = map[string]any{FallbackSecret: "s3cret"}
 	if _, err := l.Fact("fallback"); err == nil || err.Error() != "the command failed (exit 1); see the node's journal" {
 		t.Errorf("err = %v", err)

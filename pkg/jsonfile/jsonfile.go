@@ -29,9 +29,9 @@ func Read(path string, v any) error {
 	return nil
 }
 
-// ReadDefs reads the definitions by name that the JSON file at path declares; a missing file
-// declares none. It joins every error check returns, in name order, each prefixed with path, what
-// and the definition's name.
+// ReadDefs reads the definitions by name that the JSON file at path declares, decoded as
+// ParseDefs decodes them; a missing file declares none. It joins every error check returns, in
+// name order, each prefixed with path, what and the definition's name.
 func ReadDefs[T any](path, what string, check func(name string, def T) error) (map[string]T, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -43,10 +43,11 @@ func ReadDefs[T any](path, what string, check func(name string, def T) error) (m
 	return ParseDefs(path, data, what, check)
 }
 
-// ParseDefs is ReadDefs of data, the content of the file at path.
+// ParseDefs is ReadDefs of data, the content of the file at path. It decodes data with
+// DecodeStrict, so a field the image's build writes and T lacks refuses the file.
 func ParseDefs[T any](path string, data []byte, what string, check func(name string, def T) error) (map[string]T, error) {
 	defs := map[string]T{}
-	if err := json.Unmarshal(data, &defs); err != nil {
+	if err := DecodeStrict(data, &defs); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	if defs == nil {

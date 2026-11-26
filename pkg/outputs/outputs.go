@@ -39,10 +39,11 @@ const (
 type Definition struct {
 	// Inputs are the kinds, by name, whose documents the renderer reads.
 	Inputs []string `json:"inputs"`
-	// Render is a program of the image's store with its arguments, which writes the output's
-	// files into $OUT; Check, optional, a program that reads them there and fails to refuse them.
-	Render string `json:"render"`
-	Check  string `json:"check,omitempty"`
+	// Render is a program of the image's store and its arguments, which writes the output's
+	// files into $OUT; Check, optional, a program and its arguments that reads them there and
+	// fails to refuse them.
+	Render []string `json:"render"`
+	Check  []string `json:"check"`
 	// Dir is where services read the files: a link to the directory that holds them.
 	Dir string `json:"dir"`
 	// User, Group and Mode are the owner and the octal mode of the files.
@@ -84,8 +85,8 @@ func Read(path, root string) (map[string]Definition, error) {
 // check refuses a definition of the output name chalkd could not carry out: one checkDefinition
 // refuses, a dir it must not replace or a mode that is no octal number.
 func (d Definition) check(name, root string) error {
-	programs := map[string]string{partRenderer: d.Render}
-	if d.Check != "" {
+	programs := map[string][]string{partRenderer: d.Render}
+	if len(d.Check) > 0 {
 		programs[partCheck] = d.Check
 	}
 	if err := checkDefinition(name, d.Inputs, programs); err != nil {

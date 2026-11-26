@@ -60,6 +60,22 @@ reports it the same way:
   `pkg/check`: the stage, such as `rules` or `validators`, and its message. chalkd tells a refusal
   from a failure with `errors.AsType[*check.Refusal]`.
 
+## Where a definition is checked
+
+The modules write the image's definition files, such as `outputs.json` and `effects.json`, and Go
+decodes them with unknown fields refused. A command in them is a list of the program and its
+arguments. Each check of a definition has one home:
+
+- The module refuses a mistake when the image is evaluated, with a message that names the option.
+- `contract.Load` checks again, as a defence, what chalkd needs to carry a definition out safely:
+  names that form paths, the outputs' dirs, programs by absolute path, and that no program or
+  granted unit reads `Secret` or withheld documents.
+- `chalkos-rules check` checks what needs the image's store and units, such as that a program is
+  of the store and that the units an effect restarts exist.
+
+A value that Nix and Go both need, such as an API group or the pattern of a name, goes into
+`pkg/constants/constants.json`, which `lib/kinds/api.nix` reads and Go embeds.
+
 ## Comments
 
 - Keep comments short and in the present tense. Say what the code is and why, not what changed.

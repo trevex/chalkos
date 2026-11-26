@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 
+	"github.com/trevex/chalkos/pkg/constants"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/tool"
 )
@@ -58,7 +59,7 @@ func (s *Storage) Facts(ctx context.Context, which string, input []byte) ([]byte
 // volume's name, which names its disk too.
 func volumeDisks(config map[string]map[string]map[string]json.RawMessage) (map[string]storage.Ref, error) {
 	refs := map[string]storage.Ref{}
-	for name, raw := range config["storage.chalkos.dev/v1alpha1"]["Volume"] {
+	for name, raw := range config[constants.APIVersion("storage")]["Volume"] {
 		var doc struct {
 			Spec struct {
 				Disk *storage.DiskRef `json:"disk"`

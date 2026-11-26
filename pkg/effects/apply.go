@@ -20,7 +20,7 @@ import (
 type Actions struct {
 	Reload, Restart []string
 	Start           map[string]bool
-	Run             []string
+	Run             [][]string
 	Chalkd          []string
 	Hints           map[string]Hint
 }
@@ -42,7 +42,7 @@ func ActionsOf(defs map[string]Definition, due []string) Actions {
 		for _, unit := range d.Restart {
 			a.Start[unit] = a.Start[unit] || d.Start
 		}
-		if d.Run != "" && !slices.Contains(a.Run, d.Run) {
+		if len(d.Run) > 0 && !slices.ContainsFunc(a.Run, func(run []string) bool { return slices.Equal(run, d.Run) }) {
 			a.Run = append(a.Run, d.Run)
 		}
 		if d.Chalkd != "" {
@@ -62,8 +62,12 @@ func (a Actions) ByHand() string {
 	if len(a.Reload) > 0 {
 		todo = append(todo, "reload "+strings.Join(a.Reload, " "))
 	}
-	for _, command := range a.Run {
-		todo = append(todo, "run "+command)
+	for _, argv := range a.Run {
+		quoted := make([]string, len(argv))
+		for i, arg := range argv {
+			quoted[i] = shellQuote(arg)
+		}
+		todo = append(todo, "run "+strings.Join(quoted, " "))
 	}
 	if len(a.Restart) > 0 {
 		todo = append(todo, "restart "+strings.Join(a.Restart, " "))
@@ -72,6 +76,14 @@ func (a Actions) ByHand() string {
 		return ""
 	}
 	return "; the delivery is applied, so " + strings.Join(todo, " and ") + " by hand once that is fixed, or deliver it again"
+}
+
+// shellQuote puts an argument in single quotes when it is empty or a shell would split or expand it.
+func shellQuote(arg string) string {
+	if arg != "" && !strings.ContainsAny(arg, " \t\n\"'\\$`;&|<>()*?[]{}~#!") {
+		return arg
+	}
+	return "'" + strings.ReplaceAll(arg, "'", `'\''`) + "'"
 }
 
 // ApplyError is what Apply could not do: Err, the failures joined, and ByHand, what the delivery
@@ -154,11 +166,10 @@ func Apply(ctx context.Context, r tool.Runner, a Actions) ([]string, error) {
 			errs = append(errs, fmt.Errorf("reload %s: %w", strings.Join(reload, " "), err))
 		}
 	}
-	for _, command := range a.Run {
-		argv := strings.Fields(command)
+	for _, argv := range a.Run {
 		if _, err := tool.Run(ctx, r, argv[0], argv[1:]...); err != nil {
-			byHand.Run = append(byHand.Run, command)
-			errs = append(errs, fmt.Errorf("run %s: %w", command, err))
+			byHand.Run = append(byHand.Run, argv)
+			errs = append(errs, fmt.Errorf("run %s: %w", strings.Join(argv, " "), err))
 		}
 	}
 	var restarted []string

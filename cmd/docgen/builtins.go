@@ -396,6 +396,15 @@ func stripStore(s string) string {
 	})
 }
 
+// stripArgv is argv with stripStore applied to each argument.
+func stripArgv(argv []string) []string {
+	out := make([]string, len(argv))
+	for i, arg := range argv {
+		out[i] = stripStore(arg)
+	}
+	return out
+}
+
 var (
 	readFact = regexp.MustCompile(`\b(?:facts|oldFacts)\.([a-z][A-Za-z0-9]*)`)
 	readKind = regexp.MustCompile(`\b(?:config|oldConfig)\["[^"]*"\]\.([A-Z][A-Za-z0-9]*)`)
@@ -444,8 +453,8 @@ func writeFacts(b *strings.Builder, anchor, intro string, names, anchored []stri
 		f := img.facts[name]
 		var reads string
 		switch {
-		case f.Command != "":
-			reads = "what " + code(stripStore(f.Command)) + " prints"
+		case len(f.Command) > 0:
+			reads = "what " + code(strings.Join(stripArgv(f.Command), " ")) + " prints"
 			if len(f.Inputs) > 0 {
 				var inputs []string
 				for _, in := range f.Inputs {
@@ -511,7 +520,7 @@ func writeOutputs(b *strings.Builder, anchor, intro string, names, anchored []st
 	for _, name := range names {
 		o := defs[name]
 		check := "no"
-		if o.Check != "" {
+		if len(o.Check) > 0 {
 			check = "yes"
 		}
 		fmt.Fprintf(b, "| `%s`{ #%s } | %s | %s | %s | %s |\n",
@@ -530,15 +539,15 @@ func writeValidators(b *strings.Builder, anchor, intro string, names, anchored [
 	b.WriteString("| Validator | Inputs | Command |\n| --- | --- | --- |\n")
 	for _, name := range names {
 		v := defs[name]
-		command := strings.Join(append(strings.Fields(stripStore(v.Program)), "validate", name), " ")
+		command := strings.Join(append(stripArgv(v.Program), "validate", name), " ")
 		fmt.Fprintf(b, "| `%s`{ #%s } | %s | %s |\n", name, rowAnchor("validator", anchor, name, anchored), strings.Join(codes(v.Inputs), ", "), code(command))
 	}
 }
 
 // renderer describes an output's render command: one of chalkosLib.render's renderers, or a
 // command.
-func renderer(render string) string {
-	words := strings.Fields(stripStore(render))
+func renderer(render []string) string {
+	words := stripArgv(render)
 	switch {
 	case len(words) == 4 && words[0] == "chalkos-render" && words[1] == "template":
 		return "Go template " + code(words[2])
@@ -605,8 +614,8 @@ func writeEffects(b *strings.Builder, anchor, intro string, names, anchored []st
 		if len(e.Reload) > 0 {
 			does = append(does, sentence("reloads "+andList(codes(e.Reload), "and")))
 		}
-		if e.Run != "" {
-			does = append(does, sentence("runs "+code(stripStore(e.Run))))
+		if len(e.Run) > 0 {
+			does = append(does, sentence("runs "+code(strings.Join(stripArgv(e.Run), " "))))
 		}
 		if len(e.Restart) > 0 {
 			s := "restarts " + andList(codes(e.Restart), "and")

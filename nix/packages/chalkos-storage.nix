@@ -5,6 +5,7 @@ buildGoProgram {
   paths = [
     ../../cmd/chalkos-storage
     ../../pkg/atomicfile
+    ../../pkg/constants
     ../../pkg/internal/poll
     ../../pkg/internal/strs
     ../../pkg/jsonfile

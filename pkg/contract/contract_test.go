@@ -34,8 +34,8 @@ func TestLoad(t *testing.T) {
 		FactsFile:       `{"cluster": {"file": "/state/kubernetes/cluster.json"}, "share": {"file": "/state/kubernetes/share.json"}}`,
 		EffectsFile:     string(effects),
 		ServicesFile:    `{"demo.service": {"kinds": ["TimeSync"]}}`,
-		OutputsFile:     `{"demo": {"inputs": ["TimeSync"], "render": "/nix/store/x-demo/bin/render", "dir": "/run/demo", "user": "root", "group": "root", "mode": "0644"}}`,
-		ValidatorsFile:  `{"demo": {"inputs": ["TimeSync"], "program": "/nix/store/x-demo/bin/validate"}}`,
+		OutputsFile:     `{"demo": {"inputs": ["TimeSync"], "render": ["/nix/store/x-demo/bin/render"], "dir": "/run/demo", "user": "root", "group": "root", "mode": "0644"}}`,
+		ValidatorsFile:  `{"demo": {"inputs": ["TimeSync"], "program": ["/nix/store/x-demo/bin/validate"]}}`,
 		DiagnosticsFile: `{"links": {"description": "The node's links.", "command": ["/nix/store/x-iproute2/bin/ip", "-json", "link"], "role": "reader", "timeout": "10s"}}`,
 	})
 	c, err := Load(dir)
@@ -77,9 +77,9 @@ func TestLoadWithoutDefinitions(t *testing.T) {
 // them.
 func TestLoadRefuses(t *testing.T) {
 	dir := newDir(t, map[string]string{
-		FactsFile:       `{"probe": {"command": "probe"}}`,
-		OutputsFile:     `{"demo": {"inputs": ["TimeSync"], "render": "/nix/store/x-demo/bin/render", "dir": "/run/chalkos/other", "user": "root", "group": "root", "mode": "0644"}}`,
-		ValidatorsFile:  `{"demo": {"inputs": [], "program": "/nix/store/x-demo/bin/validate"}}`,
+		FactsFile:       `{"probe": {"command": ["probe"]}}`,
+		OutputsFile:     `{"demo": {"inputs": ["TimeSync"], "render": ["/nix/store/x-demo/bin/render"], "dir": "/run/chalkos/other", "user": "root", "group": "root", "mode": "0644"}}`,
+		ValidatorsFile:  `{"demo": {"inputs": [], "program": ["/nix/store/x-demo/bin/validate"]}}`,
 		DiagnosticsFile: `{"Links": {"description": "The node's links.", "command": ["/nix/store/x-iproute2/bin/ip"], "role": "reader", "timeout": "10s"}}`,
 		ServicesFile:    `[]`,
 	})
@@ -95,6 +95,39 @@ func TestLoadRefuses(t *testing.T) {
 		filepath.Join(dir, ServicesFile) + ": ",
 	} {
 		if !strings.Contains(err.Error(), want) {
+			t.Errorf("err = %v\nwant one with %q", err, want)
+		}
+	}
+}
+
+// TestLoadRefusesWithheldKinds refuses a granted unit, an output and a validator of Addon, a kind
+// the schemas withhold, whose documents and the values their secretRefs name stay with chalkd, and
+// a unit granted Secret or of a name that is no unit's.
+func TestLoadRefusesWithheldKinds(t *testing.T) {
+	dir := newDir(t, map[string]string{
+		ServicesFile:   `{"demo": {"kinds": ["TimeSync", "Addon"]}, "secrets": {"kinds": ["Secret"]}, "..": {"kinds": []}}`,
+		OutputsFile:    `{"demo": {"inputs": ["Addon"], "render": ["/nix/store/x-demo/bin/render"], "dir": "/run/demo", "user": "root", "group": "root", "mode": "0644"}}`,
+		ValidatorsFile: `{"demo": {"inputs": ["Addon"], "program": ["/nix/store/x-demo/bin/validate"]}}`,
+	})
+	_, err := Load(dir)
+	for _, want := range []string{
+		filepath.Join(dir, ServicesFile) + ": service ..: the name is no unit's name",
+		filepath.Join(dir, ServicesFile) + ": service secrets: it is granted Secret documents",
+	} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("err = %v\nwant one with %q", err, want)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, ServicesFile), []byte(`{"demo": {"kinds": ["TimeSync", "Addon"]}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err = Load(dir)
+	for _, want := range []string{
+		filepath.Join(dir, ServicesFile) + ": service demo: the image withholds Addon documents",
+		filepath.Join(dir, OutputsFile) + ": output demo: the image withholds Addon documents",
+		filepath.Join(dir, ValidatorsFile) + ": validator demo: the image withholds Addon documents",
+	} {
+		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("err = %v\nwant one with %q", err, want)
 		}
 	}
@@ -133,7 +166,7 @@ func TestRulesThatDoNotCompile(t *testing.T) {
 // TestLoadRenderRoot checks the outputs' dirs against the root a node renders them below.
 func TestLoadRenderRoot(t *testing.T) {
 	dir := newDir(t, map[string]string{
-		OutputsFile: `{"demo": {"inputs": ["TimeSync"], "render": "/nix/store/x-demo/bin/render", "dir": "/tmp/run/chalkos/outputs/demo", "user": "root", "group": "root", "mode": "0644"}}`,
+		OutputsFile: `{"demo": {"inputs": ["TimeSync"], "render": ["/nix/store/x-demo/bin/render"], "dir": "/tmp/run/chalkos/outputs/demo", "user": "root", "group": "root", "mode": "0644"}}`,
 	})
 	if _, err := Load(dir); err == nil {
 		t.Error("an output's dir outside /run: no error")
@@ -177,5 +210,33 @@ func TestZeroContractHasNoRules(t *testing.T) {
 	effects, err := c.EffectRules()
 	if err != nil || len(effects) != 0 {
 		t.Errorf("EffectRules = %v, %v", effects, err)
+	}
+}
+
+// TestLoadRefusesWithheldKindOfOneVersion refuses an output of Addon while one of the schemas of
+// that name withholds it, also when the schema of another version, read after it, does not.
+func TestLoadRefusesWithheldKindOfOneVersion(t *testing.T) {
+	dir := newDir(t, map[string]string{
+		OutputsFile: `{"demo": {"inputs": ["Addon"], "render": ["/nix/store/x-demo/bin/render"], "dir": "/run/demo", "user": "root", "group": "root", "mode": "0644"}}`,
+	})
+	raw, err := os.ReadFile(filepath.Join(dir, SchemasDir, "kubernetes.chalkos.dev_v1alpha1_Addon.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sch map[string]any
+	if err := json.Unmarshal(raw, &sch); err != nil {
+		t.Fatal(err)
+	}
+	sch["properties"].(map[string]any)["apiVersion"] = map[string]any{"const": "kubernetes.chalkos.dev/v1alpha2"}
+	kind := sch["x-chalkos-kind"].(map[string]any)
+	kind["version"] = "v1alpha2"
+	kind["withheld"] = false
+	raw, _ = json.Marshal(sch)
+	if err := os.WriteFile(filepath.Join(dir, SchemasDir, "kubernetes.chalkos.dev_v1alpha2_Addon.json"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(dir, OutputsFile) + ": output demo: the image withholds Addon documents"
+	if _, err := Load(dir); err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("err = %v\nwant one with %q", err, want)
 	}
 }

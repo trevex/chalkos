@@ -79,7 +79,8 @@ layer's modules instead.
 1. Declare the kind in a file of `modules/node/kinds/builtin/`, as
    `builtin groups.<group> // { description = ...; spec = { ... }; }`, the way `time.nix` declares
    `TimeSync`. A new file goes into the imports of `modules/node/kinds/builtin/default.nix`, and a
-   new API group into `groups` in `lib/kinds/api.nix`.
+   new API group into `groups` in `pkg/constants/constants.json`, which `lib/kinds/api.nix` and
+   the Go code read.
 2. Use the kind in the module of its area: an output that renders from it, an effect, or a unit
    that reads it. `modules/node/time.nix` renders chrony's sources from `TimeSync`.
 3. When Go code reads the kind, translate it in `pkg/config`. Add its schema to
@@ -147,8 +148,8 @@ A layer is a set of NixOS modules and a Go plugin in each program that serves it
    `chalkos.layers.<layer> = "";`, which writes the marker `/etc/chalkos/layers/<layer>`.
 3. Export the layer in `lib/layers.nix`, which the flake gives as `nixosModules.<layer>`. Its
    entry sets `chalkos.<layer>.enable = true`.
-4. Declare its kinds in its modules, with a new API group in `lib/kinds/api.nix`. Give each
-   feature its own `chalkos.<layer>.<feature>.enable`, as
+4. Declare its kinds in its modules, with a new API group in
+   `pkg/constants/constants.json`. Give each feature its own `chalkos.<layer>.<feature>.enable`, as
    [Code conventions](conventions.md#features-can-be-left-out) says.
 5. Write its API in `api/chalkos/<layer>/v1/<layer>.proto`, and follow
    [Add a node API method](#add-a-node-api-method) for each method.

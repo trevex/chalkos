@@ -1,14 +1,17 @@
 package config
 
-import "github.com/trevex/chalkos/pkg/storage"
+import (
+	"github.com/trevex/chalkos/pkg/constants"
+	"github.com/trevex/chalkos/pkg/storage"
+)
 
-// API versions and kinds chalkos declares itself.
-const (
-	CoreAPI     = "chalkos.dev/v1alpha1"
-	StorageAPI  = "storage.chalkos.dev/v1alpha1"
-	TimeAPI     = "time.chalkos.dev/v1alpha1"
-	NetworkdAPI = "networkd.chalkos.dev/v1alpha1"
-	OCIAPI      = "oci.chalkos.dev/v1alpha1"
+// API versions of the kinds chalkos declares itself.
+var (
+	CoreAPI     = constants.APIVersion("core")
+	StorageAPI  = constants.APIVersion("storage")
+	TimeAPI     = constants.APIVersion("time")
+	NetworkdAPI = constants.APIVersion("networkd")
+	OCIAPI      = constants.APIVersion("oci")
 )
 
 // SecretRef names a key of a Secret document.

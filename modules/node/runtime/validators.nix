@@ -14,17 +14,23 @@ let
     kindProblems
     plainName
     attrsetText
+    argv
     ;
 
-  # The command of a validator's program: a command as it is, or chalkos-render's run of a jq
-  # program of chalkosLib.validate.jq, which prints what the program makes of the documents and
-  # takes the "validate <name>" chalkd adds. null for anything else.
-  programCommand =
+  # The argv of a validator's program: that of a command, or chalkos-render's run of a jq program
+  # of chalkosLib.validate.jq, which prints what the program makes of the documents and takes the
+  # "validate <name>" chalkd adds. null for anything else.
+  programArgv =
     p:
-    if lib.isString p then
-      p
+    if lib.isString p || lib.isList p then
+      argv p
     else if lib.attrNames p == [ "jq" ] then
-      "${lib.getExe pkgs.chalkos.chalkos-render} validate-jq ${lib.getExe pkgs.jq} ${p.jq}"
+      [
+        (lib.getExe pkgs.chalkos.chalkos-render)
+        "validate-jq"
+        (lib.getExe pkgs.jq)
+        "${p.jq}"
+      ]
     else
       null;
 
@@ -64,12 +70,12 @@ let
     ) "${where}: a validator's name is lower-case letters, digits and dashes"
     ++ kindProblems config.chalkos.kinds "${where}.inputs" v.inputs
     ++
-      lib.optional (programCommand v.program == null)
-        "${where}.program: a validator's program is a command or chalkosLib.validate.jq, not ${attrsetText v.program}";
+      lib.optional (programArgv v.program == null)
+        "${where}.program: a validator's program is a command, a list of a program and its arguments or chalkosLib.validate.jq, not ${attrsetText v.program}";
   # A validator as chalkd reads it.
   validatorJSON = _: v: {
     inherit (v) inputs;
-    program = programCommand v.program;
+    program = programArgv v.program;
   };
   validatorsJSON = refuse (lib.concatLists (lib.mapAttrsToList validatorProblems validators)) (
     builtins.toJSON (lib.mapAttrs validatorJSON validators)

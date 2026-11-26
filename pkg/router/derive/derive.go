@@ -5,9 +5,9 @@
 //
 // chalkos-render renders the router's files from the model and runs Validate as chalkos-render
 // validate router; chalkctl runs Validate in-process. Every router image carries chalkos-render,
-// so the package takes the standard library alone, besides refusals and jsonfile. A refusal is a
-// *refusals.Error naming the document and field; a guard of what the schemas and rules refuse
-// earlier is an internal error, as InternalErrorf makes it.
+// so the package takes the standard library alone, besides refusals, jsonfile and constants. A
+// refusal is a *refusals.Error naming the document and field; a guard of what the schemas and
+// rules refuse earlier is an internal error, as InternalErrorf makes it.
 package derive
 
 import (
@@ -17,11 +17,12 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/trevex/chalkos/pkg/constants"
 	"github.com/trevex/chalkos/pkg/refusals"
 )
 
 // API is the apiVersion of the router layer's kinds.
-const API = "router.chalkos.dev/v1alpha1"
+var API = constants.APIVersion("router")
 
 // Kinds returns the kinds whose documents Build reads: the router layer's and networkd's
 // Network. An image declares those of its router features; the validator router reads the

@@ -13,6 +13,7 @@ buildGoProgram {
     ../../pkg/api
     ../../pkg/arch
     ../../pkg/atomicfile
+    ../../pkg/constants
     ../../pkg/chalkd
     ../../pkg/check
     ../../pkg/client
