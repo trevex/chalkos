@@ -53,7 +53,14 @@ in
         message = "modules/node/base/nftables.nix: nixpkgs's nftables ruleset includes deletions other than the module's; update the module to nixpkgs's nftables.nix";
       }
     ];
-    systemd.services.nftables.serviceConfig = chalkosLib.internal.noExec // {
+    # nft loads the tables through netlink, which takes CAP_NET_ADMIN, and the unit writes the
+    # deletions to /run/nftables, its runtime directory.
+    systemd.services.nftables.serviceConfig = chalkosLib.sandbox.hardened // {
+      CapabilityBoundingSet = [ "CAP_NET_ADMIN" ];
+      RestrictAddressFamilies = [
+        "AF_UNIX"
+        "AF_NETLINK"
+      ];
       ExecStart = lib.mkForce [
         ensure
         rules

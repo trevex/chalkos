@@ -31,6 +31,34 @@ let
     NoExecPaths = [ "/" ];
     ExecPaths = [ "/nix/store" ];
   };
+  # The sandbox of a service: no capabilities, Unix sockets alone, no new privileges, a read-only
+  # system, no devices, no home and a private /tmp, kernel settings, modules, logs, cgroups, clock
+  # and host name out of reach, no namespaces, realtime scheduling or set-user-ID files, the
+  # system calls of a system service of the native architecture, and programs from the store
+  # alone. A unit widens CapabilityBoundingSet and RestrictAddressFamilies to what it needs, and
+  # names the paths it writes in ReadWritePaths.
+  hardened = noExec // {
+    CapabilityBoundingSet = [ "" ];
+    RestrictAddressFamilies = [ "AF_UNIX" ];
+    NoNewPrivileges = true;
+    ProtectSystem = "strict";
+    ProtectHome = true;
+    PrivateTmp = true;
+    PrivateDevices = true;
+    ProtectKernelTunables = true;
+    ProtectKernelModules = true;
+    ProtectKernelLogs = true;
+    ProtectControlGroups = true;
+    ProtectClock = true;
+    ProtectHostname = true;
+    RestrictNamespaces = true;
+    RestrictRealtime = true;
+    RestrictSUIDSGID = true;
+    LockPersonality = true;
+    MemoryDenyWriteExecute = true;
+    SystemCallArchitectures = "native";
+    SystemCallFilter = [ "@system-service" ];
+  };
 in
 {
   types = {
@@ -98,6 +126,12 @@ in
   restartOn = effectOn "restart";
   reloadOn = effectOn "reload";
 
+  # The sandboxes of units: noExec lets programs run from the store alone, and hardened adds a
+  # service's sandbox without capabilities, which a unit widens as it needs.
+  sandbox = {
+    inherit noExec hardened;
+  };
+
   # What chalkos's own modules share, which extensions do not call.
   internal =
     refuseLib
@@ -107,7 +141,6 @@ in
         api
         kindTypes
         declaredKinds
-        noExec
         ;
       # The version of secrets.pub.json chalkos reads.
       secretsVersion = import ./secrets-version.nix;
@@ -151,12 +184,13 @@ in
             description = "Whether ${layer} images carry ${carries}${accepts}. Only with the ${layer} layer; ${how}";
           };
         };
-      # The sandbox of a root unit that needs no capability and no network: Unix sockets alone,
-      # which stay reachable on a read-only system and from the private network namespace, as it
-      # hides abstract sockets alone; no home; kernel tunables, modules and cgroups out of reach;
-      # and the system calls of a system service of the native architecture. Programs run from the
-      # store alone.
-      unprivileged = noExec // {
+      # The sandbox of a unit that runs as root but needs no capability and no network: Unix
+      # sockets alone, which stay reachable on a read-only system and from the private network
+      # namespace, as it hides abstract sockets alone; no home; kernel tunables, modules and
+      # cgroups out of reach; and the system calls of a system service of the native
+      # architecture. Programs run from the store alone. As root, the unit may still ask systemd
+      # over its socket to start any unit.
+      rootNoCaps = noExec // {
         CapabilityBoundingSet = "";
         NoNewPrivileges = true;
         PrivateNetwork = true;
@@ -171,31 +205,6 @@ in
         LockPersonality = true;
         RestrictRealtime = true;
         SystemCallArchitectures = "native";
-      };
-      # The sandbox of a service that talks to the network: no new privileges, a read-only
-      # system, no devices, no home and a private /tmp, kernel settings, modules, logs, cgroups,
-      # clock and host name out of reach, no namespaces, realtime scheduling or set-user-ID files,
-      # the system calls of a system service of the native architecture, and programs from the
-      # store alone. A unit adds its own capabilities and address families.
-      hardened = noExec // {
-        NoNewPrivileges = true;
-        ProtectSystem = "strict";
-        ProtectHome = true;
-        PrivateTmp = true;
-        PrivateDevices = true;
-        ProtectKernelTunables = true;
-        ProtectKernelModules = true;
-        ProtectKernelLogs = true;
-        ProtectControlGroups = true;
-        ProtectClock = true;
-        ProtectHostname = true;
-        RestrictNamespaces = true;
-        RestrictRealtime = true;
-        RestrictSUIDSGID = true;
-        LockPersonality = true;
-        MemoryDenyWriteExecute = true;
-        SystemCallArchitectures = "native";
-        SystemCallFilter = [ "@system-service" ];
       };
       # The type of a program option: a command, a package, whose path is the command, or an
       # attribute set of a builder, such as chalkosLib.render's, which the option's module checks.

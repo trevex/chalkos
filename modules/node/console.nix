@@ -69,7 +69,7 @@ in
       # datagram to the socket each request names). As root it owns the journal's files,
       # tty1 and those sockets, which systemd creates with mode 0600 for root; the asking
       # process takes answers of root and of its own user. It writes no file.
-      serviceConfig = chalkosLib.internal.unprivileged // {
+      serviceConfig = chalkosLib.internal.rootNoCaps // {
         ExecStart = lib.getExe pkgs.chalkos.chalkos-console;
         Restart = "always";
         RestartSec = 1;

@@ -11,6 +11,7 @@
 # cannot write /var/lib, so it cannot put another directory in its place; chalkd reads the records
 # as root and removes none.
 {
+  chalkosLib,
   config,
   lib,
   pkgs,
@@ -19,7 +20,7 @@
 }:
 let
   cfg = config.chalkos.router.dhcp;
-  inherit (routerLib) hardened;
+  inherit (chalkosLib.sandbox) hardened;
   kinds = routerLib.kinds ./kinds.nix;
   inherit (pkgs.chalkos) kea;
   dir = config.chalkos.outputs.kea.dir;

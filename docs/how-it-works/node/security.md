@@ -251,7 +251,8 @@ The `kvm` platform's images run the QEMU guest agent, which a hypervisor reaches
 virtio-serial channel. It answers only `guest-sync-delimited`, `guest-sync`, `guest-ping`,
 `guest-info`, `guest-get-osinfo`, `guest-get-host-name`, `guest-get-time`, `guest-get-timezone`,
 `guest-network-get-interfaces` and `guest-shutdown`. It never runs commands, or reads or writes
-files, for the host, so the hypervisor's admin gets no shell on the node through it.
+files, for the host, so the hypervisor's admin gets no shell on the node through it. It runs
+without capabilities: systemd, which it asks to power the node off, does the rest.
 
 !!! note "With the Kubernetes layer, a privileged pod debugs a node"
 
@@ -280,7 +281,8 @@ chalkos's units also get a mount namespace in which only the store allows execut
 systemd's `NoExecPaths=/` and `ExecPaths=/nix/store`. These are the oneshots that load the
 config, apply Links, decide a boot's health and prepare Kubernetes and containerd; the console
 and chalkd's serial log; the NixOS firewall, chrony and FRR; the cluster registry; the router's
-firewall, Kea, Unbound and dnsmasq;
+firewall, Kea, Unbound and dnsmasq; the QEMU guest agent, which also runs systemd's power
+commands from a `/sbin` of its own;
 and the transient units in which chalkd runs renderers, checks, validators, command facts,
 diagnostics and an image's checker. Even an exec path or a Volume with `spec.exec` does not let
 them run a program from outside the store.
@@ -289,6 +291,23 @@ A unit whose mounts the host must see gets no mount namespace of its own, so the
 by the mount options alone: chalkd, containerd, the kubelet and `chalkos-nat64.service`, which
 mounts the NAT64 instances' network namespaces on `/run/netns`. A unit of chalkos's modules that
 is neither on that list nor runs from the store alone fails chalkos's own checks.
+
+## Units keep the capabilities they need
+
+Most of chalkos's units run with a capability bounding set of what they need, in a sandbox that
+also makes the system read-only and hides devices, home directories and kernel settings. The
+sandbox starts from no capabilities and Unix sockets alone, and a unit names what it adds.
+FRR's daemons start as root, keep the capabilities each one asks for and run as the `frr` user;
+`frr.service`, which fills their config in, keeps `CAP_DAC_OVERRIDE` alone. The NixOS firewall
+and the router's firewall keep `CAP_NET_ADMIN`, and the oneshots that write containerd's
+registry hosts and settings and the kubelet's registry credentials keep none.
+
+Some units keep every capability, each for a reason that chalkos's checks record: chalkd, the
+oneshots that apply the config at boot, decide a boot's health, apply Links, pass DHCP's time
+servers to chrony, prepare Kubernetes and its control plane's ports and make NVIDIA's devices;
+the kubelet; containerd, less `CAP_SYS_MODULE` and `CAP_MAC_ADMIN`; and systemd's own units. A
+unit of chalkos's modules that has no bounding set and is not on that list fails chalkos's own
+checks.
 
 ## Kernel modules load from the image alone
 
@@ -393,6 +412,9 @@ runs no console, and chalkd serves no console socket.
   own, as the host must see the mounts they make, so `NoExecPaths` does not apply to them. They
   are bound by the mount options alone. systemd's own units, and those of NixOS modules an
   extension adds, keep the sandboxes they come with.
+- A unit that runs as root without capabilities can still ask systemd, over its socket, to start
+  any unit. chalkos's units that run so, such as the router's reconcilers, call systemctl for
+  what they do.
 - With the Kubernetes layer, a `Registry`'s credentials serve the image pulls of every pod on the
   node. chalkd keeps them in a `credentials.json` that only root reads, but the kubelet hands them
   to containerd for any pod whose image names the `Registry`'s host, and containerd sends them to

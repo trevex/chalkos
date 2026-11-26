@@ -407,8 +407,10 @@ The image needs bird itself, reading the rendered file. Add the service to the b
 
 `bird.conf` exists on the node alone, so the NixOS module's check of the config is off, and the
 output's check takes its place. The include of the output's `dir` names the output by its option,
-so a misspelled name fails the evaluation. The service's settings run `bird-credentials`, which
-turns the sessions' password into bird constants. Add it to the `let` bindings:
+so a misspelled name fails the evaluation. The service runs in chalkos's sandbox,
+[`chalkosLib.sandbox.hardened`](../reference/extension-api.md#chalkoslibsandboxhardened), with
+the capabilities nixpkgs grants bird. Its settings run `bird-credentials`, which turns the
+sessions' password into bird constants. Add it to the `let` bindings:
 
 ```nix
 --8<-- "examples/bgp-extension/extensions/bgp.nix:credentials"

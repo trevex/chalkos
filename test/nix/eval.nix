@@ -2386,7 +2386,8 @@ in
   };
   # The guest agent answers what the host asks about the node and shuts it down; it runs no
   # commands and touches no files. It shuts the node down with systemd's commands, which it runs
-  # from /sbin, a tmpfs of its own: when an image has links below /usr, /sbin leads to /usr/sbin.
+  # from /sbin, a read-only tmpfs of its own: when an image has links below /usr, /sbin leads to
+  # /usr/sbin.
   testGuestAgentRestricted =
     let
       config = workerImages.worker-kvm.nixos.config;
@@ -2417,7 +2418,7 @@ in
           "reboot"
           "shutdown"
         ];
-        sbinTmpfs = "/sbin";
+        sbinTmpfs = "/sbin:ro";
       };
     };
   # A kvm image finds its disks at boot: the initrd loads virtio's PCI transport and its block and
@@ -4284,7 +4285,7 @@ in
                 { routerLib, ... }:
                 {
                   environment.etc."chalkos-test/router-lib.json".text = builtins.toJSON {
-                    hardened = routerLib.hardened.NoNewPrivileges;
+                    kinds = routerLib ? kinds;
                     types = routerLib.types ? interface;
                     feature = routerLib ? feature;
                     declared = routerLib.declared [
@@ -4302,7 +4303,7 @@ in
       };
     expected = {
       router = {
-        hardened = true;
+        kinds = true;
         types = true;
         feature = true;
         declared = [ "NAT64" ];

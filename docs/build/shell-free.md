@@ -181,20 +181,38 @@ systemd.services.myapp = {
 chalkos's own modules do the same: the nftables unit runs `touch`, `cp` and `rm` in place of
 NixOS's three one-line scripts.
 
-chalkos's units also run programs from the store alone. systemd's `NoExecPaths=/` and
-`ExecPaths=/nix/store` give each a mount namespace in which no other file system allows
-execution, not even an exec path. A unit of an extension that runs nothing from elsewhere can do
-the same:
+chalkos's units also run programs from the store alone. `chalkosLib.sandbox.noExec` sets
+systemd's `NoExecPaths=/` and `ExecPaths=/nix/store`, which give the unit a mount namespace in
+which no other file system allows execution, not even an exec path. A unit of an extension that
+runs nothing from elsewhere can do the same:
 
 ```nix
-systemd.services.disk-report.serviceConfig = {
-  NoExecPaths = [ "/" ];
-  ExecPaths = [ "/nix/store" ];
+systemd.services.disk-report.serviceConfig = chalkosLib.sandbox.noExec;
+```
+
+Leave it out of a unit whose mounts the host must see, such as one that runs `ip netns add`:
+the mount namespace keeps its mounts from the host.
+
+A service that needs no devices, such as a network daemon, starts from
+[`chalkosLib.sandbox.hardened`](../reference/extension-api.md#chalkoslibsandboxhardened): `noExec`,
+no capabilities, Unix sockets alone, a read-only system and the rest the reference lists. The
+unit widens it to what the service needs:
+
+```nix
+systemd.services.myapp.serviceConfig = chalkosLib.sandbox.hardened // {
+  ExecStart = "${pkgs.myapp}/bin/myapp --listen [::]:443";
+  DynamicUser = true;
+  StateDirectory = "myapp";
+  CapabilityBoundingSet = [ "CAP_NET_BIND_SERVICE" ];
+  AmbientCapabilities = [ "CAP_NET_BIND_SERVICE" ];
+  RestrictAddressFamilies = [ "AF_UNIX" "AF_INET" "AF_INET6" ];
 };
 ```
 
-Leave both out of a unit whose mounts the host must see, such as one that runs `ip netns add`:
-the mount namespace keeps its mounts from the host.
+A unit that a NixOS module defines may set some of these already. NixOS refuses two different
+values of one setting and joins two lists, which would add the module's capabilities to the
+preset's. `lib.mapAttrs (_: lib.mkForce)` over the preset and the unit's own values replaces the
+module's, as the bird unit of the [BGP extension](../guides/bgp-extension.md) does.
 
 An effect's `run` and a diagnostic's `command` take a program and its arguments too. chalkd splits
 `run` on spaces, with no shell quoting, and runs it directly, so it can neither redirect nor

@@ -125,21 +125,16 @@ let
         wantedBy = [ "multi-user.target" ];
         path = [ config.systemd.package ];
         serviceConfig =
-          routerLib.hardened
+          chalkosLib.sandbox.hardened
           // {
             Type = "oneshot";
             RemainAfterExit = true;
             ExecStart = reconcile;
             ExecReload = reconcile;
             ExecStop = "${reconcile} stop";
-            CapabilityBoundingSet = [ "" ];
-            RestrictAddressFamilies = [ "AF_UNIX" ];
           }
           // lib.optionalAttrs (groups != [ ]) { SupplementaryGroups = groups; };
       };
-
-    # The sandbox of a unit of the router.
-    inherit (chalkosLib.internal) hardened;
   };
 in
 routerLib

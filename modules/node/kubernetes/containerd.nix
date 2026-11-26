@@ -186,7 +186,10 @@ in
       wantedBy = [ "containerd.service" ];
       before = [ "containerd.service" ];
       after = [ "chalkos-config.service" ];
-      serviceConfig = chalkosLib.internal.noExec // {
+      # It reads the Cluster document and writes below /run/containerd alone, which needs no
+      # capability.
+      serviceConfig = chalkosLib.sandbox.hardened // {
+        ReadWritePaths = [ "/run/containerd" ];
         Type = "oneshot";
         RemainAfterExit = true;
         ExecStart = "${lib.getExe pkgs.chalkos.chalkd} kubernetes containerd-config ${clusterSettings}";
@@ -214,8 +217,12 @@ in
 
     environment.etc."cni/net.d".source = confDir;
 
+    # The CNI config's directory, and containerd's runtime directory, which systemd makes too when
+    # containerd starts: chalkos-containerd-config and chalkos-registry-mirrors write to it before,
+    # in sandboxes that write to existing directories alone.
     systemd.tmpfiles.rules = [
       "d ${confDir} 0755 root root -"
+      "d /run/containerd 0755 root root -"
     ];
   };
 }

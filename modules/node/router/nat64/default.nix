@@ -3,6 +3,7 @@
 # chalkos-nat64.service, which brings Jool's instances, their namespaces and links and the routes
 # to them to the rendered files at boot and on each delivery that changes them.
 {
+  chalkosLib,
   config,
   lib,
   pkgs,
@@ -11,7 +12,7 @@
 }:
 let
   cfg = config.chalkos.router.nat64;
-  inherit (routerLib) hardened;
+  inherit (chalkosLib.sandbox) hardened;
   kinds = routerLib.kinds ./kinds.nix;
   jool = pkgs.jool-cli;
   # chalkd router nat64 brings Jool's instances to the output jool (<name>.json is Jool's file,

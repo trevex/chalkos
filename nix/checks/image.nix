@@ -31,6 +31,30 @@ let
       without: lib.nameValuePair (lib.concatStringsSep "-" without) (testLib.routerWithout without)
     ) (map lib.singleton features ++ [ features ])
   );
+  # The images whose units the unit checks read: the worker, the router, the installer and the
+  # Kubernetes images with each feature that is off by default.
+  unitImages = {
+    inherit worker router;
+    installer = testing.installer.nixos;
+  }
+  // lib.mapAttrs (_: image: image.nixos) checkLib.featureImages;
+  # The enabled units that chalkos's modules, the node modules, the platforms and the installer,
+  # define or change in each of unitImages. The test images' modules are left out.
+  ownUnits = lib.mapAttrs (
+    _: image:
+    lib.filter (name: image.config.systemd.services.${name}.enable or false) (
+      lib.unique (
+        lib.concatMap (
+          d:
+          lib.optionals (
+            lib.hasPrefix "${self}/modules/" d.file && !lib.hasPrefix "${self}/modules/testing/" d.file
+          ) (lib.attrNames d.value)
+        ) image.options.systemd.services.definitionsWithLocations
+      )
+    )
+  ) unitImages;
+  # The services of the image of unitImages called name.
+  servicesOf = name: unitImages.${name}.config.systemd.services;
 in
 {
   # The worker's and the router's kernel module trees, and one with the gpu group: a module outside
@@ -518,15 +542,16 @@ in
   # /dev/shm, the outputs' tmpfs and the ESP. /dev, which holds the devices, is noexec. The
   # worker's exec paths, containerd's and the kubelet's roots, reach chalkos-storage's generator,
   # which mounts them, and containerd and the kubelet wait for them; the router has none. Every
-  # unit that chalkos's node modules define or change runs programs from the store alone, through
-  # chalkosLib.internal.noExec, or is one of mayExec, with the reason it may not.
+  # unit that chalkos's modules define or change in the images of the unit checks runs programs
+  # from the store alone, through chalkosLib.sandbox.noExec, or is one of mayExec, with the reason
+  # it may not.
   noexec-mounts =
     let
       images = {
         worker = worker.config;
         router = router.config;
       };
-      # The units of chalkos's node modules that may run programs from outside the store, by the
+      # The units of chalkos's modules that may run programs from outside the store, by the
       # reason: a unit whose mounts the host must see can have no mount namespace of its own, and
       # systemd's units keep the sandboxes systemd gives them.
       mayExec = {
@@ -543,32 +568,19 @@ in
         s:
         s.serviceConfig.NoExecPaths or null == [ "/" ]
         && s.serviceConfig.ExecPaths or null == [ "/nix/store" ];
-      modules = "${self}/modules/node/";
-      # The enabled units chalkos's node modules define or change in the image.
-      ownUnits =
-        image:
-        lib.filter (name: image.config.systemd.services.${name}.enable or false) (
-          lib.unique (
-            lib.concatMap (
-              d: lib.optionals (lib.hasPrefix modules d.file) (lib.attrNames d.value)
-            ) image.options.systemd.services.definitionsWithLocations
-          )
-        );
-      units = lib.mapAttrs (_: ownUnits) {
-        inherit worker router;
-      };
+      units = ownUnits;
       unitFailures =
         name: own:
         map (
           unit:
-          "the ${name}'s ${unit} may run programs from outside the store: give it chalkosLib.internal.noExec, or list it in mayExec in nix/checks/image.nix with the reason"
-        ) (lib.filter (unit: !(mayExec ? ${unit}) && !noExec images.${name}.systemd.services.${unit}) own);
+          "the ${name}'s ${unit} may run programs from outside the store: give it chalkosLib.sandbox.noExec, or list it in mayExec in nix/checks/image.nix with the reason"
+        ) (lib.filter (unit: !(mayExec ? ${unit}) && !noExec (servicesOf name).${unit}) own);
       allOwn = lib.unique (lib.concatLists (lib.attrValues units));
       stale = lib.filter (
         unit:
         !lib.elem unit allOwn
-        || lib.any (c: c.systemd.services ? ${unit} && noExec c.systemd.services.${unit}) (
-          lib.attrValues images
+        || lib.any (name: lib.elem unit units.${name} && noExec (servicesOf name).${unit}) (
+          lib.attrNames units
         )
       ) (lib.attrNames mayExec);
       fstabLine =
@@ -666,6 +678,95 @@ in
       done
       ! grep -qaF -- --exec-path ${images.router.systemd.generators.chalkos-storage} \
         || fail "the router's storage generator mounts exec paths"
+      touch $out
+    '';
+
+  # Every unit that chalkos's modules define or change in the images of the unit checks keeps a
+  # capability bounding set short of the full one, as chalkosLib.sandbox.hardened starts it, or is
+  # one of mayRunAsFullRoot, with the reason it keeps every capability. A unit without
+  # CapabilityBoundingSet, or with one of the capabilities it drops, ~CAP_..., keeps the full set.
+  # The check's own probe units show that it refuses those, an empty list and a ~ after a space
+  # included, and accepts them once listed.
+  unit-sandbox =
+    let
+      # The units of chalkos's modules that keep every capability, by the reason.
+      mayRunAsFullRoot = {
+        chalkd = "the node agent: it mounts volumes, lays out and formats disks, enrols TPM2 key slots, writes EFI variables and the ESP and sets the host name";
+        chalkos-config = "applies the config recorded on STATE at boot, before the units that read it, and runs every layer's part of that, which writes where the layer's services read";
+        chalkos-health = "decides the boot's health: it asks chalkd, reads the ESP and EFI variables, records a failed boot on STATE and reboots; the capabilities this takes are not yet tested on a node";
+        chalkos-links = "has udev read its rules again and replays the network devices' add events through /sys, which a sandbox's read-only /sys stops; the capabilities this takes are not yet tested on a node";
+        chalkos-chrony-dhcp = "runs chronyc, which binds its socket in chronyd's directory, and ignores its failure, so a missing capability would go unnoticed";
+        chalkos-kubernetes = "prepares the node's Kubernetes certificates, kubeconfigs and kubelet flags and fills the firewall's VXLAN table; the capabilities this takes are not yet tested on a node";
+        chalkos-controlplane = "makes etcd's directory and loads or deletes the control plane's nftables table; the capabilities this takes are not yet tested on a node";
+        chalkos-nvidia-cdi = "makes NVIDIA's device nodes, and NVML, which runs as root, those of each GPU";
+        containerd = "runs the containers, privileged ones among them, with every capability its bounding set keeps; it drops CAP_SYS_MODULE and CAP_MAC_ADMIN";
+        kubelet = "mounts the pods' volumes and manages their cgroups and devices";
+        systemd-networkd = "systemd's; the router gives it credentials alone";
+        systemd-sysctl = "systemd's; the router orders it alone";
+        systemd-bless-boot = "systemd's; chalkos names its ESP alone";
+      };
+      # Whether the unit keeps every capability: an empty list writes no CapabilityBoundingSet=, and
+      # systemd reads a ~ after leading whitespace too.
+      fullRoot =
+        s:
+        let
+          caps = s.serviceConfig.CapabilityBoundingSet or null;
+        in
+        caps == null || caps == [ ] || lib.any (c: lib.hasPrefix "~" (lib.trim c)) (lib.toList caps);
+      # The failures of the units of an image, called name, of the services given, by the table.
+      failures =
+        table: services: name: units:
+        map (
+          unit:
+          "the ${name}'s ${unit} keeps every capability: give it a CapabilityBoundingSet, as chalkosLib.sandbox.hardened does, or list it in mayRunAsFullRoot in nix/checks/image.nix with the reason"
+        ) (lib.filter (unit: !(table ? ${unit}) && fullRoot services.${unit}) units);
+      stale = lib.filter (
+        unit:
+        !lib.any (name: lib.elem unit ownUnits.${name} && fullRoot (servicesOf name).${unit}) (
+          lib.attrNames ownUnits
+        )
+      ) (lib.attrNames mayRunAsFullRoot);
+      probe = {
+        unbound.serviceConfig = { };
+        dropping.serviceConfig.CapabilityBoundingSet = "~CAP_SYS_MODULE";
+        empty.serviceConfig = self.lib.sandbox.hardened;
+        emptyList.serviceConfig.CapabilityBoundingSet = [ ];
+        spacedDropping.serviceConfig.CapabilityBoundingSet = [ " ~CAP_SYS_MODULE" ];
+        bound.serviceConfig.CapabilityBoundingSet = [ "CAP_NET_ADMIN" ];
+      };
+      probeFailures = table: failures table probe "probe" (lib.attrNames probe);
+      all =
+        lib.concatLists (
+          lib.mapAttrsToList (name: failures mayRunAsFullRoot (servicesOf name) name) ownUnits
+        )
+        ++ map (
+          unit:
+          "mayRunAsFullRoot in nix/checks/image.nix lists ${unit}, which no image's modules define with every capability"
+        ) stale
+        ++
+          lib.optional
+            (
+              map (f: lib.head (lib.splitString ":" f)) (probeFailures { }) != [
+                "the probe's dropping keeps every capability"
+                "the probe's emptyList keeps every capability"
+                "the probe's spacedDropping keeps every capability"
+                "the probe's unbound keeps every capability"
+              ]
+            )
+            "the check refuses other probe units than dropping, emptyList, spacedDropping and unbound, or not all four"
+        ++ lib.optional (
+          probeFailures {
+            unbound = "a reason";
+            dropping = "a reason";
+            emptyList = "a reason";
+            spacedDropping = "a reason";
+          } != [ ]
+        ) "the check refuses the probe's units that mayRunAsFullRoot lists";
+    in
+    pkgs.runCommand "chalkos-unit-sandbox" { } ''
+      fail() { echo "error: $*" >&2; failed=1; }
+      ${lib.concatMapStrings (f: "fail ${lib.escapeShellArg f}\n") all}
+      [ -z "''${failed:-}" ] || exit 1
       touch $out
     '';
 

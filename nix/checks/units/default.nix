@@ -5,12 +5,13 @@ let
   inherit (pkgs) lib;
   inherit (checkLib) worker firewall unitCheck;
   # setpriv's arguments that leave root with the capabilities caps alone, as a unit's
-  # CapabilityBoundingSet= does. The checks' namespaces map root alone, so a unit's own user,
-  # such as kea or dnsmasq, is no user they can run as.
+  # CapabilityBoundingSet= does; an empty string, as an empty set holds, adds none. The checks'
+  # namespaces map root alone, so a unit's own user, such as kea or dnsmasq, is no user they can
+  # run as.
   boundTo =
     caps:
-    "setpriv --bounding-set=-all,${
-      lib.concatMapStringsSep "," (c: "+" + lib.toLower (lib.removePrefix "CAP_" c)) caps
+    "${pkgs.util-linux}/bin/setpriv --bounding-set=-all${
+      lib.concatMapStrings (c: ",+" + lib.toLower (lib.removePrefix "CAP_" c)) (lib.remove "" caps)
     } --no-new-privs --";
   # Binds each IPv4 and IPv6 socket to the device $BIND_DEVICE names when it is created.
   bindDevice = pkgs.runCommandCC "bind-device.so" { } ''
@@ -38,9 +39,11 @@ let
   routerFirewall =
     let
       unit = checkLib.router.config.systemd.services.chalkos-firewall;
-      # The start runs chalkd, which runs nft from the unit's path.
-      ExecStart = "PATH=${lib.makeBinPath unit.path}:$PATH ${unit.serviceConfig.ExecStart}";
-      inherit (unit.serviceConfig) ExecReload;
+      # The start runs chalkd, which runs nft from the unit's path; both run with the capabilities
+      # the unit's bounding set leaves.
+      bound = boundTo unit.serviceConfig.CapabilityBoundingSet;
+      ExecStart = "PATH=${lib.makeBinPath unit.path}:$PATH ${bound} ${unit.serviceConfig.ExecStart}";
+      ExecReload = "${bound} ${unit.serviceConfig.ExecReload}";
       dir = checkLib.router.config.chalkos.outputs.router-nftables.dir;
     in
     {

@@ -272,16 +272,37 @@ in
     '';
     checkConfig = false;
   };
-  systemd.services.bird.serviceConfig = {
-    ExecStartPre = lib.getExe credentials;
-    # A reload loads the credentials again and writes the constants anew, so a rotated password
-    # reaches bird without a restart.
-    RefreshOnReload = "credentials";
-    ExecReload = lib.mkForce [
-      (lib.getExe credentials)
-      "${bird}/bin/birdc configure"
-    ];
-  };
+  # chalkos's sandbox of a service replaces the one nixpkgs gives bird, widened to the
+  # capabilities nixpkgs grants bird and to the address families of its sessions and of the
+  # kernel's routes. bird and bird-credentials write to /run/bird, the unit's runtime directory,
+  # alone.
+  systemd.services.bird.serviceConfig =
+    lib.mapAttrs (_: lib.mkForce) (
+      chalkosLib.sandbox.hardened
+      // {
+        CapabilityBoundingSet = [
+          "CAP_NET_ADMIN"
+          "CAP_NET_BIND_SERVICE"
+          "CAP_NET_RAW"
+        ];
+        RestrictAddressFamilies = [
+          "AF_UNIX"
+          "AF_NETLINK"
+          "AF_INET"
+          "AF_INET6"
+        ];
+      }
+    )
+    // {
+      ExecStartPre = lib.getExe credentials;
+      # A reload loads the credentials again and writes the constants anew, so a rotated password
+      # reaches bird without a restart.
+      RefreshOnReload = "credentials";
+      ExecReload = lib.mkForce [
+        (lib.getExe credentials)
+        "${bird}/bin/birdc configure"
+      ];
+    };
   # --8<-- [end:service]
 
   # --8<-- [start:network]

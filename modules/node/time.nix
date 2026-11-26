@@ -15,7 +15,8 @@ let
   sources = config.chalkos.outputs.chrony.dir;
   dhcpSources = "/run/chalkos/chrony-dhcp";
   inherit (config.services.chrony) package;
-  inherit (chalkosLib.internal) cel noExec;
+  inherit (chalkosLib.internal) cel;
+  inherit (chalkosLib.sandbox) noExec;
   inherit (chalkosLib.internal.api) apiVersions;
   # A server as a line of chrony's sources file.
   server =
@@ -82,7 +83,7 @@ in
   systemd.services.chalkos-chrony-dhcp-links = {
     description = "Pass the time servers DHCP announced to chrony after a link changed";
     startLimitIntervalSec = 0;
-    serviceConfig = noExec // {
+    serviceConfig = chalkosLib.internal.rootNoCaps // {
       Type = "oneshot";
       ExecStart = "${config.systemd.package}/bin/systemctl restart chalkos-chrony-dhcp.service";
     };

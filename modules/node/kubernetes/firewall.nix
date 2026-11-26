@@ -63,7 +63,7 @@ in
         "kubelet.service"
       ];
       path = lib.optional config.networking.firewall.enable pkgs.nftables;
-      serviceConfig = chalkosLib.internal.noExec // {
+      serviceConfig = chalkosLib.sandbox.noExec // {
         Type = "oneshot";
         RemainAfterExit = true;
         ExecStart =

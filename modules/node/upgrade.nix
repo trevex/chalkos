@@ -73,7 +73,7 @@ in
       before = [ "boot-complete.target" ];
       after = [ "chalkd.service" ];
       path = [ config.systemd.package ];
-      serviceConfig = chalkosLib.internal.noExec // {
+      serviceConfig = chalkosLib.sandbox.noExec // {
         Type = "oneshot";
         RemainAfterExit = true;
         ExecStart = "${lib.getExe chalkd} health --wait ${toString cfg.healthTimeout}${

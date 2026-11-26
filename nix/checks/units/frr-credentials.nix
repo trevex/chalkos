@@ -8,10 +8,16 @@
   pkgs,
   checkLib,
   unitCheck,
+  boundTo,
   ...
 }:
 let
-  fill = checkLib.router.config.systemd.services.frr.serviceConfig.ExecStart;
+  # The fill, with the capabilities frr.service's bounding set leaves.
+  fill =
+    let
+      unit = checkLib.router.config.systemd.services.frr.serviceConfig;
+    in
+    "${boundTo unit.CapabilityBoundingSet} ${unit.ExecStart}";
   dir = checkLib.router.config.chalkos.outputs.frr.dir;
   rendered = "${checkLib.routerRendered "edge"}/frr/frr.conf";
 in

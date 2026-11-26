@@ -7,10 +7,16 @@
 {
   worker,
   unitCheck,
+  boundTo,
   ...
 }:
 let
-  script = worker.config.systemd.services.chalkos-containerd-config.serviceConfig.ExecStart;
+  # The unit's start, with the capabilities its bounding set leaves.
+  script =
+    let
+      unit = worker.config.systemd.services.chalkos-containerd-config.serviceConfig;
+    in
+    "${boundTo unit.CapabilityBoundingSet} ${unit.ExecStart}";
   plugins = "${worker.config.system.build.chalkosCNIPlugins}/bin";
   dump = "${worker.pkgs.containerd}/bin/containerd --config ${worker.config.virtualisation.containerd.args.config} config dump";
 in
