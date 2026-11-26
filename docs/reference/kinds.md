@@ -811,7 +811,7 @@ A partition for the node's data, on the system disk or on a disk of its own, whi
 
 `apiVersion: storage.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 7 [change rules](builtins.md#rules-volume).
+A node's config may hold several, each with a name of its own. It has 8 [change rules](builtins.md#rules-volume).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |

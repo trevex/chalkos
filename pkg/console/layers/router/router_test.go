@@ -120,7 +120,7 @@ func TestRouterTabFailingDiagnostic(t *testing.T) {
 	tm := start(t, c, status(true))
 	consoletest.WaitFor(t, tm, "nat64-sessions instance=")
 	consoletest.Press(tm, "end")
-	consoletest.WaitFor(t, tm, "dhcp leases: deadline_exceeded")
+	consoletest.WaitFor(t, tm, "dhcp leases: context deadline exceeded")
 	consoletest.Snapshot(t, tm)
 }
 

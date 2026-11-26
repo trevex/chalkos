@@ -50,7 +50,8 @@ func Previous(entries []esp.Entry, imageID string, booted esp.Entry, running []b
 // once every check passed, just before the rename, or when the image boots next already; its
 // error stops the rollback. A node that runs the image answers AlreadyInstalled; one that boots it
 // next already, from an entry without tries or of last, AlreadyStaged. Any other staged entry,
-// an upgrade's even of this image, replaced the image before, and Rollback refuses.
+// an upgrade's even of this image, replaced the image before, and Rollback refuses. A refusal is
+// a RefusalError; other errors failed to read or change the disk or the ESP.
 func (n *Node) Rollback(ctx context.Context, rootHash, last []byte, record func() error) (Result, error) {
 	if record == nil {
 		record = func() error { return nil }
@@ -77,35 +78,35 @@ func (n *Node) Rollback(ctx context.Context, rootHash, last []byte, record func(
 		// rollback from a boot not found healthy staged, or a blessed entry above the booted one,
 		// as when the boot menu picked an entry below it.
 		case staged.TriesLeft < 0:
-			return Result{}, fmt.Errorf("the image %x is staged to boot next from %s", staged.RootHash, staged.File)
+			return Result{}, refused(fmt.Errorf("the image %x is staged to boot next from %s", staged.RootHash, staged.File))
 		}
-		return Result{}, fmt.Errorf("the image %x is staged to boot next from %s; its upgrade replaced the image the node ran before", staged.RootHash, staged.File)
+		return Result{}, refused(fmt.Errorf("the image %x is staged to boot next from %s; its upgrade replaced the image the node ran before", staged.RootHash, staged.File))
 	}
 	// An image staged and not active yet replaced the image before too: the upgrade that staged it
 	// retired that image's UKI and wrote over the slot.
 	if staged, ok, err := esp.Staged(n.ESP, imageID); err != nil {
 		return Result{}, err
 	} else if ok {
-		return Result{}, fmt.Errorf("the image %x is staged in the inactive slot; its upgrade replaced the image the node ran before", staged.RootHash)
+		return Result{}, refused(fmt.Errorf("the image %x is staged in the inactive slot; its upgrade replaced the image the node ran before", staged.RootHash))
 	}
 	prev, ok := Previous(all, imageID, booted, running)
 	switch {
 	case !ok:
-		return Result{}, errors.New("the node keeps no image it ran before to roll back to")
+		return Result{}, refused(errors.New("the node keeps no image it ran before to roll back to"))
 	case !bytes.Equal(prev.RootHash, rootHash):
-		return Result{}, fmt.Errorf("the image the node ran before is %x, not %x", prev.RootHash, rootHash)
+		return Result{}, refused(fmt.Errorf("the image the node ran before is %x, not %x", prev.RootHash, rootHash))
 	}
 	// The renamed entry boots before the others only while their names order them by generation,
 	// as for an upgrade's new entry.
 	if err := checkNames(all, imageID, booted, nil); err != nil {
-		return Result{}, err
+		return Result{}, refused(err)
 	}
 	inactive, err := n.inactiveSlot(ctx, running)
 	if err != nil {
 		return Result{}, err
 	}
 	if !inactive.Holds(rootHash) {
-		return Result{}, fmt.Errorf("the inactive slot no longer holds the store of %x, which %s boots", rootHash, prev.File)
+		return Result{}, refused(fmt.Errorf("the inactive slot no longer holds the store of %x, which %s boots", rootHash, prev.File))
 	}
 	path := filepath.Join(n.ESP, esp.LinuxDir, prev.File)
 	tries, err := n.checkKeptUKI(path, imageID, rootHash)
@@ -145,11 +146,7 @@ func (n *Node) checkKeptUKI(path, imageID string, rootHash []byte) (int, error) 
 		return 0, err
 	}
 	h := Header{ImageID: imageID, Platform: n.OSRelease["CHALKOS_PLATFORM"], Architecture: n.Architecture, Image: storeslot.Image{RootHash: rootHash}, UKI: imagepart.Part{Size: info.Size()}}
-	tries, err := CheckUKI(f, h, n.EFIVars)
-	if _, ok := errors.AsType[*UKIError](err); ok {
-		return 0, refused(err)
-	}
-	return tries, err
+	return CheckUKI(f, h, n.EFIVars)
 }
 
 // KnownGood reports whether a rollback from a boot not found healthy staged the known-good image:

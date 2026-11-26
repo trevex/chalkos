@@ -13,6 +13,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
+	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/esp"
@@ -262,12 +263,11 @@ func (s *Server) planSecond(ctx context.Context, d *delivery) (secondWrite, erro
 // stagedRefusal is the refusal of a delivery for err, the staged image's refusal; secret is the
 // request's fallback secret. chalkctl sends the secret only when the running image's storage
 // enrolls it, so a staged image that adds an encrypted volume of its own is refused without it,
-// and the refusal names config apply --staged with the secrets file. The staged image's checker
-// is another chalkd whose errors arrive as text, so storage.NoFallbackSecret at the end of its
-// rule's message tells this refusal apart.
+// and the refusal names config apply --staged with the secrets file. The reason
+// NO_FALLBACK_SECRET of the staged image's refusal tells this refusal apart.
 func (s *Server) stagedRefusal(staged []byte, err error, secret string) error {
 	var hint string
-	if secret == "" && strings.Contains(err.Error(), storage.NoFallbackSecret) {
+	if secret == "" && client.Reason(err) == nodev1.ErrorReason_ERROR_REASON_NO_FALLBACK_SECRET {
 		hint = fmt.Sprintf("; the staged image's storage enrolls the fallback secret on a volume the running image's does not, and chalkctl sends the secret for the running image's storage alone: chalkctl config apply --staged %s --secrets FILE delivers the config to the staged image with the secret", s.nodeName())
 	}
 	return fmt.Errorf("the image %x staged in the inactive slot: %w%s", staged[:6], err, hint)

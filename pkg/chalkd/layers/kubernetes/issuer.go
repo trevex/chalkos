@@ -47,7 +47,7 @@ func (p *Plugin) RenewNodeCertificate(ctx context.Context, req *kubernetesv1.Ren
 // nodeCA returns the node CA of a control-plane node's share; only control planes hold it.
 func (k *side) nodeCA() (pki.CertKey, error) {
 	notControlPlane := layer.Errorf(connect.CodeFailedPrecondition, "the node is not a control plane; control-plane nodes renew node certificates")
-	c, err := k8s.ReadCluster(k.state.Cluster)
+	c, err := k.cluster()
 	if err != nil {
 		return pki.CertKey{}, err
 	}
@@ -95,7 +95,7 @@ func signRequest(nodeCA pki.CertKey, names pki.NodeNames, request []byte, now ti
 // IssueNodeCertificate obtains a node certificate for the certificate request: from the node's own
 // node CA on a control plane, from the control plane at the cluster's endpoint on a worker.
 func (p *Plugin) IssueNodeCertificate(ctx context.Context, request []byte) (string, error) {
-	c, err := k8s.ReadCluster(p.k.state.Cluster)
+	c, err := p.k.cluster()
 	if err != nil {
 		return "", err
 	}

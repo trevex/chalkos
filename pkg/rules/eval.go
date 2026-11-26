@@ -48,6 +48,8 @@ type Input struct {
 type Failure struct {
 	refusals.Refusal
 	Takes schema.Takes
+	// Reason is the reason the rule names, which the refusal carries to the client; empty for none.
+	Reason string
 }
 
 // FactError is a fact a rule reads that could not be loaded; it refuses the delivery.
@@ -180,7 +182,7 @@ func (p *Program) evaluate(vars map[string]any, cfg, oldCfg, node map[string]any
 	if ok {
 		return nil, nil
 	}
-	f := Failure{Refusal: refusals.Refusal{Kind: p.Kind.Kind, Message: p.Rule.Message}, Takes: p.Takes}
+	f := Failure{Refusal: refusals.Refusal{Kind: p.Kind.Kind, Message: p.Rule.Message}, Takes: p.Takes, Reason: p.Reason}
 	if doc != "" {
 		f.Name, f.Path = doc, strings.Join(p.Path, ".")
 	}

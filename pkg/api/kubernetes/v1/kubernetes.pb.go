@@ -52,6 +52,8 @@ const (
 	Phase_PHASE_JOINED Phase = 7
 	// The preparation of the node's Kubernetes files failed; state says why.
 	Phase_PHASE_PREPARATION_FAILED Phase = 8
+	// The node's config gives no Kubernetes cluster, so the node takes no part in one.
+	Phase_PHASE_NO_CLUSTER Phase = 9
 )
 
 // Enum value maps for Phase.
@@ -66,6 +68,7 @@ var (
 		6: "PHASE_LEFT",
 		7: "PHASE_JOINED",
 		8: "PHASE_PREPARATION_FAILED",
+		9: "PHASE_NO_CLUSTER",
 	}
 	Phase_value = map[string]int32{
 		"PHASE_UNSPECIFIED":        0,
@@ -77,6 +80,7 @@ var (
 		"PHASE_LEFT":               6,
 		"PHASE_JOINED":             7,
 		"PHASE_PREPARATION_FAILED": 8,
+		"PHASE_NO_CLUSTER":         9,
 	}
 )
 
@@ -2073,7 +2077,7 @@ const file_chalkos_kubernetes_v1_kubernetes_proto_rawDesc = "" +
 	"\n" +
 	"ImageFacts\x12\x1d\n" +
 	"\n" +
-	"image_json\x18\x01 \x01(\fR\timageJson*\xce\x01\n" +
+	"image_json\x18\x01 \x01(\fR\timageJson*\xe4\x01\n" +
 	"\x05Phase\x12\x15\n" +
 	"\x11PHASE_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fPHASE_PREPARING\x10\x01\x12\x11\n" +
@@ -2084,7 +2088,8 @@ const file_chalkos_kubernetes_v1_kubernetes_proto_rawDesc = "" +
 	"\n" +
 	"PHASE_LEFT\x10\x06\x12\x10\n" +
 	"\fPHASE_JOINED\x10\a\x12\x1c\n" +
-	"\x18PHASE_PREPARATION_FAILED\x10\b*\xe6\x01\n" +
+	"\x18PHASE_PREPARATION_FAILED\x10\b\x12\x14\n" +
+	"\x10PHASE_NO_CLUSTER\x10\t*\xe6\x01\n" +
 	"\fRotationStep\x12\x1d\n" +
 	"\x19ROTATION_STEP_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cROTATION_STEP_RESTART_ADDONS\x10\x01\x12$\n" +

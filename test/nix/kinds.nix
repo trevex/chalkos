@@ -969,7 +969,7 @@ in
     expected = true;
   };
   # The values Nix shares with Go come from pkg/constants/constants.json, which Go embeds: the API
-  # groups, networkd's kinds, the patterns of names and the normalisers.
+  # groups, networkd's kinds, the patterns of names, the normalisers and the rules' reasons.
   testSharedConstants = {
     expr = {
       inherit (chalkosLib.internal.api)
@@ -977,6 +977,7 @@ in
         groups
         networkdKinds
         normalisers
+        ruleReasons
         ;
       inherit (kindTypes) documentName;
       inherit (chalkosLib.internal) plainName;

@@ -62,8 +62,11 @@ const statusTimeout = 5 * time.Second
 
 // status describes the node's Kubernetes state.
 func (k *side) status(ctx context.Context) (*kubernetesv1.StatusResponse, error) {
-	c, err := k8s.ReadCluster(k.state.Cluster)
-	if err != nil {
+	c, err := k.cluster()
+	switch {
+	case errors.Is(err, errNoCluster):
+		return &kubernetesv1.StatusResponse{Phase: kubernetesv1.Phase_PHASE_NO_CLUSTER, State: "no cluster: the node's config gives none"}, nil
+	case err != nil:
 		return nil, err
 	}
 	st := &kubernetesv1.StatusResponse{Kind: c.Kind, Phase: kubernetesv1.Phase_PHASE_PREPARING, ApiServerVersion: c.APIServerVersion, KubeletVersion: c.Version}

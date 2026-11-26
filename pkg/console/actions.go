@@ -172,7 +172,7 @@ func (m *Model) menuKey(k tea.KeyPressMsg) tea.Cmd {
 				defer cancel()
 				result, err := run(ctx, c)
 				if err != nil {
-					return actionDoneMsg{ErrorStyle.Render(OneLine(verb + " failed: " + err.Error()))}
+					return actionDoneMsg{ErrorStyle.Render(OneLine(verb + " failed: " + Describe(err).Error()))}
 				}
 				return actionDoneMsg{OKStyle.Render(OneLine(result))}
 			}

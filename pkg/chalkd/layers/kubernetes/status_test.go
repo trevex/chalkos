@@ -7,17 +7,21 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"connectrpc.com/connect/v2"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/kubetest"
@@ -223,5 +227,21 @@ func TestStatusListsTwentyPodsNotRunning(t *testing.T) {
 	st := kubernetestest.Status(t, s)
 	if len(st.PodsNotRunning) != 20 || st.PodsNotRunningTotal != 25 || st.PodsNotRunning[19].Name != "pod-19" {
 		t.Errorf("%d pods listed of %d", len(st.PodsNotRunning), st.PodsNotRunningTotal)
+	}
+}
+
+// TestStatusWithoutACluster reports a node whose config gives no cluster as a state, and refuses a
+// request that needs the cluster as a failed precondition, not an internal error.
+func TestStatusWithoutACluster(t *testing.T) {
+	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
+	if err := os.Remove(s.k.state.Cluster); err != nil {
+		t.Fatal(err)
+	}
+	st := kubernetestest.Status(t, s)
+	if st.Phase != kubernetesv1.Phase_PHASE_NO_CLUSTER || st.State != "no cluster: the node's config gives none" {
+		t.Errorf("status = %v", st)
+	}
+	if _, err := s.k.controlPlane(); layer.CodeOf(err) != connect.CodeFailedPrecondition || err.Error() != "the node's config gives no Kubernetes cluster" {
+		t.Errorf("controlPlane = %v", err)
 	}
 }

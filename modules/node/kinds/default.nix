@@ -44,6 +44,11 @@ let
         default = "refuse";
         description = "What a change the rule refuses needs: `refuse` cannot be made, `reset` takes `chalkctl storage reset`, `reinstall` a reinstall of the node.";
       };
+      reason = lib.mkOption {
+        type = lib.types.nullOr (lib.types.enum api.ruleReasons);
+        default = null;
+        description = "The node API's `ErrorReason`, without its `ERROR_REASON_` prefix, that a refusal by the rule carries to the client, for a refusal chalkd or chalkctl acts on. Built-in rules alone name one.";
+      };
       description = lib.mkOption {
         type = lib.types.nullOr lib.types.str;
         default = null;

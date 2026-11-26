@@ -21,5 +21,5 @@ sysctl    b6b6b6b6b6b6  rendered
 certificates:
   node   expires 2027-01-01
   OS CA  expires 2027-01-01
-reboot failed: permission_denied: the image turns the console's actions off
+reboot failed: the image turns the console's actions off
 Tab/Left/Right 1-4 tabs  Up/Down/PgUp/PgDn scroll  a actions

@@ -28,8 +28,12 @@ func Write(w io.Writer, k *kubernetesv1.StatusResponse) error {
 	return t.Flush()
 }
 
-// StatusLines are the lines of the node's part in its cluster and of the versions it runs.
+// StatusLines are the lines of the node's part in its cluster and of the versions it runs, or the
+// line of a node whose config gives no cluster.
 func StatusLines(k *kubernetesv1.StatusResponse) []string {
+	if k.GetPhase() == kubernetesv1.Phase_PHASE_NO_CLUSTER {
+		return []string{"kubernetes: " + k.GetState()}
+	}
 	return []string{kubernetesLine(k), versionsLine(k)}
 }
 

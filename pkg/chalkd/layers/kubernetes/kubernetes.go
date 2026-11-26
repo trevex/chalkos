@@ -275,7 +275,7 @@ func (k *side) stopLoops(ctx context.Context) {
 // control plane that is neither bootstrapped nor left etcd. A loop that runs already is not
 // started again.
 func (k *side) startLoops() {
-	c, err := k8s.ReadCluster(k.state.Cluster)
+	c, err := k.cluster()
 	if err != nil {
 		log.Printf("kubernetes: %v", err)
 		return
@@ -322,7 +322,7 @@ func (k *side) startLocked() chan struct{} {
 	k.reload = make(chan struct{}, 1)
 	done := k.done
 	g := k.loops()
-	if c, err := k8s.ReadCluster(k.state.Cluster); err != nil {
+	if c, err := k.cluster(); err != nil {
 		log.Printf("kubernetes: %v", err)
 	} else if len(c.VIP.Addresses) > 0 {
 		g.Go("the VIP election", k.superviseVIP)

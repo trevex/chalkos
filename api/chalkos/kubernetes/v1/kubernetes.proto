@@ -196,6 +196,8 @@ enum Phase {
   PHASE_JOINED = 7;
   // The preparation of the node's Kubernetes files failed; state says why.
   PHASE_PREPARATION_FAILED = 8;
+  // The node's config gives no Kubernetes cluster, so the node takes no part in one.
+  PHASE_NO_CLUSTER = 9;
 }
 
 // A node revoked in the cluster.

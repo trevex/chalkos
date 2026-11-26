@@ -422,7 +422,7 @@ func TestApplyConfigNamesTheRemedyOfADestructiveChange(t *testing.T) {
 func TestApplyConfigNeedsFallbackForEncryptedVolume(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
 	_, err := apply(s, identityWith(section("", "ext4")), "")
-	if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "Volume extra is encrypted and the node's fallback is recovery-key, but no fallback secret was sent") {
+	if codeOf(err) != connect.CodeFailedPrecondition || reasonOf(err) != nodev1.ErrorReason_ERROR_REASON_NO_FALLBACK_SECRET || !strings.Contains(err.Error(), "Volume extra is encrypted and the node's fallback is recovery-key, but no fallback secret was sent") {
 		t.Fatalf("err = %v", err)
 	}
 	if len(r.Calls) != 0 {

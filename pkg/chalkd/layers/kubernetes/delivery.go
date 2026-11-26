@@ -179,9 +179,9 @@ func (p *Plugin) share(d layer.Planned, cluster *k8s.Cluster) ([]byte, error) {
 	}
 	if !d.Install {
 		if cluster == nil {
-			c, err := k8s.ReadCluster(p.k.state.Cluster)
+			c, err := p.k.cluster()
 			if err != nil {
-				return nil, layer.Errorf(connect.CodeInvalidArgument, "the node has no Kubernetes cluster: %w", err)
+				return nil, layer.Errorf(connect.CodeInvalidArgument, "the share needs a Kubernetes cluster: %w", err)
 			}
 			cluster = &c
 		}

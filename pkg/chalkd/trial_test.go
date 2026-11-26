@@ -362,7 +362,7 @@ func TestConfirmConfigCorruptRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 	err := sendConfirm(s, r.Version)
-	if codeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "read the record of the config's trial: ") ||
+	if codeOf(err) != connect.CodeFailedPrecondition || reasonOf(err) != nodev1.ErrorReason_ERROR_REASON_TRIAL_RECORD_UNREADABLE ||
 		!strings.Contains(err.Error(), "; other changes are refused until chalkctl config rollback ") ||
 		!strings.Contains(err.Error(), " restores the previous config, which removes the record") {
 		t.Errorf("a corrupt record: %v", err)
@@ -1006,7 +1006,7 @@ func TestResumeTrial(t *testing.T) {
 	if got := readFile(t, filepath.Join(s.Paths.StateDir, trialFile)); got != "{" {
 		t.Errorf("a record that cannot be read is %q, want it kept", got)
 	}
-	if _, err := sendConfig(s, nextConfig); codeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "read the record of the config's trial") {
+	if _, err := sendConfig(s, nextConfig); reasonOf(err) != nodev1.ErrorReason_ERROR_REASON_TRIAL_RECORD_UNREADABLE {
 		t.Errorf("a delivery past a record that cannot be read: %v", err)
 	}
 }
@@ -1215,7 +1215,7 @@ func TestRollbackConfigRemovesAnUnreadableTrial(t *testing.T) {
 	write(t, filepath.Join(s.Paths.StateDir, trialFile), "{")
 	want := "read the record of the config's trial: parse the trial record: "
 	hint := "; other changes are refused until chalkctl config rollback n1 restores the previous config, which removes the record"
-	if _, err := sendConfig(s, baseConfig); codeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), hint) {
+	if _, err := sendConfig(s, baseConfig); codeOf(err) != connect.CodeFailedPrecondition || reasonOf(err) != nodev1.ErrorReason_ERROR_REASON_TRIAL_RECORD_UNREADABLE || !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), hint) {
 		t.Errorf("a delivery: %v, want %q and %q", err, want, hint)
 	}
 	if _, err := sendRollback(s, rec.Previous); err != nil {

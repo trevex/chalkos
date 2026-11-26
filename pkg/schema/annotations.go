@@ -110,6 +110,9 @@ type Rule struct {
 	MessageExpression string `json:"messageExpression,omitempty"`
 	// Takes is Refuse where the schema leaves it out.
 	Takes Takes `json:"takes,omitempty"`
+	// Reason is one of constants.RuleReasons, which a refusal by the rule carries to the client, for
+	// a refusal that chalkd or chalkctl acts on, such as NO_FALLBACK_SECRET; empty for none.
+	Reason string `json:"reason,omitempty"`
 	// Description says what the rule guards, for the reference pages; the rule never reads or
 	// says it.
 	Description string `json:"description,omitempty"`
@@ -300,9 +303,13 @@ func decodeRules(v any) ([]Rule, error) {
 	return rules, takesOf(rules)
 }
 
-// takesOf checks the takes of each of rules, filling in Refuse where a rule leaves it out.
+// takesOf checks the takes and the reason of each of rules, filling in Refuse where a rule leaves
+// takes out.
 func takesOf(rules []Rule) error {
 	for i := range rules {
+		if r := rules[i].Reason; r != "" && !slices.Contains(constants.RuleReasons, r) {
+			return fmt.Errorf("reason %q is none of %s", r, strings.Join(constants.RuleReasons, ", "))
+		}
 		switch rules[i].Takes {
 		case "":
 			rules[i].Takes = Refuse

@@ -34,7 +34,7 @@ func (p *Plugin) Certificates(_ context.Context, now time.Time) ([]*nodev1.Certi
 // preparation wrote: the kubelet's CAs on every node, the control plane's CAs and keys on a
 // control plane. A CA issues if it issued the control plane's certificate of its kind.
 func (k *side) trust() []*nodev1.TrustStatus {
-	c, err := k8s.ReadCluster(k.state.Cluster)
+	c, err := k.cluster()
 	if err != nil {
 		return nil
 	}

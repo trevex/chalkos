@@ -21,7 +21,7 @@ func TestBuiltinRulesCompile(t *testing.T) {
 		count[p.Kind.APIVersion+" "+p.Kind.Kind]++
 	}
 	for kind, want := range map[string]int{
-		"storage.chalkos.dev/v1alpha1 Volume":     7,
+		"storage.chalkos.dev/v1alpha1 Volume":     8,
 		"storage.chalkos.dev/v1alpha1 SystemDisk": 1,
 		"kubernetes.chalkos.dev/v1alpha1 Node":    4,
 		"kubernetes.chalkos.dev/v1alpha1 Cluster": 6,
@@ -137,8 +137,8 @@ func TestRoutedVIPRules(t *testing.T) {
 func TestOf(t *testing.T) {
 	set := builtinRules(t)
 	storage := set.Of("storage.chalkos.dev/v1alpha1")
-	if len(storage.Programs) != 8 {
-		t.Errorf("the storage kinds have %d rules, want 8", len(storage.Programs))
+	if len(storage.Programs) != 9 {
+		t.Errorf("the storage kinds have %d rules, want 9", len(storage.Programs))
 	}
 	for _, p := range storage.Programs {
 		if p.Kind.Kind != "Volume" && p.Kind.Kind != "SystemDisk" {
@@ -229,6 +229,7 @@ func TestStorageRules(t *testing.T) {
 		presentError string
 		want         []string
 		takes        schema.Takes
+		reason       string
 	}{
 		{name: "unchanged", volumes: map[string]string{"data": dataVolume}},
 		{name: "a new volume", volumes: map[string]string{"data": dataVolume, "extra": `{"disk": null, "size": "1G", "format": "ext4", "mountPoint": null, "encryption": {"mode": null}}`}},
@@ -278,10 +279,10 @@ func TestStorageRules(t *testing.T) {
 		// The volume follows the node's encryption, and VAR too.
 		{name: "the node's encryption", systemDisk: edit(systemDisk, "encryption", `{"mode": "none", "fallback": "recovery-key"}`), volumes: map[string]string{"data": dataVolume}, takes: schema.Reinstall,
 			want: []string{"VAR: encryption none instead of tpm2; only a reinstall of n1 carries it out", "Volume data: encryption none instead of tpm2; reset it with chalkctl storage reset n1 data"}},
-		// chalkd tells this refusal apart by storage.NoFallbackSecret, so the message ends with it.
+		// chalkd tells this refusal apart by its reason.
 		{name: "an encrypted volume without the fallback secret", volumes: map[string]string{"data": dataVolume, "extra": `{"disk": null, "size": "1G", "format": "ext4", "mountPoint": null, "encryption": {"mode": null}}`},
 			fallback: map[string]any{"sent": false, "matches": nil},
-			want:     []string{"Volume extra is encrypted and the node's fallback is recovery-key, but " + storage.NoFallbackSecret}, takes: schema.Refuse},
+			want:     []string{"Volume extra is encrypted and the node's fallback is recovery-key, but " + storage.NoFallbackSecret}, takes: schema.Refuse, reason: "NO_FALLBACK_SECRET"},
 		{name: "an encrypted volume with a wrong fallback secret", volumes: map[string]string{"data": dataVolume, "extra": `{"disk": null, "size": "1G", "format": "ext4", "mountPoint": null, "encryption": {"mode": null}}`},
 			fallback: map[string]any{"sent": true, "matches": false},
 			want:     []string{"the fallback secret does not match the node's existing fallback keyslot"}, takes: schema.Refuse},
@@ -310,6 +311,9 @@ func TestStorageRules(t *testing.T) {
 			failures := wantFailures(t, set, Input{Documents: config.Redact(storageConfig(t, sd, tc.volumes)), Old: config.Redact(old), Facts: facts, Node: "n1"}, tc.want)
 			if len(failures) > 0 && failures[0].Takes != tc.takes {
 				t.Errorf("takes = %s, want %s", failures[0].Takes, tc.takes)
+			}
+			if len(failures) > 0 && failures[0].Reason != tc.reason {
+				t.Errorf("reason = %q, want %q", failures[0].Reason, tc.reason)
 			}
 			// At an install there is nothing to compare with.
 			facts["recorded"] = nil

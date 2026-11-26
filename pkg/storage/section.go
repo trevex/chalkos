@@ -33,9 +33,9 @@ const (
 )
 
 // NoFallbackSecret ends the refusal of a new TPM2-encrypted volume sent without the fallback
-// secret, on a node with a fallback: the built-in Volume rule's and chalkd's checkFallback's.
-// chalkd matches it in an upgrade's refusal to say which upgrade carries the pending config, so
-// keep the text stable; modules/node/kinds/builtin/storage.nix repeats it.
+// secret, on a node with a fallback: the built-in Volume rule's, which
+// modules/node/kinds/builtin/storage.nix words alike, and chalkd's checkFallback's. Both carry the
+// reason NO_FALLBACK_SECRET, which chalkd matches; nothing matches the text.
 const NoFallbackSecret = "no fallback secret was sent"
 
 // Section is the storage section of a node identity, as the node's config gives it and

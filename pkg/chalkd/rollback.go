@@ -211,7 +211,9 @@ func (s *Server) RollbackImage(ctx context.Context, m *nodev1.RollbackImageReque
 	res, err := s.imageSlots().Reactivate(ctx, m.RootHash, record)
 	if err != nil {
 		log.Printf("rollback to %x failed: %v", m.RootHash, err)
-		return nil, layer.Errorf(connect.CodeFailedPrecondition, "roll back: %w", err)
+		// A refusal fails the precondition, and a failure to read or change the disk or the ESP is
+		// internal: see domainCodes.
+		return nil, fmt.Errorf("roll back: %w", err)
 	}
 	resp := &nodev1.RollbackImageResponse{AlreadyInstalled: res.AlreadyInstalled, AlreadyStaged: res.AlreadyStaged, Entry: res.Entry}
 	switch {

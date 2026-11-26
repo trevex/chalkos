@@ -78,6 +78,7 @@ func TestLoadRefusesAMalformedAnnotation(t *testing.T) {
 		{`"x-chalkos-unique": [{"across": "list", "within": "x"}]`, `unknown field "within"`},
 		{`"x-chalkos-rules": [{"rule": "true", "takes": "later"}]`, `takes "later" is none of refuse, reset and reinstall`},
 		{`"x-chalkos-rules": [{"rule": "true", "mesage": "m"}]`, `unknown field "mesage"`},
+		{`"x-chalkos-rules": [{"rule": "true", "reason": "LATER"}]`, `reason "LATER" is none of NO_FALLBACK_SECRET`},
 		{`"x-chalkos-ref": {"kind": "VRF"}`, `names no apiVersion or no kind`},
 		{`"x-chalkos-kubernetes-object": false`, `is not true`},
 		{`"x-chalkos-networkd-key": ""`, `is not a non-empty string`},

@@ -83,18 +83,10 @@ func ReceiveUKI(path string, h Header, stream io.Reader, efivars string) (int, e
 	return tries, f.Close()
 }
 
-// UKIError is CheckUKI's refusal of a UKI, as opposed to a failure to read the UKI or the
-// firmware's db and dbx. Err is the refusal.
-type UKIError struct{ Err error }
-
-func (e *UKIError) Error() string { return e.Err.Error() }
-
-func (e *UKIError) Unwrap() error { return e.Err }
-
 // CheckUKI checks the image's UKI against its header: it must name the image's ID and platform
 // and an empty IMAGE_VERSION, boot the image's store and ask for a positive number of boot tries,
 // and with Secure Boot enforced, firmware must accept its signature. It returns the tries. A UKI
-// the check refuses is a UKIError; a UKI cut short or not a UKI at all is refused too, while a
+// the check refuses is a RefusalError; a UKI cut short or not a UKI at all is refused too, while a
 // failure to read it or the firmware's variables is not.
 func CheckUKI(r io.ReaderAt, h Header, efivars string) (int, error) {
 	db, dbx, enforced, err := secureboot.Databases(efivars)
@@ -113,7 +105,7 @@ func CheckUKI(r io.ReaderAt, h Header, efivars string) (int, error) {
 		// The check failed on what it could not read, so it refused nothing.
 		return 0, fmt.Errorf("read the UKI: %w", read.err)
 	}
-	return 0, &UKIError{Err: err}
+	return 0, refused(err)
 }
 
 // checkUKI is CheckUKI without the signature.

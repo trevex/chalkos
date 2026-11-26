@@ -9,6 +9,9 @@ import (
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connectproto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
+
+	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/client"
 )
 
 type domainError struct{ error }
@@ -77,3 +80,21 @@ func (detailedError) Error() string { return "not a member" }
 func (detailedError) Code() connect.Code { return connect.CodeFailedPrecondition }
 
 func (e detailedError) Details() []*connect.ErrorDetail { return []*connect.ErrorDetail{e.detail} }
+
+// A reason travels with the error to the client, also from a reason-giving error wrapped below an
+// error of another code, and survives the client's reading.
+func TestErrorCarriesTheReason(t *testing.T) {
+	trial := nodev1.ErrorReason_ERROR_REASON_TRIAL_RECORD_UNREADABLE
+	for name, err := range map[string]error{
+		"Reasonf": Reasonf(connect.CodeFailedPrecondition, trial, "read the record"),
+		"wrapped": Errorf(connect.CodeInvalidArgument, "deliver: %w", Reasonf(connect.CodeFailedPrecondition, trial, "read the record")),
+	} {
+		ce := Codes(nil).Error(err)
+		if got := client.Reason(ce); got != trial {
+			t.Errorf("%s: reason %v, want %v", name, got, trial)
+		}
+	}
+	if got := client.Reason(Codes(nil).Error(Errorf(connect.CodeInternal, "no reason"))); got != nodev1.ErrorReason_ERROR_REASON_UNSPECIFIED {
+		t.Errorf("an error without a reason gives %v", got)
+	}
+}

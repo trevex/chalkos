@@ -33,7 +33,7 @@ func (p *Plugin) Health(ctx context.Context) (bool, error) {
 	case prep.problem() != "":
 		return true, errors.New(prep.problem())
 	}
-	c, err := k8s.ReadCluster(k.state.Cluster)
+	c, err := k.cluster()
 	if err != nil {
 		return true, err
 	}

@@ -93,7 +93,7 @@ func uptimeWords(d time.Duration) string {
 // a config on trial and a rollback that boots next, or else that all is well.
 func (m *Model) healthLine() string {
 	if err := m.node.Info.Err; err != nil {
-		return ErrorStyle.Render(OneLine(fmt.Sprintf("chalkd does not answer, retrying: %v", err)))
+		return ErrorStyle.Render(OneLine(fmt.Sprintf("chalkd does not answer, retrying: %v", Describe(err))))
 	}
 	info := m.node.Info.Value
 	switch {

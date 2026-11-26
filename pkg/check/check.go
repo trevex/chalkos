@@ -15,6 +15,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/outputs"
@@ -78,15 +79,20 @@ const (
 )
 
 // Refusal is a config a check refused: the stage that refused it and why. Failures holds the
-// change rules not met (StageRules), Failed the validators or outputs that failed.
+// change rules not met (StageRules), Failed the validators or outputs that failed. Reason is
+// the reason of the first failed rule that names one, which the refusal carries to the client.
 type Refusal struct {
 	Stage    Stage
 	Message  string
 	Failures []rules.Failure
 	Failed   []outputs.Failure
+	Reason   string
 }
 
 func (r *Refusal) Error() string { return r.Message }
+
+// ErrorReason is the reason of the refusal, as constants.RuleReasons names it.
+func (r *Refusal) ErrorReason() string { return r.Reason }
 
 // Rules checks in.Documents against the image's change rules, which compare it with in.Old. A rule
 // that cannot be checked, or reads a fact that cannot be loaded, refuses the config too. Without
@@ -100,7 +106,11 @@ func (img Image) Rules(in rules.Input) error {
 		return &Refusal{Stage: StageRules, Message: err.Error()}
 	}
 	if len(failures) > 0 {
-		return &Refusal{Stage: StageRules, Message: rules.Refusal(failures, in.Node), Failures: failures}
+		r := &Refusal{Stage: StageRules, Message: rules.Refusal(failures, in.Node), Failures: failures}
+		if i := slices.IndexFunc(failures, func(f rules.Failure) bool { return f.Reason != "" }); i >= 0 {
+			r.Reason = failures[i].Reason
+		}
+		return r
 	}
 	return nil
 }

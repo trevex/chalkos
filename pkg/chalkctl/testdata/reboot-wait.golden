@@ -1,5 +1,5 @@
 w2: rebooting into 010101010101
 w2: it did not reboot yet
-w2: unreachable: unavailable: the node reboots
+w2: unreachable: the node reboots
 w2: its boot settled and is not healthy: etcd: context deadline exceeded
 w2: runs 010101010101, found healthy

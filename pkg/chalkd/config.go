@@ -97,7 +97,8 @@ func imageOf(c *contract.Contract, render outputs.Renderer) (check.Image, error)
 
 // refusal is err as chalkd answers with it when it is an image's refusal of config: a set the
 // image does not accept as "the config does not suit the image: ...", whichever image refused it,
-// and every other refusal as its stage says it. domainCodes gives each its code.
+// and every other refusal as its stage says it. domainCodes gives each its code, and a refusal by
+// a rule that names a reason carries it to the client.
 func refusal(err error) error {
 	if r, ok := errors.AsType[*check.Refusal](err); ok && r.Stage == check.StageConfig {
 		return fmt.Errorf("the config does not suit the image: %w", err)

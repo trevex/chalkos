@@ -112,7 +112,7 @@ func (s *Server) runImageCheck(ctx context.Context, st imageStore, system, platf
 // node: the installer has neither volumes nor slots.
 func (s *Server) imageRefusal(r *checkv1.Refusal, identity string, writing []byte) error {
 	stage := check.Stage(r.GetStage())
-	err := refusal(&check.Refusal{Stage: stage, Message: r.GetMessage()})
+	err := refusal(&check.Refusal{Stage: stage, Message: r.GetMessage(), Reason: r.GetReason()})
 	if stage != check.StageRules || s.Installer {
 		return err
 	}

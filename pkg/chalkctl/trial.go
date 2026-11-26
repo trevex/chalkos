@@ -3,7 +3,6 @@ package chalkctl
 import (
 	"cmp"
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -14,6 +13,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
+	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/internal/poll"
 	"github.com/trevex/chalkos/pkg/statusview"
@@ -69,8 +69,9 @@ func (a *app) confirmTrial(ctx context.Context, t *target, version, previous str
 		}
 		switch connect.CodeOf(err) {
 		// UNAVAILABLE is an unhealthy node, a trial that changed while the node checked its
-		// health or a node not reached, which may all pass. INTERNAL is a trial record the node
-		// cannot read, which only a rollback removes, or a failure asking again does not mend.
+		// health or a node not reached, which may all pass. FAILED_PRECONDITION includes a trial
+		// record the node cannot read, which only a rollback removes, and INTERNAL a failure
+		// asking again does not mend.
 		case connect.CodeFailedPrecondition, connect.CodeInvalidArgument, connect.CodePermissionDenied, connect.CodeUnauthenticated, connect.CodeInternal:
 			permanent = true
 			return poll.Permanent{Err: err}
@@ -103,8 +104,7 @@ func (a *app) confirmTrial(ctx context.Context, t *target, version, previous str
 // unreadableTrial reports whether err is the node's refusal of a trial whose record it cannot
 // read.
 func unreadableTrial(err error) bool {
-	ce, ok := errors.AsType[*connect.Error](err)
-	return ok && ce.Code() == connect.CodeInternal && strings.HasPrefix(ce.Message(), "read the record of the config's trial: ")
+	return client.Reason(err) == nodev1.ErrorReason_ERROR_REASON_TRIAL_RECORD_UNREADABLE
 }
 
 // confirmOnce asks the node to confirm the trial over a new connection, for at most timeout, and
