@@ -3,6 +3,8 @@ package e2e
 import (
 	"context"
 	"encoding/base64"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -11,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/inventory"
@@ -190,7 +193,7 @@ func TestUpgrade(t *testing.T) {
 		GuestForwards: []lab.GuestForward{{Guest: registryGuest, Host: reg.host}},
 	})
 	readFacts(t, m.vm, 5*time.Minute)
-	installFromRegistry(t, m, pullInventory, mirroredGuest+"/chalkos/test-upgrade:v1")
+	installFromRegistry(t, m, reg, pullInventory, mirroredGuest+"/chalkos/test-upgrade:v1")
 	assertFacts(t, readFacts(t, m.vm, 5*time.Minute), map[string]string{
 		"secureboot":      "1",
 		"usr_verity":      "verified",
@@ -209,10 +212,17 @@ func TestUpgrade(t *testing.T) {
 // installFromRegistry installs chalklab, the node n in maintenance mode, in place with the image
 // ref names in a registry, through the SDK, as a Cluster API provider installs a machine, with
 // the documents the inventory gives chalklab, filtered as chalkctl filters them. ref is resolved
-// to its digest first, with the default keychain.
-func installFromRegistry(t *testing.T, n *node, inventoryFile, ref string) {
+// to its digest first, with the default keychain. The test reads the image in its own process at
+// the address the node pulls it from, which the host reaches only through reg as its HTTP proxy,
+// as chalkctl does. HTTP_PROXY does not do here: net/http reads the proxy environment once per
+// process, before publish set it.
+func installFromRegistry(t *testing.T, n *node, reg *imageRegistry, inventoryFile, ref string) {
 	t.Helper()
 	ctx := context.Background()
+	tr := remote.DefaultTransport.(*http.Transport)
+	proxy := tr.Proxy
+	tr.Proxy = http.ProxyURL(&url.URL{Scheme: "http", Host: reg.host})
+	t.Cleanup(func() { tr.Proxy = proxy })
 	waitForChalkd(t, n, 5*time.Minute)
 	a, err := ociimage.Read(ctx, ref, authn.DefaultKeychain)
 	if err != nil {
