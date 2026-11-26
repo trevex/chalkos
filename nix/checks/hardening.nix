@@ -2,8 +2,9 @@
 # may run one unless the allow-list says why it never does (no-shell-calls), no writable mount
 # that runs programs and no unit that runs them from outside the store unless mayExec says why
 # (noexec-mounts), and no unit with the full capability bounding set unless mayRunAsFullRoot says
-# why (unit-sandbox). A contributor who adds a unit or a package that one of them refuses changes
-# its allow-list here, with the reason.
+# why (unit-sandbox). A contributor who adds a unit or a package that no-shell-calls, noexec-mounts
+# or unit-sandbox refuses changes its allow-list here, with the reason; no-shell has none, and an
+# image it refuses must leave the shell out.
 {
   pkgs,
   self,
