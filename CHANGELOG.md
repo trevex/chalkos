@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.7.2](https://github.com/trevex/chalkos/compare/v0.7.1...v0.7.2) (2026-11-26)
+
+
+### Bug Fixes
+
+* **chalkctl:** held-node remedy, SIGTERM, and --address help ([#153](https://github.com/trevex/chalkos/issues/153)) ([1935930](https://github.com/trevex/chalkos/commit/19359308ecbe51ef48f9d973f8a9b2114d64cff2))
+* **chalkd:** bound change locks and diagnostic slots, and drain on stop ([#155](https://github.com/trevex/chalkos/issues/155)) ([2a02956](https://github.com/trevex/chalkos/commit/2a029569910d719d87dfeb44e75a2640b67bbe7e))
+* check documents renderers, one CEL limit at the schema's bounds, read-only $OUT under Direct ([#156](https://github.com/trevex/chalkos/issues/156)) ([1ac89ce](https://github.com/trevex/chalkos/commit/1ac89cecfd67c648cb760edbb6ffc37d756c0175))
+* disk identity, local leave finish, refused deliveries, API codes and Routes ([#154](https://github.com/trevex/chalkos/issues/154)) ([a3d6623](https://github.com/trevex/chalkos/commit/a3d6623b680c5af547a0c870f293e9951c107099))
+
 ## [0.7.1](https://github.com/trevex/chalkos/compare/v0.7.0...v0.7.1) (2026-11-23)
 
 
