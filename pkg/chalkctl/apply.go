@@ -78,6 +78,7 @@ func (a *app) applyConfigCommand(short bool) *cobra.Command {
 		cmd.Long = applyShortLong + "\n\n" + applyConfigLong
 		cmd.Example = strings.ReplaceAll(applyConfigExample, "chalkctl config apply ", "chalkctl apply ")
 	}
+	cli.Details(cmd, applyConfigDetails)
 	a.command(cmd, func(a *app, ctx context.Context, pos []string) error { return a.applyConfig(ctx, f, pos) })
 	fs := cmd.Flags()
 	f.node.Register(fs)
@@ -120,7 +121,7 @@ func (a *app) applyConfigCommand(short bool) *cobra.Command {
 }
 
 func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string) error {
-	// A node named twice gets the config once, as upgrade --nodes upgrades it once.
+	// A node named twice gets the config once, as upgrade upgrades it once.
 	var names []string
 	for _, name := range pos {
 		if !slices.Contains(names, name) {

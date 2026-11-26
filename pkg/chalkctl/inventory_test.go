@@ -429,7 +429,7 @@ func TestStatusComparesWithTheInventory(t *testing.T) {
 	}
 	// config apply checks the config against the image the node runs, so a node on another image
 	// than the inventory's gets the config with the upgrade.
-	if out := ta.stdout.String(); !strings.Contains(out, "(not the inventory's; chalkctl upgrade --nodes n1 delivers it with the image test-metal)") {
+	if out := ta.stdout.String(); !strings.Contains(out, "(not the inventory's; chalkctl upgrade n1 delivers it with the image test-metal)") {
 		t.Errorf("status after a change on another image = %q", out)
 	}
 	writeImageDir(t, filepath.Join(ta.dir, "images", "test-metal"), "test-metal", "metal", testRootHash, false)
@@ -561,7 +561,7 @@ func TestImageLineOfAStagedImage(t *testing.T) {
 	if got := (nodeInventory{c, "n1"}).ImageLine(staged); !strings.Contains(got, "it has "+testRootHash[:12]+" (v1.5.0) staged: chalkctl node activate n1 makes it boot next") {
 		t.Errorf("the line of a staged image = %q", got)
 	}
-	if got := (nodeInventory{c, "n1"}).ImageLine(&nodev1.BootStatus{Running: running, Staged: &nodev1.BootImage{RootHash: bytes.Repeat([]byte{0xee}, 32), Generation: 2}, StagedState: nodev1.SlotState_SLOT_STATE_ACTIVE}); strings.Contains(got, "node reboot") || !strings.Contains(got, "chalkctl upgrade --nodes n1 installs that image") {
+	if got := (nodeInventory{c, "n1"}).ImageLine(&nodev1.BootStatus{Running: running, Staged: &nodev1.BootImage{RootHash: bytes.Repeat([]byte{0xee}, 32), Generation: 2}, StagedState: nodev1.SlotState_SLOT_STATE_ACTIVE}); strings.Contains(got, "node reboot") || !strings.Contains(got, "chalkctl upgrade n1 installs that image") {
 		t.Errorf("the line of another image staged = %q", got)
 	}
 	knownGood := &nodev1.BootStatus{Running: running, Staged: active.Staged, StagedState: nodev1.SlotState_SLOT_STATE_ACTIVE, StagedKnownGood: true}
@@ -576,7 +576,7 @@ func TestImageLineOfAStagedImage(t *testing.T) {
 		staged:             "not the inventory's; it comes with the image test-metal in the inactive slot",
 		knownGood:          "not the inventory's; the node boots the image test-metal next with the config it last ran; once it runs it, chalkctl config apply n1 delivers it",
 		otherStaged:        "not the inventory's; chalkctl config apply n1 delivers it if the image " + hex.EncodeToString(other)[:12] + " in the inactive slot, which is not the inventory's, accepts it too",
-		{Running: running}: "not the inventory's; chalkctl upgrade --nodes n1 delivers it with the image test-metal",
+		{Running: running}: "not the inventory's; chalkctl upgrade n1 delivers it with the image test-metal",
 	} {
 		if got := (nodeInventory{c, "n1"}).ConfigState(&nodev1.StatusResponse{ConfigVersion: "old", Boot: boot}); got != wantState {
 			t.Errorf("the config line of %v = %q, want %q", boot, got, wantState)

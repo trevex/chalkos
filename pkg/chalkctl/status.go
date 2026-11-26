@@ -153,7 +153,7 @@ func runningAdvice(name, want string, img imageMatch, s *nodev1.StatusResponse) 
 	case img.knownGood:
 		return "the node boots the image " + img.name + " next with the config it last ran; once it runs it, chalkctl config apply " + name + " delivers it"
 	}
-	return "chalkctl upgrade --nodes " + name + " delivers it with the image " + img.name
+	return "chalkctl upgrade " + name + " delivers it with the image " + img.name
 }
 
 // stagedAdvice says what delivers want, the inventory's config, to the staged image's slot. A plain
@@ -173,7 +173,7 @@ func stagedAdvice(name, want string, img imageMatch, s *nodev1.StatusResponse) s
 	}
 	switch {
 	case !img.runs && !img.stages:
-		return "chalkctl upgrade --nodes " + name + " delivers it with the image " + img.name
+		return "chalkctl upgrade " + name + " delivers it with the image " + img.name
 	case s.ConfigVersion == want || !img.runs:
 		return "chalkctl config apply --staged " + name + " delivers it" + img.otherChecks()
 	}
@@ -260,5 +260,5 @@ func (i nodeInventory) ImageLine(boot *nodev1.BootStatus) string {
 	case img.knownGood:
 		return fmt.Sprintf("%s; it has %s active as its known-good image, which it boots with the config it last ran at its next reboot: chalkctl node reboot %s", line, staged, i.name)
 	}
-	return fmt.Sprintf("%s; chalkctl upgrade --nodes %s installs that image", line, i.name)
+	return fmt.Sprintf("%s; chalkctl upgrade %s installs that image", line, i.name)
 }

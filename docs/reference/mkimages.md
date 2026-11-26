@@ -206,7 +206,7 @@ The options within each, by their path below `images`:
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
 | `*.modules`{ #imagesmodules } | list of module | `[ ]` | NixOS modules of the image, after chalkos's modules of its platform. A layer, such as `chalkos.nixosModules.kubernetes` or `chalkos.nixosModules.router`, is one of them; an image lists one layer at most. Example: `[ chalkos.nixosModules.kubernetes ./site.nix ]` |
-| `*.name`{ #imagesname } | string | required | The image's name, matching `[a-z0-9][a-z0-9-]*`, which is its attribute in mkImages's result, `CHALKOS_IMAGE` in its os-release and `name` in its `metadata.json`. `chalkctl upgrade --image` without `--nodes` upgrades the nodes running an image of this name. |
+| `*.name`{ #imagesname } | string | required | The image's name, matching `[a-z0-9][a-z0-9-]*`, which is its attribute in mkImages's result, `CHALKOS_IMAGE` in its os-release and `name` in its `metadata.json`. `chalkctl upgrade --image` without node names upgrades the nodes running an image of this name. |
 | `*.platform`{ #imagesplatform } | string | required | The platform the image is built for, matching `[a-z0-9][a-z0-9-]*`, which becomes `CHALKOS_PLATFORM` in its os-release. chalkos has modules of its own for `metal` and `kvm`, which the image carries before its `modules`; any other name is a platform of the image's modules alone. An image carries one platform's drivers, agents and console; a node refuses an image of another platform than its own. |
 
 ### `installer.modules` { #installermodules }

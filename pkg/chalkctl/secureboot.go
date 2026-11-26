@@ -74,6 +74,7 @@ func (a *app) securebootEnrollCommand() *cobra.Command {
 		Args:        cli.NoArgs,
 		Annotations: layer.Meta{Credentials: layer.Admin}.Annotations(),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.securebootEnroll(ctx, f) })
+	cli.Details(cmd, securebootEnrollDetails)
 	fs := cmd.Flags()
 	fs.StringVar(&f.keys, "keys", "", "directory of the keys, as chalkctl secureboot new writes it")
 	fs.BoolVar(&f.microsoft, "microsoft", false, "also enrol Microsoft's KEK CAs and its UEFI and option ROM CAs, which sign the firmware of graphics and network cards and other boot loaders")

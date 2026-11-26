@@ -18,6 +18,10 @@ const (
 	navEnd   = "# END docgen cli"
 )
 
+// detailsAnnotation is the annotation of a command that holds the rest of its description, which
+// its page shows and --help leaves out, as the programs' cli.DetailsAnnotation.
+const detailsAnnotation = "chalkos.dev/details"
+
 // navPrefix is where the pages are in the site, relative to its docs directory.
 const navPrefix = "reference/cli/"
 
@@ -99,6 +103,13 @@ func render(cmd *cobra.Command, docs string) (string, error) {
 			return "", err
 		}
 		fmt.Fprintf(&b, "%s\n\n", long)
+	}
+	if details := cmd.Annotations[detailsAnnotation]; details != "" {
+		text, err := siteLinks(prose(strings.TrimSpace(details)), docs)
+		if err != nil {
+			return "", err
+		}
+		fmt.Fprintf(&b, "## Details\n\n%s\n\n", text)
 	}
 	flags := cmd.LocalFlags()
 	if shells && len(available(cmd)) > 0 {

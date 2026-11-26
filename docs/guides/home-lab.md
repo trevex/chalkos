@@ -897,8 +897,8 @@ routed addresses, to the Kubernetes API, and to the internet is interrupted. Upg
 in a step of its own, at a time when that pause suits you:
 
 ```sh
-chalkctl upgrade --nodes node1,node2,node3 --secrets=secrets.age
-chalkctl upgrade --nodes router --secrets=secrets.age
+chalkctl upgrade node1 node2 node3 --secrets=secrets.age
+chalkctl upgrade router --secrets=secrets.age
 ```
 
 ## Run the lab without internet access (optional)

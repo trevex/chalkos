@@ -27,8 +27,8 @@ healthy is replaced by the one before. This page follows one node's upgrade.
     drains each node before it reboots. [Kubernetes upgrades](../kubernetes/upgrades.md) describes
     the roll.
 
-For recovery while chalkd answers but the cluster does not, `chalkctl upgrade --recover --nodes
-<node>` skips cluster version checks and layer coordination. It still validates the image and
+For recovery while chalkd answers but the cluster does not, `chalkctl upgrade <node>
+--recover` skips cluster version checks and layer coordination. It still validates the image and
 config and waits for a healthy new boot. The node's checks below, including protection of its
 fallback image, are unchanged. [Recover a node whose cluster is unavailable](../../operate/upgrade.md#recover-a-node-whose-cluster-is-unavailable)
 shows the command and the checks it skips.
@@ -70,7 +70,7 @@ stays on the operator's machine, so a new build changes no node's config, and an
 
 With `--image`, chalkctl takes a prebuilt image: a raw image with `repart-output.json` beside it,
 or an image directory. It installs the image on the nodes that run an image of its name, or on the
-nodes `--nodes` names, whatever they run. Nodes on another platform than the image's are skipped
+nodes the command names, whatever they run. Nodes on another platform than the image's are skipped
 and named. chalkctl prints each node that gets an image of another name than the one it runs.
 The check of the node's config against the image's schemas decides whether such an image suits
 it. In both cases chalkctl sends the image as the directory holds it, a copy that
@@ -315,12 +315,14 @@ is a rollback: a node that fell back from the new image. The error names the nod
 runs again, and the journal lines its failed boot recorded follow it:
 
 ```text
-chalkctl: w2: upgrade to 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6) failed: rolled back to 81bd02c4a9e1 (v1.4.0, 0f1e2d3c4b5a); it stays held by its layers; its boots logged:
+chalkctl: w2: upgrade to 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6) failed: rolled back to 81bd02c4a9e1 (v1.4.0, 0f1e2d3c4b5a); it stays cordoned; its boots logged:
 ```
 
 A run also stops when a node does not come back healthy within `--timeout`, 30 minutes by
 default. On a node its layers hold, the error then ends with
-`it stays held by its layers; run the command again to wait for it and release it`.
+`it stays cordoned; run the command again to wait for it and release it`, in the words of the
+layers that hold it: Kubernetes cordons a node, and a layer that gives no word of its own makes it
+`it stays held by its layers`.
 
 ## Running the command again continues
 

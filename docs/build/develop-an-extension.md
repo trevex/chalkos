@@ -155,7 +155,7 @@ output.
 Upgrade one node, check it, then upgrade the rest:
 
 ```sh
-chalkctl upgrade --nodes=server1 --secrets=secrets.age
+chalkctl upgrade server1 --secrets=secrets.age
 chalkctl upgrade --secrets=secrets.age
 ```
 

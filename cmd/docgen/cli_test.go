@@ -15,7 +15,7 @@ import (
 func testTree() *cobra.Command {
 	root := &cobra.Command{Use: "tool", Short: "A tool", Long: "Runs things in <dir>.", RunE: func(*cobra.Command, []string) error { return nil }}
 	root.PersistentFlags().Bool("verbose", false, "print more")
-	run := &cobra.Command{Use: "run <thing>", Short: "Run a thing", Long: "Runs <thing>, writing <file>.prev.", Example: "  # Run x fast.\n  tool run x --fast", RunE: func(*cobra.Command, []string) error { return nil }}
+	run := &cobra.Command{Use: "run <thing>", Short: "Run a thing", Long: "Runs <thing>, writing <file>.prev.", Example: "  # Run x fast.\n  tool run x --fast", Annotations: map[string]string{detailsAnnotation: "Retries <thing> when it fails."}, RunE: func(*cobra.Command, []string) error { return nil }}
 	run.Flags().Bool("fast", false, "run fast")
 	run.Flags().StringP("out", "o", "", "`file` to write, a|b (default the thing's directory)")
 	run.Flags().StringSlice("tag", nil, "tags of the thing")
@@ -60,6 +60,7 @@ func TestWriteCLI(t *testing.T) {
 		"# tool run\n\n" +
 		"```sh\ntool run <thing> [flags]\n```\n\n" +
 		"Runs &lt;thing>, writing &lt;file>.prev.\n\n" +
+		"## Details\n\nRetries &lt;thing> when it fails.\n\n" +
 		"## Flags\n\n" +
 		"| Flag | Type | Default | Description |\n" +
 		"| --- | --- | --- | --- |\n" +

@@ -185,7 +185,7 @@ func dialEither(t *target, p pinFlags) (*client.Conn, error) {
 }
 
 // nodeAddressesUsage is the usage of --address of a command that reaches one node or several:
-// config apply, and upgrade, which names its nodes with --nodes.
+// config apply and upgrade.
 const nodeAddressesUsage = "address of a node's chalkd as NODE=ADDR, or as ADDR alone when the command names one node, where ADDR is host or host:port; may be repeated (default each node's address in the inventory)"
 
 // namedAddressesUsage is the usage of --address of rotate, which reaches every node and none alone.

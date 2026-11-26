@@ -66,7 +66,7 @@ func newCommand(a *app) *cobra.Command {
 
 	gen := cli.Group(&cobra.Command{Use: "gen", Short: "Generate files of a cluster", Long: genLong, Example: genExample})
 	gen.AddCommand(a.genSecretsCommand())
-	node := cli.Group(&cobra.Command{Use: "node", Short: "Manage a node's access, activate its staged image, reboot it and show its diagnostics and routes", Long: nodeLong, Example: nodeExample})
+	node := cli.Group(&cobra.Command{Use: "node", Short: "Manage one node: access, image, reboot and diagnostics", Long: nodeLong, Example: nodeExample})
 	node.AddCommand(a.nodeRenewCommand(), a.nodeDiagCommand(), a.nodeActivateCommand(), a.nodeRebootCommand())
 	config := cli.Group(&cobra.Command{Use: "config", Short: "Deliver a node's config and act on its trial or pending config", Long: configLong, Example: configExample})
 	config.AddCommand(a.applyConfigCommand(false), a.confirmConfigCommand(), a.rollbackConfigCommand(), a.discardPendingCommand())
@@ -79,27 +79,45 @@ func newCommand(a *app) *cobra.Command {
 	secureboot.AddCommand(a.securebootNewCommand(), a.securebootEnrollCommand())
 	image := cli.Group(&cobra.Command{Use: "image", Short: "Pull chalkos images from a registry", Long: imageLong, Example: imageExample})
 	image.AddCommand(a.imagePullCommand())
-	root.AddCommand(
-		gen, node, config, client, storage, secureboot, image,
-		a.recoveryKeyCommand(),
-		a.installCommand(),
-		a.disksCommand(),
-		a.applyConfigCommand(true),
-		a.statusCommand(),
-		a.logsCommand(),
-		a.rotateCommand(),
-		a.upgradeCommand(),
-		a.validateCommand(),
-		versionCommand(),
+	root.AddGroup(&cobra.Group{ID: setUpGroup, Title: "Set up:"}, &cobra.Group{ID: operateGroup, Title: "Operate:"})
+	inGroup(root, setUpGroup, gen, a.installCommand(), client, secureboot, image)
+	inGroup(root, operateGroup,
+		a.statusCommand(), a.logsCommand(), a.disksCommand(), a.applyConfigCommand(true), config,
+		a.upgradeCommand(), node, storage, a.rotateCommand(), a.validateCommand(), a.recoveryKeyCommand(),
 	)
+	root.AddCommand(versionCommand())
 	groups := map[string]*cobra.Command{"": root, "node": node}
-	for _, c := range compiled[layer.Commands]() {
+	for _, p := range plugins {
+		c, ok := p.(layer.Commands)
+		if !ok {
+			continue
+		}
 		for group, cmds := range c.Commands(host{a}) {
+			if group == "" {
+				// A layer's commands at the root form a group of their own, titled by the layer.
+				root.AddGroup(&cobra.Group{ID: p.Name(), Title: c.Title() + ":"})
+				inGroup(root, p.Name(), cmds...)
+				continue
+			}
 			groups[group].AddCommand(cmds...)
 		}
 	}
 	declare(root, clientNew)
 	return root
+}
+
+// The groups of the root's commands in its help, besides one per layer.
+const (
+	setUpGroup   = "setup"
+	operateGroup = "operate"
+)
+
+// inGroup adds cmds to parent in the group of the ID.
+func inGroup(parent *cobra.Command, id string, cmds ...*cobra.Command) {
+	for _, c := range cmds {
+		c.GroupID = id
+	}
+	parent.AddCommand(cmds...)
 }
 
 // command makes cmd run run with the environment and streams of the command that runs.

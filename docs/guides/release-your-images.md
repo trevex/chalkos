@@ -249,7 +249,7 @@ Then upgrade one node and the rest, as [Upgrade nodes](../operate/upgrade.md#upg
 describes:
 
 ```sh
-chalkctl upgrade --nodes cp3 --secrets=secrets.age
+chalkctl upgrade cp3 --secrets=secrets.age
 chalkctl upgrade --secrets=secrets.age
 ```
 

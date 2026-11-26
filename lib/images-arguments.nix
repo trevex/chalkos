@@ -26,7 +26,7 @@ let
       name = nameOption "name" ''
         The image's name, matching `${namePattern}`, which is its attribute in mkImages's result,
         `CHALKOS_IMAGE` in its os-release and `name` in its `metadata.json`.
-        `chalkctl upgrade --image` without `--nodes` upgrades the nodes running an image of this
+        `chalkctl upgrade --image` without node names upgrades the nodes running an image of this
         name.
       '';
       platform = nameOption "platform" ''

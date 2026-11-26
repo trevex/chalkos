@@ -1,13 +1,13 @@
 ---
 title: "chalkctl node"
-description: "Manage a node's access, activate its staged image, reboot it and show its diagnostics and routes"
+description: "Manage one node: access, image, reboot and diagnostics"
 ---
 
 # chalkctl node
 
-Manages a node's access to the cluster and its boot and shows its state: renews its node
-certificate, revokes and unrevokes it by name, makes the image staged on it boot next, reboots it
-held by its layers, lists and runs the diagnostics its image declares, and shows a router's routes.
+Manages one node: renews its node certificate, makes the image staged on it boot next, reboots it
+held by its layers, and lists and runs the diagnostics its image declares. Layers add commands of
+their own.
 
 node renew needs the secrets file; node revoke and node unrevoke need an admin client file or the
 secrets file; node activate and node reboot need an operator client file or the secrets file; node
@@ -17,11 +17,9 @@ diag and node routes need a reader client file or the secrets file.
 
 ```sh
 chalkctl node renew w1
-chalkctl node revoke w1
 chalkctl node activate w1
 chalkctl node reboot w1
 chalkctl node diag w1 route-get address=2001:db8::1
-chalkctl node routes r1 ::/0
 ```
 
 ## See also

@@ -89,7 +89,7 @@ parentheses say otherwise when they differ:
   image, but another image is staged or active, as an upgrade with `--until stage` of an image the
   inventory names no longer leaves it. A delivery writes that image's config slot too, so that
   image checks the config, and no command removes it. An upgrade to a new image replaces it.
-- `not the inventory's; chalkctl upgrade --nodes node1 delivers it with the image <image>`: the
+- `not the inventory's; chalkctl upgrade node1 delivers it with the image <image>`: the
   node runs another image than the inventory's. `config apply` checks the config against the
   image the node runs, which may refuse it, so the config comes with the upgrade.
 - `not the inventory's; it comes with the image <image> in the inactive slot`: the node has the
@@ -118,7 +118,7 @@ active in its inactive slot adds `staged config <version> (...)`, the config tha
 with. When it differs, its parentheses name `chalkctl config apply node1`, which writes the config
 slots of both images, or `chalkctl config apply --staged node1` when the running image runs the
 inventory's config already, or when the staged image is the inventory's and the running image is
-not. When neither image is the inventory's, they name `chalkctl upgrade --nodes node1`, as the
+not. When neither image is the inventory's, they name `chalkctl upgrade node1`, as the
 config line does. A staged image that is not the inventory's on a node that runs the inventory's
 image adds the same condition as the config line. When status cannot compare the config, the
 staged line names `chalkctl config apply --staged --diff node1`, which compares the staged slot.
@@ -197,7 +197,7 @@ still checks ends in `, not found healthy yet`. More lines follow after an upgra
   [A node rolled back during the upgrade](upgrade.md#a-node-rolled-back-during-the-upgrade)
   says what to do.
 - `its store's root hash is ..., not that of the image ... the inventory names, ...`: the image was
-  rebuilt since the node's upgrade. The line ends in `chalkctl upgrade --nodes node1 installs that
+  rebuilt since the node's upgrade. The line ends in `chalkctl upgrade node1 installs that
   image`, in `it has ... staged: chalkctl node activate node1 makes it boot next` when the image
   waits for its activation, or in `it has ... active, which it boots with its next reboot:
   chalkctl node reboot node1` when it waits for a reboot. After a rollback from a boot that was

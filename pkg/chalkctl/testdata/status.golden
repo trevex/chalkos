@@ -11,7 +11,7 @@ previous image 123412341234 (0123456789ab-dirty) (upgrade --rollback boots it)
 upgrade to deaddeaddead failed: rolled back to 81bd81bd81bd (v1.4.0, a1b2c3d4e5f6)
   Nov 13 14:00:01 n1 chalkd[412]: health check failed
   Nov 13 14:00:02 n1 systemd[1]: Reached target Reboot.
-its store's root hash is 81bd81bd81bd81bd81bd81bd81bd81bd81bd81bd81bd81bd81bd81bd81bd81bd, not that of the image test-metal the inventory names, abababababababababababababababababababababababababababababababab; chalkctl upgrade --nodes n1 installs that image
+its store's root hash is 81bd81bd81bd81bd81bd81bd81bd81bd81bd81bd81bd81bd81bd81bd81bd81bd, not that of the image test-metal the inventory names, abababababababababababababababababababababababababababababababab; chalkctl upgrade n1 installs that image
 module policy: enforced (version 0.5.0)
 VOLUME  DISK    MOUNT POINT    STATE
 var     system  /var           mounted

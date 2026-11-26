@@ -57,6 +57,7 @@ func TestExecuteMessages(t *testing.T) {
 		"fail":      "tool: failed\n",
 		"group one": "tool: usage: accepts 1 arg(s), received 0\nUsage:\n  tool group one <arg> [flags]\n",
 		"required":  "tool: usage: required flag(s) \"name\" not set\nUsage:\n  tool required [flags]\n",
+		"grop one":  "tool: usage: unknown command \"grop\" for \"tool\"\n\nDid you mean this?\n\tgroup\nUsage:",
 	} {
 		var stderr bytes.Buffer
 		root := tree(&stderr)

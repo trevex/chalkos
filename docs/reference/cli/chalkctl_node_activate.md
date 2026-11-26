@@ -34,15 +34,15 @@ The command needs an operator client file or the secrets file.
 ## Examples
 
 ```sh
-chalkctl upgrade --nodes w1 --until stage
+chalkctl upgrade w1 --until stage
 chalkctl node activate w1
 chalkctl node reboot w1
 
 # Activate the image upgrade --image staged.
-chalkctl upgrade --image ./worker-image --nodes w1 --until stage
+chalkctl upgrade w1 --image ./worker-image --until stage
 chalkctl node activate w1 --image ./worker-image
 ```
 
 ## See also
 
-- [chalkctl node](chalkctl_node.md): Manage a node's access, activate its staged image, reboot it and show its diagnostics and routes
+- [chalkctl node](chalkctl_node.md): Manage one node: access, image, reboot and diagnostics

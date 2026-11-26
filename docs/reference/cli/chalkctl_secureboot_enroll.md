@@ -10,38 +10,47 @@ chalkctl secureboot enroll [flags]
 ```
 
 Enrols the Secure Boot keys of --keys in the firmware of a node in maintenance mode, which must be
-in Setup Mode, as firmware is once its platform key is cleared in its setup. chalkctl signs three
-updates of the firmware's variables: db and KEK, appended to what the firmware holds, and PK, which
-ends Setup Mode. It reads PK.key, PK.crt, KEK.key, KEK.crt, db.crt and owner.txt from --keys;
-db.key, which signs images, may stay on the machine that signs them. With --microsoft, db also
-gets Microsoft's UEFI CAs of 2011 and 2023 and its option ROM CA of 2023, and KEK Microsoft's KEK
-CAs of 2011 and 2023; firmware needs them to start the option ROMs of many graphics and network
-cards and boot loaders Microsoft signed.
+in Setup Mode, as firmware is once its platform key is cleared in its setup. chalkctl signs the
+updates of db, KEK and PK, which ends Setup Mode, and the node writes them, then reboots; chalkctl
+waits until it answers with Secure Boot on. The node refuses keys that would not start the boot
+loader and UKI it booted, so sign the installer or image with the db key first (chalkbuild sign)
+and boot it. See [Enrol the keys in Setup Mode](../../operate/secure-boot.md#enrol-the-keys-in-setup-mode).
 
-Option ROMs are the firmware of graphics cards, network cards and disk controllers, which the
-machine's firmware loads at every boot. Under Secure Boot, db must allow each of them, by a CA
-that signed it or by its digest. --option-roms asks the node for the SHA-256 digests of the option
-ROMs its firmware loaded, as the TPM event log lists them, prints them and adds them to db.
---db-hash adds a digest of your own, such as that of an option ROM the machine did not load this
-boot.
-
-The node refuses the keys unless the boot loader and UKI it booted verify against db with the new
-keys, so sign the installer or image with the db key first (chalkbuild sign) and boot it. It also
-refuses keys under which db would not allow every option ROM its TPM event log lists, by its digest
-or by holding Microsoft's UEFI CA of 2011 or its option ROM CA of 2023, and option ROMs dbx revokes.
-When the node cannot read its option ROMs, without a TPM for one, chalkctl says so. --skip-checks
-enrols the keys all the same, skipping both checks. A node that runs its image from its own disk
-deletes STATE, which holds nothing before the install and which the TPM no longer unseals once the
-keys change, and creates it again when it boots. The node writes PK last: when a write fails before
-it, the firmware stays in Setup Mode and enroll can run again.
-
-The node then reboots, and chalkctl waits until it answers with Secure Boot on. It makes a new
-certificate in maintenance mode when it boots, which chalkctl accepts without verifying and prints
-the fingerprint of; compare it with the node's console before the install. Like chalkctl disks, the
-command reaches the node by --address, with --fingerprint or --insecure, and with its credentials
-when its image carries an OS CA.
+Option ROMs, the firmware of graphics, network and disk controller cards, need db to allow them:
+--microsoft adds Microsoft's CAs, --option-roms the digests of the option ROMs the node loaded, and
+--db-hash a digest of your own. The node refuses keys under which db would not allow every option
+ROM it loaded; --skip-checks enrols them all the same. See
+[Allow the cards' option ROMs](../../operate/secure-boot.md#allow-the-cards-option-roms).
 
 The command needs an admin client file or the secrets file.
+
+## Details
+
+db and KEK are appended to what the firmware holds. chalkctl reads PK.key, PK.crt, KEK.key,
+KEK.crt, db.crt and owner.txt from --keys; db.key, which signs images, may stay on the machine
+that signs them. With --microsoft, db also gets Microsoft's UEFI CAs of 2011 and 2023 and its option
+ROM CA of 2023, and KEK Microsoft's KEK CAs of 2011 and 2023; firmware needs them to start the
+option ROMs of many graphics and network cards and boot loaders Microsoft signed.
+
+The machine's firmware loads option ROMs at every boot. Under Secure Boot, db must allow each of
+them, by a CA that signed it or by its digest. --option-roms asks the node for the SHA-256 digests
+of the option ROMs its firmware loaded, as the TPM event log lists them, prints them and adds them
+to db. --db-hash adds a digest of your own, such as that of an option ROM the machine did not load
+this boot.
+
+The node refuses the keys unless the boot loader and UKI it booted verify against db with the new
+keys. It also refuses keys under which db would not allow every option ROM its TPM event log lists,
+by its digest or by holding Microsoft's UEFI CA of 2011 or its option ROM CA of 2023, and option
+ROMs dbx revokes. When the node cannot read its option ROMs, without a TPM for one, chalkctl says
+so. --skip-checks skips both checks. A node that runs its image from its own disk deletes STATE,
+which holds nothing before the install and which the TPM no longer unseals once the keys change,
+and creates it again when it boots. The node writes PK last: when a write fails before it, the
+firmware stays in Setup Mode and enroll can run again.
+
+After the reboot the node makes a new certificate in maintenance mode, which chalkctl accepts
+without verifying and prints the fingerprint of; compare it with the node's console before the
+install. Like chalkctl disks, the command reaches the node by --address, with --fingerprint or
+--insecure, and with its credentials when its image carries an OS CA.
 
 ## Flags
 

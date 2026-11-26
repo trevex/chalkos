@@ -510,7 +510,7 @@ func TestUpgradeRefusesAKubeletNewerThanTheAPIServer(t *testing.T) {
 	upgraded := func() bool {
 		return slices.ContainsFunc(l.takeEvents(), func(e string) bool { return strings.HasSuffix(e, " upgrade") })
 	}
-	err := l.upgrade(newer, "--nodes", "w1", "--until", "activate")
+	err := l.upgrade(newer, "w1", "--until", "activate")
 	if want := "w1: the image's kubelet 1.38.0 would be newer than the API server 1.37.1"; err == nil || !strings.Contains(err.Error(), want) {
 		t.Errorf("err = %v, want %q", err, want)
 	}
@@ -519,7 +519,7 @@ func TestUpgradeRefusesAKubeletNewerThanTheAPIServer(t *testing.T) {
 	}
 
 	l.nodes["cp2"].rebooting = true
-	if err := l.upgrade(testImageWithKubelet(t, "w-metal", "0.3.0", "1.37.5"), "--nodes", "w1", "--until", "activate"); err == nil || !strings.Contains(err.Error(), "the versions cp2 runs are unknown: ") || !strings.Contains(err.Error(), "the version skew check needs every control plane") {
+	if err := l.upgrade(testImageWithKubelet(t, "w-metal", "0.3.0", "1.37.5"), "w1", "--until", "activate"); err == nil || !strings.Contains(err.Error(), "the versions cp2 runs are unknown: ") || !strings.Contains(err.Error(), "the version skew check needs every control plane") {
 		t.Errorf("cp2 down: %v", err)
 	}
 	if upgraded() {
@@ -527,11 +527,11 @@ func TestUpgradeRefusesAKubeletNewerThanTheAPIServer(t *testing.T) {
 	}
 	l.nodes["cp2"].rebooting = false
 
-	if err := l.upgrade(testImageWithKubelet(t, "w-metal", "0.3.0", "1.37.5"), "--nodes", "w1", "--until", "activate"); err != nil {
+	if err := l.upgrade(testImageWithKubelet(t, "w-metal", "0.3.0", "1.37.5"), "w1", "--until", "activate"); err != nil {
 		t.Errorf("a patch release: %v\n%s", err, l.ta.stdout)
 	}
 	l.nodes["w2"].rebooting = true
-	if err := l.upgrade(testUpgradeImage(t, "cp-metal", "0.2.0"), "--nodes", "cp1", "--until", "activate"); err != nil {
+	if err := l.upgrade(testUpgradeImage(t, "cp-metal", "0.2.0"), "cp1", "--until", "activate"); err != nil {
 		t.Errorf("w2 down: %v\n%s", err, l.ta.stdout)
 	}
 	l.nodes["w2"].rebooting = false
@@ -539,14 +539,14 @@ func TestUpgradeRefusesAKubeletNewerThanTheAPIServer(t *testing.T) {
 		l.nodes[name].apiServer = "1.38.0"
 	}
 	l.rollTo(t, "1.38.0")
-	if err := l.upgrade(newer, "--nodes", "w3"); err != nil {
+	if err := l.upgrade(newer, "w3"); err != nil {
 		t.Fatalf("API servers on 1.38: %v\n%s", err, l.ta.stdout)
 	}
 	l.takeEvents()
 	// A rollback opens no image, so it checks none, and a control plane that is down does not
 	// stop it.
 	l.nodes["cp2"].rebooting = true
-	if err := l.run("upgrade", "--rollback", "--nodes", "w3"); err != nil {
+	if err := l.run("upgrade", "--rollback", "w3"); err != nil {
 		t.Errorf("a rollback: %v\n%s", err, l.ta.stdout)
 	}
 }
@@ -558,7 +558,7 @@ func TestUpgradeRefusesAConfigThatChangesTheAPIServer(t *testing.T) {
 	l.runAPIServer("1.37.1")
 	l.rollTo(t, "1.37.2")
 	img := testUpgradeImage(t, "w-metal", "0.2.0")
-	err := l.upgrade(img, "--nodes", "w1", "--until", "activate")
+	err := l.upgrade(img, "w1", "--until", "activate")
 	if want := "w1: the inventory's config changes the API server from 1.37.1 to 1.37.2, which an upgrade does not deliver"; err == nil || !strings.Contains(err.Error(), want) {
 		t.Errorf("err = %v, want %q", err, want)
 	}
@@ -566,7 +566,7 @@ func TestUpgradeRefusesAConfigThatChangesTheAPIServer(t *testing.T) {
 		t.Errorf("events %q, want none", events)
 	}
 	l.runAPIServer("1.37.2")
-	if err := l.upgrade(img, "--nodes", "w1", "--until", "activate"); err != nil {
+	if err := l.upgrade(img, "w1", "--until", "activate"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
 	if got := l.nodes["w1"].staged; got != "0.2.0" {
@@ -580,7 +580,7 @@ func TestUpgradeRefusesAConfigThatChangesTheAPIServer(t *testing.T) {
 func TestOutsideTheClusterReachesNoneOfIt(t *testing.T) {
 	l := newRolloutLab(t)
 	l.nodes["cp1"].rebooting = true
-	if err := l.upgrade(testUpgradeImage(t, "plain-metal", "0.2.0"), "--nodes", "n1", "--until", "activate"); err != nil {
+	if err := l.upgrade(testUpgradeImage(t, "plain-metal", "0.2.0"), "n1", "--until", "activate"); err != nil {
 		t.Fatalf("upgrade: %v\n%s", err, l.ta.stdout)
 	}
 	l.takeEvents()

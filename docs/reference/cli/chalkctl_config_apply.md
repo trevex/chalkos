@@ -9,39 +9,55 @@ description: "Deliver a node's config from the inventory"
 chalkctl config apply <node> [<node>...] [flags]
 ```
 
-Delivers a node's config to the installed node: the documents of the files the inventory gives
-it. chalkctl checks them against the contract of the image the node runs, with the image's change
-rules that read no facts, and the node checks them again. The node replaces its config as a whole,
-applies additive storage changes such as a new volume while it runs, and restarts the units that
-read what changed; chalkctl prints the changes and the units. When the image's rules refuse a
-change, the node refuses the whole config and names the remedy. chalkctl warns of each image
-reference in the config that names a tag but no digest, and delivers the config all the same. See
+Delivers a node's config from the inventory to the installed node. chalkctl checks it against the
+contract of the image the node runs, and the node checks it again, replaces its config as a whole,
+applies additive storage changes and restarts the units that read what changed. Several nodes get
+it one after the other, and a node that runs it already is left alone, so the command run again
+continues a run that stopped. A config that changes a version a layer bounds across the cluster
+runs ordered: the nodes that act for the others first, each on trial. See
+[Change a node's config](../../operate/change-config.md).
+
+--diff prints what the config changes and checks nothing on the node; --dry-run has the node check
+it as for a delivery, prints the plan and changes nothing. See
+[Check the change on the node](../../operate/change-config.md#check-the-change-on-the-node).
+
+--staged delivers to the image staged in the inactive slot alone, or without one holds the config
+pending for the next upgrade. See
+[A node keeps one config slot per image](../../how-it-works/node/config.md#a-node-keeps-one-config-slot-per-image).
+
+--try applies the config on trial: unless chalkctl confirms it in time, the node rolls it back by
+itself. See
+[A trial rolls a config back unless it is confirmed](../../how-it-works/node/config.md#a-trial-rolls-a-config-back-unless-it-is-confirmed).
+
+The command needs the secrets file.
+
+## Details
+
+chalkctl checks the config with the image's change rules that read no facts. When the image's
+rules refuse a change, the node refuses the whole config and names the remedy. chalkctl prints the
+changes and the units it restarts, and warns of each image reference in the config that names a
+tag but no digest, and delivers the config all the same. See
 [Change rules decide which changes a node accepts](../../how-it-works/node/config.md#change-rules-decide-which-changes-a-node-accepts).
 
-With several nodes, config apply delivers to them one after the other and stops at the first that
-fails; a node named twice gets the config once. --address gives each node's address as NODE=ADDR
-where it is not the inventory's. chalkctl checks every node's status and config before the first
-node gets anything and leaves a node that runs the config already alone, so the same command run
-again continues a run that stopped. --staged, --diff and --no-confirm take one node.
+With several nodes, config apply stops at the first that fails; a node named twice gets the config
+once. --address gives each node's address as NODE=ADDR where it is not the inventory's. chalkctl
+checks every node's status and config before the first node gets anything. --staged, --diff and
+--no-confirm take one node.
 
-A config that changes a version a layer bounds across the cluster, such as the Kubernetes API
-server's, runs ordered: the layer reads the versions every node runs and refuses a config that
-breaks its bounds, as Kubernetes's version skew policy does. The nodes that act for the others,
-such as Kubernetes control planes, go first, one at a time, each held by its layers and on trial,
-for --try or else 10 minutes, until its layers find it serving with the config; then the other
-nodes. The first failure rolls that node's trial back at once, and chalkctl prints which nodes run
-which version. --until deliver leaves the first node's trial open for config confirm. An ordered
-run goes without the layers' payload flags. See
-[Upgrade Kubernetes](../../kubernetes/upgrade-kubernetes.md).
+In an ordered run the layer reads the versions every node runs and refuses a config that breaks
+its bounds, as Kubernetes's version skew policy does. The nodes that act for the others, such as
+Kubernetes control planes, go one at a time, each held by its layers and on trial, for --try or
+else 10 minutes, until its layers find it serving with the config; then the other nodes. The first
+failure rolls that node's trial back at once, and chalkctl prints which nodes run which version.
+--until deliver leaves the first node's trial open for config confirm. An ordered run goes without
+the layers' payload flags. See [Upgrade Kubernetes](../../kubernetes/upgrade-kubernetes.md).
 
---diff prints what the config changes, document by document, and checks nothing on the node.
---dry-run has the node check the config as it checks a delivery and changes nothing. It prints the
-diff, the config the node would run, the outputs that would change, the effects with what fires
-each, the storage changes, and the staged or pending config the delivery writes; a refusal exits 1.
---dry-run takes several nodes, and its error names the nodes whose config is refused apart from
-those it could not check, such as a node on trial. It goes without --diff, --try, --no-confirm,
---ignore-unit and the layers' payload flags. With --staged the plan has no outputs or
-effects, which that image takes when it boots.
+--dry-run prints the diff, the config the node would run, the outputs that would change, the
+effects with what fires each, the storage changes, and the staged or pending config the delivery
+writes; a refusal exits 1. --dry-run takes several nodes, and its error names the nodes whose
+config is refused apart from those it could not check, such as a node on trial. It goes without
+--diff, --try, --no-confirm, --ignore-unit and the layers' payload flags. With --staged the plan
+has no outputs or effects, which that image takes when it boots.
 
 For config delivered to the running image, --ignore-readiness makes failed runtime readiness
 checks warnings and lets their effects continue. It still runs the probes, validates the config,
@@ -52,31 +68,25 @@ Each image on a node keeps its own config, which it checks itself. A delivery to
 goes to the staged image too, which checks it before anything changes; once the running image
 applied it, the node writes the staged image's config, except that of a rollback's image while its
 boot is not found healthy. When that write fails, the command fails naming it, and running it
-again writes it. --staged delivers to the staged image alone, and nothing restarts. Without a
-staged image, --staged holds the config pending for the next upgrade, which takes it unless it
-carries config of its own. chalkctl checks it against the node's image in the inventory; the node
-only parses it, as no image is there to check it against. A pending config carries no fallback
-secret. A delivery to the running image replaces a pending config too, and config discard drops
-it. See
-[A node keeps one config slot per image](../../how-it-works/node/config.md#a-node-keeps-one-config-slot-per-image).
+again writes it. With --staged nothing restarts. A config --staged holds pending is taken by the
+next upgrade unless that carries config of its own. chalkctl checks it against the node's image
+in the inventory; the node only parses it, as no image is there to check it against. A pending
+config carries no fallback secret. A delivery to the running image replaces a pending config too,
+and config discard drops it.
 
---try applies the config on trial for the duration given, from 10s to 24h: unless chalkctl
-confirms it in time, the node rolls it back by itself. chalkctl confirms over a new connection,
-once the node is healthy and its layers find it serving with the config; --ignore-unit leaves a
-unit out of the health check, one unit per flag, and chalkctl warns of units that failed before the
-trial. When the config is not confirmed, or the answer to its delivery is lost, chalkctl waits up to
-two minutes after the deadline for the node's rollback, reports it and exits non-zero.
-Interrupting chalkctl leaves the trial open. A trial delivers config alone and is refused for a
-config that changes the node's storage; while it is open, the node refuses other deliveries,
-upgrades and image rollbacks. --no-confirm leaves the trial open for config confirm, and config
-rollback ends it at once. See
-[A trial rolls a config back unless it is confirmed](../../how-it-works/node/config.md#a-trial-rolls-a-config-back-unless-it-is-confirmed).
+--try takes a duration from 10s to 24h. chalkctl confirms over a new connection, once the node is
+healthy and its layers find it serving with the config; --ignore-unit leaves a unit out of the
+health check, one unit per flag, and chalkctl warns of units that failed before the trial. When
+the config is not confirmed, or the answer to its delivery is lost, chalkctl waits up to two
+minutes after the deadline for the node's rollback, reports it and exits non-zero. Interrupting
+chalkctl leaves the trial open. A trial delivers config alone and is refused for a config that
+changes the node's storage; while it is open, the node refuses other deliveries, upgrades and
+image rollbacks. --no-confirm leaves the trial open for config confirm, and config rollback ends
+it at once.
 
---kubernetes-share also delivers a new Kubernetes share, such as a worker's new kubelet
-certificate. It is refused to a node revoked with chalkctl node revoke, and while no control plane
-says which nodes are revoked; --ignore-revoked delivers it without asking.
-
-The command needs the secrets file.
+A layer's payload flag, such as --kubernetes-share, delivers the layer's payload too. It is refused
+to a node revoked with chalkctl node revoke, and while the layer cannot say which nodes are revoked;
+--ignore-revoked delivers it without asking.
 
 ## Flags
 
@@ -92,7 +102,7 @@ The command needs the secrets file.
 | `--ignore-revoked`{ #flag-ignore-revoked } | boolean | `false` | With --kubernetes-share, deliver without asking whether the node is revoked. |
 | `--ignore-unit`{ #flag-ignore-unit } | list of string | — | With --try, leave the unit out of the health check the confirmation waits for, as the image's check leaves out the units it ignores. |
 | `--inventory`{ #flag-inventory } | string | $CHALKOSINVENTORY, else chalkos.yaml in the current directory, when it exists | Inventory naming the cluster's nodes, their addresses and their config files. |
-| `--kubernetes-share`{ #flag-kubernetes-share } | boolean | `false` | Also deliver a new Kubernetes share, such as a new kubelet certificate for a worker. |
+| `--kubernetes-share`{ #flag-kubernetes-share } | boolean | `false` | Also deliver a new Kubernetes share, such as a new kubelet certificate for a worker; refused to a node revoked with chalkctl node revoke, and while no control plane says which nodes are revoked. |
 | `--no-confirm`{ #flag-no-confirm } | boolean | `false` | With --try, leave the trial open for config confirm. |
 | `--password-file`{ #flag-password-file } | string | — | File holding the password of a node whose fallback is a password. |
 | `--secrets`{ #flag-secrets } | string | — | Cluster secrets path (.age, .enc.*, or plaintext), provider URI, or - for standard input. |

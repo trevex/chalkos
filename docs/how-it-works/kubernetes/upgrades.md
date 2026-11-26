@@ -180,7 +180,7 @@ booting its current image. An activation that fails after the drain leaves the i
 the node does not reboot, chalkctl uncordons it, and the run stops. `--until stage` and
 `--until activate` drain no node.
 `chalkctl node reboot` drains a node the same way, and `--no-drain` skips the drain. For recovery
-when the cluster cannot serve an upgrade, `chalkctl upgrade --recover --nodes <node>` also skips
+when the cluster cannot serve an upgrade, `chalkctl upgrade <node> --recover` also skips
 cluster version checks, layer status queries and quorum checks. It does not drain or uncordon
 nodes, and still waits for the new boot's health checks. [Recover a node whose cluster is unavailable](../../operate/upgrade.md#recover-a-node-whose-cluster-is-unavailable)
 explains the recovery path.

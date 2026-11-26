@@ -11,23 +11,27 @@ chalkctl node reboot <node> [flags]
 
 Reboots a node as chalkctl upgrade does once the node's image is active: its layers hold it
 first, as Kubernetes keeps etcd's quorum while a control plane reboots and drains the node; then
-the node reboots, and chalkctl waits until it runs the image it boots next, an image activated by
-chalkctl node activate or the one it ran, and its boot was found healthy, and its layers release
-it, as Kubernetes uncordons it once its Node is Ready. The node checks the health of the new boot
-itself, also of a boot of an entry blessed before, which the boot loader does not count. A node
-that falls back from the image stops the command and stays held, and so does a node whose boot
-settled and stays unhealthy for a minute: the boot settled once systemd finished starting it and
-the image's health timeout, 300 seconds by default, passed since. A check that fails once, such as
-etcd answering late, does not stop the command, and a healthy look starts the minute over. When
-the node's status gave no ID of the boot before the reboot, chalkctl cannot tell the new boot from
-that one and waits for --timeout instead. A boot not found healthy within --timeout stops the
-command too and leaves the node held; the command run again waits for it and releases it.
---no-drain reboots the node without its layers holding or releasing it, and still waits. Draining
-a node goes through the cluster's control planes, which the inventory names.
+the node reboots into the image it boots next, and chalkctl waits until that boot was found healthy
+and its layers release it, as Kubernetes uncordons it once its Node is Ready. A node that falls back
+or stays unhealthy stops the command and stays held; the command run again waits for it and
+releases it. See [The node boots the new image on trial](../../how-it-works/node/upgrades.md#the-node-boots-the-new-image-on-trial).
 
-A node in maintenance mode, reached with --fingerprint or --insecure, reboots without more.
+--no-drain reboots the node without its layers holding or releasing it, and still waits. A node in
+maintenance mode, reached with --fingerprint or --insecure, reboots without more.
 
 The command needs an operator client file or the secrets file.
+
+## Details
+
+The image the node boots next is one activated by chalkctl node activate, or else the one it ran.
+The node checks the health of the new boot itself, also of a boot of an entry blessed before, which
+the boot loader does not count. A node whose boot settled and stays unhealthy for a minute stops
+the command: the boot settled once systemd finished starting it and the image's health timeout,
+300 seconds by default, passed since. A check that fails once, such as etcd answering late, does
+not stop the command, and a healthy look starts the minute over. When the node's status gave no ID
+of the boot before the reboot, chalkctl cannot tell the new boot from that one and waits for
+--timeout instead. A boot not found healthy within --timeout stops the command too and leaves the
+node held. Draining a node goes through the cluster's control planes, which the inventory names.
 
 ## Flags
 
@@ -57,4 +61,4 @@ chalkctl node reboot w1 --no-drain
 
 ## See also
 
-- [chalkctl node](chalkctl_node.md): Manage a node's access, activate its staged image, reboot it and show its diagnostics and routes
+- [chalkctl node](chalkctl_node.md): Manage one node: access, image, reboot and diagnostics

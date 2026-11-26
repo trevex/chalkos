@@ -20,13 +20,13 @@ func TestUpgradeForceRecoversWithoutCluster(t *testing.T) {
 	l.sick = map[string]string{"0.1.0": "bootstrap cannot pull the control-plane images"}
 	l.addrs["cp2"], l.addrs["cp3"] = "127.0.0.1:1", "127.0.0.1:1"
 	l.cordoned["cp1"] = true
-	if err := l.upgrade(img, "--nodes", "cp1"); err == nil || !strings.Contains(err.Error(), "API server does not answer") {
+	if err := l.upgrade(img, "cp1"); err == nil || !strings.Contains(err.Error(), "API server does not answer") {
 		t.Fatalf("ordinary upgrade = %v", err)
 	}
 	if got := l.takeEvents(); len(got) != 0 {
 		t.Fatalf("ordinary upgrade changed nodes: %q", got)
 	}
-	if err := l.upgrade(img, "--nodes", "cp1", "--recover"); err != nil {
+	if err := l.upgrade(img, "cp1", "--recover"); err != nil {
 		t.Fatalf("forced upgrade: %v\n%s", err, l.ta.stdout)
 	}
 	want := []string{"cp1 upgrade", "cp1 activate", "cp1 reboot"}
@@ -43,7 +43,7 @@ func TestUpgradeForceRecoversWithoutCluster(t *testing.T) {
 		t.Errorf("output lacks the force notice:\n%s", l.ta.stdout)
 	}
 	// Repeating recovery does not reinstall, reboot or release an already healthy target.
-	if err := l.upgrade(img, "--nodes", "cp1", "--recover"); err != nil {
+	if err := l.upgrade(img, "cp1", "--recover"); err != nil {
 		t.Fatal(err)
 	}
 	if got := l.takeEvents(); len(got) != 0 {
@@ -55,7 +55,7 @@ func TestUpgradeForceRecoversWithoutCluster(t *testing.T) {
 func TestUpgradeForceNeedsNodes(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	err := l.upgrade(testUpgradeImage(t, "cp-metal", "0.2.0"), "--recover")
-	if err == nil || !strings.Contains(err.Error(), "--recover requires --nodes") {
+	if err == nil || !strings.Contains(err.Error(), "--recover takes the nodes to recover by name") {
 		t.Fatalf("upgrade = %v", err)
 	}
 	if got := l.takeEvents(); len(got) != 0 {
@@ -69,7 +69,7 @@ func TestUpgradeForceSteps(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	l.kubernetesFails = map[string]bool{"cp1": true}
 	img := testUpgradeImage(t, "cp-metal", "0.2.0")
-	if err := l.upgrade(img, "--nodes", "cp1", "--recover", "--diff"); err != nil {
+	if err := l.upgrade(img, "cp1", "--recover", "--diff"); err != nil {
 		t.Fatal(err)
 	}
 	if got := l.takeEvents(); len(got) != 0 {
@@ -84,7 +84,7 @@ func TestUpgradeForceSteps(t *testing.T) {
 		{"activate", []string{"cp1 activate"}},
 		{"reboot", []string{"cp1 reboot"}},
 	} {
-		if err := l.upgrade(img, "--nodes", "cp1", "--recover", "--until", tc.step); err != nil {
+		if err := l.upgrade(img, "cp1", "--recover", "--until", tc.step); err != nil {
 			t.Fatalf("%s: %v", tc.step, err)
 		}
 		if got := l.takeEvents(); !slices.Equal(got, tc.events) {
@@ -118,7 +118,7 @@ func TestUpgradeForceKeepsValidation(t *testing.T) {
 				want = "Secure Boot would refuse the UKI"
 				events = []string{"cp1 upgrade", "cp1 activate"}
 			}
-			err := l.upgrade(img, "--nodes", "cp1", "--recover")
+			err := l.upgrade(img, "cp1", "--recover")
 			if err == nil || !strings.Contains(err.Error(), want) {
 				t.Fatalf("upgrade = %v, want %q", err, want)
 			}
@@ -133,7 +133,7 @@ func TestUpgradeForceKeepsValidation(t *testing.T) {
 func TestUpgradeForceStopsAtFallback(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	l.unhealthy["0.2.0"] = true
-	err := l.upgrade(testUpgradeImage(t, "cp-metal", "0.2.0"), "--nodes", "cp1", "--recover")
+	err := l.upgrade(testUpgradeImage(t, "cp-metal", "0.2.0"), "cp1", "--recover")
 	if err == nil || !strings.Contains(err.Error(), "rolled back") {
 		t.Fatalf("upgrade = %v", err)
 	}
@@ -160,13 +160,13 @@ func TestUpgradeForceSkipsRolloutGuards(t *testing.T) {
 				want = "which an upgrade does not deliver"
 			}
 			l.runAPIServer("1.37.1")
-			if err := l.upgrade(img, "--nodes", "cp1", "--until", "stage"); err == nil || !strings.Contains(err.Error(), want) {
+			if err := l.upgrade(img, "cp1", "--until", "stage"); err == nil || !strings.Contains(err.Error(), want) {
 				t.Fatalf("ordinary upgrade = %v, want %q", err, want)
 			}
 			if got := l.takeEvents(); len(got) != 0 {
 				t.Fatalf("ordinary upgrade changed nodes: %q", got)
 			}
-			if err := l.upgrade(img, "--nodes", "cp1", "--until", "stage", "--recover"); err != nil {
+			if err := l.upgrade(img, "cp1", "--until", "stage", "--recover"); err != nil {
 				t.Fatal(err)
 			}
 			if got, want := l.takeEvents(), []string{"cp1 upgrade"}; !slices.Equal(got, want) {
@@ -183,7 +183,7 @@ func TestUpgradeForceKeepsRoles(t *testing.T) {
 			l := newUpgradeLab(t, 1)
 			config := l.ta.writeConfig(t, "recovery", role, time.Hour, time.Now())
 			l.ta.withoutSecrets(t)
-			err := l.upgrade(testUpgradeImage(t, "cp-metal", "0.2.0"), "--nodes", "cp1", "--recover", "--config", config)
+			err := l.upgrade(testUpgradeImage(t, "cp-metal", "0.2.0"), "cp1", "--recover", "--config", config)
 			if role == pki.RoleReader {
 				if err == nil || !strings.Contains(err.Error(), "upgrade needs the operator role") {
 					t.Fatalf("upgrade = %v", err)
@@ -207,7 +207,7 @@ func TestUpgradeForceKeepsRoles(t *testing.T) {
 func TestUpgradeForceChecksBootHealth(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	l.sick["0.2.0"] = "broken.service failed"
-	err := l.upgrade(testUpgradeImage(t, "cp-metal", "0.2.0"), "--nodes", "cp1", "--recover")
+	err := l.upgrade(testUpgradeImage(t, "cp-metal", "0.2.0"), "cp1", "--recover")
 	if err == nil || !strings.Contains(err.Error(), "broken.service failed") {
 		t.Fatalf("upgrade = %v", err)
 	}
@@ -220,12 +220,12 @@ func TestUpgradeForceChecksBootHealth(t *testing.T) {
 func TestUpgradeForceRollback(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	img := testUpgradeImage(t, "cp-metal", "0.2.0")
-	if err := l.upgrade(img, "--nodes", "cp1", "--recover"); err != nil {
+	if err := l.upgrade(img, "cp1", "--recover"); err != nil {
 		t.Fatal(err)
 	}
 	l.takeEvents()
 	l.kubernetesFails = map[string]bool{"cp1": true}
-	if err := l.run("upgrade", "--nodes", "cp1", "--rollback", "--recover"); err != nil {
+	if err := l.run("upgrade", "cp1", "--rollback", "--recover"); err != nil {
 		t.Fatal(err)
 	}
 	if got, want := l.takeEvents(), []string{"cp1 rollback", "cp1 reboot"}; !slices.Equal(got, want) {
