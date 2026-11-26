@@ -13,7 +13,7 @@ In short:
 
 ```sh
 chalkctl status <node>          # the certificates: section shows what expires when
-chalkctl client new --name=<name> --role=<role> --secrets=secrets.age --force
+chalkctl client new --name=<name> --role=<role> --secrets=secrets.age --overwrite
 chalkctl rotate node-ca --secrets=secrets.age
 nix flake update chalkos        # after changing the input's tag; then rebuild, validate and upgrade
 ```
@@ -46,7 +46,7 @@ notes status shows.
 ## Renew what does not renew itself
 
 - Issue a new client file with
-  [Issue a client file per person](access.md#issue-a-client-file-per-person). `--force` replaces
+  [Issue a client file per person](access.md#issue-a-client-file-per-person). `--overwrite` replaces
   an existing file.
 - Renew the node certificate of a node without Kubernetes with
   [Renew node certificates](access.md#renew-node-certificates), before it expires.

@@ -32,11 +32,12 @@ func registryDeleteCommand(h layer.Host) *cobra.Command {
 	var f endpointFlags
 	var withTags bool
 	cmd := h.Command(&cobra.Command{
-		Use:     "delete REFERENCE",
-		Short:   "Delete a tag or digest on every endpoint of the cluster registry",
-		Long:    registryDeleteLong,
-		Example: registryDeleteExample,
-		Args:    cli.ExactArgs(1),
+		Use:         "delete REFERENCE",
+		Short:       "Delete a tag or digest on every endpoint of the cluster registry",
+		Long:        registryDeleteLong,
+		Example:     registryDeleteExample,
+		Args:        cli.ExactArgs(1),
+		Annotations: layer.Meta{Credentials: layer.Admin, Confirms: registryDeleteConfirms}.Annotations(),
 	}, func(h layer.Host, ctx context.Context, args []string) error {
 		ref, err := parseImageRef(args[0])
 		switch {
@@ -54,7 +55,7 @@ func registryDeleteCommand(h layer.Host) *cobra.Command {
 		if _, err := s.repoAt(s.Endpoints[0], ref); err != nil {
 			return err
 		}
-		return s.delete(ctx, h.Stdout(), h.Stderr(), ref, withTags)
+		return s.delete(ctx, h.Stdout(), h.Stderr(), ref, withTags, func(what string) error { return h.Confirm(ctx, what, "") })
 	})
 	f.register(cmd.Flags(), pki.RoleAdmin)
 	cmd.Flags().BoolVar(&withTags, "with-tags", false, "delete a digest together with the tags that name it, which the command refuses otherwise")
@@ -64,11 +65,12 @@ func registryDeleteCommand(h layer.Host) *cobra.Command {
 func registryGCCommand(h layer.Host) *cobra.Command {
 	var f endpointFlags
 	cmd := h.Command(&cobra.Command{
-		Use:     "gc",
-		Short:   "Collect garbage on every endpoint of the cluster registry",
-		Long:    registryGCLong,
-		Example: registryGCExample,
-		Args:    cli.NoArgs,
+		Use:         "gc",
+		Short:       "Collect garbage on every endpoint of the cluster registry",
+		Long:        registryGCLong,
+		Example:     registryGCExample,
+		Args:        cli.NoArgs,
+		Annotations: layer.Meta{Credentials: layer.Admin}.Annotations(),
 	}, func(h layer.Host, ctx context.Context, _ []string) error {
 		s, err := f.endpoints(h, ctx, "registry gc", pki.RoleAdmin)
 		if err != nil {
@@ -83,11 +85,12 @@ func registryGCCommand(h layer.Host) *cobra.Command {
 func registryListCommand(h layer.Host) *cobra.Command {
 	var f endpointFlags
 	cmd := h.Command(&cobra.Command{
-		Use:     "list",
-		Short:   "List the images of every endpoint of the cluster registry and mark those that differ",
-		Long:    registryListLong,
-		Example: registryListExample,
-		Args:    cli.NoArgs,
+		Use:         "list",
+		Short:       "List the images of every endpoint of the cluster registry and mark those that differ",
+		Long:        registryListLong,
+		Example:     registryListExample,
+		Args:        cli.NoArgs,
+		Annotations: layer.Meta{Credentials: layer.Reader}.Annotations(),
 	}, func(h layer.Host, ctx context.Context, _ []string) error {
 		s, err := f.endpoints(h, ctx, "registry list", pki.RoleReader)
 		if err != nil {
@@ -138,15 +141,31 @@ func (s endpoints) childrenOf(ctx context.Context, e netip.Addr, repo name.Repos
 	return m.Manifests, nil
 }
 
+// readRepo reads the tags of repo on the endpoint e and, for a digest ref, the tagged indexes
+// that name the digest.
+func (s endpoints) readRepo(ctx context.Context, e netip.Addr, repo name.Repository, ref imageRef) (map[string]v1.Descriptor, []string, error) {
+	tags, err := s.tagsOn(ctx, e, repo)
+	if err != nil || ref.digest == "" {
+		return tags, nil, err
+	}
+	parents, err := s.parentsOf(ctx, e, repo, tags, ref.digest)
+	return tags, parents, err
+}
+
 // delete deletes ref, a tag or a digest, below every endpoint, and fails unless each deleted it
 // or never held it. Before it deletes anything, it refuses a digest that a tagged index names, as
-// deleting it would break the index, and a digest that tags name, unless withTags. It reports
-// each endpoint, a failed one to errOut.
-func (s endpoints) delete(ctx context.Context, out, errOut io.Writer, ref imageRef, withTags bool) error {
+// deleting it would break the index, and a digest that tags name, unless withTags and confirm
+// accepts deleting the tags; as the prompt may wait for long, it then reads the tags again and
+// refuses when a tagged index names the digest or the tags naming it changed. It reports each
+// endpoint, a failed one to errOut.
+func (s endpoints) delete(ctx context.Context, out, errOut io.Writer, ref imageRef, withTags bool, confirm func(what string) error) error {
 	var failed []string
 	fail := func(e netip.Addr, err error) {
 		fmt.Fprintf(errOut, "%s: failed: %v\n", e, err)
 		failed = append(failed, e.String())
+	}
+	brokenIndex := func(parents []string) error {
+		return fmt.Errorf("%s is an image of the index %s; deleting it would break the index, so delete the index first", ref, strs.And(parents))
 	}
 	// The tags of the repository on each endpoint that could be read.
 	tagged := map[netip.Addr]map[string]v1.Descriptor{}
@@ -156,12 +175,8 @@ func (s endpoints) delete(ctx context.Context, out, errOut io.Writer, ref imageR
 		if err != nil {
 			return err
 		}
-		tags, err := s.tagsOn(ctx, e, repo)
-		if err == nil && ref.digest != "" {
-			var on []string
-			on, err = s.parentsOf(ctx, e, repo, tags, ref.digest)
-			parents = append(parents, on...)
-		}
+		tags, on, err := s.readRepo(ctx, e, repo, ref)
+		parents = append(parents, on...)
 		if err != nil {
 			fail(e, err)
 			continue
@@ -175,11 +190,34 @@ func (s endpoints) delete(ctx context.Context, out, errOut io.Writer, ref imageR
 		}
 	}
 	if len(parents) > 0 {
-		return fmt.Errorf("%s is an image of the index %s; deleting it would break the index, so delete the index first", ref, strs.And(parents))
+		return brokenIndex(parents)
 	}
+	slices.Sort(naming)
+	naming = slices.Compact(naming)
 	if len(naming) > 0 && !withTags {
-		slices.Sort(naming)
-		return fmt.Errorf("the tags %s name %s on %s; pass --with-tags to delete them with it, or delete the tags alone", strs.And(slices.Compact(naming)), ref, strs.And(namingOn))
+		return fmt.Errorf("the tags %s name %s on %s; pass --with-tags to delete them with it, or delete the tags alone", strs.And(naming), ref, strs.And(namingOn))
+	}
+	if len(naming) > 0 {
+		if err := confirm(fmt.Sprintf("registry delete deletes %s with the tags %s that name it on %s", ref, strs.And(naming), strs.And(namingOn))); err != nil {
+			return err
+		}
+		for _, e := range s.Endpoints {
+			confirmed, ok := tagged[e]
+			if !ok {
+				continue
+			}
+			repo, _ := s.repoAt(e, ref)
+			tags, on, err := s.readRepo(ctx, e, repo, ref)
+			switch {
+			case err != nil:
+				return fmt.Errorf("%s: %w", e, err)
+			case len(on) > 0:
+				return brokenIndex(on)
+			case !slices.Equal(tagsNaming(tags, ref.digest), tagsNaming(confirmed, ref.digest)):
+				return fmt.Errorf("the tags that name %s on %s changed while the prompt waited; delete again", ref, e)
+			}
+			tagged[e] = tags
+		}
 	}
 	// Digests that no tag names any more once their tag went.
 	untagged := map[string]bool{}

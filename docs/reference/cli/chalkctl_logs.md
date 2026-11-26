@@ -10,8 +10,10 @@ chalkctl logs <node> [flags]
 ```
 
 Prints a node's journal of the current boot, of every unit or of --unit alone; with --follow it
-keeps printing new entries until interrupted. The command needs a reader client file or the
-secrets file. A node in maintenance mode is reached with --fingerprint or --insecure as well.
+keeps printing new entries until interrupted. A node in maintenance mode is reached with
+--fingerprint or --insecure as well.
+
+The command needs a reader client file or the secrets file.
 
 ## Flags
 

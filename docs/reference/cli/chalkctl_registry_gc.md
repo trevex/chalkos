@@ -18,7 +18,9 @@ While an endpoint collects, it serves pulls and refuses pushes and deletes, and 
 layers went up before the collection started may fail on them, so run the command when no push
 is in progress. An endpoint that collects already says so, and the command fails for it. A
 collection runs to its end on the endpoint once begun: Ctrl-C stops chalkctl, not the
-collection. The command needs an admin client file or the secrets file.
+collection.
+
+The command needs an admin client file or the secrets file.
 
 ## Flags
 

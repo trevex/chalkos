@@ -363,14 +363,14 @@ func rewriteEncrypted(ctx context.Context, r layer.Rotating) error {
 }
 
 // FinishGuard refuses to remove an old service-account key within the hour after every
-// control plane applied the switch, unless forced, and an old encryption key while etcd holds
+// control plane applied the switch, unless --now is given, and an old encryption key while etcd holds
 // objects encrypted with it.
-func (p *Plugin) FinishGuard(ctx context.Context, r layer.Rotating, kind clustersecrets.RotationKind, force bool) error {
+func (p *Plugin) FinishGuard(ctx context.Context, r layer.Rotating, kind clustersecrets.RotationKind, now bool) error {
 	switch kind {
 	case clustersecrets.RotateServiceAccountKey:
 		at := r.Secrets().Rotation.Switched.Add(tokenRefresh)
-		if time.Now().Before(at) && !force {
-			return fmt.Errorf("tokens signed with the old service-account key are renewed until %s, an hour after every control plane applied the switch; finish then, or pass --force to refuse the tokens not renewed yet", at.Local().Format(time.RFC3339))
+		if time.Now().Before(at) && !now {
+			return fmt.Errorf("tokens signed with the old service-account key are renewed until %s, an hour after every control plane applied the switch; finish then, or pass --now to refuse the tokens not renewed yet", at.Local().Format(time.RFC3339))
 		}
 	case clustersecrets.RotateEncryptionKey:
 		old, err := oldEncryptionKey(r)

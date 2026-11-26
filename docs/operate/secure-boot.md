@@ -63,7 +63,7 @@ refuses keys under which Secure Boot would refuse the boot loader or the UKI it 
 machine never ends up with keys that do not start the installer. It also refuses keys under which
 the firmware would refuse the option ROMs of the machine's cards, as
 [Allow the cards' option ROMs](#allow-the-cards-option-roms) explains. Sign the installer with
-`keys/db.key` first. `--force` enrols the keys all the same.
+`keys/db.key` first. `--skip-checks` enrols the keys all the same.
 
 The node makes a new maintenance certificate when it boots again, and chalkctl reads it without a
 fingerprint to verify it against. Compare the new fingerprint that chalkctl prints with the one on
@@ -96,7 +96,7 @@ db must hold. Before it writes the keys, the node reads that log, refuses keys u
 not allow every option ROM it lists, and names the option ROMs it would refuse:
 
 ```text
-chalkctl: enroll the keys: failed_precondition: under the new db, Secure Boot would refuse the drivers the firmware loaded from outside its own firmware, as a rule the option ROMs of graphics and network cards: sha256:3f1a... PciRoot(0x0)/Pci(0x3,0x0)/Offset(0x10a00,0x2f9ff); enrol their digests with --option-roms, or Microsoft's UEFI CAs with --microsoft; without them the machine may show nothing or boot from no network card or disk controller; pass --force to enrol the keys all the same, which also skips the check of the boot loader and UKI
+chalkctl: enroll the keys: failed_precondition: under the new db, Secure Boot would refuse the drivers the firmware loaded from outside its own firmware, as a rule the option ROMs of graphics and network cards: sha256:3f1a... PciRoot(0x0)/Pci(0x3,0x0)/Offset(0x10a00,0x2f9ff); enrol their digests with --option-roms, or Microsoft's UEFI CAs with --microsoft; without them the machine may show nothing or boot from no network card or disk controller; pass --skip-checks to enrol the keys all the same, which also skips the check of the boot loader and UKI
 ```
 
 The device path names the card's PCI slot. There are three ways to allow the option ROMs:
@@ -134,7 +134,7 @@ the node says so.
 The check runs only when the node can read the event log. A machine without a TPM has none, and a
 TPM 1.2 or a TPM whose log holds no SHA-256 digests gives none the node can read. chalkctl then
 prints why the node could not check the option ROMs, and `--option-roms` finds none to enrol. The
-node refuses a log that is corrupt or cut short. `--force` skips the check, together with the
+node refuses a log that is corrupt or cut short. `--skip-checks` skips the check, together with the
 check of the boot loader and UKI.
 
 The check can be wrong in two rare ways:

@@ -21,7 +21,9 @@ two minutes past it after a failed rollback, which the node still lets a confirm
 rollback that failed after it changed the node can no longer be confirmed: config rollback
 finishes it.
 
-The node keeps the config on trial, so the command needs no inventory. It needs the secrets file.
+The node keeps the config on trial, so the command needs no inventory.
+
+The command needs the secrets file.
 
 ## Flags
 

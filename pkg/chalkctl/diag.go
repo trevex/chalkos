@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/diagnostics"
 	"github.com/trevex/chalkos/pkg/internal/cli"
@@ -16,11 +17,12 @@ import (
 func (a *app) nodeDiagCommand() *cobra.Command {
 	var f nodePinFlags
 	cmd := a.command(&cobra.Command{
-		Use:     "diag <node> [<diagnostic> [<parameter>=<value>...]]",
-		Short:   "List or run a node's diagnostics",
-		Long:    nodeDiagLong,
-		Example: nodeDiagExample,
-		Args:    cli.MinimumNArgs(1),
+		Use:         "diag <node> [<diagnostic> [<parameter>=<value>...]]",
+		Short:       "List or run a node's diagnostics",
+		Long:        nodeDiagLong,
+		Example:     nodeDiagExample,
+		Args:        cli.MinimumNArgs(1),
+		Annotations: layer.Meta{Credentials: layer.Reader}.Annotations(),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.nodeDiag(ctx, f, pos) })
 	f.node.RegisterClient(cmd.Flags())
 	f.pin.register(cmd.Flags())

@@ -24,7 +24,11 @@ secrets file, holding &lt;file>.lock.
 Nodes revoked with chalkctl node revoke are skipped and named; rotate stops while a layer cannot
 say which nodes are revoked, as when no Kubernetes control plane answers, unless none was
 bootstrapped yet. --ignore-revoked rotates without the lists, and every node of the inventory
-takes part, so remove revoked nodes from the inventory first. The command needs the secrets file.
+takes part, so remove revoked nodes from the inventory first. --finish refuses while a kind asks
+to wait, as the service-account key does within the hour after its switch; --finish --now
+finishes all the same.
+
+The command needs the secrets file.
 
 ## Flags
 
@@ -32,10 +36,10 @@ takes part, so remove revoked nodes from the inventory first. The command needs 
 | --- | --- | --- | --- |
 | `--address`{ #flag-address } | list of NODE=ADDR | each node's address in the inventory | Address of a node's chalkd as NODE=ADDR, where ADDR is host or host:port; may be repeated. |
 | `--finish`{ #flag-finish } | boolean | `false` | Remove the old value from every node and the secrets file. |
-| `--force`{ #flag-force } | boolean | `false` | With --finish, finish although the kind asks to wait, as the service-account key does within the hour after its switch. |
 | `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |
 | `--ignore-revoked`{ #flag-ignore-revoked } | boolean | `false` | Rotate every node of the inventory, revoked ones included, without reading the revoked nodes, as while no layer can say which are. |
 | `--inventory`{ #flag-inventory } | string | $CHALKOSINVENTORY, else chalkos.yaml in the current directory, when it exists | Inventory naming the cluster's nodes, their addresses and their config files. |
+| `--now`{ #flag-now } | boolean | `false` | With --finish, finish now although the kind asks to wait, as the service-account key does within the hour after its switch. |
 | `--out`{ #flag-out } | string | — | New file to write the changed secrets file to, instead of updating the secrets file in place. |
 | `--public-out`{ #flag-public-out } | string | — | New file to write the public half to, instead of updating secrets.pub.json beside the secrets file in place. |
 | `--recipient`{ #flag-recipient } | list of string | — | Age recipient to encrypt the changed secrets file to instead of those it records; may be repeated. A plaintext secrets file is encrypted only to a new .age file given with --out. |

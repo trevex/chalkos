@@ -80,7 +80,7 @@ func TestEveryControlPlaneReadsRevoked(t *testing.T) {
 			}
 			continue
 		}
-		if err == nil || !strings.Contains(err.Error(), "pass --force to revoke w1 anyway") {
+		if err == nil || !strings.Contains(err.Error(), "pass --skip-read-check to revoke w1 anyway") {
 			t.Errorf("%v: %v, want a refusal", tc.controlPlanes, err)
 			continue
 		}

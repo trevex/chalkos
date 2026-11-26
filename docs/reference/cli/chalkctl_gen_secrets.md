@@ -19,7 +19,9 @@ recipients --recipient gives (age public keys, SSH public keys or age plugin rec
 The command refuses to overwrite any of these files, because new secrets would lock out every
 installed node. With --out - the secrets file goes to standard output, for a secret manager to
 keep, the public half to --public-out, which --out - needs, and the command's messages to standard
-error. The command needs no secrets file or client file.
+error.
+
+The command needs no secrets file or client file.
 
 ## Flags
 

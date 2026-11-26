@@ -134,7 +134,7 @@ func TestRegistryManage(t *testing.T) {
 	if err := run("registry", "delete", "busybox@"+digest.String()); err == nil || !strings.Contains(err.Error(), "pass --with-tags") {
 		t.Errorf("registry delete of a tagged digest = %v, want it refused", err)
 	}
-	if err := run("registry", "delete", "busybox@"+digest.String(), "--with-tags"); err != nil || strings.Count(l.stdout.String(), " and its tags 1.37.0\n") != 2 {
+	if err := run("registry", "delete", "busybox@"+digest.String(), "--with-tags", "--yes"); err != nil || strings.Count(l.stdout.String(), " and its tags 1.37.0\n") != 2 {
 		t.Errorf("registry delete --with-tags = %v, %q, want the digest and its tag deleted on both endpoints", err, l.stdout)
 	}
 	if err := run("registry", "list"); err != nil || l.stdout.String() != "REPOSITORY  TAG  DIGEST  ENDPOINTS\n" {

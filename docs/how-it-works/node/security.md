@@ -379,7 +379,7 @@ runs no console, and chalkd serves no console socket.
   [signing guide](../../build/sign-images.md) shows, and chalklab enrols its own keys in its virtual
   machines. chalkos changes no Secure Boot variable on an installed node. Installing does not check
   that Secure Boot is on.
-- A platform key that someone enrolled through an installer without an OS CA, with `--force` if
+- A platform key that someone enrolled through an installer without an OS CA, with `--skip-checks` if
   their keys do not start the installer, leaves the firmware trusting only what they sign.
   Clearing the keys in the firmware setup undoes it.
 - There is no certificate revocation list. A leaked client file or kubeconfig stays valid until it

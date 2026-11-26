@@ -18,21 +18,22 @@ import (
 )
 
 type rotateFlags struct {
-	node                  nodeFlags
-	change                changeFlags
-	resume, finish, force bool
-	ignoreRevoked         bool
-	timeout               time.Duration
+	node                nodeFlags
+	change              changeFlags
+	resume, finish, now bool
+	ignoreRevoked       bool
+	timeout             time.Duration
 }
 
 func (a *app) rotateCommand() *cobra.Command {
 	f := rotateFlags{node: nodeFlags{needs: "rotate"}}
 	cmd := a.command(&cobra.Command{
-		Use:     "rotate <kind>",
-		Short:   "Rotate " + kindList(rotationKinds(), " or "),
-		Long:    rotateLong,
-		Example: rotateExample,
-		Args:    cli.ExactArgs(1),
+		Use:         "rotate <kind>",
+		Short:       "Rotate " + kindList(rotationKinds(), " or "),
+		Long:        rotateLong,
+		Example:     rotateExample,
+		Args:        cli.ExactArgs(1),
+		Annotations: layer.Meta{Credentials: layer.SecretsFile}.Annotations(),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.rotate(ctx, f, pos) })
 	fs := cmd.Flags()
 	f.node.Register(fs)
@@ -41,7 +42,7 @@ func (a *app) rotateCommand() *cobra.Command {
 	address.Value, address.Usage = namedAddresses{&f.node.Address}, namedAddressesUsage
 	fs.BoolVar(&f.resume, "resume", false, "continue the rotation the secrets file records")
 	fs.BoolVar(&f.finish, "finish", false, "remove the old value from every node and the secrets file")
-	fs.BoolVar(&f.force, "force", false, "with --finish, finish although the kind asks to wait, as the service-account key does within the hour after its switch")
+	fs.BoolVar(&f.now, "now", false, "with --finish, finish now although the kind asks to wait, as the service-account key does within the hour after its switch")
 	fs.BoolVar(&f.ignoreRevoked, "ignore-revoked", false, "rotate every node of the inventory, revoked ones included, without reading the revoked nodes, as while no layer can say which are")
 	fs.DurationVar(&f.timeout, "timeout", 10*time.Minute, "how long to wait for each node to apply a phase")
 	return cmd
@@ -52,8 +53,8 @@ func (a *app) rotate(ctx context.Context, f rotateFlags, pos []string) error {
 	switch {
 	case f.resume && f.finish:
 		return cli.Usagef("pass --resume or --finish, not both")
-	case f.force && !f.finish:
-		return cli.Usagef("--force goes with --finish")
+	case f.now && !f.finish:
+		return cli.Usagef("--now goes with --finish")
 	case f.timeout <= 0:
 		return cli.Usagef("--timeout must be positive")
 	}
@@ -93,7 +94,7 @@ func (a *app) rotate(ctx context.Context, f rotateFlags, pos []string) error {
 	}
 	switch {
 	case f.finish:
-		return r.finish(ctx, kind, f.force)
+		return r.finish(ctx, kind, f.now)
 	case f.resume:
 		return r.resume(ctx, kind)
 	}
@@ -164,7 +165,7 @@ func (r *rotation) running(kind clustersecrets.RotationKind) error {
 	return nil
 }
 
-func (r *rotation) finish(ctx context.Context, kind clustersecrets.RotationKind, force bool) error {
+func (r *rotation) finish(ctx context.Context, kind clustersecrets.RotationKind, now bool) error {
 	if err := r.running(kind); err != nil {
 		return err
 	}
@@ -173,7 +174,7 @@ func (r *rotation) finish(ctx context.Context, kind clustersecrets.RotationKind,
 		if rot.Phase != clustersecrets.PhaseRefresh || !rot.Applied {
 			return fmt.Errorf("the rotation of the %s is in its %s phase; finish it once its refresh phase is applied, after chalkctl rotate %s --resume", kind.Name(), rot.Phase, kind)
 		}
-		if err := rotatorOf(r, kind).FinishGuard(ctx, r, kind, force); err != nil {
+		if err := rotatorOf(r, kind).FinishGuard(ctx, r, kind, now); err != nil {
 			return err
 		}
 		if err := r.save(func(s *clustersecrets.Secrets) error { return s.FinishRotation() }); err != nil {

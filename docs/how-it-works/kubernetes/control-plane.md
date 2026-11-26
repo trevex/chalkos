@@ -112,7 +112,7 @@ A refused connection, a timeout or a closed connection at the endpoint reads as 
 first bootstrap behind a VIP that no node holds yet needs that. A cluster whose control planes are
 all down therefore looks like no cluster to the node. With an inventory, chalkctl asks the other
 control planes for their status before it calls the node, and refuses while one is an etcd member or
-is joining. It warns of one that does not answer, since chalkctl may reach only some nodes. `--force` skips that check, for the recovery of a cluster whose
+is joining. It warns of one that does not answer, since chalkctl may reach only some nodes. `--ignore-members` skips that check, for the recovery of a cluster whose
 other control planes are lost.
 
 ## Further control planes join etcd on their own
@@ -157,7 +157,7 @@ chalkctl etcd leave <node>
 
 `remove-member` removes another node's member. `leave` takes a node out itself: it releases the
 node's VIPs, stops its control plane, deletes its etcd data and unpins its addresses. Both refuse
-when the voters left would have fewer healthy members than their quorum. `remove-member --force`
+when the voters left would have fewer healthy members than their quorum. `remove-member --ignore-quorum`
 removes a member anyway. A node that left joins again only after a reinstall.
 
 ## Workers join with the certificate from their share

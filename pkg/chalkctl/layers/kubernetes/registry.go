@@ -34,11 +34,12 @@ func registryCommand(h layer.Host) *cobra.Command {
 func registryPushCommand(h layer.Host) *cobra.Command {
 	var f endpointFlags
 	cmd := h.Command(&cobra.Command{
-		Use:     "push SOURCE REFERENCE",
-		Short:   "Push an image to every endpoint of the cluster registry",
-		Long:    registryPushLong,
-		Example: registryPushExample,
-		Args:    cli.ExactArgs(2),
+		Use:         "push SOURCE REFERENCE",
+		Short:       "Push an image to every endpoint of the cluster registry",
+		Long:        registryPushLong,
+		Example:     registryPushExample,
+		Args:        cli.ExactArgs(2),
+		Annotations: layer.Meta{Credentials: layer.Admin}.Annotations(),
 	}, func(h layer.Host, ctx context.Context, args []string) error {
 		ref, err := parseImageRef(args[1])
 		if err != nil {

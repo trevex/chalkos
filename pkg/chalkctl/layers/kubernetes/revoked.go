@@ -103,10 +103,10 @@ func admit(ctx context.Context, t layer.Target, skip string, status statusFunc, 
 	}
 	list, err := revokedNodesOf(ctx, controlPlanes, status)
 	if err != nil {
-		return fmt.Errorf("%w; %s only once one does, or with --force", err, does)
+		return fmt.Errorf("%w; %s only once one does, or with --ignore-revoked", err, does)
 	}
 	if n, ok := list[t.Name()]; ok {
-		return fmt.Errorf("%s is revoked %s, and %s only once chalkctl node unrevoke %s lets it back in, or with --force", t.Name(), kubernetesview.RevokedSince(n), does, t.Name())
+		return fmt.Errorf("%s is revoked %s, and %s only once chalkctl node unrevoke %s lets it back in, or with --ignore-revoked", t.Name(), kubernetesview.RevokedSince(n), does, t.Name())
 	}
 	return nil
 }

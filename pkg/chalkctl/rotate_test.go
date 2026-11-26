@@ -724,7 +724,7 @@ func TestRotateResumesEveryPhase(t *testing.T) {
 					switch r := l.secrets().Rotation; {
 					case r == nil:
 					case r.Phase == clustersecrets.PhaseRefresh && r.Applied:
-						args = append(args, "--finish", "--force")
+						args = append(args, "--finish", "--now")
 					default:
 						args = append(args, "--resume")
 					}

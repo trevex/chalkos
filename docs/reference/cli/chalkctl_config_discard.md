@@ -11,7 +11,9 @@ chalkctl config discard <node> [flags]
 
 Drops the config a node holds pending for its next upgrade, which config apply --staged leaves on
 a node without a staged image, and names the config it dropped. The node holds the config, so the
-command needs no inventory. It needs the secrets file.
+command needs no inventory.
+
+The command needs the secrets file.
 
 ## Flags
 

@@ -25,8 +25,9 @@ command too and leaves the node held; the command run again waits for it and rel
 --no-drain reboots the node without its layers holding or releasing it, and still waits. Draining
 a node goes through the cluster's control planes, which the inventory names.
 
-A node in maintenance mode, reached with --fingerprint or --insecure, reboots without more. The
-command needs an operator client file or the secrets file.
+A node in maintenance mode, reached with --fingerprint or --insecure, reboots without more.
+
+The command needs an operator client file or the secrets file.
 
 ## Flags
 

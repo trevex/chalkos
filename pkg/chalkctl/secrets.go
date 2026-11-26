@@ -199,11 +199,12 @@ type recoveryKeyFlags struct {
 func (a *app) recoveryKeyCommand() *cobra.Command {
 	var f recoveryKeyFlags
 	cmd := a.command(&cobra.Command{
-		Use:     "recovery-key <node>",
-		Short:   "Print a node's recovery key",
-		Long:    recoveryKeyLong,
-		Example: recoveryKeyExample,
-		Args:    cli.ExactArgs(1),
+		Use:         "recovery-key <node>",
+		Short:       "Print a node's recovery key",
+		Long:        recoveryKeyLong,
+		Example:     recoveryKeyExample,
+		Args:        cli.ExactArgs(1),
+		Annotations: layer.Meta{Credentials: layer.SecretsFile}.Annotations(),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.recoveryKey(ctx, f, pos) })
 	f.cluster.Register(cmd.Flags())
 	f.secrets.Register(cmd.Flags())
@@ -242,11 +243,12 @@ type genSecretsFlags struct {
 func (a *app) genSecretsCommand() *cobra.Command {
 	var f genSecretsFlags
 	cmd := a.command(&cobra.Command{
-		Use:     "secrets",
-		Short:   "Generate the cluster's secrets file",
-		Long:    genSecretsLong,
-		Example: genSecretsExample,
-		Args:    cli.NoArgs,
+		Use:         "secrets",
+		Short:       "Generate the cluster's secrets file",
+		Long:        genSecretsLong,
+		Example:     genSecretsExample,
+		Args:        cli.NoArgs,
+		Annotations: layer.Meta{Credentials: layer.NoCredentials}.Annotations(),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.genSecrets(f) })
 	fs := cmd.Flags()
 	fs.StringArrayVar(&f.recipients, "recipient", nil, "age recipient to encrypt secrets.age to: an age public key, an SSH public key, or an age plugin recipient; may be repeated")

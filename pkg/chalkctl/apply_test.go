@@ -142,7 +142,7 @@ func TestStorageResetAsksForPasswordOnlyForEncryptedVolume(t *testing.T) {
 			s, _ := installedNode(t, ta, []byte(`{}`))
 			addr := ta.startNode(t, s)
 			ta.answers = []string{"right", "wrong"}
-			err := ta.run(context.Background(), ta.args([]string{"storage", "reset", "n1", "data"}, addr))
+			err := ta.run(context.Background(), ta.args([]string{"storage", "reset", "n1", "data", "--yes"}, addr))
 			if err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Errorf("reset = %v, want %q", err, c.want)
 			}
@@ -219,14 +219,14 @@ func TestApplyConfigStopsOnAFailingCheck(t *testing.T) {
 	}
 }
 
-func TestApplyConfigForceHelp(t *testing.T) {
+func TestApplyConfigIgnoreRevokedHelp(t *testing.T) {
 	ta := newTestApp(t)
 	cmd, _, err := newCommand(ta.app).Find([]string{"config", "apply"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if f := cmd.Flags().Lookup("force"); f == nil || f.Usage != "with --kubernetes-share, deliver without asking whether the node is revoked" {
-		t.Errorf("--force: %v", f)
+	if f := cmd.Flags().Lookup("ignore-revoked"); f == nil || f.Usage != "with --kubernetes-share, deliver without asking whether the node is revoked" {
+		t.Errorf("--ignore-revoked: %v", f)
 	}
 	if f := cmd.Flags().Lookup("ignore-readiness"); f == nil || !strings.Contains(f.Usage, "runtime readiness") {
 		t.Errorf("--ignore-readiness: %v", f)
@@ -342,8 +342,8 @@ func TestApplyIsConfigApply(t *testing.T) {
 			t.Errorf("apply %s: err = %v", flag, err)
 		}
 	}
-	if err := ta.run(context.Background(), []string{"apply", "n1", "--force", "--inventory", ta.inventory}); err == nil || !strings.Contains(err.Error(), "--force goes with --kubernetes-share") {
-		t.Errorf("apply --force: err = %v", err)
+	if err := ta.run(context.Background(), []string{"apply", "n1", "--ignore-revoked", "--inventory", ta.inventory}); err == nil || !strings.Contains(err.Error(), "--ignore-revoked goes with --kubernetes-share") {
+		t.Errorf("apply --ignore-revoked: err = %v", err)
 	}
 }
 

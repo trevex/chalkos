@@ -25,11 +25,12 @@ import (
 func (a *app) securebootNewCommand() *cobra.Command {
 	var name string
 	cmd := a.command(&cobra.Command{
-		Use:     "new <dir>",
-		Short:   "Create Secure Boot keys: PK, KEK and db",
-		Long:    securebootNewLong,
-		Example: securebootNewExample,
-		Args:    cli.ExactArgs(1),
+		Use:         "new <dir>",
+		Short:       "Create Secure Boot keys: PK, KEK and db",
+		Long:        securebootNewLong,
+		Example:     securebootNewExample,
+		Args:        cli.ExactArgs(1),
+		Annotations: layer.Meta{Credentials: layer.NoCredentials}.Annotations(),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.securebootNew(pos[0], name) })
 	cmd.Flags().StringVar(&name, "name", "", "name the certificates' common names begin with (default the directory's base name)")
 	return cmd
@@ -53,31 +54,32 @@ func (a *app) securebootNew(dir, name string) error {
 }
 
 type securebootEnrollFlags struct {
-	secrets          layer.SecretsFlags
-	config, address  string
-	pin              pinFlags
-	keys             string
-	microsoft, force bool
-	optionROMs       bool
-	dbHashes         []string
-	timeout          time.Duration
+	secrets               layer.SecretsFlags
+	config, address       string
+	pin                   pinFlags
+	keys                  string
+	microsoft, skipChecks bool
+	optionROMs            bool
+	dbHashes              []string
+	timeout               time.Duration
 }
 
 func (a *app) securebootEnrollCommand() *cobra.Command {
 	var f securebootEnrollFlags
 	cmd := a.command(&cobra.Command{
-		Use:     "enroll",
-		Short:   "Enrol Secure Boot keys in the firmware of a node in maintenance mode whose firmware is in Setup Mode",
-		Long:    securebootEnrollLong,
-		Example: securebootEnrollExample,
-		Args:    cli.NoArgs,
+		Use:         "enroll",
+		Short:       "Enrol Secure Boot keys in the firmware of a node in maintenance mode whose firmware is in Setup Mode",
+		Long:        securebootEnrollLong,
+		Example:     securebootEnrollExample,
+		Args:        cli.NoArgs,
+		Annotations: layer.Meta{Credentials: layer.Admin}.Annotations(),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.securebootEnroll(ctx, f) })
 	fs := cmd.Flags()
 	fs.StringVar(&f.keys, "keys", "", "directory of the keys, as chalkctl secureboot new writes it")
 	fs.BoolVar(&f.microsoft, "microsoft", false, "also enrol Microsoft's KEK CAs and its UEFI and option ROM CAs, which sign the firmware of graphics and network cards and other boot loaders")
 	fs.BoolVar(&f.optionROMs, "option-roms", false, "also enrol in db the SHA-256 digests of the option ROMs the node's firmware loaded, as its TPM event log lists them")
 	fs.StringArrayVar(&f.dbHashes, "db-hash", nil, "also enrol in db this SHA-256 Authenticode digest of an image, 64 hex digits, optionally after sha256: (repeatable)")
-	fs.BoolVar(&f.force, "force", false, "enrol the keys even if Secure Boot would refuse the boot loader or UKI the node booted, or an option ROM it loaded, under them")
+	fs.BoolVar(&f.skipChecks, "skip-checks", false, "enrol the keys even if Secure Boot would refuse the boot loader or UKI the node booted, or an option ROM it loaded, under them")
 	fs.StringVar(&f.address, "address", "", "address of the node's chalkd, host or host:port")
 	f.secrets.Register(fs)
 	fs.StringVar(&f.config, "config", "", "client file of an admin to authenticate with instead of the secrets file")
@@ -150,7 +152,7 @@ func (a *app) securebootEnroll(ctx context.Context, f securebootEnrollFlags) err
 			hashes = addHash(hashes, d.Sha256)
 		}
 	}
-	req, err := enrolmentRequest(keys, f.microsoft, hashes, f.force, time.Now())
+	req, err := enrolmentRequest(keys, f.microsoft, hashes, f.skipChecks, time.Now())
 	if err != nil {
 		return err
 	}
@@ -190,7 +192,7 @@ func (a *app) securebootEnroll(ctx context.Context, f securebootEnrollFlags) err
 // what the firmware holds, db signed by KEK, KEK by PK, and PK, which ends Setup Mode, by itself.
 // With microsoft, Microsoft's CAs join db and KEK; db also gets hashes, the SHA-256 digests of
 // images.
-func enrolmentRequest(k secureboot.Keys, microsoft bool, hashes [][]byte, force bool, now time.Time) (*nodev1.EnrollSecureBootRequest, error) {
+func enrolmentRequest(k secureboot.Keys, microsoft bool, hashes [][]byte, skipChecks bool, now time.Time) (*nodev1.EnrollSecureBootRequest, error) {
 	db := append(secureboot.X509SignatureLists(k.Owner, k.DB.Cert), secureboot.SHA256SignatureList(k.Owner, hashes...)...)
 	kek := secureboot.X509SignatureLists(k.Owner, k.KEK.Cert)
 	if microsoft {
@@ -204,7 +206,7 @@ func enrolmentRequest(k secureboot.Keys, microsoft bool, hashes [][]byte, force 
 		}
 		return u, nil
 	}
-	req := &nodev1.EnrollSecureBootRequest{Force: force}
+	req := &nodev1.EnrollSecureBootRequest{Force: skipChecks}
 	var err error
 	if req.Db, err = sign("db", secureboot.ImageSecurityDatabase, secureboot.AttrAppend, db, k.KEK); err != nil {
 		return nil, err

@@ -142,7 +142,7 @@ func TestSecurebootEnroll(t *testing.T) {
 		ta := newTestApp(t)
 		n := enrollNode(t, ta, 1, false, nil)
 		addr, written := n.addr, n.written
-		args := []string{"secureboot", "enroll", "--keys", keys, "--address", addr, "--insecure", "--force"}
+		args := []string{"secureboot", "enroll", "--keys", keys, "--address", addr, "--insecure", "--skip-checks"}
 		if microsoft {
 			args = append(args, "--microsoft")
 		}
@@ -192,7 +192,7 @@ func TestSecurebootEnrollRefusals(t *testing.T) {
 
 	ta := newTestApp(t)
 	addr := enrollNode(t, ta, 0, false, nil).addr
-	err := ta.run(context.Background(), []string{"secureboot", "enroll", "--keys", keys, "--address", addr, "--insecure", "--force", "--timeout", "300ms"})
+	err := ta.run(context.Background(), []string{"secureboot", "enroll", "--keys", keys, "--address", addr, "--insecure", "--skip-checks", "--timeout", "300ms"})
 	if err == nil || !strings.Contains(err.Error(), "the node booted again without Secure Boot on, it reports SECURE_BOOT_DISABLED") {
 		t.Errorf("enroll on a node that does not turn Secure Boot on = %v", err)
 	}
@@ -200,9 +200,9 @@ func TestSecurebootEnrollRefusals(t *testing.T) {
 	ta = newTestApp(t)
 	n := enrollNode(t, ta, 1, false, nil)
 	addr, written := n.addr, n.written
-	ta.run(context.Background(), []string{"secureboot", "enroll", "--keys", keys, "--address", addr, "--insecure", "--force"})
+	ta.run(context.Background(), []string{"secureboot", "enroll", "--keys", keys, "--address", addr, "--insecure", "--skip-checks"})
 	ta.stdout.Reset()
-	err = ta.run(context.Background(), []string{"secureboot", "enroll", "--keys", keys, "--address", addr, "--insecure", "--force"})
+	err = ta.run(context.Background(), []string{"secureboot", "enroll", "--keys", keys, "--address", addr, "--insecure", "--skip-checks"})
 	if err == nil || !strings.Contains(err.Error(), "not in Setup Mode") || len(written) != 3 {
 		t.Errorf("enroll out of Setup Mode = %v, wrote %d", err, len(written))
 	}
@@ -222,7 +222,7 @@ func TestSecurebootEnrollWaitsForTheReboot(t *testing.T) {
 	keys := testKeys(t)
 	ta := newTestApp(t)
 	n := enrollNode(t, ta, 1, true, nil)
-	if err := ta.run(context.Background(), []string{"secureboot", "enroll", "--keys", keys, "--address", n.addr, "--insecure", "--force"}); err != nil {
+	if err := ta.run(context.Background(), []string{"secureboot", "enroll", "--keys", keys, "--address", n.addr, "--insecure", "--skip-checks"}); err != nil {
 		t.Fatal(err)
 	}
 	var rebooted string
@@ -246,7 +246,7 @@ func TestSecurebootEnrollOptionROMs(t *testing.T) {
 	l.Driver(secureboottest.EvBootServicesDriver, nic, secureboottest.OptionROMPath(4))
 	ta := newTestApp(t)
 	n := enrollNode(t, ta, 1, false, l.Bytes)
-	err := ta.run(context.Background(), []string{"secureboot", "enroll", "--keys", keys, "--address", n.addr, "--insecure", "--force",
+	err := ta.run(context.Background(), []string{"secureboot", "enroll", "--keys", keys, "--address", n.addr, "--insecure", "--skip-checks",
 		"--option-roms", "--db-hash", "sha256:" + hex.EncodeToString(other[:]), "--db-hash", strings.ToUpper(hex.EncodeToString(nic[:]))})
 	if err != nil {
 		t.Fatalf("%v\n%s", err, ta.stderr)
@@ -285,7 +285,7 @@ func TestSecurebootEnrollRefusesOptionROMs(t *testing.T) {
 
 	ta = newTestApp(t)
 	n = enrollNode(t, ta, 1, false, nil)
-	if err := ta.run(context.Background(), []string{"secureboot", "enroll", "--keys", keys, "--address", n.addr, "--insecure", "--force", "--option-roms"}); err != nil {
+	if err := ta.run(context.Background(), []string{"secureboot", "enroll", "--keys", keys, "--address", n.addr, "--insecure", "--skip-checks", "--option-roms"}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(ta.stderr.String(), "has no TPM") {

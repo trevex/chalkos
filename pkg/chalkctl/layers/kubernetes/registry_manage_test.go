@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-containerregistry/pkg/v1/empty"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 
 	"github.com/trevex/chalkos/pkg/pki"
@@ -23,7 +25,7 @@ func TestDeleteTag(t *testing.T) {
 	d := digestOf(t, img).String()
 	te.pushTo(t, img, "docker.io/library/busybox:1.37.0", "192.0.2.1", "192.0.2.2")
 	te.pushTo(t, img, "docker.io/library/busybox:latest", "192.0.2.2")
-	if err := te.delete(context.Background(), &te.out, &te.errOut, iref(t, "busybox:1.37.0"), false); err != nil {
+	if err := te.delete(context.Background(), &te.out, &te.errOut, iref(t, "busybox:1.37.0"), false, accept); err != nil {
 		t.Fatalf("delete = %v; %s", err, te.errOut.String())
 	}
 	if want := "192.0.2.1: deleted 192.0.2.1:5000/docker.io/library/busybox:1.37.0, which named " + d + "; no tag names it now\n" +
@@ -45,14 +47,14 @@ func TestDeleteTag(t *testing.T) {
 	te.pushTo(t, img, "docker.io/library/busybox:1.37.0", "192.0.2.1")
 	te.tls = te.clientTLS(t, pki.RoleReader)
 	te.reset()
-	if err := te.delete(context.Background(), &te.out, &te.errOut, iref(t, "busybox:1.37.0"), false); err == nil || !strings.HasPrefix(te.errOut.String(), "192.0.2.1: failed: ") || !strings.Contains(te.errOut.String(), "admin role") {
+	if err := te.delete(context.Background(), &te.out, &te.errOut, iref(t, "busybox:1.37.0"), false, accept); err == nil || !strings.HasPrefix(te.errOut.String(), "192.0.2.1: failed: ") || !strings.Contains(te.errOut.String(), "admin role") {
 		t.Errorf("delete as a reader = %v, %q, want the registry's refusal", err, te.errOut.String())
 	}
 
 	te.tls = te.clientTLS(t, pki.RoleAdmin)
 	te.regs[netip.MustParseAddr("192.0.2.2")].Close()
 	te.reset()
-	err := te.delete(context.Background(), &te.out, &te.errOut, iref(t, "busybox:1.37.0"), false)
+	err := te.delete(context.Background(), &te.out, &te.errOut, iref(t, "busybox:1.37.0"), false, accept)
 	if want := "the delete failed on 1 of 3 endpoints of the cluster registry: 192.0.2.2; delete again once they are reachable"; err == nil || err.Error() != want {
 		t.Errorf("delete with 192.0.2.2 stopped = %v, want %q", err, want)
 	}
@@ -69,14 +71,14 @@ func TestDeleteDigest(t *testing.T) {
 	d := digestOf(t, img).String()
 	te.pushTo(t, img, "docker.io/library/busybox:1.37.0", "192.0.2.1", "192.0.2.2")
 	te.pushTo(t, img, "docker.io/library/busybox:latest", "192.0.2.2")
-	err := te.delete(context.Background(), &te.out, &te.errOut, iref(t, "busybox@"+d), false)
+	err := te.delete(context.Background(), &te.out, &te.errOut, iref(t, "busybox@"+d), false, accept)
 	if want := "the tags 1.37.0 and latest name docker.io/library/busybox@" + d + " on 192.0.2.1 and 192.0.2.2; pass --with-tags to delete them with it, or delete the tags alone"; err == nil || err.Error() != want {
 		t.Errorf("delete of a tagged digest = %v, want %q", err, want)
 	}
 	if _, ok := te.digestAt(t, "192.0.2.1", "docker.io/library/busybox:1.37.0"); !ok || te.out.Len() != 0 {
 		t.Errorf("a refused delete deleted something: %q", te.out.String())
 	}
-	if err := te.delete(context.Background(), &te.out, &te.errOut, iref(t, "busybox@"+d), true); err != nil {
+	if err := te.delete(context.Background(), &te.out, &te.errOut, iref(t, "busybox@"+d), true, accept); err != nil {
 		t.Fatalf("delete --with-tags = %v; %s", err, te.errOut.String())
 	}
 	if want := "192.0.2.1: deleted 192.0.2.1:5000/docker.io/library/busybox@" + d + " and its tags 1.37.0\n" +
@@ -93,7 +95,7 @@ func TestDeleteDigest(t *testing.T) {
 
 	// Absent everywhere: done.
 	te.reset()
-	if err := te.delete(context.Background(), &te.out, &te.errOut, iref(t, "busybox@"+d), false); err != nil || strings.Count(te.out.String(), ": absent ") != 2 {
+	if err := te.delete(context.Background(), &te.out, &te.errOut, iref(t, "busybox@"+d), false, accept); err != nil || strings.Count(te.out.String(), ": absent ") != 2 {
 		t.Errorf("delete of an absent digest = %v, %q, want it absent on both", err, te.out.String())
 	}
 
@@ -102,13 +104,42 @@ func TestDeleteDigest(t *testing.T) {
 	te.pushTo(t, idx, "ghcr.io/a/b:1", "192.0.2.1", "192.0.2.2")
 	child := childrenOfIndex(t, idx)[0].String()
 	for _, withTags := range []bool{false, true} {
-		err := te.delete(context.Background(), &te.out, &te.errOut, iref(t, "ghcr.io/a/b@"+child), withTags)
+		err := te.delete(context.Background(), &te.out, &te.errOut, iref(t, "ghcr.io/a/b@"+child), withTags, accept)
 		if want := "ghcr.io/a/b@" + child + " is an image of the index ghcr.io/a/b:1 on 192.0.2.1 and ghcr.io/a/b:1 on 192.0.2.2; deleting it would break the index, so delete the index first"; err == nil || err.Error() != want {
 			t.Errorf("delete of an index's image (--with-tags %v) = %v, want %q", withTags, err, want)
 		}
 	}
 	if _, ok := te.digestAt(t, "192.0.2.1", "ghcr.io/a/b@"+child); !ok {
 		t.Error("a refused delete deleted the index's image")
+	}
+}
+
+// TestDeleteDigestAfterPrompt reads the tags again once the prompt returns, and refuses a digest
+// that a tag the prompt did not name, or a tagged index, names by then.
+func TestDeleteDigestAfterPrompt(t *testing.T) {
+	te := startEndpoints(t, nil, "192.0.2.1", "192.0.2.2")
+	img := randomImage(t)
+	d := digestOf(t, img).String()
+	te.pushTo(t, img, "docker.io/library/busybox:1.37.0", "192.0.2.1", "192.0.2.2")
+	idx := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{Add: img})
+	for _, tc := range []struct {
+		during func()
+		want   string
+	}{{
+		during: func() { te.pushTo(t, img, "docker.io/library/busybox:latest", "192.0.2.2") },
+		want:   "the tags that name docker.io/library/busybox@" + d + " on 192.0.2.2 changed while the prompt waited; delete again",
+	}, {
+		during: func() { te.pushTo(t, idx, "docker.io/library/busybox:multi", "192.0.2.1") },
+		want:   "docker.io/library/busybox@" + d + " is an image of the index docker.io/library/busybox:multi on 192.0.2.1; deleting it would break the index, so delete the index first",
+	}} {
+		te.reset()
+		err := te.delete(context.Background(), &te.out, &te.errOut, iref(t, "busybox@"+d), true, func(string) error { tc.during(); return nil })
+		if err == nil || err.Error() != tc.want {
+			t.Errorf("delete = %v, want %q", err, tc.want)
+		}
+		if _, ok := te.digestAt(t, "192.0.2.1", "docker.io/library/busybox@"+d); !ok || te.out.Len() != 0 {
+			t.Errorf("a refused delete deleted something: %q", te.out.String())
+		}
 	}
 }
 
@@ -135,7 +166,7 @@ func TestCollectOnEndpoints(t *testing.T) {
 	if err := te.collect(context.Background(), &te.out, &te.errOut); err == nil || !strings.HasPrefix(te.out.String(), "192.0.2.1: freed 0 B\n") {
 		t.Errorf("collect = %v, %q, want nothing freed", err, te.out.String())
 	}
-	if err := te.delete(context.Background(), &te.out, &te.errOut, iref(t, "busybox@"+digestOf(t, img).String()), true); err != nil {
+	if err := te.delete(context.Background(), &te.out, &te.errOut, iref(t, "busybox@"+digestOf(t, img).String()), true, accept); err != nil {
 		t.Fatalf("delete = %v; %s", err, te.errOut.String())
 	}
 	te.reset()
@@ -240,3 +271,6 @@ func TestListEndpoints(t *testing.T) {
 		t.Errorf("output = %q, errors = %q, want 10.0.0.3 failed and the images on the others", te.out.String(), te.errOut.String())
 	}
 }
+
+// accept is a confirmation that goes ahead.
+func accept(string) error { return nil }

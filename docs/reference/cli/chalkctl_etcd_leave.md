@@ -13,8 +13,10 @@ Takes a control plane out of etcd: the node releases its virtual IPs, removes it
 with the same quorum guard as remove-member, stops its static pods (etcd and the Kubernetes
 control-plane components), deletes its etcd data and unpins its addresses. It joins the cluster
 again only once it is reinstalled. A node whose own member does not answer (for example after it
-lost its pinned address) leaves only with --force, through the other members. The command needs
-an admin client file or the secrets file.
+lost its pinned address) leaves only with --through-others, which removes its member through the
+other members.
+
+The command needs an admin client file or the secrets file.
 
 ## Flags
 
@@ -22,10 +24,10 @@ an admin client file or the secrets file.
 | --- | --- | --- | --- |
 | `--address`{ #flag-address } | list of [NODE=]ADDR | each node's address in the inventory | Address of a node's chalkd: ADDR for the one node the command reaches, or NODE=ADDR for any node, where ADDR is host or host:port; may be repeated. |
 | `--config`{ #flag-config } | string | $CHALKOSCONFIG, else ~/.config/chalkos/config, unless --secrets is given | Client file to authenticate with instead of the secrets file. |
-| `--force`{ #flag-force } | boolean | `false` | Leave through the other members also when the node's own etcd member does not answer (for example when it lost its pinned address). |
 | `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |
 | `--inventory`{ #flag-inventory } | string | $CHALKOSINVENTORY, else chalkos.yaml in the current directory, when it exists | Inventory naming the cluster's nodes, their addresses and their config files. |
 | `--secrets`{ #flag-secrets } | string | — | Cluster secrets path (.age, .enc.*, or plaintext), provider URI, or - for standard input. |
+| `--through-others`{ #flag-through-others } | boolean | `false` | Leave through the other members also when the node's own etcd member does not answer (for example when it lost its pinned address). |
 
 ## Examples
 

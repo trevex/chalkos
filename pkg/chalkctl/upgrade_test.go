@@ -181,6 +181,9 @@ type upgradeLab struct {
 	// flaky is the number of checks of a boot's health, of any node, that find it settled and
 	// unhealthy before the lab answers as it would, as when etcd answers late.
 	flaky int
+	// unblessed makes the nodes report the boots they run as not blessed yet, as before chalkd found
+	// them healthy.
+	unblessed bool
 	// noBootID makes the nodes report no boot ID, as a chalkd that cannot read it.
 	noBootID bool
 	// hangHealth makes the nodes never answer a look that checks the health of their boot, as a
@@ -323,7 +326,7 @@ func (n *upgradeFake) Status(ctx context.Context, req *nodev1.StatusRequest) (*n
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}
-	sick, settling, noBootID := maps.Clone(n.lab.sick), n.lab.settling, n.lab.noBootID
+	sick, settling, noBootID, unblessed := maps.Clone(n.lab.sick), n.lab.settling, n.lab.noBootID, n.lab.unblessed
 	flaky := req.GetCheckHealth() && n.lab.flaky > 0
 	if flaky {
 		n.lab.flaky--
@@ -342,7 +345,7 @@ func (n *upgradeFake) Status(ctx context.Context, req *nodev1.StatusRequest) (*n
 	defer n.mu.Unlock()
 	st := &nodev1.StatusResponse{Boot: &nodev1.BootStatus{
 		Running: &nodev1.BootImage{RootHash: n.root, Generation: n.generation},
-		Entry:   fmt.Sprintf("chalkos_%d.efi", n.generation), Blessed: true,
+		Entry:   fmt.Sprintf("chalkos_%d.efi", n.generation), Blessed: !unblessed,
 		BootId: fmt.Sprintf("boot-%d", n.boots),
 	}}
 	if noBootID {
@@ -767,9 +770,9 @@ func newUpgradeLabOf(t *testing.T, controlPlanes int, workers []string, cpImage,
 	return l
 }
 
-// upgrade runs chalkctl upgrade with the image and the lab's inventory.
+// upgrade runs chalkctl upgrade with the image and the lab's inventory, confirmed with --yes.
 func (l *upgradeLab) upgrade(img string, args ...string) error {
-	return l.run(append([]string{"upgrade", "--image", img}, args...)...)
+	return l.run(append([]string{"upgrade", "--image", img, "--yes"}, args...)...)
 }
 
 // useInventory describes the lab's nodes in an inventory, which the lab's runs read from then on:
@@ -808,7 +811,7 @@ func TestUpgradeGivesEachNodeItsImage(t *testing.T) {
 		"cp-metal": testUpgradeImage(t, "cp-metal", "0.2.0"), "w-metal": testUpgradeImage(t, "w-metal", "0.2.0"), "plain-metal": testUpgradeImage(t, "plain-metal", "0.2.0"),
 	}
 	l.useInventory(t, images)
-	if err := l.run("upgrade", "--max-unavailable", "4"); err != nil {
+	if err := l.run("upgrade", "--max-unavailable", "4", "--yes"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
 	for name, v := range l.images() {
@@ -1153,6 +1156,30 @@ func TestUpgradeUntilStage(t *testing.T) {
 		if err := l.run(args...); !errors.Is(err, cli.ErrUsage) {
 			t.Errorf("%q = %v, want a usage error", args, err)
 		}
+	}
+}
+
+// TestUpgradeUntilStageLeavesARunningNode leaves a node that runs the image, not yet found healthy,
+// as it runs: --until stage and --until activate do not wait for it or release it.
+func TestUpgradeUntilStageLeavesARunningNode(t *testing.T) {
+	l := newUpgradeLab(t, 3)
+	img := testUpgradeImage(t, "w-metal", "0.2.0")
+	if err := l.upgrade(img, "--nodes", "w1"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	l.takeEvents()
+	l.unblessed = true
+	l.cordoned["w1"] = true
+	for _, until := range []string{"stage", "activate"} {
+		if err := l.upgrade(img, "--nodes", "w1", "--until", until); err != nil {
+			t.Fatalf("--until %s: %v\n%s", until, err, l.ta.stdout)
+		}
+		if got := l.takeEvents(); len(got) != 0 {
+			t.Errorf("--until %s: events %q, want none", until, got)
+		}
+	}
+	if !l.cordoned["w1"] {
+		t.Error("--until stage or activate released w1")
 	}
 }
 
@@ -1971,7 +1998,7 @@ func TestUpgradeWithAClientFileAlone(t *testing.T) {
 	if got := l.takeEvents(); len(got) != 0 {
 		t.Errorf("asked %q", got)
 	}
-	if err := l.ta.run(context.Background(), addressed("upgrade", "--image", testUpgradeImage(t, "w-metal", "0.2.0"), "--config", config)); err != nil {
+	if err := l.ta.run(context.Background(), addressed("upgrade", "--image", testUpgradeImage(t, "w-metal", "0.2.0"), "--config", config, "--yes")); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
 	if v := l.images(); v["w1"] != "0.2.0" || v["w2"] != "0.2.0" || v["w3"] != "0.2.0" || v["cp1"] != "0.1.0" || v["n1"] != "0.1.0" {
@@ -2464,7 +2491,7 @@ func TestUpgradeRollbackSkipsNodesOnTheTarget(t *testing.T) {
 	l.takeEvents()
 	l.uncountedRollback = true
 	l.ta.stdout.Reset()
-	if err := l.run("upgrade", "--rollback"); err != nil {
+	if err := l.run("upgrade", "--rollback", "--yes"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
 	if got, want := l.takeEvents(), []string{"w1 drain", "w1 rollback", "w1 reboot", "w1 uncordon"}; !slices.Equal(got, want) {
@@ -2481,7 +2508,7 @@ func TestUpgradeRollbackSkipsNodesOnTheTarget(t *testing.T) {
 // conflicting flags.
 func TestUpgradeRollbackRefuses(t *testing.T) {
 	l := newUpgradeLab(t, 3)
-	if err := l.run("upgrade", "--rollback"); err == nil || !strings.Contains(err.Error(), "no node keeps a previous image to roll back to") {
+	if err := l.run("upgrade", "--rollback", "--yes"); err == nil || !strings.Contains(err.Error(), "no node keeps a previous image to roll back to") {
 		t.Errorf("without previous images: %v", err)
 	}
 	if err := l.upgrade(testUpgradeImage(t, "w-metal", "0.2.0"), "--nodes", "w1,w2"); err != nil {

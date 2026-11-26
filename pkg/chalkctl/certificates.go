@@ -15,8 +15,8 @@ import (
 )
 
 type nodeRenewFlags struct {
-	node  nodeFlags
-	force bool
+	node          nodeFlags
+	ignoreRevoked bool
 }
 
 // nodeRenewCommand issues a node a new node certificate from the node CA and delivers it. The node is
@@ -26,14 +26,15 @@ func (a *app) nodeRenewCommand() *cobra.Command {
 	// The certificate names the node's addresses, which only its config gives.
 	f := nodeRenewFlags{node: nodeFlags{needs: "node renew"}}
 	cmd := a.command(&cobra.Command{
-		Use:     "renew <node>",
-		Short:   "Issue a node a new node certificate, also once its own expired",
-		Long:    nodeRenewLong,
-		Example: nodeRenewExample,
-		Args:    cli.ExactArgs(1),
+		Use:         "renew <node>",
+		Short:       "Issue a node a new node certificate, also once its own expired",
+		Long:        nodeRenewLong,
+		Example:     nodeRenewExample,
+		Args:        cli.ExactArgs(1),
+		Annotations: layer.Meta{Credentials: layer.SecretsFile}.Annotations(),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.nodeRenew(ctx, f, pos) })
 	f.node.Register(cmd.Flags())
-	cmd.Flags().BoolVar(&f.force, "force", false, "renew without asking whether the node is revoked")
+	cmd.Flags().BoolVar(&f.ignoreRevoked, "ignore-revoked", false, "renew without asking whether the node is revoked")
 	return cmd
 }
 
@@ -42,7 +43,7 @@ func (a *app) nodeRenew(ctx context.Context, f nodeRenewFlags, pos []string) err
 	if err != nil {
 		return err
 	}
-	if !f.force {
+	if !f.ignoreRevoked {
 		for _, d := range compiled[layer.Delivery]() {
 			if err := d.Admit(ctx, t, "node renew issues it a node certificate"); err != nil {
 				return err

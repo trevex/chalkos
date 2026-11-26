@@ -5,7 +5,9 @@ description: "Generate files of a cluster"
 
 # chalkctl gen
 
-Generates the files a cluster starts from. Its command needs no secrets file or client file.
+Generates the files a cluster starts from.
+
+Its command needs no secrets file or client file.
 
 ## Examples
 

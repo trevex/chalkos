@@ -28,8 +28,12 @@ next install of the image continues there. The node then reboots into the image.
 
 A name revoked with chalkctl node revoke is refused, as is any node while a layer cannot say which
 names are revoked, as when a bootstrapped Kubernetes cluster's control planes do not answer;
---force installs without asking. chalkctl warns of each image reference in the config that names a
-tag but no digest. The command needs the secrets file.
+--ignore-revoked installs without asking. chalkctl warns of each image reference in the config
+that names a tag but no digest.
+
+The command needs the secrets file. It asks for the node's name on the terminal before the installer
+replaces what the target disk holds with --wipe-disk; without a terminal it refuses unless --yes is
+given.
 
 ## Flags
 
@@ -37,14 +41,15 @@ tag but no digest. The command needs the secrets file.
 | --- | --- | --- | --- |
 | `--address`{ #flag-address } | list of [NODE=]ADDR | each node's address in the inventory | Address of a node's chalkd: ADDR for the one node the command reaches, or NODE=ADDR for any node, where ADDR is host or host:port; may be repeated. |
 | `--fingerprint`{ #flag-fingerprint } | string | — | SHA-256 fingerprint the node prints on its console in maintenance mode. |
-| `--force`{ #flag-force } | boolean | `false` | Install the node without asking whether its name is revoked. |
 | `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |
+| `--ignore-revoked`{ #flag-ignore-revoked } | boolean | `false` | Install the node without asking whether its name is revoked. |
 | `--image`{ #flag-image } | string | the node's image in the inventory: from its directory, or from a registry, which the installer pulls | Image to install when the node runs the installer: a raw image with repart-output.json and repart.d next to it, or an image directory, which chalkctl sends. |
 | `--insecure`{ #flag-insecure } | boolean | `false` | Accept any certificate and print the node's fingerprint. |
 | `--inventory`{ #flag-inventory } | string | $CHALKOSINVENTORY, else chalkos.yaml in the current directory, when it exists | Inventory naming the cluster's nodes, their addresses and their config files. |
 | `--password-file`{ #flag-password-file } | string | — | File holding the password of a node whose fallback is a password. |
 | `--secrets`{ #flag-secrets } | string | — | Cluster secrets path (.age, .enc.*, or plaintext), provider URI, or - for standard input. |
 | `--wipe-disk`{ #flag-wipe-disk } | boolean | `false` | Let the installer replace whatever the target disk holds, including an installed node; without it, the installer continues an earlier install of the node or takes a disk on which blkid finds no signature, which counts as empty even when it holds data. |
+| `--yes`{ #flag-yes } | boolean | `false` | Go ahead without asking; without a terminal the command refuses unless it is given. |
 
 ## Examples
 

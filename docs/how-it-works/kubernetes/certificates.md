@@ -157,7 +157,7 @@ explains:
   encrypted object under the new key. It pauses after the refresh.
 
 The finish has guards. A service-account key is removed only an hour after every control plane
-applied the switch, by which time the kubelets have renewed the tokens of running pods. `--force`
+applied the switch, by which time the kubelets have renewed the tokens of running pods. `--now`
 removes it earlier and refuses the tokens not renewed yet. An encryption key is removed only once
 etcd holds no object encrypted with it.
 
@@ -206,12 +206,12 @@ through denies the node's writes within seconds. The other control planes' API s
 the policy shortly after.
 
 `chalkctl node revoke` first asks every other control plane whether it reads the revoked nodes,
-and refuses while one does not answer or cannot read the list. `--force` revokes the node anyway.
+and refuses while one does not answer or cannot read the list. `--skip-read-check` revokes the node anyway.
 
 chalkctl reads the list as well. `chalkctl rotate` reads it before each phase and skips the listed
 nodes, so no rotation hands a revoked node a certificate. `chalkctl node renew` and
-`chalkctl config apply --kubernetes-share` refuse a listed node unless `--force` is given, and
-`chalkctl install` refuses to install a node under a listed name unless `--force` is given. All
+`chalkctl config apply --kubernetes-share` refuse a listed node unless `--ignore-revoked` is given, and
+`chalkctl install` refuses to install a node under a listed name unless `--ignore-revoked` is given. All
 four refuse to run while no control plane says which nodes are revoked. `chalkctl rotate
 --ignore-revoked` rotates without the list, as during an outage of the API server, and every node
 of the inventory then takes part. install counts a control plane that does not answer as an
@@ -222,7 +222,7 @@ wait.
 applies the policy again. A node's old certificates chain to the OS CA, which chalkd trusts with
 every node CA it signed, and to the Kubernetes CA. So the control plane unrevokes the node only
 when every OS CA and Kubernetes CA it trusts was made after the revocation, and refuses otherwise.
-`--force` unrevokes it anyway, and the old certificates work again until they expire. The check
+`--allow-old-ca` unrevokes it anyway, and the old certificates work again until they expire. The check
 compares the revocation time, taken from the control plane's clock, with the time chalkctl made
 the CA, taken from the workstation's clock. The two clocks must agree: a workstation clock far
 ahead can make a CA from before the revocation pass the check.
@@ -250,10 +250,10 @@ lists for every node, it leaves these:
   chalkctl node unrevoke make.
 - A control plane renews node certificates only while it can read the list from its API server.
   During a long outage of the API server, renewals stop, the control plane's own included.
-  `chalkctl node renew --force` renews a node's certificate without asking the control planes.
+  `chalkctl node renew --ignore-revoked` renews a node's certificate without asking the control planes.
 - A control plane that still runs a chalkd from before node revocation renews a revoked node's
   node certificate until it is upgraded. The API server denies the node's writes all the same.
-  `chalkctl node revoke` refuses while such a control plane runs, unless `--force` is given.
+  `chalkctl node revoke` refuses while such a control plane runs, unless `--skip-read-check` is given.
 - The list has a size limit. The API server compiles no expression longer than 100,000
   characters, so a control plane refuses a revocation that would make the policy's map longer
   than 90,000: about 2,000 short names, or about 300 names of the longest length Kubernetes

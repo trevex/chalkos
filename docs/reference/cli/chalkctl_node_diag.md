@@ -18,9 +18,10 @@ prints on standard output and standard error. It fails when the command fails, r
 its timeout or prints more than 1 MiB.
 
 Every image declares addresses, links, routes, route-get, neighbours, ping, dns-query,
-tcp-connect and nft-ruleset; layers and extensions add more. Listing needs a reader client file
-or the secrets file, and running a diagnostic the role it lists. A node in maintenance mode is
-reached with --fingerprint or --insecure as well.
+tcp-connect and nft-ruleset; layers and extensions add more. Running a diagnostic needs the role
+it lists. A node in maintenance mode is reached with --fingerprint or --insecure as well.
+
+The command needs a reader client file or the secrets file.
 
 ## Flags
 

@@ -59,11 +59,11 @@ out boots its previous image again. [Upgrades](../how-it-works/node/upgrades.md)
 
 ## Recover a node whose cluster is unavailable
 
-When chalkd is reachable but Kubernetes or etcd cannot start, run `chalkctl upgrade --force` to
+When chalkd is reachable but Kubernetes or etcd cannot start, run `chalkctl upgrade --recover` to
 install the repair image over the node API. Name every target explicitly:
 
 ```sh
-chalkctl upgrade --nodes cp1 --force --secrets=secrets.age
+chalkctl upgrade --nodes cp1 --recover --secrets=secrets.age
 ```
 
 The run reaches only the selected nodes, in batches of `--max-unavailable` without coordinator
@@ -73,11 +73,11 @@ be interrupted and etcd can lose quorum. The node's image and config checks, Sec
 and protection of its fallback image still apply. chalkctl still waits for the new boot to pass
 the node's health checks and stops if it falls back. A node cordoned before recovery stays
 cordoned. If the node refuses to overwrite the fallback of an unblessed boot,
-`chalkctl upgrade --nodes cp1 --rollback --force --secrets=secrets.age` recovers by booting the
+`chalkctl upgrade --nodes cp1 --rollback --recover --secrets=secrets.age` recovers by booting the
 previous image first.
 
-`--force` is a client option; the installed chalkd needs no new API. Use it with `--until stage`
-or `--until activate` to stop before rebooting. Repeat `upgrade --nodes cp1 --force` to continue
+`--recover` is a client option; the installed chalkd needs no new API. Use it with `--until stage`
+or `--until activate` to stop before rebooting. Repeat `upgrade --nodes cp1 --recover` to continue
 from the staged or activated image.
 
 ## Name the new image in the inventory
@@ -155,7 +155,10 @@ that `chalklab sign` signed, as
 
 Run the command in the inventory's directory, or name the inventory with `--inventory` or
 `$CHALKOSINVENTORY`. Start with
-one node, `--nodes cp3`, and check it. Then run the command without `--nodes` for the rest. This
+one node, `--nodes cp3`, and check it. Then run the command without `--nodes` for the rest. A run
+without `--nodes` takes every node of the inventory, so chalkctl prints the nodes it upgrades and
+asks before the first change; without a terminal, as in a script, it refuses unless `--yes` is
+given. `--diff` and `--until stage` change no running node and do not ask. This
 run of the homelab example upgrades its three Kubernetes nodes, `node1` to `node3`, and its router,
 which run two images:
 
@@ -163,6 +166,8 @@ which run two images:
 $ chalkctl upgrade --secrets=secrets.age
 upgrading node-metal on metal to <new>: node1, node2, node3
 upgrading router-metal on metal to <new-router>: router
+chalkctl: upgrade without --nodes changes every node of homelab, 4 nodes.
+Go ahead? [y/N] y
 node1: installing <new>
 node1: config unchanged
 node1: installed <new>, staged as .staged-chalkos_2.efi

@@ -28,11 +28,12 @@ type routesFlags struct {
 func nodeRoutesCommand(h layer.Host) *cobra.Command {
 	var f routesFlags
 	cmd := h.Command(&cobra.Command{
-		Use:     "routes <node> [<prefix>]",
-		Short:   "Show a router's routes",
-		Long:    nodeRoutesLong,
-		Example: nodeRoutesExample,
-		Args:    cli.RangeArgs(1, 2),
+		Use:         "routes <node> [<prefix>]",
+		Short:       "Show a router's routes",
+		Long:        nodeRoutesLong,
+		Example:     nodeRoutesExample,
+		Args:        cli.RangeArgs(1, 2),
+		Annotations: layer.Meta{Credentials: layer.Reader}.Annotations(),
 	}, func(h layer.Host, ctx context.Context, pos []string) error { return nodeRoutes(h, ctx, f, pos) })
 	f.node.RegisterClient(cmd.Flags())
 	cmd.Flags().StringVar(&f.protocol, "protocol", "", "only the kernel's routes of this protocol, such as kernel, static, ra, dhcp or bgp")

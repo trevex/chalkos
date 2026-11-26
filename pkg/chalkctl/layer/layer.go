@@ -92,7 +92,7 @@ type Delivery interface {
 	// the layer gives nothing.
 	Payloads(t Target, now time.Time) ([]*anypb.Any, error)
 	// ApplyFlags registers config apply's flags that ask for the layer's payloads; chalkctl
-	// registers --force, which delivers them without Admit.
+	// registers --ignore-revoked, which delivers them without Admit.
 	ApplyFlags(fs *pflag.FlagSet) ApplyFlags
 	// Admit refuses to deliver t what the secrets file issues it, which does says.
 	Admit(ctx context.Context, t Target, does string) error
@@ -189,6 +189,11 @@ type Host interface {
 	Table() *tabwriter.Writer
 	// Command makes cmd run run with the environment and streams of the command that runs.
 	Command(cmd *cobra.Command, run func(h Host, ctx context.Context, args []string) error) *cobra.Command
+	// Confirm asks on the terminal before a command that declares Meta.Confirms does what, a
+	// clause such as "registry delete deletes the tags 1.0 and latest with the digest", and fails
+	// unless the answer agrees: y, or typed when it is not empty, such as a node's name. With --yes
+	// it goes ahead without asking; without a terminal it refuses and names --yes.
+	Confirm(ctx context.Context, what, typed string) error
 	// Cluster loads the cluster the flags name.
 	Cluster(ctx context.Context, f ClusterFlags) (Cluster, error)
 	// Target addresses the node with the flags' credentials: the client file or the secrets file,

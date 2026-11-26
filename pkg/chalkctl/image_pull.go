@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/imagepull"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 )
@@ -13,11 +14,12 @@ import (
 func (a *app) imagePullCommand() *cobra.Command {
 	var layout bool
 	cmd := a.command(&cobra.Command{
-		Use:     "pull <reference> <dir>",
-		Short:   "Pull an image from a registry into an image directory or an OCI layout",
-		Long:    imagePullLong,
-		Example: imagePullExample,
-		Args:    cli.ExactArgs(2),
+		Use:         "pull <reference> <dir>",
+		Short:       "Pull an image from a registry into an image directory or an OCI layout",
+		Long:        imagePullLong,
+		Example:     imagePullExample,
+		Args:        cli.ExactArgs(2),
+		Annotations: layer.Meta{Credentials: layer.NoCredentials}.Annotations(),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.imagePull(ctx, pos[0], pos[1], layout) })
 	cmd.Flags().BoolVar(&layout, "layout", false, "write the OCI layout the registry serves, whose manifest keeps its digest, instead of an image directory")
 	return cmd

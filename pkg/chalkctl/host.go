@@ -24,6 +24,10 @@ func (h host) Stdout() io.Writer        { return h.a.stdout }
 func (h host) Stderr() io.Writer        { return h.a.stderr }
 func (h host) Table() *tabwriter.Writer { return h.a.table() }
 
+func (h host) Confirm(ctx context.Context, what, typed string) error {
+	return h.a.confirm(ctx, what, typed)
+}
+
 func (h host) Command(cmd *cobra.Command, run func(layer.Host, context.Context, []string) error) *cobra.Command {
 	return h.a.command(cmd, func(a *app, ctx context.Context, args []string) error { return run(host{a}, ctx, args) })
 }

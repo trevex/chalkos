@@ -70,7 +70,7 @@ doing until `chalkctl status` reports a problem on the `node` line under `certif
 
 A control plane renews a certificate only while it can read the revoked nodes from its API
 server, so that it never renews a revoked node's. During a long outage of the API server, no
-renewal succeeds, the control plane's own included. `chalkctl node renew --force` renews a node's
+renewal succeeds, the control plane's own included. `chalkctl node renew --ignore-revoked` renews a node's
 certificate without asking the control planes.
 
 A node whose image runs no Kubernetes has no control plane to ask. Renew its certificate with

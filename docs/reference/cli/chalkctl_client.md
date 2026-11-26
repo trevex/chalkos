@@ -5,8 +5,9 @@ description: "Manage client files"
 
 # chalkctl client
 
-Manages client files, which let a person operate the cluster without the secrets file. Writing
-a client file needs the secrets file.
+Manages client files, which let a person operate the cluster without the secrets file.
+
+Its command needs the secrets file.
 
 ## Examples
 

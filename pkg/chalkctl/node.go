@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/statusview"
@@ -19,11 +20,12 @@ import (
 func (a *app) disksCommand() *cobra.Command {
 	var f nodePinFlags
 	cmd := a.command(&cobra.Command{
-		Use:     "disks [<node>]",
-		Short:   "List a node's disks",
-		Long:    disksLong,
-		Example: disksExample,
-		Args:    cli.RangeArgs(0, 1),
+		Use:         "disks [<node>]",
+		Short:       "List a node's disks",
+		Long:        disksLong,
+		Example:     disksExample,
+		Args:        cli.RangeArgs(0, 1),
+		Annotations: layer.Meta{Credentials: layer.Reader}.Annotations(),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.disks(ctx, f, pos) })
 	f.node.RegisterClient(cmd.Flags())
 	f.pin.register(cmd.Flags())
@@ -82,11 +84,12 @@ type logsFlags struct {
 func (a *app) logsCommand() *cobra.Command {
 	var f logsFlags
 	cmd := a.command(&cobra.Command{
-		Use:     "logs <node>",
-		Short:   "Show a node's journal",
-		Long:    logsLong,
-		Example: logsExample,
-		Args:    cli.ExactArgs(1),
+		Use:         "logs <node>",
+		Short:       "Show a node's journal",
+		Long:        logsLong,
+		Example:     logsExample,
+		Args:        cli.ExactArgs(1),
+		Annotations: layer.Meta{Credentials: layer.Reader}.Annotations(),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.logs(ctx, f, pos) })
 	fs := cmd.Flags()
 	f.node.RegisterClient(fs)

@@ -10,6 +10,9 @@ node in maintenance mode whose firmware is in Setup Mode, without the firmware's
 private keys stay on the workstation: chalkctl signs the updates of the firmware's variables, and
 the node writes them. See [Enrol Secure Boot keys](../../operate/secure-boot.md).
 
+secureboot enroll needs an admin client file or the secrets file; secureboot new needs no secrets
+file or client file.
+
 ## Examples
 
 ```sh

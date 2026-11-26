@@ -9,11 +9,12 @@ documents. chalkctl waits until they are applied, up to --timeout. The other con
 the first.
 
 With an inventory, chalkctl first asks the inventory's other control planes for their status and
-refuses while one is an etcd member, is joining or does not answer. --force skips this check, as
+refuses while one is an etcd member, is joining or does not answer. --ignore-members skips this
+check, as
 when recovering a cluster whose other control planes are lost. The node itself refuses when it
 is bootstrapped already or holds etcd data, and when an API server answers at the cluster
 endpoint, with a certificate of the cluster's CA or of another CA, so a second cluster is not
-initialised behind the endpoint. The command needs an admin client file or the secrets file.`
+initialised behind the endpoint.`
 
 const bootstrapExample = `  chalkctl bootstrap cp1`
 
@@ -25,7 +26,7 @@ written with mode 0600. Write a new one from the secrets file when it expires; p
 until it expires or the Kubernetes CA rotates. --server points clients at another URL than the
 cluster endpoint (a forwarded port, for example), while they still verify the API server's
 certificate for the endpoint. The kubeconfig's cluster, user and context are named after the
-inventory's metadata.name, or after --context. The command needs the secrets file.`
+inventory's metadata.name, or after --context. An existing file is replaced only with --overwrite.`
 
 const kubeconfigExample = `  chalkctl kubeconfig --secrets secrets.age --out lab.kubeconfig
 
@@ -35,23 +36,21 @@ const kubeconfigExample = `  chalkctl kubeconfig --secrets secrets.age --out lab
   # Through a port forwarded to the API server.
   chalkctl kubeconfig --secrets secrets.age --server https://127.0.0.1:6443 --out -`
 
-const etcdLong = `Manages the members of the cluster's etcd, which runs on the control planes. etcd members
-needs a reader client file, and etcd remove-member and etcd leave need an admin client file; the
-secrets file works for all three.`
+const etcdLong = `Manages the members of the cluster's etcd, which runs on the control planes.`
 
 const etcdExample = `  chalkctl etcd members`
 
 const etcdMembersLong = `Lists etcd's members the way one control plane's own member sees them: name, ID, peer URLs,
 whether a member votes or is a learner, and its health. The first control plane that answers is
-asked, or --via. The command needs a reader client file or the secrets file.`
+asked, or --via.`
 
 const etcdMembersExample = `  chalkctl etcd members --via cp2`
 
 const etcdRemoveMemberLong = `Removes another node's etcd member, named by its node or its member ID: for example the member
 of a node that is gone. The removal is refused when the voters left would have fewer healthy
-members than their quorum, unless --force is given. A control plane other than the removed one
-does the removal: --via, or the first one that answers. The command needs an admin client file
-or the secrets file.`
+members than their quorum, unless --ignore-quorum is given, and etcd then accepts no writes until
+enough members are healthy again. A control plane other than the removed one does the removal:
+--via, or the first one that answers.`
 
 const etcdRemoveMemberExample = `  # Remove the member of cp3, whose machine failed.
   chalkctl etcd remove-member cp3
@@ -63,8 +62,8 @@ const etcdLeaveLong = `Takes a control plane out of etcd: the node releases its 
 with the same quorum guard as remove-member, stops its static pods (etcd and the Kubernetes
 control-plane components), deletes its etcd data and unpins its addresses. It joins the cluster
 again only once it is reinstalled. A node whose own member does not answer (for example after it
-lost its pinned address) leaves only with --force, through the other members. The command needs
-an admin client file or the secrets file.`
+lost its pinned address) leaves only with --through-others, which removes its member through the
+other members.`
 
 const etcdLeaveExample = `  chalkctl etcd leave cp3`
 
@@ -82,9 +81,10 @@ gone, then rotate os-ca and kubernetes-ca. A cluster without Kubernetes keeps no
 there chalkctl rotate os-ca cuts a node off.
 
 The command first asks every other control plane whether it reads the revoked nodes, and refuses
-while one does not answer or does not say it read them. --force revokes the node despite either
-refusal. A control plane revokes the node: --via, or the first other one that answers. The command
-needs an admin client file or the secrets file.`
+while one does not answer or does not say it read them. --allow-control-plane revokes a control
+plane, an etcd member or the node --via names all the same, and --skip-read-check revokes the node
+without asking the other control planes. A control plane revokes the node: --via, or the first
+other one that answers.`
 
 const nodeRevokeExample = `  # Cut off w1, which was removed from the cluster.
   chalkctl node revoke w1`
@@ -96,19 +96,18 @@ chalkctl rotate os-ca and chalkctl rotate kubernetes-ca, each to its finish, fir
 installed afresh under the name then joins as usual. See
 https://trevex.github.io/chalkos/how-it-works/kubernetes/certificates/#revoking-a-node-cuts-off-its-writes-and-renewals.
 
---force unrevokes the node anyway, and its old certificates work again until they expire. The old
-node does not come back by itself: its kubelet registers its Node once as it starts, so reboot it
-with chalkctl node reboot --no-drain, as its Node is gone and holds nothing to drain, or restart
+--allow-old-ca unrevokes the node anyway, and its old certificates work again until they expire. The
+old node does not come back by itself: its kubelet registers its Node once as it starts, so reboot
+it with chalkctl node reboot --no-drain, as its Node is gone and holds nothing to drain, or restart
 its kubelet.
 
-A control plane unrevokes the node: --via, or the first one that answers. The command needs an
-admin client file or the secrets file.`
+A control plane unrevokes the node: --via, or the first one that answers.`
 
 const nodeUnrevokeExample = `  # Reuse the name w1 once the rotations of os-ca and kubernetes-ca have finished.
   chalkctl node unrevoke w1
 
   # Let the old w1 back in, certificates and all.
-  chalkctl node unrevoke w1 --force
+  chalkctl node unrevoke w1 --allow-old-ca
   chalkctl node reboot w1 --no-drain`
 
 const registryLong = `Manages the images of the cluster registry, which chalkos-registry serves on the nodes that a
@@ -138,8 +137,7 @@ anything else it reads.
 
 chalkctl prints the image's digest, checks that each endpoint serves it, reports each endpoint,
 and fails unless every one has the image. --connect-to reaches an endpoint through another
-address, such as a forwarded port, while it still verifies the endpoint's certificate. The
-command needs an admin client file or the secrets file.`
+address, such as a forwarded port, while it still verifies the endpoint's certificate.`
 
 const registryPushExample = `  chalkctl registry push busybox.tar docker.io/library/busybox:1.37.0 --secrets secrets.age
 
@@ -159,7 +157,10 @@ do, the manifest stays, and with it its layers, until chalkctl registry delete
 <repository>@<digest>. A digest takes the manifest. Before it deletes anything, chalkctl refuses a
 digest that tags name unless --with-tags is given, and then prints each tag it deleted with it;
 it always refuses a digest that a tagged index names, as the index would break. The layers stay
-on disk until chalkctl registry gc. The command needs an admin client file or the secrets file.`
+on disk until chalkctl registry gc.`
+
+// registryDeleteConfirms says when registry delete asks, for its Meta.
+const registryDeleteConfirms = "asks on the terminal before it deletes a digest together with the tags that name it, as --with-tags allows"
 
 const registryDeleteExample = `  # Take the tag away; the manifest stays.
   chalkctl registry delete docker.io/library/busybox:1.36.1
@@ -176,7 +177,7 @@ While an endpoint collects, it serves pulls and refuses pushes and deletes, and 
 layers went up before the collection started may fail on them, so run the command when no push
 is in progress. An endpoint that collects already says so, and the command fails for it. A
 collection runs to its end on the endpoint once begun: Ctrl-C stops chalkctl, not the
-collection. The command needs an admin client file or the secrets file.`
+collection.`
 
 const registryGCExample = `  chalkctl registry delete docker.io/library/busybox@sha256:7b3ccabffc97de872a30dfd234fd972a66d247c8cfc69b0550f276481852627c --with-tags
   chalkctl registry gc`
@@ -189,6 +190,6 @@ command exits 1 when any is marked or an endpoint cannot be listed; a push of th
 endpoint mends it. Images pushed by digest alone, without a tag, are not listed.
 
 The registry serves reads to anyone, but chalkctl verifies the endpoints by the OS CA of a client
-file or the secrets file, so the command needs a client file of any role or the secrets file.`
+file or the secrets file, so the command takes one of them.`
 
 const registryListExample = `  chalkctl registry list`

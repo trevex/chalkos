@@ -15,30 +15,32 @@ names another; commands read it from there, or from the path --config or $CHALKO
 client file names no cluster: its OS CA ties it to one, and a node of another cluster fails the TLS
 handshake, which chalkctl reports as a node that does not accept the client file.
 
-A client file works for bootstrap, disks, etcd leave, etcd members, etcd remove-member, logs,
-node activate, node diag, node reboot, node revoke, node routes, node unrevoke, registry delete,
-registry gc, registry list, registry push, secureboot enroll, status, storage reset and upgrade;
-every other command needs the secrets file or neither file. A reader may read nodes'
-information, disks, status and logs, etcd's members and the cluster registry's images; an
-operator may also upgrade, activate staged images, reboot, drain and uncordon nodes; an admin may
-call every method of chalkd but the node's own renewal, and push, delete and collect garbage in
-the cluster registry. See
+A client file works for bootstrap, disks, etcd leave, etcd members, etcd remove-member, logs, node
+activate, node diag, node reboot, node revoke, node routes, node unrevoke, registry delete, registry
+gc, registry list, registry push, secureboot enroll, status, storage reset and upgrade; every other
+command needs the secrets file or neither file.
+
+A reader may read nodes' information, disks, status and logs, etcd's members and the cluster
+registry's images; an operator may also upgrade, activate staged images, reboot, drain and
+uncordon nodes; an admin may call every method of chalkd but the node's own renewal, and push,
+delete and collect garbage in the cluster registry. See
 [chalkd checks the role of every request](../../how-it-works/node/security.md#chalkd-checks-the-role-of-every-request).
 
 The certificate is valid for --ttl, by default 30 days for an admin, 90 days for an operator and
 a year for a reader. Issue a new file from the secrets file when it expires; chalkctl warns in
-the last third of its lifetime.
+the last third of its lifetime. An existing file is replaced only with --overwrite. The command
+needs no inventory.
 
-The command needs the secrets file and no inventory.
+The command needs the secrets file.
 
 ## Flags
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
-| `--force`{ #flag-force } | boolean | `false` | Replace an existing file. |
 | `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |
 | `--name`{ #flag-name } | string | required | The user's name, which the certificate carries. |
 | `--out`{ #flag-out } | string | ~/.config/chalkos/config | File to write. |
+| `--overwrite`{ #flag-overwrite } | boolean | `false` | Replace an existing file. |
 | `--role`{ #flag-role } | string | required | The role the certificate grants: admin, operator or reader. |
 | `--secrets`{ #flag-secrets } | string | — | Cluster secrets path (.age, .enc.*, or plaintext), provider URI, or - for standard input. |
 | `--ttl`{ #flag-ttl } | duration | 720h for an admin, 2160h for an operator, 8760h for a reader | Validity of the certificate. |

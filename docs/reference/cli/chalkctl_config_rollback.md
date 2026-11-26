@@ -22,8 +22,9 @@ It also finishes a rollback at a trial's deadline that failed after it changed t
 trial's rollback, the config on trial is the node's previous config, which the command delivers
 again without a trial.
 
-The node keeps the config it rolls back to, so the command needs no inventory. It needs the
-secrets file.
+The node keeps the config it rolls back to, so the command needs no inventory.
+
+The command needs the secrets file.
 
 ## Flags
 

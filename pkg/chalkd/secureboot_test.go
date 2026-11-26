@@ -297,7 +297,7 @@ func TestEnrollSecureBootWithoutESP(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := s.EnrollSecureBoot(context.Background(), enrolRequest(t, k))
-	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "udev found no ESP on the disk the machine booted from") || !strings.Contains(err.Error(), "--force") {
+	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "udev found no ESP on the disk the machine booted from") || !strings.Contains(err.Error(), "--skip-checks") {
 		t.Errorf("EnrollSecureBoot = %v", err)
 	}
 	if len(fw.writes) > 0 {
@@ -311,12 +311,12 @@ func TestEnrollSecureBootWithoutESP(t *testing.T) {
 func TestBootedBinariesErrorWhenTheESPDidNotMount(t *testing.T) {
 	notMounted := fmt.Errorf("list the UKIs on the ESP: %w", &fs.PathError{Op: "open", Path: "/efi/EFI/Linux", Err: unix.ENODEV})
 	err := bootedBinariesError("/efi", notMounted)
-	if layer.CodeOf(err) != connect.CodeUnavailable || !strings.Contains(err.Error(), "the ESP did not mount at /efi") || !strings.Contains(err.Error(), "efi.mount") || strings.Contains(err.Error(), "--force") {
+	if layer.CodeOf(err) != connect.CodeUnavailable || !strings.Contains(err.Error(), "the ESP did not mount at /efi") || !strings.Contains(err.Error(), "efi.mount") || strings.Contains(err.Error(), "--skip-checks") {
 		t.Errorf("bootedBinariesError(ENODEV) = %v", err)
 	}
 	other := fmt.Errorf("list the UKIs on the ESP: %w", &fs.PathError{Op: "open", Path: "/efi/EFI/Linux", Err: unix.EIO})
 	err = bootedBinariesError("/efi", other)
-	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "--force") {
+	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "--skip-checks") {
 		t.Errorf("bootedBinariesError(EIO) = %v", err)
 	}
 }
@@ -423,7 +423,7 @@ func TestCheckDrivers(t *testing.T) {
 			t.Errorf("%s: allowed", tc.name)
 			continue
 		}
-		for _, want := range append(tc.refused, "--force", "boot loader and UKI") {
+		for _, want := range append(tc.refused, "--skip-checks", "boot loader and UKI") {
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("%s: %v, want it to name %q", tc.name, err, want)
 			}
@@ -452,7 +452,7 @@ func TestEnrollSecureBootChecksDrivers(t *testing.T) {
 	}{
 		{"an option ROM db does not allow", "rom", nil, false, connect.CodeFailedPrecondition, "sha256:" + hex.EncodeToString(rom[:]) + " PciRoot(0x0)/Pci(0x3,0x0)"},
 		{"the option ROM's digest", "rom", dbUpdate(t, k, rom), false, connect.CodeFailedPrecondition, "not signed by a db certificate"},
-		{"a garbled event log", "garbage", nil, false, connect.CodeFailedPrecondition, "--force"},
+		{"a garbled event log", "garbage", nil, false, connect.CodeFailedPrecondition, "--skip-checks"},
 		// A log of SHA-1 digests alone does not list the drivers, so the check of the image follows.
 		{"a SHA-1 event log", "sha1", nil, false, connect.CodeFailedPrecondition, "not signed by a db certificate"},
 		{"forced", "rom", nil, true, 0, ""},

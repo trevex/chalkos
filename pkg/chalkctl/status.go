@@ -19,11 +19,12 @@ import (
 func (a *app) statusCommand() *cobra.Command {
 	var n nodeFlags
 	cmd := a.command(&cobra.Command{
-		Use:     "status <node>",
-		Short:   "Show an installed node's status",
-		Long:    statusLong,
-		Example: statusExample,
-		Args:    cli.ExactArgs(1),
+		Use:         "status <node>",
+		Short:       "Show an installed node's status",
+		Long:        statusLong,
+		Example:     statusExample,
+		Args:        cli.ExactArgs(1),
+		Annotations: layer.Meta{Credentials: layer.Reader}.Annotations(),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.status(ctx, n, pos) })
 	n.RegisterClient(cmd.Flags())
 	return cmd
