@@ -35,9 +35,6 @@ func TestReadMetadataFields(t *testing.T) {
 	if md.ID != "chalkos" || md.Name != "worker-metal" || md.Platform != "metal" || len(md.RootHash) != 64 || md.Revision != "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678" || md.Tag != "v1.5.0" {
 		t.Errorf("metadata = %+v", md)
 	}
-	if len(md.Kinds) != 1 || md.Kinds[0] != (Kind{APIVersion: "demo.example.org/v1alpha1", Kind: "Demo", Multiple: true}) {
-		t.Errorf("kinds = %+v", md.Kinds)
-	}
 }
 
 func TestParseMetadata(t *testing.T) {

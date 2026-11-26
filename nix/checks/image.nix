@@ -960,7 +960,7 @@ in
     )
   );
 
-  # An image directory describes itself and carries a schema for each kind it lists.
+  # An image directory describes itself and carries the schemas of its kinds.
   image-contract =
     pkgs.runCommand "chalkos-image-contract"
       {
@@ -981,7 +981,7 @@ in
           and .name == "test-metal"
           and .platform == "metal"
           and (.rootHash | test("^[0-9a-f]{64}$"))
-          and ([.kinds[].kind] | index("Network") != null)
+          and (has("kinds") | not)
           and (has("kubernetes") | not)
         ' $dir/metadata.json
         # Slot A's labels name its store by the root hash, in the raw image as in
@@ -1002,9 +1002,7 @@ in
           echo "error: the image's ESP holds no /EFI/Linux/chalkos_1.efi" >&2
           exit 1
         }
-        for k in $(jq -r '.kinds[] | "\(.apiVersion | sub("/"; "_"))_\(.kind).json"' $dir/metadata.json); do
-          test -f $dir/schemas/$k || { echo "error: metadata.json lists $k, which schemas/ lacks" >&2; exit 1; }
-        done
+        test -f $dir/schemas/networkd.chalkos.dev_v1alpha1_Network.json
         if [ -n "$(ls -A $dir/facts)" ]; then
           echo "error: the test image runs no Kubernetes, but its directory has facts: $(ls $dir/facts)" >&2
           exit 1

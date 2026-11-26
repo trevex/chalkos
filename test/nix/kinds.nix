@@ -201,7 +201,12 @@ let
       args = lib.concatStringsSep " " (lib.tail words);
     };
   resolvePeering = chalkosLib.internal.get.resolve (peeringSpec kindTypes.secretRef);
-  kindNames = config: map (k: k.kind) config.system.build.chalkosKinds;
+  # The kinds an image accepts, by the x-chalkos-kind of each schema, networkd's among them.
+  kindsOf =
+    config:
+    map (s: s."x-chalkos-kind") (lib.attrValues config.system.build.chalkosKindSchemas)
+    ++ config.system.build.chalkosNetworkdKinds;
+  kindNames = config: map (k: k.kind) (kindsOf config);
   builtinFixture =
     file: builtins.fromJSON (builtins.readFile (../fixtures/kinds/builtin + "/${file}"));
   builtinSchema =
@@ -972,21 +977,19 @@ in
     expected = "${withDemo.system.build.chalkosSchemas}";
   };
   testKindsListed = {
-    expr = lib.elem {
-      apiVersion = "demo.example.org/v1alpha1";
-      kind = "Demo";
-      multiple = true;
-    } withDemo.system.build.chalkosKinds;
+    expr = lib.any (k: k.group == "demo.example.org" && k.kind == "Demo" && k.multiple) (
+      kindsOf withDemo
+    );
     expected = true;
   };
   testNetworkdKindsListed = {
-    expr = lib.filter (
-      k: k.apiVersion == "networkd.chalkos.dev/v1alpha1"
-    ) withDemo.system.build.chalkosKinds;
+    expr = map (k: { inherit (k) group kind multiple; }) (
+      lib.filter (k: k.group == "networkd.chalkos.dev") (kindsOf withDemo)
+    );
     expected =
       map
         (kind: {
-          apiVersion = "networkd.chalkos.dev/v1alpha1";
+          group = "networkd.chalkos.dev";
           inherit kind;
           multiple = true;
         })
@@ -2164,7 +2167,6 @@ in
       expr = {
         schema = xKind "vault.example.org_v1_Vault.json";
         demo = xKind "demo.example.org_v1alpha1_Demo.json" ? withheld;
-        metadata = lib.filter (k: k.kind == "Vault") config.system.build.chalkosKinds;
         grant = fails (
           servicesOf (withVault {
             systemd.services.bird.chalkos.kinds = [ "Vault" ];
@@ -2188,14 +2190,6 @@ in
           withheld = true;
         };
         demo = false;
-        metadata = [
-          {
-            apiVersion = "vault.example.org/v1";
-            kind = "Vault";
-            multiple = false;
-            withheld = true;
-          }
-        ];
         grant = true;
         effect = true;
       };

@@ -340,14 +340,6 @@ in
     system.build.chalkosRulesCheck = rulesCheck;
     system.build.chalkosRulesImage = rulesImage;
     chalkos.imageDirectory.checks = [ rulesCheck ];
-    system.build.chalkosKinds = map (
-      k:
-      {
-        apiVersion = "${k.group}/${k.version}";
-        inherit (k) kind multiple;
-      }
-      // lib.optionalAttrs (k.withheld or false) { withheld = true; }
-    ) (config.system.build.chalkosNetworkdKinds ++ kinds);
     environment.etc."chalkos/schemas".source = schemas;
   };
 }

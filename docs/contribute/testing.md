@@ -264,7 +264,7 @@ shell functions the check scripts call: `fail`, `retry` and `refuses`, and for t
 | `example-bgp-extension` | The standalone BIRD image evaluates and its extension tests pass. |
 | `example-bgp-extension-validator-docs` | The BGP guide shows the refusals that two of the extension's tests expect, as their `refusals.json` holds them. |
 | `example-extensions` | The extensions example's image builds, and `chalkctl validate` accepts its YAML, `Rack` and `Hardware` documents included, with it. |
-| `image-contract` | An image directory describes itself and carries a schema for each kind it lists. |
+| `image-contract` | An image directory describes itself and carries the schemas of its kinds. |
 | `image-oci` | The test image's OCI layout: one manifest of the chalkos artifact type, whose header names the image directory's root hash and platform, whose layers are the image's parts and contract in order, whose annotations are those `metadata.json` names, and whose contract holds the directory's `metadata.json`. |
 | `chrony-dhcp` | The `chalkos-chrony-dhcp` unit's command: the time servers networkd learned are chrony's when the node's `TimeSync` takes them, and none are otherwise. chrony's effect reloads the sources of a chronyd that runs alone. |
 | `containerd-config` | containerd's merged config takes the sandbox image from the file `chalkos-containerd-config` writes from the `Cluster` document, and keeps its own without one. |
