@@ -186,3 +186,16 @@ func TestStatusWithASectionError(t *testing.T) {
 		t.Errorf("status -o json = %s", out)
 	}
 }
+
+// A layer whose status could not be read keeps its error in -o json, beside the readable layers.
+func TestStatusJSONKeepsALayerError(t *testing.T) {
+	r := &statusRead{name: "n1", status: &nodev1.StatusResponse{}, info: &nodev1.InfoResponse{},
+		layers: []layerSection{unreadLayer("kubernetes", errors.New("the node is unreachable"))}}
+	s, err := r.json()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.LayerErrors["kubernetes"] != "the node is unreachable" || s.Layers != nil {
+		t.Errorf("layerErrors = %v, layers = %v", s.LayerErrors, s.Layers)
+	}
+}

@@ -82,6 +82,8 @@ type statusRead struct {
 // layerSection is a layer's section of a node's status, by the layer's name.
 type layerSection struct {
 	name string
+	// err says why the layer's status could not be read; nil when it was.
+	err error
 	layer.StatusSection
 }
 
@@ -105,9 +107,10 @@ func (a *app) readStatus(ctx context.Context, t *target, conn *client.Conn) (*st
 		section, err := s.ReadStatus(ctx, conn)
 		if err != nil {
 			// A layer's section the node could not answer shows in its place, as chalkd's own do.
-			section = unreadSection(p.Name(), client.Describe(err, t.hints()))
+			r.layers = append(r.layers, unreadLayer(p.Name(), client.Describe(err, t.hints())))
+			continue
 		}
-		r.layers = append(r.layers, layerSection{p.Name(), section})
+		r.layers = append(r.layers, layerSection{name: p.Name(), StatusSection: section})
 	}
 	r.options = statusview.Options{
 		Node:         t.name,
@@ -129,15 +132,15 @@ func (a *app) readStatus(ctx context.Context, t *target, conn *client.Conn) (*st
 	return r, nil
 }
 
-// unreadSection is the section of the layer called name, whose status could not be read for err.
-func unreadSection(name string, err error) layer.StatusSection {
-	return layer.StatusSection{
+// unreadLayer is the section of the layer called name, whose status could not be read for err.
+func unreadLayer(name string, err error) layerSection {
+	return layerSection{name: name, err: err, StatusSection: layer.StatusSection{
 		Write: func(w io.Writer) error {
 			_, werr := fmt.Fprintln(w, statusview.SectionErrorLine(name, err.Error()))
 			return werr
 		},
 		Problems: []string{name + " unknown"},
-	}
+	}}
 }
 
 // statusJSON is a node's status as status -o json prints it.
@@ -159,6 +162,9 @@ type statusJSON struct {
 	Status json.RawMessage `json:"status,omitempty"`
 	// Layers are the layers' statuses by the layer's name, each in protojson.
 	Layers map[string]json.RawMessage `json:"layers,omitempty"`
+	// LayerErrors say why the statuses of layers could not be read, by the layer's name; Layers
+	// leaves those layers out.
+	LayerErrors map[string]string `json:"layerErrors,omitempty"`
 }
 
 // json is the node's status as status -o json prints it.
@@ -179,6 +185,12 @@ func (r *statusRead) json() (statusJSON, error) {
 		return statusJSON{}, err
 	}
 	for _, l := range r.layers {
+		if l.err != nil {
+			if s.LayerErrors == nil {
+				s.LayerErrors = map[string]string{}
+			}
+			s.LayerErrors[l.name] = l.err.Error()
+		}
 		if l.Message == nil {
 			continue
 		}
