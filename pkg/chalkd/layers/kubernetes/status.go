@@ -104,6 +104,7 @@ func (k *side) status(ctx context.Context) (*kubernetesv1.StatusResponse, error)
 		if k.split != "" {
 			st.State += ": " + k.split
 		}
+		st.AddonsApplied = k.appliedLocked()
 		k.mu.Unlock()
 		if len(c.VIP.Addresses) > 0 {
 			st.Vip = "standby"

@@ -292,8 +292,15 @@ type StatusResponse struct {
 	PodsError string `protobuf:"bytes,17,opt,name=pods_error,json=podsError,proto3" json:"pods_error,omitempty"`
 	// How many pods on the node do not run, of which pods_not_running lists the first 20.
 	PodsNotRunningTotal uint32 `protobuf:"varint,18,opt,name=pods_not_running_total,json=podsNotRunningTotal,proto3" json:"pods_not_running_total,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// On a bootstrapped control-plane node: whether the control plane's loop applied chalkos's
+	// add-ons and the objects of the Addon documents since the loop started. The loop starts when
+	// chalkd starts and when the loops restart, as after a change to the cluster's settings; the
+	// field is false from then until the loop, or one stopped while a bootstrap waited for it,
+	// applied them. It stays true through a reload for a changed share or config, also before the
+	// loop applied the changed objects, and when the loop fails later. False on other nodes.
+	AddonsApplied bool `protobuf:"varint,19,opt,name=addons_applied,json=addonsApplied,proto3" json:"addons_applied,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *StatusResponse) Reset() {
@@ -450,6 +457,13 @@ func (x *StatusResponse) GetPodsNotRunningTotal() uint32 {
 		return x.PodsNotRunningTotal
 	}
 	return 0
+}
+
+func (x *StatusResponse) GetAddonsApplied() bool {
+	if x != nil {
+		return x.AddonsApplied
+	}
+	return false
 }
 
 // The request of BGPStatus.
@@ -1970,7 +1984,7 @@ var File_chalkos_kubernetes_v1_kubernetes_proto protoreflect.FileDescriptor
 const file_chalkos_kubernetes_v1_kubernetes_proto_rawDesc = "" +
 	"\n" +
 	"&chalkos/kubernetes/v1/kubernetes.proto\x12\x15chalkos.kubernetes.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1achalkos/node/v1/node.proto\"\x0f\n" +
-	"\rStatusRequest\"\xab\x06\n" +
+	"\rStatusRequest\"\xd2\x06\n" +
 	"\x0eStatusResponse\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x122\n" +
@@ -1992,7 +2006,8 @@ const file_chalkos_kubernetes_v1_kubernetes_proto_rawDesc = "" +
 	"\x10pods_not_running\x18\x10 \x03(\v2\x1e.chalkos.kubernetes.v1.NodePodR\x0epodsNotRunning\x12\x1d\n" +
 	"\n" +
 	"pods_error\x18\x11 \x01(\tR\tpodsError\x123\n" +
-	"\x16pods_not_running_total\x18\x12 \x01(\rR\x13podsNotRunningTotal\"\x12\n" +
+	"\x16pods_not_running_total\x18\x12 \x01(\rR\x13podsNotRunningTotal\x12%\n" +
+	"\x0eaddons_applied\x18\x13 \x01(\bR\raddonsApplied\"\x12\n" +
 	"\x10BGPStatusRequest\"A\n" +
 	"\x11BGPStatusResponse\x12,\n" +
 	"\x03bgp\x18\x01 \x01(\v2\x1a.chalkos.node.v1.BGPStatusR\x03bgp\"\\\n" +
