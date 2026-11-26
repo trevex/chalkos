@@ -159,48 +159,39 @@ one node, `chalkctl upgrade cp3`, and check it. Then run the command without a n
 run that names no node takes every node of the inventory, so chalkctl prints the nodes it upgrades and
 asks before the first change; without a terminal, as in a script, it refuses unless `--yes` is
 given. `--diff` and `--until stage` change no running node and do not ask. This
-run of the homelab example upgrades its three Kubernetes nodes, `node1` to `node3`, and its router,
-which run two images:
+run upgrades the template's three control planes, `cp1` to `cp3`:
 
 ```console
 $ chalkctl upgrade --secrets=secrets.age
-upgrading node-metal on metal to <new>: node1, node2, node3
-upgrading router-metal on metal to <new-router>: router
-chalkctl: upgrade with no node named changes every node of homelab, 4 nodes.
+upgrading node-metal on metal to <new>: cp1, cp2, cp3
+chalkctl: upgrade with no node named changes every node of cluster, 3 nodes.
 Go ahead? [y/N] y
-node1: installing <new>
-node1: config unchanged
-node1: installed <new>, staged as .staged-chalkos_2.efi
-node1: cordoned, evicted <n> pods, kept <n>
-node1: activated <new>, which boots next as chalkos_2+3.efi
-node1: rebooting into <new>
-node1: it did not reboot yet
-node1: unreachable: <error>
-node1: its boot is not healthy yet: units failed: kubelet.service
-node1: runs <new>, found healthy
-node1: uncordoned
-node2: installing <new>
+cp1: installing <new>
+cp1: config unchanged
+cp1: installed <new>, staged as .staged-chalkos_2.efi
+cp1: cordoned, evicted <n> pods, kept <n>
+cp1: activated <new>, which boots next as chalkos_2+3.efi
+cp1: rebooting into <new>
+cp1: it did not reboot yet
+cp1: unreachable: <error>
+cp1: its boot is not healthy yet: units failed: kubelet.service
+cp1: runs <new>, found healthy
+cp1: uncordoned
+cp2: installing <new>
 ...
-node3: uncordoned
-router: installing <new-router>
-router: config unchanged
-router: installed <new-router>, staged as .staged-chalkos_2.efi
-router: activated <new-router>, which boots next as chalkos_2+3.efi
-router: rebooting into <new-router>
-router: unreachable: <error>
-router: runs <new-router>, found healthy
-upgraded 4 nodes to <new>, <new-router>
+cp3: uncordoned
+upgraded 3 nodes to <new>
 ```
 
-`<new>` and `<new-router>` stand for the new images' names. chalkctl names an image by the first
+`<new>` stands for the new image's name. chalkctl names an image by the first
 12 hex characters of its root hash. When the build names a tag or a git revision, they follow in
 parentheses, the revision cut to 12 characters, as in `<root hash> (<tag>, <revision>)`. `<n>`
 stands for numbers of pods, and `<error>` for the error of a look that did not reach the node.
 `.staged-chalkos_2.efi` is the staged UKI on a node that was installed with `chalkos_1.efi`, and
 `chalkos_2+3.efi` the boot entry its activation gives it: generation 2, with three tries.
 
-The first lines name each image and its platform and the nodes that get it. `...` stands
-for the lines of node2 and node3, which repeat node1's. Each node shows its steps:
+The first line names the image, its platform and the nodes that get it. `...` stands
+for the lines of cp2 and cp3, which repeat cp1's. Each node shows its steps:
 
 1. `installing` starts sending the image.
 2. The config line says what the node's config changes with the image. `config unchanged` means
@@ -215,16 +206,14 @@ for the lines of node2 and node3, which repeat node1's. Each node shows its step
 6. `runs ..., found healthy` means the boot was blessed.
 
 On a terminal, an image sent from a directory also prints its progress about every tenth of its
-size, such as `node1: sent 40%, 120.0 MiB of 297.3 MiB`. Sizes are in MiB or GiB. Output to a
+size, such as `cp1: sent 40%, 120.0 MiB of 297.3 MiB`. Sizes are in MiB or GiB. Output to a
 file or a pipe, as in CI, gets no progress lines.
 
 The last line counts the nodes upgraded.
 
 The control planes go first, one at a time, and the other nodes after them in batches of
 `--max-unavailable`, 1 by default. Raise it when the workloads have spare capacity, because each
-batch takes its nodes away for one reboot. The homelab's nodes reach each other and the
-Kubernetes API through its router alone, so its reboot pauses that traffic. `chalkctl upgrade router`
-upgrades the router in a run of its own, at a time that suits.
+batch takes its nodes away for one reboot.
 [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) lists every flag.
 
 `--image` installs an image directory, or a raw image with `repart-output.json` next to it, in

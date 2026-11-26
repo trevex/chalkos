@@ -8,9 +8,9 @@ description: "Write a flake that builds a cluster's image with mkImages, into th
 This page is for an image author who builds a cluster's images with Nix. At the end you have a
 flake that builds unsigned images into the directories the cluster's inventory names, such as
 `images/node-metal`, and you know what the build writes there and what else `mkImages` returns.
-The page follows the
-[homelab example](https://github.com/trevex/chalkos/tree/main/examples/homelab): images for bare
-metal, one for its router and one that its three Kubernetes nodes run.
+The page follows the `cluster-metal` template, which
+[Build a cluster on real machines](../guides/cluster-on-machines.md) installs: one image for bare
+metal that its three Kubernetes control planes, `cp1` to `cp3`, run.
 
 ## Before you begin
 
@@ -23,22 +23,24 @@ needs that directory and no Nix.
 
 ## The flake calls mkImages
 
-The homelab's flake builds a router image, a Kubernetes node image and the installer.
+The template's flake builds the Kubernetes node image and the installer.
 
 ```nix title="flake.nix"
---8<-- "examples/homelab/flake.nix"
+--8<-- "templates/cluster-metal/flake.nix"
 ```
 
 The flake takes chalkos as an input and calls `chalkos.lib.mkImages`. `flake.lock` pins the
 chalkos version, so the images change only when the lock file or the flake's own modules change.
-The call sets two arguments:
+The call sets three arguments:
 
+- `osCA` is the public part of the cluster's secrets, `secrets.pub.json`, which
+  `chalkctl gen secrets` writes. The image and the installer trust its OS CA in maintenance mode,
+  so a machine that waits for its install accepts only the cluster's clients. Generate the secrets
+  before the first build.
 - `revision` is the commit the images are built from. chalkctl shows it beside an image's root
   hash.
 - `images` lists the images to build, each with its name, its platform and its NixOS modules.
-  All are for bare metal. `router-metal` lists the router layer, `chalkos.nixosModules.router`.
-  `node-metal` lists the Kubernetes layer, `chalkos.nixosModules.kubernetes`. Both layers
-  provide their own BGP speaker.
+  `node-metal` is for bare metal and lists the Kubernetes layer, `chalkos.nixosModules.kubernetes`.
 
 A layer is a predefined set of NixOS modules that chalkos ships, listed like any other module.
 An image lists one layer at most, and an image without one runs chalkos's base alone.
@@ -71,9 +73,6 @@ which [Config and the inventory](../how-it-works/node/config.md) describes.
 The arguments are module options, so a misspelled argument fails the evaluation and names the
 argument. The [mkImages reference](../reference/mkimages.md) documents each one.
 [Images and platforms](images-and-platforms.md) covers `images`, `modules` and `osCA`.
-The homelab's flake sets no `osCA`, which suits only a lab on a private network.
-[The home lab guide](../guides/home-lab.md#prepare-the-files) adds it in the step that generates
-the secrets.
 
 `revision` and `tag` say where an image came from. Nix cannot read git tags, so whatever builds a
 release passes the tag:
@@ -92,7 +91,7 @@ images = chalkos.lib.mkImages {
 };
 ```
 
-`self` must be among the arguments of the flake's `outputs`, as in the homelab's flake. Each image
+`self` must be among the arguments of the flake's `outputs`, as in the template's flake. Each image
 directory's `metadata.json` records both values, and chalkctl shows them beside the root hash's
 first 12 hex characters, as in `3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)`. They never reach the
 image's store, so they change no root hash, and nothing orders or refuses an image by them.
@@ -103,10 +102,9 @@ systemd-boot would order boot entries by it.
 
 ## Build the image
 
-Build each package and link the result where the inventory looks for it:
+Build the package and link the result where the inventory looks for it:
 
 ```console
-$ nix build .#router-metal -o images/router-metal
 $ nix build .#node-metal -o images/node-metal
 $ ls images/node-metal
 chalkos.raw
@@ -117,26 +115,11 @@ repart-output.json
 schemas
 ```
 
-`images/node-metal` is a link into `/nix/store`. The homelab's inventory names it as the image
-`node-metal` and gives it to the nodes of the group `nodes`, and gives `router-metal` to the
-router:
+`images/node-metal` is a link into `/nix/store`. The template's inventory names it as the image
+`node-metal` and gives it to every node through `spec.all`:
 
 ```yaml title="chalkos.yaml"
-apiVersion: chalkctl.chalkos.dev/v1alpha1
-kind: Inventory
-metadata: {name: homelab}
-spec:
-  images:
-    router-metal: {source: {directory: images/router-metal}}
-    node-metal: {source: {directory: images/node-metal}}
-  groups:
-    router: {imageName: router-metal, files: [router/*.yaml]}
-    nodes: {imageName: node-metal, files: [cluster/*.yaml, bgp/fabric.yaml, bgp/secrets.yaml]}
-  nodes:
-    router: {address: 192.168.1.2, groups: [router]}
-    node1: {address: "fdc8:a1b2:c3d4:ff::11", groups: [nodes], files: [nodes/node1.yaml]}
-    node2: {address: "fdc8:a1b2:c3d4:ff::12", groups: [nodes], files: [nodes/node2.yaml]}
-    node3: {address: "fdc8:a1b2:c3d4:ff::13", groups: [nodes], files: [nodes/node3.yaml]}
+--8<-- "templates/cluster-metal/chalkos.yaml"
 ```
 
 A relative directory is relative to the inventory's directory. The next build replaces the link,
@@ -174,7 +157,7 @@ KVM, `zstd` compresses the raw image for transport, and `dd` or a USB writer put
 
 ## An image carries its OCI layout, NixOS system and tests
 
-The homelab exposes three images and the installer by name. Each image `mkImages` returns is its
+The template exposes its image and the installer by name. Each image `mkImages` returns is its
 image directory, and carries the other forms of the image as attributes. Each is built only when
 something asks for it:
 
@@ -220,7 +203,7 @@ packages.x86_64-linux = chalkos.lib.selectImages { layer = "kubernetes"; } image
 another one as a module argument, [`chalkosLib`](../reference/extension-api.md#chalkoslib), with
 helpers such as `types`, `mkOption`, `render`, `validate` and `reloadOn`.
 
-The homelab's flake exports the NixOS systems as `nixosConfigurations` and the tests as its
+The template's flake exports the NixOS systems as `nixosConfigurations` and the tests as its
 checks:
 
 ```nix
@@ -240,14 +223,13 @@ inventory names for it. It reaches no node and needs no secrets:
 chalkctl validate
 ```
 
-For the homelab it prints a line per node, with the image's root hash and the hash of the node's
+For the template it prints a line per node, with the image's root hash and the hash of the node's
 config:
 
 ```text
-node1: valid for the image node-metal (node-metal on metal, root hash 3b80d0bf1243), config 451b547e8373fe70683c9dbf95f7cc08916ae0e920702da6c1a2c3e85c6f4080
-node2: valid for the image node-metal (node-metal on metal, root hash 3b80d0bf1243), config 10c35f7fe988679c3a54691ddf95e78267269d22297fb360ceae5527f5965d50
-node3: valid for the image node-metal (node-metal on metal, root hash 3b80d0bf1243), config 55ed0b193224383f68d0bb4014e45885697279cd67dfa6fc9232627757cfbd44
-router: valid for the image router-metal (router-metal on metal, root hash cd7ac91cb655), config dc6178bbae55b1fe0e6af7b10502a1099f708c995b7be242ee95bb92050f87e6
+cp1: valid for the image node-metal (node-metal on metal, root hash 3b80d0bf1243), config 451b547e8373fe70683c9dbf95f7cc08916ae0e920702da6c1a2c3e85c6f4080
+cp2: valid for the image node-metal (node-metal on metal, root hash 3b80d0bf1243), config 10c35f7fe988679c3a54691ddf95e78267269d22297fb360ceae5527f5965d50
+cp3: valid for the image node-metal (node-metal on metal, root hash 3b80d0bf1243), config 55ed0b193224383f68d0bb4014e45885697279cd67dfa6fc9232627757cfbd44
 ```
 
 A document of a kind the image does not declare, or a misspelled field, fails here. The image is

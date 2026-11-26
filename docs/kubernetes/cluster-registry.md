@@ -16,10 +16,10 @@ A cluster that reaches the registries, or a mirror on its network that holds eve
 need the cluster registry; [Registries and mirrors](../operate/registries.md) covers those. The
 cluster registry suits a cluster with nothing else to pull from, such as one on an isolated site.
 
-The configuration on this page adds a `ClusterRegistry` to the homelab, whose control planes
-`node1`, `node2` and `node3` have the addresses `fdc8:a1b2:c3d4:ff::11` to
-`fdc8:a1b2:c3d4:ff::13`. The output comes from a lab cluster whose control plane `cp1` at
-192.168.100.11 serves the registry and whose worker `w1` pulls from it. The lab's
+The configuration on this page adds a `ClusterRegistry` to the cluster of the `cluster-metal`
+template, whose control planes `cp1`, `cp2` and `cp3` have the addresses `192.168.1.11` to
+`192.168.1.13`. The output comes from a lab cluster whose control plane `cp1` at 192.168.100.11
+serves the registry and whose worker `w1` pulls from it. The lab's
 `ClusterRegistry` mirrors `cluster-registry.chalkos.test`, a host the lab cannot reach.
 
 ## Before you begin
@@ -48,7 +48,7 @@ kind: ClusterRegistry
 metadata: {name: cluster}
 spec:
   mirrors: [docker.io, ghcr.io, registry.k8s.io]
-  endpoints: ["fdc8:a1b2:c3d4:ff::11", "fdc8:a1b2:c3d4:ff::12", "fdc8:a1b2:c3d4:ff::13"]
+  endpoints: [192.168.1.11, 192.168.1.12, 192.168.1.13]
   port: 5000
 ```
 
@@ -95,7 +95,7 @@ starts the registry at its first boot. A running cluster gets it with `chalkctl 
 every Kubernetes node:
 
 ```sh
-chalkctl config apply node1 node2 node3 --secrets=secrets.age
+chalkctl config apply cp1 cp2 cp3 --secrets=secrets.age
 ```
 
 The delivery rewrites containerd's mirrors on every node and starts the registry on serving nodes.
@@ -155,7 +155,7 @@ document pins. A pull into a layout that exists adds a second entry to it, which
 so the loop removes the directory first. Carry `images/oci/` into the air gap. A tar of a layout,
 `tar -cf <name>.tar -C images/oci/<name> .`, is an OCI archive, which chalkctl reads too.
 
-The indexes are larger than the images a node runs. The homelab's eight images take about
+The indexes are larger than the images a node runs. The template's eight images take about
 1.2 GiB, of which the pause image's index takes about 400 MiB, most of it its Windows images.
 
 !!! note "skopeo keeps no Docker manifest list in an OCI layout"
@@ -326,7 +326,7 @@ The registry keeps its images on VAR by default. A [`Volume`](../reference/kinds
 mounted at `/var/lib/chalkos-registry` gives it a disk of its own. Put it in the file of each
 serving node:
 
-```yaml title="nodes/node1.yaml"
+```yaml title="nodes/cp1.yaml"
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: Volume
 metadata: {name: registry}

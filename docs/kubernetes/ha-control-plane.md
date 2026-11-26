@@ -14,14 +14,14 @@ A healthy control plane is three voters, each healthy:
 
 ```console
 $ chalkctl etcd members
-NAME  ID                PEER URLS                    MEMBER  HEALTH
-cp1   d9fb26556fe7b4a5  https://192.168.123.11:2380  voter   healthy
-cp2   7cd467b152867819  https://192.168.123.12:2380  voter   healthy
-cp3   af880a99b80b32b3  https://192.168.123.13:2380  voter   healthy
+NAME  ID                PEER URLS                  MEMBER  HEALTH
+cp1   d9fb26556fe7b4a5  https://192.168.1.11:2380  voter   healthy
+cp2   7cd467b152867819  https://192.168.1.12:2380  voter   healthy
+cp3   af880a99b80b32b3  https://192.168.1.13:2380  voter   healthy
 ```
 
-The output on this page comes from a lab cluster whose control planes `cp1`, `cp2` and `cp3` sit at
-192.168.123.11 to 192.168.123.13, behind the VIP 192.168.123.10.
+The page follows the cluster of the `cluster-metal` template, whose control planes `cp1`, `cp2` and
+`cp3` sit at 192.168.1.11 to 192.168.1.13, behind the VIP 192.168.1.10.
 
 ## Before you begin
 
@@ -44,50 +44,23 @@ apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Cluster
 metadata: {name: default}
 spec:
-  endpoint: https://192.168.123.10:6443
-  vip: {addresses: [192.168.123.10]}
-  --8<-- "examples/homelab/cluster/cluster.yaml:images"
+  endpoint: https://192.168.1.10:6443
+  vip: {addresses: [192.168.1.10], mode: l2}
+  --8<-- "templates/cluster-metal/cluster/cluster.yaml:images"
 ```
 
 Each control plane has a file of its own with `type: controlplane`, its system disk and its static
-address:
+address on the port it matches by MAC address:
 
 ```yaml title="nodes/cp1.yaml"
-apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Node
-metadata: {name: default}
-spec:
-  type: controlplane
----
-apiVersion: storage.chalkos.dev/v1alpha1
-kind: SystemDisk
-metadata: {name: system}
-spec:
-  disk: {path: /dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100001}
----
-apiVersion: networkd.chalkos.dev/v1alpha1
-kind: Network
-metadata: {name: 10-uplink}
-spec:
-  match: {name: enp1s0}
-  network: {address: [192.168.123.11/24], gateway: 192.168.123.1}
+--8<-- "templates/cluster-metal/nodes/cp1.yaml"
 ```
 
-`nodes/cp2.yaml` and `nodes/cp3.yaml` differ only in their disk and address. The inventory names
-the three nodes at the same addresses:
+`nodes/cp2.yaml` and `nodes/cp3.yaml` differ only in their disk, MAC address and address. The
+inventory names the three nodes at the same addresses:
 
 ```yaml title="chalkos.yaml"
-apiVersion: chalkctl.chalkos.dev/v1alpha1
-kind: Inventory
-metadata: {name: prod}
-spec:
-  images:
-    node-metal: {source: {directory: images/node-metal-signed}}
-  all: {imageName: node-metal, files: [cluster/*.yaml]}
-  nodes:
-    cp1: {address: 192.168.123.11, files: [nodes/cp1.yaml]}
-    cp2: {address: 192.168.123.12, files: [nodes/cp2.yaml]}
-    cp3: {address: 192.168.123.13, files: [nodes/cp3.yaml]}
+--8<-- "templates/cluster-metal/chalkos.yaml"
 ```
 
 chalkd adds the VIP to the interface that holds the node's address of the VIP's family. A `Node`
@@ -115,7 +88,7 @@ metadata: {name: default}
 spec:
   endpoint: https://10.0.100.10:6443
   vip: {addresses: [10.0.100.10], mode: routed}
-  --8<-- "examples/homelab/cluster/cluster.yaml:images"
+  --8<-- "templates/cluster-metal/cluster/cluster.yaml:images"
 ```
 
 Each control plane names the interface it adds the VIP to in `spec.vip.interface`, usually a dummy
@@ -128,34 +101,35 @@ kind: Node
 metadata: {name: default}
 spec:
   type: controlplane
-  vip: {interface: node0}
+  vip: {interface: vip0}
 ---
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: NetDev
-metadata: {name: 10-node0}
+metadata: {name: 10-vip0}
 spec:
-  netDev: {name: node0, kind: dummy}
+  netDev: {name: vip0, kind: dummy}
 ---
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network
-metadata: {name: 10-node0}
+metadata: {name: 10-vip0}
 spec:
-  match: {name: node0}
+  match: {name: vip0}
   network: {keepConfiguration: "yes"}
 ```
 
-`keepConfiguration: "yes"` keeps the VIP when networkd configures `node0` again: chalkd adds an
+`keepConfiguration: "yes"` keeps the VIP when networkd configures `vip0` again: chalkd adds an
 IPv6 VIP with a preferred lifetime of 0, which networkd would otherwise remove as a dynamic address
-it did not configure. The rest of the file stays as above. `chalkctl validate` refuses a control plane without
-`vip.interface` in a cluster with a routed VIP. A worker needs none.
+it did not configure. The rest of the file stays as above. `chalkctl validate` refuses a control
+plane without `vip.interface` in a cluster with a routed VIP. A worker needs none.
 
-Name `node0` in the `BGPSpeaker`'s export interfaces, as
+Name `vip0` in the `BGPSpeaker`'s export interfaces, as
 [Announce the VIP](bgp.md#announce-the-vip) shows, or configure the extension's daemon to announce
-the addresses of `node0`. The VIP's route then follows the holder: when a new control plane wins
-the election, the old holder's daemon withdraws the route and the new holder's announces it. A failover takes the election's time plus the time the daemons and
-their peers need to move the route. `chalkctl status` shows `vip holder` and `vip standby` as with
-an `l2` VIP. The homelab announces its VIP this way, with the Kubernetes layer's BGP speaker over
-both ports of each node, as [Build a home lab](../guides/home-lab.md) sets up.
+the addresses of `vip0`. The VIP's route then follows the holder: when a new control plane wins
+the election, the old holder's daemon withdraws the route and the new holder's announces it. A
+failover takes the election's time plus the time the daemons and their peers need to move the
+route. `chalkctl status` shows `vip holder` and `vip standby` as with an `l2` VIP.
+[Build a home lab](../guides/home-lab.md) announces its VIP this way, with the Kubernetes layer's
+BGP speaker over both ports of each node.
 
 chalkd adds an IPv6 VIP with a preferred lifetime of 0, so the node never uses it as a source
 address. `ip -6 addr` shows it as `deprecated`, and routing daemons announce it all the same.
@@ -174,7 +148,7 @@ Each node reboots into its image and waits, because it cannot tell whether it sh
 cluster or join one. [`chalkctl status`](../reference/cli/chalkctl_status.md) shows it:
 
 ```text
-kubernetes controlplane: waiting for the cluster at https://192.168.123.10:6443; bootstrap only the first control plane of a new cluster
+kubernetes controlplane: waiting for the cluster at https://192.168.1.10:6443; bootstrap only the first control plane of a new cluster
 ```
 
 Bootstrap exactly one of them:
@@ -198,8 +172,8 @@ has it promoted to a voter and then starts the rest of its control plane. Its st
 step:
 
 ```text
-kubernetes controlplane: joining the cluster at https://192.168.123.10:6443: checking etcd's members
-kubernetes controlplane: joining the cluster at https://192.168.123.10:6443: etcd member af880a99b80b32b3 catches up
+kubernetes controlplane: joining the cluster at https://192.168.1.10:6443: checking etcd's members
+kubernetes controlplane: joining the cluster at https://192.168.1.10:6443: etcd member af880a99b80b32b3 catches up
 ```
 
 Before the node adds itself as a learner, it pins its addresses on STATE. From then on, every boot
@@ -297,10 +271,10 @@ Bring the unhealthy member back first. `chalkctl etcd members` shows which one i
 
 ```console
 $ chalkctl etcd members
-NAME  ID                PEER URLS                    MEMBER  HEALTH
-cp1   d9fb26556fe7b4a5  https://192.168.123.11:2380  voter   healthy
-cp2   7cd467b152867819  https://192.168.123.12:2380  voter   healthy
-cp3   af880a99b80b32b3  https://192.168.123.13:2380  voter   unhealthy: context deadline exceeded
+NAME  ID                PEER URLS                  MEMBER  HEALTH
+cp1   d9fb26556fe7b4a5  https://192.168.1.11:2380  voter   healthy
+cp2   7cd467b152867819  https://192.168.1.12:2380  voter   healthy
+cp3   af880a99b80b32b3  https://192.168.1.13:2380  voter   unhealthy: context deadline exceeded
 ```
 
 ## Replace a failed machine
@@ -394,7 +368,7 @@ A control plane reinstalled without `chalkctl etcd leave` finds a member of its 
 and stops. Joining would hand it the old member's identity without its data:
 
 ```text
-kubernetes controlplane: joining the cluster at https://192.168.123.10:6443: etcd has a member cp3 already; remove it with chalkctl etcd remove-member cp3
+kubernetes controlplane: joining the cluster at https://192.168.1.10:6443: etcd has a member cp3 already; remove it with chalkctl etcd remove-member cp3
 ```
 
 Run the command the status names. The node joins on its next attempt.
@@ -406,7 +380,7 @@ for example, waits for `spec.nodeIP.timeout` seconds of the `Cluster` document. 
 neither etcd nor the kubelet:
 
 ```text
-kubernetes controlplane: preparation failed: pinned address 192.168.123.13 is not present, 5m0s after chalkos-node-addresses.target; restore it, or remove the node's etcd member with chalkctl etcd remove-member cp3 and reinstall the node
+kubernetes controlplane: preparation failed: pinned address 192.168.1.13 is not present, 5m0s after chalkos-node-addresses.target; restore it, or remove the node's etcd member with chalkctl etcd remove-member cp3 and reinstall the node
 ```
 
 The other two keep the cluster running. Restore the address and reboot the node, or take it out.

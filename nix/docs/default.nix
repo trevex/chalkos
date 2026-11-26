@@ -41,7 +41,9 @@ let
       "nodes"
     ];
     "templates/cluster-metal" = [
+      "flake.nix"
       "chalkos.yaml"
+      "cluster"
       "nodes"
     ];
   };

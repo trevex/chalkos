@@ -25,7 +25,7 @@ spec:
   ipFamilies: [ipv4]
   podCIDRs: {ipv4: 10.244.0.0/16}
   serviceCIDRs: {ipv4: 10.96.0.0/12}
-  --8<-- "examples/homelab/cluster/cluster.yaml:images"
+  --8<-- "templates/cluster-metal/cluster/cluster.yaml:images"
 ```
 
 The references of `images` must suit the kubelet release of the nodes' image, which the image
@@ -79,19 +79,19 @@ flowchart LR
     clients -->|"6443 and 50000"| vip(["VIP"])
     vip --- holder["the control plane holding the VIP"]
     clients -->|"6443 and 50000"| lb["your load balancer"]
-    lb --> node1["node1"]
-    lb --> node2["node2"]
-    lb --> node3["node3"]
+    lb --> cp1["cp1"]
+    lb --> cp2["cp2"]
+    lb --> cp3["cp3"]
 ```
 
 Choose one:
 
 - A VIP, `spec.vip.addresses`, which chalkd holds on one healthy control plane at a time. By
   default the holder announces it with gratuitous ARP and unsolicited neighbour advertisements, so
-  the control planes must share one layer-2 segment. Use it for machines in one rack or VLAN. With
-  `spec.vip.mode: routed`, a routing daemon on each control plane announces the VIP instead, such
-  as the Kubernetes layer's [BGP speaker](bgp.md), as in the homelab, and the control planes may
-  sit on different links. The endpoint is the VIP or a name that resolves to it;
+  the control planes must share one layer-2 segment, as in the `cluster-metal` template. Use it
+  for machines in one rack or VLAN. With `spec.vip.mode: routed`, a routing daemon on each control
+  plane announces the VIP instead, such as the Kubernetes layer's [BGP speaker](bgp.md), and the
+  control planes may sit on different links. The endpoint is the VIP or a name that resolves to it;
   `chalkctl validate` refuses an endpoint address that is none of the VIPs, with `vip: the endpoint https://192.0.2.11:6443 is none of the virtual
   addresses`.
 - A load balancer you run, for control planes in different segments. It forwards TCP ports 6443
@@ -115,8 +115,8 @@ Give every control plane a static address in a `Network` document of its own fil
 address as its `address` in the inventory. A control plane's addresses are pinned on STATE when it
 becomes an etcd member, and every later boot waits for exactly those addresses before it starts
 etcd. Changing a control plane's address means taking it out of etcd and reinstalling
-it. The homelab's control planes hold their addresses on a dummy interface, `node0`, which keeps
-them whichever port or cable fails.
+it. The `cluster-metal` template's control planes hold their addresses on their Ethernet port, in
+a `Network` document that matches the port by its MAC address.
 
 Workers may take their address from DHCP. `spec.nodeIP.validSubnets` of the `Cluster` document
 then picks it from the subnets you list. The inventory names such a worker by an address or name
@@ -125,11 +125,11 @@ that stays.
 ## Choose the IP families and ranges
 
 `spec.ipFamilies` lists the cluster's address families, the primary one first: `[ipv4]` by
-default, `[ipv6]` for IPv6 alone, as in the homelab, or `[ipv4, ipv6]` for dual stack. Each family
-has a pod range, `podCIDRs`, and a service range, `serviceCIDRs`. The families, the ranges and the
-cluster DNS addresses of `dnsIPs` are fixed once the cluster exists, because the certificates, etcd
-and the ranges the control plane allocated were made for them. A node that holds a Kubernetes share
-refuses a config that changes them, with a message such as:
+default, as in the `cluster-metal` template, `[ipv6]` for IPv6 alone, or `[ipv4, ipv6]` for dual
+stack. Each family has a pod range, `podCIDRs`, and a service range, `serviceCIDRs`. The families,
+the ranges and the cluster DNS addresses of `dnsIPs` are fixed once the cluster exists, because
+the certificates, etcd and the ranges the control plane allocated were made for them. A node that
+holds a Kubernetes share refuses a config that changes them, with a message such as:
 
 ```text
 the config changes the cluster's podCIDRs from ipv4 10.244.0.0/16 to ipv4 10.245.0.0/16; they are fixed once the cluster exists, so keep them, or reinstall the node into a new cluster
@@ -153,7 +153,7 @@ spec:
   serviceCIDRs:
     ipv4: 10.96.0.0/12
     ipv6: fd00:10:96::/112
-  --8<-- "examples/homelab/cluster/cluster.yaml:images"
+  --8<-- "templates/cluster-metal/cluster/cluster.yaml:images"
 ```
 
 [Kubernetes networking](../how-it-works/kubernetes/networking.md#each-node-picks-one-address-per-family-before-the-kubelet-starts)
@@ -175,15 +175,13 @@ needs no secrets file:
 
 ```console
 $ chalkctl validate
-node1: valid for the image node-metal (node-metal on metal, root hash 3b80d0bf1243), config 451b547e8373fe70683c9dbf95f7cc08916ae0e920702da6c1a2c3e85c6f4080
-node2: valid for the image node-metal (node-metal on metal, root hash 3b80d0bf1243), config 10c35f7fe988679c3a54691ddf95e78267269d22297fb360ceae5527f5965d50
-node3: valid for the image node-metal (node-metal on metal, root hash 3b80d0bf1243), config 55ed0b193224383f68d0bb4014e45885697279cd67dfa6fc9232627757cfbd44
-router: valid for the image router-metal (router-metal on metal, root hash cd7ac91cb655), config dc6178bbae55b1fe0e6af7b10502a1099f708c995b7be242ee95bb92050f87e6
+cp1: valid for the image node-metal (node-metal on metal, root hash 3b80d0bf1243), config 451b547e8373fe70683c9dbf95f7cc08916ae0e920702da6c1a2c3e85c6f4080
+cp2: valid for the image node-metal (node-metal on metal, root hash 3b80d0bf1243), config 10c35f7fe988679c3a54691ddf95e78267269d22297fb360ceae5527f5965d50
+cp3: valid for the image node-metal (node-metal on metal, root hash 3b80d0bf1243), config 55ed0b193224383f68d0bb4014e45885697279cd67dfa6fc9232627757cfbd44
 ```
 
-The output is the homelab's, whose router runs no Kubernetes. Each node of your inventory gets a
-line. A refused config names the
-node and the field, as in the VIP message above.
+The output is the `cluster-metal` template's. Each node of your inventory gets a line. A refused
+config names the node and the field, as in the VIP message above.
 
 ## What next
 

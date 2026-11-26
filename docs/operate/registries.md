@@ -10,7 +10,7 @@ This page is for an operator whose inventory names an image in a registry, as
 the credentials of a private registry in its config, and pulls through a mirror before it asks the
 registry itself. The examples on this page are for nodes that pull from `ghcr.io` through a mirror
 on the local network. Their documents go in a file such as `cluster/registry.yaml`, which the
-homelab example does not have.
+cluster-metal template does not have.
 
 A node pulls its own image at an install and at an upgrade. chalkctl sends it the image's
 reference by digest, and chalkd pulls the image with the `Registry` and `Mirror` documents of its
@@ -183,7 +183,7 @@ chalkctl validate
 Then upgrade one node, as [Upgrade nodes](upgrade.md) describes:
 
 ```sh
-chalkctl upgrade node1 --secrets=secrets.age
+chalkctl upgrade cp1 --secrets=secrets.age
 ```
 
 The node pulls the image with the delivered config. A run that ends with

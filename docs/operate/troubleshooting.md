@@ -89,15 +89,15 @@ shrinks, reformats, re-encrypts, moves or removes a volume.
 `chalkctl config rollback`, `config confirm` or `config apply --try` stops before the node changes
 anything.
 
-- `Volume scratch: the config removes it; only a reinstall of node1 removes a volume` from
+- `Volume scratch: the config removes it; only a reinstall of cp1 removes a volume` from
   `config rollback`: the previous config lacks a volume that the last delivery added. Keep the
   current config, or reinstall the node.
-- `node1 keeps no previous config of the image it runs; it keeps one once config apply replaced the
+- `cp1 keeps no previous config of the image it runs; it keeps one once config apply replaced the
   config the image was installed or upgraded with`: an install or an upgrade wrote the config, so
   there is nothing to roll back to yet.
 - `the config changes the node's storage, volume <name>: <reason>, which a rollback cannot undo;
   deliver it without a trial`: deliver the config without `--try`.
-- `node1 has no open trial to confirm; it runs config <version>`: no trial is open on the node,
+- `cp1 has no open trial to confirm; it runs config <version>`: no trial is open on the node,
   so there is nothing to confirm.
 
 ## A config on trial rolled back
@@ -105,21 +105,21 @@ anything.
 `chalkctl config apply --try` or `chalkctl config confirm` exits non-zero, and the node runs the
 config from before the trial again.
 
-- `node1: config <version> was not confirmed within its trial: ...`, with
-  `node1 rolled back to config <previous-version> at the trial's deadline`: the node did not
+- `cp1: config <version> was not confirmed within its trial: ...`, with
+  `cp1 rolled back to config <previous-version> at the trial's deadline`: the node did not
   confirm the config in time. The error ends with the last reason, such as
   `the node is not healthy: units failed: demo.service`. Fix the cause and try again.
   `the answer to its delivery did not come` means the config cut chalkctl off.
-- `node1 runs config <previous-version> again: config <version> was rolled back`: the image's
+- `cp1 runs config <previous-version> again: config <version> was rolled back`: the image's
   layers did not find the node serving by the deadline. On a Kubernetes node whose Node is not
   Ready for another reason than a missing CNI, deliver a config meant to fix the node without
   `--try`: the node then applies the config for good, and chalkctl waits for no layer and no
   health check. A config that changes the API server's version goes to a control plane on trial even
   then, so mend the node with a config that keeps the version first.
-- `chalkctl: warning: node1: units failed already: late.service; the trial rolls back at its deadline unless they recover, the image ignores them or --ignore-unit leaves them out`:
+- `chalkctl: warning: cp1: units failed already: late.service; the trial rolls back at its deadline unless they recover, the image ignores them or --ignore-unit leaves them out`:
   a unit failed before the trial, and any failed unit keeps the node from confirming. Leave it
   out of the trial's check with `--ignore-unit`, one unit per flag:
-  `chalkctl config apply node1 --secrets=secrets.age --try 5m --ignore-unit late.service`.
+  `chalkctl config apply cp1 --secrets=secrets.age --try 5m --ignore-unit late.service`.
 
 [chalkctl confirms a trial over a new connection](../how-it-works/node/config.md#chalkctl-confirms-a-trial-over-a-new-connection)
 explains what the confirmation waits for.
@@ -131,16 +131,16 @@ explains what the confirmation waits for.
 
 - `the image <hash> staged in the inactive slot: ... no fallback secret was sent; ...`: the staged
   image's storage needs the fallback secret and the running image's does not. Deliver the config to
-  the staged image with `chalkctl config apply --staged node1 --secrets=secrets.age`.
+  the staged image with `chalkctl config apply --staged cp1 --secrets=secrets.age`.
 - `the node runs config <version> (<what it did>), but writing the config slot of the image <hash> staged in the inactive slot failed, so it keeps config <version>: ...`:
   the running image took the config, and the staged image kept its earlier one. Run the command
   again to write it.
 - `config <version> is confirmed, but the image <hash>, staged in the inactive slot when the trial began, is the running image now, ...`:
   the node booted into the staged image during the trial, so the running image's config slot never
-  got the confirmed config. Run `chalkctl config apply node1 --secrets=secrets.age` to write it.
+  got the confirmed config. Run `chalkctl config apply cp1 --secrets=secrets.age` to write it.
 - `config <version> is confirmed, but the confirmation that ended its trial stopped before it wrote the config slot of the image <hash> ...`:
   chalkd or the node stopped while it confirmed the trial, and the staged image kept its earlier
-  config. Run `chalkctl config apply node1 --secrets=secrets.age` to write it.
+  config. Run `chalkctl config apply cp1 --secrets=secrets.age` to write it.
 
 ## An upgrade refuses the pending config
 
@@ -148,8 +148,8 @@ explains what the confirmation waits for.
 
 - `the pending config <version> does not suit the image: ...`: the image the upgrade installs
   refused the config the node held pending. Change the files and run
-  `chalkctl config apply --staged node1` again, or remove the pending config with
-  `chalkctl config discard node1`.
+  `chalkctl config apply --staged cp1 --secrets=secrets.age` again, or remove the pending config with
+  `chalkctl config discard cp1`.
 - `the pending config <version> does not suit the image: ...; a pending config is kept without the fallback secret, ...`:
   the pending config adds an encrypted volume, which needs the fallback secret. Upgrade with the
   config from the inventory and the secrets file.
@@ -166,7 +166,7 @@ how to go on. The run also stops with one of these messages:
   back to. Wait for the check, at most the health timeout per try.
 - `Secure Boot would refuse the UKI: ...`: the image is unsigned, or signed with a key the
   firmware's db does not hold. Sign the build with `chalkbuild sign` and the db key.
-- `node3 runs an image built for kvm, but its image node-metal is built for metal; changing a node's
+- `cp3 runs an image built for kvm, but its image node-metal is built for metal; changing a node's
   platform is a reinstall`: the inventory names a build of another platform for the node. Fix the
   inventory, or reinstall the node.
 - `the config of <node>: ...`: the new image does not accept the node's config, such as a document
@@ -181,30 +181,30 @@ how to go on. The run also stops with one of these messages:
   found no image staged, or another one than the inventory or `--image` names for the node. Stage
   the image with `chalkctl upgrade <node> --until stage` first, with the same `--image`
   when you activate one.
-- `node3: its boot of <image> settled and is not healthy: ...`: the node runs the image, but its
+- `cp3: its boot of <image> settled and is not healthy: ...`: the node runs the image, but its
   boot failed the node's health checks for a minute in a row, after systemd finished starting it
   and the image's health timeout passed. The checks are that chalkd serves and then those of the
   image's layer: on Kubernetes, the etcd member, the API server and the kubelet of a control
   plane, or the kubelet and the Node of a worker. A node whose layer does not decide fails on a
   failed unit or an identity that was not applied. The message names the check that failed. A
-  boot of a blessed entry is not counted, so the node does not fall back. `chalkctl status node3`
-  lists failed units, and `chalkctl logs node3` shows the boot's journal. A boot that is still
+  boot of a blessed entry is not counted, so the node does not fall back. `chalkctl status cp3`
+  lists failed units, and `chalkctl logs cp3` shows the boot's journal. A boot that is still
   starting at `--timeout` ends with
-  `node3: waiting for <image> to be found healthy: its boot is not healthy yet: ...` instead. When
+  `cp3: waiting for <image> to be found healthy: its boot is not healthy yet: ...` instead. When
   the node's status gave no boot ID before the reboot, chalkctl cannot tell the new boot from the
   old one and waits until `--timeout`, ending with `its boot settled and is not healthy: ...`. On
   a node its layers hold, each of these ends with
   `it stays cordoned; run the command again to wait for it and release it`: the same
   command run again releases the node once its boot is healthy.
-- `node3: activate: ...; <image> boots next all the same, so it stays cordoned: ...`: the
+- `cp3: activate: ...; <image> boots next all the same, so it stays cordoned: ...`: the
   node's activation failed after it made the image boot next. Released, the node would boot the
   image at its next reboot without a drain, so its layers hold it, as Kubernetes keeps it
-  cordoned. `chalkctl node reboot node3` boots the image and releases the node.
+  cordoned. `chalkctl node reboot cp3` boots the image and releases the node.
 - `no node keeps a previous image to roll back to: ...`: `--rollback` found no node with an image
   to boot again. A node keeps none after an install, after an upgrade or rollback it fell back
   from, and while an image staged or activated with `--until` holds its inactive slot. Make a
   staged image boot with `chalkctl node activate` and `chalkctl node reboot`.
-- `the nodes roll back to different images: node1 to <a>; router to <b>; roll them back separately by naming their nodes`:
+- `the nodes roll back to different images: cp1 to <a>; w1 to <b>; roll them back separately by naming their nodes`:
   the nodes ran different images before, such as control planes and workers on images of their
   own. Roll each group back in a run that names its nodes.
 - `w2 does not run <old>, which the other nodes roll back to, and keeps no previous image: ...; leave

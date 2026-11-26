@@ -8,14 +8,14 @@ description: "Start the cluster on its first control plane, watch the other node
 This page is for an operator whose nodes are installed and waiting for their cluster. One command
 starts the cluster on the first control plane, and every other node joins it on its own. At the
 end every node is `Ready` in Kubernetes, and you hold a kubeconfig for the API server. The page
-uses the homelab's control planes `node1`, `node2` and `node3`, behind the VIP
-`fdc8:a1b2:c3d4:ff::10`.
+uses the control planes `cp1`, `cp2` and `cp3` of the `cluster-metal` template, behind the VIP
+`192.168.1.10`.
 
 In short:
 
 ```sh
-chalkctl status node1
-chalkctl bootstrap node1 --secrets=secrets.age
+chalkctl status cp1
+chalkctl bootstrap cp1 --secrets=secrets.age
 chalkctl kubeconfig --secrets=secrets.age
 kubectl --kubeconfig kubeconfig get nodes
 ```
@@ -40,7 +40,7 @@ An installed control plane cannot tell whether it should start the cluster or jo
 [`chalkctl status`](../reference/cli/chalkctl_status.md) shows it in the Kubernetes line:
 
 ```text
-kubernetes controlplane: waiting for the cluster at https://[fdc8:a1b2:c3d4:ff::10]:6443; bootstrap only the first control plane of a new cluster
+kubernetes controlplane: waiting for the cluster at https://192.168.1.10:6443; bootstrap only the first control plane of a new cluster
 ```
 
 The URL is the cluster endpoint, here the VIP. A worker reads `joined` once it has
@@ -52,40 +52,40 @@ followed by the error, until its kubelet has registered its node with the API se
 Run [`chalkctl bootstrap`](../reference/cli/chalkctl_bootstrap.md) on one control plane:
 
 ```console
-$ chalkctl bootstrap node1 --secrets=secrets.age
-bootstrapping node1; the control plane pulls its images and starts
-node1 is bootstrapped; applied 19 objects
+$ chalkctl bootstrap cp1 --secrets=secrets.age
+bootstrapping cp1; the control plane pulls its images and starts
+cp1 is bootstrapped; applied 19 objects
 ```
 
-chalkd on node1 records the bootstrap on STATE, starts etcd as the cluster's first member and starts
+chalkd on cp1 records the bootstrap on STATE, starts etcd as the cluster's first member and starts
 the API server, the controller-manager and the scheduler. It then applies chalkos's add-ons: RBAC,
 kube-proxy, flannel and CoreDNS. Last come the objects of the `Addon` documents. `applied 19 objects`
-counts all of them; the homelab has no `Addon` documents, so all 19 are chalkos's.
+counts all of them; the template has no `Addon` documents, so all 19 are chalkos's.
 
 chalkctl waits until the objects are applied, up to `--timeout`, 20 minutes by default. Most of
 that time goes into pulling the control plane's images. When `--timeout` passes first, chalkctl
 stops with a `deadline_exceeded` error. The bootstrap stays in place and chalkd keeps applying, so
-wait and watch `chalkctl status node1`. Do not bootstrap again: chalkd refuses the second run.
+wait and watch `chalkctl status cp1`. Do not bootstrap again: chalkd refuses the second run.
 
 Bootstrap one control plane only. A second bootstrap would start a second etcd cluster, so chalkos
 refuses it in these cases:
 
 - On a node that is bootstrapped already, chalkd answers `the node is bootstrapped already`.
 - On a node whose cluster answers at the endpoint, chalkd answers `the cluster's API server answers
-  at https://[fdc8:a1b2:c3d4:ff::10]:6443; this node joins it on its own`.
-- On a worker, chalkctl refuses before it sends anything: `node4 is not a control-plane node;
+  at https://192.168.1.10:6443; this node joins it on its own`.
+- On a worker, chalkctl refuses before it sends anything: `w1 is not a control-plane node;
   bootstrap one of the cluster's control-plane nodes`.
 
 ## Watch the other nodes join
 
 Each other control plane finds the cluster at the endpoint, joins etcd and starts its control
 plane. etcd accepts one learner at a time, so control planes join one after another. While a node
-joins, its status names the step after `joining the cluster at <endpoint>:`. In the homelab it
+joins, its status names the step after `joining the cluster at <endpoint>:`. In the template it
 reads:
 
 ```text
-kubernetes controlplane: joining the cluster at https://[fdc8:a1b2:c3d4:ff::10]:6443: checking etcd's members
-kubernetes controlplane: joining the cluster at https://[fdc8:a1b2:c3d4:ff::10]:6443: etcd member <id> catches up
+kubernetes controlplane: joining the cluster at https://192.168.1.10:6443: checking etcd's members
+kubernetes controlplane: joining the cluster at https://192.168.1.10:6443: etcd member <id> catches up
 ```
 
 `<id>` is the new member's etcd ID in hexadecimal. A joined control plane reads `bootstrapped`, the
@@ -165,10 +165,10 @@ List the nodes with the kubeconfig:
 
 ```console
 $ kubectl --kubeconfig kubeconfig get nodes
-NAME    STATUS   ROLES    AGE   VERSION
-node1   Ready    <none>   4m    v1.37.2
-node2   Ready    <none>   2m    v1.37.2
-node3   Ready    <none>   1m    v1.37.2
+NAME   STATUS   ROLES    AGE   VERSION
+cp1    Ready    <none>   4m    v1.37.2
+cp2    Ready    <none>   2m    v1.37.2
+cp3    Ready    <none>   1m    v1.37.2
 ```
 
 Every node of the inventory appears, with the Kubernetes release of its image.
@@ -183,7 +183,7 @@ minute, until flannel runs on it.
 | --- | --- | --- |
 | A control plane stays at `waiting for the cluster at ...; bootstrap only the first control plane of a new cluster` after the bootstrap | It cannot reach the API server at the endpoint. | Check that the endpoint reaches a bootstrapped control plane on port 6443. |
 | A worker's `node ready` stays `unknown` | Its kubelet cannot register at the endpoint. | Check `chalkctl logs <node> --unit=kubelet.service`. |
-| The bootstrap times out | The control plane is still pulling its images. | Wait, and watch `chalkctl status node1`. |
+| The bootstrap times out | The control plane is still pulling its images. | Wait, and watch `chalkctl status cp1`. |
 | `chalkctl bootstrap` fails with `another control plane may hold the cluster` | Another control plane of the inventory is an etcd member or is joining. A control plane that does not answer gets a warning instead. | Bootstrap only the first control plane of a new cluster. Pass `--ignore-members` only to recover a cluster whose other control planes are lost. |
 | The bootstrap fails with `an API server of another CA answers at ...` | The node was installed from another secrets file than the cluster at the endpoint, or another cluster uses the endpoint. | Reinstall the node from the cluster's secrets file, or give the new cluster an endpoint of its own. |
 | `chalkctl kubeconfig` fails with `no Cluster document of the cluster ... names an endpoint` | The inventory's files give no node a `Cluster` document. | Add the `Cluster` document to the files every node gets. |

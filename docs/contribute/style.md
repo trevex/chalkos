@@ -93,6 +93,22 @@ Show the thing before the rules about it: a YAML document before its field table
 its output before its flags, a whole Nix file before the options it sets. Examples are real: output comes from a run, and documents pass the checks. The mechanics of
 code blocks and placeholders are in [Writing documentation](writing-docs.md#code-blocks).
 
+## Running examples
+
+Each section carries one example through its pages, so a reader can follow one repository from
+page to page:
+
+| Section | Example | Names and addresses |
+| --- | --- | --- |
+| Get started | the `lab` and `router-lab` templates | `cp1` and `w1`; `router` and `client` |
+| Operate nodes, Run Kubernetes, Build images | the `cluster-metal` template | `cp1` to `cp3` at `192.168.1.11` to `.13`, the VIP `192.168.1.10`, a worker `w1` at `192.168.1.14` where a page needs one |
+| Run a router | a router `r1` with the documents each page shows | `r1` |
+| Guides | each guide's own: `cluster-metal` for the cluster and air-gapped guides, the homelab example for the home lab and the BGP extension | as the guide sets them |
+
+The tutorials of Build images, which run on the quick start's lab, keep its `cp1` and `w1`.
+Run Kubernetes > Announce addresses with BGP uses the homelab example, whose routed VIP and BGP
+fabric are the page's subject. A page never mixes the names of two examples.
+
 ## Credentials in examples
 
 An example runs with the credential an operator uses every day. Pass the secrets file only to

@@ -241,17 +241,24 @@ image to `spec.images`, beside `node-metal`, and name it on the node that runs i
 ```yaml title="chalkos.yaml"
 apiVersion: chalkctl.chalkos.dev/v1alpha1
 kind: Inventory
-metadata: {name: storage}
+metadata: {name: cluster}
 spec:
   images:
     node-metal: {source: {directory: images/node-metal}}
     storage-metal: {source: {directory: images/storage-metal}}
-  all: {imageName: node-metal, files: [cluster/*.yaml]}
+  all: {imageName: node-metal}
+  groups:
+    kubernetes: {files: [cluster/*.yaml]}
   nodes:
-    node1: {address: 192.0.2.11, files: [nodes/node1.yaml]}
-    node2: {address: 192.0.2.12, files: [nodes/node2.yaml]}
-    storage1: {address: 192.0.2.31, imageName: storage-metal, files: [nodes/storage1.yaml]}
+    cp1: {address: 192.168.1.11, groups: [kubernetes], files: [nodes/cp1.yaml]}
+    cp2: {address: 192.168.1.12, groups: [kubernetes], files: [nodes/cp2.yaml]}
+    cp3: {address: 192.168.1.13, groups: [kubernetes], files: [nodes/cp3.yaml]}
+    storage1: {address: 192.168.1.31, imageName: storage-metal, files: [nodes/storage1.yaml]}
 ```
+
+The control planes get the files of `cluster/` through the group `kubernetes`, not through
+`spec.all`, because `storage-metal` carries no Kubernetes layer and refuses the `Cluster`
+document.
 
 A node's own `imageName` wins, then the `imageName` of its groups, then `spec.all.imageName`.
 chalkctl refuses the inventory when a node is in two groups that name different images, or when

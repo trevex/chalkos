@@ -385,11 +385,11 @@ The node shows its volumes as mounted and no failed units.
 ## If it fails
 
 A config that the image's checker refuses ends `chalkctl install` with the image's message, such as
-that of the homelab example's validator `bgp-peers` from
-[Validate config with a program](../build/validate-config.md), on its node `node1`:
+that of the validator `hardware-rack` from
+[Validate config with a program](../build/validate-config.md), on the node `cp1`:
 
 ```text
-chalkctl: install node1: failed_precondition: install: the config is refused: Peer/router: spec.interfaces[2]: enp3s0 has no Network document; bird binds the session to an interface the node configures; the target disk boots nothing, and an install of the image continues on it
+chalkctl: install cp1: failed_precondition: install: the config is refused: Hardware/hardware: metadata.name: a node with a Hardware document needs a Rack document, which says where the server is mounted; the target disk boots nothing, and an install of the image continues on it
 ```
 
 The machine stays in maintenance mode. Fix the config and run the same `chalkctl install` again: the
