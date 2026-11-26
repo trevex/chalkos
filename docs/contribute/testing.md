@@ -240,7 +240,8 @@ shell functions the check scripts call: `fail`, `retry` and `refuses`, and for t
 | `bootspec` | An image's bootspec names the UKI on the ESP and no initrd. |
 | `no-shell` | The test images, the release images and the feature images, which carry the Kubernetes features that are off by default, link no `/bin/sh`, have no activation script and no shell on the system path, and the release images build without the debug tools or `chalkos.shell.allow`, so no shell is in their systems or their initrds. |
 | `no-shell-calls` | No ELF file of the release and feature images' systems and initrds imports `system`, `popen` or `wordexp` or holds `/bin/sh`, unless the allow-list in `nix/checks/image.nix` gives the reason it never runs a shell on a node. The images' console keymaps load with the decompression tools disabled, and their initrds carry the zlib that kbd opens for gzipped keymaps and fonts. |
-| `noexec-mounts` | No writable file system of the worker or the router lets a file run, take set-user-ID effect or open as a device, and every unit of chalkos's node modules runs programs from the store alone, through `chalkosLib.internal.noExec`, or is on the list `mayExec` of `nix/checks/image.nix` with its reason. |
+| `noexec-mounts` | The worker's and the router's writable file systems are mounted `nosuid,nodev,noexec`, and every unit of chalkos's modules on the worker, the router, the installer and the feature images runs programs from the store alone, unless `mayExec` in `nix/checks/image.nix` gives the reason it may not. |
+| `unit-sandbox` | Every unit of chalkos's modules on those images has a capability bounding set short of the full one, unless `mayRunAsFullRoot` in `nix/checks/image.nix` gives the reason it keeps every capability. |
 | `module-policy` | The worker's UKI carries the module policy in its first archive, with the store's root hash, padded to its slot's size. |
 | `vxlan-rule` | The VXLAN firewall rule, in network namespaces. |
 | `router-firewall` | A router's firewall unit and rulesets, in network namespaces. |
@@ -469,7 +470,7 @@ Every check builds with `nix build`, and a change runs the checks of the parts i
 | `api/chalkos/*/v1/*.proto` | `api-generated`, `docs-generated`, `go-unit`, `go-lint` |
 | Command help, option descriptions | `docs-generated`, `docs` |
 | Pages in `docs/` | `docs`, and `example-bgp-extension-validator-docs` for `guides/bgp-extension.md` |
-| Modules in `modules/` or `lib/` | `eval`, `eval-kinds`, `image-tests`, and the build and end-to-end checks of what the module does |
+| Modules in `modules/` or `lib/` | `eval`, `eval-kinds`, `image-tests`, `noexec-mounts`, `unit-sandbox`, and the build and end-to-end checks of what the module does |
 | `examples/homelab` | `example-homelab` |
 | `examples/bgp-extension` | `example-bgp-extension`, `example-bgp-extension-validator-docs`, `image-tests` |
 | `examples/extensions` | `example-extensions`, `image-tests` |

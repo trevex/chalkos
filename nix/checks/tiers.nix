@@ -53,6 +53,7 @@ let
       "router-policy-routing"
       "router-vrf"
       "security-insights"
+      "unit-sandbox"
       "vxlan-rule"
       "workflows"
     ];
