@@ -358,8 +358,12 @@ and `chalkctl status` prints no `bgp` line. A router with FRR and no sessions pr
 
 The `Routes` call lists the kernel's routes, which chalkd reads through netlink, and the paths BGP
 selected, from `show bgp ipv4 unicast detail json` and its IPv6 twin. For another VRF it lists that
-VRF's table and asks for `show bgp vrf <name> ipv4 unicast detail json`. A route of several next
-hops lists each with its weight, and an IPv4 route over an IPv6 next hop names it.
+VRF's table and asks for `show bgp vrf <name> ipv4 unicast detail json`. A request with a prefix
+reads the kernel's routes of the prefix's family alone and asks for the paths within it, such as
+`show bgp ipv6 unicast 2001:db8::/32 longer-prefixes json detail`, so a router with a full table
+answers it at once. The call lists at most 10,000 kernel routes and 10,000 paths and sets
+`truncated` when it leaves some out. A route of several next hops lists each with its weight, and
+an IPv4 route over an IPv6 next hop names it.
 `chalkctl node routes` prints both. A node of another image answers that the router layer is not
 in its image.
 

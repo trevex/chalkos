@@ -163,7 +163,7 @@ func (d *delivery) beginActivation() *activation {
 	boot := s.bootID()
 	r := activationRecord{
 		Slot: filepath.Base(d.dir), Boot: boot, Attempt: time.Now().UnixNano(),
-		Target: d.stored.Version, State: activationRunning, Step: "record effects baseline",
+		Target: d.stored.Version, State: activationRunning,
 	}
 	checkpoint := d.resumeEffects && boot != "" && len(d.machine.changes) == 0 &&
 		d.msg.FallbackSecret == "" && len(d.msg.Layers) == 0 && len(d.msg.Trust) == 0 &&

@@ -92,10 +92,12 @@ func TestConsoleAuthorisation(t *testing.T) {
 	}{
 		// An empty rollback is refused after authorisation.
 		{"normal with actions", normal, true, with(reads, map[string]connect.Code{
-			"Reboot": 0, "Shutdown": 0, "RollbackImage": connect.CodeInvalidArgument, "RollbackConfig": connect.CodeInvalidArgument})},
+			"Reboot": 0, "Shutdown": 0, "RollbackImage": connect.CodeInvalidArgument, "RollbackConfig": connect.CodeInvalidArgument,
+			"RunOperatorDiagnostic": 0})},
 		{"normal without actions", normal, false, with(reads, map[string]connect.Code{
 			"Reboot": connect.CodePermissionDenied, "Shutdown": connect.CodePermissionDenied,
-			"RollbackImage": connect.CodePermissionDenied, "RollbackConfig": connect.CodePermissionDenied})},
+			"RollbackImage": connect.CodePermissionDenied, "RollbackConfig": connect.CodePermissionDenied,
+			"RunOperatorDiagnostic": connect.CodePermissionDenied})},
 		{"maintenance", maintenance, true, map[string]connect.Code{
 			"Info": 0, "Disks": 0, "Logs": 0, "Diagnostics": 0, "Reboot": 0, "Shutdown": 0,
 			"Status": connect.CodeFailedPrecondition, "RollbackImage": connect.CodeFailedPrecondition,
@@ -104,6 +106,8 @@ func TestConsoleAuthorisation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s, _ := newTestServer(t, tc.mode, vda)
 			s.ConsoleActions = tc.actions
+			writeContract(t, s, contract.DiagnosticsFile, testDiagnostics)
+			s.Diagnose = &fakeDiagnose{}
 			writeIdentity(t, s, "{}")
 			write(t, filepath.Join(s.Paths.StateDir, "storage", "storage.json"), "{}")
 			conn := serveConsole(t, s)
@@ -116,11 +120,12 @@ func TestConsoleAuthorisation(t *testing.T) {
 	}
 }
 
-// TestConsoleRunsDiagnosticsOfOperators lets the console run the diagnostics of readers and
-// operators, such as the router's leases, and refuses those of admins.
+// TestConsoleRunsDiagnosticsOfOperators lets the console with actions run the diagnostics of
+// readers and operators, such as the router's leases, and refuses those of admins.
 func TestConsoleRunsDiagnosticsOfOperators(t *testing.T) {
 	f := &fakeDiagnose{}
 	s, _ := newTestServer(t, normal, vda)
+	s.ConsoleActions = true
 	writeContract(t, s, contract.DiagnosticsFile, strings.TrimSuffix(testDiagnostics, "}")+`,
   "wipe": {"description": "Needs an admin.", "command": ["/nix/store/x-coreutils/bin/true"], "role": "admin", "timeout": "10s"}}`)
 	s.Diagnose = f

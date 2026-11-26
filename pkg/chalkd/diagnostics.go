@@ -53,7 +53,7 @@ func (s *Server) RunDiagnostic(ctx context.Context, req *nodev1.RunDiagnosticReq
 	if !ok {
 		return layer.Errorf(connect.CodeNotFound, "the image declares no diagnostic %q; chalkctl node diag lists those it does", name)
 	}
-	if !diagnosticAllowed(ctx, pki.Role(d.Role)) {
+	if !s.diagnosticAllowed(ctx, pki.Role(d.Role)) {
 		return layer.Errorf(connect.CodePermissionDenied, "the diagnostic %s needs the %s role", name, d.Role)
 	}
 	argv, ns, err := d.Call(req.Arguments)
@@ -75,10 +75,15 @@ func (s *Server) RunDiagnostic(ctx context.Context, req *nodev1.RunDiagnosticReq
 }
 
 // diagnosticAllowed reports whether the caller may run a diagnostic that needs the role need. The
-// console runs those of readers and operators, as whoever sits at the machine may reboot it.
-func diagnosticAllowed(ctx context.Context, need pki.Role) bool {
+// console runs those of readers, and those of operators only with ConsoleActions, which lets it
+// reboot the node too.
+func (s *Server) diagnosticAllowed(ctx context.Context, need pki.Role) bool {
 	if onConsole(ctx) {
-		return pki.RoleOperator.Allows(need)
+		console := pki.RoleReader
+		if s.ConsoleActions {
+			console = pki.RoleOperator
+		}
+		return console.Allows(need)
 	}
 	role, _ := ctx.Value(roleKey{}).(pki.Role)
 	return role.Allows(need)

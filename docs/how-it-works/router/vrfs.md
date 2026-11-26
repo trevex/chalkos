@@ -293,9 +293,10 @@ first.
 
 The `Routes` call takes a VRF. chalkd reads its table from the node's running `VRF` document,
 below `/run/chalkos/config/router.chalkos.dev/VRF`, lists the kernel's routes of that table and
-asks for `show bgp vrf <name> ipv4 unicast detail json` and its IPv6 twin. A request names a VRF
-or a table, not both, and `default` is the main table and the default VRF's instance. A VRF of no
-running document is refused with `the node has no VRF <name>`.
+asks for `show bgp vrf <name> ipv4 unicast detail json` and its IPv6 twin, or for the paths
+within a prefix the request gives. A request names a VRF or a table, not both, and `default` is
+the main table and the default VRF's instance. A VRF of no running document is refused with
+`the node has no VRF <name>`.
 
 The diagnostics `bgp-summary`, `bgp-neighbor`, `bgp-route` and `bfd-peers` take a `vrf` argument,
 `default` unless it is given, and pass it to vtysh as `vrf <name>`.

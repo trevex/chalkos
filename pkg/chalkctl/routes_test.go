@@ -39,6 +39,7 @@ func routerNode(t *testing.T, ta *testApp) string {
 		{Prefix: "vtysh -c " + frrstatus.NeighborsCommand, Out: frr("neighbors.json")},
 		{Prefix: "vtysh -c show bgp ipv4 unicast detail json", Out: frr("ipv4-detail.json")},
 		{Prefix: "vtysh -c show bgp ipv6 unicast detail json", Out: frr("ipv6-detail.json")},
+		{Prefix: "vtysh -c show bgp ipv6 unicast ::/0 longer-prefixes json detail", Out: frr("ipv6-prefix-detail.json")},
 		{Prefix: "vtysh -c show bgp vrf tenant ipv4 unicast detail json", Out: "{}"},
 		{Prefix: "vtysh -c show bgp vrf tenant ipv6 unicast detail json", Out: frr("ipv6-detail-imported.json")},
 	}}
@@ -52,17 +53,17 @@ func routerNode(t *testing.T, ta *testApp) string {
 	if err := os.Symlink(filepath.Join(t.TempDir(), "frr.conf"), frrConf); err != nil {
 		t.Fatal(err)
 	}
-	s.Plugins = chalkdtest.Plugins(t, s, layers.Of(layers.Router), routerplugin.New(runsWith{s, r}, routerplugin.Options{FRRConfig: frrConf, VRFDir: vrfs, KernelRoutes: func() ([]*router.KernelRoute, error) {
+	s.Plugins = chalkdtest.Plugins(t, s, layers.Of(layers.Router), routerplugin.New(runsWith{s, r}, routerplugin.Options{FRRConfig: frrConf, VRFDir: vrfs, KernelRoutes: func(f router.Filter, _ int) ([]*router.KernelRoute, error) {
 		hops := func() []*router.NextHop {
 			return []*router.NextHop{
 				{Gateway: "fe80::e06b:dcff:fe54:f465", Interface: "eth2", Weight: 1}, {Gateway: "fe80::b817:4cff:fe8b:9cf", Interface: "eth1", Weight: 1}}
 		}
-		return []*router.KernelRoute{
+		return f.Kernel([]*router.KernelRoute{
 			{Destination: "::/0", Type: "unicast", Protocol: "bgp", Table: 254, Metric: 20, NextHops: hops()},
 			{Destination: "2001:db8:2::/48", Type: "blackhole", Protocol: "boot", Table: 254, Metric: 1024},
 			{Destination: "2001:db8:ffff::1/128", Type: "unicast", Protocol: "bgp", Table: 254, Metric: 20, NextHops: hops()},
 			{Destination: "2001:db8:ffff::2/128", Type: "unicast", Protocol: "bgp", Table: 100, Metric: 20, NextHops: []*router.NextHop{{Gateway: "fe80::5054:ff:fe12:102", Interface: "swp1"}}},
-		}, nil
+		}), nil
 	}}))
 	return ta.startNode(t, s)
 }
@@ -133,7 +134,7 @@ func TestNodeRoutesOfAVRFWithoutVRFs(t *testing.T) {
 	s, _ := installedNode(t, ta, nil)
 	r := &tooltest.Runner{Rules: []tooltest.Rule{{Prefix: "vtysh", Out: "{}"}}}
 	s.Plugins = chalkdtest.Plugins(t, s, layers.Of(layers.Router), withoutVRFs{routerplugin.New(runsWith{s, r}, routerplugin.Options{
-		KernelRoutes: func() ([]*router.KernelRoute, error) { return nil, nil },
+		KernelRoutes: func(router.Filter, int) ([]*router.KernelRoute, error) { return nil, nil },
 	})})
 	addr := ta.startNode(t, s)
 	err := ta.run(context.Background(), ta.args([]string{"node", "routes", "n1", "--vrf", "tenant"}, addr))

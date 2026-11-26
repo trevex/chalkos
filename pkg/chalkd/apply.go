@@ -142,7 +142,7 @@ func (s *Server) apply(ctx context.Context, r applyRequest) (*nodev1.ApplyConfig
 		return nil, err
 	}
 	d.resumeEffects = true
-	resp, err := d.commit(ctx)
+	resp, _, err := d.commit(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -174,9 +174,6 @@ type delivery struct {
 	// held is set for a delivery of the config the slot runs already, which writes the slot no
 	// more: it applies the config and takes the effects, as the end of a trial's rollback does.
 	held bool
-	// started is set once commit recorded the attempt and may change the node; a commit that
-	// failed without it changed nothing.
-	started bool
 	// resumeEffects allows a plain ApplyConfig to reuse a failed attempt's checkpoints.
 	// Trial and rollback deliveries always run their effects.
 	resumeEffects bool
@@ -307,26 +304,36 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 // a retry, or any later delivery, takes the effects of what a failed or interrupted attempt
 // changed. storage.json is the machine's, not an image's: applyStorage records the section once
 // its additive changes are made, so a retry makes none twice.
-func (d *delivery) commit(ctx context.Context) (_ *nodev1.ApplyConfigResponse, err error) {
+//
+// started reports whether a commit that failed got past its refusals, recording the attempt and
+// the OS CAs' own checks, and may have changed the node. A refused commit changed nothing and
+// records no activation.
+func (d *delivery) commit(ctx context.Context) (_ *nodev1.ApplyConfigResponse, started bool, err error) {
 	s, m := d.s, d.msg
-	activation := d.beginActivation()
-	defer func() { activation.finish(err) }()
 	if err := s.recordAttempt(d.fx, d.staged.States()); err != nil {
 		s.refused(d.fx)
-		return nil, err
+		return nil, false, err
 	}
-	d.started = true
 	if len(m.Trust) > 0 {
-		activation.step("replace OS trust")
 		if err := s.Certificate.ReplaceTrust(d.osCA, peerOf(ctx)...); err != nil {
 			if isRefusedTrust(err) {
-				d.started = false
 				s.refused(d.fx)
+				return nil, false, err
 			}
-			return nil, err
+			return nil, true, err
 		}
 		log.Printf("trusting %s from now on", strs.Count(strings.Count(d.osCA, "-----BEGIN CERTIFICATE-----"), "OS CA"))
 	}
+	resp, err := d.apply(ctx)
+	return resp, true, err
+}
+
+// apply makes the changes of a commit after the OS CAs and records them as the config's
+// activation.
+func (d *delivery) apply(ctx context.Context) (_ *nodev1.ApplyConfigResponse, err error) {
+	s, m := d.s, d.msg
+	activation := d.beginActivation()
+	defer func() { activation.finish(err) }()
 	if !d.keep {
 		activation.step("apply machine storage")
 		if err := s.applyMachine(ctx, d.machine, m.FallbackSecret); err != nil {

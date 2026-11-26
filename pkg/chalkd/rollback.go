@@ -165,9 +165,9 @@ func (s *Server) deliverStored(ctx context.Context, stored slot.Stored, what str
 	}
 	defer d.staged.Discard()
 	d.held = d.replaced == next.Version
-	r, err := d.commit(ctx)
+	r, started, err := d.commit(ctx)
 	if err != nil {
-		return nil, d.started, err
+		return nil, started, err
 	}
 	return r, false, nil
 }

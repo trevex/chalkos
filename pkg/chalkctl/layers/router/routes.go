@@ -63,6 +63,9 @@ func nodeRoutes(h layer.Host, ctx context.Context, f routesFlags, pos []string) 
 	if f.vrf != "" && r.Vrf != f.vrf {
 		return fmt.Errorf("the node's image does not know VRFs, so it cannot list the routes of VRF %s", f.vrf)
 	}
+	if r.Truncated {
+		fmt.Fprintln(h.Stderr(), "the node lists the first 10,000 kernel routes and BGP paths alone; give a narrower prefix to see the rest")
+	}
 	w := h.Table()
 	fmt.Fprintln(w, "DESTINATION\tTYPE\tPROTOCOL\tTABLE\tMETRIC\tNEXT HOPS")
 	for _, k := range r.Kernel {

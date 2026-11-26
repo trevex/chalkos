@@ -27,9 +27,10 @@ in
       type = lib.types.bool;
       default = true;
       description = ''
-        Whether the console may reboot and shut down the node and roll back its image and its
-        config. Anyone at the machine's keyboard can use them; chalkd refuses them on the
-        console's socket when this is false.
+        Whether the console may reboot and shut down the node, roll back its image and its
+        config, and run the image's diagnostics of operators. Anyone at the machine's keyboard
+        can use them; chalkd refuses them on the console's socket when this is false, and the
+        console runs the diagnostics of readers alone.
       '';
     };
   };

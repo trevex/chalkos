@@ -1729,6 +1729,7 @@ The response of Routes.
 | `bgp` | list of BGPRoute | The paths BGP selected and installs, in the order of their families and prefixes; none on an image without BGP. |
 | `bgp_error` | string | Why BGP's paths could not be read, such as vtysh's error; empty when they were. |
 | `vrf` | string | The VRF whose routes these are: the request's vrf, or default for a request without one. A node whose image does not know VRFs leaves it empty and lists the main table and the default instance's paths, whatever the request's vrf. |
+| `truncated` | bool | Set when the kernel's routes or BGP's paths were more than 10,000 and the list holds the first 10,000 of them; a narrower prefix lists them whole. |
 
 Field types: [KernelRoute](#router-message-kernelroute), [BGPRoute](#router-message-bgproute).
 
