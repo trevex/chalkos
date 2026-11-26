@@ -1,0 +1,35 @@
+{
+  "disks": [
+    {
+      "device": "/dev/vda",
+      "model": "QEMU HARDDISK",
+      "size": "17179869184",
+      "serial": "chalk-sys",
+      "type": "hdd",
+      "partitions": [
+        {
+          "device": "/dev/vda1",
+          "size": "536870912",
+          "label": "esp",
+          "content": "vfat"
+        },
+        {
+          "device": "/dev/vda2",
+          "size": "1610612736",
+          "label": "chalkos-a",
+          "content": "erofs"
+        }
+      ],
+      "usage": "boot"
+    },
+    {
+      "device": "/dev/nvme0n1",
+      "model": "Samsung SSD 980",
+      "size": "1000204886016",
+      "serial": "S64DNF0R",
+      "wwn": "eui.002538b1",
+      "type": "ssd",
+      "usage": "volume data"
+    }
+  ]
+}

@@ -189,6 +189,7 @@ of its router services last:
 
 ```console
 $ chalkctl status router
+router: healthy
 config e3befdf104b789da4dd4f9c58b263905755e3428e7b9e9d560a75552e161b87e (the inventory's)
 platform kvm (the inventory's)
 image b5558bdbabdd, booted from chalkos_1.efi

@@ -15,6 +15,8 @@ import (
 
 	imagecontract "github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/diagnostics"
+	"github.com/trevex/chalkos/pkg/internal/cli"
+	"github.com/trevex/chalkos/pkg/internal/golden"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -87,6 +89,15 @@ func TestNodeDiagLists(t *testing.T) {
 		"  address=<address>            IPv4 or IPv6 address.\n"
 	if got := ta.stdout.String(); got != want {
 		t.Errorf("stdout:\n%s\nwant:\n%s", got, want)
+	}
+	// -o json lists them in protojson, and goes with no diagnostic that runs.
+	ta.stdout.Reset()
+	if err := ta.run(context.Background(), ta.args([]string{"node", "diag", "n1", "-o", "json"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	golden.Check(t, "testdata/diag.json.golden", ta.stdout.String())
+	if err := ta.run(context.Background(), ta.args([]string{"node", "diag", "n1", "ping", "address=192.0.2.1", "-o", "json"}, addr)); !errors.Is(err, cli.ErrUsage) {
+		t.Errorf("a diagnostic run with -o json: %v", err)
 	}
 }
 

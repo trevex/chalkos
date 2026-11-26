@@ -16,6 +16,7 @@ import (
 
 func (a *app) nodeDiagCommand() *cobra.Command {
 	var f nodePinFlags
+	var output layer.Output
 	cmd := a.command(&cobra.Command{
 		Use:         "diag <node> [<diagnostic> [<parameter>=<value>...]]",
 		Short:       "List or run a node's diagnostics",
@@ -23,13 +24,18 @@ func (a *app) nodeDiagCommand() *cobra.Command {
 		Example:     nodeDiagExample,
 		Args:        cli.MinimumNArgs(1),
 		Annotations: layer.Meta{Credentials: layer.Reader}.Annotations(),
-	}, func(a *app, ctx context.Context, pos []string) error { return a.nodeDiag(ctx, f, pos) })
+	}, func(a *app, ctx context.Context, pos []string) error { return a.nodeDiag(ctx, f, output, pos) })
 	f.node.RegisterClient(cmd.Flags())
 	f.pin.register(cmd.Flags())
+	output.Register(cmd.Flags())
+	cmd.Flags().Lookup("output").Usage = "format of the list of diagnostics: text, or json for programs; a diagnostic that runs prints what its command prints"
 	return cmd
 }
 
-func (a *app) nodeDiag(ctx context.Context, f nodePinFlags, pos []string) error {
+func (a *app) nodeDiag(ctx context.Context, f nodePinFlags, output layer.Output, pos []string) error {
+	if output.JSON() && len(pos) > 1 {
+		return cli.Usagef("-o json lists the diagnostics; a diagnostic that runs prints what its command prints")
+	}
 	var args map[string]string
 	if len(pos) > 1 {
 		var err error
@@ -47,7 +53,7 @@ func (a *app) nodeDiag(ctx context.Context, f nodePinFlags, pos []string) error 
 	}
 	defer conn.Close()
 	if len(pos) == 1 {
-		return a.listDiagnostics(ctx, conn)
+		return a.listDiagnostics(ctx, conn, output)
 	}
 	return a.runDiagnostic(ctx, conn, pos[1], args)
 }
@@ -68,10 +74,13 @@ func diagnosticArguments(words []string) (map[string]string, error) {
 	return args, nil
 }
 
-func (a *app) listDiagnostics(ctx context.Context, conn *client.Conn) error {
+func (a *app) listDiagnostics(ctx context.Context, conn *client.Conn, output layer.Output) error {
 	resp, err := conn.Diagnostics(ctx, &nodev1.DiagnosticsRequest{})
 	if err != nil {
 		return err
+	}
+	if output.JSON() {
+		return layer.WriteJSON(a.stdout, resp)
 	}
 	w := a.table()
 	fmt.Fprintln(w, "DIAGNOSTIC\tROLE\tDESCRIPTION")

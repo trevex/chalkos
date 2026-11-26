@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -118,6 +119,19 @@ func TestValidate(t *testing.T) {
 	}
 	if !strings.Contains(ta.stdout.String(), "n1: valid") {
 		t.Errorf("stdout = %q, want n1 valid all the same", ta.stdout)
+	}
+	// -o json prints each node's result, and fails the same.
+	ta.stdout.Reset()
+	if err := ta.run(context.Background(), []string{"validate", "--inventory", path, "-o", "json"}); err == nil {
+		t.Error("validate -o json of an invalid config passed")
+	}
+	var v validation
+	if err := json.Unmarshal(ta.stdout.Bytes(), &v); err != nil {
+		t.Fatalf("%v:\n%s", err, ta.stdout)
+	}
+	if n := v.Nodes; len(n) != 2 || n[0].Node != "n1" || !n[0].Valid || n[0].Image != "test-metal" || n[0].RootHash != testRootHash || len(n[0].ConfigVersion) == 0 ||
+		n[1].Node != "n2" || n[1].Valid || !strings.Contains(n[1].Error, "gatway") {
+		t.Errorf("validate -o json =\n%s", ta.stdout)
 	}
 	ta.stdout.Reset()
 	if err := ta.run(context.Background(), []string{"validate", "n1", "n1", "--inventory", path}); err != nil || strings.Count(ta.stdout.String(), "n1: valid") != 1 {

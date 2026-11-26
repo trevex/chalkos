@@ -93,6 +93,7 @@ func etcdCommand(h layer.Host) *cobra.Command {
 
 func etcdMembersCommand(h layer.Host) *cobra.Command {
 	var f viaFlags
+	var output layer.Output
 	cmd := h.Command(&cobra.Command{
 		Use:         "members",
 		Short:       "List etcd's members and their health",
@@ -100,19 +101,23 @@ func etcdMembersCommand(h layer.Host) *cobra.Command {
 		Example:     etcdMembersExample,
 		Args:        cli.NoArgs,
 		Annotations: layer.Meta{Credentials: layer.Reader}.Annotations(),
-	}, func(h layer.Host, ctx context.Context, pos []string) error { return etcdMembers(h, ctx, f) })
+	}, func(h layer.Host, ctx context.Context, pos []string) error { return etcdMembers(h, ctx, f, output) })
 	f.node.RegisterClient(cmd.Flags())
+	output.Register(cmd.Flags())
 	cmd.Flags().StringVar(&f.via, "via", "", "control plane to ask, which a bare --address reaches (default the first one that answers)")
 	return cmd
 }
 
-func etcdMembers(h layer.Host, ctx context.Context, f viaFlags) error {
+func etcdMembers(h layer.Host, ctx context.Context, f viaFlags, output layer.Output) error {
 	var resp *kubernetesv1.EtcdMembersResponse
 	err := throughControlPlane(h, ctx, f, "", layer.Fetch(&resp, func(conn *client.Conn) (*kubernetesv1.EtcdMembersResponse, error) {
 		return Client(conn).EtcdMembers(ctx, &kubernetesv1.EtcdMembersRequest{})
 	}))
 	if err != nil {
 		return err
+	}
+	if output.JSON() {
+		return layer.WriteJSON(h.Stdout(), resp)
 	}
 	w := h.Table()
 	fmt.Fprintln(w, "NAME\tID\tPEER URLS\tMEMBER\tHEALTH")

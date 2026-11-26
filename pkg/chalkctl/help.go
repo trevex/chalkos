@@ -369,23 +369,36 @@ command needs no inventory.`
 const discardPendingExample = `  # Drop the config w1 holds pending.
   chalkctl config discard w1 --secrets secrets.age`
 
-const statusLong = `Shows an installed node's status: the config stored for the running image and whether it is the
-one the inventory gives; the last completed live activation and any current or failed activation
-step; its platform; the image it booted, by its store's root hash and the tag and revision it was
-built from as far as the node knows them, the boot entry and whether that boot was found healthy;
-an upgrade that is staged, or active and boots next; an upgrade that failed and was rolled back,
-with the journal of the boot that failed; a config on trial and when it rolls back; the config it
-holds pending for its next upgrade, unchecked, and since when; the previous config and image a
-rollback restores; whether its store is the image the inventory names for it; its volumes and
-their state; Kubernetes, with the nodes revoked in the cluster on a control plane; a router's BGP
-sessions; the certificates it serves and when they expire; the CAs it trusts; its clock; and the
-units that failed.
+const statusLong = `Shows an installed node's status. Its first line sums it up: healthy, or the problems the lines
+below show, such as a boot not found healthy yet, a volume missing or a unit that failed. Then
+come the config stored for the running image and whether it is the inventory's, a live activation,
+a trial, a staged or pending config, the platform, the image the node booted and whether that boot
+was found healthy, an upgrade staged, active or failed, the previous config and image a rollback
+restores, whether the store is the inventory's image, the module policy, the volumes, the outputs,
+each layer's section, the certificates, the CAs the node trusts, its clock and the failed units.
+See https://trevex.github.io/chalkos/operate/status-and-logs/.
+
+Without a node, the command reads every node of the inventory at once, each within 15 seconds, and
+prints a line of each: its image, whether its boot was found healthy, how its config compares with
+the inventory's or until when it is on trial, and how many problems it shows. A node that does not
+answer is unreachable and stops none of the others.
+
+-o json prints the same for programs: each node's name, whether it is healthy, its problems, how it
+compares with the inventory, and its answers to the node API's Info and Status and the layers'
+statuses in protojson. See
+https://trevex.github.io/chalkos/operate/status-and-logs/#gate-a-pipeline-on-chalkctl-status.
 
 status decrypts no sops:// or age:// source of a Secret document, so it asks for no key. When the
 config the inventory gives the node takes values from such sources, status does not know its
 version: it says so in place of comparing it, and chalkctl config apply --diff <node> compares it.`
 
 const statusExample = `  chalkctl status cp1
+
+  # A line of each node of the cluster.
+  chalkctl status
+
+  # Fail unless every node is healthy.
+  chalkctl status -o json | jq -e '.nodes | all(.healthy)'
 
   # With the inventory and the client file a lab writes.
   export CHALKOSINVENTORY=~/.local/state/chalklab/lab/chalkos.yaml
@@ -589,7 +602,11 @@ value shows when a command that delivers the config reads it.
 A config validate passes can still be refused on delivery: validate runs no rule that reads the
 node's facts or its running config, none of the image's other validators, and none of its
 renderers or their checks. chalkctl config apply --dry-run has the node run all of them, and
-changes nothing.`
+changes nothing.
+
+-o json prints the result as an object: nodes holds each node's node, valid, error when it is not,
+the image it was checked against as image, imageReference, imageName, platform and rootHash, its
+configVersion and its warnings; warnings holds the layers' warnings. It exits as the lines do.`
 
 const validateExample = `  # Check every node of chalkos.yaml.
   chalkctl validate

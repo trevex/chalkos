@@ -214,6 +214,7 @@ explains which image checks what and when each slot is written.
 
 ```console
 $ chalkctl status cp1
+cp1: healthy
 config 415c8f6a2ad1aaf92090cbf7b9814c5384220d2ec63d276334234e2bfcef86ad (the inventory's)
 ...
 ```

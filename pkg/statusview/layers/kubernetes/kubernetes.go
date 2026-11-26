@@ -129,3 +129,28 @@ func RevokedSince(n *kubernetesv1.RevokedNode) string {
 	}
 	return "since " + n.RevokedAt.AsTime().UTC().Format(time.RFC3339)
 }
+
+// Problems are what the node's Kubernetes status shows wrong, each in a few words, for the summary
+// of its status: a Node that is not Ready, control-plane pods behind the config, pods that do not
+// run, and lists that could not be read.
+func Problems(k *kubernetesv1.StatusResponse) []string {
+	var p []string
+	if r := k.GetNodeReady(); r != "" && r != "True" {
+		p = append(p, "Kubernetes node not ready")
+	}
+	if c := k.GetControlPlanePods(); c != "" && c != "current" {
+		p = append(p, "control-plane pods: "+c)
+	}
+	switch n := k.GetPodsNotRunningTotal(); {
+	case k.GetPodsError() != "":
+		p = append(p, "pods unknown")
+	case n == 1:
+		p = append(p, "1 pod not running")
+	case n > 1:
+		p = append(p, fmt.Sprintf("%d pods not running", n))
+	}
+	if k.GetRevokedNodesError() != "" {
+		p = append(p, "revoked nodes unknown")
+	}
+	return p
+}

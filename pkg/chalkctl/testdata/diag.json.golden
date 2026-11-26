@@ -1,0 +1,53 @@
+{
+  "diagnostics": [
+    {
+      "name": "journal",
+      "description": "A unit's journal.",
+      "parameters": [
+        {
+          "name": "unit",
+          "type": "pattern",
+          "description": "A service.",
+          "regex": "^[a-z-]+\\.service$"
+        }
+      ],
+      "role": "reader",
+      "timeout": "10s"
+    },
+    {
+      "name": "ping",
+      "description": "Pings an address.",
+      "parameters": [
+        {
+          "name": "address",
+          "type": "address",
+          "description": "Address to ping."
+        },
+        {
+          "name": "count",
+          "type": "int",
+          "description": "Echo requests.",
+          "optional": true,
+          "defaultValue": "4",
+          "min": "1",
+          "max": "10"
+        }
+      ],
+      "role": "operator",
+      "timeout": "20s"
+    },
+    {
+      "name": "route-get",
+      "description": "The route the kernel takes to an address.",
+      "parameters": [
+        {
+          "name": "address",
+          "type": "address",
+          "description": "IPv4 or IPv6 address."
+        }
+      ],
+      "role": "reader",
+      "timeout": "10s"
+    }
+  ]
+}

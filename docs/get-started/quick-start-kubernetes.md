@@ -353,6 +353,7 @@ shows what a node runs:
 
 ```console
 $ chalkctl status cp1
+cp1: healthy
 config cff86e2957830b9ec4a10a6f6966660695c5a332fca12103d59f79ab4c1ccc15 (the inventory's)
 platform kvm (the inventory's)
 image c628af2ea405, booted from chalkos_1.efi
@@ -580,6 +581,7 @@ image before again, and chalkctl stops there and shows what the failed boot logg
 
 ```console
 $ chalkctl status w1
+w1: 1 problem: image not the inventory's
 config b8b41769a31866ce5c70011cfa1826b0668f39e9b2eac69d7fc0f847bae277fd (the inventory's)
 platform kvm (the inventory's)
 image 7986f78938ed (186d48b7ef31), booted from chalkos_2.efi

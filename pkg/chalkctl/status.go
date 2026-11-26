@@ -3,9 +3,13 @@ package chalkctl
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"slices"
+	"sync"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -16,51 +20,263 @@ import (
 	"github.com/trevex/chalkos/pkg/statusview"
 )
 
+type statusFlags struct {
+	node   nodeFlags
+	output layer.Output
+}
+
 func (a *app) statusCommand() *cobra.Command {
-	var n nodeFlags
+	var f statusFlags
 	cmd := a.command(&cobra.Command{
-		Use:         "status <node>",
-		Short:       "Show an installed node's status",
+		Use:         "status [<node>]",
+		Short:       "Show an installed node's status, or a line for each node of the cluster",
 		Long:        statusLong,
 		Example:     statusExample,
-		Args:        cli.ExactArgs(1),
+		Args:        cli.RangeArgs(0, 1),
 		Annotations: layer.Meta{Credentials: layer.Reader}.Annotations(),
-	}, func(a *app, ctx context.Context, pos []string) error { return a.status(ctx, n, pos) })
-	n.RegisterClient(cmd.Flags())
+	}, func(a *app, ctx context.Context, pos []string) error { return a.status(ctx, f, pos) })
+	f.node.RegisterClient(cmd.Flags())
+	f.output.Register(cmd.Flags())
 	return cmd
 }
 
-func (a *app) status(ctx context.Context, n nodeFlags, pos []string) error {
-	t, err := a.clientTarget(ctx, n, pos[0])
+func (a *app) status(ctx context.Context, f statusFlags, pos []string) error {
+	if len(pos) == 0 {
+		return a.clusterStatus(ctx, f)
+	}
+	t, err := a.clientTarget(ctx, f.node, pos[0])
 	if err != nil {
 		return err
 	}
-	return callNode(t, func(conn *client.Conn) error { return a.printStatus(ctx, t, conn) })
+	var r *statusRead
+	if err := callNode(t, func(conn *client.Conn) error {
+		r, err = a.readStatus(ctx, t, conn)
+		return err
+	}); err != nil {
+		return err
+	}
+	if f.output.JSON() {
+		s, err := r.json()
+		if err != nil {
+			return err
+		}
+		return layer.WriteJSON(a.stdout, s)
+	}
+	fmt.Fprintln(a.stdout, statusview.SummaryLine(t.name, r.problems))
+	return statusview.Write(a.stdout, r.status, r.options)
 }
 
-// printStatus prints the status of the node t over conn.
-func (a *app) printStatus(ctx context.Context, t *target, conn *client.Conn) error {
-	resp, err := conn.Status(ctx, &nodev1.StatusRequest{})
+// statusRead is what status read of a node: its Status and Info, the sections of its layers, the
+// options statusview writes the status with and the problems the status shows.
+type statusRead struct {
+	name     string
+	status   *nodev1.StatusResponse
+	info     *nodev1.InfoResponse
+	layers   []layerSection
+	options  statusview.Options
+	problems []string
+	// compared is set when an inventory compares the node.
+	compared bool
+}
+
+// layerSection is a layer's section of a node's status, by the layer's name.
+type layerSection struct {
+	name string
+	layer.StatusSection
+}
+
+// readStatus reads the status of the node t over conn, with the sections of the layers its Info
+// names.
+func (a *app) readStatus(ctx context.Context, t *target, conn *client.Conn) (*statusRead, error) {
+	st, err := conn.Status(ctx, &nodev1.StatusRequest{})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	info, err := conn.Info(ctx, &nodev1.InfoRequest{})
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return statusview.Write(a.stdout, resp, statusview.Options{
+	r := &statusRead{name: t.name, status: st, info: info, compared: !t.cluster.Partial()}
+	for _, p := range plugins {
+		s, ok := p.(layer.Status)
+		if !ok || !slices.Contains(info.Layers, p.Name()) {
+			continue
+		}
+		section, err := s.ReadStatus(ctx, conn)
+		if err != nil {
+			return nil, err
+		}
+		r.layers = append(r.layers, layerSection{p.Name(), section})
+	}
+	r.options = statusview.Options{
 		Node:         t.name,
 		Inventory:    nodeInventory{c: t.cluster, name: t.name},
 		ModulePolicy: info.ModulePolicy,
-		Layers: func(io.Writer) error {
-			for _, p := range pluginsOf[layer.Status](info.Layers) {
-				if err := p.PrintStatus(ctx, host{a}, conn); err != nil {
+		Layers: func(w io.Writer) error {
+			for _, l := range r.layers {
+				if err := l.Write(w); err != nil {
 					return err
 				}
 			}
 			return nil
 		},
-	})
+	}
+	r.problems = statusview.Problems(st, r.options)
+	for _, l := range r.layers {
+		r.problems = append(r.problems, l.Problems...)
+	}
+	return r, nil
+}
+
+// statusJSON is a node's status as status -o json prints it.
+type statusJSON struct {
+	// Node is the node's name in the inventory.
+	Node string `json:"node"`
+	// Error says why the node could not be read, as status without a node prints it; the fields
+	// after Problems are then left out.
+	Error string `json:"error,omitempty"`
+	// Healthy is set when the node was read and shows no problem.
+	Healthy bool `json:"healthy"`
+	// Problems are what the node's status shows wrong, each in a few words, as the summary line
+	// names them; their wording may change, their number does not without a cause.
+	Problems []string `json:"problems"`
+	// Inventory compares the node with the inventory; left out without one.
+	Inventory *statusview.Comparison `json:"inventory,omitempty"`
+	// Info and Status are the node's answers to the node API's Info and Status, in protojson.
+	Info   json.RawMessage `json:"info,omitempty"`
+	Status json.RawMessage `json:"status,omitempty"`
+	// Layers are the layers' statuses by the layer's name, each in protojson.
+	Layers map[string]json.RawMessage `json:"layers,omitempty"`
+}
+
+// json is the node's status as status -o json prints it.
+func (r *statusRead) json() (statusJSON, error) {
+	s := statusJSON{Node: r.name, Healthy: len(r.problems) == 0, Problems: r.problems}
+	if s.Problems == nil {
+		s.Problems = []string{}
+	}
+	if r.compared {
+		c := r.options.Inventory.Compare(r.status)
+		s.Inventory = &c
+	}
+	var err error
+	if s.Info, err = layer.ProtoJSON(r.info); err != nil {
+		return statusJSON{}, err
+	}
+	if s.Status, err = layer.ProtoJSON(r.status); err != nil {
+		return statusJSON{}, err
+	}
+	for _, l := range r.layers {
+		if s.Layers == nil {
+			s.Layers = map[string]json.RawMessage{}
+		}
+		if s.Layers[l.name], err = layer.ProtoJSON(l.Message); err != nil {
+			return statusJSON{}, err
+		}
+	}
+	return s, nil
+}
+
+// clusterStatusTimeout bounds the read of each node's status by status without a node, so a node
+// that does not answer is reported as unreachable while the others are.
+const clusterStatusTimeout = 15 * time.Second
+
+// clusterStatus reads the status of every node of the inventory at once and prints a line of
+// each, or with -o json each node's status. A node that cannot be read is unreachable and fails
+// none of the others.
+func (a *app) clusterStatus(ctx context.Context, f statusFlags) error {
+	s, err := a.reach(ctx, f.node, "", true)
+	if err != nil {
+		return err
+	}
+	if err := s.cluster.RequireNodes("status without a node"); err != nil {
+		return err
+	}
+	names := s.cluster.NodeNames()
+	reads := make([]*statusRead, len(names))
+	errs := make([]error, len(names))
+	var wg sync.WaitGroup
+	for i, name := range names {
+		wg.Go(func() {
+			ctx, cancel := context.WithTimeout(ctx, clusterStatusTimeout)
+			defer cancel()
+			t, err := s.target(name)
+			if err != nil {
+				errs[i] = err
+				return
+			}
+			errs[i] = callNode(t, func(conn *client.Conn) error {
+				reads[i], err = a.readStatus(ctx, t, conn)
+				return err
+			})
+		})
+	}
+	wg.Wait()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if f.output.JSON() {
+		out := struct {
+			Nodes []statusJSON `json:"nodes"`
+		}{Nodes: make([]statusJSON, len(names))}
+		for i, name := range names {
+			if errs[i] != nil {
+				out.Nodes[i] = statusJSON{Node: name, Error: layer.Unnamed(name, errs[i]).Error(), Problems: []string{}}
+				continue
+			}
+			if out.Nodes[i], err = reads[i].json(); err != nil {
+				return err
+			}
+		}
+		return layer.WriteJSON(a.stdout, out)
+	}
+	w := a.table()
+	fmt.Fprintln(w, "NODE\tIMAGE\tBOOT\tCONFIG\tPROBLEMS")
+	for i, name := range names {
+		if errs[i] != nil {
+			fmt.Fprintf(w, "%s\t-\tunreachable\t-\t-\n", name)
+			continue
+		}
+		r := reads[i]
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\n", name, statusview.BootImageName(r.status.GetBoot().GetRunning()), bootState(r.status.GetBoot()), r.configState(), len(r.problems))
+	}
+	if err := w.Flush(); err != nil {
+		return err
+	}
+	for i, err := range errs {
+		if err != nil {
+			fmt.Fprintf(a.stderr, "chalkctl: %s is unreachable: %v\n", names[i], layer.Unnamed(names[i], err))
+		}
+	}
+	return nil
+}
+
+// bootState is the BOOT column of a node whose boot status is b.
+func bootState(b *nodev1.BootStatus) string {
+	switch {
+	case b.GetError() != "":
+		return "unknown"
+	case b.GetBlessed():
+		return "healthy"
+	}
+	return "not healthy"
+}
+
+// configState is the CONFIG column of the node: a trial and its deadline, else how its config
+// compares with the inventory's.
+func (r *statusRead) configState() string {
+	if tr := r.status.GetTrial(); tr != nil {
+		return "on trial until " + statusview.DeadlineOf(tr)
+	}
+	if !r.compared {
+		return statusview.Unknown
+	}
+	switch c := r.options.Inventory.Compare(r.status).Config; c {
+	case statusview.Same:
+		return "inventory's"
+	default:
+		return c
+	}
 }
 
 // nodeInventory compares the node name with the inventory of c, as statusview asks.
@@ -261,4 +477,45 @@ func (i nodeInventory) ImageLine(boot *nodev1.BootStatus) string {
 		return fmt.Sprintf("%s; it has %s active as its known-good image, which it boots with the config it last ran at its next reboot: chalkctl node reboot %s", line, staged, i.name)
 	}
 	return fmt.Sprintf("%s; chalkctl upgrade %s installs that image", line, i.name)
+}
+
+// Compare compares the node the status s describes with the inventory, as status -o json prints
+// it.
+func (i nodeInventory) Compare(s *nodev1.StatusResponse) statusview.Comparison {
+	c := statusview.Comparison{Config: i.configMatch(s.ConfigVersion), Image: statusview.Unknown, Platform: statusview.Unknown}
+	if s.GetBoot().GetStaged() != nil {
+		c.StagedConfig = i.configMatch(s.StagedConfigVersion)
+	}
+	if i.c.Partial() {
+		return c
+	}
+	_, md, err := i.c.image(i.name)
+	if err != nil {
+		return c
+	}
+	c.Platform = match(s.Platform == md.Platform)
+	if running := s.GetBoot().GetRunning().GetRootHash(); len(running) > 0 {
+		c.Image = match(hex.EncodeToString(running) == md.RootHash)
+	}
+	return c
+}
+
+// configMatch compares version, the config of a slot of the node, with the inventory's.
+func (i nodeInventory) configMatch(version string) string {
+	if i.c.Partial() {
+		return statusview.Unknown
+	}
+	want, err := i.c.version(i.name)
+	if err != nil {
+		return statusview.Unknown
+	}
+	return match(version == want)
+}
+
+// match is same when same is set, else differs.
+func match(same bool) string {
+	if same {
+		return statusview.Same
+	}
+	return statusview.Differs
 }

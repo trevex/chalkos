@@ -26,6 +26,9 @@ func (fakeInventory) StagedConfigState(*nodev1.StatusResponse) string {
 }
 func (fakeInventory) PlatformLine(p string) string        { return "platform " + p + " (the inventory's)" }
 func (fakeInventory) ImageLine(*nodev1.BootStatus) string { return "image line of the inventory" }
+func (fakeInventory) Compare(*nodev1.StatusResponse) Comparison {
+	return Comparison{Config: Differs, StagedConfig: Same, Image: Differs, Platform: Same}
+}
 
 // richStatus is a node's status that reaches each line Write writes.
 func richStatus() *nodev1.StatusResponse {
@@ -274,5 +277,32 @@ func TestWriteActivation(t *testing.T) {
 	want = "activated config unrecorded\nan activation is in progress\nthe config activation record could not be written, so it may be out of date; the journal says why\n"
 	if out.String() != want {
 		t.Fatalf("status = %q, want %q", out.String(), want)
+	}
+}
+
+// The problems of a status are those its lines show, in their order, and none for a healthy node.
+func TestProblems(t *testing.T) {
+	got := Problems(richStatus(), Options{Inventory: fakeInventory{}, ModulePolicy: &nodev1.ModulePolicyStatus{State: nodev1.ModulePolicyState_MODULE_POLICY_STATE_TAMPERED}})
+	want := []string{
+		"trial rollback failed", "trial record unreadable", "config not the inventory's", "boot not found healthy yet",
+		"upgrade to deaddeaddead failed", "image not the inventory's", "module policy tampered", "volume data missing",
+		"disk data not found", "output motd failed", "certificate node expires in 20 days",
+		"certificate client share unreadable: parse the client share", "unit demo.service failed",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("problems = %q, want %q", got, want)
+	}
+	healthy := &nodev1.StatusResponse{Boot: &nodev1.BootStatus{Blessed: true}, Time: &nodev1.TimeStatus{Synchronised: true}}
+	if got := Problems(healthy, Options{}); len(got) != 0 {
+		t.Errorf("a healthy node has the problems %q", got)
+	}
+	for problems, want := range map[int]string{0: "n1: healthy", 1: "n1: 1 problem: p1", 2: "n1: 2 problems: p1, p2"} {
+		var p []string
+		for i := range problems {
+			p = append(p, fmt.Sprintf("p%d", i+1))
+		}
+		if got := SummaryLine("n1", p); got != want {
+			t.Errorf("SummaryLine(%q) = %q, want %q", p, got, want)
+		}
 	}
 }

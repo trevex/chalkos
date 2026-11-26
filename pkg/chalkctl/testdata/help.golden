@@ -38,7 +38,7 @@ Operate:
   node         Manage one node: access, image, reboot and diagnostics
   recovery-key Print a node's recovery key
   rotate       Rotate os-ca, node-ca, kubernetes-ca, service-account-key or encryption-key
-  status       Show an installed node's status
+  status       Show an installed node's status, or a line for each node of the cluster
   storage      Manage a node's volumes
   upgrade      Install new images on the cluster's nodes, or boot their previous ones again
   validate     Check nodes' config against the schemas of their images

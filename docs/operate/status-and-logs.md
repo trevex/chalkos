@@ -28,6 +28,7 @@ image with the inventory. A healthy `node1` reads:
 
 ```console
 $ chalkctl status node1
+node1: healthy
 config <version> (the inventory's)
 platform metal (the inventory's)
 image <image>, booted from chalkos_1.efi
@@ -76,6 +77,22 @@ The placeholders stand for values that differ on every node:
 
 The sections below explain the lines in this order. A section that has nothing to show leaves
 its lines out.
+
+## Read the summary line
+
+The first line sums up the lines below it: `node1: healthy`, or the problems they show, each in
+a few words, such as:
+
+```text
+node1: 3 problems: boot not found healthy yet, volume data missing, unit demo.service failed
+```
+
+A problem is a line that needs a look: a config or image that is not the inventory's, a trial or
+an activation that failed, a boot not found healthy yet or an upgrade that failed, a module
+policy that failed, a volume missing or not mounted, a disk not found, an output whose renderer
+failed, a certificate with a problem, a clock that is not synchronised, a failed unit, and what
+each layer counts, such as a Kubernetes Node that is not Ready or a BGP session that is not
+established. The sections below explain each.
 
 ## Read the config line
 
@@ -334,6 +351,65 @@ TCP port 4460 and UDP port 123. A network that blocks both needs its own servers
 
 `failed unit <unit>` names each systemd unit that failed in this boot. A healthy node has none.
 Read the unit's journal next.
+
+## See every node at once
+
+`chalkctl status` without a node reads every node of the inventory at once and prints a line of
+each:
+
+```console
+$ chalkctl status
+NODE    IMAGE                                BOOT         CONFIG                                PROBLEMS
+node1   <image>                              healthy      inventory's                           0
+node2   <image>                              not healthy  on trial until 2026-11-26T10:15:00Z   2
+node3   -                                    unreachable  -                                     -
+router  <image>                              healthy      differs                               1
+chalkctl: node3 is unreachable: <error>
+```
+
+BOOT says whether the node found its boot healthy. CONFIG says whether the config of the running
+image is the inventory's, `differs` when it is not, `unknown` when status cannot compare it, or
+until when a config is on trial. PROBLEMS counts the problems of the node's summary line;
+`chalkctl status <node>` names them. Each node has 15 seconds to answer. A node that does not
+answer shows as `unreachable`, the line after the table says why, and the others print all the
+same.
+
+## Gate a pipeline on chalkctl status
+
+`-o json` prints the same for programs. The output is stable: `chalkctl status -o json` prints
+an object with `nodes`, and `chalkctl status <node> -o json` one node's object:
+
+```json
+{
+  "node": "node1",
+  "healthy": true,
+  "problems": [],
+  "inventory": {"config": "same", "image": "same", "platform": "same"},
+  "info": {"mode": "MODE_NORMAL", "imageId": "chalkos", "nodeName": "node1", "chalkosVersion": "0.8.0"},
+  "status": {"configVersion": "<version>", "boot": {"running": {"rootHash": "<base64>"}, "blessed": true}},
+  "layers": {"kubernetes": {"kind": "controlplane", "nodeReady": "True"}}
+}
+```
+
+`healthy` is true when the node answered and shows no problem. `problems` are the summary
+line's, whose wording may change. `inventory` compares the node with the inventory: `config`,
+`stagedConfig` while an image is staged, `image` and `platform`, each `same`, `differs` or
+`unknown`. `error` replaces the rest for a node that did not answer. `info`, `status` and
+`layers` are the node's answers in protojson, as the [node API](../reference/api.md) names their
+fields: in lowerCamelCase, with fields at their zero value left out, 64-bit numbers as strings and
+bytes in base64. The example above leaves most fields out.
+
+A CI job that gates a release on the cluster checks that every node is healthy and runs the
+inventory's image and config:
+
+```sh
+chalkctl status -o json | jq -e '
+  .nodes | all(.healthy and .inventory.image == "same" and .inventory.config == "same")'
+```
+
+`jq -e` exits 1 when a node is not, and the job fails. `chalkctl disks`, `chalkctl node diag`,
+`chalkctl validate`, `chalkctl etcd members` and `chalkctl registry list` take `-o json` too.
+
 
 ## Follow a unit's journal with chalkctl logs
 

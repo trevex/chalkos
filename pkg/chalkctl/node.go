@@ -20,6 +20,7 @@ import (
 
 func (a *app) disksCommand() *cobra.Command {
 	var f nodePinFlags
+	var output layer.Output
 	cmd := a.command(&cobra.Command{
 		Use:         "disks [<node>]",
 		Short:       "List a node's disks",
@@ -27,13 +28,14 @@ func (a *app) disksCommand() *cobra.Command {
 		Example:     disksExample,
 		Args:        cli.RangeArgs(0, 1),
 		Annotations: layer.Meta{Credentials: layer.Reader}.Annotations(),
-	}, func(a *app, ctx context.Context, pos []string) error { return a.disks(ctx, f, pos) })
+	}, func(a *app, ctx context.Context, pos []string) error { return a.disks(ctx, f, output, pos) })
 	f.node.RegisterClient(cmd.Flags())
 	f.pin.register(cmd.Flags())
+	output.Register(cmd.Flags())
 	return cmd
 }
 
-func (a *app) disks(ctx context.Context, f nodePinFlags, pos []string) error {
+func (a *app) disks(ctx context.Context, f nodePinFlags, output layer.Output, pos []string) error {
 	n, p := f.node, f.pin
 	var conn *client.Conn
 	var err error
@@ -72,6 +74,9 @@ func (a *app) disks(ctx context.Context, f nodePinFlags, pos []string) error {
 	}
 	if p.insecure {
 		fmt.Fprintf(a.stderr, "chalkctl: the node's certificate fingerprint is %s\n", conn.Fingerprint())
+	}
+	if output.JSON() {
+		return layer.WriteJSON(a.stdout, resp)
 	}
 	return statusview.WriteDisks(a.stdout, resp.Disks)
 }

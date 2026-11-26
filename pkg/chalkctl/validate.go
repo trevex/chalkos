@@ -17,7 +17,10 @@ import (
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
-type validateFlags struct{ cluster layer.ClusterFlags }
+type validateFlags struct {
+	cluster layer.ClusterFlags
+	output  layer.Output
+}
 
 func (a *app) validateCommand() *cobra.Command {
 	var f validateFlags
@@ -30,6 +33,7 @@ func (a *app) validateCommand() *cobra.Command {
 		Annotations: layer.Meta{Credentials: layer.NoCredentials}.Annotations(),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.validate(ctx, f, pos) })
 	cmd.Flags().StringVar(&f.cluster.Inventory, "inventory", "", "inventory naming the nodes and their config files (default $"+inventory.Env+", else "+inventory.DefaultFile+" in the current directory)")
+	f.output.Register(cmd.Flags())
 	return cmd
 }
 
@@ -64,19 +68,32 @@ func (a *app) validate(ctx context.Context, f validateFlags, names []string) err
 		return fmt.Errorf("%s: %w", path, err)
 	}
 	var failed failures
+	out := validation{Nodes: []nodeValidation{}, Warnings: []string{}}
 	for _, name := range nodes {
-		line, warnings, err := validateNode(c, name)
+		v, err := validateNode(c, name)
 		if err != nil {
 			failed.add(name, err)
+			out.Nodes = append(out.Nodes, nodeValidation{Node: name, Error: err.Error(), Warnings: []string{}})
 			continue
 		}
-		fmt.Fprintln(a.stdout, line)
-		for _, w := range warnings {
+		out.Nodes = append(out.Nodes, v)
+		if f.output.JSON() {
+			continue
+		}
+		fmt.Fprintln(a.stdout, v.line())
+		for _, w := range v.Warnings {
 			fmt.Fprintln(a.stderr, "warning: "+w)
 		}
 	}
 	for _, p := range compiled[layer.InventoryWarnings]() {
-		for _, w := range p.InventoryWarnings(c) {
+		out.Warnings = append(out.Warnings, p.InventoryWarnings(c)...)
+	}
+	if f.output.JSON() {
+		if err := layer.WriteJSON(a.stdout, out); err != nil {
+			return err
+		}
+	} else {
+		for _, w := range out.Warnings {
 			fmt.Fprintln(a.stderr, "warning: "+w)
 		}
 	}
@@ -131,48 +148,90 @@ func (f failures) String() string {
 	return strings.Join(lines, "\n")
 }
 
+// validation is what validate -o json prints.
+type validation struct {
+	// Nodes are the nodes checked, in the order checked.
+	Nodes []nodeValidation `json:"nodes"`
+	// Warnings are what the layers warn of the nodes' config together.
+	Warnings []string `json:"warnings"`
+}
+
+// nodeValidation is the result of checking a node's config, as validate -o json prints it.
+type nodeValidation struct {
+	Node string `json:"node"`
+	// Valid is set when the node's config passed the checks of validate.
+	Valid bool `json:"valid"`
+	// Error says why it did not; the fields after it are then left out.
+	Error string `json:"error,omitempty"`
+	// Image is the image's name in the inventory, ImageReference the manifest of an image from a
+	// registry by its digest, and ImageName, Platform and RootHash the image's metadata.
+	Image          string `json:"image,omitempty"`
+	ImageReference string `json:"imageReference,omitempty"`
+	ImageName      string `json:"imageName,omitempty"`
+	Platform       string `json:"platform,omitempty"`
+	RootHash       string `json:"rootHash,omitempty"`
+	// ConfigVersion is the config's version, as status names it; left out when validate does not
+	// know it, as for Secret values from sources it does not decrypt.
+	ConfigVersion string `json:"configVersion,omitempty"`
+	// Warnings are what the node's valid config warrants a warning for.
+	Warnings []string `json:"warnings"`
+}
+
+// line is the line validate prints of a node whose config is valid.
+func (v nodeValidation) line() string {
+	image := v.Image
+	if v.ImageReference != "" {
+		// The tag may move; the line names the manifest the config was checked against.
+		image += " at " + v.ImageReference
+	}
+	version := "config " + v.ConfigVersion
+	if v.ConfigVersion == "" {
+		version = "config version unknown"
+	}
+	return fmt.Sprintf("%s: valid for the image %s (%s on %s, root hash %.12s), %s", v.Node, image, v.ImageName, v.Platform, v.RootHash, version)
+}
+
 // validateNode checks a node's config against the image the inventory names for it, as the node
-// would, and returns what a valid config warrants a warning for. Its errors and warnings name the
-// node.
-func validateNode(cl *cluster, name string) (string, []string, error) {
+// would, with what a valid config warrants a warning for. Its errors and warnings name the node.
+func validateNode(cl *cluster, name string) (nodeValidation, error) {
 	_, md, err := cl.image(name)
 	if err != nil {
-		return "", nil, err
+		return nodeValidation{}, err
 	}
 	nc, encrypted, err := cl.checkedConfig(name)
 	if err != nil {
-		return "", nil, err
+		return nodeValidation{}, err
 	}
 	c, err := inventoryContract(nc, md.Platform)
 	if err != nil {
-		return "", nil, fmt.Errorf("node %s: %w", name, err)
+		return nodeValidation{}, fmt.Errorf("node %s: %w", name, err)
 	}
 	d, err := checkNodeConfig(nc, c)
 	if err != nil {
-		return "", nil, fmt.Errorf("node %s: %w", name, err)
+		return nodeValidation{}, fmt.Errorf("node %s: %w", name, err)
 	}
-	var warnings []string
+	v := nodeValidation{
+		Node: name, Valid: true, Image: nc.ImageName, ImageName: md.Name, Platform: md.Platform, RootHash: md.RootHash,
+		ConfigVersion: d.Version, Warnings: []string{},
+	}
 	for _, w := range d.unpinned {
-		warnings = append(warnings, fmt.Sprintf("node %s: %s", name, w))
+		v.Warnings = append(v.Warnings, fmt.Sprintf("node %s: %s", name, w))
 	}
 	// STATE follows the SystemDisk's encryption mode, and holds the node's keys and secrets.
 	if d.identity.Storage.Encryption == storage.EncryptionNone {
-		warnings = append(warnings, fmt.Sprintf("node %s: its SystemDisk's encryption.mode is none, so STATE, which holds the node's keys and secrets, is not encrypted", name))
+		v.Warnings = append(v.Warnings, fmt.Sprintf("node %s: its SystemDisk's encryption.mode is none, so STATE, which holds the node's keys and secrets, is not encrypted", name))
 	}
-	image := nc.ImageName
 	if nc.ImageOCI != "" {
-		// The tag may move; the line names the manifest the config was checked against.
 		a, err := nc.Artifact()
 		if err != nil {
-			return "", nil, err
+			return nodeValidation{}, err
 		}
-		image += " at " + a.Reference
+		v.ImageReference = a.Reference
 	}
-	line := fmt.Sprintf("%s: valid for the image %s (%s on %s, root hash %.12s), config %s", name, image, md.Name, md.Platform, md.RootHash, d.Version)
 	if len(encrypted) > 0 {
 		// The version hashes the Secret values, which validate does not decrypt.
-		line = fmt.Sprintf("%s: valid for the image %s (%s on %s, root hash %.12s), config version unknown", name, image, md.Name, md.Platform, md.RootHash)
-		warnings = append(warnings, fmt.Sprintf("node %s: used placeholders for %s, as validate decrypts no sops or age source; chalkctl config apply --dry-run %s reads their sources", name, strs.And(encrypted), name))
+		v.ConfigVersion = ""
+		v.Warnings = append(v.Warnings, fmt.Sprintf("node %s: used placeholders for %s, as validate decrypts no sops or age source; chalkctl config apply --dry-run %s reads their sources", name, strs.And(encrypted), name))
 	}
-	return line, warnings, nil
+	return v, nil
 }

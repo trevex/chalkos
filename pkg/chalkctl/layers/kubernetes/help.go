@@ -190,6 +190,11 @@ command exits 1 when any is marked or an endpoint cannot be listed; a push of th
 endpoint mends it. Images pushed by digest alone, without a tag, are not listed.
 
 The registry serves reads to anyone, but chalkctl verifies the endpoints by the OS CA of a client
-file or the secrets file, so the command takes one of them.`
+file or the secrets file, so the command takes one of them.
+
+-o json prints the listing as an object: endpoints holds the endpoints asked, failed those that
+could not be listed, and images each tag with its repository, tag and whole digest, the endpoints
+serving it, those missing it, those that differ with their digest, and those broken with how many
+images of the index they lack. It exits as the table does.`
 
 const registryListExample = `  chalkctl registry list`
