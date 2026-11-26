@@ -418,6 +418,19 @@ func TestRenderTimeout(t *testing.T) {
 	}
 }
 
+// A unit is named after its definition and its directory's suffix, and a long name is cut so the
+// unit name stays within the 255 bytes systemd allows.
+func TestUnitOf(t *testing.T) {
+	if got := unitOf("/run/chalkos/outputs/.staging/bird-conf.1234"); got != "chalkos-render-bird-conf-1234.service" {
+		t.Fatalf("unitOf = %q", got)
+	}
+	name := strings.Repeat("a", 240)
+	got := unitOf("/staging/" + name + ".4294967295")
+	if len(got) > 255 || !strings.HasSuffix(got, "a-4294967295.service") || !strings.HasPrefix(got, "chalkos-render-aaa") {
+		t.Fatalf("unitOf = %q (%d bytes)", got, len(got))
+	}
+}
+
 // A renderer runs as the unprivileged user in command.Hardened, without capabilities or devices
 // and with STATE, /var and all of /run/chalkos but $OUT hidden; it may write $OUT alone and open
 // Unix sockets alone, and prints its report of refusals into a file of chalkd's, which the manager

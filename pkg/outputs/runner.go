@@ -189,8 +189,12 @@ func (Sandbox) Run(ctx context.Context, p Program) ([]byte, error) {
 
 // unitOf is the transient unit of a program whose $OUT is out, a directory scratch made: named after
 // the definition and the directory's unique suffix, such as chalkos-render-bird-conf-1234.service.
+// It cuts a long definition name so the unit name stays within the 255 bytes systemd allows.
 func unitOf(out string) string {
-	return "chalkos-render-" + strings.ReplaceAll(filepath.Base(out), ".", "-") + ".service"
+	const prefix = "chalkos-render-"
+	name, suffix, _ := strings.Cut(filepath.Base(out), ".")
+	tail := "-" + suffix + ".service"
+	return prefix + name[:min(len(name), 255-len(prefix)-len(tail))] + tail
 }
 
 // readOutput reads what a program printed into the file at path, and refuses more than
