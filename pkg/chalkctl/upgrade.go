@@ -619,7 +619,7 @@ func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 		}
 		if err := sendChunks(parts, func(c *nodev1.ImageChunk) error {
 			return stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Chunk{Chunk: c}})
-		}); err != nil {
+		}, r.a.sendProgress(r.Say, name, img.size())); err != nil {
 			return err
 		}
 		res, err := stream.CloseAndReceive()

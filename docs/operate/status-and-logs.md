@@ -338,10 +338,17 @@ Read the unit's journal next.
 ## Follow a unit's journal with chalkctl logs
 
 `chalkctl logs` prints the node's journal of the current boot, of every unit or of `--unit`
-alone. `-f` follows it:
+alone. `-f` follows it, starting with the last 100 entries:
 
 ```sh
 chalkctl logs node1 --unit=chalkd.service -f
+```
+
+`-n` or `--lines` starts with that many of the last entries; `-n 0` starts with the boot's first
+entry, which is what `chalkctl logs` without `-f` prints by default:
+
+```sh
+chalkctl logs node1 -n 20
 ```
 
 A node serves eight journal streams to the clients of its network at a time, four of them to one

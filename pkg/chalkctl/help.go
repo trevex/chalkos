@@ -393,11 +393,15 @@ const statusExample = `  chalkctl status cp1
   chalkctl status cp1`
 
 const logsLong = `Prints a node's journal of the current boot, of every unit or of --unit alone; with --follow it
-keeps printing new entries until interrupted. A node in maintenance mode is reached with
---fingerprint or --insecure as well.`
+keeps printing new entries until interrupted, starting with the last 100 entries. --lines starts
+with that many of the last entries, or with the whole boot at 0. A node in maintenance mode is
+reached with --fingerprint or --insecure as well.`
 
 const logsExample = `  # Follow chalkd's log on cp1.
-  chalkctl logs cp1 --unit chalkd.service -f`
+  chalkctl logs cp1 --unit chalkd.service -f
+
+  # The last 20 entries of the boot.
+  chalkctl logs cp1 -n 20`
 
 const nodeActivateLong = `Makes the image staged on a node boot next, as chalkctl upgrade --until stage leaves it:
 the node renames the image's UKI to its boot entry's name with the tries the image asks for, so

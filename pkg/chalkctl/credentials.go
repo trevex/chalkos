@@ -127,6 +127,7 @@ func (a *app) configCredentials(path string) (*credentials, error) {
 	if err != nil {
 		return nil, err
 	}
+	a.warnReadable(path, "a private key")
 	leaf, err := c.Leaf()
 	if err != nil {
 		return nil, err

@@ -11,6 +11,7 @@ import (
 	"github.com/trevex/chalkos/pkg/secureboot"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/uki"
+	"github.com/trevex/chalkos/pkg/version"
 )
 
 func (s *Server) Info(ctx context.Context, _ *nodev1.InfoRequest) (*nodev1.InfoResponse, error) {
@@ -25,7 +26,8 @@ func (s *Server) Info(ctx context.Context, _ *nodev1.InfoRequest) (*nodev1.InfoR
 		Platform:    release["CHALKOS_PLATFORM"],
 		Layers:      s.Plugins.Layers().Names(),
 		// In every mode: the installer and maintenance mode load the policy too.
-		ModulePolicy: s.modulePolicyStatus(ctx),
+		ModulePolicy:   s.modulePolicyStatus(ctx),
+		ChalkosVersion: version.Version,
 	}
 	// An image is its store's root hash; the record of installed images gives its provenance.
 	if root, err := uki.RunningHash(s.Paths.Cmdline); err == nil {

@@ -66,12 +66,12 @@ func TestInstallerInstallsOntoLVMDisk(t *testing.T) {
 	// without --wipe-disk from the registry.
 	interrupted := cancelledInstall(t, n, "", append(slices.Clone(install), "--image", image, "--wipe-disk", "--yes"))
 	// The store data, hash tree, UKI and boot loader, not the whole raw image.
-	m := regexp.MustCompile(`sending (\d+) bytes`).FindStringSubmatch(interrupted)
+	m := regexp.MustCompile(`sending ([0-9.]+) MiB `).FindStringSubmatch(interrupted)
 	if m == nil {
-		t.Fatal("chalkctl did not say how many bytes it sends")
+		t.Fatal("chalkctl did not say how many MiB it sends, less than a GiB")
 	}
-	if sent, _ := strconv.ParseInt(m[1], 10, 64); sent >= 400<<20 {
-		t.Errorf("chalkctl sent %d bytes, want less than 400 MiB", sent)
+	if sent, _ := strconv.ParseFloat(m[1], 64); sent >= 400 {
+		t.Errorf("chalkctl sent %s MiB, want less than 400 MiB", m[1])
 	}
 	// A Greeting that shouts passes chalkctl's checks; the image's validator refuses it once the
 	// image's store is on the disk, and the target boots nothing. The refused install took the disk

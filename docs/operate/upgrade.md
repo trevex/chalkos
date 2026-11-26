@@ -174,6 +174,9 @@ node1: installed <new>, staged as .staged-chalkos_2.efi
 node1: cordoned, evicted <n> pods, kept <n>
 node1: activated <new>, which boots next as chalkos_2+3.efi
 node1: rebooting into <new>
+node1: it did not reboot yet
+node1: unreachable: <error>
+node1: its boot is not healthy yet: units failed: kubelet.service
 node1: runs <new>, found healthy
 node1: uncordoned
 node2: installing <new>
@@ -184,6 +187,7 @@ router: config unchanged
 router: installed <new-router>, staged as .staged-chalkos_2.efi
 router: activated <new-router>, which boots next as chalkos_2+3.efi
 router: rebooting into <new-router>
+router: unreachable: <error>
 router: runs <new-router>, found healthy
 upgraded 4 nodes to <new>, <new-router>
 ```
@@ -191,9 +195,9 @@ upgraded 4 nodes to <new>, <new-router>
 `<new>` and `<new-router>` stand for the new images' names. chalkctl names an image by the first
 12 hex characters of its root hash. When the build names a tag or a git revision, they follow in
 parentheses, the revision cut to 12 characters, as in `<root hash> (<tag>, <revision>)`. `<n>`
-stands for numbers of pods. `.staged-chalkos_2.efi` is the staged UKI on a node that was installed
-with `chalkos_1.efi`, and `chalkos_2+3.efi` the boot entry its activation gives it: generation 2,
-with three tries.
+stands for numbers of pods, and `<error>` for the error of a look that did not reach the node.
+`.staged-chalkos_2.efi` is the staged UKI on a node that was installed with `chalkos_1.efi`, and
+`chalkos_2+3.efi` the boot entry its activation gives it: generation 2, with three tries.
 
 The first lines name each image and its platform and the nodes that get it. `...` stands
 for the lines of node2 and node3, which repeat node1's. Each node shows its steps:
@@ -204,8 +208,15 @@ for the lines of node2 and node3, which repeat node1's. Each node shows its step
 3. `installed ..., staged as ...` names the staged UKI. The image checked the config with its own
    checker, renderers included, before the node staged it.
 4. `activated ..., which boots next as ...` names the new boot entry.
-5. `rebooting into` reboots the node.
+5. `rebooting into` reboots the node. While chalkctl waits for its new boot, it prints a line each
+   time the state of the wait changes: `it did not reboot yet`, `unreachable` with the error of
+   the last look, or why the boot is not found healthy yet, such as a failed unit. A node that
+   stays in one state prints one line, so a slow boot and a stuck one read apart.
 6. `runs ..., found healthy` means the boot was blessed.
+
+On a terminal, an image sent from a directory also prints its progress about every tenth of its
+size, such as `node1: sent 40%, 120.0 MiB of 297.3 MiB`. Sizes are in MiB or GiB. Output to a
+file or a pipe, as in CI, gets no progress lines.
 
 The last line counts the nodes upgraded.
 

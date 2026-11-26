@@ -3,6 +3,7 @@
 package chalkctl
 
 import (
+	"cmp"
 	"context"
 	"io"
 	"os"
@@ -37,6 +38,13 @@ type app struct {
 	ask func(ctx context.Context, prompt string) (string, error)
 	// yes is the --yes of the command that runs, which goes ahead without confirm asking.
 	yes bool
+	// release is chalkctl's release, which nodes are compared with; empty is version.Version. Tests
+	// set it.
+	release string
+	// releases warns of the nodes of another release the command that runs meets.
+	releases *releaseCheck
+	// warnedFiles are the files of private keys the command that runs warned of.
+	warnedFiles *warnedFiles
 }
 
 // NewCommand returns chalkctl's root command, with age and SSH keys from the user's home directory
@@ -131,6 +139,8 @@ func (a *app) command(cmd *cobra.Command, run func(a *app, ctx context.Context, 
 		if c.Flags().Lookup("yes") != nil {
 			commandApp.yes, _ = c.Flags().GetBool("yes")
 		}
+		commandApp.warnedFiles = &warnedFiles{}
+		commandApp.releases = &releaseCheck{ours: cmp.Or(a.release, version.Version), stderr: commandApp.stderr}
 		sources := &secretSources{ctx: ctx, app: commandApp, identities: identities}
 		return run(commandApp, context.WithValue(ctx, secretSourcesKey{}, sources), args)
 	}

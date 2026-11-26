@@ -57,6 +57,7 @@ buildGoProgram {
     ../../pkg/uki
     ../../pkg/upgrade
     ../../pkg/verity
+    ../../pkg/version
   ];
   ldflags = [
     "-s"

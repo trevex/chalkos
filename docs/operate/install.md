@@ -273,7 +273,7 @@ illustrative: its lines are chalkctl's, and the disk, the image hash and the siz
 example's.
 
 ```text
-installing cp1 onto /dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100001 from /home/alice/cluster/images/node-metal-signed: chalkos 5f1e60980b55, sending 311717904 bytes of store, hash tree, UKI and boot loader
+installing cp1 onto /dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100001 from /home/alice/cluster/images/node-metal-signed: chalkos 5f1e60980b55, sending 297.3 MiB of store, hash tree, UKI and boot loader
 cp1 is installed and reboots
 chalkctl recovery-key cp1 prints the key that unlocks it when its TPM fails
 ```

@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"os"
@@ -155,8 +154,8 @@ func TestInstallFromPartsStreamsTheImage(t *testing.T) {
 	if int64(len(streamed)) != size || !bytes.Equal(loader[:], h.BootLoader.SHA256) {
 		t.Errorf("streamed %d bytes, want %d ending in the boot loader", len(streamed), size)
 	}
-	if !strings.Contains(ta.stdout.String(), fmt.Sprintf("sending %d bytes", size)) {
-		t.Errorf("chalkctl printed %q, not the bytes it sends", ta.stdout)
+	if !strings.Contains(ta.stdout.String(), "sending "+binarySize(uint64(size))+" of store") {
+		t.Errorf("chalkctl printed %q, not the size it sends", ta.stdout)
 	}
 	if got.Target != (storage.Ref{Selector: storage.Selector{Serial: "chalk-target"}}) || got.WipeDisk {
 		t.Errorf("target = %+v, wipe = %v", got.Target, got.WipeDisk)

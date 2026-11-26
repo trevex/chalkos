@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 
 	"github.com/google/go-containerregistry/pkg/v1/types"
+	"golang.org/x/term"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/image"
@@ -201,10 +202,12 @@ func checkInstallImage(t *target, img *diskImage) error {
 	return nil
 }
 
-// sendChunks sends what r holds in chunks. A send that finds the stream closed ends it: the node
-// refused the image already, and closing the stream returns why.
-func sendChunks(r io.Reader, send func(*nodev1.ImageChunk) error) error {
+// sendChunks sends what r holds in chunks and reports to progress, unless nil, how much it sent. A
+// send that finds the stream closed ends it: the node refused the image already, and closing the
+// stream returns why.
+func sendChunks(r io.Reader, send func(*nodev1.ImageChunk) error, progress func(sent uint64)) error {
 	buf := make([]byte, chunkSize)
+	var sent uint64
 	for {
 		n, rerr := io.ReadFull(r, buf)
 		if n > 0 {
@@ -212,6 +215,10 @@ func sendChunks(r io.Reader, send func(*nodev1.ImageChunk) error) error {
 				return nil
 			} else if err != nil {
 				return err
+			}
+			sent += uint64(n)
+			if progress != nil {
+				progress(sent)
 			}
 		}
 		if rerr == io.EOF || rerr == io.ErrUnexpectedEOF {
@@ -255,4 +262,45 @@ func openParts(path string, bootLoader bool) (p *image.Parts, raw, definitions s
 // name names the image chalkctl sends.
 func (img *diskImage) name() string {
 	return statusview.ImageName(img.header.GetRootHash(), img.header.GetRevision(), img.header.GetTag())
+}
+
+// binarySize is a number of bytes in MiB, or in GiB from 1 GiB on, with one decimal.
+func binarySize(n uint64) string {
+	if n >= 1<<30 {
+		return fmt.Sprintf("%.1f GiB", float64(n)/(1<<30))
+	}
+	return fmt.Sprintf("%.1f MiB", float64(n)/(1<<20))
+}
+
+// sendProgress is what sendChunks reports to while it sends the node called name total bytes: a
+// line through say about each tenth of total, while standard output is a terminal. A log, as of
+// CI, gets no progress lines; nil reports nothing.
+func (a *app) sendProgress(say func(format string, args ...any), name string, total uint64) func(sent uint64) {
+	if !isTerminal(a.stdout) {
+		return nil
+	}
+	return tenths(say, name, total)
+}
+
+// tenths reports a line through say each time what was sent of total passes another tenth of it,
+// short of the whole.
+func tenths(say func(format string, args ...any), name string, total uint64) func(sent uint64) {
+	if total == 0 {
+		return nil
+	}
+	var said uint64
+	return func(sent uint64) {
+		tenth := min(sent, total) * 10 / total
+		if tenth <= said || tenth >= 10 {
+			return
+		}
+		said = tenth
+		say("%s: sent %d%%, %s of %s", name, tenth*10, binarySize(sent), binarySize(total))
+	}
+}
+
+// isTerminal reports whether w is a terminal.
+func isTerminal(w io.Writer) bool {
+	f, ok := w.(*os.File)
+	return ok && term.IsTerminal(int(f.Fd()))
 }

@@ -2,6 +2,7 @@ package chalkctl
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"math"
 	"net/http"
@@ -29,6 +30,8 @@ import (
 type cannedNode struct {
 	nodev1connect.UnimplementedNodeServiceHandler
 	s *chalkd.Server
+	// release is the chalkos release Info names; empty keeps the node's.
+	release string
 }
 
 func (n cannedNode) Info(ctx context.Context, req *nodev1.InfoRequest) (*nodev1.InfoResponse, error) {
@@ -36,6 +39,7 @@ func (n cannedNode) Info(ctx context.Context, req *nodev1.InfoRequest) (*nodev1.
 	if err == nil {
 		resp.Layers = []string{layers.Kubernetes, layers.Router}
 		resp.ModulePolicy = &nodev1.ModulePolicyStatus{State: nodev1.ModulePolicyState_MODULE_POLICY_STATE_ENFORCED, Version: "0.5.0"}
+		resp.ChalkosVersion = cmp.Or(n.release, resp.ChalkosVersion)
 	}
 	return resp, err
 }
@@ -144,10 +148,17 @@ func cannedStatus() *nodev1.StatusResponse {
 // cannedNodeAt serves n1 with the canned answers and returns its address.
 func cannedNodeAt(t *testing.T, ta *testApp) string {
 	t.Helper()
+	return cannedReleaseAt(t, ta, "")
+}
+
+// cannedReleaseAt serves n1 with the canned answers, its chalkd of the release, and returns its
+// address.
+func cannedReleaseAt(t *testing.T, ta *testApp, release string) string {
+	t.Helper()
 	s, _ := installedNode(t, ta, nil)
 	addr := ta.startNode(t, s)
 	mux := http.NewServeMux()
-	n := cannedNode{s: s}
+	n := cannedNode{s: s, release: release}
 	server := connect.NewServer()
 	nodev1connect.RegisterNodeServiceHandler(server, n)
 	kubernetesv1connect.RegisterKubernetesServiceHandler(server, kubernetesStatus{})

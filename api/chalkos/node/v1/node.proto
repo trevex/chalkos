@@ -253,6 +253,9 @@ message InfoResponse {
   string node_name = 15;
   // Whether the kernel loads modules from the running image alone.
   ModulePolicyStatus module_policy = 16;
+  // The release of chalkos that chalkd belongs to, as its version command prints it, such as 0.6.0;
+  // chalkctl of another release warns, as the two keep no compatibility between releases.
+  string chalkos_version = 17;
 }
 
 // What the node makes of the image's module policy, the IPE policy that lets the kernel load

@@ -337,7 +337,7 @@ func (r *rotation) nodes() (nodeSet, error) {
 	if err != nil {
 		return nodeSet{}, err
 	}
-	return nodeSet{cluster: r.cluster, creds: creds, addresses: r.addresses}, nil
+	return nodeSet{cluster: r.cluster, creds: creds, addresses: r.addresses, release: r.a.releases}, nil
 }
 
 // Call runs fn against a node.

@@ -32,6 +32,7 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/image/imagetest"
 	"github.com/trevex/chalkos/pkg/internal/cli"
+	"github.com/trevex/chalkos/pkg/internal/golden"
 	"github.com/trevex/chalkos/pkg/internal/poll"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/layers"
@@ -2682,4 +2683,17 @@ func inOrder(at func(string) int, node string) bool {
 func runsKubernetes(imageName string) bool {
 	kind, _, _ := strings.Cut(imageName, "-")
 	return kind == "cp" || kind == "w" || kind == "k8s"
+}
+
+// TestNodeRebootSaysEachWaitState prints a line each time the state of the wait for the node's
+// boot changes, and one line for a state that several looks find.
+func TestNodeRebootSaysEachWaitState(t *testing.T) {
+	l := newUpgradeLab(t, 1)
+	l.mu.Lock()
+	l.flaky = 3
+	l.mu.Unlock()
+	if err := l.run("node", "reboot", "w2", "--no-drain", "--timeout", "1m"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	golden.Check(t, "testdata/reboot-wait.golden", l.ta.stdout.String())
 }

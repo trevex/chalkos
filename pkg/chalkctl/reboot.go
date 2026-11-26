@@ -234,7 +234,9 @@ func (b *rebooter) waitHealthy(ctx context.Context, n *rebootNode, t bootTarget)
 	// unhealthyFor is the boot found settled and unhealthy for the grace period. A look that
 	// reached no node changes nothing.
 	unhealthyFor := poll.Sustained{Window: b.grace}
-	err := poll.Until(ctx, "", b.timeout, b.poll, func(ctx context.Context) error {
+	// state is the wait's state the run printed last, so it prints a line when it changes.
+	var state string
+	look := func(ctx context.Context) error {
 		var st *nodev1.StatusResponse
 		var notReady error
 		err := b.reach.Call(n.name, func(conn *client.Conn) error {
@@ -263,7 +265,7 @@ func (b *rebooter) waitHealthy(ctx context.Context, n *rebootNode, t bootTarget)
 			return nil
 		})
 		if err != nil {
-			return err
+			return unreachable{err}
 		}
 		boot := st.GetBoot()
 		health := boot.GetHealth()
@@ -296,6 +298,11 @@ func (b *rebooter) waitHealthy(ctx context.Context, n *rebootNode, t bootTarget)
 			return fmt.Errorf("its boot is not healthy yet: %s", health.GetError())
 		}
 		return notReady
+	}
+	err := poll.Until(ctx, "", b.timeout, b.poll, func(ctx context.Context) error {
+		err := look(ctx)
+		b.sayState(n.name, err, &state)
+		return err
 	})
 	switch {
 	case fellBack != nil:
@@ -564,4 +571,31 @@ func readRoles(ctx context.Context, conn *client.Conn, layers []string) (upgrade
 		roles = append(roles, upgradeRole{u, role})
 	}
 	return roles, nil
+}
+
+// unreachable is the error of a look at a node that did not reach it.
+type unreachable struct{ err error }
+
+func (u unreachable) Error() string { return u.err.Error() }
+func (u unreachable) Unwrap() error { return u.err }
+
+// sayState prints a line of a wait for the node called name when the state a look found, err,
+// differs from state, the one printed last, and keeps it in state. A look that did not reach the
+// node is one state, whatever its error; one that ends the wait prints nothing, as its error
+// says why.
+func (b *rebooter) sayState(name string, err error, state *string) {
+	if _, ok := errors.AsType[poll.Permanent](err); err == nil || ok {
+		return
+	}
+	line := strings.TrimPrefix(err.Error(), name+": ")
+	now := line
+	if u, ok := errors.AsType[unreachable](err); ok {
+		now = "unreachable"
+		line = "unreachable: " + layer.Unnamed(name, u.err).Error()
+	}
+	if now == *state {
+		return
+	}
+	*state = now
+	b.Say("%s: %s", name, line)
 }
