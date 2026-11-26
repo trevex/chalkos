@@ -11,11 +11,11 @@ chalkctl disks [<node>] [flags]
 
 Lists a node's disks with their use, the partitions on them, and the properties a storage definition
 selects disks by: size, type, model, serial number and WWN. A node in maintenance mode is reached
-with --fingerprint or --insecure as well. A node that the inventory does not name yet is reached at
---address, in maintenance mode: an image or installer built with an OS CA accepts only a client with
-the secrets file or a client file, one built without accepts any client.
+with --fingerprint or --insecure as well.
 
-The command needs a reader client file or the secrets file.
+The command needs a reader client file or the secrets file. A node that the inventory does not name
+yet is reached at --address, in maintenance mode, and needs one only when its image or installer
+was built with an OS CA; one built without accepts any client.
 
 ## Flags
 
