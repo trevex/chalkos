@@ -53,7 +53,7 @@ let
         type = lib.types.nullOr lib.types.str;
         default = null;
         example = "A Peer keeps its AS number.";
-        description = "One sentence on what the rule guards, which the reference pages show; the node never reads it.";
+        description = "One sentence on what the rule guards, which the reference pages show and which names the rule when it cannot be evaluated or refuses without a message.";
       };
     };
   };

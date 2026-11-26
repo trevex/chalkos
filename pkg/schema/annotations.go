@@ -113,8 +113,8 @@ type Rule struct {
 	// Reason is one of constants.RuleReasons, which a refusal by the rule carries to the client, for
 	// a refusal that chalkd or chalkctl acts on, such as NO_FALLBACK_SECRET; empty for none.
 	Reason string `json:"reason,omitempty"`
-	// Description says what the rule guards, for the reference pages; the rule never reads or
-	// says it.
+	// Description says what the rule guards, for the reference pages and the errors that name the
+	// rule; the rule never reads it.
 	Description string `json:"description,omitempty"`
 }
 

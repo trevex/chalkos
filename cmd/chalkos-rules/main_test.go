@@ -79,6 +79,17 @@ func TestCheck(t *testing.T) {
 	}
 }
 
+// A rule without message or messageExpression passes the check with a warning that names it.
+func TestCheckWarnsOfARuleWithoutMessage(t *testing.T) {
+	var out bytes.Buffer
+	err := checkImage(image(t, files(greeting(`[{"rule": "self == oldSelf"}]`, kindRule), lock, effect(`false`, `false`))), &out)
+	want := "warning: Greeting spec.message: rule \"self == oldSelf\" has neither message nor messageExpression, so its refusals say only which rule refused; give it a message that says why and what to do instead\n" +
+		"2 rules and 2 effect rules compile, reading the facts none\n"
+	if err != nil || out.String() != want {
+		t.Errorf("check = %q, %v", out.String(), err)
+	}
+}
+
 // A diagnostic chalkd would refuse fails the check, as it would fail chalkd's reading of it.
 func TestCheckRefusesADiagnostic(t *testing.T) {
 	f := files(greeting(fieldRule, kindRule), lock, effect(`false`, `false`))

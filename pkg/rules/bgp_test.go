@@ -165,7 +165,7 @@ func TestBGPRulesReadAddresses(t *testing.T) {
 		want string
 	}{
 		{"a neighbour address that is none", []config.Document{bgp, doc("BGPPeer", "upstream", `{"address": "198.51.100.300", "remoteAS": 64496, "families": {"ipv6": {}}}`)},
-			`cannot check: BGPPeer/upstream: spec.address: a rule cannot be evaluated: ` + errNotIP},
+			`cannot check: BGPPeer/upstream: spec.address: the rule "A BGPPeer's address is a unicast address beyond the router: not unspecified, loopback, link-local, multicast, broadcast or IPv4-mapped IPv6." cannot be evaluated: ` + errNotIP},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := set.Evaluate(Input{Documents: config.Redact(tc.docs), Node: "r1"})

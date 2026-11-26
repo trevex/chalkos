@@ -82,5 +82,5 @@ func (e *EffectRule) evaluate(cfg, oldCfg, node map[string]any, facts, oldFacts 
 	var factErr error
 	bindFacts(vars, "facts", e.Facts, facts, &factErr)
 	bindFacts(vars, "oldFacts", e.Facts, oldFacts, &factErr)
-	return evalBool(e.program, vars, nil, &factErr)
+	return evalBool(e.program, vars, "a rule", nil, &factErr)
 }

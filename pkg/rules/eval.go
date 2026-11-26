@@ -145,18 +145,19 @@ func bindFacts(vars map[string]any, ident string, names []string, facts Facts, f
 
 // evalBool evaluates prg, the check of a rule, with vars. A fact the rule reads that could not be
 // loaded, which bindFacts keeps in factErr, is the error then, whatever the rule yields without
-// it; else the error says why the rule yields no bool, naming the one of fields it lacks.
-func evalBool(prg cel.Program, vars map[string]any, fields []string, factErr *error) (bool, error) {
+// it; else the error says why rule, which names the rule, yields no bool, naming the one of
+// fields it lacks.
+func evalBool(prg cel.Program, vars map[string]any, rule string, fields []string, factErr *error) (bool, error) {
 	out, _, err := prg.Eval(vars)
 	if *factErr != nil {
 		return false, *factErr
 	}
 	if err != nil {
-		return false, errors.New(cannotEvaluate(err, fields))
+		return false, errors.New(cannotEvaluate(rule, err, fields))
 	}
 	ok, isBool := out.(types.Bool)
 	if !isBool {
-		return false, fmt.Errorf("a rule yields %s, not a bool", out.Type().TypeName())
+		return false, fmt.Errorf("%s yields %s, not a bool", rule, out.Type().TypeName())
 	}
 	return bool(ok), nil
 }
@@ -171,7 +172,7 @@ func (p *Program) evaluate(vars map[string]any, cfg, oldCfg, node map[string]any
 	if doc != "" {
 		where = refusals.Refusal{Kind: p.Kind.Kind, Name: doc, Path: strings.Join(p.Path, ".")}.Where()
 	}
-	ok, err := evalBool(p.check, vars, p.checkFields, &factErr)
+	ok, err := evalBool(p.check, vars, p.named(), p.checkFields, &factErr)
 	// A fact that could not be loaded is returned as it is, outside the cannot-check wrap.
 	if factErr != nil {
 		return nil, factErr
@@ -194,14 +195,14 @@ func (p *Program) evaluate(vars map[string]any, cfg, oldCfg, node map[string]any
 		if s, isString := msg.(types.String); err == nil && isString {
 			f.Message = refusals.Printable(string(s))
 		} else if f.Message == "" {
-			f.Message = "the config does not meet a rule of " + p.Where() + ", whose messageExpression fails"
+			f.Message = "the config does not meet " + p.named() + " of " + p.Where() + ", whose messageExpression fails"
 			if why := messageError(msg, err, p.messageFields); why != "" {
 				f.Message += ": " + why
 			}
 		}
 	}
 	if f.Message == "" {
-		f.Message = "the config does not meet a rule of " + p.Where()
+		f.Message = "the config does not meet " + p.named() + " of " + p.Where()
 	}
 	return []Failure{f}, nil
 }
@@ -392,13 +393,30 @@ func evalError(err error, fields []string) string {
 	return ""
 }
 
-// cannotEvaluate is the error of a rule that cannot be evaluated, with what evalError says of
-// err.
-func cannotEvaluate(err error, fields []string) string {
+// cannotEvaluate is the error of rule, which names a rule that cannot be evaluated, with what
+// evalError says of err.
+func cannotEvaluate(rule string, err error, fields []string) string {
 	if says := evalError(err, fields); says != "" {
-		return "a rule cannot be evaluated: " + says
+		return rule + " cannot be evaluated: " + says
 	}
-	return "a rule cannot be evaluated"
+	return rule + " cannot be evaluated"
+}
+
+// namedLength is the most runes of a rule's text that named quotes.
+const namedLength = 80
+
+// named names the rule in the errors and default refusals of its evaluation: by its description,
+// or else by its text with its white space collapsed, cut to namedLength runes. Both come from
+// the image, not from the config.
+func (p *Program) named() string {
+	text := p.Description
+	if text == "" {
+		text = strings.Join(strings.Fields(p.Rule.Rule), " ")
+		if r := []rune(text); len(r) > namedLength {
+			text = string(r[:namedLength-1]) + "…"
+		}
+	}
+	return fmt.Sprintf("the rule %q", text)
 }
 
 // bounded is s cut to maxErrorText bytes, at a character's start.
