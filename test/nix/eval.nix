@@ -4822,6 +4822,32 @@ in
         stored = true;
       };
     };
+  # chalkos.usr.links belongs to the base: a link set on a router image is in its store partition
+  # and referenced by its system, as on a Kubernetes image.
+  testUsrLinksOnRouter =
+    let
+      c = router [
+        (
+          { pkgs, ... }:
+          {
+            chalkos.usr.links."bin/fstrim" = "${pkgs.util-linux}/bin/fstrim";
+          }
+        )
+      ];
+      contents = c.image.repart.partitions.${c.image.repart.verityStore.partitionIds.store}.contents;
+    in
+    {
+      expr = {
+        tops = lib.attrNames contents;
+        source = lib.hasInfix "chalkos-usr-links" contents."/bin".source;
+        stored = lib.any (p: lib.hasInfix "chalkos-usr-links" (toString p)) c.system.extraDependencies;
+      };
+      expected = {
+        tops = [ "/bin" ];
+        source = true;
+        stored = true;
+      };
+    };
   # containerd's runtime handlers: runc, and those an image adds, in the read-only config; CDI
   # specifications, which containerd 2.4 always reads, from the image (/etc/cdi) and from units
   # at boot (/var/run/cdi).

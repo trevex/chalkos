@@ -2,47 +2,16 @@
 # DaemonSets mount it by hostPath, and links below /usr for the programs operators run in the
 # host's mount namespace through nsenter. /lib/modules leads to the image's module tree
 # (kernel.nix), whose files are its own, so a pod that mounts it reads the modules without the
-# store. /usr is the store's file system, read-only and checked by dm-verity, so the links are
-# part of the image: chalkos.usr.links adds them to the store partition, and the layer's features
-# and an image's chalkos.kubernetes.hostTools fill it.
+# store. The links are chalkos.usr.links of the base, which the layer's features and an image's
+# chalkos.kubernetes.hostTools fill.
 {
   config,
   lib,
-  pkgs,
   ...
 }:
-let
-  inherit (lib) mkOption types;
-  links = config.chalkos.usr.links;
-  # The links as a tree, one directory per first path component below /usr.
-  tree = pkgs.runCommand "chalkos-usr-links" { } (
-    ''
-      mkdir $out
-    ''
-    + lib.concatStrings (
-      lib.mapAttrsToList (path: target: ''
-        mkdir -p "$out/$(dirname ${lib.escapeShellArg path})"
-        ln -s ${lib.escapeShellArg target} $out/${lib.escapeShellArg path}
-      '') links
-    )
-  );
-  tops = lib.unique (map (p: lib.head (lib.splitString "/" p)) (lib.attrNames links));
-  inherit (config.image.repart.verityStore.partitionIds) store;
-in
 {
-  options.chalkos.usr.links = mkOption {
-    type = types.attrsOf types.path;
-    default = { };
-    internal = true;
-    description = ''
-      Symbolic links below /usr by their path relative to it, such as `sbin/iscsiadm`, to
-      programs or directories of the store. They live in the store's file system, so they change
-      the image's root hash like any other content.
-    '';
-  };
-
-  options.chalkos.kubernetes.hostTools = mkOption {
-    type = types.attrsOf types.path;
+  options.chalkos.kubernetes.hostTools = lib.mkOption {
+    type = lib.types.attrsOf lib.types.path;
     default = { };
     example = lib.literalExpression ''{ fstrim = "''${pkgs.util-linux}/bin/fstrim"; }'';
     description = ''
@@ -68,14 +37,5 @@ in
       "bin/${name}" = program;
       "sbin/${name}" = program;
     }) config.chalkos.kubernetes.hostTools;
-
-    # The system references the tree, so the store partition, the SBOM and the shell checks hold its
-    # closure.
-    system.extraDependencies = lib.mkIf (links != { }) [ tree ];
-    image.repart.partitions.${store}.contents = lib.mkIf (links != { }) (
-      lib.genAttrs (map (t: "/${t}") tops) (t: {
-        source = "${tree}${t}";
-      })
-    );
   };
 }
