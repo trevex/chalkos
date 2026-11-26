@@ -26,9 +26,10 @@ chalkos adds two things to that model, both about config:
   the image before keeps the config it ran. A kind can change incompatibly between two images, and
   a fallback still boots with config its image understands.
 
-Nodes also run nothing the image did not bring. They carry no shell, every writable file system is
-mounted noexec except the directories a layer runs programs from, such as containerd's root, and
-with Secure Boot on the kernel loads modules only from the signed image. The
+Outside containers, nodes also run nothing the image did not bring. They carry no shell, every
+writable file system is mounted noexec except the directories a layer runs programs from, such as
+containerd's root, and with Secure Boot on and the module policy left on, as it is by default, the
+kernel loads modules only from the signed image. The
 [security model](https://trevex.github.io/chalkos/how-it-works/node/security/) lists what each
 attacker position reaches.
 
