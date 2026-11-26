@@ -2,6 +2,7 @@ package kubernetes
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -29,8 +30,8 @@ import (
 
 // controlPlane serves chalkd with the Kubernetes layer on the control-plane node n1, whose files
 // hold a share and are prepared, and dials it as an admin. options, when not nil, changes the
-// layer's options once the node's files are written.
-func controlPlane(t *testing.T, options func(o *kubernetesplugin.Options, s knode.State)) *client.Conn {
+// layer's options once the node's files are written; wrap, when not nil, wraps chalkd's handler.
+func controlPlane(t *testing.T, options func(o *kubernetesplugin.Options, s knode.State), wrap func(http.Handler) http.Handler) *client.Conn {
 	t.Helper()
 	secrets, err := clustersecrets.Generate(time.Now())
 	if err != nil {
@@ -65,7 +66,7 @@ func controlPlane(t *testing.T, options func(o *kubernetesplugin.Options, s knod
 	t.Cleanup(k.Stop)
 	s.Plugins = chalkdtest.Plugins(t, s, layers.Of(layers.Kubernetes), k)
 	s.Loader.Layers = layer.Active[nodeconfig.Layer](s.Plugins)
-	node := sdktest.Serve(t, s, secrets.OSCA, secrets.NodeCA, "n1", nil)
+	node := sdktest.Serve(t, s, secrets.OSCA, secrets.NodeCA, "n1", wrap)
 	cert, err := sdk.AdminCertificate(secrets, "sdk-test", time.Now())
 	if err != nil {
 		t.Fatal(err)
@@ -129,7 +130,7 @@ func etcdMember(t *testing.T, others ...string) (*client.Conn, map[string]*etcdt
 		if err := s.RenderStaticPods(); err != nil {
 			t.Fatal(err)
 		}
-	})
+	}, nil)
 	return conn, members
 }
 
