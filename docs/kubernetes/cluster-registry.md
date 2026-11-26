@@ -287,7 +287,8 @@ digest on every endpoint. An endpoint that does not hold it counts as done.
 - A tag goes alone. The manifest it named stays, and with it its layers, and chalkctl prints the
   digest and the tags that still name it.
 - A digest takes the manifest. chalkctl refuses a digest that tags name unless `--with-tags` is
-  given, and then deletes those tags with it.
+  given, and then asks before it deletes those tags with it. Without a terminal, as in a script,
+  `--yes` answers the question.
 - chalkctl always refuses a digest that a tagged index names, because the index would break.
   Delete the index first.
 
@@ -295,6 +296,8 @@ In the lab:
 
 ```console
 $ chalkctl registry delete cluster-registry.chalkos.test/e2e/busybox@sha256:66a6306db78bf2dbf3487f293aa8d6990d8e506fdffab9cc43fe422becf886e4 --with-tags
+chalkctl: registry delete deletes cluster-registry.chalkos.test/e2e/busybox@sha256:66a6306db78bf2dbf3487f293aa8d6990d8e506fdffab9cc43fe422becf886e4 with the tags 1.37.0 that name it on 192.168.100.11.
+Go ahead? [y/N] y
 192.168.100.11: deleted 192.168.100.11:5000/cluster-registry.chalkos.test/e2e/busybox@sha256:66a6306db78bf2dbf3487f293aa8d6990d8e506fdffab9cc43fe422becf886e4 and its tags 1.37.0
 ```
 

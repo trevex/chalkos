@@ -96,13 +96,13 @@ func TestNodeUnrevoke(t *testing.T) {
 
 	ta.stdout.Reset()
 	err := ta.run(ctx, ta.args([]string{"node", "unrevoke", "w2", "--via", "n1"}, addr))
-	if err == nil || !strings.Contains(err.Error(), "chalkctl rotate os-ca") || !strings.Contains(err.Error(), "chalkctl rotate kubernetes-ca") || !strings.Contains(err.Error(), "--force") {
+	if err == nil || !strings.Contains(err.Error(), "chalkctl rotate os-ca") || !strings.Contains(err.Error(), "chalkctl rotate kubernetes-ca") || !strings.Contains(err.Error(), "--allow-old-ca") {
 		t.Errorf("unrevoking w2: %v, want the node's refusal naming the rotations", err)
 	}
 	if list, _ := revoked.Load(ctx, cs); !list["w2"].Equal(future) {
 		t.Errorf("the refusal changed the revoked nodes: %v", list)
 	}
-	if err := ta.run(ctx, ta.args([]string{"node", "unrevoke", "w2", "--via", "n1", "--force"}, addr)); err != nil {
+	if err := ta.run(ctx, ta.args([]string{"node", "unrevoke", "w2", "--via", "n1", "--allow-old-ca"}, addr)); err != nil {
 		t.Fatal(err)
 	}
 	if got := ta.stdout.String(); !strings.HasPrefix(got, "unrevoked node w2; ") || !strings.Contains(got, "work again until they expire: the os-ca and kubernetes-ca were not rotated since") {
@@ -152,12 +152,12 @@ func TestCertificatesRefusedToRevokedNodes(t *testing.T) {
 	for _, cmd := range [][]string{{"node", "renew", "n1"}, {"config", "apply", "n1", "--kubernetes-share"}} {
 		err := ta.run(ctx, ta.args(cmd, addr))
 		if err == nil || !strings.Contains(err.Error(), "n1 is revoked since 2026-10-23T12:00:00Z") ||
-			!strings.Contains(err.Error(), "chalkctl node unrevoke n1") || !strings.Contains(err.Error(), "--force") {
+			!strings.Contains(err.Error(), "chalkctl node unrevoke n1") || !strings.Contains(err.Error(), "--ignore-revoked") {
 			t.Errorf("%v: %v, want refused as revoked", cmd, err)
 		}
 	}
-	if err := ta.run(ctx, ta.args([]string{"node", "renew", "n1", "--force"}, addr)); err != nil {
-		t.Errorf("node renew --force: %v", err)
+	if err := ta.run(ctx, ta.args([]string{"node", "renew", "n1", "--ignore-revoked"}, addr)); err != nil {
+		t.Errorf("node renew --ignore-revoked: %v", err)
 	}
 	// config apply without a share delivers no certificate.
 	if err := ta.run(ctx, ta.args([]string{"config", "apply", "n1", "--diff"}, addr)); err != nil {
@@ -166,8 +166,8 @@ func TestCertificatesRefusedToRevokedNodes(t *testing.T) {
 	if err := ta.run(ctx, ta.args([]string{"config", "apply", "n1"}, addr)); err != nil {
 		t.Errorf("config apply without --kubernetes-share: %v", err)
 	}
-	if err := ta.run(ctx, ta.args([]string{"config", "apply", "n1", "--kubernetes-share", "--force"}, addr)); err != nil && strings.Contains(err.Error(), "revoked") {
-		t.Errorf("config apply --kubernetes-share --force: %v", err)
+	if err := ta.run(ctx, ta.args([]string{"config", "apply", "n1", "--kubernetes-share", "--ignore-revoked"}, addr)); err != nil && strings.Contains(err.Error(), "revoked") {
+		t.Errorf("config apply --kubernetes-share --ignore-revoked: %v", err)
 	}
 
 	if _, _, err := revoked.Unrevoke(ctx, cs, "n1", nil); err != nil {
@@ -177,7 +177,7 @@ func TestCertificatesRefusedToRevokedNodes(t *testing.T) {
 		return true, nil, errors.New("connection refused")
 	})
 	err := ta.run(ctx, ta.args([]string{"node", "renew", "n1"}, addr))
-	if err == nil || !strings.Contains(err.Error(), "no control-plane node said which nodes are revoked") || !strings.Contains(err.Error(), "connection refused") || !strings.Contains(err.Error(), "--force") {
+	if err == nil || !strings.Contains(err.Error(), "no control-plane node said which nodes are revoked") || !strings.Contains(err.Error(), "connection refused") || !strings.Contains(err.Error(), "--ignore-revoked") {
 		t.Errorf("node renew without the list: %v", err)
 	}
 }
@@ -200,13 +200,13 @@ func TestNodeRevokeRefusesAControlPlane(t *testing.T) {
 	addr, cs := revokeNode(t, ta)
 	ctx := context.Background()
 	err := ta.run(ctx, ta.args([]string{"node", "revoke", "n1", "--via", "n1"}, addr))
-	if err == nil || !strings.Contains(err.Error(), "CA keys") || !strings.Contains(err.Error(), "chalkctl etcd leave n1") || !strings.Contains(err.Error(), "--force") {
+	if err == nil || !strings.Contains(err.Error(), "CA keys") || !strings.Contains(err.Error(), "chalkctl etcd leave n1") || !strings.Contains(err.Error(), "--allow-control-plane") {
 		t.Errorf("revoking the control plane asked: %v", err)
 	}
 	if list, _ := revoked.Load(ctx, cs); len(list) != 0 {
 		t.Errorf("the refusal revoked %v", list)
 	}
-	if err := ta.run(ctx, ta.args([]string{"node", "revoke", "n1", "--via", "n1", "--force"}, addr)); err != nil {
+	if err := ta.run(ctx, ta.args([]string{"node", "revoke", "n1", "--via", "n1", "--allow-control-plane"}, addr)); err != nil {
 		t.Fatal(err)
 	}
 	if list, _ := revoked.Load(ctx, cs); len(list) != 1 {
@@ -238,13 +238,13 @@ func TestNodeRevokeRefusesUnlessEveryControlPlaneReads(t *testing.T) {
 	})
 	err := ta.run(ctx, ta.args([]string{"node", "revoke", "w1", "--via", "n1"}, addr))
 	if err == nil || !strings.Contains(err.Error(), "n1: cannot read the revoked nodes") || !strings.Contains(err.Error(), "connection refused") ||
-		!strings.Contains(err.Error(), "--force") {
+		!strings.Contains(err.Error(), "--skip-read-check") {
 		t.Errorf("revoking w1: %v, want a refusal naming n1", err)
 	}
 	if list, _ := revoked.Load(ctx, cs); len(list) != 0 {
 		t.Errorf("the refusal revoked %v", list)
 	}
-	if err := ta.run(ctx, ta.args([]string{"node", "revoke", "w1", "--via", "n1", "--force"}, addr)); err != nil {
+	if err := ta.run(ctx, ta.args([]string{"node", "revoke", "w1", "--via", "n1", "--skip-read-check"}, addr)); err != nil {
 		t.Fatal(err)
 	}
 	if list, _ := revoked.Load(ctx, cs); len(list) != 1 {
@@ -288,22 +288,22 @@ func TestInstallAsksControlPlanesAtTheirAddresses(t *testing.T) {
 }
 
 // install refuses a name a control plane lists as revoked, and installs while bootstrapped control
-// planes cannot say which are revoked only with --force. A control plane that does not answer
-// counts as one not installed yet, as while a cluster's nodes are installed one by one.
+// planes cannot say which are revoked only with --ignore-revoked. A control plane that does not
+// answer counts as one not installed yet, as while a cluster's nodes are installed one by one.
 func TestInstallRefusesRevokedNames(t *testing.T) {
 	l := installLab(t)
 	l.revoked = []*kubernetesv1.RevokedNode{{Name: "n1", RevokedAt: timestamppb.New(revokedAt)}}
 	err := l.install()
-	if err == nil || !strings.Contains(err.Error(), "n1 is revoked since 2026-10-23T12:00:00Z") || !strings.Contains(err.Error(), "chalkctl node unrevoke n1") || !strings.Contains(err.Error(), "--force") {
+	if err == nil || !strings.Contains(err.Error(), "n1 is revoked since 2026-10-23T12:00:00Z") || !strings.Contains(err.Error(), "chalkctl node unrevoke n1") || !strings.Contains(err.Error(), "--ignore-revoked") {
 		t.Errorf("installing a revoked name: %v", err)
 	}
-	if err := l.install("--force"); err != nil {
-		t.Errorf("--force: %v", err)
+	if err := l.install("--ignore-revoked"); err != nil {
+		t.Errorf("--ignore-revoked: %v", err)
 	}
 
 	l.revoked = nil
 	l.revokedErr = map[string]string{"cp1": "read the revoked nodes: connection refused", "cp2": "read the revoked nodes: connection refused"}
-	if err := l.install(); err == nil || !strings.Contains(err.Error(), "no control-plane node said which nodes are revoked") || !strings.Contains(err.Error(), "--force") {
+	if err := l.install(); err == nil || !strings.Contains(err.Error(), "no control-plane node said which nodes are revoked") || !strings.Contains(err.Error(), "--ignore-revoked") {
 		t.Errorf("installing without the list: %v", err)
 	}
 

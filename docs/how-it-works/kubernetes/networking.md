@@ -124,7 +124,7 @@ pinned address 10.0.0.11 is not present, 5m0s after chalkos-node-addresses.targe
 
 [`chalkctl etcd leave`](../../reference/cli/chalkctl_etcd_leave.md) removes the pin together with
 the node's member. A node whose pinned address is gone runs no etcd member that could answer, so it
-leaves with `chalkctl etcd leave <node> --force`, which removes its member through the other
+leaves with `chalkctl etcd leave <node> --through-others`, which removes its member through the other
 members.
 
 ## The address families of a cluster are fixed once it exists
@@ -380,7 +380,7 @@ the sessions it leaves alone. Routers run the same FRR build and reload, which
 - Within `vxlanSourceSubnets` a source address can be forged. The kernel drops an IPv4 packet that
   claims the node's own address as its source, but has no such check for IPv6.
 - A control plane whose pinned address is gone does not start etcd or the control plane until the
-  address returns, or until the node leaves etcd with `chalkctl etcd leave --force` and is
+  address returns, or until the node leaves etcd with `chalkctl etcd leave --through-others` and is
   reinstalled.
 
 ## Related pages

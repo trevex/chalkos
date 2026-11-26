@@ -74,8 +74,9 @@ rollback ends it at once. See
 
 --kubernetes-share also delivers a new Kubernetes share, such as a worker's new kubelet
 certificate. It is refused to a node revoked with chalkctl node revoke, and while no control plane
-says which nodes are revoked; --force delivers it without asking. The command needs the secrets
-file.
+says which nodes are revoked; --ignore-revoked delivers it without asking.
+
+The command needs the secrets file.
 
 ## Flags
 
@@ -86,9 +87,9 @@ file.
 | `--allow-downtime`{ #flag-allow-downtime } | boolean | `false` | Deliver a new API server version to a control plane of a cluster with one or two, whose API may be unavailable while that control plane's API server restarts. |
 | `--diff`{ #flag-diff } | boolean | `false` | Print the diff against the node's config and change nothing; the node checks nothing. |
 | `--dry-run`{ #flag-dry-run } | boolean | `false` | Have the node check the config as for a delivery and print the diff and plan; changes nothing. |
-| `--force`{ #flag-force } | boolean | `false` | With --kubernetes-share, deliver without asking whether the node is revoked. |
 | `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |
 | `--ignore-readiness`{ #flag-ignore-readiness } | boolean | `false` | Make failed runtime readiness checks of a delivery to the running image warnings, and let their effects continue. |
+| `--ignore-revoked`{ #flag-ignore-revoked } | boolean | `false` | With --kubernetes-share, deliver without asking whether the node is revoked. |
 | `--ignore-unit`{ #flag-ignore-unit } | list of string | — | With --try, leave the unit out of the health check the confirmation waits for, as the image's check leaves out the units it ignores. |
 | `--inventory`{ #flag-inventory } | string | $CHALKOSINVENTORY, else chalkos.yaml in the current directory, when it exists | Inventory naming the cluster's nodes, their addresses and their config files. |
 | `--kubernetes-share`{ #flag-kubernetes-share } | boolean | `false` | Also deliver a new Kubernetes share, such as a new kubelet certificate for a worker. |

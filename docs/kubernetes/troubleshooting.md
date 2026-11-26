@@ -199,7 +199,7 @@ etcd nor the kubelet.
 Set `ipFamilies` back to the families after `created with`, in that order, and deliver the config
 with `chalkctl config apply cp1 --secrets=secrets.age`. A node whose running config holds the
 changed families already refuses that change too. Then take it out of etcd with
-`chalkctl etcd leave cp1 --force` and reinstall it, as [A control plane lost its pinned
+`chalkctl etcd leave cp1 --through-others` and reinstall it, as [A control plane lost its pinned
 address](ha-control-plane.md#a-control-plane-lost-its-pinned-address) describes.
 
 ## The kubelet certificate was lost with VAR
@@ -247,7 +247,7 @@ The name `w1` is in the cluster's revoked nodes, which `chalkctl status cp1` lis
   `kubernetes-ca`, then run `chalkctl node unrevoke w1`, as
   [Reuse a removed node's name](../operate/add-remove-nodes.md#reuse-a-removed-nodes-name)
   describes.
-- A node revoked by mistake comes back with `chalkctl node unrevoke w1 --force`, which lets its
+- A node revoked by mistake comes back with `chalkctl node unrevoke w1 --allow-old-ca`, which lets its
   old certificates work again. Then reboot it with `chalkctl node reboot w1 --no-drain`, because
   its kubelet registers its Node only as it starts.
 

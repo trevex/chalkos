@@ -64,9 +64,9 @@ func TestEtcdMembers(t *testing.T) {
 	}
 }
 
-// --force reaches the node: without it the node refuses to leave while its own member does not
+// --through-others reaches the node: without it the node refuses to leave while its own member does not
 // answer, with it the node goes on to the quorum guard.
-func TestEtcdLeaveForce(t *testing.T) {
+func TestEtcdLeaveThroughOthers(t *testing.T) {
 	ta := newTestApp(t)
 	s := etcdNode(t, ta, func(o *kubernetesplugin.Options) {
 		local := o.LocalEtcd
@@ -80,10 +80,10 @@ func TestEtcdLeaveForce(t *testing.T) {
 	})
 	addr := ta.startNode(t, s)
 	err := ta.run(context.Background(), ta.args([]string{"etcd", "leave", "n1"}, addr))
-	if err == nil || !strings.Contains(err.Error(), "pass --force") {
-		t.Errorf("err = %v, want a refusal naming --force", err)
+	if err == nil || !strings.Contains(err.Error(), "pass --through-others") {
+		t.Errorf("err = %v, want a refusal naming --through-others", err)
 	}
-	err = ta.run(context.Background(), ta.args([]string{"etcd", "leave", "n1", "--force"}, addr))
+	err = ta.run(context.Background(), ta.args([]string{"etcd", "leave", "n1", "--through-others"}, addr))
 	if err == nil || !strings.Contains(err.Error(), "etcd's last voter") {
 		t.Errorf("err = %v, want a refusal for the last voter", err)
 	}

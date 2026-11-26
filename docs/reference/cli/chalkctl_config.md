@@ -8,7 +8,9 @@ description: "Deliver a node's config and act on its trial or pending config"
 Delivers a node's config from the inventory and acts on its trial or pending config. config
 apply delivers the config, and chalkctl apply is its short form. config confirm confirms a config
 on trial, config rollback delivers a node's previous config again, and config discard drops the
-config a node holds pending for its next upgrade. The commands need the secrets file.
+config a node holds pending for its next upgrade.
+
+Its commands need the secrets file.
 
 ## Examples
 

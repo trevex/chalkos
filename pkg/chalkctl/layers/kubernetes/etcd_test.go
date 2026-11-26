@@ -28,7 +28,7 @@ func TestTryNextControlPlane(t *testing.T) {
 		{notMember, true},
 		// The message alone does not tell chalkctl to move on.
 		{connect.NewError(connect.CodeFailedPrecondition, "the node is not an etcd member; ask another control-plane node"), false},
-		{connect.NewError(connect.CodeFailedPrecondition, "removing cp2 would leave etcd without a healthy quorum; pass --force to remove it anyway"), false},
+		{connect.NewError(connect.CodeFailedPrecondition, "removing cp2 would leave etcd without a healthy quorum; pass --ignore-quorum to remove it anyway"), false},
 		{connect.NewError(connect.CodeNotFound, "etcd has no member cp9"), false},
 		{errors.New("certificate mismatch"), false},
 	} {

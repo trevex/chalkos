@@ -22,8 +22,7 @@ registry, names each node whose config is not, and warns of a node whose SystemD
 which holds its keys and secrets, unencrypted, and of each image reference that names a tag but no
 digest, which nodes pull by whatever the tag points to when they pull. A layer warns of what the
 nodes' config together leaves open, such as flannel's VXLAN taken from any source, with the
-ranges of the nodes' addresses to set instead. It reaches no node and needs no secrets file or
-client file.
+ranges of the nodes' addresses to set instead. It reaches no node.
 
 validate reads the file:// sources of Secret documents and decrypts no sops:// or age:// source,
 so it asks for no key. It checks each key of such a source with a placeholder value, which no
@@ -35,6 +34,8 @@ A config validate passes can still be refused on delivery: validate runs no rule
 node's facts or its running config, none of the image's other validators, and none of its
 renderers or their checks. chalkctl config apply --dry-run has the node run all of them, and
 changes nothing.
+
+The command needs no secrets file or client file.
 
 ## Flags
 

@@ -16,21 +16,22 @@ chalkctl rotate os-ca and chalkctl rotate kubernetes-ca, each to its finish, fir
 installed afresh under the name then joins as usual. See
 [Revoking a node cuts off its writes and renewals](../../how-it-works/kubernetes/certificates.md#revoking-a-node-cuts-off-its-writes-and-renewals).
 
---force unrevokes the node anyway, and its old certificates work again until they expire. The old
-node does not come back by itself: its kubelet registers its Node once as it starts, so reboot it
-with chalkctl node reboot --no-drain, as its Node is gone and holds nothing to drain, or restart
+--allow-old-ca unrevokes the node anyway, and its old certificates work again until they expire. The
+old node does not come back by itself: its kubelet registers its Node once as it starts, so reboot
+it with chalkctl node reboot --no-drain, as its Node is gone and holds nothing to drain, or restart
 its kubelet.
 
-A control plane unrevokes the node: --via, or the first one that answers. The command needs an
-admin client file or the secrets file.
+A control plane unrevokes the node: --via, or the first one that answers.
+
+The command needs an admin client file or the secrets file.
 
 ## Flags
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
 | `--address`{ #flag-address } | list of [NODE=]ADDR | each node's address in the inventory | Address of a node's chalkd: ADDR for the one node the command reaches, or NODE=ADDR for any node, where ADDR is host or host:port; may be repeated. |
+| `--allow-old-ca`{ #flag-allow-old-ca } | boolean | `false` | Unrevoke the node although the OS CA or the Kubernetes CA predates its revocation, so its old certificates work again. |
 | `--config`{ #flag-config } | string | $CHALKOSCONFIG, else ~/.config/chalkos/config, unless --secrets is given | Client file to authenticate with instead of the secrets file. |
-| `--force`{ #flag-force } | boolean | `false` | Unrevoke the node although the OS CA or the Kubernetes CA predates its revocation, so its old certificates work again. |
 | `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |
 | `--inventory`{ #flag-inventory } | string | $CHALKOSINVENTORY, else chalkos.yaml in the current directory, when it exists | Inventory naming the cluster's nodes, their addresses and their config files. |
 | `--secrets`{ #flag-secrets } | string | — | Cluster secrets path (.age, .enc.*, or plaintext), provider URI, or - for standard input. |
@@ -43,7 +44,7 @@ admin client file or the secrets file.
 chalkctl node unrevoke w1
 
 # Let the old w1 back in, certificates and all.
-chalkctl node unrevoke w1 --force
+chalkctl node unrevoke w1 --allow-old-ca
 chalkctl node reboot w1 --no-drain
 ```
 

@@ -258,11 +258,11 @@ too. It refuses a node that is installed already, with
     chalkctl asks the other control planes of the inventory for the revoked nodes, and refuses a
     name that `chalkctl node revoke` revoked, with
     `cp3 is revoked since <time>, and install installs cp3 only once chalkctl node unrevoke cp3
-    lets it back in, or with --force`.
+    lets it back in, or with --ignore-revoked`.
     It also refuses while control planes were bootstrapped and none says which nodes are revoked.
     A control plane that does not answer as an installed node, such as one in maintenance mode or
     switched off, counts as not installed yet, so the cluster's first nodes install while the
-    others wait. `--force` installs without asking.
+    others wait. `--ignore-revoked` installs without asking.
     [Reuse a removed node's name](add-remove-nodes.md#reuse-a-removed-nodes-name) frees the name.
 
 The installer gets the image as well. For an image in a registry it pulls the image itself, as the
@@ -335,7 +335,9 @@ slot A of the target disk /dev/nvme0n1 (model "...", size ..., serial "...") hol
     With `--wipe-disk`, the installer replaces whatever the disk holds, an installed node
     included, and nothing on it can be recovered. Check the disk in `chalkctl disks` first. A
     disk on which `blkid` finds no signature counts as empty without the flag, even when it
-    holds data.
+    holds data. Once chalkctl printed the disk it installs onto, it asks for the node's name
+    before the installer touches the disk. Without a terminal, as in a script, the command
+    refuses unless `--yes` is given.
 
 [Add and remove nodes](add-remove-nodes.md) covers reinstalling a node that is part of the
 cluster.

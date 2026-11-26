@@ -6,7 +6,9 @@ description: "Pull chalkos images from a registry"
 # chalkctl image
 
 Fetches chalkos images from a registry to the local disk, for sites, labs and tools that read
-an image from a directory. Its command needs no secrets file or client file.
+an image from a directory.
+
+Its command needs no secrets file or client file.
 
 ## Examples
 

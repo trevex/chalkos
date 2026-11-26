@@ -257,8 +257,8 @@ func TestKubernetesCluster(t *testing.T) {
 // revocation revokes w1 through cp1, after which cp1 lists it as revoked, refuses to renew its
 // node certificate and the API server denies its kubelet's writes; the test impersonates the
 // kubelet as the kubeconfig's admin. Unrevoking w1 is refused, as the OS CA and the Kubernetes
-// CA predate the revocation, until --force. A kubelet registers its Node once, when it starts:
-// w1 reboots to register again, and turns Ready.
+// CA predate the revocation, until --allow-old-ca. A kubelet registers its Node once, when it
+// starts: w1 reboots to register again, and turns Ready.
 func revocation(t *testing.T, ctx context.Context, nodes map[string]*node, kubeconfig string) {
 	t.Helper()
 	w1, cp1 := nodes["w1"], nodes["cp1"]
@@ -308,10 +308,10 @@ func revocation(t *testing.T, ctx context.Context, nodes map[string]*node, kubec
 
 	out, err := chalkctl(t, cp1, "base", "node", "unrevoke", "w1", "--via", "cp1")
 	if err == nil || !strings.Contains(out, "chalkctl rotate os-ca") || !strings.Contains(out, "chalkctl rotate kubernetes-ca") {
-		t.Errorf("unrevoking w1 without --force: %v, want refused naming os-ca and kubernetes-ca", err)
+		t.Errorf("unrevoking w1 without --allow-old-ca: %v, want refused naming os-ca and kubernetes-ca", err)
 	}
-	if _, err := chalkctl(t, cp1, "base", "node", "unrevoke", "w1", "--via", "cp1", "--force"); err != nil {
-		t.Fatalf("unrevoke w1 --force: %v", err)
+	if _, err := chalkctl(t, cp1, "base", "node", "unrevoke", "w1", "--via", "cp1", "--allow-old-ca"); err != nil {
+		t.Fatalf("unrevoke w1 --allow-old-ca: %v", err)
 	}
 	if _, err := cs.CoreV1().Nodes().Get(ctx, "w1", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
 		t.Errorf("w1's Node after the unrevoke, before w1 rebooted: %s, want not found", describe(err))

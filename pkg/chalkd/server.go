@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"path/filepath"
 	"slices"
@@ -269,6 +270,9 @@ var permissions = map[string]layer.Permission{
 	nodev1connect.NodeServiceActivateImageProcedure: {Modes: layer.NormalOnly, Role: pki.RoleOperator},
 	nodev1connect.NodeServiceRollbackImageProcedure: {Modes: layer.NormalOnly, Role: pki.RoleOperator, Console: layer.ConsoleAction},
 }
+
+// Permissions are the permissions of the node API's procedures, for the tests of its clients.
+func Permissions() map[string]layer.Permission { return maps.Clone(permissions) }
 
 // gate is where a procedure may be called: its permission and its layer, layers.Base for the
 // node API.

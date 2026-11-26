@@ -11,9 +11,11 @@ chalkctl etcd remove-member <node|id> [flags]
 
 Removes another node's etcd member, named by its node or its member ID: for example the member
 of a node that is gone. The removal is refused when the voters left would have fewer healthy
-members than their quorum, unless --force is given. A control plane other than the removed one
-does the removal: --via, or the first one that answers. The command needs an admin client file
-or the secrets file.
+members than their quorum, unless --ignore-quorum is given, and etcd then accepts no writes until
+enough members are healthy again. A control plane other than the removed one does the removal:
+--via, or the first one that answers.
+
+The command needs an admin client file or the secrets file.
 
 ## Flags
 
@@ -21,8 +23,8 @@ or the secrets file.
 | --- | --- | --- | --- |
 | `--address`{ #flag-address } | list of [NODE=]ADDR | each node's address in the inventory | Address of a node's chalkd: ADDR for the one node the command reaches, or NODE=ADDR for any node, where ADDR is host or host:port; may be repeated. |
 | `--config`{ #flag-config } | string | $CHALKOSCONFIG, else ~/.config/chalkos/config, unless --secrets is given | Client file to authenticate with instead of the secrets file. |
-| `--force`{ #flag-force } | boolean | `false` | Remove the member even when the voters left would have no healthy quorum. |
 | `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |
+| `--ignore-quorum`{ #flag-ignore-quorum } | boolean | `false` | Remove the member even when the voters left would have no healthy quorum. |
 | `--inventory`{ #flag-inventory } | string | $CHALKOSINVENTORY, else chalkos.yaml in the current directory, when it exists | Inventory naming the cluster's nodes, their addresses and their config files. |
 | `--secrets`{ #flag-secrets } | string | — | Cluster secrets path (.age, .enc.*, or plaintext), provider URI, or - for standard input. |
 | `--via`{ #flag-via } | string | the first other one that answers | Control plane that removes the member, which a bare --address reaches. |

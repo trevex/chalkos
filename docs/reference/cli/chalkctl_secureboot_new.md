@@ -18,6 +18,8 @@ directory must not exist or be empty.
 chalkbuild sign signs images with db.key and db.crt. Whoever holds PK.key or KEK.key can change
 which images the firmware starts, so keep the directory offline and backed up.
 
+The command needs no secrets file or client file.
+
 ## Flags
 
 | Flag | Type | Default | Description |

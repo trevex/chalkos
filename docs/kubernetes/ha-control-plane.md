@@ -315,8 +315,8 @@ $ chalkctl etcd remove-member cp3
 removed the etcd member cp3 (af880a99b80b32b3)
 ```
 
-The same quorum guard applies. `--force` skips it, and etcd then accepts no writes until enough of
-the remaining members are healthy again.
+The same quorum guard applies. `--ignore-quorum` skips it, and etcd then accepts no writes until
+enough of the remaining members are healthy again.
 
 Then install the replacement machine under the same name. Give it the addresses of the node's
 `Network` document, so the inventory's address stays right. Change its `SystemDisk` if the new disk
@@ -382,7 +382,7 @@ A control plane's Kubernetes line in `chalkctl status` names what holds it back,
 
 | Status | Cause | Fix |
 | --- | --- | --- |
-| `preparation failed: pinned address ... is not present` | The node booted without one of the addresses it was pinned to when it became an etcd member. | Restore the address and reboot. Or remove its member with `chalkctl etcd remove-member <node>`, as the status suggests, or with `chalkctl etcd leave <node> --force`, which also cleans up the node; then reinstall it. |
+| `preparation failed: pinned address ... is not present` | The node booted without one of the addresses it was pinned to when it became an etcd member. | Restore the address and reboot. Or remove its member with `chalkctl etcd remove-member <node>`, as the status suggests, or with `chalkctl etcd leave <node> --through-others`, which also cleans up the node; then reinstall it. |
 | `joining the cluster at ...: etcd has a member <node> already; remove it with chalkctl etcd remove-member <node>` | The node was reinstalled without leaving etcd, and its old member is still there. | Run the command the status names. The node tries again every 10 seconds and joins. |
 | `left etcd; reinstall the node to join the cluster again` | The node left etcd with `chalkctl etcd leave`. | Reinstall it. |
 | `etcd data missing: restore etcd or reinstall the node` | The node is an etcd member, but VAR lost its etcd data. | chalkos cannot restore etcd. Run `chalkctl etcd remove-member <node>`, then reinstall it. |
@@ -410,8 +410,8 @@ kubernetes controlplane: preparation failed: pinned address 192.168.123.13 is no
 ```
 
 The other two keep the cluster running. Restore the address and reboot the node, or take it out.
-Its own etcd member does not answer, so `chalkctl etcd leave cp3` refuses without `--force`. With
-`--force` it removes the member through the others and cleans up the node. Then reinstall it.
+Its own etcd member does not answer, so `chalkctl etcd leave cp3` refuses without `--through-others`.
+With `--through-others` it removes the member through the others and cleans up the node. Then reinstall it.
 
 [Recover a node](../operate/recover-node.md) covers nodes that do not unlock or boot.
 [Troubleshoot Kubernetes](troubleshooting.md) starts from symptoms.

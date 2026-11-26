@@ -12,7 +12,7 @@ talks to chalkd on each node over mutual TLS, and never builds or signs images.
 
 Commands authenticate with the cluster's secrets file, which holds every CA key and which only
 --secrets names, or with a client file of the admin, operator or reader role, which chalkctl client
-new writes. Each command's help says which it needs. A command that accepts both takes --config or
+new writes. Each command's help says which it takes. A command that accepts both takes --config or
 --secrets, not both, else the client file $CHALKOSCONFIG names, else ~/.config/chalkos/config.
 
 A command's flags go after its name, anywhere among its arguments, and -- ends them: every

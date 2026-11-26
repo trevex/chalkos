@@ -19,11 +19,13 @@ holds pending for its next upgrade, unchecked, and since when; the previous conf
 rollback restores; whether its store is the image the inventory names for it; its volumes and
 their state; Kubernetes, with the nodes revoked in the cluster on a control plane; a router's BGP
 sessions; the certificates it serves and when they expire; the CAs it trusts; its clock; and the
-units that failed. The command needs a reader client file or the secrets file.
+units that failed.
 
 status decrypts no sops:// or age:// source of a Secret document, so it asks for no key. When the
 config the inventory gives the node takes values from such sources, status does not know its
 version: it says so in place of comparing it, and chalkctl config apply --diff &lt;node> compares it.
+
+The command needs a reader client file or the secrets file.
 
 ## Flags
 

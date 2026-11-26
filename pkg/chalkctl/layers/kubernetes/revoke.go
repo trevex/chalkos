@@ -17,38 +17,40 @@ import (
 )
 
 func nodeRevokeCommand(h layer.Host) *cobra.Command {
-	var f viaFlags
+	var f revokeFlags
 	cmd := h.Command(&cobra.Command{
-		Use:     "revoke <node>",
-		Short:   "Cut a node off the cluster by name",
-		Long:    nodeRevokeLong,
-		Example: nodeRevokeExample,
-		Args:    cli.ExactArgs(1),
+		Use:         "revoke <node>",
+		Short:       "Cut a node off the cluster by name",
+		Long:        nodeRevokeLong,
+		Example:     nodeRevokeExample,
+		Args:        cli.ExactArgs(1),
+		Annotations: layer.Meta{Credentials: layer.Admin}.Annotations(),
 	}, func(h layer.Host, ctx context.Context, pos []string) error { return nodeRevoke(h, ctx, f, pos) })
 	f.node.RegisterClient(cmd.Flags())
 	fs := cmd.Flags()
 	fs.StringVar(&f.via, "via", "", "control plane that revokes the node, which a bare --address reaches (default the first other one that answers)")
-	fs.BoolVar(&f.force, "force", false, "revoke the node although it is a control plane, an etcd member or the one --via names, or although a control plane cannot read the revoked nodes")
+	fs.BoolVar(&f.override, "allow-control-plane", false, "revoke the node although it is a control plane, an etcd member or the one --via names")
+	fs.BoolVar(&f.skipReadCheck, "skip-read-check", false, "revoke the node although a control plane does not answer or cannot read the revoked nodes")
 	return cmd
 }
 
-func nodeRevoke(h layer.Host, ctx context.Context, f viaFlags, pos []string) error {
+func nodeRevoke(h layer.Host, ctx context.Context, f revokeFlags, pos []string) error {
 	name := pos[0]
-	if err := keepsRevokedNodes(h, ctx, f); err != nil {
+	if err := keepsRevokedNodes(h, ctx, f.viaFlags); err != nil {
 		return err
 	}
-	if f.via == name && !f.force {
+	if f.via == name && !f.override {
 		return fmt.Errorf("%s is the control plane asked to revoke it; %s", name, controlPlaneRevocation(name))
 	}
-	if !f.force {
-		if err := controlPlanesRead(h, ctx, f, name); err != nil {
+	if !f.skipReadCheck {
+		if err := controlPlanesRead(h, ctx, f.viaFlags, name); err != nil {
 			return err
 		}
 	}
 	var resp *kubernetesv1.RevokeNodeResponse
 	// A control plane is not asked to revoke itself.
-	err := throughControlPlane(h, ctx, f, name, func(conn *client.Conn) error {
-		if !f.force {
+	err := throughControlPlane(h, ctx, f.viaFlags, name, func(conn *client.Conn) error {
+		if !f.override {
 			m, err := Client(conn).EtcdMembers(ctx, &kubernetesv1.EtcdMembersRequest{})
 			if err != nil {
 				return err
@@ -121,7 +123,7 @@ func everyControlPlaneReads(ctx context.Context, controlPlanes []string, name st
 	if len(why) == 0 {
 		return nil
 	}
-	return fmt.Errorf("not every control-plane node reads the revoked nodes (%s); repair those, or pass --force to revoke %s anyway", strings.Join(why, "; "), name)
+	return fmt.Errorf("not every control-plane node reads the revoked nodes (%s); repair those, or pass --skip-read-check to revoke %s anyway", strings.Join(why, "; "), name)
 }
 
 // etcdMemberRefusal refuses to revoke a node that is still an etcd member, a control plane.
@@ -138,7 +140,7 @@ func etcdMemberRefusal(name string, members []*kubernetesv1.EtcdMember) error {
 func controlPlaneRevocation(name string) string {
 	return fmt.Sprintf("revoking a control plane does not cut it off, because it holds the CA keys: take it out of etcd with "+
 		"chalkctl etcd leave %s, or chalkctl etcd remove-member %s if it is gone, then rotate its CAs with chalkctl rotate os-ca "+
-		"and chalkctl rotate kubernetes-ca; pass --force to revoke it anyway", name, name)
+		"and chalkctl rotate kubernetes-ca; pass --allow-control-plane to revoke it anyway", name, name)
 }
 
 // keepsRevokedNodes refuses a cluster whose inventory names no control plane, which keeps no
@@ -164,16 +166,17 @@ func keepsRevokedNodes(h layer.Host, ctx context.Context, f viaFlags) error {
 func nodeUnrevokeCommand(h layer.Host) *cobra.Command {
 	var f viaFlags
 	cmd := h.Command(&cobra.Command{
-		Use:     "unrevoke <node>",
-		Short:   "Let a revoked node's name join the cluster again",
-		Long:    nodeUnrevokeLong,
-		Example: nodeUnrevokeExample,
-		Args:    cli.ExactArgs(1),
+		Use:         "unrevoke <node>",
+		Short:       "Let a revoked node's name join the cluster again",
+		Long:        nodeUnrevokeLong,
+		Example:     nodeUnrevokeExample,
+		Args:        cli.ExactArgs(1),
+		Annotations: layer.Meta{Credentials: layer.Admin}.Annotations(),
 	}, func(h layer.Host, ctx context.Context, pos []string) error { return nodeUnrevoke(h, ctx, f, pos) })
 	fs := cmd.Flags()
 	f.node.RegisterClient(fs)
 	fs.StringVar(&f.via, "via", "", "control plane that unrevokes the node (default the first one that answers)")
-	fs.BoolVar(&f.force, "force", false, "unrevoke the node although the OS CA or the Kubernetes CA predates its revocation, so its old certificates work again")
+	fs.BoolVar(&f.override, "allow-old-ca", false, "unrevoke the node although the OS CA or the Kubernetes CA predates its revocation, so its old certificates work again")
 	return cmd
 }
 
@@ -183,7 +186,7 @@ func nodeUnrevoke(h layer.Host, ctx context.Context, f viaFlags, pos []string) e
 	}
 	var resp *kubernetesv1.UnrevokeNodeResponse
 	err := throughControlPlane(h, ctx, f, "", layer.Fetch(&resp, func(conn *client.Conn) (*kubernetesv1.UnrevokeNodeResponse, error) {
-		return Client(conn).UnrevokeNode(ctx, &kubernetesv1.UnrevokeNodeRequest{Node: pos[0], Force: f.force})
+		return Client(conn).UnrevokeNode(ctx, &kubernetesv1.UnrevokeNodeRequest{Node: pos[0], Force: f.override})
 	}))
 	if err != nil {
 		return err
@@ -216,4 +219,11 @@ func unrevokedLine(name string, at time.Time, stale []string) string {
 		"the old %s's kubelet does not register its Node again by itself: reboot it with chalkctl node reboot %s --no-drain, or restart its kubelet; "+
 		"a node installed afresh as %s registers as usual",
 		name, when, strings.Join(stale, " and "), verb, name, name, name)
+}
+
+// revokeFlags are node revoke's flags: --allow-control-plane is the override of viaFlags.
+type revokeFlags struct {
+	viaFlags
+	// skipReadCheck revokes the node although a control plane cannot say which nodes are revoked.
+	skipReadCheck bool
 }

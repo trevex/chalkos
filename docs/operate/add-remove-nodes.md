@@ -205,7 +205,7 @@ From then on:
 - The API server denies every write by its kubelet, so the kubelet can neither register its Node
   again nor renew its kubelet client certificate.
 - `chalkctl rotate` skips the node, and `chalkctl node renew`,
-  `chalkctl config apply --kubernetes-share` and `chalkctl install` refuse it unless `--force` is
+  `chalkctl config apply --kubernetes-share` and `chalkctl install` refuse it unless `--ignore-revoked` is
   given.
 
 The command needs an admin client file or the secrets file. It goes through a control plane:
@@ -219,10 +219,10 @@ Before it revokes the node, `chalkctl node revoke` asks every other control plan
 the revoked nodes, and refuses while one does not answer or cannot read the list:
 
 ```text
-chalkctl: not every control-plane node reads the revoked nodes (cp2: cannot read the revoked nodes: read the revoked nodes: connection refused); repair those, or pass --force to revoke w1 anyway
+chalkctl: not every control-plane node reads the revoked nodes (cp2: cannot read the revoked nodes: read the revoked nodes: connection refused); repair those, or pass --skip-read-check to revoke w1 anyway
 ```
 
-Repair that control plane, then revoke again. `--force` revokes the node at once; the API server
+Repair that control plane, then revoke again. `--skip-read-check` revokes the node at once; the API server
 denies its writes all the same.
 
 A control plane also refuses a revocation that would make the list too long for the API server to
@@ -247,7 +247,7 @@ control plane that `--via` names. Take the control plane out of etcd first, with
 then rotate `os-ca` and `kubernetes-ca` with `chalkctl rotate`, as
 [Manage access and certificates](access.md#rotate-the-os-ca) and
 [Rotate the Kubernetes CAs and keys](../kubernetes/rotate-kubernetes-cas.md) describe.
-`--force` revokes an etcd member all the same.
+`--allow-control-plane` revokes an etcd member all the same.
 
 Revocation needs the Kubernetes layer. A node whose image lacks it answers
 `chalkctl node revoke` and `chalkctl node unrevoke` with `UNIMPLEMENTED` and
@@ -289,14 +289,14 @@ revocation. While one of them predates it, the old node's certificates would wor
 `chalkctl node unrevoke` refuses and names the rotations missing:
 
 ```text
-chalkctl: cp1: failed_precondition: w1 was revoked at 2026-10-23T22:42:25Z, but the OS CA (chalkctl rotate os-ca) and the Kubernetes CA (chalkctl rotate kubernetes-ca) may predate the revocation: the old node's certificates would work again until they expire; rotate them first, or pass --force to unrevoke w1 anyway
+chalkctl: cp1: failed_precondition: w1 was revoked at 2026-10-23T22:42:25Z, but the OS CA (chalkctl rotate os-ca) and the Kubernetes CA (chalkctl rotate kubernetes-ca) may predate the revocation: the old node's certificates would work again until they expire; rotate them first, or pass --allow-old-ca to unrevoke w1 anyway
 ```
 
-`--force` unrevokes the node without the rotations. Use it to let the old machine back in, for
+`--allow-old-ca` unrevokes the node without the rotations. Use it to let the old machine back in, for
 example after revoking the wrong node. Its old certificates then work again until they expire:
 
 ```console
-$ chalkctl node unrevoke w1 --force --secrets=secrets.age
+$ chalkctl node unrevoke w1 --allow-old-ca --secrets=secrets.age
 unrevoked node w1; its certificates from before 2026-10-23T22:42:25Z work again until they expire: the os-ca and kubernetes-ca were not rotated since
 the old w1's kubelet does not register its Node again by itself: reboot it with chalkctl node reboot w1 --no-drain, or restart its kubelet; a node installed afresh as w1 registers as usual
 ```

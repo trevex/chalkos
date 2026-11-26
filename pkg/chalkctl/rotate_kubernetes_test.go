@@ -26,8 +26,8 @@ func TestRotateOneAtATime(t *testing.T) {
 			t.Errorf("rotate %v while the service-account key rotates: %v", args, err)
 		}
 	}
-	if err := l.rotate("os-ca", "--force"); err == nil {
-		t.Error("--force without --finish was accepted")
+	if err := l.rotate("os-ca", "--now"); err == nil {
+		t.Error("--now without --finish was accepted")
 	}
 }
 
@@ -138,9 +138,9 @@ func TestRotateEncryptionKey(t *testing.T) {
 	if err := l.rotate("encryption-key", "--finish"); err == nil || !strings.Contains(err.Error(), "1 object encrypted with the old key") {
 		t.Fatalf("err = %v, want the finish refused", err)
 	}
-	// --force overrides the service-account key's wait alone, never data left under the old key.
-	if err := l.rotate("encryption-key", "--finish", "--force"); err == nil || !strings.Contains(err.Error(), "1 object encrypted with the old key") {
-		t.Fatalf("--force: err = %v, want the finish refused", err)
+	// --now overrides the service-account key's wait alone, never data left under the old key.
+	if err := l.rotate("encryption-key", "--finish", "--now"); err == nil || !strings.Contains(err.Error(), "1 object encrypted with the old key") {
+		t.Fatalf("--now: err = %v, want the finish refused", err)
 	}
 	if l.phase() != "refresh applied" {
 		t.Errorf("a refused finish left %q", l.phase())
@@ -189,8 +189,8 @@ func TestRotateServiceAccountKeyWaitsAnHour(t *testing.T) {
 		t.Errorf("the addons did not restart with tokens of the new key: %v", events)
 	}
 	l.switchedAgo(59 * time.Minute)
-	if err := l.rotate("service-account-key", "--finish"); err == nil || !strings.Contains(err.Error(), "--force") {
-		t.Fatalf("err = %v, want a refusal within the hour naming --force", err)
+	if err := l.rotate("service-account-key", "--finish"); err == nil || !strings.Contains(err.Error(), "--now") {
+		t.Fatalf("err = %v, want a refusal within the hour naming --now", err)
 	}
 	l.switchedAgo(61 * time.Minute)
 	if err := l.rotate("service-account-key", "--finish"); err != nil {

@@ -159,17 +159,18 @@ type clientNewFlags struct {
 	secrets         layer.SecretsFlags
 	name, role, out string
 	ttl             time.Duration
-	force           bool
+	overwrite       bool
 }
 
 func (a *app) clientNewCommand() *cobra.Command {
 	var f clientNewFlags
 	cmd := a.command(&cobra.Command{
-		Use:     "new",
-		Short:   "Write a client file, which operates the cluster without the secrets file",
-		Long:    clientNewLong,
-		Example: clientNewExample,
-		Args:    cli.NoArgs,
+		Use:         "new",
+		Short:       "Write a client file, which operates the cluster without the secrets file",
+		Long:        clientNewLong,
+		Example:     clientNewExample,
+		Args:        cli.NoArgs,
+		Annotations: layer.Meta{Credentials: layer.SecretsFile}.Annotations(),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.clientNew(ctx, f) })
 	fs := cmd.Flags()
 	f.secrets.Register(fs)
@@ -179,7 +180,7 @@ func (a *app) clientNewCommand() *cobra.Command {
 	cmd.MarkFlagRequired("role")
 	fs.DurationVar(&f.ttl, "ttl", 0, "validity of the certificate (default 720h for an admin, 2160h for an operator, 8760h for a reader)")
 	fs.StringVar(&f.out, "out", "", "file to write (default ~/.config/chalkos/config)")
-	fs.BoolVar(&f.force, "force", false, "replace an existing file")
+	fs.BoolVar(&f.overwrite, "overwrite", false, "replace an existing file")
 	return cmd
 }
 
@@ -214,10 +215,10 @@ func (a *app) clientNew(ctx context.Context, f clientNewFlags) error {
 		return err
 	}
 	// The file holds the user's private key.
-	if f.force {
+	if f.overwrite {
 		err = atomicfile.WriteFile(path, data, 0o600)
 	} else if _, statErr := os.Stat(path); statErr == nil {
-		return fmt.Errorf("%s exists; pass --force to replace it", path)
+		return fmt.Errorf("%s exists; pass --overwrite to replace it", path)
 	} else {
 		err = atomicfile.WriteNew(path, data, 0o600)
 	}

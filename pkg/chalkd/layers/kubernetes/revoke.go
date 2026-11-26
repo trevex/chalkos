@@ -76,7 +76,7 @@ func (p *Plugin) UnrevokeNode(ctx context.Context, req *kubernetesv1.UnrevokeNod
 			return layer.Errorf(connect.CodeInternal, "%w", err)
 		}
 		if len(stale) > 0 && !req.Force {
-			return layer.Errorf(connect.CodeFailedPrecondition, "%s; rotate them first, or pass --force to unrevoke %s anyway", staleWarning(name, at, stale), name)
+			return layer.Errorf(connect.CodeFailedPrecondition, "%s; rotate them first, or pass --allow-old-ca to unrevoke %s anyway", staleWarning(name, at, stale), name)
 		}
 		return nil
 	})

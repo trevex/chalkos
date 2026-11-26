@@ -23,20 +23,24 @@ gone, then rotate os-ca and kubernetes-ca. A cluster without Kubernetes keeps no
 there chalkctl rotate os-ca cuts a node off.
 
 The command first asks every other control plane whether it reads the revoked nodes, and refuses
-while one does not answer or does not say it read them. --force revokes the node despite either
-refusal. A control plane revokes the node: --via, or the first other one that answers. The command
-needs an admin client file or the secrets file.
+while one does not answer or does not say it read them. --allow-control-plane revokes a control
+plane, an etcd member or the node --via names all the same, and --skip-read-check revokes the node
+without asking the other control planes. A control plane revokes the node: --via, or the first
+other one that answers.
+
+The command needs an admin client file or the secrets file.
 
 ## Flags
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
 | `--address`{ #flag-address } | list of [NODE=]ADDR | each node's address in the inventory | Address of a node's chalkd: ADDR for the one node the command reaches, or NODE=ADDR for any node, where ADDR is host or host:port; may be repeated. |
+| `--allow-control-plane`{ #flag-allow-control-plane } | boolean | `false` | Revoke the node although it is a control plane, an etcd member or the one --via names. |
 | `--config`{ #flag-config } | string | $CHALKOSCONFIG, else ~/.config/chalkos/config, unless --secrets is given | Client file to authenticate with instead of the secrets file. |
-| `--force`{ #flag-force } | boolean | `false` | Revoke the node although it is a control plane, an etcd member or the one --via names, or although a control plane cannot read the revoked nodes. |
 | `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |
 | `--inventory`{ #flag-inventory } | string | $CHALKOSINVENTORY, else chalkos.yaml in the current directory, when it exists | Inventory naming the cluster's nodes, their addresses and their config files. |
 | `--secrets`{ #flag-secrets } | string | — | Cluster secrets path (.age, .enc.*, or plaintext), provider URI, or - for standard input. |
+| `--skip-read-check`{ #flag-skip-read-check } | boolean | `false` | Revoke the node although a control plane does not answer or cannot read the revoked nodes. |
 | `--via`{ #flag-via } | string | the first other one that answers | Control plane that revokes the node, which a bare --address reaches. |
 
 ## Examples

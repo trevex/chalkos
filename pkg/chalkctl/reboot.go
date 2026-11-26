@@ -461,11 +461,12 @@ type nodeRebootFlags struct {
 func (a *app) nodeRebootCommand() *cobra.Command {
 	f := nodeRebootFlags{layers: map[string]any{}}
 	cmd := a.command(&cobra.Command{
-		Use:     "reboot <node>",
-		Short:   "Reboot a node, held by its layers, and wait until it is healthy again",
-		Long:    nodeRebootLong,
-		Example: nodeRebootExample,
-		Args:    cli.ExactArgs(1),
+		Use:         "reboot <node>",
+		Short:       "Reboot a node, held by its layers, and wait until it is healthy again",
+		Long:        nodeRebootLong,
+		Example:     nodeRebootExample,
+		Args:        cli.ExactArgs(1),
+		Annotations: layer.Meta{Credentials: layer.Operator}.Annotations(),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.nodeReboot(ctx, f, pos[0]) })
 	fs := cmd.Flags()
 	f.node.RegisterClient(fs)

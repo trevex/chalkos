@@ -185,7 +185,7 @@ func TestEtcdRemoveMember(t *testing.T) {
 	stoppedMember(s)
 	members["cp3"].Stop()
 	// Without cp2, n1 and the stopped cp3 would be left.
-	if err := removeMember(s, "cp2", false); layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "pass --force") {
+	if err := removeMember(s, "cp2", false); layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "pass --ignore-quorum") {
 		t.Errorf("removing cp2 while cp3 is down: %v", err)
 	}
 	list, err := cli.Members(context.Background())
@@ -395,7 +395,7 @@ func TestEtcdLeaveNeedsLocalMemberOrForce(t *testing.T) {
 	s, cli, others := memberNode(t, "cp2", "cp3")
 	otherMembersOnly(t, s, others["cp2"], others["cp3"])
 	err := leave(s, false)
-	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "does not answer") || !strings.Contains(err.Error(), "--force") {
+	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "does not answer") || !strings.Contains(err.Error(), "--through-others") {
 		t.Errorf("leaving while the node's member does not answer: %v", err)
 	}
 	p := s.k.state
@@ -416,7 +416,7 @@ func TestEtcdLeaveNeedsLocalMemberOrForce(t *testing.T) {
 	checkLeft(t, s)
 }
 
-// A bootstrapped node whose member an operator removed leaves without --force, although its etcd
+// A bootstrapped node whose member an operator removed leaves without --through-others, although its etcd
 // stopped answering.
 func TestEtcdLeaveAfterOwnMemberRemoved(t *testing.T) {
 	t.Parallel()

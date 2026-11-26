@@ -185,11 +185,12 @@ func (a *app) confirmConfigCommand() *cobra.Command {
 	// The node keeps the config on trial, so no inventory needs to give it.
 	var n nodeFlags
 	cmd := a.command(&cobra.Command{
-		Use:     "confirm <node>",
-		Short:   "Confirm a node's config on trial",
-		Long:    confirmConfigLong,
-		Example: confirmConfigExample,
-		Args:    cli.ExactArgs(1),
+		Use:         "confirm <node>",
+		Short:       "Confirm a node's config on trial",
+		Long:        confirmConfigLong,
+		Example:     confirmConfigExample,
+		Args:        cli.ExactArgs(1),
+		Annotations: layer.Meta{Credentials: layer.SecretsFile}.Annotations(),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.confirmConfig(ctx, n, pos[0]) })
 	n.Register(cmd.Flags())
 	return cmd

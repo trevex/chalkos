@@ -30,8 +30,8 @@ type applyConfigFlags struct {
 	staged, diff bool
 	// dryRun has the node check the config and print the delivery's plan in place of applying it.
 	dryRun bool
-	// force delivers the layers' payloads without asking whether the node is revoked.
-	force bool
+	// ignoreRevoked delivers the layers' payloads without asking whether the node is revoked.
+	ignoreRevoked bool
 	// ignoreReadiness makes failed runtime readiness checks warnings.
 	ignoreReadiness bool
 	layers          []layerFlags
@@ -65,11 +65,12 @@ type layerFlags struct {
 func (a *app) applyConfigCommand(short bool) *cobra.Command {
 	f := applyConfigFlags{node: nodeFlags{needs: "config apply"}, until: untilConfirm, rollout: map[string]any{}}
 	cmd := &cobra.Command{
-		Use:     "apply <node> [<node>...]",
-		Short:   "Deliver a node's config from the inventory",
-		Long:    applyConfigLong,
-		Example: applyConfigExample,
-		Args:    cli.MinimumNArgs(1),
+		Use:         "apply <node> [<node>...]",
+		Short:       "Deliver a node's config from the inventory",
+		Long:        applyConfigLong,
+		Example:     applyConfigExample,
+		Args:        cli.MinimumNArgs(1),
+		Annotations: layer.Meta{Credentials: layer.SecretsFile}.Annotations(),
 	}
 	if short {
 		f.node.needs = "apply"
@@ -91,7 +92,7 @@ func (a *app) applyConfigCommand(short bool) *cobra.Command {
 	}
 	if len(payloadFlags) > 0 {
 		f.payloadFlags = strings.Join(payloadFlags, " or ")
-		fs.BoolVar(&f.force, "force", false, "with "+f.payloadFlags+", deliver without asking whether the node is revoked")
+		fs.BoolVar(&f.ignoreRevoked, "ignore-revoked", false, "with "+f.payloadFlags+", deliver without asking whether the node is revoked")
 	}
 	fs.BoolVar(&f.ignoreReadiness, "ignore-readiness", false, "make failed runtime readiness checks of a delivery to the running image warnings, and let their effects continue")
 	fs.BoolVar(&f.staged, "staged", false, "deliver the config to the image staged in the inactive slot, which checks it after chalkctl checks it against the node's image in the inventory; without one, the node holds it pending for the next upgrade; with --dry-run, the staged image checks it and nothing is kept; without one, --dry-run says what the node would hold pending")
@@ -142,8 +143,8 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 		return cli.Usagef("--ignore-unit goes with --try")
 	case f.try != 0 && (f.try < minTrial || f.try > maxTrial):
 		return cli.Usagef("--try takes from %v to %v, not %v", minTrial, maxTrial, f.try)
-	case f.force && !f.payloads():
-		return cli.Usagef("--force goes with %s; --ignore-readiness ignores failed readiness checks", f.payloadFlags)
+	case f.ignoreRevoked && !f.payloads():
+		return cli.Usagef("--ignore-revoked goes with %s; --ignore-readiness ignores failed readiness checks", f.payloadFlags)
 	case f.ignoreReadiness && (f.staged || f.diff || f.payloads()):
 		return cli.Usagef("--ignore-readiness goes with config for the running image, not with --staged, --diff or a layer's payload flag")
 	}
@@ -228,7 +229,7 @@ func refusedByNode(err error) bool {
 // check it and prints what the delivery would change.
 func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) error {
 	for _, l := range f.layers {
-		if l.f.Requested() && !f.force && !f.diff {
+		if l.f.Requested() && !f.ignoreRevoked && !f.diff {
 			if err := l.d.Admit(ctx, t, l.f.Does()); err != nil {
 				return err
 			}
@@ -488,11 +489,12 @@ type rollbackConfigFlags struct {
 func (a *app) rollbackConfigCommand() *cobra.Command {
 	var f rollbackConfigFlags
 	cmd := a.command(&cobra.Command{
-		Use:     "rollback <node>",
-		Short:   "Deliver a node's previous config again",
-		Long:    rollbackConfigLong,
-		Example: rollbackConfigExample,
-		Args:    cli.ExactArgs(1),
+		Use:         "rollback <node>",
+		Short:       "Deliver a node's previous config again",
+		Long:        rollbackConfigLong,
+		Example:     rollbackConfigExample,
+		Args:        cli.ExactArgs(1),
+		Annotations: layer.Meta{Credentials: layer.SecretsFile}.Annotations(),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.rollbackConfig(ctx, f, pos[0]) })
 	f.node.Register(cmd.Flags())
 	cmd.Flags().BoolVar(&f.diff, "diff", false, "print what the rollback changes in the node's config, document by document and field by field, and change nothing")
@@ -597,11 +599,12 @@ type resetVolumeFlags struct {
 func (a *app) resetVolumeCommand() *cobra.Command {
 	f := resetVolumeFlags{node: nodeFlags{needs: "storage reset"}}
 	cmd := a.command(&cobra.Command{
-		Use:     "reset <node> <volume>",
-		Short:   "Wipe and recreate one volume",
-		Long:    resetVolumeLong,
-		Example: resetVolumeExample,
-		Args:    cli.ExactArgs(2),
+		Use:         "reset <node> <volume>",
+		Short:       "Wipe and recreate one volume",
+		Long:        resetVolumeLong,
+		Example:     resetVolumeExample,
+		Args:        cli.ExactArgs(2),
+		Annotations: layer.Meta{Credentials: layer.Admin, Confirms: resetVolumeConfirms}.Annotations(),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.resetVolume(ctx, f, pos) })
 	f.node.RegisterClient(cmd.Flags())
 	registerPasswordFile(cmd.Flags(), &f.passwordFile)
@@ -626,6 +629,9 @@ func (a *app) resetVolume(ctx context.Context, f resetVolumeFlags, pos []string)
 	if err != nil {
 		return err
 	}
+	if err := a.confirm(ctx, fmt.Sprintf("storage reset wipes the volume %s of %s at %s, and its data is lost", pos[1], t.name, t.addr), t.name); err != nil {
+		return err
+	}
 	// Without a fallback the node is not asked for its volumes.
 	var fallback string
 	if d.identity.Storage.Fallback != storage.FallbackNone {
@@ -648,11 +654,12 @@ func (a *app) discardPendingCommand() *cobra.Command {
 	// The node holds the config it drops, so no inventory needs to give it.
 	var n nodeFlags
 	cmd := a.command(&cobra.Command{
-		Use:     "discard <node>",
-		Short:   "Drop the config a node holds pending for its next upgrade",
-		Long:    discardPendingLong,
-		Example: discardPendingExample,
-		Args:    cli.ExactArgs(1),
+		Use:         "discard <node>",
+		Short:       "Drop the config a node holds pending for its next upgrade",
+		Long:        discardPendingLong,
+		Example:     discardPendingExample,
+		Args:        cli.ExactArgs(1),
+		Annotations: layer.Meta{Credentials: layer.SecretsFile}.Annotations(),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.discardPending(ctx, n, pos[0]) })
 	n.Register(cmd.Flags())
 	return cmd

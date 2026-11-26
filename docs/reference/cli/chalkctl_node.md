@@ -8,9 +8,10 @@ description: "Manage a node's access, activate its staged image, reboot it and s
 Manages a node's access to the cluster and its boot and shows its state: renews its node
 certificate, revokes and unrevokes it by name, makes the image staged on it boot next, reboots it
 held by its layers, lists and runs the diagnostics its image declares, and shows a router's routes.
+
 node renew needs the secrets file; node revoke and node unrevoke need an admin client file or the
-secrets file; node activate and node reboot need an operator client file or the secrets file;
-node diag and node routes need a reader client file or the secrets file.
+secrets file; node activate and node reboot need an operator client file or the secrets file; node
+diag and node routes need a reader client file or the secrets file.
 
 ## Examples
 

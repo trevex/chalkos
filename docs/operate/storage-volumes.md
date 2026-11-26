@@ -266,13 +266,17 @@ document now defines it:
 
 ```console
 $ chalkctl storage reset node1 scratch --secrets=secrets.age
+chalkctl: storage reset wipes the volume scratch of node1 at <address>, and its data is lost.
+Type node1 to go ahead: node1
 volume scratch of node1 was wiped and created again
 ```
 
 !!! danger "A reset deletes the volume's data"
 
     The command wipes the partition before it creates the new one. Move the data away, or stop
-    the workloads that use it, first.
+    the workloads that use it, first. chalkctl asks for the node's name before it resets the
+    volume, so a reset typed for the wrong node stops there. Without a terminal, as in a script,
+    the command refuses unless `--yes` is given.
 
 An encrypted volume is sealed to the TPM again and gets its fallback keyslot back. The command
 needs the secrets file for a node whose fallback is its recovery key, and the password for one

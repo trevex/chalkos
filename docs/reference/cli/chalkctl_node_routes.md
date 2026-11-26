@@ -18,7 +18,9 @@ BGP's paths only for bgp. --vrf and --table exclude each other, and --vrf fails 
 image does not know VRFs. A router whose image carries no BGP shows the kernel's routes alone. It
 shows at most 10,000 kernel routes and 10,000 paths and says so on standard error when it leaves
 some out, as for a full Internet table without a prefix. A node of another image answers that
-the router layer is not in its image. The command needs a reader client file or the secrets file.
+the router layer is not in its image.
+
+The command needs a reader client file or the secrets file.
 
 ## Flags
 

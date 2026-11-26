@@ -16,8 +16,9 @@ inventory gives the node, or with --image the image upgrade --image staged, by i
 the node refuses when it has no image staged or another one. With --image the command needs no
 inventory. The node checks the UKI again, and not the config: the image's own checker passed
 the config before the image was staged. Asked again, the command says that the image boots next
-already. The image boots with the node's next reboot, which chalkctl node reboot runs. The command
-needs an operator client file or the secrets file.
+already. The image boots with the node's next reboot, which chalkctl node reboot runs.
+
+The command needs an operator client file or the secrets file.
 
 ## Flags
 

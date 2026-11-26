@@ -184,7 +184,7 @@ func (p *Plugin) EtcdRemoveMember(ctx context.Context, req *kubernetesv1.EtcdRem
 	err = cli.Remove(rctx, m.ID, req.Force)
 	cancel()
 	if _, ok := errors.AsType[*etcd.QuorumError](err); ok {
-		return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w; pass --force to remove it anyway", err)
+		return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w; pass --ignore-quorum to remove it anyway", err)
 	}
 	if err != nil {
 		return nil, removeError(err)
@@ -321,7 +321,7 @@ func (k *side) leaveEtcd(ctx context.Context, cp controlPlaneNode, bootstrapped,
 		// A bootstrapped node leaves through the other members alone only when forced: its own
 		// member may be healthy but cut off, or unable to run, as without its pinned address.
 		if bootstrapped && !force && !slices.Contains(answered, k.localEtcd(c)) {
-			return layer.Errorf(connect.CodeFailedPrecondition, "this node's etcd member %s does not answer at %s; pass --force to remove it through the other members, as when the node lost its pinned address", self, k.localEtcd(c))
+			return layer.Errorf(connect.CodeFailedPrecondition, "this node's etcd member %s does not answer at %s; pass --through-others to remove it through the other members, as when the node lost its pinned address", self, k.localEtcd(c))
 		}
 		rctx, cancel := k.etcdRequest(ctx)
 		err := etcd.CheckQuorum(members, cli.Health(rctx, members), self.ID)

@@ -22,11 +22,12 @@ type validateFlags struct{ cluster layer.ClusterFlags }
 func (a *app) validateCommand() *cobra.Command {
 	var f validateFlags
 	cmd := a.command(&cobra.Command{
-		Use:     "validate [<node>...]",
-		Short:   "Check nodes' config against the schemas of their images",
-		Long:    validateLong,
-		Example: validateExample,
-		Args:    cobra.ArbitraryArgs,
+		Use:         "validate [<node>...]",
+		Short:       "Check nodes' config against the schemas of their images",
+		Long:        validateLong,
+		Example:     validateExample,
+		Args:        cobra.ArbitraryArgs,
+		Annotations: layer.Meta{Credentials: layer.NoCredentials}.Annotations(),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.validate(ctx, f, pos) })
 	cmd.Flags().StringVar(&f.cluster.Inventory, "inventory", "", "inventory naming the nodes and their config files (default $"+inventory.Env+", else "+inventory.DefaultFile+" in the current directory)")
 	return cmd

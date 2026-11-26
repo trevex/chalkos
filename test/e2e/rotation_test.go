@@ -37,7 +37,7 @@ func rotations(t *testing.T, ctx context.Context, nodes map[string]*node, p peer
 	t.Helper()
 	kubeconfig := func(name string) (string, kubernetes.Interface) {
 		path := filepath.Join(dir, name)
-		if _, err := chalkctl(t, nil, "base", "kubeconfig", "--out", path, "--force", "--server", fmt.Sprintf("https://127.0.0.1:%d", apiPort)); err != nil {
+		if _, err := chalkctl(t, nil, "base", "kubeconfig", "--out", path, "--overwrite", "--server", fmt.Sprintf("https://127.0.0.1:%d", apiPort)); err != nil {
 			t.Fatal(err)
 		}
 		cs, _ := clientsetOf(t, path)
@@ -147,7 +147,7 @@ func rotations(t *testing.T, ctx context.Context, nodes map[string]*node, p peer
 	timed("the service-account key's rotation", func() {
 		rotate("service-account-key")
 		// The test does not wait the hour in which kubelets renew the tokens of other pods.
-		rotate("service-account-key", "--finish", "--force")
+		rotate("service-account-key", "--finish", "--now")
 		works(cs, "the service-account key's rotation", time.Now())
 	})
 

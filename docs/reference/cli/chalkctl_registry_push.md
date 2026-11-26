@@ -29,8 +29,9 @@ anything else it reads.
 
 chalkctl prints the image's digest, checks that each endpoint serves it, reports each endpoint,
 and fails unless every one has the image. --connect-to reaches an endpoint through another
-address, such as a forwarded port, while it still verifies the endpoint's certificate. The
-command needs an admin client file or the secrets file.
+address, such as a forwarded port, while it still verifies the endpoint's certificate.
+
+The command needs an admin client file or the secrets file.
 
 ## Flags
 

@@ -73,11 +73,11 @@ func TestConfigNew(t *testing.T) {
 	if info, _ := os.Stat(out); info.Mode().Perm() != 0o600 {
 		t.Errorf("mode %v", info.Mode())
 	}
-	if err := ta.run(context.Background(), args); err == nil || !strings.Contains(err.Error(), "--force") {
-		t.Errorf("err = %v, want a refusal to overwrite naming --force", err)
+	if err := ta.run(context.Background(), args); err == nil || !strings.Contains(err.Error(), "--overwrite") {
+		t.Errorf("err = %v, want a refusal to overwrite naming --overwrite", err)
 	}
-	if err := ta.run(context.Background(), append(args, "--force")); err != nil {
-		t.Errorf("--force: %v", err)
+	if err := ta.run(context.Background(), append(args, "--overwrite")); err != nil {
+		t.Errorf("--overwrite: %v", err)
 	}
 	// By default the file goes where chalkctl looks for it.
 	if err := ta.run(context.Background(), []string{"client", "new", "--name", "bob", "--role", "reader"}); err != nil {

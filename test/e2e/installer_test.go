@@ -64,7 +64,7 @@ func TestInstallerInstallsOntoLVMDisk(t *testing.T) {
 	// An install streamed from the image's directory wipes the target, whose volume group stayed
 	// inactive, and is cancelled while chalkd writes slot A of the laid-out target; it continues
 	// without --wipe-disk from the registry.
-	interrupted := cancelledInstall(t, n, "", append(slices.Clone(install), "--image", image, "--wipe-disk"))
+	interrupted := cancelledInstall(t, n, "", append(slices.Clone(install), "--image", image, "--wipe-disk", "--yes"))
 	// The store data, hash tree, UKI and boot loader, not the whole raw image.
 	m := regexp.MustCompile(`sending (\d+) bytes`).FindStringSubmatch(interrupted)
 	if m == nil {
@@ -181,10 +181,11 @@ func cancelledInstall(t *testing.T, n *node, inventory string, args []string) st
 
 // TestInstallerISOBoots signs a copy of the generic installer as chalkbuild sign does and boots
 // its ISO as a CD-ROM on firmware in Setup Mode, where chalkd serves any client in maintenance
-// mode. chalkctl secureboot enroll writes the test keys, which signed the copy, without --force,
-// so chalkd finds the boot loader and UKI the firmware started from the ISO's ESP, and checks
-// the option ROM of the NIC that the TPM event log lists, whose digest --option-roms enrols. The
-// installer boots again with Secure Boot on, and chalkctl lists the disks of the machine.
+// mode. chalkctl secureboot enroll writes the test keys, which signed the copy, without
+// --skip-checks, so chalkd finds the boot loader and UKI the firmware started from the ISO's ESP,
+// and checks the option ROM of the NIC that the TPM event log lists, whose digest --option-roms
+// enrols. The installer boots again with Secure Boot on, and chalkctl lists the disks of the
+// machine.
 func TestInstallerISOBoots(t *testing.T) {
 	requireEnv(t, "CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS", "CHALKLAB_SB_KEYS", "CHALKLAB_GENERIC_INSTALLER_DIR", "CHALKLAB_CHALKCTL")
 	dir := vmDir(t)

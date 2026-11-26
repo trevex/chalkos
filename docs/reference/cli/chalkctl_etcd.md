@@ -5,9 +5,10 @@ description: "Manage the cluster's etcd members"
 
 # chalkctl etcd
 
-Manages the members of the cluster's etcd, which runs on the control planes. etcd members
-needs a reader client file, and etcd remove-member and etcd leave need an admin client file; the
-secrets file works for all three.
+Manages the members of the cluster's etcd, which runs on the control planes.
+
+etcd leave and etcd remove-member need an admin client file or the secrets file; etcd members needs
+a reader client file or the secrets file.
 
 ## Examples
 

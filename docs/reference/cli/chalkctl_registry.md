@@ -9,6 +9,9 @@ Manages the images of the cluster registry, which chalkos-registry serves on the
 ClusterRegistry document's endpoints name. Nothing copies images between the endpoints, so each
 command acts on every one of them, one after the other, and reports each.
 
+registry delete, registry gc and registry push need an admin client file or the secrets file;
+registry list needs a reader client file or the secrets file.
+
 ## Examples
 
 ```sh

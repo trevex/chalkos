@@ -77,9 +77,11 @@ func notEtcdMember(err error) bool {
 // viaFlags are the flags of the commands that act through a control plane: the etcd commands,
 // node revoke and node unrevoke.
 type viaFlags struct {
-	node  layer.NodeFlags
-	via   string
-	force bool
+	node layer.NodeFlags
+	via  string
+	// override is the flag that overrides the command's check, such as etcd remove-member
+	// --ignore-quorum.
+	override bool
 }
 
 // etcdCommand is the etcd group and its commands.
@@ -92,11 +94,12 @@ func etcdCommand(h layer.Host) *cobra.Command {
 func etcdMembersCommand(h layer.Host) *cobra.Command {
 	var f viaFlags
 	cmd := h.Command(&cobra.Command{
-		Use:     "members",
-		Short:   "List etcd's members and their health",
-		Long:    etcdMembersLong,
-		Example: etcdMembersExample,
-		Args:    cli.NoArgs,
+		Use:         "members",
+		Short:       "List etcd's members and their health",
+		Long:        etcdMembersLong,
+		Example:     etcdMembersExample,
+		Args:        cli.NoArgs,
+		Annotations: layer.Meta{Credentials: layer.Reader}.Annotations(),
 	}, func(h layer.Host, ctx context.Context, pos []string) error { return etcdMembers(h, ctx, f) })
 	f.node.RegisterClient(cmd.Flags())
 	cmd.Flags().StringVar(&f.via, "via", "", "control plane to ask, which a bare --address reaches (default the first one that answers)")
@@ -132,23 +135,24 @@ func etcdMembers(h layer.Host, ctx context.Context, f viaFlags) error {
 func etcdRemoveMemberCommand(h layer.Host) *cobra.Command {
 	var f viaFlags
 	cmd := h.Command(&cobra.Command{
-		Use:     "remove-member <node|id>",
-		Short:   "Remove a node's etcd member, such as a stale one",
-		Long:    etcdRemoveMemberLong,
-		Example: etcdRemoveMemberExample,
-		Args:    cli.ExactArgs(1),
+		Use:         "remove-member <node|id>",
+		Short:       "Remove a node's etcd member, such as a stale one",
+		Long:        etcdRemoveMemberLong,
+		Example:     etcdRemoveMemberExample,
+		Args:        cli.ExactArgs(1),
+		Annotations: layer.Meta{Credentials: layer.Admin}.Annotations(),
 	}, func(h layer.Host, ctx context.Context, pos []string) error { return etcdRemoveMember(h, ctx, f, pos) })
 	fs := cmd.Flags()
 	f.node.RegisterClient(fs)
 	fs.StringVar(&f.via, "via", "", "control plane that removes the member, which a bare --address reaches (default the first other one that answers)")
-	fs.BoolVar(&f.force, "force", false, "remove the member even when the voters left would have no healthy quorum")
+	fs.BoolVar(&f.override, "ignore-quorum", false, "remove the member even when the voters left would have no healthy quorum")
 	return cmd
 }
 
 func etcdRemoveMember(h layer.Host, ctx context.Context, f viaFlags, pos []string) error {
 	var resp *kubernetesv1.EtcdRemoveMemberResponse
 	err := throughControlPlane(h, ctx, f, pos[0], layer.Fetch(&resp, func(conn *client.Conn) (*kubernetesv1.EtcdRemoveMemberResponse, error) {
-		return Client(conn).EtcdRemoveMember(client.Unbounded(ctx), &kubernetesv1.EtcdRemoveMemberRequest{Member: pos[0], Force: f.force})
+		return Client(conn).EtcdRemoveMember(client.Unbounded(ctx), &kubernetesv1.EtcdRemoveMemberRequest{Member: pos[0], Force: f.override})
 	}))
 	if err != nil {
 		return err
@@ -160,14 +164,15 @@ func etcdRemoveMember(h layer.Host, ctx context.Context, f viaFlags, pos []strin
 func etcdLeaveCommand(h layer.Host) *cobra.Command {
 	var f viaFlags
 	cmd := h.Command(&cobra.Command{
-		Use:     "leave <node>",
-		Short:   "Take a control plane out of etcd",
-		Long:    etcdLeaveLong,
-		Example: etcdLeaveExample,
-		Args:    cli.ExactArgs(1),
+		Use:         "leave <node>",
+		Short:       "Take a control plane out of etcd",
+		Long:        etcdLeaveLong,
+		Example:     etcdLeaveExample,
+		Args:        cli.ExactArgs(1),
+		Annotations: layer.Meta{Credentials: layer.Admin}.Annotations(),
 	}, func(h layer.Host, ctx context.Context, pos []string) error { return etcdLeave(h, ctx, f, pos) })
 	f.node.RegisterClient(cmd.Flags())
-	cmd.Flags().BoolVar(&f.force, "force", false, "leave through the other members also when the node's own etcd member does not answer (for example when it lost its pinned address)")
+	cmd.Flags().BoolVar(&f.override, "through-others", false, "leave through the other members also when the node's own etcd member does not answer (for example when it lost its pinned address)")
 	return cmd
 }
 
@@ -177,7 +182,7 @@ func etcdLeave(h layer.Host, ctx context.Context, f viaFlags, pos []string) erro
 		return err
 	}
 	if err := t.Call(func(conn *client.Conn) error {
-		_, err := Client(conn).EtcdLeave(client.Unbounded(ctx), &kubernetesv1.EtcdLeaveRequest{Force: f.force})
+		_, err := Client(conn).EtcdLeave(client.Unbounded(ctx), &kubernetesv1.EtcdLeaveRequest{Force: f.override})
 		return err
 	}); err != nil {
 		return err

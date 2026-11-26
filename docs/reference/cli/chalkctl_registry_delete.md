@@ -18,7 +18,11 @@ do, the manifest stays, and with it its layers, until chalkctl registry delete
 &lt;repository>@&lt;digest>. A digest takes the manifest. Before it deletes anything, chalkctl refuses a
 digest that tags name unless --with-tags is given, and then prints each tag it deleted with it;
 it always refuses a digest that a tagged index names, as the index would break. The layers stay
-on disk until chalkctl registry gc. The command needs an admin client file or the secrets file.
+on disk until chalkctl registry gc.
+
+The command needs an admin client file or the secrets file. It asks on the terminal before it
+deletes a digest together with the tags that name it, as --with-tags allows; without a terminal it
+refuses unless --yes is given.
 
 ## Flags
 
@@ -30,6 +34,7 @@ on disk until chalkctl registry gc. The command needs an admin client file or th
 | `--inventory`{ #flag-inventory } | string | $CHALKOSINVENTORY, else chalkos.yaml in the current directory, when it exists | Inventory naming the cluster's nodes, their addresses and their config files. |
 | `--secrets`{ #flag-secrets } | string | — | Cluster secrets path (.age, .enc.*, or plaintext), provider URI, or - for standard input. |
 | `--with-tags`{ #flag-with-tags } | boolean | `false` | Delete a digest together with the tags that name it, which the command refuses otherwise. |
+| `--yes`{ #flag-yes } | boolean | `false` | Go ahead without asking; without a terminal the command refuses unless it is given. |
 
 ## Examples
 

@@ -32,6 +32,11 @@ type app struct {
 	// unhealthyGrace is how long a node's boot may be found unhealthy after it settled before a
 	// reboot's wait for it stops; zero is a minute. Tests set it.
 	unhealthyGrace time.Duration
+	// ask asks for a line on the terminal, which confirm reads; nil asks on standard input when it
+	// is a terminal. Tests set it.
+	ask func(ctx context.Context, prompt string) (string, error)
+	// yes is the --yes of the command that runs, which goes ahead without confirm asking.
+	yes bool
 }
 
 // NewCommand returns chalkctl's root command, with age and SSH keys from the user's home directory
@@ -66,7 +71,8 @@ func newCommand(a *app) *cobra.Command {
 	config := cli.Group(&cobra.Command{Use: "config", Short: "Deliver a node's config and act on its trial or pending config", Long: configLong, Example: configExample})
 	config.AddCommand(a.applyConfigCommand(false), a.confirmConfigCommand(), a.rollbackConfigCommand(), a.discardPendingCommand())
 	client := cli.Group(&cobra.Command{Use: "client", Short: "Manage client files", Long: clientLong, Example: clientExample})
-	client.AddCommand(a.clientNewCommand())
+	clientNew := a.clientNewCommand()
+	client.AddCommand(clientNew)
 	storage := cli.Group(&cobra.Command{Use: "storage", Short: "Manage a node's volumes", Long: storageLong, Example: storageExample})
 	storage.AddCommand(a.resetVolumeCommand())
 	secureboot := cli.Group(&cobra.Command{Use: "secureboot", Short: "Create Secure Boot keys and enrol them in a node's firmware", Long: securebootLong, Example: securebootExample})
@@ -84,7 +90,7 @@ func newCommand(a *app) *cobra.Command {
 		a.rotateCommand(),
 		a.upgradeCommand(),
 		a.validateCommand(),
-		version.Command("chalkctl"),
+		versionCommand(),
 	)
 	groups := map[string]*cobra.Command{"": root, "node": node}
 	for _, c := range compiled[layer.Commands]() {
@@ -92,6 +98,7 @@ func newCommand(a *app) *cobra.Command {
 			groups[group].AddCommand(cmds...)
 		}
 	}
+	declare(root, clientNew)
 	return root
 }
 
@@ -102,6 +109,9 @@ func (a *app) command(cmd *cobra.Command, run func(a *app, ctx context.Context, 
 		var identities []string
 		if c.Flags().Lookup("identity") != nil {
 			identities, _ = c.Flags().GetStringArray("identity")
+		}
+		if c.Flags().Lookup("yes") != nil {
+			commandApp.yes, _ = c.Flags().GetBool("yes")
 		}
 		sources := &secretSources{ctx: ctx, app: commandApp, identities: identities}
 		return run(commandApp, context.WithValue(ctx, secretSourcesKey{}, sources), args)
@@ -127,4 +137,11 @@ func (a *app) poll() time.Duration {
 // table writes aligned columns, separated by tabs, to standard output once flushed.
 func (a *app) table() *tabwriter.Writer {
 	return statusview.Table(a.stdout)
+}
+
+// versionCommand is chalkctl version, which needs no credentials.
+func versionCommand() *cobra.Command {
+	cmd := version.Command("chalkctl")
+	cmd.Annotations = layer.Meta{Credentials: layer.NoCredentials}.Annotations()
+	return cmd
 }

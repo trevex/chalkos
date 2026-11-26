@@ -28,18 +28,20 @@ boot.
 The node refuses the keys unless the boot loader and UKI it booted verify against db with the new
 keys, so sign the installer or image with the db key first (chalkbuild sign) and boot it. It also
 refuses keys under which db would not allow every option ROM its TPM event log lists, by its digest
-or by holding Microsoft's UEFI CA of 2011 or its option ROM CA of 2023, and option ROMs dbx
-revokes. When the node cannot read its option ROMs, without a TPM for one, chalkctl says so.
---force enrols the keys all the same, skipping both checks. A node that runs its image from its
-own disk deletes STATE, which holds nothing before the install and which the TPM no longer unseals
-once the keys change, and creates it again when it boots. The node writes PK last: when a write
-fails before it, the firmware stays in Setup Mode and enroll can run again.
+or by holding Microsoft's UEFI CA of 2011 or its option ROM CA of 2023, and option ROMs dbx revokes.
+When the node cannot read its option ROMs, without a TPM for one, chalkctl says so. --skip-checks
+enrols the keys all the same, skipping both checks. A node that runs its image from its own disk
+deletes STATE, which holds nothing before the install and which the TPM no longer unseals once the
+keys change, and creates it again when it boots. The node writes PK last: when a write fails before
+it, the firmware stays in Setup Mode and enroll can run again.
 
 The node then reboots, and chalkctl waits until it answers with Secure Boot on. It makes a new
 certificate in maintenance mode when it boots, which chalkctl accepts without verifying and prints
 the fingerprint of; compare it with the node's console before the install. Like chalkctl disks, the
-command reaches the node by --address, with --fingerprint or --insecure, and with the secrets file
-or an admin's client file when its image carries an OS CA.
+command reaches the node by --address, with --fingerprint or --insecure, and with its credentials
+when its image carries an OS CA.
+
+The command needs an admin client file or the secrets file.
 
 ## Flags
 
@@ -49,13 +51,13 @@ or an admin's client file when its image carries an OS CA.
 | `--config`{ #flag-config } | string | — | Client file of an admin to authenticate with instead of the secrets file. |
 | `--db-hash`{ #flag-db-hash } | list of string | — | Also enrol in db this SHA-256 Authenticode digest of an image, 64 hex digits, optionally after sha256: (repeatable). |
 | `--fingerprint`{ #flag-fingerprint } | string | — | SHA-256 fingerprint the node prints on its console in maintenance mode. |
-| `--force`{ #flag-force } | boolean | `false` | Enrol the keys even if Secure Boot would refuse the boot loader or UKI the node booted, or an option ROM it loaded, under them. |
 | `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |
 | `--insecure`{ #flag-insecure } | boolean | `false` | Accept any certificate and print the node's fingerprint. |
 | `--keys`{ #flag-keys } | string | required | Directory of the keys, as chalkctl secureboot new writes it. |
 | `--microsoft`{ #flag-microsoft } | boolean | `false` | Also enrol Microsoft's KEK CAs and its UEFI and option ROM CAs, which sign the firmware of graphics and network cards and other boot loaders. |
 | `--option-roms`{ #flag-option-roms } | boolean | `false` | Also enrol in db the SHA-256 digests of the option ROMs the node's firmware loaded, as its TPM event log lists them. |
 | `--secrets`{ #flag-secrets } | string | — | Cluster secrets path (.age, .enc.*, or plaintext), provider URI, or - for standard input. |
+| `--skip-checks`{ #flag-skip-checks } | boolean | `false` | Enrol the keys even if Secure Boot would refuse the boot loader or UKI the node booted, or an option ROM it loaded, under them. |
 | `--timeout`{ #flag-timeout } | duration | `10m0s` | How long to wait for the node to boot again with Secure Boot on. |
 
 ## Examples

@@ -106,7 +106,7 @@ func clusterRegistry(t *testing.T, ctx context.Context, cs kubernetes.Interface,
 	}
 
 	ref := clusterRegistryRepo + "@" + digest
-	if out, err := chalkctlContext(ctx, t, nil, "base", "registry", "delete", ref, "--with-tags", "--connect-to", connect); err != nil || !strings.Contains(out, "192.168.100.11: deleted 192.168.100.11:5000/"+ref+" and its tags 1.37.0") {
+	if out, err := chalkctlContext(ctx, t, nil, "base", "registry", "delete", ref, "--with-tags", "--yes", "--connect-to", connect); err != nil || !strings.Contains(out, "192.168.100.11: deleted 192.168.100.11:5000/"+ref+" and its tags 1.37.0") {
 		t.Errorf("registry delete: %v\n%s", err, out)
 	}
 	if out, err := chalkctlContext(ctx, t, nil, "base", "registry", "gc", "--connect-to", connect); err != nil || !freedRE.MatchString(out) {

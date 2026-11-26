@@ -28,6 +28,8 @@ part against its digest and the store against its hash tree. The directory appea
 the whole image is written and checked. It must not exist or be empty; one that holds the same
 image already is left as it is, and one that holds anything else is refused.
 
+The command needs no secrets file or client file.
+
 ## Flags
 
 | Flag | Type | Default | Description |

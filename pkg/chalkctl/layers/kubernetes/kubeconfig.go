@@ -26,18 +26,19 @@ type kubeconfigFlags struct {
 	// contextSet is whether --context was given, so that an empty name is refused rather than
 	// replaced by the default.
 	contextSet bool
-	force      bool
+	overwrite  bool
 }
 
 func kubeconfigCommand(h layer.Host) *cobra.Command {
 	var f kubeconfigFlags
 	var cmd *cobra.Command
 	cmd = h.Command(&cobra.Command{
-		Use:     "kubeconfig",
-		Short:   "Write an admin kubeconfig",
-		Long:    kubeconfigLong,
-		Example: kubeconfigExample,
-		Args:    cli.NoArgs,
+		Use:         "kubeconfig",
+		Short:       "Write an admin kubeconfig",
+		Long:        kubeconfigLong,
+		Example:     kubeconfigExample,
+		Args:        cli.NoArgs,
+		Annotations: layer.Meta{Credentials: layer.SecretsFile}.Annotations(),
 	}, func(h layer.Host, ctx context.Context, pos []string) error {
 		f.contextSet = cmd.Flags().Changed("context")
 		return kubeconfig(h, ctx, f)
@@ -47,7 +48,7 @@ func kubeconfigCommand(h layer.Host) *cobra.Command {
 	f.secrets.Register(fs)
 	fs.DurationVar(&f.ttl, "ttl", 24*time.Hour, "validity of the admin certificate")
 	fs.StringVar(&f.out, "out", "kubeconfig", "file to write, - for standard output")
-	fs.BoolVar(&f.force, "force", false, "replace an existing file")
+	fs.BoolVar(&f.overwrite, "overwrite", false, "replace an existing file")
 	fs.StringVar(&f.server, "server", "", "URL clients reach the API server at, when it differs from the cluster endpoint; the certificate is still verified for the endpoint")
 	fs.StringVar(&f.name, "name", "admin", "user name in the admin certificate")
 	fs.StringVar(&f.context, "context", "", "name of the kubeconfig's cluster, user and context (default the inventory's metadata.name)")
@@ -103,7 +104,7 @@ func kubeconfig(h layer.Host, ctx context.Context, f kubeconfigFlags) error {
 		return err
 	}
 	write := atomicfile.WriteNew
-	if f.force {
+	if f.overwrite {
 		write = atomicfile.WriteFile
 	}
 	// The file holds the admin's private key: a directory created for it is its owner's alone.
@@ -111,6 +112,9 @@ func kubeconfig(h layer.Host, ctx context.Context, f kubeconfigFlags) error {
 		return err
 	}
 	if err := write(f.out, data, 0o600); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return fmt.Errorf("%s exists; pass --overwrite to replace it", f.out)
+		}
 		return err
 	}
 	fmt.Fprintf(h.Stdout(), "wrote %s; its certificate is valid for %s\n", f.out, f.ttl)

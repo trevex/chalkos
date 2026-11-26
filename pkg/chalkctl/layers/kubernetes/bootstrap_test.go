@@ -13,7 +13,7 @@ import (
 )
 
 // TestAdmitBootstrap refuses a bootstrap while another control plane of the inventory is an etcd
-// member, is joining or does not answer, and lets --force past; workers, nodes without Kubernetes
+// member, is joining or does not answer, and lets --ignore-members past; workers, nodes without Kubernetes
 // and control planes that wait or left etcd hold no cluster.
 func TestAdmitBootstrap(t *testing.T) {
 	statuses := map[string]*kubernetesv1.StatusResponse{
@@ -57,7 +57,7 @@ func TestAdmitBootstrap(t *testing.T) {
 			}
 			continue
 		}
-		if err == nil || !strings.Contains(err.Error(), "another control plane may hold the cluster") || !strings.Contains(err.Error(), "pass --force to bootstrap cp1 anyway") {
+		if err == nil || !strings.Contains(err.Error(), "another control plane may hold the cluster") || !strings.Contains(err.Error(), "pass --ignore-members to bootstrap cp1 anyway") {
 			t.Errorf("%v: %v, want a refusal", tc.others, err)
 			continue
 		}
@@ -67,7 +67,7 @@ func TestAdmitBootstrap(t *testing.T) {
 			}
 		}
 		if err := admitBootstrap(context.Background(), c, "cp1", true, status, io.Discard); err != nil {
-			t.Errorf("%v with --force: %v", tc.others, err)
+			t.Errorf("%v with --ignore-members: %v", tc.others, err)
 		}
 	}
 }

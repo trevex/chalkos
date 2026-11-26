@@ -20,22 +20,23 @@ import (
 type bootstrapFlags struct {
 	node    layer.NodeFlags
 	timeout time.Duration
-	// force bootstraps although another control plane is a member or does not answer.
-	force bool
+	// ignoreMembers bootstraps although another control plane is a member or is joining.
+	ignoreMembers bool
 }
 
 func bootstrapCommand(h layer.Host) *cobra.Command {
 	var f bootstrapFlags
 	cmd := h.Command(&cobra.Command{
-		Use:     "bootstrap <node>",
-		Short:   "Initialise the cluster on a control plane",
-		Long:    bootstrapLong,
-		Example: bootstrapExample,
-		Args:    cli.ExactArgs(1),
+		Use:         "bootstrap <node>",
+		Short:       "Initialise the cluster on a control plane",
+		Long:        bootstrapLong,
+		Example:     bootstrapExample,
+		Args:        cli.ExactArgs(1),
+		Annotations: layer.Meta{Credentials: layer.Admin}.Annotations(),
 	}, func(h layer.Host, ctx context.Context, pos []string) error { return bootstrap(h, ctx, f, pos) })
 	f.node.RegisterClient(cmd.Flags())
 	cmd.Flags().DurationVar(&f.timeout, "timeout", 20*time.Minute, "how long to wait for the control plane to apply its add-ons and Addon objects")
-	cmd.Flags().BoolVar(&f.force, "force", false, "bootstrap although another control plane of the inventory is an etcd member or is joining, as when recovering a cluster whose other control planes are lost")
+	cmd.Flags().BoolVar(&f.ignoreMembers, "ignore-members", false, "bootstrap although another control plane of the inventory is an etcd member or is joining, as when recovering a cluster whose other control planes are lost")
 	return cmd
 }
 
@@ -53,7 +54,7 @@ func bootstrap(h layer.Host, ctx context.Context, f bootstrapFlags, pos []string
 		if kind != k8s.KindControlPlane {
 			return fmt.Errorf("%s is not a control-plane node; bootstrap one of the cluster's control-plane nodes", t.Name())
 		}
-		if err := admitBootstrap(ctx, t.Cluster(), t.Name(), f.force, nodeStatusOf(t.Nodes().Call), h.Stderr()); err != nil {
+		if err := admitBootstrap(ctx, t.Cluster(), t.Name(), f.ignoreMembers, nodeStatusOf(t.Nodes().Call), h.Stderr()); err != nil {
 			return err
 		}
 	}
@@ -74,10 +75,10 @@ func bootstrap(h layer.Host, ctx context.Context, f bootstrapFlags, pos []string
 }
 
 // admitBootstrap refuses to bootstrap the control plane called name while another control plane
-// of the inventory is an etcd member or is joining, unless forced. It warns on stderr of those that
-// do not answer: chalkctl may reach only some nodes, as through a forwarded port.
-func admitBootstrap(ctx context.Context, c layer.Cluster, name string, force bool, status statusFunc, stderr io.Writer) error {
-	if force {
+// of the inventory is an etcd member or is joining, unless ignoreMembers. It warns on stderr of
+// those that do not answer: chalkctl may reach only some nodes, as through a forwarded port.
+func admitBootstrap(ctx context.Context, c layer.Cluster, name string, ignoreMembers bool, status statusFunc, stderr io.Writer) error {
+	if ignoreMembers {
 		return nil
 	}
 	others, err := nodesOf(c, k8s.KindControlPlane, name)
@@ -85,7 +86,7 @@ func admitBootstrap(ctx context.Context, c layer.Cluster, name string, force boo
 		return err
 	}
 	if err := noOtherMember(ctx, others, status, stderr); err != nil {
-		return fmt.Errorf("%w; bootstrap only the first control plane of a new cluster, or pass --force to bootstrap %s anyway", err, name)
+		return fmt.Errorf("%w; bootstrap only the first control plane of a new cluster, or pass --ignore-members to bootstrap %s anyway", err, name)
 	}
 	return nil
 }

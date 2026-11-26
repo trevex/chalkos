@@ -86,7 +86,7 @@ func (s *Server) EnrollSecureBoot(ctx context.Context, req *nodev1.EnrollSecureB
 		}
 		drivers, unchecked, err := s.readDrivers()
 		if err != nil {
-			return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w; pass --force to enrol the keys without checking the drivers it lists, which also skips the check of the boot loader and UKI", err)
+			return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w; pass --skip-checks to enrol the keys without checking the drivers it lists, which also skips the check of the boot loader and UKI", err)
 		}
 		if err := checkDrivers(drivers, newDB, dbx); err != nil {
 			return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
@@ -195,7 +195,7 @@ func checkDrivers(drivers []secureboot.Driver, db, dbx secureboot.Database) erro
 	if len(problems) == 0 {
 		return nil
 	}
-	return fmt.Errorf("%s; without them the machine may show nothing or boot from no network card or disk controller; pass --force to enrol the keys all the same, which also skips the check of the boot loader and UKI",
+	return fmt.Errorf("%s; without them the machine may show nothing or boot from no network card or disk controller; pass --skip-checks to enrol the keys all the same, which also skips the check of the boot loader and UKI",
 		strings.Join(problems, "; "))
 }
 
@@ -250,7 +250,7 @@ func (s *Server) checkBootedUnder(db, dbx secureboot.Database) error {
 	}
 	for _, path := range binaries {
 		if err := verifyFile(path, db, dbx); err != nil {
-			return layer.Errorf(connect.CodeFailedPrecondition, "the installer or image this machine booted is not signed by a db certificate: %s: %w; sign it with the db key you enrol (chalkbuild sign), boot it, and run enroll again, or pass --force", filepath.Base(path), err)
+			return layer.Errorf(connect.CodeFailedPrecondition, "the installer or image this machine booted is not signed by a db certificate: %s: %w; sign it with the db key you enrol (chalkbuild sign), boot it, and run enroll again, or pass --skip-checks", filepath.Base(path), err)
 		}
 	}
 	return nil
@@ -263,7 +263,7 @@ func bootedBinariesError(espDir string, err error) error {
 	if errors.Is(err, unix.ENODEV) {
 		return layer.Errorf(connect.CodeUnavailable, "the ESP did not mount at %s, so the boot loader and UKI this machine booted cannot be checked against the new db: %w; see why in the journal of efi.mount (chalkctl logs <node> --unit efi.mount) and run enroll again", espDir, err)
 	}
-	return layer.Errorf(connect.CodeFailedPrecondition, "find the boot loader and UKI this machine booted, which must verify against the new db: %w; pass --force to enrol the keys without the check", err)
+	return layer.Errorf(connect.CodeFailedPrecondition, "find the boot loader and UKI this machine booted, which must verify against the new db: %w; pass --skip-checks to enrol the keys without the check", err)
 }
 
 // bootedBinaries are the files of the boot loader and the UKI the node booted on the ESP.

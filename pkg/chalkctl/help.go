@@ -11,7 +11,7 @@ talks to chalkd on each node over mutual TLS, and never builds or signs images.
 
 Commands authenticate with the cluster's secrets file, which holds every CA key and which only
 --secrets names, or with a client file of the admin, operator or reader role, which chalkctl client
-new writes. Each command's help says which it needs. A command that accepts both takes --config or
+new writes. Each command's help says which it takes. A command that accepts both takes --config or
 --secrets, not both, else the client file $CHALKOSCONFIG names, else ~/.config/chalkos/config.
 
 A command's flags go after its name, anywhere among its arguments, and -- ends them: every
@@ -24,7 +24,7 @@ const rootExample = `  # Generate the cluster's secrets, install and bootstrap a
   chalkctl bootstrap cp1 --secrets secrets.age
   chalkctl kubeconfig --secrets secrets.age`
 
-const genLong = `Generates the files a cluster starts from. Its command needs no secrets file or client file.`
+const genLong = `Generates the files a cluster starts from.`
 
 const genExample = `  chalkctl gen secrets --plaintext`
 
@@ -38,7 +38,7 @@ https://trevex.github.io/chalkos/how-it-works/node/certificates/.
 The command refuses to overwrite any of these files, because new secrets would lock out every
 installed node. With --out - the secrets file goes to standard output, for a secret manager to
 keep, the public half to --public-out, which --out - needs, and the command's messages to standard
-error. The command needs no secrets file or client file.`
+error.`
 
 const genSecretsExample = `  # Encrypt the secrets to an age key and an SSH key.
   chalkctl gen secrets --recipient age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p \
@@ -53,10 +53,7 @@ const genSecretsExample = `  # Encrypt the secrets to an age key and an SSH key.
 
 const nodeLong = `Manages a node's access to the cluster and its boot and shows its state: renews its node
 certificate, revokes and unrevokes it by name, makes the image staged on it boot next, reboots it
-held by its layers, lists and runs the diagnostics its image declares, and shows a router's routes.
-node renew needs the secrets file; node revoke and node unrevoke need an admin client file or the
-secrets file; node activate and node reboot need an operator client file or the secrets file;
-node diag and node routes need a reader client file or the secrets file.`
+held by its layers, lists and runs the diagnostics its image declares, and shows a router's routes.`
 
 const nodeExample = `  chalkctl node renew w1
   chalkctl node revoke w1
@@ -74,9 +71,8 @@ prints on standard output and standard error. It fails when the command fails, r
 its timeout or prints more than 1 MiB.
 
 Every image declares addresses, links, routes, route-get, neighbours, ping, dns-query,
-tcp-connect and nft-ruleset; layers and extensions add more. Listing needs a reader client file
-or the secrets file, and running a diagnostic the role it lists. A node in maintenance mode is
-reached with --fingerprint or --insecure as well.`
+tcp-connect and nft-ruleset; layers and extensions add more. Running a diagnostic needs the role
+it lists. A node in maintenance mode is reached with --fingerprint or --insecure as well.`
 
 const nodeDiagExample = `  # List w1's diagnostics.
   chalkctl node diag w1
@@ -95,15 +91,14 @@ to recovering a node; renewing node certificates before they expire avoids it.
 
 A node revoked with chalkctl node revoke is refused, as is any node while a layer cannot say
 which nodes are revoked: in a Kubernetes cluster the control planes are asked first, and one
-whose own certificate expired cannot answer. --force renews without asking. The command needs
-the secrets file.`
+whose own certificate expired cannot answer. --ignore-revoked renews without asking.`
 
 const nodeRenewExample = `  chalkctl node renew w1`
 
 const configLong = `Delivers a node's config from the inventory and acts on its trial or pending config. config
 apply delivers the config, and chalkctl apply is its short form. config confirm confirms a config
 on trial, config rollback delivers a node's previous config again, and config discard drops the
-config a node holds pending for its next upgrade. The commands need the secrets file.`
+config a node holds pending for its next upgrade.`
 
 const configExample = `  # Deliver w1's config on trial for five minutes, or, with the short form:
   chalkctl config apply w1 --secrets secrets.age --try 5m
@@ -112,8 +107,7 @@ const configExample = `  # Deliver w1's config on trial for five minutes, or, wi
   # Undo w1's last config delivery.
   chalkctl config rollback w1 --secrets secrets.age`
 
-const clientLong = `Manages client files, which let a person operate the cluster without the secrets file. Writing
-a client file needs the secrets file.`
+const clientLong = `Manages client files, which let a person operate the cluster without the secrets file.`
 
 const clientExample = `  chalkctl client new --name alice --role operator --secrets secrets.age`
 
@@ -123,21 +117,18 @@ names another; commands read it from there, or from the path --config or $CHALKO
 client file names no cluster: its OS CA ties it to one, and a node of another cluster fails the TLS
 handshake, which chalkctl reports as a node that does not accept the client file.
 
-A client file works for bootstrap, disks, etcd leave, etcd members, etcd remove-member, logs,
-node activate, node diag, node reboot, node revoke, node routes, node unrevoke, registry delete,
-registry gc, registry list, registry push, secureboot enroll, status, storage reset and upgrade;
-every other command needs the secrets file or neither file. A reader may read nodes'
-information, disks, status and logs, etcd's members and the cluster registry's images; an
-operator may also upgrade, activate staged images, reboot, drain and uncordon nodes; an admin may
-call every method of chalkd but the node's own renewal, and push, delete and collect garbage in
-the cluster registry. See
+A client file works for %s; every other command needs the secrets file or neither file.
+
+A reader may read nodes' information, disks, status and logs, etcd's members and the cluster
+registry's images; an operator may also upgrade, activate staged images, reboot, drain and
+uncordon nodes; an admin may call every method of chalkd but the node's own renewal, and push,
+delete and collect garbage in the cluster registry. See
 https://trevex.github.io/chalkos/how-it-works/node/security/#chalkd-checks-the-role-of-every-request.
 
 The certificate is valid for --ttl, by default 30 days for an admin, 90 days for an operator and
 a year for a reader. Issue a new file from the secrets file when it expires; chalkctl warns in
-the last third of its lifetime.
-
-The command needs the secrets file and no inventory.`
+the last third of its lifetime. An existing file is replaced only with --overwrite. The command
+needs no inventory.`
 
 const clientNewExample = `  # A reader's client file for a dashboard.
   chalkctl client new --name grafana --role reader --ttl 720h --out grafana.json --secrets secrets.age
@@ -145,27 +136,28 @@ const clientNewExample = `  # A reader's client file for a dashboard.
   # The operator's own client file, at ~/.config/chalkos/config.
   chalkctl client new --name alice --role operator --secrets secrets.age`
 
-const storageLong = `Manages the volumes of an installed node. Its command needs an admin client file or the
-secrets file.`
+const storageLong = `Manages the volumes of an installed node.`
 
 const storageExample = `  chalkctl storage reset w1 data`
 
-const resetVolumeLong = `Wipes one volume of a node and creates it again, empty, the way the node's config defines it.
-Its data is lost. A volume the config encrypts is sealed to the TPM again and, unless the
-node's fallback is none, gets the second keyslot back: the node's recovery key or its password.
-A volume the config leaves unencrypted is created without encryption. The command needs the
-inventory, which defines the volume, and an admin client file or the secrets file. A
-node whose fallback is its recovery key needs the secrets file, from which the key is derived. The
-reset refuses a config that changes another volume too, which a delivery carries out, and runs
-once no config is on trial. A client that goes away does not stop a reset that has begun.`
+const resetVolumeLong = `Wipes one volume of a node and creates it again, empty, the way the node's config defines it. Its
+data is lost. A volume the config encrypts is sealed to the TPM again and, unless the node's
+fallback is none, gets the second keyslot back: the node's recovery key or its password. A volume
+the config leaves unencrypted is created without encryption. The command needs the inventory, which
+defines the volume. A node whose fallback is its recovery key needs the secrets file, from which the
+key is derived. The reset refuses a config that changes another volume too, which a delivery carries
+out, and runs once no config is on trial. A client that goes away does not stop a reset that has
+begun.`
+
+// resetVolumeConfirms says when storage reset asks, for its Meta.
+const resetVolumeConfirms = "asks for the node's name on the terminal before it wipes the volume"
 
 const resetVolumeExample = `  # Recreate the data volume of w1.
   chalkctl storage reset w1 data --secrets secrets.age`
 
 const recoveryKeyLong = `Prints the recovery key of a node, which unlocks its encrypted volumes when the TPM does not:
 for example after a change of the Secure Boot keys or state, which the TPM measures in PCR 7. It
-is derived from the secrets file's recovery secret and the node's name, so no file stores it. The
-command needs the secrets file.`
+is derived from the secrets file's recovery secret and the node's name, so no file stores it.`
 
 const recoveryKeyExample = `  chalkctl recovery-key w1`
 
@@ -188,8 +180,11 @@ https://trevex.github.io/chalkos/how-it-works/node/overview/#an-install-turns-a-
 
 A name revoked with chalkctl node revoke is refused, as is any node while a layer cannot say which
 names are revoked, as when a bootstrapped Kubernetes cluster's control planes do not answer;
---force installs without asking. chalkctl warns of each image reference in the config that names a
-tag but no digest. The command needs the secrets file.`
+--ignore-revoked installs without asking. chalkctl warns of each image reference in the config
+that names a tag but no digest.`
+
+// installConfirms says when install asks, for its Meta.
+const installConfirms = "asks for the node's name on the terminal before the installer replaces what the target disk holds with --wipe-disk"
 
 const installExample = `  # Install cp1, comparing the certificate with the fingerprint on its console.
   chalkctl install cp1 --secrets secrets.age \
@@ -199,12 +194,11 @@ const installExample = `  # Install cp1, comparing the certificate with the fing
   chalkctl install w1 --secrets secrets.age --address 192.168.1.50 --insecure \
     --image ./worker-image`
 
-const disksLong = `Lists a node's disks with their use, the partitions on them, and the properties a storage
-definition selects disks by: size, type, model, serial number and WWN. An installed node is
-reached with a reader client file or the secrets file; a node in maintenance mode with
---fingerprint or --insecure as well. A node that the inventory does not name yet is reached at
---address, in maintenance mode: an image or installer built with an OS CA accepts only a client
-with the secrets file or a client file, one built without accepts any client.`
+const disksLong = `Lists a node's disks with their use, the partitions on them, and the properties a storage definition
+selects disks by: size, type, model, serial number and WWN. A node in maintenance mode is reached
+with --fingerprint or --insecure as well. A node that the inventory does not name yet is reached at
+--address, in maintenance mode: an image or installer built with an OS CA accepts only a client with
+the secrets file or a client file, one built without accepts any client.`
 
 const disksExample = `  # The disks of an installed node.
   chalkctl disks w1
@@ -281,8 +275,7 @@ https://trevex.github.io/chalkos/how-it-works/node/config/#a-trial-rolls-a-confi
 
 --kubernetes-share also delivers a new Kubernetes share, such as a worker's new kubelet
 certificate. It is refused to a node revoked with chalkctl node revoke, and while no control plane
-says which nodes are revoked; --force delivers it without asking. The command needs the secrets
-file.`
+says which nodes are revoked; --ignore-revoked delivers it without asking.`
 
 const applyConfigExample = `  # Apply w1's changed network and labels.
   chalkctl config apply w1 --secrets secrets.age
@@ -334,7 +327,7 @@ two minutes past it after a failed rollback, which the node still lets a confirm
 rollback that failed after it changed the node can no longer be confirmed: config rollback
 finishes it.
 
-The node keeps the config on trial, so the command needs no inventory. It needs the secrets file.`
+The node keeps the config on trial, so the command needs no inventory.`
 
 const confirmConfigExample = `  # Keep a trial open while you test by hand, then keep the config.
   chalkctl config apply w1 --secrets secrets.age --try 30m --no-confirm
@@ -353,8 +346,7 @@ It also finishes a rollback at a trial's deadline that failed after it changed t
 trial's rollback, the config on trial is the node's previous config, which the command delivers
 again without a trial.
 
-The node keeps the config it rolls back to, so the command needs no inventory. It needs the
-secrets file.`
+The node keeps the config it rolls back to, so the command needs no inventory.`
 
 const rollbackConfigExample = `  # Show what undoing w1's last config delivery changes, then undo it.
   chalkctl config rollback w1 --secrets secrets.age --diff
@@ -362,7 +354,7 @@ const rollbackConfigExample = `  # Show what undoing w1's last config delivery c
 
 const discardPendingLong = `Drops the config a node holds pending for its next upgrade, which config apply --staged leaves on
 a node without a staged image, and names the config it dropped. The node holds the config, so the
-command needs no inventory. It needs the secrets file.`
+command needs no inventory.`
 
 const discardPendingExample = `  # Drop the config w1 holds pending.
   chalkctl config discard w1 --secrets secrets.age`
@@ -377,7 +369,7 @@ holds pending for its next upgrade, unchecked, and since when; the previous conf
 rollback restores; whether its store is the image the inventory names for it; its volumes and
 their state; Kubernetes, with the nodes revoked in the cluster on a control plane; a router's BGP
 sessions; the certificates it serves and when they expire; the CAs it trusts; its clock; and the
-units that failed. The command needs a reader client file or the secrets file.
+units that failed.
 
 status decrypts no sops:// or age:// source of a Secret document, so it asks for no key. When the
 config the inventory gives the node takes values from such sources, status does not know its
@@ -391,8 +383,8 @@ const statusExample = `  chalkctl status cp1
   chalkctl status cp1`
 
 const logsLong = `Prints a node's journal of the current boot, of every unit or of --unit alone; with --follow it
-keeps printing new entries until interrupted. The command needs a reader client file or the
-secrets file. A node in maintenance mode is reached with --fingerprint or --insecure as well.`
+keeps printing new entries until interrupted. A node in maintenance mode is reached with
+--fingerprint or --insecure as well.`
 
 const logsExample = `  # Follow chalkd's log on cp1.
   chalkctl logs cp1 --unit chalkd.service -f`
@@ -404,8 +396,7 @@ inventory gives the node, or with --image the image upgrade --image staged, by i
 the node refuses when it has no image staged or another one. With --image the command needs no
 inventory. The node checks the UKI again, and not the config: the image's own checker passed
 the config before the image was staged. Asked again, the command says that the image boots next
-already. The image boots with the node's next reboot, which chalkctl node reboot runs. The command
-needs an operator client file or the secrets file.`
+already. The image boots with the node's next reboot, which chalkctl node reboot runs.`
 
 const nodeActivateExample = `  chalkctl upgrade --nodes w1 --until stage
   chalkctl node activate w1
@@ -431,8 +422,7 @@ command too and leaves the node held; the command run again waits for it and rel
 --no-drain reboots the node without its layers holding or releasing it, and still waits. Draining
 a node goes through the cluster's control planes, which the inventory names.
 
-A node in maintenance mode, reached with --fingerprint or --insecure, reboots without more. The
-command needs an operator client file or the secrets file.`
+A node in maintenance mode, reached with --fingerprint or --insecure, reboots without more.`
 
 const nodeRebootExample = `  # Drain w1, reboot it into the image it boots next and uncordon it once it is Ready.
   chalkctl node reboot w1
@@ -455,7 +445,9 @@ secrets file, holding <file>.lock.
 Nodes revoked with chalkctl node revoke are skipped and named; rotate stops while a layer cannot
 say which nodes are revoked, as when no Kubernetes control plane answers, unless none was
 bootstrapped yet. --ignore-revoked rotates without the lists, and every node of the inventory
-takes part, so remove revoked nodes from the inventory first. The command needs the secrets file.`
+takes part, so remove revoked nodes from the inventory first. --finish refuses while a kind asks
+to wait, as the service-account key does within the hour after its switch; --finish --now
+finishes all the same.`
 
 const rotateExample = `  # Rotate the Kubernetes CA. It pauses after the accept phase, so kubeconfigs and workloads can
   # trust the new CA before it issues certificates. It pauses again after the refresh.
@@ -480,7 +472,7 @@ not found healthy within --timeout stops it too and stays held; the command run 
 and releases it, unless the node fell back meanwhile: like any node that fell back, it then stays
 held until a run reboots it into a fixed image, or into the same image once more with
 --retry-failed, finds that boot healthy and has its layers release it. Staging or activating an
-image does not release it, nor does a run with --force, which leaves the layers out.
+image does not release it, nor does a run with --recover, which leaves the layers out.
 --until stage or --until activate stops each node after that step and holds no node.
 
 Before any node gets its image, the image's layers check the versions it brings against what the
@@ -489,14 +481,14 @@ newer than the oldest API server the control planes run. An upgrade also refuses
 changes a version the layers bound against the config a node runs, such as the Kubernetes API
 server's: chalkctl config apply delivers that change first, in the order the layers need.
 
---force recovers the nodes explicitly named by --nodes when their cluster cannot serve an
+--recover recovers the nodes explicitly named by --nodes when their cluster cannot serve an
 ordinary upgrade. It skips cluster version checks, config rollout guards and layer coordination:
 no layer role queries, quorum checks, draining or uncordoning. It needs only the selected nodes'
 chalkd endpoints, processes them in --max-unavailable batches without coordinator ordering, and
 still checks credentials, image integrity and config, and waits for the new boot to pass the
 node's health checks. It may interrupt workloads or lose etcd quorum. The node's protection of a
 fallback image while its running boot is unblessed still applies. The flag is client-side and
-works with installed nodes that have no force option of their own.
+works with installed nodes that have no recovery option of their own.
 
 Each node gets its config with the image, checked against it before any node is drained, and
 chalkctl prints a line of what it changes and warns of each image reference in the config that
@@ -516,14 +508,19 @@ https://trevex.github.io/chalkos/how-it-works/node/upgrades/#a-rollback-boots-th
 Run again, an upgrade continues where it stopped, and --retry-failed installs the image once more
 on nodes that fell back from it. See
 https://trevex.github.io/chalkos/how-it-works/node/upgrades/ and
-https://trevex.github.io/chalkos/how-it-works/kubernetes/upgrades/. The command needs an
-operator client file or the secrets file.`
+https://trevex.github.io/chalkos/how-it-works/kubernetes/upgrades/.
+
+A run without --nodes takes every node of the cluster the inventory names, so a wrong
+$CHALKOSINVENTORY reaches another cluster: chalkctl prints the nodes of the run before it asks.`
+
+// upgradeConfirms says when upgrade asks, for its Meta.
+const upgradeConfirms = "asks on the terminal before a run without --nodes changes the first node of the inventory, unless --diff or --until stage stops it before a change"
 
 const upgradeExample = `  # Upgrade the whole cluster, each node to the image the inventory names for it.
   chalkctl upgrade
 
   # Recover a node whose cluster cannot serve the upgrade.
-  chalkctl upgrade --nodes cp1 --force
+  chalkctl upgrade --nodes cp1 --recover
 
   # Upgrade the nodes running an image of its name, two at a time, with an image chalkbuild signed.
   chalkctl upgrade --image ./worker-image --max-unavailable 2
@@ -549,8 +546,7 @@ registry, names each node whose config is not, and warns of a node whose SystemD
 which holds its keys and secrets, unencrypted, and of each image reference that names a tag but no
 digest, which nodes pull by whatever the tag points to when they pull. A layer warns of what the
 nodes' config together leaves open, such as flannel's VXLAN taken from any source, with the
-ranges of the nodes' addresses to set instead. It reaches no node and needs no secrets file or
-client file.
+ranges of the nodes' addresses to set instead. It reaches no node.
 
 validate reads the file:// sources of Secret documents and decrypts no sops:// or age:// source,
 so it asks for no key. It checks each key of such a source with a placeholder value, which no
@@ -608,18 +604,18 @@ boot.
 The node refuses the keys unless the boot loader and UKI it booted verify against db with the new
 keys, so sign the installer or image with the db key first (chalkbuild sign) and boot it. It also
 refuses keys under which db would not allow every option ROM its TPM event log lists, by its digest
-or by holding Microsoft's UEFI CA of 2011 or its option ROM CA of 2023, and option ROMs dbx
-revokes. When the node cannot read its option ROMs, without a TPM for one, chalkctl says so.
---force enrols the keys all the same, skipping both checks. A node that runs its image from its
-own disk deletes STATE, which holds nothing before the install and which the TPM no longer unseals
-once the keys change, and creates it again when it boots. The node writes PK last: when a write
-fails before it, the firmware stays in Setup Mode and enroll can run again.
+or by holding Microsoft's UEFI CA of 2011 or its option ROM CA of 2023, and option ROMs dbx revokes.
+When the node cannot read its option ROMs, without a TPM for one, chalkctl says so. --skip-checks
+enrols the keys all the same, skipping both checks. A node that runs its image from its own disk
+deletes STATE, which holds nothing before the install and which the TPM no longer unseals once the
+keys change, and creates it again when it boots. The node writes PK last: when a write fails before
+it, the firmware stays in Setup Mode and enroll can run again.
 
 The node then reboots, and chalkctl waits until it answers with Secure Boot on. It makes a new
 certificate in maintenance mode when it boots, which chalkctl accepts without verifying and prints
 the fingerprint of; compare it with the node's console before the install. Like chalkctl disks, the
-command reaches the node by --address, with --fingerprint or --insecure, and with the secrets file
-or an admin's client file when its image carries an OS CA.`
+command reaches the node by --address, with --fingerprint or --insecure, and with its credentials
+when its image carries an OS CA.`
 
 const securebootEnrollExample = `  # Enrol the keys in a machine that booted the signed installer, then install it.
   chalkctl secureboot enroll --keys keys --address 192.168.1.50 --insecure --secrets secrets.age
@@ -634,7 +630,7 @@ const securebootEnrollExample = `  # Enrol the keys in a machine that booted the
     --fingerprint 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08`
 
 const imageLong = `Fetches chalkos images from a registry to the local disk, for sites, labs and tools that read
-an image from a directory. Its command needs no secrets file or client file.`
+an image from a directory.`
 
 const imageExample = `  chalkctl image pull ghcr.io/example/node-metal:v1.2.0 images/node-metal`
 

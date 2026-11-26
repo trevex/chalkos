@@ -767,9 +767,9 @@ func newUpgradeLabOf(t *testing.T, controlPlanes int, workers []string, cpImage,
 	return l
 }
 
-// upgrade runs chalkctl upgrade with the image and the lab's inventory.
+// upgrade runs chalkctl upgrade with the image and the lab's inventory, confirmed with --yes.
 func (l *upgradeLab) upgrade(img string, args ...string) error {
-	return l.run(append([]string{"upgrade", "--image", img}, args...)...)
+	return l.run(append([]string{"upgrade", "--image", img, "--yes"}, args...)...)
 }
 
 // useInventory describes the lab's nodes in an inventory, which the lab's runs read from then on:
@@ -808,7 +808,7 @@ func TestUpgradeGivesEachNodeItsImage(t *testing.T) {
 		"cp-metal": testUpgradeImage(t, "cp-metal", "0.2.0"), "w-metal": testUpgradeImage(t, "w-metal", "0.2.0"), "plain-metal": testUpgradeImage(t, "plain-metal", "0.2.0"),
 	}
 	l.useInventory(t, images)
-	if err := l.run("upgrade", "--max-unavailable", "4"); err != nil {
+	if err := l.run("upgrade", "--max-unavailable", "4", "--yes"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
 	for name, v := range l.images() {
@@ -1971,7 +1971,7 @@ func TestUpgradeWithAClientFileAlone(t *testing.T) {
 	if got := l.takeEvents(); len(got) != 0 {
 		t.Errorf("asked %q", got)
 	}
-	if err := l.ta.run(context.Background(), addressed("upgrade", "--image", testUpgradeImage(t, "w-metal", "0.2.0"), "--config", config)); err != nil {
+	if err := l.ta.run(context.Background(), addressed("upgrade", "--image", testUpgradeImage(t, "w-metal", "0.2.0"), "--config", config, "--yes")); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
 	if v := l.images(); v["w1"] != "0.2.0" || v["w2"] != "0.2.0" || v["w3"] != "0.2.0" || v["cp1"] != "0.1.0" || v["n1"] != "0.1.0" {
@@ -2464,7 +2464,7 @@ func TestUpgradeRollbackSkipsNodesOnTheTarget(t *testing.T) {
 	l.takeEvents()
 	l.uncountedRollback = true
 	l.ta.stdout.Reset()
-	if err := l.run("upgrade", "--rollback"); err != nil {
+	if err := l.run("upgrade", "--rollback", "--yes"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
 	if got, want := l.takeEvents(), []string{"w1 drain", "w1 rollback", "w1 reboot", "w1 uncordon"}; !slices.Equal(got, want) {
@@ -2481,7 +2481,7 @@ func TestUpgradeRollbackSkipsNodesOnTheTarget(t *testing.T) {
 // conflicting flags.
 func TestUpgradeRollbackRefuses(t *testing.T) {
 	l := newUpgradeLab(t, 3)
-	if err := l.run("upgrade", "--rollback"); err == nil || !strings.Contains(err.Error(), "no node keeps a previous image to roll back to") {
+	if err := l.run("upgrade", "--rollback", "--yes"); err == nil || !strings.Contains(err.Error(), "no node keeps a previous image to roll back to") {
 		t.Errorf("without previous images: %v", err)
 	}
 	if err := l.upgrade(testUpgradeImage(t, "w-metal", "0.2.0"), "--nodes", "w1,w2"); err != nil {

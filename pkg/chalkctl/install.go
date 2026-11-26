@@ -23,17 +23,19 @@ type installFlags struct {
 	node                nodeFlags
 	pin                 pinFlags
 	image, passwordFile string
-	wipeDisk, force     bool
+	wipeDisk            bool
+	ignoreRevoked       bool
 }
 
 func (a *app) installCommand() *cobra.Command {
 	f := installFlags{node: nodeFlags{needs: "install"}}
 	cmd := a.command(&cobra.Command{
-		Use:     "install <node>",
-		Short:   "Install a node that waits in maintenance mode",
-		Long:    installLong,
-		Example: installExample,
-		Args:    cli.ExactArgs(1),
+		Use:         "install <node>",
+		Short:       "Install a node that waits in maintenance mode",
+		Long:        installLong,
+		Example:     installExample,
+		Args:        cli.ExactArgs(1),
+		Annotations: layer.Meta{Credentials: layer.SecretsFile, Confirms: installConfirms}.Annotations(),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.install(ctx, f, pos) })
 	fs := cmd.Flags()
 	f.node.Register(fs)
@@ -41,7 +43,7 @@ func (a *app) installCommand() *cobra.Command {
 	fs.StringVar(&f.image, "image", "", "image to install when the node runs the installer: a raw image with repart-output.json and repart.d next to it, or an image directory, which chalkctl sends (default the node's image in the inventory: from its directory, or from a registry, which the installer pulls)")
 	fs.BoolVar(&f.wipeDisk, "wipe-disk", false, "let the installer replace whatever the target disk holds, including an installed node; without it, the installer continues an earlier install of the node or takes a disk on which blkid finds no signature, which counts as empty even when it holds data")
 	registerPasswordFile(fs, &f.passwordFile)
-	fs.BoolVar(&f.force, "force", false, "install the node without asking whether its name is revoked")
+	fs.BoolVar(&f.ignoreRevoked, "ignore-revoked", false, "install the node without asking whether its name is revoked")
 	return cmd
 }
 
@@ -80,7 +82,7 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 	if info.Mode != nodev1.Mode_MODE_MAINTENANCE {
 		return fmt.Errorf("%s at %s is installed already", t.name, t.addr)
 	}
-	if !f.force {
+	if !f.ignoreRevoked {
 		for _, d := range compiled[layer.Delivery]() {
 			if err := d.AdmitInstall(ctx, t); err != nil {
 				return err
@@ -158,6 +160,11 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 			fmt.Fprintf(a.stdout, "installing %s onto %s: %s %s, which the installer pulls from %s\n", t.name, ref, img.header.GetImageId(), img.name(), src)
 		} else {
 			fmt.Fprintf(a.stdout, "installing %s onto %s from %s: %s %s, sending %d bytes of store, hash tree, UKI and boot loader\n", t.name, ref, img.path, img.header.GetImageId(), img.name(), img.size())
+		}
+		if f.wipeDisk {
+			if err := a.confirm(ctx, fmt.Sprintf("with --wipe-disk, the installer replaces whatever the disk %s of the machine at %s holds, an installed node included", ref, t.addr), t.name); err != nil {
+				return err
+			}
 		}
 	}
 

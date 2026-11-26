@@ -28,8 +28,9 @@ type Rotation interface {
 	PausesAfter(kind clustersecrets.RotationKind, phase clustersecrets.Phase) bool
 	// Paused says what the operator does before the rotation continues.
 	Paused(ctx context.Context, r Rotating, rot clustersecrets.Rotation) error
-	// FinishGuard refuses to remove an old value of kind something still needs; force is --force.
-	FinishGuard(ctx context.Context, r Rotating, kind clustersecrets.RotationKind, force bool) error
+	// FinishGuard refuses to remove an old value of kind something still needs; now is --now, which
+	// overrides a wait.
+	FinishGuard(ctx context.Context, r Rotating, kind clustersecrets.RotationKind, now bool) error
 	// Finished says what the end of the rotation of kind leaves: the state of the nodes, which
 	// follows "the rotation of the <kind> is finished: ", and advice for what the finish cannot
 	// reach, such as clients' files to issue again; advice is "" without any.

@@ -17,16 +17,17 @@ to recovering a node; renewing node certificates before they expire avoids it.
 
 A node revoked with chalkctl node revoke is refused, as is any node while a layer cannot say
 which nodes are revoked: in a Kubernetes cluster the control planes are asked first, and one
-whose own certificate expired cannot answer. --force renews without asking. The command needs
-the secrets file.
+whose own certificate expired cannot answer. --ignore-revoked renews without asking.
+
+The command needs the secrets file.
 
 ## Flags
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
 | `--address`{ #flag-address } | list of [NODE=]ADDR | each node's address in the inventory | Address of a node's chalkd: ADDR for the one node the command reaches, or NODE=ADDR for any node, where ADDR is host or host:port; may be repeated. |
-| `--force`{ #flag-force } | boolean | `false` | Renew without asking whether the node is revoked. |
 | `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |
+| `--ignore-revoked`{ #flag-ignore-revoked } | boolean | `false` | Renew without asking whether the node is revoked. |
 | `--inventory`{ #flag-inventory } | string | $CHALKOSINVENTORY, else chalkos.yaml in the current directory, when it exists | Inventory naming the cluster's nodes, their addresses and their config files. |
 | `--secrets`{ #flag-secrets } | string | — | Cluster secrets path (.age, .enc.*, or plaintext), provider URI, or - for standard input. |
 

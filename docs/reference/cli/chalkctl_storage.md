@@ -5,8 +5,9 @@ description: "Manage a node's volumes"
 
 # chalkctl storage
 
-Manages the volumes of an installed node. Its command needs an admin client file or the
-secrets file.
+Manages the volumes of an installed node.
+
+Its command needs an admin client file or the secrets file.
 
 ## Examples
 

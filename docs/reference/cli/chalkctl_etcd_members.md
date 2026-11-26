@@ -11,7 +11,9 @@ chalkctl etcd members [flags]
 
 Lists etcd's members the way one control plane's own member sees them: name, ID, peer URLs,
 whether a member votes or is a learner, and its health. The first control plane that answers is
-asked, or --via. The command needs a reader client file or the secrets file.
+asked, or --via.
+
+The command needs a reader client file or the secrets file.
 
 ## Flags
 

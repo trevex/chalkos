@@ -167,11 +167,11 @@ so delete and recreate them before you finish.
 A finish before that hour is refused, because it would invalidate tokens that pods still use:
 
 ```text
-chalkctl: tokens signed with the old service-account key are renewed until 2026-10-23T20:58:51+02:00, an hour after every control plane applied the switch; finish then, or pass --force to refuse the tokens not renewed yet
+chalkctl: tokens signed with the old service-account key are renewed until 2026-10-23T20:58:51+02:00, an hour after every control plane applied the switch; finish then, or pass --now to refuse the tokens not renewed yet
 ```
 
 Run `chalkctl rotate service-account-key --finish --secrets=secrets.age` once the time has
-passed. `--finish --force` finishes earlier and refuses the tokens that were not renewed yet.
+passed. `--finish --now` finishes earlier and refuses the tokens that were not renewed yet.
 
 ## Rotate the encryption key
 

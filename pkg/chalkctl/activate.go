@@ -24,11 +24,12 @@ type nodeActivateFlags struct {
 func (a *app) nodeActivateCommand() *cobra.Command {
 	f := nodeActivateFlags{node: nodeFlags{needs: "node activate"}}
 	cmd := a.command(&cobra.Command{
-		Use:     "activate <node>",
-		Short:   "Make the image staged on a node boot next",
-		Long:    nodeActivateLong,
-		Example: nodeActivateExample,
-		Args:    cli.ExactArgs(1),
+		Use:         "activate <node>",
+		Short:       "Make the image staged on a node boot next",
+		Long:        nodeActivateLong,
+		Example:     nodeActivateExample,
+		Args:        cli.ExactArgs(1),
+		Annotations: layer.Meta{Credentials: layer.Operator}.Annotations(),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.nodeActivate(ctx, f, pos[0]) })
 	fs := cmd.Flags()
 	f.node.RegisterClient(fs)
