@@ -15,7 +15,10 @@ time goes into the first build, while Nix downloads and builds the image's parts
 You need the lab of [Quick start: Kubernetes](../get-started/quick-start-kubernetes.md), created
 and running, with the config change of
 [Change the nodes' config](../get-started/quick-start-kubernetes.md#change-the-nodes-config)
-applied. Run every command of this page in the lab directory, in the shell `nix develop` opens.
+applied. Run every command of this page in the lab directory, in the shell `nix develop` opens, with
+the three variables of
+[Use the cluster with kubectl](../get-started/quick-start-kubernetes.md#use-the-cluster-with-kubectl)
+exported; a new shell needs them exported again.
 
 ## Change the image
 
@@ -161,7 +164,9 @@ published image it ran before stays in the other slot, which `chalkctl upgrade -
 The lab's inventory still names the published image, so `chalkctl status` says that the node runs
 another one. To make your build the lab's image, point `node-kvm` in `chalkos.yaml` at its
 directory, `node-kvm: {source: {directory: images/node-kvm}}`, and create the lab again, as the
-template's `README.md` describes.
+template's `README.md` describes. This step is optional and starts over: `chalklab destroy` removes
+the lab's disks, so the nodes lose the published image in their other slot and cannot roll back to
+it.
 
 Both nodes are `Ready` in Kubernetes again:
 
