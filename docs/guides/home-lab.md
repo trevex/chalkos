@@ -477,7 +477,8 @@ YAML needs for an IPv6 address; the workstation reaches it over the tunnel:
     ```sh
     chalkctl node diag router neighbours \
       | jq -r '.[] | select(.dev == "fabric" and (.dst | startswith("fe80::")))
-          | [.lladdr, (.dst | sub("^fe80::"; "fdc8:a1b2:c3d4:1:"))] | @tsv'
+          | [.lladdr, (.dst | ltrimstr("fe80::") | split(":") | [range(4 - length) | "0"] + .
+            | "fdc8:a1b2:c3d4:1:" + join(":"))] | @tsv'
     ```
 
     Boot one node at a time, so the new lines are its own. Without the console you have no
@@ -709,11 +710,12 @@ Deliver a change of the router's ports, `management` interfaces or firewall with
 delivery renames a router port at once when its `Link` document gives it a new name, so change
 every document that names the port in the same delivery.
 
-New images reach the lab as on any cluster: build and sign them again, and roll them out with
-`chalkctl upgrade`, as [Change things later](cluster-on-machines.md#change-things-later) in the
-cluster guide and [Upgrade nodes](../operate/upgrade.md) describe. While the router reboots,
-traffic between the nodes' routed addresses, to the Kubernetes API and to the internet stops, so
-upgrade the router in a step of its own:
+New images reach the lab as on any cluster: build them again, sign copies of them when the
+lab uses Secure Boot, and roll them out with `chalkctl upgrade`, as
+[Change things later](cluster-on-machines.md#change-things-later) in the cluster guide and
+[Upgrade nodes](../operate/upgrade.md) describe. While the router reboots, traffic between the
+nodes' routed addresses, to the Kubernetes API and to the internet stops, so upgrade the router in
+a step of its own:
 
 ```sh
 chalkctl upgrade node1 node2 node3 --secrets=secrets.age
