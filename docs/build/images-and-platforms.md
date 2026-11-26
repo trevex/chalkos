@@ -64,9 +64,8 @@ A name is lower-case letters, digits and dashes, and starts with a letter or dig
 two entries of one name, and an entry named `installer`, which names the installer. The names
 above end in their platform only by convention; `platform` alone sets the platform.
 
-`chalkctl upgrade --image` without `--nodes` installs the image on the nodes that run an image of
-the same name. A renamed image matches no running node, so its first upgrade names the nodes with
-`--nodes`.
+`chalkctl upgrade --image` without node names installs the image on the nodes that run an image
+of the same name. A renamed image matches no running node, so its first upgrade names the nodes.
 
 ## Add a layer
 
@@ -371,7 +370,7 @@ which copies a flake's tracked files.
 | The build names `chalkos.kubernetes.version` and `chalkos.kubernetes.package` | Both are set, to different minors. Set one of them. |
 | The build names `chalkos.consoles` | `boot.kernelParams` holds a `console=` entry. Set the consoles in `chalkos.consoles`. |
 | The evaluation says to generate new secrets | `osCA` names a secrets file of another version than 3. Generate new secrets. |
-| `chalkctl upgrade --image` of a renamed image | A renamed image matches no running node. Name the nodes of its first upgrade with `--nodes`. |
+| `chalkctl upgrade --image` of a renamed image | A renamed image matches no running node. Name the nodes in its first upgrade. |
 
 ## What next
 

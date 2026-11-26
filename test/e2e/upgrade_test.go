@@ -56,7 +56,7 @@ func TestUpgrade(t *testing.T) {
 	})
 	pinnedPrefix := mirroredGuest + "/chalkos/test-upgrade@sha256:"
 	upgraded := time.Now()
-	out, err := chalkctl(t, nil, "", "upgrade", "--inventory", pullInventory, "--nodes", "chalklab", "--address", "chalklab="+n.addr, "--until", "stage")
+	out, err := chalkctl(t, nil, "", "upgrade", "chalklab", "--inventory", pullInventory, "--address", "chalklab="+n.addr, "--until", "stage")
 	if err != nil || !strings.Contains(out, "chalklab: config 4 added, 0 removed, 0 changed\n") ||
 		!strings.Contains(out, "chalklab: installing "+nextHash[:12]+", which it pulls from "+pinnedPrefix) ||
 		!strings.Contains(out, "chalklab: installed "+nextHash[:12]+", staged as .staged-chalkos_2.efi\n") ||
@@ -104,7 +104,7 @@ func TestUpgrade(t *testing.T) {
 	// The test image is still in slot A with its UKI and config: a rollback boots it again as
 	// generation 3, counted, since the upgrade image's boot was found healthy.
 	rolled := time.Now()
-	out, err = chalkctl(t, nil, "base", "upgrade", "--rollback", "--nodes", "chalklab", "--address", "chalklab="+n.addr, "--timeout", "10m")
+	out, err = chalkctl(t, nil, "base", "upgrade", "chalklab", "--rollback", "--address", "chalklab="+n.addr, "--timeout", "10m")
 	if err != nil || !strings.Contains(out, "chalklab: rolling back to "+base[:12]) || !strings.Contains(out, "chalklab: "+base[:12]+" boots next as chalkos_3+3.efi\n") ||
 		!strings.Contains(out, "rolled back 1 node to "+base[:12]) {
 		t.Fatalf("rollback to %s: %v", base[:12], err)
@@ -122,7 +122,7 @@ func TestUpgrade(t *testing.T) {
 	if _, err := chalkctl(t, nil, "", "client", "new", "--name", "ops", "--role", "operator", "--out", operator); err != nil {
 		t.Fatal(err)
 	}
-	upgradeAsOperator := []string{"upgrade", "--image", nextImage, "--nodes", "chalklab", "--address", "chalklab=" + n.addr, "--timeout", "10m"}
+	upgradeAsOperator := []string{"upgrade", "chalklab", "--image", nextImage, "--address", "chalklab=" + n.addr, "--timeout", "10m"}
 	out, err = chalkctl(t, n, "upgrade-stay", "config", "apply", "--staged", "chalklab")
 	stay := pendingHeld.FindStringSubmatch(out)
 	if err != nil || stay == nil {
@@ -154,7 +154,7 @@ func TestUpgrade(t *testing.T) {
 	t.Logf("rolled back and upgraded again in %v", time.Since(rolled).Round(time.Second))
 
 	failed := time.Now()
-	out, err = chalkctl(t, nil, "base", "upgrade", "--image", badImage, "--nodes", "chalklab", "--address", "chalklab="+n.addr, "--timeout", "10m")
+	out, err = chalkctl(t, nil, "base", "upgrade", "chalklab", "--image", badImage, "--address", "chalklab="+n.addr, "--timeout", "10m")
 	if err == nil || !strings.Contains(out, `chalklab: config 0 added, 4 removed (Secret "registry", Farewell "bye", Mirror "e2e", Registry "e2e"), 0 changed`+"\n") ||
 		!strings.Contains(out, "chalklab: activated "+badHash[:12]+", which boots next as chalkos_5+1.efi") ||
 		!strings.Contains(out, "chalklab: upgrade to "+badHash[:12]+" failed: rolled back to "+nextHash[:12]) || !strings.Contains(out, "units failed: chalktest-broken.service") {

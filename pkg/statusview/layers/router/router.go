@@ -103,3 +103,44 @@ func dhcpCount(n uint64) string {
 	}
 	return strconv.FormatUint(n, 10)
 }
+
+// Problems are what the router's status shows wrong, each in a few words, for the summary of the
+// node's status: BGP sessions that are not established, and resolvers, DHCP servers and relays
+// that do not run.
+func Problems(r *routerv1.StatusResponse) []string {
+	var p []string
+	if r.BgpError != "" {
+		p = append(p, "BGP unknown")
+	}
+	for _, peer := range r.Peers {
+		if peer.State != "Established" {
+			p = append(p, "BGP peer "+cmp.Or(peer.Name, peer.Neighbor)+" "+peer.State)
+		}
+	}
+	if r.Nat64Error != "" {
+		p = append(p, "NAT64 unknown")
+	}
+	if r.Resolver != nil && !r.Resolver.Running {
+		p = append(p, "resolver not running")
+	}
+	for _, v := range r.VrfResolvers {
+		if !v.Running {
+			p = append(p, "resolver "+v.Vrf+" not running")
+		}
+	}
+	for _, d := range r.Dhcp {
+		if !d.Running {
+			name := "dhcp4"
+			if d.Family == "ipv6" {
+				name = "dhcp6"
+			}
+			p = append(p, name+" "+d.Vrf+" not running")
+		}
+	}
+	for _, d := range r.DhcpRelays {
+		if !d.Running {
+			p = append(p, "dhcp-relay "+d.Vrf+" not running")
+		}
+	}
+	return p
+}

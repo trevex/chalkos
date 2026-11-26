@@ -48,7 +48,7 @@ type upgradeRun struct {
 	diffing bool
 	// rollback is set for upgrade --rollback, which boots the nodes' previous image.
 	rollback bool
-	// confirm asks before the run changes the first node, as a run without --nodes takes every
+	// confirm asks before the run changes the first node, as a run that names no node takes every
 	// node of the inventory.
 	confirm bool
 }
@@ -85,7 +85,7 @@ type upgradeOptions struct {
 type upgradeFlags struct {
 	upgradeOptions
 	node           nodeFlags
-	image, nodes   string
+	image          string
 	diff, rollback bool
 	layers         map[string]any
 	timeout        time.Duration
@@ -94,18 +94,18 @@ type upgradeFlags struct {
 func (a *app) upgradeCommand() *cobra.Command {
 	f := upgradeFlags{upgradeOptions: upgradeOptions{until: untilReboot}, layers: map[string]any{}}
 	cmd := a.command(&cobra.Command{
-		Use:         "upgrade",
+		Use:         "upgrade [<node>...]",
 		Short:       "Install new images on the cluster's nodes, or boot their previous ones again",
 		Long:        upgradeLong,
 		Example:     upgradeExample,
-		Args:        cli.NoArgs,
+		Args:        cobra.ArbitraryArgs,
 		Annotations: layer.Meta{Credentials: layer.Operator, Confirms: upgradeConfirms}.Annotations(),
-	}, func(a *app, ctx context.Context, pos []string) error { return a.upgrade(ctx, f) })
+	}, func(a *app, ctx context.Context, pos []string) error { return a.upgrade(ctx, f, pos) })
+	cli.Details(cmd, upgradeDetails)
 	fs := cmd.Flags()
 	f.node.RegisterClient(fs)
 	fs.Lookup("address").Usage = nodeAddressesUsage
-	fs.StringVar(&f.image, "image", "", "image to install on the nodes running an image of its name, or on the nodes --nodes names whatever they run: a raw image with repart-output.json next to it, or an image directory (default the directory of each node's image in the inventory)")
-	fs.StringVar(&f.nodes, "nodes", "", "comma-separated nodes to upgrade (default every node of the cluster, or with --image every node running an image of its name)")
+	fs.StringVar(&f.image, "image", "", "image to install on the nodes running an image of its name, or on the nodes named whatever they run: a raw image with repart-output.json next to it, or an image directory (default the directory of each node's image in the inventory)")
 	fs.IntVar(&f.maxUnavailable, "max-unavailable", 1, "how many nodes upgrade at once after the nodes that act for the others, such as Kubernetes control planes, which upgrade one at a time")
 	for _, p := range plugins {
 		if u, ok := p.(layer.UpgradeFlags); ok {
@@ -122,9 +122,9 @@ func (a *app) upgradeCommand() *cobra.Command {
 	return cmd
 }
 
-func (a *app) upgrade(ctx context.Context, f upgradeFlags) error {
-	if f.recovery && f.nodes == "" {
-		return cli.Usagef("--recover requires --nodes to name the nodes to recover")
+func (a *app) upgrade(ctx context.Context, f upgradeFlags, named []string) error {
+	if f.recovery && len(named) == 0 {
+		return cli.Usagef("--recover takes the nodes to recover by name")
 	}
 	if f.maxUnavailable < 1 {
 		return cli.Usagef("--max-unavailable must be at least 1")
@@ -143,10 +143,6 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags) error {
 		case f.until == untilStage:
 			return cli.Usagef("--rollback stages no image: it makes the image the nodes ran before boot next; --until activate stops there")
 		}
-	}
-	var named []string
-	if f.nodes != "" {
-		named = strings.Split(f.nodes, ",")
 	}
 	s, err := a.reach(ctx, f.node, soleNode(named), true)
 	if err != nil {
@@ -392,7 +388,7 @@ func (r *upgradeRun) run(ctx context.Context) error {
 		r.Say("rolling back %s to %s: %s", strs.Count(len(r.nodes), "node"), statusview.BootImageName(r.rollbackTo), strings.Join(r.order(), ", "))
 	}
 	if r.confirm && len(r.nodes) > 0 {
-		if err := r.a.confirm(ctx, fmt.Sprintf("upgrade without --nodes changes every node of %s, %s", r.cluster.Name(), strs.Count(len(r.nodes), "node")), ""); err != nil {
+		if err := r.a.confirm(ctx, fmt.Sprintf("upgrade with no node named changes every node of %s, %s", r.cluster.Name(), strs.Count(len(r.nodes), "node")), ""); err != nil {
 			return err
 		}
 	}
@@ -623,7 +619,7 @@ func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 		}
 		if err := sendChunks(parts, func(c *nodev1.ImageChunk) error {
 			return stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Chunk{Chunk: c}})
-		}); err != nil {
+		}, r.a.sendProgress(r.Say, name, img.size())); err != nil {
 			return err
 		}
 		res, err := stream.CloseAndReceive()

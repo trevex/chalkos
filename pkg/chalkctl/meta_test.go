@@ -188,12 +188,12 @@ func TestStorageResetConfirms(t *testing.T) {
 }
 
 // An upgrade of every node of the inventory asks once it printed the nodes, before the first
-// change; one of the nodes --nodes names, or one that stops at the stage step, does not.
+// change; one of the nodes named, or one that stops at the stage step, does not.
 func TestUpgradeConfirmsEveryNode(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	img := testUpgradeImage(t, "w-metal", "0.2.0")
 	err := l.run("upgrade", "--image", img)
-	if err == nil || !strings.Contains(err.Error(), "upgrade without --nodes changes every node of") || !strings.Contains(err.Error(), "pass --yes") {
+	if err == nil || !strings.Contains(err.Error(), "upgrade with no node named changes every node of") || !strings.Contains(err.Error(), "pass --yes") {
 		t.Fatalf("without a terminal: %v, want a refusal naming --yes", err)
 	}
 	if !strings.Contains(l.ta.stdout.String(), "upgrading w-metal on metal") {
@@ -215,11 +215,11 @@ func TestUpgradeConfirmsEveryNode(t *testing.T) {
 		asked = append(asked, prompt)
 		return "y", nil
 	}
-	if err := l.run("upgrade", "--image", img, "--nodes", "w1"); err != nil {
-		t.Errorf("--nodes w1: %v", err)
+	if err := l.run("upgrade", "--image", img, "w1"); err != nil {
+		t.Errorf("w1: %v", err)
 	}
 	if len(asked) != 0 {
-		t.Errorf("--nodes asked %q", asked)
+		t.Errorf("w1 asked %q", asked)
 	}
 	if err := l.run("upgrade", "--image", img); err != nil {
 		t.Errorf("answering y: %v", err)

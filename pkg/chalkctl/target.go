@@ -78,7 +78,7 @@ func (a *app) reach(ctx context.Context, n nodeFlags, one string, clientFile boo
 	if err != nil {
 		return nodeSet{}, err
 	}
-	return nodeSet{cluster: c, creds: creds, addresses: addresses}, nil
+	return nodeSet{cluster: c, creds: creds, addresses: addresses, release: a.releases}, nil
 }
 
 // addresses are the addresses --address gives, by node, as Addresses.Resolve gives them. It
@@ -138,7 +138,11 @@ func dialNode(t *target, ignoreValidity bool) (*client.Conn, error) {
 			return fmt.Errorf("this client file's OS CA does not verify the node's certificate, %s: is the file another cluster's or from before an OS CA rotation, or does the address reach another cluster's node? (%w)", path, err)
 		}
 	}
-	return client.Dial(t.addr, o)
+	conn, err := client.Dial(t.addr, o)
+	if err != nil {
+		return nil, err
+	}
+	return t.nodes.release.watch(conn, t.name), nil
 }
 
 // pinFlags verifies a node in maintenance mode, which serves a self-signed certificate.
@@ -179,13 +183,17 @@ type nodePinFlags struct {
 // and to an installed node otherwise.
 func dialEither(t *target, p pinFlags) (*client.Conn, error) {
 	if p.set() {
-		return p.dial(t.addr, t.source, t.creds.cert)
+		conn, err := p.dial(t.addr, t.source, t.creds.cert)
+		if err != nil {
+			return nil, err
+		}
+		return t.nodes.release.watch(conn, t.name), nil
 	}
 	return dialInstalled(t)
 }
 
 // nodeAddressesUsage is the usage of --address of a command that reaches one node or several:
-// config apply, and upgrade, which names its nodes with --nodes.
+// config apply and upgrade.
 const nodeAddressesUsage = "address of a node's chalkd as NODE=ADDR, or as ADDR alone when the command names one node, where ADDR is host or host:port; may be repeated (default each node's address in the inventory)"
 
 // namedAddressesUsage is the usage of --address of rotate, which reaches every node and none alone.
@@ -202,6 +210,8 @@ type nodeSet struct {
 	cluster   *cluster
 	creds     *credentials
 	addresses map[string]string
+	// release warns of nodes of another release than chalkctl's.
+	release *releaseCheck
 }
 
 // target addresses a node of the set, at the address --address gives for it or else at the
@@ -238,7 +248,11 @@ func callNode(t *target, fn func(conn *client.Conn) error) error {
 		return layer.Named(t.name, err)
 	}
 	defer conn.Close()
-	return layer.Named(t.name, fn(conn))
+	var ours string
+	if r := t.nodes.release; r != nil {
+		ours = r.ours
+	}
+	return layer.Named(t.name, unimplemented(fn(conn), ours))
 }
 
 // status reads the status of the installed node name.

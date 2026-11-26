@@ -1,0 +1,284 @@
+{
+  "node": "n1",
+  "healthy": false,
+  "problems": [
+    "trial rollback failed",
+    "trial record unreadable",
+    "config not the inventory's",
+    "staged config not the inventory's",
+    "boot not found healthy yet",
+    "upgrade to deaddeaddead failed",
+    "image not the inventory's",
+    "volume data missing",
+    "disk data not found",
+    "output unbound-conf failed",
+    "certificate node expires in 20 days",
+    "certificate Kubernetes share unreadable: parse the Kubernetes share",
+    "unit kea-dhcp4@guest.service failed",
+    "control-plane pods: kube-apiserver is not Ready",
+    "BGP peer transit Active",
+    "resolver guest not running",
+    "dhcp4 guest not running",
+    "dhcp-relay guest not running"
+  ],
+  "inventory": {
+    "config": "differs",
+    "stagedConfig": "differs",
+    "image": "differs",
+    "platform": "same"
+  },
+  "info": {
+    "mode": "MODE_NORMAL",
+    "imageId": "chalkos",
+    "bootDisk": "/dev/vda",
+    "secureBoot": "SECURE_BOOT_DISABLED",
+    "fingerprint": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "hostname": "n1",
+    "image": "test-metal",
+    "platform": "metal",
+    "rootHash": "q6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6s=",
+    "layers": [
+      "kubernetes",
+      "router"
+    ],
+    "nodeName": "n1",
+    "modulePolicy": {
+      "state": "MODULE_POLICY_STATE_ENFORCED",
+      "version": "0.5.0"
+    },
+    "chalkosVersion": "unknown"
+  },
+  "status": {
+    "disks": [
+      {
+        "name": "system",
+        "device": "/dev/vda"
+      },
+      {
+        "name": "data",
+        "error": "no disk matches the selector serial=S64DNF0R"
+      }
+    ],
+    "volumes": [
+      {
+        "name": "var",
+        "disk": "system",
+        "mountPoint": "/var",
+        "present": true,
+        "mounted": true
+      },
+      {
+        "name": "data",
+        "disk": "data",
+        "mountPoint": "/var/lib/data"
+      }
+    ],
+    "failedUnits": [
+      "kea-dhcp4@guest.service"
+    ],
+    "certificates": [
+      {
+        "name": "node",
+        "notAfter": "2027-10-08T12:00:00Z",
+        "problem": "expires in 20 days; renew it with chalkctl node renew <node>"
+      },
+      {
+        "name": "Kubernetes share",
+        "problem": "unreadable: parse the Kubernetes share"
+      }
+    ],
+    "time": {
+      "synchronised": true,
+      "source": "10.0.2.2",
+      "offsetSeconds": -0.0000123
+    },
+    "trust": [
+      {
+        "name": "OS CA",
+        "fingerprints": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
+        "issuing": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+        "name": "Kubernetes CA",
+        "fingerprints": [
+          "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        ],
+        "issuing": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      }
+    ],
+    "boot": {
+      "running": {
+        "rootHash": "gb2BvYG9gb2BvYG9gb2BvYG9gb2BvYG9gb2BvYG9gb0=",
+        "generation": "7",
+        "revision": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+        "tag": "v1.4.0"
+      },
+      "entry": "chalkos_7+2-1.efi",
+      "staged": {
+        "rootHash": "P6k/qT+pP6k/qT+pP6k/qT+pP6k/qT+pP6k/qT+pP6k=",
+        "generation": "8",
+        "tag": "v1.5.0"
+      },
+      "failed": {
+        "rootHash": "3q3erd6t3q3erd6t3q3erd6t3q3erd6t3q3erd6t3q0=",
+        "generation": "9"
+      },
+      "journal": [
+        "Nov 13 14:00:01 n1 chalkd[412]: health check failed",
+        "Nov 13 14:00:02 n1 systemd[1]: Reached target Reboot."
+      ],
+      "previous": {
+        "rootHash": "EjQSNBI0EjQSNBI0EjQSNBI0EjQSNBI0EjQSNBI0EjQ=",
+        "generation": "6",
+        "revision": "0123456789abcdef0123-dirty"
+      },
+      "stagedState": "SLOT_STATE_STAGED"
+    },
+    "platform": "metal",
+    "configVersion": "3fa9c1e2b7d04e5f",
+    "stagedConfigVersion": "77aa01bc23de45f6",
+    "outputs": [
+      {
+        "name": "bird-conf",
+        "hash": "abababababababababababababababababababababababababababababababab"
+      },
+      {
+        "name": "unbound-conf",
+        "error": "its renderer failed (exit 2); see the node's journal"
+      }
+    ],
+    "previousConfigVersion": "77aa01bc23de45f6",
+    "trial": {
+      "version": "3fa9c1e2b7d04e5f",
+      "previousVersion": "77aa01bc23de45f6",
+      "deadline": "2026-11-13T15:04:00Z",
+      "error": "output demo failed",
+      "ignoreUnits": [
+        "late.service"
+      ]
+    },
+    "trialError": "parse chalkd/trial: unexpected end of JSON input",
+    "pendingConfig": {
+      "version": "9c0ffee12345abcd",
+      "since": "2026-11-12T08:00:00Z"
+    }
+  },
+  "layers": {
+    "kubernetes": {
+      "kind": "controlplane",
+      "state": "bootstrapped",
+      "nodeReady": "True",
+      "vip": "holder",
+      "controlPlane": "current",
+      "controlPlaneCurrent": true,
+      "revokedNodes": [
+        {
+          "name": "n7",
+          "revokedAt": "2026-11-02T09:30:00Z"
+        },
+        {
+          "name": "old-worker"
+        }
+      ],
+      "apiServerVersion": "1.37.2",
+      "kubeletVersion": "1.37.1",
+      "controlPlanePods": "kube-apiserver is not Ready"
+    },
+    "router": {
+      "peers": [
+        {
+          "name": "fabric",
+          "neighbor": "eth1",
+          "state": "Established",
+          "uptimeSeconds": "3723",
+          "prefixesReceived": 1,
+          "prefixesSent": 2,
+          "bfd": "up"
+        },
+        {
+          "name": "transit",
+          "neighbor": "203.0.113.254",
+          "state": "Active",
+          "vrf": "tenant"
+        }
+      ],
+      "nat64": [
+        {
+          "name": "edge",
+          "sessions": "3",
+          "bindings": "2",
+          "pools": [
+            {
+              "protocol": "tcp",
+              "size": "4535"
+            },
+            {
+              "protocol": "udp",
+              "size": "4535"
+            },
+            {
+              "protocol": "icmp"
+            }
+          ]
+        }
+      ],
+      "resolver": {
+        "running": true
+      },
+      "vrfResolvers": [
+        {
+          "error": "unbound@guest.service is inactive",
+          "vrf": "guest"
+        }
+      ],
+      "dhcp": [
+        {
+          "vrf": "default",
+          "family": "ipv4",
+          "running": true,
+          "subnets": [
+            {
+              "name": "office",
+              "subnet": "192.0.2.0/24",
+              "leased": "2",
+              "pool": "100"
+            }
+          ]
+        },
+        {
+          "vrf": "default",
+          "family": "ipv6",
+          "running": true,
+          "subnets": [
+            {
+              "name": "office6",
+              "subnet": "2001:db8:1::/64",
+              "leased": "1",
+              "pool": "18446744073709551615",
+              "delegated": "1",
+              "delegable": "256"
+            }
+          ]
+        },
+        {
+          "vrf": "guest",
+          "family": "ipv4",
+          "error": "dial unix /run/kea/dhcp4-guest.sock: connect: no such file or directory"
+        }
+      ],
+      "dhcpRelays": [
+        {
+          "vrf": "default",
+          "running": true
+        },
+        {
+          "vrf": "guest",
+          "error": "dhcrelay@guest.service is failed"
+        }
+      ]
+    }
+  }
+}

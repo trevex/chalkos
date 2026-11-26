@@ -79,6 +79,7 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 	if err != nil {
 		return maintenanceError(ctx, t, err)
 	}
+	t.nodes.release.check(t.name, info.GetChalkosVersion())
 	if info.Mode != nodev1.Mode_MODE_MAINTENANCE {
 		return fmt.Errorf("%s at %s is installed already", t.name, t.addr)
 	}
@@ -159,7 +160,7 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		if src := img.source.GetOci().GetReference(); src != "" {
 			fmt.Fprintf(a.stdout, "installing %s onto %s: %s %s, which the installer pulls from %s\n", t.name, ref, img.header.GetImageId(), img.name(), src)
 		} else {
-			fmt.Fprintf(a.stdout, "installing %s onto %s from %s: %s %s, sending %d bytes of store, hash tree, UKI and boot loader\n", t.name, ref, img.path, img.header.GetImageId(), img.name(), img.size())
+			fmt.Fprintf(a.stdout, "installing %s onto %s from %s: %s %s, sending %s of store, hash tree, UKI and boot loader\n", t.name, ref, img.path, img.header.GetImageId(), img.name(), binarySize(img.size()))
 		}
 		if f.wipeDisk {
 			if err := a.confirm(ctx, fmt.Sprintf("with --wipe-disk, the installer replaces whatever the disk %s of the machine at %s holds, an installed node included", ref, t.addr), t.name); err != nil {
@@ -183,7 +184,7 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		defer done()
 		if err := sendChunks(parts, func(c *nodev1.ImageChunk) error {
 			return stream.Send(&nodev1.InstallRequest{Message: &nodev1.InstallRequest_Chunk{Chunk: c}})
-		}); err != nil {
+		}, a.sendProgress(func(format string, args ...any) { fmt.Fprintf(a.stdout, format+"\n", args...) }, t.name, img.size())); err != nil {
 			return err
 		}
 	}

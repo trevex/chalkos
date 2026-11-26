@@ -32,6 +32,9 @@ var (
 // Name is the Kubernetes layer's.
 func (*Plugin) Name() string { return layers.Kubernetes }
 
+// Title is the Kubernetes layer's, which titles its commands in chalkctl's help.
+func (*Plugin) Title() string { return "Kubernetes" }
+
 // Commands are bootstrap, kubeconfig, etcd and registry, and node revoke and node unrevoke.
 func (*Plugin) Commands(h layer.Host) map[string][]*cobra.Command {
 	return map[string][]*cobra.Command{

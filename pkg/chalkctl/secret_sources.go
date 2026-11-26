@@ -130,6 +130,9 @@ func (s *secretSources) read(source secretSource) ([]byte, error) {
 		}
 		format, _ := clustersecrets.DetectFormat(data)
 		encrypted := format == clustersecrets.FormatAge || format == clustersecrets.FormatArmoredAge
+		if !encrypted {
+			s.app.warnReadable(source.path, "secrets")
+		}
 		switch {
 		case source.provider == "file" && encrypted && !source.inferred:
 			return nil, errors.New("the file is age-encrypted; name it with age://")

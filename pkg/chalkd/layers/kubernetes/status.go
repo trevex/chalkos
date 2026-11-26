@@ -75,6 +75,9 @@ func (k *side) status(ctx context.Context) (*kubernetesv1.StatusResponse, error)
 		return nil, err
 	} else if problem := prep.problem(); problem != "" {
 		st.State = problem
+		if prep.failure != "" {
+			st.Phase = kubernetesv1.Phase_PHASE_PREPARATION_FAILED
+		}
 		return st, nil
 	}
 	m, leftovers, err := k.state.ReadMembership()

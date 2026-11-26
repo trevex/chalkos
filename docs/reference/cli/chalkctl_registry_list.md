@@ -19,6 +19,11 @@ endpoint mends it. Images pushed by digest alone, without a tag, are not listed.
 The registry serves reads to anyone, but chalkctl verifies the endpoints by the OS CA of a client
 file or the secrets file, so the command takes one of them.
 
+-o json prints the listing as an object: endpoints holds the endpoints asked, failed those that
+could not be listed, and images each tag with its repository, tag and whole digest, the endpoints
+serving it, those missing it, those that differ with their digest, and those broken with how many
+images of the index they lack. It exits as the table does.
+
 The command needs a reader client file or the secrets file.
 
 ## Flags
@@ -29,6 +34,7 @@ The command needs a reader client file or the secrets file.
 | `--connect-to`{ #flag-connect-to } | list of string | — | ENDPOINT=HOST:PORT: reach an endpoint at another address, such as a forwarded port, while still verifying its certificate for the endpoint; may be repeated, once per endpoint. |
 | `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |
 | `--inventory`{ #flag-inventory } | string | $CHALKOSINVENTORY, else chalkos.yaml in the current directory, when it exists | Inventory naming the cluster's nodes, their addresses and their config files. |
+| `--output`{ #flag-output }, `-o` | format | `text` | Format to print: text, or json for programs. |
 | `--secrets`{ #flag-secrets } | string | — | Cluster secrets path (.age, .enc.*, or plaintext), provider URI, or - for standard input. |
 
 ## Examples

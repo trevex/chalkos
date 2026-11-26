@@ -26,7 +26,7 @@ func (p *Plugin) UpgradeRole(ctx context.Context, conn *client.Conn) (layer.Upgr
 	if err != nil {
 		return layer.UpgradeRole{}, err
 	}
-	return layer.UpgradeRole{Coordinator: k.Kind == k8s.KindControlPlane, Member: inCluster(k)}, nil
+	return layer.UpgradeRole{Coordinator: k.Kind == k8s.KindControlPlane, Member: inCluster(k), Held: "cordoned"}, nil
 }
 
 // ListedCoordinator reports whether the inventory lists the node as a control plane.

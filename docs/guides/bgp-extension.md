@@ -636,7 +636,7 @@ which carries node1's files:
 ```sh
 nix build .#node-bird-metal -o images/node-bird-metal
 chalkctl validate
-chalkctl upgrade --nodes node1 --secrets=secrets.age
+chalkctl upgrade node1 --secrets=secrets.age
 ```
 
 The node checks its config with the new image's validators, renderers and checks before it

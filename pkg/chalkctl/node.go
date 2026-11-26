@@ -9,6 +9,7 @@ import (
 	"io"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
@@ -19,6 +20,7 @@ import (
 
 func (a *app) disksCommand() *cobra.Command {
 	var f nodePinFlags
+	var output layer.Output
 	cmd := a.command(&cobra.Command{
 		Use:         "disks [<node>]",
 		Short:       "List a node's disks",
@@ -26,13 +28,14 @@ func (a *app) disksCommand() *cobra.Command {
 		Example:     disksExample,
 		Args:        cli.RangeArgs(0, 1),
 		Annotations: layer.Meta{Credentials: layer.Reader}.Annotations(),
-	}, func(a *app, ctx context.Context, pos []string) error { return a.disks(ctx, f, pos) })
+	}, func(a *app, ctx context.Context, pos []string) error { return a.disks(ctx, f, output, pos) })
 	f.node.RegisterClient(cmd.Flags())
 	f.pin.register(cmd.Flags())
+	output.Register(cmd.Flags())
 	return cmd
 }
 
-func (a *app) disks(ctx context.Context, f nodePinFlags, pos []string) error {
+func (a *app) disks(ctx context.Context, f nodePinFlags, output layer.Output, pos []string) error {
 	n, p := f.node, f.pin
 	var conn *client.Conn
 	var err error
@@ -72,6 +75,9 @@ func (a *app) disks(ctx context.Context, f nodePinFlags, pos []string) error {
 	if p.insecure {
 		fmt.Fprintf(a.stderr, "chalkctl: the node's certificate fingerprint is %s\n", conn.Fingerprint())
 	}
+	if output.JSON() {
+		return layer.WriteJSON(a.stdout, resp)
+	}
 	return statusview.WriteDisks(a.stdout, resp.Disks)
 }
 
@@ -79,7 +85,13 @@ type logsFlags struct {
 	nodePinFlags
 	follow bool
 	unit   string
+	lines  uint32
+	// linesFlag is --lines, which tells whether it was given.
+	linesFlag *pflag.Flag
 }
+
+// followLines is how many of the boot's last entries logs -f starts with unless --lines says.
+const followLines = 100
 
 func (a *app) logsCommand() *cobra.Command {
 	var f logsFlags
@@ -96,6 +108,8 @@ func (a *app) logsCommand() *cobra.Command {
 	f.pin.register(fs)
 	fs.BoolVarP(&f.follow, "follow", "f", false, "keep printing new entries")
 	fs.StringVar(&f.unit, "unit", "", "unit whose entries alone are printed")
+	fs.Uint32VarP(&f.lines, "lines", "n", 0, fmt.Sprintf("how many of the boot's last entries to start with, 0 for the whole boot (default %d with --follow, else the whole boot)", followLines))
+	f.linesFlag = fs.Lookup("lines")
 	return cmd
 }
 
@@ -109,7 +123,11 @@ func (a *app) logs(ctx context.Context, f logsFlags, pos []string) error {
 		return err
 	}
 	defer conn.Close()
-	stream, err := conn.Logs(ctx, &nodev1.LogsRequest{Unit: f.unit, Follow: f.follow})
+	lines := f.lines
+	if f.follow && !f.linesFlag.Changed {
+		lines = followLines
+	}
+	stream, err := conn.Logs(ctx, &nodev1.LogsRequest{Unit: f.unit, Follow: f.follow, Lines: lines})
 	if err != nil {
 		return err
 	}

@@ -703,8 +703,9 @@ func (c *haCluster) rollingUpgrade(ctx context.Context) {
 			}
 		}
 	}()
-	args := []string{"upgrade", "--image", os.Getenv("CHALKLAB_K8S_HA_UPGRADE_IMAGE_DIR"), "--config", config, "--nodes", strings.Join(upgraded, ","),
+	args := []string{"upgrade", "--image", os.Getenv("CHALKLAB_K8S_HA_UPGRADE_IMAGE_DIR"), "--config", config,
 		"--inventory", inventoryPath("ha"), "--timeout", "15m"}
+	args = append(args, upgraded...)
 	for _, name := range all {
 		args = append(args, "--address", name+"="+c.nodes[name].addr)
 	}

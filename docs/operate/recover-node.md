@@ -115,8 +115,8 @@ request. Each one undoes one kind of change:
 - A config delivery that broke a service: `chalkctl config rollback w1 --secrets
   secrets.age` delivers the config the image ran before.
   [Roll back a config change](change-config.md#roll-back-a-config-change) describes it.
-- An image that misbehaves after its boot was found healthy: `chalkctl upgrade --rollback --nodes
-  w1` boots the image the node ran before, which its inactive slot still holds.
+- An image that misbehaves after its boot was found healthy: `chalkctl upgrade w1
+  --rollback` boots the image the node ran before, which its inactive slot still holds.
   [Go back to the previous image](upgrade.md#go-back-to-the-previous-image) describes it.
 
 The node's OS CAs, node certificate, storage and layer payloads stay as they are with either

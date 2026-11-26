@@ -703,7 +703,7 @@ gives it, in two ways:
   `not the inventory's; chalkctl config apply <node> delivers it`. `config apply` checks the
   config against the image the node runs, which need not accept the files of another image. A
   node that runs another image than the inventory's therefore shows
-  `chalkctl upgrade --nodes <node> delivers it with the image <image>`, or
+  `chalkctl upgrade <node> delivers it with the image <image>`, or
   `it comes with the image <image> in the inactive slot` when that image is staged or active. A
   known-good image keeps the config it last ran, so when it is the inventory's image, the advice
   is `config apply` once the node runs it. A delivery writes the config slot of a staged image

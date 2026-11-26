@@ -46,17 +46,7 @@ func (s *Server) Logs(ctx context.Context, req *nodev1.LogsRequest, stream nodev
 // Journal runs journalctl for the current boot, from its last lines entries when lines is not zero;
 // following ends when ctx does.
 func Journal(ctx context.Context, unit string, follow bool, lines uint32) (io.ReadCloser, error) {
-	args := []string{"--boot", "--no-pager", "--output=short-iso"}
-	if lines > 0 {
-		args = append(args, "--lines="+strconv.FormatUint(uint64(lines), 10))
-	}
-	if unit != "" {
-		args = append(args, "--unit="+unit)
-	}
-	if follow {
-		args = append(args, "--follow")
-	}
-	cmd := exec.CommandContext(ctx, "journalctl", args...)
+	cmd := exec.CommandContext(ctx, "journalctl", journalArgs(unit, follow, lines)...)
 	out, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
@@ -77,4 +67,22 @@ func (p *process) Close() error {
 	p.cmd.Process.Kill()
 	p.cmd.Wait()
 	return nil
+}
+
+// journalArgs are the arguments of journalctl for Journal. Zero lines passes --no-tail, as
+// following otherwise starts from the last ten entries.
+func journalArgs(unit string, follow bool, lines uint32) []string {
+	args := []string{"--boot", "--no-pager", "--output=short-iso"}
+	if lines > 0 {
+		args = append(args, "--lines="+strconv.FormatUint(uint64(lines), 10))
+	} else if follow {
+		args = append(args, "--no-tail")
+	}
+	if unit != "" {
+		args = append(args, "--unit="+unit)
+	}
+	if follow {
+		args = append(args, "--follow")
+	}
+	return args
 }

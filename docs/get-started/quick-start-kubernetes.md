@@ -353,6 +353,7 @@ shows what a node runs:
 
 ```console
 $ chalkctl status cp1
+cp1: healthy
 config cff86e2957830b9ec4a10a6f6966660695c5a332fca12103d59f79ab4c1ccc15 (the inventory's)
 platform kvm (the inventory's)
 image c628af2ea405, booted from chalkos_1.efi
@@ -526,10 +527,10 @@ signed images/node-kvm-signed/chalkos.raw with the db key of the lab lab
 [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) with `--image` gives the signed copy to
 the nodes and rolls it through the cluster, one node at a time. On its own, `--image` picks the
 nodes that run an image of its name, `node-kvm`. The nodes run the published image, which names
-itself `kubernetes-kvm`, so `--nodes` names them:
+itself `kubernetes-kvm`, so the command names them:
 
 ```console
-$ chalkctl upgrade --image images/node-kvm-signed --nodes cp1,w1 --allow-downtime
+$ chalkctl upgrade cp1 w1 --image images/node-kvm-signed --allow-downtime
 cp1 runs the image kubernetes-kvm; it gets node-kvm
 w1 runs the image kubernetes-kvm; it gets node-kvm
 upgrading node-kvm on kvm to 7986f78938ed (186d48b7ef31): cp1, w1
@@ -580,11 +581,12 @@ image before again, and chalkctl stops there and shows what the failed boot logg
 
 ```console
 $ chalkctl status w1
+w1: 1 problem: image not the inventory's
 config b8b41769a31866ce5c70011cfa1826b0668f39e9b2eac69d7fc0f847bae277fd (the inventory's)
 platform kvm (the inventory's)
 image 7986f78938ed (186d48b7ef31), booted from chalkos_2.efi
 previous image c628af2ea405 (upgrade --rollback boots it)
-its store's root hash is 7986f78938ed320bc54a75ad2ebd10329352f10e1fcb99c0fdeb25b034ad2f79, not that of the image node-kvm the inventory names, c628af2ea405dc1b9b319c555d15a3b3822953b0ae3cf8478927cb76bc074095; chalkctl upgrade --nodes w1 installs that image
+its store's root hash is 7986f78938ed320bc54a75ad2ebd10329352f10e1fcb99c0fdeb25b034ad2f79, not that of the image node-kvm the inventory names, c628af2ea405dc1b9b319c555d15a3b3822953b0ae3cf8478927cb76bc074095; chalkctl upgrade w1 installs that image
 VOLUME  DISK    MOUNT POINT  STATE
 var     system  /var         mounted
 OUTPUT            HASH          STATE

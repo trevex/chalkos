@@ -22,6 +22,9 @@ var (
 // Name is the router layer's.
 func (*Plugin) Name() string { return layers.Router }
 
+// Title is the router layer's, which titles its commands in chalkctl's help.
+func (*Plugin) Title() string { return "Router" }
+
 // Commands are node routes.
 func (*Plugin) Commands(h layer.Host) map[string][]*cobra.Command {
 	return map[string][]*cobra.Command{"node": {nodeRoutesCommand(h)}}

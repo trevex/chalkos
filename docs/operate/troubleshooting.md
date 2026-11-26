@@ -179,7 +179,7 @@ how to go on. The run also stops with one of these messages:
 - `activate: no image is staged in the inactive slot` or
   `activate: the image staged in the inactive slot is <a>, not <b>`: `chalkctl node activate`
   found no image staged, or another one than the inventory or `--image` names for the node. Stage
-  the image with `chalkctl upgrade --nodes <node> --until stage` first, with the same `--image`
+  the image with `chalkctl upgrade <node> --until stage` first, with the same `--image`
   when you activate one.
 - `node3: its boot of <image> settled and is not healthy: ...`: the node runs the image, but its
   boot failed the node's health checks for a minute in a row, after systemd finished starting it
@@ -194,9 +194,9 @@ how to go on. The run also stops with one of these messages:
   the node's status gave no boot ID before the reboot, chalkctl cannot tell the new boot from the
   old one and waits until `--timeout`, ending with `its boot settled and is not healthy: ...`. On
   a node its layers hold, each of these ends with
-  `it stays held by its layers; run the command again to wait for it and release it`: the same
+  `it stays cordoned; run the command again to wait for it and release it`: the same
   command run again releases the node once its boot is healthy.
-- `node3: activate: ...; <image> boots next all the same, so it stays held by its layers: ...`: the
+- `node3: activate: ...; <image> boots next all the same, so it stays cordoned: ...`: the
   node's activation failed after it made the image boot next. Released, the node would boot the
   image at its next reboot without a drain, so its layers hold it, as Kubernetes keeps it
   cordoned. `chalkctl node reboot node3` boots the image and releases the node.
@@ -204,12 +204,12 @@ how to go on. The run also stops with one of these messages:
   to boot again. A node keeps none after an install, after an upgrade or rollback it fell back
   from, and while an image staged or activated with `--until` holds its inactive slot. Make a
   staged image boot with `chalkctl node activate` and `chalkctl node reboot`.
-- `the nodes roll back to different images: node1 to <a>; router to <b>; roll them back separately with --nodes`:
+- `the nodes roll back to different images: node1 to <a>; router to <b>; roll them back separately by naming their nodes`:
   the nodes ran different images before, such as control planes and workers on images of their
-  own. Roll each group back with its own `--nodes`.
+  own. Roll each group back in a run that names its nodes.
 - `w2 does not run <old>, which the other nodes roll back to, and keeps no previous image: ...; leave
-  it out with --nodes`: the node was installed with the image the others run now and never
-  upgraded. Leave it out with `--nodes`.
+  it out by naming the other nodes`: the node was installed with the image the others run now and never
+  upgraded. Name the other nodes to leave it out.
 
 With the Kubernetes layer, the run also stops at a control plane whose reboot would cost etcd its
 quorum, and at a drain that does not finish.
@@ -221,7 +221,7 @@ quorum, and at a drain that does not finish.
 the last delivery. Preview and deliver the change, as
 [Change a node's config](change-config.md) describes.
 
-`not the inventory's; chalkctl upgrade --nodes w1 delivers it with the image <image>` means the
+`not the inventory's; chalkctl upgrade w1 delivers it with the image <image>` means the
 node also runs another image than the inventory's. `config apply` would check the files against
 the image the node runs, which may refuse them. Upgrade the node, as
 [Upgrade nodes](upgrade.md) describes; the upgrade delivers the config with the image.

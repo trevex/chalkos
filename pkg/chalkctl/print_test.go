@@ -2,9 +2,13 @@ package chalkctl
 
 import (
 	"bytes"
+	"cmp"
 	"context"
+	"encoding/json"
 	"math"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -29,6 +33,8 @@ import (
 type cannedNode struct {
 	nodev1connect.UnimplementedNodeServiceHandler
 	s *chalkd.Server
+	// release is the chalkos release Info names; empty keeps the node's.
+	release string
 }
 
 func (n cannedNode) Info(ctx context.Context, req *nodev1.InfoRequest) (*nodev1.InfoResponse, error) {
@@ -36,6 +42,9 @@ func (n cannedNode) Info(ctx context.Context, req *nodev1.InfoRequest) (*nodev1.
 	if err == nil {
 		resp.Layers = []string{layers.Kubernetes, layers.Router}
 		resp.ModulePolicy = &nodev1.ModulePolicyStatus{State: nodev1.ModulePolicyState_MODULE_POLICY_STATE_ENFORCED, Version: "0.5.0"}
+		resp.ChalkosVersion = cmp.Or(n.release, resp.ChalkosVersion)
+		// What differs from one test node to the next.
+		resp.Fingerprint, resp.Hostname, resp.BootDisk = strings.Repeat("f", 64), "n1", "/dev/vda"
 	}
 	return resp, err
 }
@@ -61,7 +70,7 @@ type kubernetesStatus struct {
 
 func (kubernetesStatus) Status(context.Context, *kubernetesv1.StatusRequest) (*kubernetesv1.StatusResponse, error) {
 	return &kubernetesv1.StatusResponse{
-		Kind: "controlplane", State: "bootstrapped", NodeReady: "True", Vip: "holder", ControlPlane: "current",
+		Kind: "controlplane", State: "bootstrapped", NodeReady: "True", Vip: "holder", ControlPlane: "current", ControlPlaneCurrent: true,
 		ApiServerVersion: "1.37.2", KubeletVersion: "1.37.1", ControlPlanePods: "kube-apiserver is not Ready",
 		RevokedNodes: []*kubernetesv1.RevokedNode{
 			{Name: "n7", RevokedAt: timestamppb.New(time.Date(2026, 11, 2, 9, 30, 0, 0, time.UTC))},
@@ -144,10 +153,17 @@ func cannedStatus() *nodev1.StatusResponse {
 // cannedNodeAt serves n1 with the canned answers and returns its address.
 func cannedNodeAt(t *testing.T, ta *testApp) string {
 	t.Helper()
+	return cannedReleaseAt(t, ta, "")
+}
+
+// cannedReleaseAt serves n1 with the canned answers, its chalkd of the release, and returns its
+// address.
+func cannedReleaseAt(t *testing.T, ta *testApp, release string) string {
+	t.Helper()
 	s, _ := installedNode(t, ta, nil)
 	addr := ta.startNode(t, s)
 	mux := http.NewServeMux()
-	n := cannedNode{s: s}
+	n := cannedNode{s: s, release: release}
 	server := connect.NewServer()
 	nodev1connect.RegisterNodeServiceHandler(server, n)
 	kubernetesv1connect.RegisterKubernetesServiceHandler(server, kubernetesStatus{})
@@ -192,4 +208,61 @@ func TestDisksPrints(t *testing.T) {
 		t.Fatal(err)
 	}
 	golden.Check(t, "testdata/disks.golden", ta.stdout.String())
+}
+
+// TestStatusJSON holds what chalkctl status -o json prints of a node: the summary's problems, the
+// inventory's comparisons, and the node's and its layers' answers in protojson.
+func TestStatusJSON(t *testing.T) {
+	ta := newTestApp(t)
+	addr := cannedNodeAt(t, ta)
+	if err := ta.run(context.Background(), ta.args([]string{"status", "n1", "-o", "json"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	golden.Check(t, "testdata/status.json.golden", ta.stdout.String())
+}
+
+// TestClusterStatus prints a line of each node of the inventory, n2 unreachable among them, and
+// with -o json each node's status.
+func TestClusterStatus(t *testing.T) {
+	ta := newTestApp(t)
+	addr := cannedNodeAt(t, ta)
+	writeFile(t, ta.inventory, testInventoryYAML+"    n2: {address: 10.0.0.12, files: [nodes/n2.yaml]}\n")
+	data, err := os.ReadFile(filepath.Join(ta.dir, "nodes", "n1.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(ta.dir, "nodes", "n2.yaml"), string(data))
+	// Nothing listens on port 1 of the loopback address.
+	args := []string{"--inventory", ta.inventory, "--address", "n1=" + addr, "--address", "n2=127.0.0.1:1"}
+	if err := ta.run(context.Background(), append([]string{"status"}, args...)); err != nil {
+		t.Fatal(err)
+	}
+	golden.Check(t, "testdata/status-cluster.golden", ta.stdout.String())
+	if !strings.HasPrefix(ta.stderr.String(), "chalkctl: n2 is unreachable: ") {
+		t.Errorf("stderr = %q", ta.stderr)
+	}
+	ta.stdout.Reset()
+	if err := ta.run(context.Background(), append([]string{"status", "-o", "json"}, args...)); err != nil {
+		t.Fatal(err)
+	}
+	var out struct {
+		Nodes []statusJSON `json:"nodes"`
+	}
+	if err := json.Unmarshal(ta.stdout.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Nodes) != 2 || out.Nodes[0].Node != "n1" || len(out.Nodes[0].Problems) != 18 || out.Nodes[0].Status == nil ||
+		out.Nodes[1].Node != "n2" || out.Nodes[1].Error == "" || out.Nodes[1].Healthy || out.Nodes[1].Status != nil {
+		t.Errorf("status -o json =\n%s", ta.stdout)
+	}
+}
+
+// TestDisksJSON holds what chalkctl disks -o json prints: the node's Disks answer in protojson.
+func TestDisksJSON(t *testing.T) {
+	ta := newTestApp(t)
+	addr := cannedNodeAt(t, ta)
+	if err := ta.run(context.Background(), ta.args([]string{"disks", "n1", "-o", "json"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	golden.Check(t, "testdata/disks.json.golden", ta.stdout.String())
 }

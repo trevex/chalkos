@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -53,7 +54,14 @@ func Root(root *cobra.Command) *cobra.Command {
 func Group(cmd *cobra.Command) *cobra.Command {
 	cmd.Args = func(cmd *cobra.Command, args []string) error {
 		if len(args) > 0 {
-			return Usagef("unknown command %q for %q", args[0], cmd.CommandPath())
+			msg := fmt.Sprintf("unknown command %q for %q", args[0], cmd.CommandPath())
+			if cmd.SuggestionsMinimumDistance <= 0 {
+				cmd.SuggestionsMinimumDistance = 2 // cobra's default
+			}
+			if s := cmd.SuggestionsFor(args[0]); len(s) > 0 && !cmd.DisableSuggestions {
+				msg += "\n\nDid you mean this?\n\t" + strings.Join(s, "\n\t")
+			}
+			return Usagef("%s", msg)
 		}
 		return nil
 	}
@@ -176,4 +184,18 @@ func (e *enum[T]) Set(v string) error {
 	}
 	*e.p = T(v)
 	return nil
+}
+
+// DetailsAnnotation is the annotation of a command that holds the rest of its description, which
+// the generated reference page shows after its Long and --help leaves out, so the help shows its
+// usage and examples within a screen.
+const DetailsAnnotation = "chalkos.dev/details"
+
+// Details sets the rest of cmd's description, as DetailsAnnotation holds it, and returns cmd.
+func Details(cmd *cobra.Command, details string) *cobra.Command {
+	if cmd.Annotations == nil {
+		cmd.Annotations = map[string]string{}
+	}
+	cmd.Annotations[DetailsAnnotation] = details
+	return cmd
 }

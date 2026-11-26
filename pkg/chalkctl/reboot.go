@@ -18,6 +18,7 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/internal/poll"
+	"github.com/trevex/chalkos/pkg/internal/strs"
 	"github.com/trevex/chalkos/pkg/statusview"
 )
 
@@ -164,7 +165,7 @@ func (b *rebooter) reboot(ctx context.Context, n *rebootNode, t bootTarget, hold
 func (b *rebooter) heldForActivation(ctx context.Context, n *rebootNode, t bootTarget, err error) error {
 	held := "it stays held"
 	if n.roles.member() {
-		held = heldNote
+		held = n.roles.heldNote()
 	}
 	st, serr := b.reach.status(ctx, n.name)
 	if serr != nil {
@@ -193,14 +194,30 @@ func (b *rebooter) release(ctx context.Context, n *rebootNode, t bootTarget, hel
 	return nil
 }
 
-// heldNote says that a node stays held after an error.
-const heldNote = "it stays held by its layers"
+// heldNote says that a node stays held after an error, in the words of the layers that hold it,
+// such as "it stays cordoned", or as held by its layers when one of them gives none.
+func (rs upgradeRoles) heldNote() string {
+	var words []string
+	for _, r := range rs {
+		switch {
+		case !r.role.Member:
+		case r.role.Held == "":
+			return "it stays held by its layers"
+		case !slices.Contains(words, r.role.Held):
+			words = append(words, r.role.Held)
+		}
+	}
+	if len(words) == 0 {
+		return "it stays held by its layers"
+	}
+	return "it stays " + strs.And(words)
+}
 
 // stillHeld adds to err, when the node's layers hold it, that it stays held and that the command
 // run again waits for it and releases it.
 func (n *rebootNode) stillHeld(err error) error {
 	if n.held && n.roles.member() {
-		return fmt.Errorf("%w; %s; run the command again to wait for it and release it", err, heldNote)
+		return fmt.Errorf("%w; %s; run the command again to wait for it and release it", err, n.roles.heldNote())
 	}
 	return err
 }
@@ -217,7 +234,9 @@ func (b *rebooter) waitHealthy(ctx context.Context, n *rebootNode, t bootTarget)
 	// unhealthyFor is the boot found settled and unhealthy for the grace period. A look that
 	// reached no node changes nothing.
 	unhealthyFor := poll.Sustained{Window: b.grace}
-	err := poll.Until(ctx, "", b.timeout, b.poll, func(ctx context.Context) error {
+	// state is the wait's state the run printed last, so it prints a line when it changes.
+	var state string
+	look := func(ctx context.Context) error {
 		var st *nodev1.StatusResponse
 		var notReady error
 		err := b.reach.Call(n.name, func(conn *client.Conn) error {
@@ -246,7 +265,7 @@ func (b *rebooter) waitHealthy(ctx context.Context, n *rebootNode, t bootTarget)
 			return nil
 		})
 		if err != nil {
-			return err
+			return unreachable{err}
 		}
 		boot := st.GetBoot()
 		health := boot.GetHealth()
@@ -279,6 +298,11 @@ func (b *rebooter) waitHealthy(ctx context.Context, n *rebootNode, t bootTarget)
 			return fmt.Errorf("its boot is not healthy yet: %s", health.GetError())
 		}
 		return notReady
+	}
+	err := poll.Until(ctx, "", b.timeout, b.poll, func(ctx context.Context) error {
+		err := look(ctx)
+		b.sayState(n.name, err, &state)
+		return err
 	})
 	switch {
 	case fellBack != nil:
@@ -317,7 +341,7 @@ func unhealthyError(n *rebootNode, t bootTarget, why string) error {
 // what its boots logged.
 func fellBackError(n *rebootNode, msg string, boot *nodev1.BootStatus) error {
 	if n.held && n.roles.member() {
-		msg += "; " + heldNote
+		msg += "; " + n.roles.heldNote()
 	}
 	if len(boot.Journal) > 0 {
 		msg += "; its boots logged:\n  " + strings.Join(boot.Journal, "\n  ")
@@ -468,6 +492,7 @@ func (a *app) nodeRebootCommand() *cobra.Command {
 		Args:        cli.ExactArgs(1),
 		Annotations: layer.Meta{Credentials: layer.Operator}.Annotations(),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.nodeReboot(ctx, f, pos[0]) })
+	cli.Details(cmd, nodeRebootDetails)
 	fs := cmd.Flags()
 	f.node.RegisterClient(fs)
 	f.pin.register(fs)
@@ -546,4 +571,31 @@ func readRoles(ctx context.Context, conn *client.Conn, layers []string) (upgrade
 		roles = append(roles, upgradeRole{u, role})
 	}
 	return roles, nil
+}
+
+// unreachable is the error of a look at a node that did not reach it.
+type unreachable struct{ err error }
+
+func (u unreachable) Error() string { return u.err.Error() }
+func (u unreachable) Unwrap() error { return u.err }
+
+// sayState prints a line of a wait for the node called name when the state a look found, err,
+// differs from state, the one printed last, and keeps it in state. A look that did not reach the
+// node is one state, whatever its error; one that ends the wait prints nothing, as its error
+// says why.
+func (b *rebooter) sayState(name string, err error, state *string) {
+	if _, ok := errors.AsType[poll.Permanent](err); err == nil || ok {
+		return
+	}
+	line := strings.TrimPrefix(err.Error(), name+": ")
+	now := line
+	if u, ok := errors.AsType[unreachable](err); ok {
+		now = "unreachable"
+		line = "unreachable: " + layer.Unnamed(name, u.err).Error()
+	}
+	if now == *state {
+		return
+	}
+	*state = now
+	b.Say("%s: %s", name, line)
 }

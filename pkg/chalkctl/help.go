@@ -51,16 +51,14 @@ const genSecretsExample = `  # Encrypt the secrets to an age key and an SSH key.
   chalkctl gen secrets --recipient age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p \
     --out - --public-out secrets.pub.json | pass insert --multiline chalkos/secrets`
 
-const nodeLong = `Manages a node's access to the cluster and its boot and shows its state: renews its node
-certificate, revokes and unrevokes it by name, makes the image staged on it boot next, reboots it
-held by its layers, lists and runs the diagnostics its image declares, and shows a router's routes.`
+const nodeLong = `Manages one node: renews its node certificate, makes the image staged on it boot next, reboots it
+held by its layers, and lists and runs the diagnostics its image declares. Layers add commands of
+their own.`
 
 const nodeExample = `  chalkctl node renew w1
-  chalkctl node revoke w1
   chalkctl node activate w1
   chalkctl node reboot w1
-  chalkctl node diag w1 route-get address=2001:db8::1
-  chalkctl node routes r1 ::/0`
+  chalkctl node diag w1 route-get address=2001:db8::1`
 
 const nodeDiagLong = `Lists the diagnostics a node's image declares, or runs one. A diagnostic is a read-only command of
 the image, such as ip route get, that chalkd runs on the node in a sandbox of its own. Without a
@@ -212,39 +210,53 @@ const disksExample = `  # The disks of an installed node.
 const applyShortLong = `chalkctl apply is the short form of chalkctl config apply: it takes the same nodes and flags and
 does the same.`
 
-const applyConfigLong = `Delivers a node's config to the installed node: the documents of the files the inventory gives
-it. chalkctl checks them against the contract of the image the node runs, with the image's change
-rules that read no facts, and the node checks them again. The node replaces its config as a whole,
-applies additive storage changes such as a new volume while it runs, and restarts the units that
-read what changed; chalkctl prints the changes and the units. When the image's rules refuse a
-change, the node refuses the whole config and names the remedy. chalkctl warns of each image
-reference in the config that names a tag but no digest, and delivers the config all the same. See
+const applyConfigLong = `Delivers a node's config from the inventory to the installed node. chalkctl checks it against the
+contract of the image the node runs, and the node checks it again, replaces its config as a whole,
+applies additive storage changes and restarts the units that read what changed. Several nodes get
+it one after the other, and a node that runs it already is left alone, so the command run again
+continues a run that stopped. A config that changes a version a layer bounds across the cluster
+runs ordered: the nodes that act for the others first, each on trial. See
+https://trevex.github.io/chalkos/operate/change-config/.
+
+--diff prints what the config changes and checks nothing on the node; --dry-run has the node check
+it as for a delivery, prints the plan and changes nothing. See
+https://trevex.github.io/chalkos/operate/change-config/#check-the-change-on-the-node.
+
+--staged delivers to the image staged in the inactive slot alone, or without one holds the config
+pending for the next upgrade. See
+https://trevex.github.io/chalkos/how-it-works/node/config/#a-node-keeps-one-config-slot-per-image.
+
+--try applies the config on trial: unless chalkctl confirms it in time, the node rolls it back by
+itself. See
+https://trevex.github.io/chalkos/how-it-works/node/config/#a-trial-rolls-a-config-back-unless-it-is-confirmed.`
+
+// applyConfigDetails is the rest of config apply's description, which the reference page shows
+// and --help leaves out.
+const applyConfigDetails = `chalkctl checks the config with the image's change rules that read no facts. When the image's
+rules refuse a change, the node refuses the whole config and names the remedy. chalkctl prints the
+changes and the units it restarts, and warns of each image reference in the config that names a
+tag but no digest, and delivers the config all the same. See
 https://trevex.github.io/chalkos/how-it-works/node/config/#change-rules-decide-which-changes-a-node-accepts.
 
-With several nodes, config apply delivers to them one after the other and stops at the first that
-fails; a node named twice gets the config once. --address gives each node's address as NODE=ADDR
-where it is not the inventory's. chalkctl checks every node's status and config before the first
-node gets anything and leaves a node that runs the config already alone, so the same command run
-again continues a run that stopped. --staged, --diff and --no-confirm take one node.
+With several nodes, config apply stops at the first that fails; a node named twice gets the config
+once. --address gives each node's address as NODE=ADDR where it is not the inventory's. chalkctl
+checks every node's status and config before the first node gets anything. --staged, --diff and
+--no-confirm take one node.
 
-A config that changes a version a layer bounds across the cluster, such as the Kubernetes API
-server's, runs ordered: the layer reads the versions every node runs and refuses a config that
-breaks its bounds, as Kubernetes's version skew policy does. The nodes that act for the others,
-such as Kubernetes control planes, go first, one at a time, each held by its layers and on trial,
-for --try or else 10 minutes, until its layers find it serving with the config; then the other
-nodes. The first failure rolls that node's trial back at once, and chalkctl prints which nodes run
-which version. --until deliver leaves the first node's trial open for config confirm. An ordered
-run goes without the layers' payload flags. See
-https://trevex.github.io/chalkos/kubernetes/upgrade-kubernetes/.
+In an ordered run the layer reads the versions every node runs and refuses a config that breaks
+its bounds, as Kubernetes's version skew policy does. The nodes that act for the others, such as
+Kubernetes control planes, go one at a time, each held by its layers and on trial, for --try or
+else 10 minutes, until its layers find it serving with the config; then the other nodes. The first
+failure rolls that node's trial back at once, and chalkctl prints which nodes run which version.
+--until deliver leaves the first node's trial open for config confirm. An ordered run goes without
+the layers' payload flags. See https://trevex.github.io/chalkos/kubernetes/upgrade-kubernetes/.
 
---diff prints what the config changes, document by document, and checks nothing on the node.
---dry-run has the node check the config as it checks a delivery and changes nothing. It prints the
-diff, the config the node would run, the outputs that would change, the effects with what fires
-each, the storage changes, and the staged or pending config the delivery writes; a refusal exits 1.
---dry-run takes several nodes, and its error names the nodes whose config is refused apart from
-those it could not check, such as a node on trial. It goes without --diff, --try, --no-confirm,
---ignore-unit and the layers' payload flags. With --staged the plan has no outputs or
-effects, which that image takes when it boots.
+--dry-run prints the diff, the config the node would run, the outputs that would change, the
+effects with what fires each, the storage changes, and the staged or pending config the delivery
+writes; a refusal exits 1. --dry-run takes several nodes, and its error names the nodes whose
+config is refused apart from those it could not check, such as a node on trial. It goes without
+--diff, --try, --no-confirm, --ignore-unit and the layers' payload flags. With --staged the plan
+has no outputs or effects, which that image takes when it boots.
 
 For config delivered to the running image, --ignore-readiness makes failed runtime readiness
 checks warnings and lets their effects continue. It still runs the probes, validates the config,
@@ -255,29 +267,25 @@ Each image on a node keeps its own config, which it checks itself. A delivery to
 goes to the staged image too, which checks it before anything changes; once the running image
 applied it, the node writes the staged image's config, except that of a rollback's image while its
 boot is not found healthy. When that write fails, the command fails naming it, and running it
-again writes it. --staged delivers to the staged image alone, and nothing restarts. Without a
-staged image, --staged holds the config pending for the next upgrade, which takes it unless it
-carries config of its own. chalkctl checks it against the node's image in the inventory; the node
-only parses it, as no image is there to check it against. A pending config carries no fallback
-secret. A delivery to the running image replaces a pending config too, and config discard drops
-it. See
-https://trevex.github.io/chalkos/how-it-works/node/config/#a-node-keeps-one-config-slot-per-image.
+again writes it. With --staged nothing restarts. A config --staged holds pending is taken by the
+next upgrade unless that carries config of its own. chalkctl checks it against the node's image
+in the inventory; the node only parses it, as no image is there to check it against. A pending
+config carries no fallback secret. A delivery to the running image replaces a pending config too,
+and config discard drops it.
 
---try applies the config on trial for the duration given, from 10s to 24h: unless chalkctl
-confirms it in time, the node rolls it back by itself. chalkctl confirms over a new connection,
-once the node is healthy and its layers find it serving with the config; --ignore-unit leaves a
-unit out of the health check, one unit per flag, and chalkctl warns of units that failed before the
-trial. When the config is not confirmed, or the answer to its delivery is lost, chalkctl waits up to
-two minutes after the deadline for the node's rollback, reports it and exits non-zero.
-Interrupting chalkctl leaves the trial open. A trial delivers config alone and is refused for a
-config that changes the node's storage; while it is open, the node refuses other deliveries,
-upgrades and image rollbacks. --no-confirm leaves the trial open for config confirm, and config
-rollback ends it at once. See
-https://trevex.github.io/chalkos/how-it-works/node/config/#a-trial-rolls-a-config-back-unless-it-is-confirmed.
+--try takes a duration from 10s to 24h. chalkctl confirms over a new connection, once the node is
+healthy and its layers find it serving with the config; --ignore-unit leaves a unit out of the
+health check, one unit per flag, and chalkctl warns of units that failed before the trial. When
+the config is not confirmed, or the answer to its delivery is lost, chalkctl waits up to two
+minutes after the deadline for the node's rollback, reports it and exits non-zero. Interrupting
+chalkctl leaves the trial open. A trial delivers config alone and is refused for a config that
+changes the node's storage; while it is open, the node refuses other deliveries, upgrades and
+image rollbacks. --no-confirm leaves the trial open for config confirm, and config rollback ends
+it at once.
 
---kubernetes-share also delivers a new Kubernetes share, such as a worker's new kubelet
-certificate. It is refused to a node revoked with chalkctl node revoke, and while no control plane
-says which nodes are revoked; --ignore-revoked delivers it without asking.`
+A layer's payload flag, such as --kubernetes-share, delivers the layer's payload too. It is refused
+to a node revoked with chalkctl node revoke, and while the layer cannot say which nodes are revoked;
+--ignore-revoked delivers it without asking.`
 
 const applyConfigExample = `  # Apply w1's changed network and labels.
   chalkctl config apply w1 --secrets secrets.age
@@ -361,17 +369,24 @@ command needs no inventory.`
 const discardPendingExample = `  # Drop the config w1 holds pending.
   chalkctl config discard w1 --secrets secrets.age`
 
-const statusLong = `Shows an installed node's status: the config stored for the running image and whether it is the
-one the inventory gives; the last completed live activation and any current or failed activation
-step; its platform; the image it booted, by its store's root hash and the tag and revision it was
-built from as far as the node knows them, the boot entry and whether that boot was found healthy;
-an upgrade that is staged, or active and boots next; an upgrade that failed and was rolled back,
-with the journal of the boot that failed; a config on trial and when it rolls back; the config it
-holds pending for its next upgrade, unchecked, and since when; the previous config and image a
-rollback restores; whether its store is the image the inventory names for it; its volumes and
-their state; Kubernetes, with the nodes revoked in the cluster on a control plane; a router's BGP
-sessions; the certificates it serves and when they expire; the CAs it trusts; its clock; and the
-units that failed.
+const statusLong = `Shows an installed node's status. Its first line sums it up: healthy, or the problems the lines
+below show, such as a boot not found healthy yet, a volume missing or a unit that failed. Then
+come the config stored for the running image and whether it is the inventory's, a live activation,
+a trial, a staged or pending config, the platform, the image the node booted and whether that boot
+was found healthy, an upgrade staged, active or failed, the previous config and image a rollback
+restores, whether the store is the inventory's image, the module policy, the volumes, the outputs,
+each layer's section, the certificates, the CAs the node trusts, its clock and the failed units.
+See https://trevex.github.io/chalkos/operate/status-and-logs/.
+
+Without a node, the command reads every node of the inventory at once, each within 15 seconds, and
+prints a line of each: its image, whether its boot was found healthy, how its config compares with
+the inventory's or until when it is on trial, and how many problems it shows. A node that does not
+answer is unreachable and stops none of the others.
+
+-o json prints the same for programs: each node's name, whether it is healthy, its problems, how it
+compares with the inventory, and its answers to the node API's Info and Status and the layers'
+statuses in protojson. See
+https://trevex.github.io/chalkos/operate/status-and-logs/#gate-a-pipeline-on-chalkctl-status.
 
 status decrypts no sops:// or age:// source of a Secret document, so it asks for no key. When the
 config the inventory gives the node takes values from such sources, status does not know its
@@ -379,17 +394,27 @@ version: it says so in place of comparing it, and chalkctl config apply --diff <
 
 const statusExample = `  chalkctl status cp1
 
+  # A line of each node of the cluster.
+  chalkctl status
+
+  # Fail unless every node is healthy.
+  chalkctl status -o json | jq -e '.nodes | all(.healthy)'
+
   # With the inventory and the client file a lab writes.
   export CHALKOSINVENTORY=~/.local/state/chalklab/lab/chalkos.yaml
   export CHALKOSCONFIG=~/.local/state/chalklab/lab/chalkctl.json
   chalkctl status cp1`
 
 const logsLong = `Prints a node's journal of the current boot, of every unit or of --unit alone; with --follow it
-keeps printing new entries until interrupted. A node in maintenance mode is reached with
---fingerprint or --insecure as well.`
+keeps printing new entries until interrupted, starting with the last 100 entries. --lines starts
+with that many of the last entries, or with the whole boot at 0. A node in maintenance mode is
+reached with --fingerprint or --insecure as well.`
 
 const logsExample = `  # Follow chalkd's log on cp1.
-  chalkctl logs cp1 --unit chalkd.service -f`
+  chalkctl logs cp1 --unit chalkd.service -f
+
+  # The last 20 entries of the boot.
+  chalkctl logs cp1 -n 20`
 
 const nodeActivateLong = `Makes the image staged on a node boot next, as chalkctl upgrade --until stage leaves it:
 the node renames the image's UKI to its boot entry's name with the tries the image asks for, so
@@ -400,31 +425,35 @@ inventory. The node checks the UKI again, and not the config: the image's own ch
 the config before the image was staged. Asked again, the command says that the image boots next
 already. The image boots with the node's next reboot, which chalkctl node reboot runs.`
 
-const nodeActivateExample = `  chalkctl upgrade --nodes w1 --until stage
+const nodeActivateExample = `  chalkctl upgrade w1 --until stage
   chalkctl node activate w1
   chalkctl node reboot w1
 
   # Activate the image upgrade --image staged.
-  chalkctl upgrade --image ./worker-image --nodes w1 --until stage
+  chalkctl upgrade w1 --image ./worker-image --until stage
   chalkctl node activate w1 --image ./worker-image`
 
 const nodeRebootLong = `Reboots a node as chalkctl upgrade does once the node's image is active: its layers hold it
 first, as Kubernetes keeps etcd's quorum while a control plane reboots and drains the node; then
-the node reboots, and chalkctl waits until it runs the image it boots next, an image activated by
-chalkctl node activate or the one it ran, and its boot was found healthy, and its layers release
-it, as Kubernetes uncordons it once its Node is Ready. The node checks the health of the new boot
-itself, also of a boot of an entry blessed before, which the boot loader does not count. A node
-that falls back from the image stops the command and stays held, and so does a node whose boot
-settled and stays unhealthy for a minute: the boot settled once systemd finished starting it and
-the image's health timeout, 300 seconds by default, passed since. A check that fails once, such as
-etcd answering late, does not stop the command, and a healthy look starts the minute over. When
-the node's status gave no ID of the boot before the reboot, chalkctl cannot tell the new boot from
-that one and waits for --timeout instead. A boot not found healthy within --timeout stops the
-command too and leaves the node held; the command run again waits for it and releases it.
---no-drain reboots the node without its layers holding or releasing it, and still waits. Draining
-a node goes through the cluster's control planes, which the inventory names.
+the node reboots into the image it boots next, and chalkctl waits until that boot was found healthy
+and its layers release it, as Kubernetes uncordons it once its Node is Ready. A node that falls back
+or stays unhealthy stops the command and stays held; the command run again waits for it and
+releases it. See https://trevex.github.io/chalkos/how-it-works/node/upgrades/#the-node-boots-the-new-image-on-trial.
 
-A node in maintenance mode, reached with --fingerprint or --insecure, reboots without more.`
+--no-drain reboots the node without its layers holding or releasing it, and still waits. A node in
+maintenance mode, reached with --fingerprint or --insecure, reboots without more.`
+
+// nodeRebootDetails is the rest of node reboot's description, which the reference page shows and
+// --help leaves out.
+const nodeRebootDetails = `The image the node boots next is one activated by chalkctl node activate, or else the one it ran.
+The node checks the health of the new boot itself, also of a boot of an entry blessed before, which
+the boot loader does not count. A node whose boot settled and stays unhealthy for a minute stops
+the command: the boot settled once systemd finished starting it and the image's health timeout,
+300 seconds by default, passed since. A check that fails once, such as etcd answering late, does
+not stop the command, and a healthy look starts the minute over. When the node's status gave no ID
+of the boot before the reboot, chalkctl cannot tell the new boot from that one and waits for
+--timeout instead. A boot not found healthy within --timeout stops the command too and leaves the
+node held. Draining a node goes through the cluster's control planes, which the inventory names.`
 
 const nodeRebootExample = `  # Drain w1, reboot it into the image it boots next and uncordon it once it is Ready.
   chalkctl node reboot w1
@@ -460,22 +489,37 @@ const rotateExample = `  # Rotate the Kubernetes CA. It pauses after the accept 
   # Rotate the node CA. It runs in one go: every node gets a certificate of the new one.
   chalkctl rotate node-ca --secrets secrets.age`
 
-const upgradeLong = `Installs a new image on each node: first the nodes that act for the others, such as Kubernetes
-control planes, one at a time, then the other nodes in batches of --max-unavailable. Without
---image, each node, or each node --nodes names, gets the image the inventory names for it; with
---image, the nodes running an image of its name get it, or those --nodes names. Each node goes
-through the steps the step-by-step path runs one at a time: the node stages the image in its
-inactive slot once the image's own checker accepted its config, as upgrade --until stage stops
-there; it activates the image, which then boots next, as chalkctl node activate does; and it
-reboots into the image as chalkctl node reboot does. Its layers hold it before the reboot and
-release it once its boot was found healthy: Kubernetes keeps etcd's quorum, drains the node and
+const upgradeLong = `Installs a new image on the nodes named, or on every node of the cluster: first the nodes that act
+for the others, such as Kubernetes control planes, one at a time, then the other nodes in batches
+of --max-unavailable. Without --image each node gets the image the inventory names for it; with
+--image, the nodes named or else those running an image of its name get it. Each node stages the
+image, activates it and reboots into it, held by its layers until its boot was found healthy. A
+node that falls back, or is not found healthy within --timeout, stops the run; the command run
+again continues where it stopped. See https://trevex.github.io/chalkos/how-it-works/node/upgrades/.
+
+--until stage or --until activate stops each node after that step and holds no node. See
+https://trevex.github.io/chalkos/operate/upgrade/#upgrade-step-by-step.
+
+--recover recovers the nodes named when their cluster cannot serve an ordinary upgrade, leaving
+the layers out. It may interrupt workloads or lose etcd quorum. See
+https://trevex.github.io/chalkos/operate/upgrade/#recover-a-node-whose-cluster-is-unavailable.
+
+--rollback boots the image the nodes ran before their last upgrade again instead of installing one.
+See https://trevex.github.io/chalkos/how-it-works/node/upgrades/#a-rollback-boots-the-image-before-again.`
+
+// upgradeDetails is the rest of upgrade's description, which the reference page shows and --help
+// leaves out.
+const upgradeDetails = `Each node goes through the steps the step-by-step path runs one at a time: the node stages the
+image in its inactive slot once the image's own checker accepted its config, as upgrade --until
+stage stops there; it activates the image, which then boots next, as chalkctl node activate does;
+and it reboots into the image as chalkctl node reboot does. Its layers hold it before the reboot
+and release it once its boot was found healthy: Kubernetes keeps etcd's quorum, drains the node and
 uncordons it once it is Ready. A node that falls back to the image before stops the run. A node
 not found healthy within --timeout stops it too and stays held; the command run again waits for it
 and releases it, unless the node fell back meanwhile: like any node that fell back, it then stays
 held until a run reboots it into a fixed image, or into the same image once more with
 --retry-failed, finds that boot healthy and has its layers release it. Staging or activating an
 image does not release it, nor does a run with --recover, which leaves the layers out.
---until stage or --until activate stops each node after that step and holds no node.
 
 Before any node gets its image, the image's layers check the versions it brings against what the
 cluster runs and refuse an image that would break their bounds, as Kubernetes refuses a kubelet
@@ -483,57 +527,56 @@ newer than the oldest API server the control planes run. An upgrade also refuses
 changes a version the layers bound against the config a node runs, such as the Kubernetes API
 server's: chalkctl config apply delivers that change first, in the order the layers need.
 
---recover recovers the nodes explicitly named by --nodes when their cluster cannot serve an
-ordinary upgrade. It skips cluster version checks, config rollout guards and layer coordination:
-no layer role queries, quorum checks, draining or uncordoning. It needs only the selected nodes'
-chalkd endpoints, processes them in --max-unavailable batches without coordinator ordering, and
-still checks credentials, image integrity and config, and waits for the new boot to pass the
-node's health checks. It may interrupt workloads or lose etcd quorum. The node's protection of a
-fallback image while its running boot is unblessed still applies. The flag is client-side and
-works with installed nodes that have no recovery option of their own.
+--recover skips cluster version checks, config rollout guards and layer coordination: no layer
+role queries, quorum checks, draining or uncordoning. It needs only the named nodes' chalkd
+endpoints, processes them in --max-unavailable batches without coordinator ordering, and still
+checks credentials, image integrity and config, and waits for the new boot to pass the node's
+health checks. The node's protection of a fallback image while its running boot is unblessed still
+applies. The flag is client-side and works with installed nodes that have no recovery option of
+their own.
 
 Each node gets its config with the image, checked against it before any node is drained, and
 chalkctl prints a line of what it changes and warns of each image reference in the config that
-names a tag but no digest; --diff prints the whole diff and changes nothing.
-Delivering config needs the admin role: with an operator client file, each node gives the image
-its pending config, else carries its own config over. A new volume is enrolled with the recovery
-key, which only the secrets file gives, or the password --password-file holds.
+names a tag but no digest; --diff prints the whole diff and changes nothing. Delivering config needs
+the admin role: with an operator client file, each node gives the image its pending config, else
+carries its own config over. A new volume is enrolled with the recovery key, which only the secrets
+file gives, or the password --password-file holds.
 
---rollback boots the image the nodes ran before their last upgrade again instead of installing
-one; their inactive slots still hold it with its config. Every node named, or every node of the
-cluster, must roll back to the same image or run it already, or the command refuses and asks for
---nodes. The run holds and releases each node as an upgrade does; it stages nothing, so it takes
---until activate and reboot alone. Run again, it continues with the same image, and an upgrade to
-the inventory's image undoes it. See
-https://trevex.github.io/chalkos/how-it-works/node/upgrades/#a-rollback-boots-the-image-before-again.
+With --rollback the nodes' inactive slots still hold the image before with its config. Every node
+named, or every node of the cluster, must roll back to the same image or run it already, or the
+command refuses and asks for the nodes by name. The run holds and releases each node as an upgrade
+does; it stages nothing, so it takes --until activate and reboot alone. Run again, it continues
+with the same image, and an upgrade to the inventory's image undoes it.
 
 Run again, an upgrade continues where it stopped, and --retry-failed installs the image once more
 on nodes that fell back from it. See
-https://trevex.github.io/chalkos/how-it-works/node/upgrades/ and
 https://trevex.github.io/chalkos/how-it-works/kubernetes/upgrades/.
 
-A run without --nodes takes every node of the cluster the inventory names, so a wrong
+A run that names no node takes every node of the cluster the inventory names, so a wrong
 $CHALKOSINVENTORY reaches another cluster: chalkctl prints the nodes of the run before it asks.`
 
 // upgradeConfirms says when upgrade asks, for its Meta.
-const upgradeConfirms = "asks on the terminal before a run without --nodes changes the first node of the inventory, unless --diff or --until stage stops it before a change"
+const upgradeConfirms = "asks on the terminal before a run that names no node changes the first node of the inventory, unless --diff or --until stage stops it before a change"
 
 const upgradeExample = `  # Upgrade the whole cluster, each node to the image the inventory names for it.
   chalkctl upgrade
 
+  # Upgrade w1 and w2.
+  chalkctl upgrade w1 w2
+
   # Recover a node whose cluster cannot serve the upgrade.
-  chalkctl upgrade --nodes cp1 --recover
+  chalkctl upgrade cp1 --recover
 
   # Upgrade the nodes running an image of its name, two at a time, with an image chalkbuild signed.
   chalkctl upgrade --image ./worker-image --max-unavailable 2
 
   # Upgrade w1 step by step: stage its image, make it boot next, reboot into it.
-  chalkctl upgrade --nodes w1 --until stage
+  chalkctl upgrade w1 --until stage
   chalkctl node activate w1
   chalkctl node reboot w1
 
   # Boot the image w1 and w2 ran before their last upgrade again.
-  chalkctl upgrade --rollback --nodes w1,w2`
+  chalkctl upgrade w1 w2 --rollback`
 
 const validateLong = `Checks the config of the nodes named, or of every node of the inventory, as each node would
 check it on its image: the set the inventory gives the node, every document against the schemas of
@@ -559,7 +602,11 @@ value shows when a command that delivers the config reads it.
 A config validate passes can still be refused on delivery: validate runs no rule that reads the
 node's facts or its running config, none of the image's other validators, and none of its
 renderers or their checks. chalkctl config apply --dry-run has the node run all of them, and
-changes nothing.`
+changes nothing.
+
+-o json prints the result as an object: nodes holds each node's node, valid, error when it is not,
+the image it was checked against as image, imageReference, imageName, platform and rootHash, its
+configVersion and its warnings; warnings holds the layers' warnings. It exits as the lines do.`
 
 const validateExample = `  # Check every node of chalkos.yaml.
   chalkctl validate
@@ -588,36 +635,45 @@ const securebootNewExample = `  chalkctl secureboot new keys
   chalkbuild sign --key keys/db.key --cert keys/db.crt images/node-metal images/node-metal-signed`
 
 const securebootEnrollLong = `Enrols the Secure Boot keys of --keys in the firmware of a node in maintenance mode, which must be
-in Setup Mode, as firmware is once its platform key is cleared in its setup. chalkctl signs three
-updates of the firmware's variables: db and KEK, appended to what the firmware holds, and PK, which
-ends Setup Mode. It reads PK.key, PK.crt, KEK.key, KEK.crt, db.crt and owner.txt from --keys;
-db.key, which signs images, may stay on the machine that signs them. With --microsoft, db also
-gets Microsoft's UEFI CAs of 2011 and 2023 and its option ROM CA of 2023, and KEK Microsoft's KEK
-CAs of 2011 and 2023; firmware needs them to start the option ROMs of many graphics and network
-cards and boot loaders Microsoft signed.
+in Setup Mode, as firmware is once its platform key is cleared in its setup. chalkctl signs the
+updates of db, KEK and PK, which ends Setup Mode, and the node writes them, then reboots; chalkctl
+waits until it answers with Secure Boot on. The node refuses keys that would not start the boot
+loader and UKI it booted, so sign the installer or image with the db key first (chalkbuild sign)
+and boot it. See https://trevex.github.io/chalkos/operate/secure-boot/#enrol-the-keys-in-setup-mode.
 
-Option ROMs are the firmware of graphics cards, network cards and disk controllers, which the
-machine's firmware loads at every boot. Under Secure Boot, db must allow each of them, by a CA
-that signed it or by its digest. --option-roms asks the node for the SHA-256 digests of the option
-ROMs its firmware loaded, as the TPM event log lists them, prints them and adds them to db.
---db-hash adds a digest of your own, such as that of an option ROM the machine did not load this
-boot.
+Option ROMs, the firmware of graphics, network and disk controller cards, need db to allow them:
+--microsoft adds Microsoft's CAs, --option-roms the digests of the option ROMs the node loaded, and
+--db-hash a digest of your own. The node refuses keys under which db would not allow every option
+ROM it loaded; --skip-checks enrols them all the same. See
+https://trevex.github.io/chalkos/operate/secure-boot/#allow-the-cards-option-roms.`
+
+// securebootEnrollDetails is the rest of secureboot enroll's description, which the reference
+// page shows and --help leaves out.
+const securebootEnrollDetails = `db and KEK are appended to what the firmware holds. chalkctl reads PK.key, PK.crt, KEK.key,
+KEK.crt, db.crt and owner.txt from --keys; db.key, which signs images, may stay on the machine
+that signs them. With --microsoft, db also gets Microsoft's UEFI CAs of 2011 and 2023 and its option
+ROM CA of 2023, and KEK Microsoft's KEK CAs of 2011 and 2023; firmware needs them to start the
+option ROMs of many graphics and network cards and boot loaders Microsoft signed.
+
+The machine's firmware loads option ROMs at every boot. Under Secure Boot, db must allow each of
+them, by a CA that signed it or by its digest. --option-roms asks the node for the SHA-256 digests
+of the option ROMs its firmware loaded, as the TPM event log lists them, prints them and adds them
+to db. --db-hash adds a digest of your own, such as that of an option ROM the machine did not load
+this boot.
 
 The node refuses the keys unless the boot loader and UKI it booted verify against db with the new
-keys, so sign the installer or image with the db key first (chalkbuild sign) and boot it. It also
-refuses keys under which db would not allow every option ROM its TPM event log lists, by its digest
-or by holding Microsoft's UEFI CA of 2011 or its option ROM CA of 2023, and option ROMs dbx revokes.
-When the node cannot read its option ROMs, without a TPM for one, chalkctl says so. --skip-checks
-enrols the keys all the same, skipping both checks. A node that runs its image from its own disk
-deletes STATE, which holds nothing before the install and which the TPM no longer unseals once the
-keys change, and creates it again when it boots. The node writes PK last: when a write fails before
-it, the firmware stays in Setup Mode and enroll can run again.
+keys. It also refuses keys under which db would not allow every option ROM its TPM event log lists,
+by its digest or by holding Microsoft's UEFI CA of 2011 or its option ROM CA of 2023, and option
+ROMs dbx revokes. When the node cannot read its option ROMs, without a TPM for one, chalkctl says
+so. --skip-checks skips both checks. A node that runs its image from its own disk deletes STATE,
+which holds nothing before the install and which the TPM no longer unseals once the keys change,
+and creates it again when it boots. The node writes PK last: when a write fails before it, the
+firmware stays in Setup Mode and enroll can run again.
 
-The node then reboots, and chalkctl waits until it answers with Secure Boot on. It makes a new
-certificate in maintenance mode when it boots, which chalkctl accepts without verifying and prints
-the fingerprint of; compare it with the node's console before the install. Like chalkctl disks, the
-command reaches the node by --address, with --fingerprint or --insecure, and with its credentials
-when its image carries an OS CA.`
+After the reboot the node makes a new certificate in maintenance mode, which chalkctl accepts
+without verifying and prints the fingerprint of; compare it with the node's console before the
+install. Like chalkctl disks, the command reaches the node by --address, with --fingerprint or
+--insecure, and with its credentials when its image carries an OS CA.`
 
 const securebootEnrollExample = `  # Enrol the keys in a machine that booted the signed installer, then install it.
   chalkctl secureboot enroll --keys keys --address 192.168.1.50 --insecure --secrets secrets.age

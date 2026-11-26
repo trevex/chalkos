@@ -71,6 +71,7 @@ The response of Info.
 | `layers` | list of string | The layers the running image carries beside the base every image has, such as "kubernetes", in name order; empty on the installer and on an image of the base alone. |
 | `node_name` | string | The node's name, as its node certificate names it; empty in maintenance mode and on the installer. |
 | `module_policy` | ModulePolicyStatus | Whether the kernel loads modules from the running image alone. |
+| `chalkos_version` | string | The release of chalkos that chalkd belongs to, as its version command prints it, such as 0.6.0; chalkctl of another release warns, as the two keep no compatibility between releases. A build without a release, whose version reads unknown, on either side draws no warning. |
 
 Field types: [Mode](#enum-mode), [SecureBoot](#enum-secureboot), [ModulePolicyStatus](#message-modulepolicystatus).
 
@@ -1641,13 +1642,14 @@ etcd membership.
 | Name | Number | Description |
 | ---- | ------ | ----------- |
 | `PHASE_UNSPECIFIED` | 0 | No phase; chalkd never reports it. |
-| `PHASE_PREPARING` | 1 | The node has no share yet, or its Kubernetes files are being prepared, or their preparation failed. |
+| `PHASE_PREPARING` | 1 | The node has no share yet, or its Kubernetes files are being prepared. |
 | `PHASE_WAITING` | 2 | A control-plane node that is no etcd member and has not started joining. It waits for a bootstrap or for the cluster, or tries to reach the cluster to join it. |
 | `PHASE_JOINING` | 3 | A control-plane node that started joining the cluster and has not finished. It may be an etcd member already. |
 | `PHASE_BOOTSTRAPPED` | 4 | A control-plane node that is an etcd member: it initialised etcd or finished joining. |
 | `PHASE_ETCD_DATA_MISSING` | 5 | A bootstrapped control-plane node whose etcd data is missing, as after VAR was reset. Its control plane does not start until etcd is restored or the node is reinstalled. |
 | `PHASE_LEFT` | 6 | A control-plane node that left etcd. It joins the cluster again only once reinstalled. |
 | `PHASE_JOINED` | 7 | A worker node whose Kubernetes files are prepared: its kubelet joins the cluster. |
+| `PHASE_PREPARATION_FAILED` | 8 | The preparation of the node's Kubernetes files failed; state says why. |
 
 ### RotationStep { #kubernetes-enum-rotationstep }
 

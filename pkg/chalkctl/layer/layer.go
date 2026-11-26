@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/trevex/chalkos/pkg/client"
@@ -35,14 +36,29 @@ type Commands interface {
 	// Commands are the layer's commands by the group they join: "" for chalkctl itself, or a
 	// group's name, such as "node".
 	Commands(h Host) map[string][]*cobra.Command
+	// Title titles the group of the layer's commands at chalkctl's root in its help, such as
+	// Kubernetes.
+	Title() string
 }
 
 // Status is a plugin that adds its section to a node's status. chalkctl asks the plugins of the
 // layers the node's Info names.
 type Status interface {
-	// PrintStatus prints the layer's section of the status of the node conn reaches, whose image
-	// carries the layer.
-	PrintStatus(ctx context.Context, h Host, conn *client.Conn) error
+	// ReadStatus reads the layer's part of the status of the node conn reaches, whose image carries
+	// the layer.
+	ReadStatus(ctx context.Context, conn *client.Conn) (StatusSection, error)
+}
+
+// StatusSection is a layer's part of a node's status.
+type StatusSection struct {
+	// Message is the layer's status as its service answers it, which status -o json prints under
+	// the layer's name.
+	Message proto.Message
+	// Write writes the section as chalkctl status prints it.
+	Write func(w io.Writer) error
+	// Problems are what the section shows wrong, each in a few words, which the summary of the
+	// node's status counts.
+	Problems []string
 }
 
 // Validators is a plugin whose layer links the Go code of its images' validator programs, which
@@ -158,6 +174,9 @@ type UpgradeRole struct {
 	// Member is set for a node that serves the cluster, which an upgrade releases only once it
 	// does again, and which stays held after it fell back.
 	Member bool
+	// Held is how the layer holds a member, completing "it stays", such as cordoned; empty says it
+	// stays held by its layers.
+	Held string
 }
 
 // Upgrading is a run of chalkctl upgrade or chalkctl node reboot, as a plugin's hooks use it.

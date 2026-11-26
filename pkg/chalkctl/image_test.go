@@ -5,9 +5,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -111,5 +113,27 @@ func TestImageContractNeedsSchemas(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := imageContract(dir); err == nil || !strings.Contains(err.Error(), dir+" has no schemas/") {
 		t.Errorf("err = %v", err)
+	}
+}
+
+// An image's size is in MiB below a GiB and in GiB from there on.
+func TestBinarySize(t *testing.T) {
+	for n, want := range map[uint64]string{0: "0.0 MiB", 312 << 20: "312.0 MiB", 1536 << 20: "1.5 GiB", 1<<30 - 1: "1024.0 MiB"} {
+		if got := binarySize(n); got != want {
+			t.Errorf("binarySize(%d) = %q, want %q", n, got, want)
+		}
+	}
+}
+
+// The progress of a send is a line for each tenth of it passed, once, short of the whole.
+func TestTenths(t *testing.T) {
+	var lines []string
+	progress := tenths(func(format string, args ...any) { lines = append(lines, fmt.Sprintf(format, args...)) }, "w1", 100<<20)
+	for _, sent := range []uint64{5 << 20, 10 << 20, 11 << 20, 35 << 20, 99 << 20, 100 << 20} {
+		progress(sent)
+	}
+	want := []string{"w1: sent 10%, 10.0 MiB of 100.0 MiB", "w1: sent 30%, 35.0 MiB of 100.0 MiB", "w1: sent 90%, 99.0 MiB of 100.0 MiB"}
+	if !slices.Equal(lines, want) {
+		t.Errorf("lines = %q, want %q", lines, want)
 	}
 }

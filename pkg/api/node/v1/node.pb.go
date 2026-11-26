@@ -465,9 +465,13 @@ type InfoResponse struct {
 	// installer.
 	NodeName string `protobuf:"bytes,15,opt,name=node_name,json=nodeName,proto3" json:"node_name,omitempty"`
 	// Whether the kernel loads modules from the running image alone.
-	ModulePolicy  *ModulePolicyStatus `protobuf:"bytes,16,opt,name=module_policy,json=modulePolicy,proto3" json:"module_policy,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	ModulePolicy *ModulePolicyStatus `protobuf:"bytes,16,opt,name=module_policy,json=modulePolicy,proto3" json:"module_policy,omitempty"`
+	// The release of chalkos that chalkd belongs to, as its version command prints it, such as 0.6.0;
+	// chalkctl of another release warns, as the two keep no compatibility between releases. A build
+	// without a release, whose version reads unknown, on either side draws no warning.
+	ChalkosVersion string `protobuf:"bytes,17,opt,name=chalkos_version,json=chalkosVersion,proto3" json:"chalkos_version,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *InfoResponse) Reset() {
@@ -610,6 +614,13 @@ func (x *InfoResponse) GetModulePolicy() *ModulePolicyStatus {
 		return x.ModulePolicy
 	}
 	return nil
+}
+
+func (x *InfoResponse) GetChalkosVersion() string {
+	if x != nil {
+		return x.ChalkosVersion
+	}
+	return ""
 }
 
 // The module policy's state.
@@ -6107,7 +6118,7 @@ var File_chalkos_node_v1_node_proto protoreflect.FileDescriptor
 const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\n" +
 	"\x1achalkos/node/v1/node.proto\x12\x0fchalkos.node.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x19google/protobuf/any.proto\x1a\x1egoogle/protobuf/duration.proto\"\r\n" +
-	"\vInfoRequest\"\x99\x04\n" +
+	"\vInfoRequest\"\xc2\x04\n" +
 	"\fInfoResponse\x12)\n" +
 	"\x04mode\x18\x01 \x01(\x0e2\x15.chalkos.node.v1.ModeR\x04mode\x12\x19\n" +
 	"\bimage_id\x18\x02 \x01(\tR\aimageId\x12\x1c\n" +
@@ -6126,7 +6137,8 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x03tag\x18\r \x01(\tR\x03tag\x12\x16\n" +
 	"\x06layers\x18\x0e \x03(\tR\x06layers\x12\x1b\n" +
 	"\tnode_name\x18\x0f \x01(\tR\bnodeName\x12H\n" +
-	"\rmodule_policy\x18\x10 \x01(\v2#.chalkos.node.v1.ModulePolicyStatusR\fmodulePolicy\"\x80\x01\n" +
+	"\rmodule_policy\x18\x10 \x01(\v2#.chalkos.node.v1.ModulePolicyStatusR\fmodulePolicy\x12'\n" +
+	"\x0fchalkos_version\x18\x11 \x01(\tR\x0echalkosVersion\"\x80\x01\n" +
 	"\x12ModulePolicyStatus\x128\n" +
 	"\x05state\x18\x01 \x01(\x0e2\".chalkos.node.v1.ModulePolicyStateR\x05state\x12\x16\n" +
 	"\x06detail\x18\x02 \x01(\tR\x06detail\x12\x18\n" +

@@ -47,6 +47,11 @@ node API change between releases. In the commands below, `<tag>` is that release
 `v0.6.0`: the release of the published images, or the one the image author's `flake.nix` names in
 its `chalkos` input.
 
+chalkctl compares its release with that of chalkd on each node whose information it reads, and
+warns once per command when they differ, as during an upgrade of the cluster's image:
+`chalkctl: warning: node1 runs chalkd 0.5.0, this chalkctl is 0.6.0; use the chalkctl of the node's release`.
+It warns and goes on. A call that the node answers with `unimplemented` adds the same hint.
+
 ### Download it from the release
 
 Each release publishes chalkctl as `chalkctl-linux-amd64`, a static program that runs no other
@@ -242,6 +247,13 @@ export CHALKOSINVENTORY=~/clusters/cluster/chalkos.yaml
 A client file names no cluster. Its OS CA ties it to one: a node of another cluster fails the TLS
 handshake, and chalkctl says the node does not accept this client file and asks whether it is
 another cluster's.
+
+chalkctl writes client files and secrets files readable by their owner alone. A file copied or
+checked out with other permissions still works, and chalkctl warns once per command, as for a
+client file of mode 0644:
+`chalkctl: warning: alice.json holds a private key and is readable by others (mode 0644); chmod 600 it`.
+The same goes for an age identity that `--identity` names and for a plaintext secrets file. A file
+of another owner, or one in the Nix store, draws no warning, as you cannot change its mode.
 
 The secrets file, the client files and the images relate as follows:
 

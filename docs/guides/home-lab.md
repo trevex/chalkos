@@ -466,7 +466,7 @@ Install the router at the installer's address, which `chalkos.yaml` names for no
 
 ```console
 $ chalkctl install router --secrets=secrets.age --fingerprint=<fingerprint>
-installing router onto /dev/disk/by-id/nvme-Samsung_SSD_980_512GB_S64DNF0R812345 from /home/alice/homelab/images/router-metal: chalkos <image>, sending <n> bytes of store, hash tree, UKI and boot loader
+installing router onto /dev/disk/by-id/nvme-Samsung_SSD_980_512GB_S64DNF0R812345 from /home/alice/homelab/images/router-metal: chalkos <image>, sending <size> of store, hash tree, UKI and boot loader
 router is installed and reboots
 chalkctl recovery-key router prints the key that unlocks it when its TPM fails
 ```
@@ -897,8 +897,8 @@ routed addresses, to the Kubernetes API, and to the internet is interrupted. Upg
 in a step of its own, at a time when that pause suits you:
 
 ```sh
-chalkctl upgrade --nodes node1,node2,node3 --secrets=secrets.age
-chalkctl upgrade --nodes router --secrets=secrets.age
+chalkctl upgrade node1 node2 node3 --secrets=secrets.age
+chalkctl upgrade router --secrets=secrets.age
 ```
 
 ## Run the lab without internet access (optional)

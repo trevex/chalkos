@@ -1,0 +1,60 @@
+chalkctl installs and operates the nodes of a chalkos cluster. It reads the cluster from an
+inventory, which names each node, its address, its image and its config files: the file --inventory
+names, else the file $CHALKOSINVENTORY names, else chalkos.yaml in the current directory. It
+talks to chalkd on each node over mutual TLS, and never builds or signs images.
+
+Commands authenticate with the cluster's secrets file, which holds every CA key and which only
+--secrets names, or with a client file of the admin, operator or reader role, which chalkctl client
+new writes. Each command's help says which it takes. A command that accepts both takes --config or
+--secrets, not both, else the client file $CHALKOSCONFIG names, else ~/.config/chalkos/config.
+
+A command's flags go after its name, anywhere among its arguments, and -- ends them: every
+argument after it is read as a positional argument.
+
+Usage:
+  chalkctl [flags]
+  chalkctl [command]
+
+Examples:
+  # Generate the cluster's secrets, install and bootstrap a control plane, write a kubeconfig.
+  chalkctl gen secrets --recipient age1...
+  chalkctl install cp1 --secrets secrets.age \
+    --fingerprint 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+  chalkctl bootstrap cp1 --secrets secrets.age
+  chalkctl kubeconfig --secrets secrets.age
+
+Set up:
+  client       Manage client files
+  gen          Generate files of a cluster
+  image        Pull chalkos images from a registry
+  install      Install a node that waits in maintenance mode
+  secureboot   Create Secure Boot keys and enrol them in a node's firmware
+
+Operate:
+  apply        Deliver a node's config from the inventory: short for config apply
+  config       Deliver a node's config and act on its trial or pending config
+  disks        List a node's disks
+  logs         Show a node's journal
+  node         Manage one node: access, image, reboot and diagnostics
+  recovery-key Print a node's recovery key
+  rotate       Rotate os-ca, node-ca, kubernetes-ca, service-account-key or encryption-key
+  status       Show an installed node's status, or a line for each node of the cluster
+  storage      Manage a node's volumes
+  upgrade      Install new images on the cluster's nodes, or boot their previous ones again
+  validate     Check nodes' config against the schemas of their images
+
+Kubernetes:
+  bootstrap    Initialise the cluster on a control plane
+  etcd         Manage the cluster's etcd members
+  kubeconfig   Write an admin kubeconfig
+  registry     Manage the images of the cluster registry
+
+Additional Commands:
+  completion   Generate the autocompletion script for the specified shell
+  help         Help about any command
+  version      Print the version and the git revision of the build
+
+Flags:
+  -h, --help[=true|false]   help for chalkctl
+
+Use "chalkctl [command] --help" for more information about a command.

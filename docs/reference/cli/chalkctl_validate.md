@@ -35,6 +35,10 @@ node's facts or its running config, none of the image's other validators, and no
 renderers or their checks. chalkctl config apply --dry-run has the node run all of them, and
 changes nothing.
 
+-o json prints the result as an object: nodes holds each node's node, valid, error when it is not,
+the image it was checked against as image, imageReference, imageName, platform and rootHash, its
+configVersion and its warnings; warnings holds the layers' warnings. It exits as the lines do.
+
 The command needs no secrets file or client file.
 
 ## Flags
@@ -42,6 +46,7 @@ The command needs no secrets file or client file.
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
 | `--inventory`{ #flag-inventory } | string | $CHALKOSINVENTORY, else chalkos.yaml in the current directory | Inventory naming the nodes and their config files. |
+| `--output`{ #flag-output }, `-o` | format | `text` | Format to print: text, or json for programs. |
 
 ## Examples
 

@@ -2,6 +2,7 @@ package chalkctl
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/netip"
 	"strings"
@@ -57,6 +58,20 @@ func TestEtcdMembers(t *testing.T) {
 	if len(lines) != 2 || !strings.HasPrefix(lines[0], "NAME") || !strings.HasPrefix(lines[1], "n1 ") ||
 		!strings.Contains(lines[1], "https://127.0.0.1:") || !strings.HasSuffix(lines[1], "voter   healthy") {
 		t.Errorf("members:\n%s", ta.stdout)
+	}
+	// -o json prints the member list in protojson.
+	ta.stdout.Reset()
+	if err := ta.run(context.Background(), ta.args([]string{"etcd", "members", "--via", "n1", "-o", "json"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	var resp struct {
+		Members []struct {
+			Name     string   `json:"name"`
+			PeerURLs []string `json:"peerUrls"`
+		} `json:"members"`
+	}
+	if err := json.Unmarshal(ta.stdout.Bytes(), &resp); err != nil || len(resp.Members) != 1 || resp.Members[0].Name != "n1" || len(resp.Members[0].PeerURLs) != 1 {
+		t.Errorf("members -o json: %v\n%s", err, ta.stdout)
 	}
 	// --address reaches one node, which --via names.
 	if err := ta.run(context.Background(), ta.args([]string{"etcd", "members"}, addr)); err == nil || !strings.Contains(err.Error(), "--via") {

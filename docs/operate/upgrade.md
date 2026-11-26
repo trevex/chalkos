@@ -17,7 +17,7 @@ In short:
 rm -rf images/node-metal-signed
 chalkbuild sign --key keys/db.key --cert keys/db.crt images/node-metal images/node-metal-signed
 chalkctl validate
-chalkctl upgrade --nodes cp3 --secrets=secrets.age
+chalkctl upgrade cp3 --secrets=secrets.age
 chalkctl upgrade --secrets=secrets.age
 chalkctl status cp3
 ```
@@ -63,7 +63,7 @@ When chalkd is reachable but Kubernetes or etcd cannot start, run `chalkctl upgr
 install the repair image over the node API. Name every target explicitly:
 
 ```sh
-chalkctl upgrade --nodes cp1 --recover --secrets=secrets.age
+chalkctl upgrade cp1 --recover --secrets=secrets.age
 ```
 
 The run reaches only the selected nodes, in batches of `--max-unavailable` without coordinator
@@ -73,11 +73,11 @@ be interrupted and etcd can lose quorum. The node's image and config checks, Sec
 and protection of its fallback image still apply. chalkctl still waits for the new boot to pass
 the node's health checks and stops if it falls back. A node cordoned before recovery stays
 cordoned. If the node refuses to overwrite the fallback of an unblessed boot,
-`chalkctl upgrade --nodes cp1 --rollback --recover --secrets=secrets.age` recovers by booting the
+`chalkctl upgrade cp1 --rollback --recover --secrets=secrets.age` recovers by booting the
 previous image first.
 
 `--recover` is a client option; the installed chalkd needs no new API. Use it with `--until stage`
-or `--until activate` to stop before rebooting. Repeat `upgrade --nodes cp1 --recover` to continue
+or `--until activate` to stop before rebooting. Repeat `upgrade cp1 --recover` to continue
 from the staged or activated image.
 
 ## Name the new image in the inventory
@@ -138,7 +138,7 @@ it changes with `--diff`, which prints each node's changes as
 
 ```sh
 chalkctl validate cp3
-chalkctl upgrade --nodes=cp3 --diff --secrets=secrets.age
+chalkctl upgrade cp3 --diff --secrets=secrets.age
 ```
 
 The run also stops before it sends anything when a node runs another platform than its image in the
@@ -155,8 +155,8 @@ that `chalklab sign` signed, as
 
 Run the command in the inventory's directory, or name the inventory with `--inventory` or
 `$CHALKOSINVENTORY`. Start with
-one node, `--nodes cp3`, and check it. Then run the command without `--nodes` for the rest. A run
-without `--nodes` takes every node of the inventory, so chalkctl prints the nodes it upgrades and
+one node, `chalkctl upgrade cp3`, and check it. Then run the command without a node for the rest. A
+run that names no node takes every node of the inventory, so chalkctl prints the nodes it upgrades and
 asks before the first change; without a terminal, as in a script, it refuses unless `--yes` is
 given. `--diff` and `--until stage` change no running node and do not ask. This
 run of the homelab example upgrades its three Kubernetes nodes, `node1` to `node3`, and its router,
@@ -166,7 +166,7 @@ which run two images:
 $ chalkctl upgrade --secrets=secrets.age
 upgrading node-metal on metal to <new>: node1, node2, node3
 upgrading router-metal on metal to <new-router>: router
-chalkctl: upgrade without --nodes changes every node of homelab, 4 nodes.
+chalkctl: upgrade with no node named changes every node of homelab, 4 nodes.
 Go ahead? [y/N] y
 node1: installing <new>
 node1: config unchanged
@@ -174,6 +174,9 @@ node1: installed <new>, staged as .staged-chalkos_2.efi
 node1: cordoned, evicted <n> pods, kept <n>
 node1: activated <new>, which boots next as chalkos_2+3.efi
 node1: rebooting into <new>
+node1: it did not reboot yet
+node1: unreachable: <error>
+node1: its boot is not healthy yet: units failed: kubelet.service
 node1: runs <new>, found healthy
 node1: uncordoned
 node2: installing <new>
@@ -184,6 +187,7 @@ router: config unchanged
 router: installed <new-router>, staged as .staged-chalkos_2.efi
 router: activated <new-router>, which boots next as chalkos_2+3.efi
 router: rebooting into <new-router>
+router: unreachable: <error>
 router: runs <new-router>, found healthy
 upgraded 4 nodes to <new>, <new-router>
 ```
@@ -191,9 +195,9 @@ upgraded 4 nodes to <new>, <new-router>
 `<new>` and `<new-router>` stand for the new images' names. chalkctl names an image by the first
 12 hex characters of its root hash. When the build names a tag or a git revision, they follow in
 parentheses, the revision cut to 12 characters, as in `<root hash> (<tag>, <revision>)`. `<n>`
-stands for numbers of pods. `.staged-chalkos_2.efi` is the staged UKI on a node that was installed
-with `chalkos_1.efi`, and `chalkos_2+3.efi` the boot entry its activation gives it: generation 2,
-with three tries.
+stands for numbers of pods, and `<error>` for the error of a look that did not reach the node.
+`.staged-chalkos_2.efi` is the staged UKI on a node that was installed with `chalkos_1.efi`, and
+`chalkos_2+3.efi` the boot entry its activation gives it: generation 2, with three tries.
 
 The first lines name each image and its platform and the nodes that get it. `...` stands
 for the lines of node2 and node3, which repeat node1's. Each node shows its steps:
@@ -204,22 +208,29 @@ for the lines of node2 and node3, which repeat node1's. Each node shows its step
 3. `installed ..., staged as ...` names the staged UKI. The image checked the config with its own
    checker, renderers included, before the node staged it.
 4. `activated ..., which boots next as ...` names the new boot entry.
-5. `rebooting into` reboots the node.
+5. `rebooting into` reboots the node. While chalkctl waits for its new boot, it prints a line each
+   time the state of the wait changes: `it did not reboot yet`, `unreachable` with the error of
+   the last look, or why the boot is not found healthy yet, such as a failed unit. A node that
+   stays in one state prints one line, so a slow boot and a stuck one read apart.
 6. `runs ..., found healthy` means the boot was blessed.
+
+On a terminal, an image sent from a directory also prints its progress about every tenth of its
+size, such as `node1: sent 40%, 120.0 MiB of 297.3 MiB`. Sizes are in MiB or GiB. Output to a
+file or a pipe, as in CI, gets no progress lines.
 
 The last line counts the nodes upgraded.
 
 The control planes go first, one at a time, and the other nodes after them in batches of
 `--max-unavailable`, 1 by default. Raise it when the workloads have spare capacity, because each
 batch takes its nodes away for one reboot. The homelab's nodes reach each other and the
-Kubernetes API through its router alone, so its reboot pauses that traffic. `--nodes router`
+Kubernetes API through its router alone, so its reboot pauses that traffic. `chalkctl upgrade router`
 upgrades the router in a run of its own, at a time that suits.
 [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) lists every flag.
 
 `--image` installs an image directory, or a raw image with `repart-output.json` next to it, in
 place of the inventory's. It goes to the nodes that run an image of its name, or to the nodes
-`--nodes` names, and skips nodes on another platform. A renamed image matches no node that runs
-the image before it, so its first upgrade names the nodes with `--nodes`. chalkctl sends the image
+the command names, and skips nodes on another platform. A renamed image matches no node that runs
+the image before it, so its first upgrade names the nodes. chalkctl sends the image
 as the directory holds it and checks no signature, so sign it first:
 
 ```sh
@@ -255,7 +266,7 @@ lists what it does with each node.
 `--until` stops each node after a step. A later command runs the next step, for one node at a time:
 
 ```console
-$ chalkctl upgrade --nodes cp3 --until stage --secrets=secrets.age
+$ chalkctl upgrade cp3 --until stage --secrets=secrets.age
 upgrading node-metal on metal to <new>: cp3
 cp3: installing <new>
 cp3: config unchanged
@@ -314,7 +325,7 @@ previous image <old> (upgrade --rollback boots it)
 `chalkctl upgrade --rollback` boots that image again in place of installing one:
 
 ```console
-$ chalkctl upgrade --rollback --nodes cp1,cp2,cp3
+$ chalkctl upgrade cp1 cp2 cp3 --rollback
 rolling back 3 nodes to <old>: cp1, cp2, cp3
 cp1: cordoned, evicted <n> pods, kept <n>
 cp1: rolling back to <old>
@@ -334,7 +345,7 @@ rolled back 3 nodes to <old>
 
 The node writes no image. It renames the previous image's UKI to the next generation, here
 `chalkos_3+3.efi`. chalkctl runs it in the order and batches of an upgrade, and it takes
-`--nodes`, `--until activate`, `--max-unavailable` and `--timeout`. The image boots with the config
+node names, `--until activate`, `--max-unavailable` and `--timeout`. The image boots with the config
 it last ran, so an operator client file suffices. `--image`, `--diff` and `--retry-failed` do not
 combine with `--rollback`. Every node of the run must roll back to the same image, and a second
 rollback changes nothing. `chalkctl upgrade` to the inventory's image undoes a rollback.
@@ -355,14 +366,15 @@ A node whose new image is not found healthy within its tries boots its previous 
 at that node:
 
 ```text
-chalkctl: cp3: upgrade to <new> failed: rolled back to <old>; it stays held by its layers; its boots logged:
+chalkctl: cp3: upgrade to <new> failed: rolled back to <old>; it stays cordoned; its boots logged:
   <journal lines>
 ```
 
 `<old>` is the image the node runs again. `<journal lines>` are the last 30 lines that chalkd and the
 health check logged during the failed boot, such as
-`the node did not become healthy within 5m0s: ...`. `; it stays held by its layers` appears on a node
-its layers hold, such as a node of a Kubernetes cluster, which stays cordoned. `chalkctl status cp3`
+`the node did not become healthy within 5m0s: ...`. `; it stays cordoned` appears on a node
+its layers hold, such as a node of a Kubernetes cluster; a layer without a word of its own makes
+it `; it stays held by its layers`. `chalkctl status cp3`
 shows the same lines for as long as the failed image stays on the disk.
 
 The node runs its previous image, and that boot is healthy. To go on:

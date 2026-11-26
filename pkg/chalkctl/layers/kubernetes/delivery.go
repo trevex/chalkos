@@ -40,7 +40,7 @@ type applyFlags struct{ share bool }
 // ApplyFlags registers --kubernetes-share.
 func (p *Plugin) ApplyFlags(fs *pflag.FlagSet) layer.ApplyFlags {
 	f := &applyFlags{}
-	fs.BoolVar(&f.share, "kubernetes-share", false, "also deliver a new Kubernetes share, such as a new kubelet certificate for a worker")
+	fs.BoolVar(&f.share, "kubernetes-share", false, "also deliver a new Kubernetes share, such as a new kubelet certificate for a worker; refused to a node revoked with chalkctl node revoke, and while no control plane says which nodes are revoked")
 	return f
 }
 

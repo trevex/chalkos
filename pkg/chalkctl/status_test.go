@@ -49,7 +49,7 @@ func trialUnreadable(config string) *nodev1.StatusResponse {
 
 const (
 	unreadableAdvice = "the node takes no delivery until chalkctl config rollback w1 removes the record of a config's trial that cannot be read"
-	upgradeAdvice    = "chalkctl upgrade --nodes w1 delivers it with the image new"
+	upgradeAdvice    = "chalkctl upgrade w1 delivers it with the image new"
 )
 
 // TestStagedAdvice names the delivery that gives the staged slot the inventory's config, and no

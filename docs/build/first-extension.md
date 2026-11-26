@@ -344,6 +344,7 @@ $ chalkctl logs w1 --unit=hardware-info.service
 
 ```console
 $ chalkctl status w1
+w1: healthy
 config 9307d1da8a3a17a8e611ded2cdbdd577692950cc6eb963ce1712ecf656a25416 (the inventory's)
 previous config d8ddf99001390c55c88d34312a8ce7db6eee5f3d08a19f47e4b5fc50f90eaa55 (config rollback restores it)
 platform kvm (the inventory's)

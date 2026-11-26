@@ -28,6 +28,7 @@ image with the inventory. A healthy `node1` reads:
 
 ```console
 $ chalkctl status node1
+node1: healthy
 config <version> (the inventory's)
 platform metal (the inventory's)
 image <image>, booted from chalkos_1.efi
@@ -77,6 +78,22 @@ The placeholders stand for values that differ on every node:
 The sections below explain the lines in this order. A section that has nothing to show leaves
 its lines out.
 
+## Read the summary line
+
+The first line sums up the lines below it: `node1: healthy`, or the problems they show, each in
+a few words, such as:
+
+```text
+node1: 3 problems: boot not found healthy yet, volume data missing, unit demo.service failed
+```
+
+A problem is a line that needs a look: a config or image that is not the inventory's, a trial or
+an activation that failed, a boot not found healthy yet or an upgrade that failed, a module
+policy that failed, a volume missing or not mounted, a disk not found, an output whose renderer
+failed, a certificate with a problem, a clock that is not synchronised, a failed unit, and what
+each layer counts, such as a Kubernetes Node that is not Ready or a BGP session that is not
+established. The sections below explain each.
+
 ## Read the config line
 
 `config <version> (the inventory's)` means the node runs the config the inventory gives it. The
@@ -89,7 +106,7 @@ parentheses say otherwise when they differ:
   image, but another image is staged or active, as an upgrade with `--until stage` of an image the
   inventory names no longer leaves it. A delivery writes that image's config slot too, so that
   image checks the config, and no command removes it. An upgrade to a new image replaces it.
-- `not the inventory's; chalkctl upgrade --nodes node1 delivers it with the image <image>`: the
+- `not the inventory's; chalkctl upgrade node1 delivers it with the image <image>`: the
   node runs another image than the inventory's. `config apply` checks the config against the
   image the node runs, which may refuse it, so the config comes with the upgrade.
 - `not the inventory's; it comes with the image <image> in the inactive slot`: the node has the
@@ -118,7 +135,7 @@ active in its inactive slot adds `staged config <version> (...)`, the config tha
 with. When it differs, its parentheses name `chalkctl config apply node1`, which writes the config
 slots of both images, or `chalkctl config apply --staged node1` when the running image runs the
 inventory's config already, or when the staged image is the inventory's and the running image is
-not. When neither image is the inventory's, they name `chalkctl upgrade --nodes node1`, as the
+not. When neither image is the inventory's, they name `chalkctl upgrade node1`, as the
 config line does. A staged image that is not the inventory's on a node that runs the inventory's
 image adds the same condition as the config line. When status cannot compare the config, the
 staged line names `chalkctl config apply --staged --diff node1`, which compares the staged slot.
@@ -197,7 +214,7 @@ still checks ends in `, not found healthy yet`. More lines follow after an upgra
   [A node rolled back during the upgrade](upgrade.md#a-node-rolled-back-during-the-upgrade)
   says what to do.
 - `its store's root hash is ..., not that of the image ... the inventory names, ...`: the image was
-  rebuilt since the node's upgrade. The line ends in `chalkctl upgrade --nodes node1 installs that
+  rebuilt since the node's upgrade. The line ends in `chalkctl upgrade node1 installs that
   image`, in `it has ... staged: chalkctl node activate node1 makes it boot next` when the image
   waits for its activation, or in `it has ... active, which it boots with its next reboot:
   chalkctl node reboot node1` when it waits for a reboot. After a rollback from a boot that was
@@ -335,13 +352,79 @@ TCP port 4460 and UDP port 123. A network that blocks both needs its own servers
 `failed unit <unit>` names each systemd unit that failed in this boot. A healthy node has none.
 Read the unit's journal next.
 
+## See every node at once
+
+`chalkctl status` without a node reads every node of the inventory at once and prints a line of
+each:
+
+```console
+$ chalkctl status
+NODE    IMAGE                                BOOT         CONFIG                                PROBLEMS
+node1   <image>                              healthy      inventory's                           0
+node2   <image>                              not healthy  on trial until 2026-11-26T10:15:00Z   2
+node3   -                                    unreachable  -                                     -
+router  <image>                              healthy      differs                               1
+chalkctl: node3 is unreachable: <error>
+```
+
+BOOT says whether the node found its boot healthy. CONFIG says whether the config of the running
+image is the inventory's, `differs` when it is not, `unknown` when status cannot compare it, or
+until when a config is on trial. PROBLEMS counts the problems of the node's summary line;
+`chalkctl status <node>` names them. Each node has 15 seconds to answer. A node that does not
+answer shows as `unreachable`, the line after the table says why, and the others print all the
+same.
+
+## Gate a pipeline on chalkctl status
+
+`-o json` prints the same for programs. The output is stable: `chalkctl status -o json` prints
+an object with `nodes`, and `chalkctl status <node> -o json` one node's object:
+
+```json
+{
+  "node": "node1",
+  "healthy": true,
+  "problems": [],
+  "inventory": {"config": "same", "image": "same", "platform": "same"},
+  "info": {"mode": "MODE_NORMAL", "imageId": "chalkos", "nodeName": "node1", "chalkosVersion": "0.8.0"},
+  "status": {"configVersion": "<version>", "boot": {"running": {"rootHash": "<base64>"}, "blessed": true}},
+  "layers": {"kubernetes": {"kind": "controlplane", "nodeReady": "True"}}
+}
+```
+
+`healthy` is true when the node answered and shows no problem. `problems` are the summary
+line's, whose wording may change. `inventory` compares the node with the inventory: `config`,
+`stagedConfig` while an image is staged, `image` and `platform`, each `same`, `differs` or
+`unknown`. `error` replaces the rest for a node that did not answer. `info`, `status` and
+`layers` are the node's answers in protojson, as the [node API](../reference/api.md) names their
+fields: in lowerCamelCase, with fields at their zero value left out, 64-bit numbers as strings and
+bytes in base64. The example above leaves most fields out.
+
+A CI job that gates a release on the cluster checks that every node is healthy and runs the
+inventory's image and config:
+
+```sh
+chalkctl status -o json | jq -e '
+  .nodes | all(.healthy and .inventory.image == "same" and .inventory.config == "same")'
+```
+
+`jq -e` exits 1 when a node is not, and the job fails. `chalkctl disks`, `chalkctl node diag`,
+`chalkctl validate`, `chalkctl etcd members` and `chalkctl registry list` take `-o json` too.
+
+
 ## Follow a unit's journal with chalkctl logs
 
 `chalkctl logs` prints the node's journal of the current boot, of every unit or of `--unit`
-alone. `-f` follows it:
+alone. `-f` follows it, starting with the last 100 entries:
 
 ```sh
 chalkctl logs node1 --unit=chalkd.service -f
+```
+
+`-n` or `--lines` starts with that many of the last entries; `-n 0` starts with the boot's first
+entry, which is what `chalkctl logs` without `-f` prints by default:
+
+```sh
+chalkctl logs node1 -n 20
 ```
 
 A node serves eight journal streams to the clients of its network at a time, four of them to one

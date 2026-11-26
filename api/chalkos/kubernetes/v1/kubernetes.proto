@@ -177,8 +177,7 @@ message BGPStatusResponse {
 enum Phase {
   // No phase; chalkd never reports it.
   PHASE_UNSPECIFIED = 0;
-  // The node has no share yet, or its Kubernetes files are being prepared, or their preparation
-  // failed.
+  // The node has no share yet, or its Kubernetes files are being prepared.
   PHASE_PREPARING = 1;
   // A control-plane node that is no etcd member and has not started joining. It waits for a
   // bootstrap or for the cluster, or tries to reach the cluster to join it.
@@ -195,6 +194,8 @@ enum Phase {
   PHASE_LEFT = 6;
   // A worker node whose Kubernetes files are prepared: its kubelet joins the cluster.
   PHASE_JOINED = 7;
+  // The preparation of the node's Kubernetes files failed; state says why.
+  PHASE_PREPARATION_FAILED = 8;
 }
 
 // A node revoked in the cluster.

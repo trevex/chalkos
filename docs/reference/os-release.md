@@ -96,7 +96,7 @@ The installer's carries `IMAGE_ID="chalkos-installer"` and `CHALKOS_BOOT_TRIES`,
 | `IMAGE_ID`, `CHALKOS_IMAGE`, `CHALKOS_PLATFORM` | chalkd's Info | Reported as they are; empty on an image that sets none. |
 | `CHALKOS_PLATFORM` | chalkd's Status | Reported, and shown by `chalkctl status` beside the platform of the node's image in the inventory. |
 
-`chalkctl upgrade --image` without `--nodes` upgrades the nodes whose `CHALKOS_IMAGE` equals the
+`chalkctl upgrade --image` without node names upgrades the nodes whose `CHALKOS_IMAGE` equals the
 image's. No other check compares it: a node may change the image it runs through an upgrade, and
 the check of its config against the new image's schemas decides whether the image suits it.
 

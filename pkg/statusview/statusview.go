@@ -28,6 +28,8 @@ type Inventory interface {
 	// ImageLine is the status line of a store other than the inventory's image; empty when there
 	// is nothing to say.
 	ImageLine(boot *nodev1.BootStatus) string
+	// Compare compares the node the status s describes with the inventory.
+	Compare(s *nodev1.StatusResponse) Comparison
 }
 
 // Options say what Write adds to a node's status.

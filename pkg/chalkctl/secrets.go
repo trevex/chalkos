@@ -118,6 +118,7 @@ func (a *app) parseIdentity(ctx context.Context, file string) ([]age.Identity, e
 	if err != nil {
 		return nil, err
 	}
+	a.warnReadable(file, "a private key")
 	ids, err := clustersecrets.ParseIdentities(data, a.pluginUI(), a.passphrase(ctx, file), func() ([]byte, error) {
 		return os.ReadFile(file + ".pub")
 	})

@@ -13,7 +13,6 @@ import (
 	"net/netip"
 	"slices"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -26,6 +25,7 @@ import (
 	"github.com/trevex/chalkos/pkg/internal/strs"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/registry"
+	"github.com/trevex/chalkos/pkg/statusview"
 )
 
 func registryDeleteCommand(h layer.Host) *cobra.Command {
@@ -84,6 +84,7 @@ func registryGCCommand(h layer.Host) *cobra.Command {
 
 func registryListCommand(h layer.Host) *cobra.Command {
 	var f endpointFlags
+	var output layer.Output
 	cmd := h.Command(&cobra.Command{
 		Use:         "list",
 		Short:       "List the images of every endpoint of the cluster registry and mark those that differ",
@@ -96,9 +97,10 @@ func registryListCommand(h layer.Host) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return s.list(ctx, h.Table(), h.Stderr())
+		return s.list(ctx, h.Stdout(), h.Stderr(), output)
 	})
 	f.register(cmd.Flags(), pki.RoleReader)
+	output.Register(cmd.Flags())
 	return cmd
 }
 
@@ -399,73 +401,149 @@ type held struct {
 	missing int
 }
 
+// registryListing is what registry list finds on the endpoints of the cluster registry, as
+// registry list -o json prints it.
+type registryListing struct {
+	// Endpoints are the endpoints asked, in their order.
+	Endpoints []string `json:"endpoints"`
+	// Failed are the endpoints that could not be listed.
+	Failed []string `json:"failed,omitempty"`
+	// Images are the tags of every repository, by repository and tag.
+	Images []registryImage `json:"images"`
+}
+
+// registryImage is a tag of a repository of the cluster registry, as the endpoints serve it.
+type registryImage struct {
+	Repository string `json:"repository"`
+	Tag        string `json:"tag"`
+	// Digest is the digest of the manifest most endpoints serve for the tag, the first in the
+	// endpoints' order on a tie.
+	Digest string `json:"digest"`
+	// Serving are the endpoints that serve Digest whole.
+	Serving []string `json:"serving"`
+	// Missing are the endpoints, of those listed, that lack the tag.
+	Missing []string `json:"missing,omitempty"`
+	// Differs are the digests of the endpoints that serve another manifest, by the endpoint.
+	Differs map[string]string `json:"differs,omitempty"`
+	// Broken are how many images of the index each endpoint that lacks some of them lacks, by the
+	// endpoint.
+	Broken map[string]int `json:"broken,omitempty"`
+}
+
+// marked reports whether some endpoint lacks the image, serves another one or lacks part of it.
+func (img registryImage) marked() bool {
+	return len(img.Missing) > 0 || len(img.Differs) > 0 || len(img.Broken) > 0
+}
+
 // list prints each tag of each repository with the endpoints that serve it, and marks those
 // missing on, differing between, or broken on some endpoint: an index whose images an endpoint
 // lacks. A tag's digest is the one most endpoints serve, the first in endpoints order on a tie.
-// It fails when any is marked or an endpoint cannot be listed, which it reports to errOut.
-func (s endpoints) list(ctx context.Context, tw *tabwriter.Writer, errOut io.Writer) error {
-	served := map[image]map[netip.Addr]held{}
-	var failed []string
-	for _, e := range s.Endpoints {
-		if err := s.listOn(ctx, e, served); err != nil {
-			fmt.Fprintf(errOut, "%s: failed: %v\n", e, err)
-			failed = append(failed, e.String())
+// With -o json it prints the listing. It fails when any is marked or an endpoint cannot be
+// listed, which it reports to errOut.
+func (s endpoints) list(ctx context.Context, out, errOut io.Writer, output layer.Output) error {
+	l := s.listing(ctx, errOut)
+	if output.JSON() {
+		if err := layer.WriteJSON(out, l); err != nil {
+			return err
+		}
+	} else if err := s.writeListing(out, l); err != nil {
+		return err
+	}
+	marked := 0
+	for _, img := range l.Images {
+		if img.marked() {
+			marked++
 		}
 	}
-	fmt.Fprintln(tw, "REPOSITORY\tTAG\tDIGEST\tENDPOINTS")
-	marked := 0
+	switch {
+	case len(l.Failed) > 0:
+		return fmt.Errorf("%d of %d endpoints of the cluster registry could not be listed: %s", len(l.Failed), len(s.Endpoints), strings.Join(l.Failed, ", "))
+	case marked > 0:
+		return fmt.Errorf("the endpoints of the cluster registry differ in %d of %d images; push those again to every endpoint to make them alike", marked, len(l.Images))
+	}
+	return nil
+}
+
+// listing lists what every endpoint serves, and reports to errOut each endpoint that cannot be
+// listed.
+func (s endpoints) listing(ctx context.Context, errOut io.Writer) registryListing {
+	served := map[image]map[netip.Addr]held{}
+	l := registryListing{Images: []registryImage{}}
+	for _, e := range s.Endpoints {
+		l.Endpoints = append(l.Endpoints, e.String())
+		if err := s.listOn(ctx, e, served); err != nil {
+			fmt.Fprintf(errOut, "%s: failed: %v\n", e, err)
+			l.Failed = append(l.Failed, e.String())
+		}
+	}
 	for _, img := range slices.SortedFunc(maps.Keys(served), func(a, b image) int {
 		return cmp.Or(cmp.Compare(a.repo, b.repo), cmp.Compare(a.tag, b.tag))
 	}) {
 		at := served[img]
 		want := s.majority(at)
-		var serving, notes []string
+		r := registryImage{Repository: img.repo, Tag: img.tag, Digest: want.String(), Serving: []string{}}
 		for _, e := range s.Endpoints {
 			h, ok := at[e]
 			switch {
-			case !ok && !slices.Contains(failed, e.String()):
-				notes = append(notes, "missing on "+e.String())
+			case !ok && !slices.Contains(l.Failed, e.String()):
+				r.Missing = append(r.Missing, e.String())
 			case !ok:
 			case h.digest != want:
-				notes = append(notes, fmt.Sprintf("differs on %s (%s)", e, short(h.digest)))
+				if r.Differs == nil {
+					r.Differs = map[string]string{}
+				}
+				r.Differs[e.String()] = h.digest.String()
 			case h.missing > 0:
-				notes = append(notes, fmt.Sprintf("broken on %s (lacks %s of the index)", e, strs.Count(h.missing, "image")))
+				if r.Broken == nil {
+					r.Broken = map[string]int{}
+				}
+				r.Broken[e.String()] = h.missing
 			default:
-				serving = append(serving, e.String())
+				r.Serving = append(r.Serving, e.String())
+			}
+		}
+		l.Images = append(l.Images, r)
+	}
+	return l
+}
+
+// writeListing writes the table of the listing: each image with the endpoints that serve it, or
+// all, and the notes of those that do not.
+func (s endpoints) writeListing(out io.Writer, l registryListing) error {
+	tw := statusview.Table(out)
+	fmt.Fprintln(tw, "REPOSITORY\tTAG\tDIGEST\tENDPOINTS")
+	for _, img := range l.Images {
+		var notes []string
+		for _, e := range s.Endpoints {
+			switch e := e.String(); {
+			case slices.Contains(img.Missing, e):
+				notes = append(notes, "missing on "+e)
+			case img.Differs[e] != "":
+				notes = append(notes, fmt.Sprintf("differs on %s (%s)", e, shortDigest(img.Differs[e])))
+			case img.Broken[e] > 0:
+				notes = append(notes, fmt.Sprintf("broken on %s (lacks %s of the index)", e, strs.Count(img.Broken[e], "image")))
 			}
 		}
 		where := "all"
-		if len(serving) < len(s.Endpoints) {
-			where = strings.Join(append([]string{strings.Join(serving, ", ")}, notes...), "; ")
+		if len(img.Serving) < len(s.Endpoints) {
+			where = strings.Join(append([]string{strings.Join(img.Serving, ", ")}, notes...), "; ")
 		}
-		if len(notes) > 0 {
-			marked++
-		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", img.repo, img.tag, short(want), where)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", img.Repository, img.Tag, shortDigest(img.Digest), where)
 	}
-	if err := tw.Flush(); err != nil {
-		return err
-	}
-	switch {
-	case len(failed) > 0:
-		return fmt.Errorf("%d of %d endpoints of the cluster registry could not be listed: %s", len(failed), len(s.Endpoints), strings.Join(failed, ", "))
-	case marked > 0:
-		return fmt.Errorf("the endpoints of the cluster registry differ in %d of %d images; push those again to every endpoint to make them alike", marked, len(served))
-	}
-	return nil
+	return tw.Flush()
 }
 
 // majority is the digest most endpoints of at serve, the first in endpoints order on a tie.
 func (s endpoints) majority(at map[netip.Addr]held) v1.Hash {
 	counts := map[v1.Hash]int{}
+	for _, e := range s.Endpoints {
+		if h, ok := at[e]; ok {
+			counts[h.digest]++
+		}
+	}
 	var best v1.Hash
 	for _, e := range s.Endpoints {
-		h, ok := at[e]
-		if !ok {
-			continue
-		}
-		counts[h.digest]++
-		if counts[h.digest] > counts[best] {
+		if h, ok := at[e]; ok && counts[h.digest] > counts[best] {
 			best = h.digest
 		}
 	}
@@ -528,3 +606,9 @@ func (s endpoints) missingOf(ctx context.Context, e netip.Addr, repo name.Reposi
 
 // short is a digest as the table shows it: its algorithm and first 12 hex digits.
 func short(d v1.Hash) string { return d.Algorithm + ":" + d.Hex[:12] }
+
+// shortDigest is short of a digest in its string form, algorithm:hex.
+func shortDigest(d string) string {
+	alg, hex, _ := strings.Cut(d, ":")
+	return alg + ":" + hex[:min(12, len(hex))]
+}

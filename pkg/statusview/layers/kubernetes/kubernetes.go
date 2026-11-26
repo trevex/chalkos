@@ -129,3 +129,38 @@ func RevokedSince(n *kubernetesv1.RevokedNode) string {
 	}
 	return "since " + n.RevokedAt.AsTime().UTC().Format(time.RFC3339)
 }
+
+// Problems are what the node's Kubernetes status shows wrong, each in a few words, for the summary
+// of its status: a failed preparation, a control plane whose etcd data is missing, a Node that is not Ready, a control plane that does not
+// serve the node's certificates, control-plane pods behind the config, pods that do not run, and
+// lists that could not be read.
+func Problems(k *kubernetesv1.StatusResponse) []string {
+	var p []string
+	switch k.GetPhase() {
+	case kubernetesv1.Phase_PHASE_PREPARATION_FAILED:
+		p = append(p, "Kubernetes preparation failed")
+	case kubernetesv1.Phase_PHASE_ETCD_DATA_MISSING:
+		p = append(p, "etcd data missing")
+	}
+	if r := k.GetNodeReady(); r != "" && r != "True" {
+		p = append(p, "Kubernetes node not ready")
+	}
+	if k.GetControlPlane() != "" && !k.GetControlPlaneCurrent() {
+		p = append(p, "control plane not current")
+	}
+	if c := k.GetControlPlanePods(); c != "" && c != "current" {
+		p = append(p, "control-plane pods: "+c)
+	}
+	switch n := k.GetPodsNotRunningTotal(); {
+	case k.GetPodsError() != "":
+		p = append(p, "pods unknown")
+	case n == 1:
+		p = append(p, "1 pod not running")
+	case n > 1:
+		p = append(p, fmt.Sprintf("%d pods not running", n))
+	}
+	if k.GetRevokedNodesError() != "" {
+		p = append(p, "revoked nodes unknown")
+	}
+	return p
+}

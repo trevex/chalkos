@@ -5,16 +5,18 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/netip"
+	"slices"
 	"strings"
 	"testing"
 
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 
+	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/registry"
-	"github.com/trevex/chalkos/pkg/statusview"
 )
 
 // TestDeleteTag deletes a tag on every endpoint, counts one that never held it as done, says
@@ -220,7 +222,7 @@ func TestListEndpoints(t *testing.T) {
 	te.pushTo(t, b, "docker.io/library/c:1", "10.0.0.2", "10.0.0.3")
 	list := func() error {
 		te.reset()
-		return te.list(context.Background(), statusview.Table(&te.out), &te.errOut)
+		return te.list(context.Background(), &te.out, &te.errOut, layer.TextOutput)
 	}
 	err := list()
 	if want := "the endpoints of the cluster registry differ in 2 of 4 images; push those again to every endpoint to make them alike"; err == nil || err.Error() != want {
@@ -236,6 +238,22 @@ func TestListEndpoints(t *testing.T) {
 	}, "\n")
 	if te.out.String() != want {
 		t.Errorf("list =\n%s\nwant\n%s", te.out.String(), want)
+	}
+	// -o json lists the same, with whole digests, and fails the same.
+	te.reset()
+	if err := te.list(context.Background(), &te.out, &te.errOut, layer.JSONOutput); err == nil {
+		t.Error("list -o json of endpoints that differ passed")
+	}
+	var l registryListing
+	if err := json.Unmarshal(te.out.Bytes(), &l); err != nil {
+		t.Fatal(err)
+	}
+	if len(l.Images) != 4 {
+		t.Fatalf("list -o json =\n%s", te.out.String())
+	}
+	if b1 := l.Images[2]; b1.Repository != "docker.io/library/b" || b1.Tag != "1" || b1.Digest != digestOf(t, b).String() ||
+		!slices.Equal(b1.Serving, []string{"10.0.0.1"}) || !slices.Equal(b1.Missing, []string{"10.0.0.3"}) || b1.Differs["10.0.0.2"] != digestOf(t, other).String() || len(l.Failed) != 0 {
+		t.Errorf("list -o json =\n%s", te.out.String())
 	}
 
 	// Alike once b:1 and c:1 are pushed everywhere.
@@ -274,3 +292,22 @@ func TestListEndpoints(t *testing.T) {
 
 // accept is a confirmation that goes ahead.
 func accept(string) error { return nil }
+
+// The majority is the digest most endpoints serve, the first endpoint's of those on a tie.
+func TestMajority(t *testing.T) {
+	a, b := v1.Hash{Algorithm: "sha256", Hex: "aa"}, v1.Hash{Algorithm: "sha256", Hex: "bb"}
+	var s endpoints
+	at := map[netip.Addr]held{}
+	for i, h := range []v1.Hash{a, b, b, a} {
+		e := netip.AddrFrom4([4]byte{192, 0, 2, byte(i + 1)})
+		s.Endpoints = append(s.Endpoints, e)
+		at[e] = held{digest: h}
+	}
+	if got := s.majority(at); got != a {
+		t.Errorf("majority of a, b, b, a = %s, want %s", got, a)
+	}
+	at[s.Endpoints[3]] = held{digest: b}
+	if got := s.majority(at); got != b {
+		t.Errorf("majority of a, b, b, b = %s, want %s", got, b)
+	}
+}

@@ -248,7 +248,7 @@ func (r *upgradeRun) planRollback(ctx context.Context, named []string) error {
 	}
 	for _, name := range candidates {
 		if b := boots[name]; rollbackVote(b) == nil && !bytes.Equal(b.GetRunning().GetRootHash(), target.GetRootHash()) {
-			return fmt.Errorf("%s does not run %s, which the other nodes roll back to, and keeps no previous image: %s; leave it out with --nodes", name, statusview.BootImageName(target), noPrevious(b))
+			return fmt.Errorf("%s does not run %s, which the other nodes roll back to, and keeps no previous image: %s; leave it out by naming the other nodes", name, statusview.BootImageName(target), noPrevious(b))
 		}
 	}
 	r.rollbackTo = target
@@ -279,7 +279,7 @@ func rollbackTarget(votes map[string][]string, images map[string]*nodev1.BootIma
 	for _, key := range slices.Sorted(maps.Keys(votes)) {
 		parts = append(parts, strings.Join(votes[key], ", ")+" to "+statusview.BootImageName(images[key]))
 	}
-	return nil, fmt.Errorf("the nodes roll back to different images: %s; roll them back separately with --nodes", strings.Join(parts, "; "))
+	return nil, fmt.Errorf("the nodes roll back to different images: %s; roll them back separately by naming their nodes", strings.Join(parts, "; "))
 }
 
 // noPrevious says why a node's status names no previous image.
