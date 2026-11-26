@@ -536,14 +536,14 @@ func (s endpoints) writeListing(out io.Writer, l registryListing) error {
 // majority is the digest most endpoints of at serve, the first in endpoints order on a tie.
 func (s endpoints) majority(at map[netip.Addr]held) v1.Hash {
 	counts := map[v1.Hash]int{}
+	for _, e := range s.Endpoints {
+		if h, ok := at[e]; ok {
+			counts[h.digest]++
+		}
+	}
 	var best v1.Hash
 	for _, e := range s.Endpoints {
-		h, ok := at[e]
-		if !ok {
-			continue
-		}
-		counts[h.digest]++
-		if counts[h.digest] > counts[best] {
+		if h, ok := at[e]; ok && counts[h.digest] > counts[best] {
 			best = h.digest
 		}
 	}

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -291,3 +292,22 @@ func TestListEndpoints(t *testing.T) {
 
 // accept is a confirmation that goes ahead.
 func accept(string) error { return nil }
+
+// The majority is the digest most endpoints serve, the first endpoint's of those on a tie.
+func TestMajority(t *testing.T) {
+	a, b := v1.Hash{Algorithm: "sha256", Hex: "aa"}, v1.Hash{Algorithm: "sha256", Hex: "bb"}
+	var s endpoints
+	at := map[netip.Addr]held{}
+	for i, h := range []v1.Hash{a, b, b, a} {
+		e := netip.AddrFrom4([4]byte{192, 0, 2, byte(i + 1)})
+		s.Endpoints = append(s.Endpoints, e)
+		at[e] = held{digest: h}
+	}
+	if got := s.majority(at); got != a {
+		t.Errorf("majority of a, b, b, a = %s, want %s", got, a)
+	}
+	at[s.Endpoints[3]] = held{digest: b}
+	if got := s.majority(at); got != b {
+		t.Errorf("majority of a, b, b, b = %s, want %s", got, b)
+	}
+}
