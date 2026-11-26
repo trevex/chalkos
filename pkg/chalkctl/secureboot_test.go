@@ -120,9 +120,10 @@ func enrollNode(t *testing.T, ta *testApp, secureBootAfter byte, early bool, eve
 		return nil
 	}
 	s.RemoveState = func(context.Context) error { return nil }
-	s.RebootNode = func() {
+	s.RebootNode = func() error {
 		efiVar("SecureBoot", secureBootAfter)
 		n.rebooted <- ta.renewMaintenanceCertificate(t, n.addr)
+		return nil
 	}
 	ta.pollInterval = 10 * time.Millisecond
 	n.addr = ta.startNode(t, s)

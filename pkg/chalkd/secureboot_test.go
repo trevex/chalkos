@@ -109,7 +109,7 @@ func enrolServer(t *testing.T, setupMode bool, other []byte) (*Server, *firmware
 		fw.stateRemoved = true
 		return nil
 	}
-	s.RebootNode = func() { close(fw.rebooted) }
+	s.RebootNode = func() error { close(fw.rebooted); return nil }
 	return s, fw
 }
 

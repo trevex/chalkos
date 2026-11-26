@@ -267,8 +267,9 @@ type NodeServiceClient interface {
 	// Logs streams the journal of the current boot, or of one unit in it. Available in maintenance
 	// and normal mode to readers. The console may call it.
 	Logs(context.Context, *v1.LogsRequest) (NodeServiceLogsClientStream, error)
-	// Reboot reboots the node once the response is sent. Available in maintenance and normal mode
-	// to operators. The console may call it while the image allows the console's actions.
+	// Reboot reboots the node once the response is sent and no change of the node runs, unless
+	// forced. Available in maintenance and normal mode to operators. The console may call it while
+	// the image allows the console's actions.
 	Reboot(context.Context, *v1.RebootRequest) (*v1.RebootResponse, error)
 	// Upgrade installs a new image into the node's inactive slot and stages it there, then activates
 	// it as ActivateImage does, so it boots next, counting the image's boot tries until a boot is
@@ -374,9 +375,9 @@ type NodeServiceClient interface {
 	// under Secure Boot, and where the firmware found it. Available in maintenance mode to
 	// readers.
 	SecureBootDrivers(context.Context, *v1.SecureBootDriversRequest) (*v1.SecureBootDriversResponse, error)
-	// Shutdown powers the node off once the response is sent, as Reboot reboots it. Available in
-	// maintenance and normal mode to operators. The console may call it while the image allows the
-	// console's actions.
+	// Shutdown powers the node off once the response is sent and no change of the node runs, as
+	// Reboot reboots it. Available in maintenance and normal mode to operators. The console may call
+	// it while the image allows the console's actions.
 	Shutdown(context.Context, *v1.ShutdownRequest) (*v1.ShutdownResponse, error)
 }
 
@@ -538,8 +539,9 @@ type NodeServiceHandler interface {
 	// Logs streams the journal of the current boot, or of one unit in it. Available in maintenance
 	// and normal mode to readers. The console may call it.
 	Logs(context.Context, *v1.LogsRequest, NodeServiceLogsServerStream) error
-	// Reboot reboots the node once the response is sent. Available in maintenance and normal mode
-	// to operators. The console may call it while the image allows the console's actions.
+	// Reboot reboots the node once the response is sent and no change of the node runs, unless
+	// forced. Available in maintenance and normal mode to operators. The console may call it while
+	// the image allows the console's actions.
 	Reboot(context.Context, *v1.RebootRequest) (*v1.RebootResponse, error)
 	// Upgrade installs a new image into the node's inactive slot and stages it there, then activates
 	// it as ActivateImage does, so it boots next, counting the image's boot tries until a boot is
@@ -645,9 +647,9 @@ type NodeServiceHandler interface {
 	// under Secure Boot, and where the firmware found it. Available in maintenance mode to
 	// readers.
 	SecureBootDrivers(context.Context, *v1.SecureBootDriversRequest) (*v1.SecureBootDriversResponse, error)
-	// Shutdown powers the node off once the response is sent, as Reboot reboots it. Available in
-	// maintenance and normal mode to operators. The console may call it while the image allows the
-	// console's actions.
+	// Shutdown powers the node off once the response is sent and no change of the node runs, as
+	// Reboot reboots it. Available in maintenance and normal mode to operators. The console may call
+	// it while the image allows the console's actions.
 	Shutdown(context.Context, *v1.ShutdownRequest) (*v1.ShutdownResponse, error)
 }
 

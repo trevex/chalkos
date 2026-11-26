@@ -4509,7 +4509,11 @@ func (x *LogsResponse) GetLine() string {
 
 // The request of Reboot.
 type RebootRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Reboot at once, even while a change of the node runs, such as an upgrade, a config delivery or
+	// an install, which the reboot interrupts. Without it the node waits a few seconds for the
+	// change to end and otherwise refuses the reboot with ABORTED, naming the change.
+	Force         bool `protobuf:"varint,1,opt,name=force,proto3" json:"force,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4542,6 +4546,13 @@ func (x *RebootRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use RebootRequest.ProtoReflect.Descriptor instead.
 func (*RebootRequest) Descriptor() ([]byte, []int) {
 	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{53}
+}
+
+func (x *RebootRequest) GetForce() bool {
+	if x != nil {
+		return x.Force
+	}
+	return false
 }
 
 // The response of Reboot, which the node sends before it reboots.
@@ -5735,7 +5746,9 @@ func (x *SecureBootDriver) GetDevicePath() string {
 
 // The request of Shutdown.
 type ShutdownRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Power off at once, even while a change of the node runs, as RebootRequest.force reboots.
+	Force         bool `protobuf:"varint,1,opt,name=force,proto3" json:"force,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5768,6 +5781,13 @@ func (x *ShutdownRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ShutdownRequest.ProtoReflect.Descriptor instead.
 func (*ShutdownRequest) Descriptor() ([]byte, []int) {
 	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{71}
+}
+
+func (x *ShutdownRequest) GetForce() bool {
+	if x != nil {
+		return x.Force
+	}
+	return false
 }
 
 // The response of Shutdown, which the node sends before it powers off.
@@ -6386,8 +6406,9 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x06follow\x18\x02 \x01(\bR\x06follow\x12\x14\n" +
 	"\x05lines\x18\x03 \x01(\rR\x05lines\"\"\n" +
 	"\fLogsResponse\x12\x12\n" +
-	"\x04line\x18\x01 \x01(\tR\x04line\"\x0f\n" +
-	"\rRebootRequest\"\x10\n" +
+	"\x04line\x18\x01 \x01(\tR\x04line\"%\n" +
+	"\rRebootRequest\x12\x14\n" +
+	"\x05force\x18\x01 \x01(\bR\x05force\"\x10\n" +
 	"\x0eRebootResponse\"\x8a\x01\n" +
 	"\x0eUpgradeRequest\x128\n" +
 	"\x06header\x18\x01 \x01(\v2\x1e.chalkos.node.v1.UpgradeHeaderH\x00R\x06header\x123\n" +
@@ -6469,8 +6490,9 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x10SecureBootDriver\x12\x16\n" +
 	"\x06sha256\x18\x01 \x01(\fR\x06sha256\x12\x1f\n" +
 	"\vdevice_path\x18\x02 \x01(\tR\n" +
-	"devicePath\"\x11\n" +
-	"\x0fShutdownRequest\"\x12\n" +
+	"devicePath\"'\n" +
+	"\x0fShutdownRequest\x12\x14\n" +
+	"\x05force\x18\x01 \x01(\bR\x05force\"\x12\n" +
 	"\x10ShutdownResponse\"\xf2\x01\n" +
 	"\rBGPPeerStatus\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +

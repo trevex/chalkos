@@ -21,6 +21,13 @@ func (s *Server) Logs(ctx context.Context, req *nodev1.LogsRequest, stream nodev
 		return layer.Errorf(connect.CodeResourceExhausted, "%d log streams are open already; close one first", maxLogStreams)
 	}
 	defer s.logStreams.Add(-1)
+	// chalkd does not wait for a stream that follows the journal when it stops.
+	if s.Stopping != nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithCancel(ctx)
+		defer cancel()
+		defer context.AfterFunc(s.Stopping, cancel)()
+	}
 	r, err := s.Journal(ctx, req.Unit, req.Follow, req.Lines)
 	if err != nil {
 		return fmt.Errorf("read the journal: %w", err)

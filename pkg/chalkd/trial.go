@@ -172,6 +172,7 @@ func (s *Server) ConfirmConfig(ctx context.Context, req *nodev1.ConfirmConfigReq
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer s.muBy.hold("a config's confirmation")()
 	r, open, err := readTrial(s.Paths.StateDir)
 	if err != nil {
 		return nil, s.unreadableTrial(err)
@@ -399,7 +400,11 @@ func (s *Server) lockSlots(what string) (unlock func(), err error) {
 		s.upgrading.Unlock()
 		return nil, err
 	}
-	return s.upgrading.Unlock, nil
+	release := s.upgradingBy.hold(what)
+	return func() {
+		release()
+		s.upgrading.Unlock()
+	}, nil
 }
 
 // refuseOnTrial refuses what, a change of the node, while a config is on trial, so the trial's
@@ -714,6 +719,7 @@ func (s *Server) expireTrial(version string, deadline time.Time, armed uint64) {
 	defer s.upgrading.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer s.upgradingBy.hold("the rollback at a trial's deadline")()
 	// A deadline that fires once chalkd stopped leaves the trial to the next start, so its record
 	// takes no failure the stop caused.
 	if !s.trial.current(armed) {
@@ -772,6 +778,7 @@ func (s *Server) ResumeTrial(ctx context.Context) {
 	defer s.upgrading.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer s.upgradingBy.hold("the resumption of a config's trial")()
 	if ctx.Err() != nil {
 		return
 	}

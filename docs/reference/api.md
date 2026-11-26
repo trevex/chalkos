@@ -328,8 +328,9 @@ A message of the Logs stream.
 
 ### Reboot { #method-reboot }
 
-Reboot reboots the node once the response is sent. Available in maintenance and normal mode
-to operators. The console may call it while the image allows the console's actions.
+Reboot reboots the node once the response is sent and no change of the node runs, unless
+forced. Available in maintenance and normal mode to operators. The console may call it while
+the image allows the console's actions.
 
 Request: RebootRequest. Response: RebootResponse.
 
@@ -337,7 +338,9 @@ Request: RebootRequest. Response: RebootResponse.
 
 The request of Reboot.
 
-No fields.
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `force` | bool | Reboot at once, even while a change of the node runs, such as an upgrade, a config delivery or an install, which the reboot interrupts. Without it the node waits a few seconds for the change to end and otherwise refuses the reboot with ABORTED, naming the change. |
 
 #### RebootResponse { #message-rebootresponse }
 
@@ -667,9 +670,9 @@ Field types: [SecureBootDriver](#message-securebootdriver).
 
 ### Shutdown { #method-shutdown }
 
-Shutdown powers the node off once the response is sent, as Reboot reboots it. Available in
-maintenance and normal mode to operators. The console may call it while the image allows the
-console's actions.
+Shutdown powers the node off once the response is sent and no change of the node runs, as
+Reboot reboots it. Available in maintenance and normal mode to operators. The console may call
+it while the image allows the console's actions.
 
 Request: ShutdownRequest. Response: ShutdownResponse.
 
@@ -677,7 +680,9 @@ Request: ShutdownRequest. Response: ShutdownResponse.
 
 The request of Shutdown.
 
-No fields.
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `force` | bool | Power off at once, even while a change of the node runs, as RebootRequest.force reboots. |
 
 #### ShutdownResponse { #message-shutdownresponse }
 

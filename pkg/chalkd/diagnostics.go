@@ -1,6 +1,7 @@
 package chalkd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -48,6 +49,16 @@ func diagnosticOf(name string, d diagnostics.Definition) *nodev1.Diagnostic {
 }
 
 func (s *Server) RunDiagnostic(ctx context.Context, req *nodev1.RunDiagnosticRequest, stream nodev1connect.NodeServiceRunDiagnosticServerStream) error {
+	return s.runDiagnostic(ctx, req, stream)
+}
+
+// diagnosticStream is the stream of RunDiagnostic's responses.
+type diagnosticStream interface {
+	Send(*nodev1.RunDiagnosticResponse) error
+}
+
+// runDiagnostic is RunDiagnostic with its responses sent to stream.
+func (s *Server) runDiagnostic(ctx context.Context, req *nodev1.RunDiagnosticRequest, stream diagnosticStream) error {
 	name := req.Name
 	d, ok := s.Loader.Contract.Diagnostics[name]
 	if !ok {
@@ -64,13 +75,17 @@ func (s *Server) RunDiagnostic(ctx context.Context, req *nodev1.RunDiagnosticReq
 		s.diagnosticRuns.Add(-1)
 		return layer.Errorf(connect.CodeResourceExhausted, "%d diagnostics run already; wait for one to end", maxDiagnosticRuns)
 	}
-	defer s.diagnosticRuns.Add(-1)
+	// The run's slot is free once its unit ended: a client that stops reading blocks the stream's
+	// last sends, but holds no slot.
+	release := sync.OnceFunc(func() { s.diagnosticRuns.Add(-1) })
+	defer release()
 
 	runCtx, stop := context.WithCancel(ctx)
 	defer stop()
-	out := &diagnosticOutput{stream: stream, stop: stop, left: diagnostics.MaxOutput}
+	out := newDiagnosticOutput(stream, stop)
 	run := diagnostics.Run{Name: name, Argv: argv, Capabilities: d.Capabilities, Groups: d.Groups, NetworkNamespace: ns, Timeout: d.RunTime()}
 	exit, err := s.diagnose().Run(runCtx, run, out.writer(false), out.writer(true))
+	release()
 	return out.finish(ctx, name, ns, exit, err)
 }
 
@@ -96,20 +111,31 @@ func (s *Server) diagnose() diagnostics.Runner {
 	return diagnostics.Sandbox{}
 }
 
-// diagnosticOutput sends what a run prints as messages of the stream, from the goroutines that
-// read its standard output and error, up to diagnostics.MaxOutput bytes together. Once the output
-// passes that, or a send fails, it stops the run and discards what the run prints until it ends,
-// so that its pipes never fill. A run may return while its output is still being copied, so the
-// stream's last message is sent under the same lock, and what is written after it is discarded.
+// diagnosticOutput sends what a run prints as messages of the stream, up to diagnostics.MaxOutput
+// bytes together. The goroutines that read the run's standard output and error queue it, and send
+// sends the queue, so a client that stops reading blocks neither the run's end nor its pipes. Once
+// the output passes the limit, or a send fails, it stops the run and discards what the run prints
+// until it ends. What is written once the run returned is discarded.
 type diagnosticOutput struct {
-	stream nodev1connect.NodeServiceRunDiagnosticServerStream
+	stream diagnosticStream
 	stop   context.CancelFunc
+	// sent is closed once send returned, having sent the queue or failed.
+	sent chan struct{}
 
 	mu      sync.Mutex
+	more    *sync.Cond
+	queue   []*nodev1.RunDiagnosticResponse
 	left    int
 	limited bool
 	done    bool
 	err     error
+}
+
+func newDiagnosticOutput(stream diagnosticStream, stop context.CancelFunc) *diagnosticOutput {
+	o := &diagnosticOutput{stream: stream, stop: stop, sent: make(chan struct{}), left: diagnostics.MaxOutput}
+	o.more = sync.NewCond(&o.mu)
+	go o.send()
+	return o
 }
 
 func (o *diagnosticOutput) writer(stderr bool) io.Writer {
@@ -121,15 +147,13 @@ func (o *diagnosticOutput) writer(stderr bool) io.Writer {
 		}
 		n := min(len(p), o.left)
 		if n > 0 {
-			msg := &nodev1.RunDiagnosticResponse{Output: &nodev1.RunDiagnosticResponse_Stdout{Stdout: p[:n]}}
+			data := bytes.Clone(p[:n])
+			msg := &nodev1.RunDiagnosticResponse{Output: &nodev1.RunDiagnosticResponse_Stdout{Stdout: data}}
 			if stderr {
-				msg.Output = &nodev1.RunDiagnosticResponse_Stderr{Stderr: p[:n]}
+				msg.Output = &nodev1.RunDiagnosticResponse_Stderr{Stderr: data}
 			}
-			if err := o.stream.Send(msg); err != nil {
-				o.err = err
-				o.stop()
-				return len(p), nil
-			}
+			o.queue = append(o.queue, msg)
+			o.more.Signal()
 			o.left -= n
 		}
 		if n < len(p) {
@@ -140,12 +164,43 @@ func (o *diagnosticOutput) writer(stderr bool) io.Writer {
 	})
 }
 
-// finish ends the output once the run of the diagnostic name in the network namespace ns
-// returned, with how the run ended: the stream's last message, or the error the call fails with.
-func (o *diagnosticOutput) finish(ctx context.Context, name, ns string, exit diagnostics.Exit, err error) error {
+// send sends the queued output until the run returned and the queue is empty, or a send failed.
+func (o *diagnosticOutput) send() {
+	defer close(o.sent)
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	for {
+		for len(o.queue) == 0 && !o.done {
+			o.more.Wait()
+		}
+		if len(o.queue) == 0 {
+			return
+		}
+		msg := o.queue[0]
+		o.queue = o.queue[1:]
+		o.mu.Unlock()
+		err := o.stream.Send(msg)
+		o.mu.Lock()
+		if err != nil {
+			o.err = err
+			o.queue = nil
+			o.stop()
+			return
+		}
+	}
+}
+
+// finish ends the output once the run of the diagnostic name in the network namespace ns
+// returned, with how the run ended: the stream's last message, sent after the queued output, or
+// the error the call fails with.
+func (o *diagnosticOutput) finish(ctx context.Context, name, ns string, exit diagnostics.Exit, err error) error {
+	o.mu.Lock()
 	o.done = true
+	o.more.Signal()
+	o.mu.Unlock()
+	<-o.sent
+	o.mu.Lock()
+	defer o.mu.Unlock()
 	switch {
 	case o.err != nil:
 		return o.err

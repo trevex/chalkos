@@ -174,10 +174,10 @@ type Server struct {
 	// Journal streams the journal of the boot, or of one unit, from its last lines entries when
 	// lines is not zero.
 	Journal func(ctx context.Context, unit string, follow bool, lines uint32) (io.ReadCloser, error)
-	// RebootNode reboots the node; it is called once the response has been sent.
-	RebootNode func()
-	// PowerOffNode powers the node off; it is called once the response has been sent.
-	PowerOffNode func()
+	// RebootNode starts the reboot of the node; it is called once the response has been sent.
+	RebootNode func() error
+	// PowerOffNode starts the power-off of the node; it is called once the response has been sent.
+	PowerOffNode func() error
 	// AfterResponse runs f once the response has had time to reach the client, as before a
 	// reboot or power-off; nil waits a second. Tests replace it to run f when they choose.
 	AfterResponse func(f func())
@@ -200,6 +200,8 @@ type Server struct {
 	// config, and run the diagnostics of operators, as the image's chalkos.console.actions.enable
 	// says.
 	ConsoleActions bool
+	// Stopping ends once chalkd stops, and the Logs streams with it; nil never ends.
+	Stopping context.Context
 
 	// clock is the time client certificates are verified at; nil is the system clock.
 	clock func() time.Time
@@ -216,12 +218,20 @@ type Server struct {
 	activating liveActivation
 	// upgrading is held while an upgrade runs, which changes only the inactive slot and the ESP.
 	upgrading sync.Mutex
+	// upgradingBy and muBy name the changes that hold s.upgrading and s.mu.
+	upgradingBy, muBy changeHolder
+	// goingDown is set once a reboot or shutdown that holds s.upgrading and s.mu started, which
+	// keeps them until the node went down.
+	goingDown atomic.Bool
 	// trial rolls the config on trial back at its deadline; s.mu guards it.
 	trial trialDeadline
 	// logStreams counts the Logs calls running.
 	logStreams atomic.Int32
 	// diagnosticRuns counts the RunDiagnostic calls running.
 	diagnosticRuns atomic.Int32
+	// streamIdle bounds how long the client of an install or an upgrade may send nothing; zero is
+	// idleStream. Tests shorten it.
+	streamIdle time.Duration
 }
 
 // Offline is the Server of chalkd's commands that do not serve, such as check, health and the
@@ -337,8 +347,12 @@ func (s *Server) ConsoleHandler() http.Handler {
 	})
 }
 
+// responseKey holds the http.ResponseController of a call, through which a handler bounds its
+// reads.
+type responseKey struct{}
+
 // mux serves the node API and every compiled plugin's API behind the authorizer.
-func (s *Server) mux() *http.ServeMux {
+func (s *Server) mux() http.Handler {
 	server := connect.NewServer(authorizer{s: s, gates: s.gates()}.intercept, errorCodes)
 	nodev1connect.RegisterNodeServiceHandler(server, s)
 	for _, p := range s.Plugins.Compiled() {
@@ -351,7 +365,9 @@ func (s *Server) mux() *http.ServeMux {
 		// decompressing one up to the limit off chalkd.
 		connecthttp.WithCompressors(),
 	)
-	return mux
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mux.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), responseKey{}, http.NewResponseController(w))))
+	})
 }
 
 // verifyClient verifies a client's certificate with pki.VerifyClient against the OS CAs the node
@@ -512,18 +528,22 @@ func (s *Server) recorded() (storage.Section, storage.Pins, error) {
 	return section, pins, nil
 }
 
-func (s *Server) Reboot(ctx context.Context, _ *nodev1.RebootRequest) (*nodev1.RebootResponse, error) {
-	s.rebootSoon()
+func (s *Server) Reboot(ctx context.Context, req *nodev1.RebootRequest) (*nodev1.RebootResponse, error) {
+	if err := s.afterChanges(ctx, req.Force, "reboot", s.RebootNode); err != nil {
+		return nil, err
+	}
 	return &nodev1.RebootResponse{}, nil
 }
 
-func (s *Server) Shutdown(ctx context.Context, _ *nodev1.ShutdownRequest) (*nodev1.ShutdownResponse, error) {
-	s.afterResponse(s.PowerOffNode)
+func (s *Server) Shutdown(ctx context.Context, req *nodev1.ShutdownRequest) (*nodev1.ShutdownResponse, error) {
+	if err := s.afterChanges(ctx, req.Force, "shut down", s.PowerOffNode); err != nil {
+		return nil, err
+	}
 	return &nodev1.ShutdownResponse{}, nil
 }
 
 // rebootSoon reboots once the response has had time to reach the client.
-func (s *Server) rebootSoon() { s.afterResponse(s.RebootNode) }
+func (s *Server) rebootSoon() { s.afterResponse(func() { goDown("reboot", s.RebootNode) }) }
 
 // afterResponse calls f once the response has had time to reach the client.
 func (s *Server) afterResponse(f func()) {

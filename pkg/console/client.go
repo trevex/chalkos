@@ -24,6 +24,8 @@ type Client interface {
 	// Logs streams the journal of the current boot, or of unit, from its last replayLines entries,
 	// and calls line for each entry, until ctx ends or the stream fails.
 	Logs(ctx context.Context, unit string, line func(string)) error
+	// Reboot and Shutdown act at once, even while a change of the node runs: the operator confirmed
+	// that the node goes down at once.
 	Reboot(ctx context.Context) error
 	Shutdown(ctx context.Context) error
 	// RollbackImage rolls the node back to the image of rootHash and reboots it.
@@ -51,12 +53,12 @@ func (c nodeClient) Disks(ctx context.Context) (*nodev1.DisksResponse, error) {
 }
 
 func (c nodeClient) Reboot(ctx context.Context) error {
-	_, err := c.node.Reboot(ctx, &nodev1.RebootRequest{})
+	_, err := c.node.Reboot(ctx, &nodev1.RebootRequest{Force: true})
 	return err
 }
 
 func (c nodeClient) Shutdown(ctx context.Context) error {
-	_, err := c.node.Shutdown(ctx, &nodev1.ShutdownRequest{})
+	_, err := c.node.Shutdown(ctx, &nodev1.ShutdownRequest{Force: true})
 	return err
 }
 

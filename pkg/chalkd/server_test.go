@@ -100,6 +100,10 @@ var (
 
 // newTestServer returns a server in the mode whose paths point at fixture trees: vda is the
 // boot disk and carries VAR as vda7.
+// stayUp is a reboot or shutdown of a test node that does not start, so the node keeps serving
+// and its change locks stay free.
+func stayUp() error { return errors.New("the test node stays up") }
+
 func newTestServer(t *testing.T, mode nodev1.Mode, disks ...storagetest.Disk) (*Server, *tooltest.Runner) {
 	t.Helper()
 	root := t.TempDir()
@@ -118,8 +122,8 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...storagetest.Disk) (*
 		Journal: func(context.Context, string, bool, uint32) (io.ReadCloser, error) {
 			return io.NopCloser(strings.NewReader("")), nil
 		},
-		RebootNode:   func() {},
-		PowerOffNode: func() {},
+		RebootNode:   stayUp,
+		PowerOffNode: stayUp,
 		// Tests never read the host's file systems.
 		Statfs: func(string) (uint64, uint64, error) { return 0, 0, errors.New("no file system to read") },
 		// The node reboots or powers off before it answers, so a test sees whether it did once
@@ -870,7 +874,7 @@ func TestLogsStreamsJournal(t *testing.T) {
 func TestRebootAfterResponse(t *testing.T) {
 	s, _ := newTestServer(t, normal, vda)
 	rebooted := make(chan struct{})
-	s.RebootNode = func() { close(rebooted) }
+	s.RebootNode = func() error { close(rebooted); return nil }
 	if _, err := s.Reboot(context.Background(), &nodev1.RebootRequest{}); err != nil {
 		t.Fatal(err)
 	}
@@ -885,8 +889,8 @@ func TestRebootAfterResponse(t *testing.T) {
 func TestShutdownAfterResponse(t *testing.T) {
 	s, _ := newTestServer(t, normal, vda)
 	off := make(chan struct{})
-	s.PowerOffNode = func() { close(off) }
-	s.RebootNode = func() { t.Error("Shutdown rebooted the node") }
+	s.PowerOffNode = func() error { close(off); return nil }
+	s.RebootNode = func() error { t.Error("Shutdown rebooted the node"); return nil }
 	if _, err := s.Shutdown(context.Background(), &nodev1.ShutdownRequest{}); err != nil {
 		t.Fatal(err)
 	}

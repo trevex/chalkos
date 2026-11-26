@@ -85,6 +85,8 @@ in
         ExecStart = "${lib.getExe chalkd} serve";
         Restart = "always";
         RestartSec = 5;
+        # chalkd lets the calls and changes that run end for up to 60 seconds when it stops.
+        TimeoutStopSec = 90;
         # The fingerprint and addresses must reach the console in maintenance mode: through
         # /dev/console, the serial ports that chalkos-serial-log@ copies them to, or the console on
         # the screen.

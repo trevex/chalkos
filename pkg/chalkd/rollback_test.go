@@ -186,7 +186,7 @@ func TestRollbackImage(t *testing.T) {
 				t.Fatal(err)
 			}
 			rebooted := make(chan struct{})
-			s.RebootNode = func() { close(rebooted) }
+			s.RebootNode = func() error { close(rebooted); return nil }
 			fakeImageSlots(t, s).reactivate = func(_ context.Context, rootHash []byte, record func() error) (upgrade.Result, error) {
 				if !bytes.Equal(rootHash, previous) {
 					t.Errorf("re-activates %x", rootHash)

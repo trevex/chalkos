@@ -1,13 +1,17 @@
 package chalkd
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"net/http"
+	"os"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -30,13 +34,12 @@ import (
 // the header as a streamed one; its contract layer gives the repart definitions, schemas and
 // layers' facts.
 func (s *Server) Install(ctx context.Context, stream nodev1connect.NodeServiceInstallServerStream) (*nodev1.InstallResponse, error) {
-	if !s.mu.TryLock() {
-		return nil, layer.Errorf(connect.CodeAborted, "another install is running")
-	}
-	defer s.mu.Unlock()
-	if s.installed {
-		return nil, layer.Errorf(connect.CodeFailedPrecondition, "the node is installed and reboots")
-	}
+	return s.install(ctx, boundIdle(ctx, stream, s.idleBound()))
+}
+
+// install is Install of the requests of stream. It reads and checks the header before it takes
+// s.mu, so a client that sends nothing holds no lock.
+func (s *Server) install(ctx context.Context, stream requests[*nodev1.InstallRequest]) (*nodev1.InstallResponse, error) {
 	h, err := readHeader(stream, (*nodev1.InstallRequest).GetHeader, "install")
 	if err != nil {
 		return nil, err
@@ -62,6 +65,14 @@ func (s *Server) Install(ctx context.Context, stream nodev1connect.NodeServiceIn
 	}
 	if h.Config == "" {
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "the header delivers no config")
+	}
+	if !s.mu.TryLock() {
+		return nil, layer.Errorf(connect.CodeAborted, "another install is running")
+	}
+	defer s.mu.Unlock()
+	defer s.muBy.hold("an install")()
+	if s.installed {
+		return nil, layer.Errorf(connect.CodeFailedPrecondition, "the node is installed and reboots")
 	}
 	// An image the installer pulls brings the contract the config is translated with.
 	contract := h.GetContract()
@@ -140,7 +151,7 @@ func (s *Server) Install(ctx context.Context, stream nodev1connect.NodeServiceIn
 	}
 	if err != nil {
 		log.Printf("install failed: %v", err)
-		return nil, layer.Errorf(connect.CodeFailedPrecondition, "install: %w", err)
+		return nil, refused("install", err)
 	}
 	s.installed = true
 	log.Print("installed; rebooting")
@@ -189,7 +200,7 @@ func (s *Server) installPayloads(ctx context.Context, deliveries []layer.Deliver
 // host in the header's config, the only config the installer has. Before anything changes it
 // fetches the manifest, header and contract layer, and returns the contract, which the manifest's
 // digest pins. Install logs each refusal it returns.
-func (s *Server) pullInstall(ctx context.Context, stream nodev1connect.NodeServiceInstallServerStream, h *nodev1.InstallHeader) (*ociimage.Pull, *nodev1.ImageContract, error) {
+func (s *Server) pullInstall(ctx context.Context, stream requests[*nodev1.InstallRequest], h *nodev1.InstallHeader) (*ociimage.Pull, *nodev1.ImageContract, error) {
 	ref := h.GetSource().GetOci().GetReference()
 	img := imageHeader(h.Image)
 	if ref == "" {
@@ -241,6 +252,53 @@ type requests[M any] interface {
 	// Receive returns the next request, or an error matching io.EOF once the client closed its
 	// side.
 	Receive() (M, error)
+}
+
+// idleStream is how long the client of an install or an upgrade may send nothing before chalkd
+// ends the call. ReadHeaderTimeout and IdleTimeout do not bound an open HTTP/2 stream.
+const idleStream = 2 * time.Minute
+
+// idleBound is s's bound on how long the client of an install or an upgrade may send nothing.
+func (s *Server) idleBound() time.Duration { return cmp.Or(s.streamIdle, idleStream) }
+
+// boundIdle ends the reads of stream, the requests of the call of ctx, once its client sent
+// nothing for idle. Each Receive sets the request's read deadline that far ahead, which ends a
+// read of an HTTP/2 stream as of an HTTP/1 connection, and clears it once it returned: a deadline
+// that passes between reads ends an HTTP/2 stream's next read too.
+func boundIdle[M any](ctx context.Context, stream requests[M], idle time.Duration) requests[M] {
+	rc, ok := ctx.Value(responseKey{}).(*http.ResponseController)
+	if !ok {
+		return stream
+	}
+	return idleRequests[M]{stream: stream, rc: rc, idle: idle}
+}
+
+// idleRequests are requests whose reads boundIdle bounds.
+type idleRequests[M any] struct {
+	stream requests[M]
+	rc     *http.ResponseController
+	idle   time.Duration
+}
+
+func (r idleRequests[M]) Receive() (M, error) {
+	// A connection that cannot take deadlines leaves the read unbounded.
+	_ = r.rc.SetReadDeadline(time.Now().Add(r.idle))
+	msg, err := r.stream.Receive()
+	// The call may run on for long before it reads again, or without reading at all.
+	_ = r.rc.SetReadDeadline(time.Time{})
+	if errors.Is(err, os.ErrDeadlineExceeded) {
+		return msg, layer.Errorf(connect.CodeDeadlineExceeded, "the client sent nothing for %v", r.idle)
+	}
+	return msg, err
+}
+
+// refused is the error of an install or an upgrade (what) that failed with err: FAILED_PRECONDITION,
+// unless the client's idle bound ended it, which keeps DEADLINE_EXCEEDED.
+func refused(what string, err error) error {
+	if layer.CodeOf(err) == connect.CodeDeadlineExceeded {
+		return fmt.Errorf("%s: %w", what, err)
+	}
+	return layer.Errorf(connect.CodeFailedPrecondition, "%s: %w", what, err)
 }
 
 // chunks reads the image the requests after the header of stream carry.
