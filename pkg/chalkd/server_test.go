@@ -98,12 +98,12 @@ var (
 	vdb = storagetest.Disk{Name: "vdb", Devnum: "253:16", Props: map[string]string{"ID_PATH": "pci-0000:00:05.0", "ID_SERIAL": "chalk-extra"}}
 )
 
-// newTestServer returns a server in the mode whose paths point at fixture trees: vda is the
-// boot disk and carries VAR as vda7.
 // stayUp is a reboot or shutdown of a test node that does not start, so the node keeps serving
 // and its change locks stay free.
 func stayUp() error { return errors.New("the test node stays up") }
 
+// newTestServer returns a server in the mode whose paths point at fixture trees: vda is the
+// boot disk and carries VAR as vda7.
 func newTestServer(t *testing.T, mode nodev1.Mode, disks ...storagetest.Disk) (*Server, *tooltest.Runner) {
 	t.Helper()
 	root := t.TempDir()
