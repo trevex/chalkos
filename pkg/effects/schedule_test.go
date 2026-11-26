@@ -59,8 +59,8 @@ func TestScheduleBlocksDependentsAndKeepsIndependentEffects(t *testing.T) {
 	defs := map[string]Definition{
 		"networkd":  {Restart: []string{"networkd.service"}},
 		"resolver":  {After: []string{"networkd"}, WaitFor: readyProbe, Reload: []string{"resolver.service"}},
-		"app":       {After: []string{"resolver"}, Run: "update-app"},
-		"telemetry": {Run: "configure-telemetry"},
+		"app":       {After: []string{"resolver"}, Run: []string{"update-app"}},
+		"telemetry": {Run: []string{"configure-telemetry"}},
 	}
 	r := &tooltest.Runner{Rules: []tooltest.Rule{
 		{Prefix: "systemctl try-restart networkd.service", Err: errors.New("failed")},
@@ -119,7 +119,7 @@ func TestScheduleWaitsForReadinessWithUnchangedPrerequisite(t *testing.T) {
 
 func TestScheduleMergesSharedActionsBeforeOrdering(t *testing.T) {
 	defs := map[string]Definition{
-		"networkd": {Run: "configure-network"},
+		"networkd": {Run: []string{"configure-network"}},
 		"reload":   {After: []string{"networkd"}, Reload: []string{"resolver.service"}},
 		"restart":  {Start: true, Restart: []string{"resolver.service"}},
 	}
@@ -139,7 +139,7 @@ func TestScheduleMergesSharedActionsBeforeOrdering(t *testing.T) {
 
 func TestScheduleForcesReadinessTimeoutButStopsOnCancellation(t *testing.T) {
 	testwait.Bubble(t, func(t *testing.T) {
-		defs := map[string]Definition{"resolver": {WaitFor: readyProbe, Run: "reload-resolver"}}
+		defs := map[string]Definition{"resolver": {WaitFor: readyProbe, Run: []string{"reload-resolver"}}}
 		s, err := PlanSchedule(defs, []string{"resolver"})
 		if err != nil {
 			t.Fatal(err)

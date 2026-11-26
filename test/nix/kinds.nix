@@ -1374,7 +1374,7 @@ in
           when = "facts.share != oldFacts.share";
           restart = [ "bird.service" ];
           start = true;
-          run = "birdc configure";
+          run = "birdc  configure";
           chalkd = "kubernetes:reload";
         };
       })).bird;
@@ -1384,13 +1384,16 @@ in
       when = "facts.share != oldFacts.share";
       restart = [ "bird.service" ];
       reload = [ ];
-      run = "birdc configure";
+      run = [
+        "birdc"
+        "configure"
+      ];
       start = true;
       chalkd = "kubernetes:reload";
       hint = null;
     };
   };
-  # An output reaches chalkd with its check's command as it is.
+  # An output reaches chalkd with its render's and its check's commands split at white space.
   testOutputsReachChalkd =
     let
       config = withBird {
@@ -1423,20 +1426,24 @@ in
       };
       expected = {
         inputs = [ "Demo" ];
-        render = "/nix/store/x-render/bin/render";
+        render = [ "/nix/store/x-render/bin/render" ];
         dir = "/run/chalkos/outputs/bird-conf";
         user = "bird";
         group = "root";
         mode = "0644";
-        check = "/nix/store/x-bird/bin/bird -p -c";
+        check = [
+          "/nix/store/x-bird/bin/bird"
+          "-p"
+          "-c"
+        ];
         outputs = [ "bird-conf" ];
         dirOption = "/run/chalkos/outputs/bird-conf";
       };
     };
-  # A check is a program: a command as it is, a package as its path, or chalkos-render's run of
-  # the command of chalkosLib.check.run or .each with $OUT and $FILE left for it to replace. A
-  # check of another form, or whose command has an argument with white space, which chalkd would
-  # split, fails the evaluation.
+  # A check is a program: a command split at white space, a package as its path, or chalkos-render's
+  # run of the program and arguments of chalkosLib.check.run or .each with $OUT and $FILE left for it
+  # to replace, each argument as it is, white space and all. A check of another form, or without
+  # a program, fails the evaluation.
   testChecks =
     let
       outputs =
@@ -1468,7 +1475,7 @@ in
             "--conf-file=$FILE"
           ];
       };
-      check = name: (outputsOf config).${name}.check;
+      check = name: lib.concatStringsSep " " (outputsOf config).${name}.check;
       refused =
         check:
         fails (
@@ -1485,15 +1492,17 @@ in
         run = render (check "run");
         each = render (check "each");
         value = chalkosLib.check.each "*.conf" [ "x" ];
-        spaced = refused (
-          chalkosLib: _:
-          chalkosLib.check.run [
-            "/nix/store/x-a/bin/a"
-            "b c"
-          ]
-        );
+        spaced =
+          lib.tail
+            (outputsOf (outputs {
+              x =
+                chalkosLib: _:
+                chalkosLib.check.each "a b" [
+                  "/nix/store/x-a/bin/a"
+                  "b c"
+                ];
+            })).x.check;
         empty = refused (chalkosLib: _: chalkosLib.check.run [ ]);
-        spacedGlob = refused (chalkosLib: _: chalkosLib.check.each "a b" [ "/nix/store/x-a/bin/a" ]);
         other = refused (_: _: { script = "true"; });
       };
       expected = {
@@ -1505,9 +1514,14 @@ in
           each = "*.conf";
           run = [ "x" ];
         };
-        spaced = true;
+        spaced = [
+          "check"
+          "each"
+          "a b"
+          "/nix/store/x-a/bin/a"
+          "b c"
+        ];
         empty = true;
-        spacedGlob = true;
         other = true;
       };
     };
@@ -1535,7 +1549,7 @@ in
           };
         }
       );
-      render = name: (outputsOf config).${name}.render;
+      render = name: lib.concatStringsSep " " (outputsOf config).${name}.render;
     in
     {
       expr = {
@@ -1557,8 +1571,9 @@ in
         package = true;
       };
     };
-  # A validator reaches chalkd with its input kinds and its program's command: a command as it is,
-  # a package as its path, and a jq program of chalkosLib.validate as chalkos-render's run of it.
+  # A validator reaches chalkd with its input kinds and its program's argv: a command split at white
+  # space, a package as its path, and a jq program of chalkosLib.validate as chalkos-render's run
+  # of it.
   testValidatorsReachChalkd =
     let
       config = withBird (
@@ -1589,14 +1604,19 @@ in
       expr = {
         inherit (validators) c;
         inputs = validators.p.inputs;
-        package = lib.hasPrefix "/nix/store/" validators.p.program;
-        jq = builtins.match ".*/bin/chalkos-render validate-jq /nix/store/[^ ]+/bin/jq /nix/store/[^ ]+-(demo.jq)" validators.j.program;
+        package = lib.hasPrefix "/nix/store/" (lib.head validators.p.program);
+        jq = builtins.match ".*/bin/chalkos-render validate-jq /nix/store/[^ ]+/bin/jq /nix/store/[^ ]+-(demo.jq)" (
+          lib.concatStringsSep " " validators.j.program
+        );
         value = chalkosLib.validate.jq "x.jq";
       };
       expected = {
         c = {
           inputs = [ "Demo" ];
-          program = "/nix/store/x-validate/bin/validate --strict";
+          program = [
+            "/nix/store/x-validate/bin/validate"
+            "--strict"
+          ];
         };
         inputs = [
           "Demo"
@@ -1914,8 +1934,9 @@ in
       {
         inherit (output) inputs dir check;
         render =
-          builtins.match "/nix/store/[^ ]+-chalkos-render-[^ ]+/bin/chalkos-render networkd /nix/store/[^ ]+-chalkos-networkd-schemas" output.render
-          != null;
+          builtins.match "/nix/store/[^ ]+-chalkos-render-[^ ]+/bin/chalkos-render networkd /nix/store/[^ ]+-chalkos-networkd-schemas" (
+            lib.concatStringsSep " " output.render
+          ) != null;
         tests = lib.filter (lib.hasPrefix "networkd-") (lib.attrNames withDemo.chalkos.tests);
         # The router's examples are tests of router images alone.
         routerTests = lib.any (lib.hasPrefix "router-") (lib.attrNames withDemo.chalkos.tests);
@@ -1927,7 +1948,7 @@ in
         "Network"
       ];
       dir = "/run/systemd/network";
-      check = "";
+      check = [ ];
       render = true;
       tests = [
         "networkd-none"
@@ -2472,7 +2493,7 @@ in
     };
   };
   # The image's facts reach /etc/chalkos/facts.json: a file with the fields it keeps, or a command
-  # with its inputs.
+  # with its inputs, each argument of a list as it is.
   testFactsReachTheImage = {
     expr =
       let
@@ -2484,7 +2505,10 @@ in
                 fields = [ "at" ];
               };
               probe = {
-                command = "/nix/store/x-probe/bin/probe facts";
+                command = [
+                  "/nix/store/x-probe/bin/probe"
+                  "facts $NODE"
+                ];
                 inputs = [ "fallbackSecret" ];
               };
             };
@@ -2502,7 +2526,10 @@ in
         fields = [ "at" ];
       };
       probe = {
-        command = "/nix/store/x-probe/bin/probe facts";
+        command = [
+          "/nix/store/x-probe/bin/probe"
+          "facts $NODE"
+        ];
         inputs = [ "fallbackSecret" ];
       };
       etc = true;
@@ -2520,10 +2547,9 @@ in
         names = lib.attrNames defined;
         plain = lib.attrNames plainImage.system.build.chalkosFactDefinitions;
         inherit (defined) recorded share cluster;
-        disks = lib.hasSuffix " disks" defined.disks.command && !(defined.disks ? inputs);
+        disks = lib.last defined.disks.command == "disks" && !(defined.disks ? inputs);
         fallback =
-          lib.hasSuffix " fallback" defined.fallback.command
-          && defined.fallback.inputs == [ "fallbackSecret" ];
+          lib.last defined.fallback.command == "fallback" && defined.fallback.inputs == [ "fallbackSecret" ];
       };
     expected = {
       names = [

@@ -41,8 +41,8 @@ let
   outputs = builtins.toJSON {
     demo = {
       inputs = [ "Demo" ];
-      render = "${render}/bin/render";
-      check = "${render}/bin/check";
+      render = [ "${render}/bin/render" ];
+      check = [ "${render}/bin/check" ];
       dir = "/run/demo";
       user = "root";
       group = "root";
@@ -52,7 +52,7 @@ let
   validators = builtins.toJSON {
     demo = {
       inputs = [ "Demo" ];
-      program = "${render}/bin/validate";
+      program = [ "${render}/bin/validate" ];
     };
   };
   secondStore =
@@ -71,7 +71,7 @@ let
           ${../../../test/fixtures/kinds/image/schemas/demo.example.org_v1alpha1_Demo.json} >$out${system}/etc/chalkos/schemas/demo.example.org_v1alpha1_Demo.json
         echo '${outputs}' >$out${system}/etc/chalkos/outputs.json
         echo '${validators}' >$out${system}/etc/chalkos/validators.json
-        echo '{"probe": {"command": "${fact}/bin/probe"}}' >$out${system}/etc/chalkos/facts.json
+        echo '{"probe": {"command": ["${fact}/bin/probe"]}}' >$out${system}/etc/chalkos/facts.json
         cat >$out${render}/bin/render <<'EOF'
         #!${pkgs.bash}/bin/bash
         set -e

@@ -34,8 +34,8 @@ func TestLoad(t *testing.T) {
 		FactsFile:       `{"cluster": {"file": "/state/kubernetes/cluster.json"}, "share": {"file": "/state/kubernetes/share.json"}}`,
 		EffectsFile:     string(effects),
 		ServicesFile:    `{"demo.service": {"kinds": ["TimeSync"]}}`,
-		OutputsFile:     `{"demo": {"inputs": ["TimeSync"], "render": "/nix/store/x-demo/bin/render", "dir": "/run/demo", "user": "root", "group": "root", "mode": "0644"}}`,
-		ValidatorsFile:  `{"demo": {"inputs": ["TimeSync"], "program": "/nix/store/x-demo/bin/validate"}}`,
+		OutputsFile:     `{"demo": {"inputs": ["TimeSync"], "render": ["/nix/store/x-demo/bin/render"], "dir": "/run/demo", "user": "root", "group": "root", "mode": "0644"}}`,
+		ValidatorsFile:  `{"demo": {"inputs": ["TimeSync"], "program": ["/nix/store/x-demo/bin/validate"]}}`,
 		DiagnosticsFile: `{"links": {"description": "The node's links.", "command": ["/nix/store/x-iproute2/bin/ip", "-json", "link"], "role": "reader", "timeout": "10s"}}`,
 	})
 	c, err := Load(dir)
@@ -77,9 +77,9 @@ func TestLoadWithoutDefinitions(t *testing.T) {
 // them.
 func TestLoadRefuses(t *testing.T) {
 	dir := newDir(t, map[string]string{
-		FactsFile:       `{"probe": {"command": "probe"}}`,
-		OutputsFile:     `{"demo": {"inputs": ["TimeSync"], "render": "/nix/store/x-demo/bin/render", "dir": "/run/chalkos/other", "user": "root", "group": "root", "mode": "0644"}}`,
-		ValidatorsFile:  `{"demo": {"inputs": [], "program": "/nix/store/x-demo/bin/validate"}}`,
+		FactsFile:       `{"probe": {"command": ["probe"]}}`,
+		OutputsFile:     `{"demo": {"inputs": ["TimeSync"], "render": ["/nix/store/x-demo/bin/render"], "dir": "/run/chalkos/other", "user": "root", "group": "root", "mode": "0644"}}`,
+		ValidatorsFile:  `{"demo": {"inputs": [], "program": ["/nix/store/x-demo/bin/validate"]}}`,
 		DiagnosticsFile: `{"Links": {"description": "The node's links.", "command": ["/nix/store/x-iproute2/bin/ip"], "role": "reader", "timeout": "10s"}}`,
 		ServicesFile:    `[]`,
 	})
@@ -133,7 +133,7 @@ func TestRulesThatDoNotCompile(t *testing.T) {
 // TestLoadRenderRoot checks the outputs' dirs against the root a node renders them below.
 func TestLoadRenderRoot(t *testing.T) {
 	dir := newDir(t, map[string]string{
-		OutputsFile: `{"demo": {"inputs": ["TimeSync"], "render": "/nix/store/x-demo/bin/render", "dir": "/tmp/run/chalkos/outputs/demo", "user": "root", "group": "root", "mode": "0644"}}`,
+		OutputsFile: `{"demo": {"inputs": ["TimeSync"], "render": ["/nix/store/x-demo/bin/render"], "dir": "/tmp/run/chalkos/outputs/demo", "user": "root", "group": "root", "mode": "0644"}}`,
 	})
 	if _, err := Load(dir); err == nil {
 		t.Error("an output's dir outside /run: no error")

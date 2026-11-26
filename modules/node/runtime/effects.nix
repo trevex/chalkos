@@ -125,10 +125,14 @@ let
         '';
       };
       run = lib.mkOption {
-        type = lib.types.nullOr lib.types.nonEmptyStr;
+        type = lib.types.nullOr chalkosLib.internal.commandType;
         default = null;
-        example = "chronyc reload sources";
-        description = "Command, with its arguments, the effect runs after the reloads and before the restarts in its batch. chalkd splits it on spaces, with no shell quoting, and runs the first word: a bare program name of chalkd's PATH, or an absolute path in the image's store. chalkd runs it whether or not any unit runs, and a command that fails fails the delivery, so one that talks to a service that may be stopped checks first that the service runs.";
+        example = [
+          "chronyc"
+          "reload"
+          "sources"
+        ];
+        description = "Program and its arguments the effect runs after the reloads and before the restarts in its batch, as a list or as a string split at white space. chalkd runs it without a shell; the program is a bare program name of chalkd's PATH, or an absolute path in the image's store. chalkd runs it whether or not any unit runs, and a command that fails fails the delivery, so one that talks to a service that may be stopped checks first that the service runs.";
       };
       start = lib.mkOption {
         type = lib.types.bool;
@@ -182,12 +186,7 @@ let
       where = "chalkos.effects.${name}";
       # The layer an effect's chalkd action names, or a run of chalkd <layer> <command> does.
       chalkdLayer = if e.chalkd == null then null else lib.head (lib.splitString ":" e.chalkd);
-      # Split on whitespace as chalkd splits it, with strings.Fields.
-      runWords =
-        if e.run == null then
-          [ ]
-        else
-          lib.filter (w: lib.isString w && w != "") (builtins.split "[[:space:]]+" e.run);
+      runWords = if e.run == null then [ ] else chalkosLib.internal.argv e.run;
       runLayer =
         if
           lib.length runWords >= 2
@@ -255,7 +254,7 @@ let
         kinds
         ;
       when = lib.defaultTo "" e.when;
-      run = lib.defaultTo "" e.run;
+      run = if e.run == null then [ ] else chalkosLib.internal.argv e.run;
       chalkd = lib.defaultTo "" e.chalkd;
       hint =
         if e.hint == null then

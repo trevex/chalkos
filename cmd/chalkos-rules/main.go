@@ -105,10 +105,10 @@ func checkImage(image string, out io.Writer) error {
 	kinds := kindNamesOf(s)
 	outs, vals := c.Outputs, c.Validators
 	for _, name := range slices.Sorted(maps.Keys(outs)) {
-		errs = append(errs, checkPrograms(kinds, outputs.RoleOutput, name, outs[name].Inputs, map[string]string{"renderer": outs[name].Render, "check": outs[name].Check})...)
+		errs = append(errs, checkPrograms(kinds, outputs.RoleOutput, name, outs[name].Inputs, map[string][]string{"renderer": outs[name].Render, "check": outs[name].Check})...)
 	}
 	for _, name := range slices.Sorted(maps.Keys(vals)) {
-		errs = append(errs, checkPrograms(kinds, outputs.RoleValidator, name, vals[name].Inputs, map[string]string{"program": vals[name].Program})...)
+		errs = append(errs, checkPrograms(kinds, outputs.RoleValidator, name, vals[name].Inputs, map[string][]string{"program": vals[name].Program})...)
 	}
 	errs = append(errs, checkEffects(kinds, outs, c.Effects)...)
 	if len(errs) > 0 {
@@ -159,13 +159,12 @@ func kindNamesOf(s *schema.Schemas) kindNames {
 // checkPrograms refuses a definition of the role whose programs, by part, are not of the image's
 // store, or whose inputs are kinds the image does not declare or withholds from its programs;
 // contract.Load refused the rest already.
-func checkPrograms(kinds kindNames, role outputs.Role, name string, inputs []string, programs map[string]string) []error {
+func checkPrograms(kinds kindNames, role outputs.Role, name string, inputs []string, programs map[string][]string) []error {
 	var errs []error
 	for _, part := range slices.Sorted(maps.Keys(programs)) {
-		// InStore judges the program, the first word, alone: an argument such as /var/lib/ need
-		// not be a clean path.
-		if argv := strings.Fields(programs[part]); programs[part] != "" && (len(argv) == 0 || !command.InStore(argv[0])) {
-			errs = append(errs, fmt.Errorf("%s %s: the %s %q is no program of the image's store", role, name, part, programs[part]))
+		// InStore judges the program alone: an argument such as /var/lib/ need not be a clean path.
+		if argv := programs[part]; len(argv) > 0 && !command.InStore(argv[0]) {
+			errs = append(errs, fmt.Errorf("%s %s: the %s %q is no program of the image's store", role, name, part, strings.Join(argv, " ")))
 		}
 	}
 	for _, kind := range inputs {

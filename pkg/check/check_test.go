@@ -48,7 +48,7 @@ func testImage(t *testing.T, render string) Image {
 			"names": {Kinds: []string{"Demo"}, Reload: []string{"names.service"}},
 		}},
 		Outputs: map[string]outputs.Definition{"demo": {
-			Inputs: []string{"Demo"}, Render: script(t, render), Dir: filepath.Join(root, "demo"),
+			Inputs: []string{"Demo"}, Render: []string{script(t, render)}, Dir: filepath.Join(root, "demo"),
 			User: strconv.Itoa(os.Getuid()), Group: strconv.Itoa(os.Getgid()), Mode: "0644",
 		}},
 		Renderer: outputs.Renderer{Root: root, Run: outputs.Direct{}},
@@ -191,7 +191,7 @@ func TestRunRefuses(t *testing.T) {
 				in.Facts = fixed(&facts{err: errors.New("share.json is not JSON")})
 			}
 			demo := img.Outputs["demo"]
-			demo.Render = script(t, tc.render)
+			demo.Render = []string{script(t, tc.render)}
 			img.Outputs["demo"] = demo
 			in.Delivered = config.Redact(parse(t, tc.next))
 			res, err := Run(context.Background(), img, in)
@@ -224,7 +224,7 @@ func TestRunValidators(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			img := testImage(t, `exit 3`)
-			img.Validators = Programs{Defs: map[string]outputs.Validator{"demo": {Inputs: []string{"Demo"}, Program: script(t, tc.validate)}}, Render: img.Renderer}
+			img.Validators = Programs{Defs: map[string]outputs.Validator{"demo": {Inputs: []string{"Demo"}, Program: []string{script(t, tc.validate)}}}, Render: img.Renderer}
 			in := running(t, testImage(t, `cat > "$OUT/demo.json"`), &facts{})
 			in.Delivered = config.Redact(parse(t, base))
 			_, err := Run(context.Background(), img, in)

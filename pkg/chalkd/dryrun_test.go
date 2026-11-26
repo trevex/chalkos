@@ -73,7 +73,7 @@ func TestDryRunPlansAndChangesNothing(t *testing.T) {
 func TestRuntimePrerequisitesInDryRunAndRetry(t *testing.T) {
 	s, r := configServer(t)
 	writeEffects(t, s, `{
-	  "network": {"outputs": ["demo"], "run": "configure-network"},
+	  "network": {"outputs": ["demo"], "run": ["configure-network"]},
 	  "demo": {"outputs": ["demo"], "after": ["network"], "restart": ["demo.service"],
 	    "waitFor": {"description": "the route", "argv": ["/nix/store/demo/bin/check-route"], "timeoutSeconds": 1}}
 	}`)

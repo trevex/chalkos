@@ -161,8 +161,8 @@ func actions(d effects.Definition) []string {
 	if len(d.Reload) > 0 {
 		out = append(out, "reload "+strings.Join(d.Reload, " "))
 	}
-	if d.Run != "" {
-		out = append(out, "run "+d.Run)
+	if len(d.Run) > 0 {
+		out = append(out, "run "+strings.Join(d.Run, " "))
 	}
 	if len(d.Restart) > 0 {
 		out = append(out, "restart "+strings.Join(d.Restart, " "))

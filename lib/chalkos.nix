@@ -59,6 +59,27 @@ let
     SystemCallArchitectures = "native";
     SystemCallFilter = [ "@system-service" ];
   };
+  # The type of a command option: a list of the program and its arguments, each a string or a
+  # package, whose path it stands for; a string, split at white space; or a package, whose path is
+  # the program. argv turns a value of it into the list chalkd runs, so no argument of a list is
+  # split.
+  commandType =
+    lib.types.either (lib.types.coercedTo lib.types.package toString lib.types.nonEmptyStr) (
+      lib.types.nonEmptyListOf (lib.types.coercedTo lib.types.package toString lib.types.str)
+    )
+    // {
+      description = "list of a program and its arguments, command or package";
+    };
+  # The program and arguments of a value of commandType. builtins.split drops the store paths a
+  # string refers to, so each word of a string refers to those of the whole string.
+  argv =
+    command:
+    if lib.isList command then
+      command
+    else
+      map (lib.addContextFrom command) (
+        lib.filter (w: lib.isString w && w != "") (builtins.split "[[:space:]]+" command)
+      );
 in
 {
   types = {
@@ -206,15 +227,14 @@ in
         RestrictRealtime = true;
         SystemCallArchitectures = "native";
       };
-      # The type of a program option: a command, a package, whose path is the command, or an
-      # attribute set of a builder, such as chalkosLib.render's, which the option's module checks.
+      inherit commandType argv;
+      # The type of a program option: a value of commandType, or an attribute set of a builder,
+      # such as chalkosLib.render's, which the option's module checks.
       programType =
         builders:
-        lib.types.either (lib.types.coercedTo lib.types.package toString lib.types.nonEmptyStr) (
-          lib.types.attrsOf lib.types.raw
-        )
+        lib.types.either commandType (lib.types.attrsOf lib.types.raw)
         // {
-          description = "command, package or ${builders} value";
+          description = "list of a program and its arguments, command, package or ${builders} value";
         };
       # A DNS name: letters, digits, dots and dashes, starting and ending with a letter or digit.
       dnsName = "[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?";

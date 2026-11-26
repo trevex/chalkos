@@ -46,7 +46,7 @@ func TestCommandFactsReadSecretsHashed(t *testing.T) {
 	s, _ := configServer(t)
 	rec := &stdinRecorder{}
 	s.Facts = rec
-	writeContract(t, s, contract.FactsFile, `{"probe": {"command": "/nix/store/x-probe/bin/probe"}}`)
+	writeContract(t, s, contract.FactsFile, `{"probe": {"command": ["/nix/store/x-probe/bin/probe"]}}`)
 	docs, err := config.Parse(strings.NewReader(`apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Addon
 metadata: {name: a}

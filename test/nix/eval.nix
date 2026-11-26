@@ -2022,7 +2022,10 @@ in
             (etcJSON "effects.json" c).chrony == {
               outputs = [ "chrony" ];
               kinds = [ ];
-              run = "chalkd chrony-reload-sources";
+              run = [
+                "chalkd"
+                "chrony-reload-sources"
+              ];
               reload = [ ];
               restart = [ ];
               start = false;

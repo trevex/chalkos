@@ -15,7 +15,7 @@
       "frr.service"
     ],
     "restart": [],
-    "run": "",
+    "run": [],
     "start": false,
     "when": ""
   },
@@ -32,7 +32,7 @@
     "restart": [
       "frr.service"
     ],
-    "run": "",
+    "run": [],
     "start": true,
     "when": "(size(((\"kubernetes.chalkos.dev/v1alpha1\" in config && \"BGPSpeaker\" in config[\"kubernetes.chalkos.dev/v1alpha1\"]) ? config[\"kubernetes.chalkos.dev/v1alpha1\"].BGPSpeaker : {})) > 0) != (size(((\"kubernetes.chalkos.dev/v1alpha1\" in oldConfig && \"BGPSpeaker\" in oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"]) ? oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"].BGPSpeaker : {})) > 0)"
   },
@@ -46,7 +46,7 @@
     "outputs": [],
     "reload": [],
     "restart": [],
-    "run": "",
+    "run": [],
     "start": false,
     "when": "facts.cluster != oldFacts.cluster || cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in config && \"Cluster\" in config[\"kubernetes.chalkos.dev/v1alpha1\"]) ? config[\"kubernetes.chalkos.dev/v1alpha1\"].Cluster : {}), d.map(n, d[n].spec)) != cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in oldConfig && \"Cluster\" in oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"]) ? oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"].Cluster : {}), d.map(n, d[n].spec)) || cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in config && \"Flannel\" in config[\"kubernetes.chalkos.dev/v1alpha1\"]) ? config[\"kubernetes.chalkos.dev/v1alpha1\"].Flannel : {}), d.map(n, d[n].spec)) != cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in oldConfig && \"Flannel\" in oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"]) ? oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"].Flannel : {}), d.map(n, d[n].spec))"
   },
@@ -60,7 +60,7 @@
     "outputs": [],
     "reload": [],
     "restart": [],
-    "run": "",
+    "run": [],
     "start": false,
     "when": "(cel.bind(was, oldFacts.share, cel.bind(gets, facts.share, was == null || gets == null ? was != gets : was.filter(k, k != \"nodeCA\").map(k, k + \"=\" + was[k]) != gets.filter(k, k != \"nodeCA\").map(k, k + \"=\" + gets[k]))) || (cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in config && \"Node\" in config[\"kubernetes.chalkos.dev/v1alpha1\"]) ? config[\"kubernetes.chalkos.dev/v1alpha1\"].Node : {}), d.exists(n, d[n].spec.type == \"controlplane\")) && cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in config && \"Addon\" in config[\"kubernetes.chalkos.dev/v1alpha1\"]) ? config[\"kubernetes.chalkos.dev/v1alpha1\"].Addon : {}), d.map(n, d[n].spec)).map(s, s.objects).flatten() != cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in oldConfig && \"Addon\" in oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"]) ? oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"].Addon : {}), d.map(n, d[n].spec)).map(s, s.objects).flatten())) && !(facts.cluster != oldFacts.cluster || cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in config && \"Cluster\" in config[\"kubernetes.chalkos.dev/v1alpha1\"]) ? config[\"kubernetes.chalkos.dev/v1alpha1\"].Cluster : {}), d.map(n, d[n].spec)) != cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in oldConfig && \"Cluster\" in oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"]) ? oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"].Cluster : {}), d.map(n, d[n].spec)) || cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in config && \"Flannel\" in config[\"kubernetes.chalkos.dev/v1alpha1\"]) ? config[\"kubernetes.chalkos.dev/v1alpha1\"].Flannel : {}), d.map(n, d[n].spec)) != cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in oldConfig && \"Flannel\" in oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"]) ? oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"].Flannel : {}), d.map(n, d[n].spec)))"
   },
@@ -73,7 +73,10 @@
     ],
     "reload": [],
     "restart": [],
-    "run": "chalkd chrony-reload-sources",
+    "run": [
+      "chalkd",
+      "chrony-reload-sources"
+    ],
     "start": false,
     "when": ""
   },
@@ -86,7 +89,7 @@
     "restart": [
       "chalkos-chrony-dhcp.service"
     ],
-    "run": "",
+    "run": [],
     "start": false,
     "when": "cel.bind(d, ((\"time.chalkos.dev/v1alpha1\" in config && \"TimeSync\" in config[\"time.chalkos.dev/v1alpha1\"]) ? config[\"time.chalkos.dev/v1alpha1\"].TimeSync : {}), d.map(n, d[n].spec)) != cel.bind(d, ((\"time.chalkos.dev/v1alpha1\" in oldConfig && \"TimeSync\" in oldConfig[\"time.chalkos.dev/v1alpha1\"]) ? oldConfig[\"time.chalkos.dev/v1alpha1\"].TimeSync : {}), d.map(n, d[n].spec))"
   },
@@ -101,7 +104,7 @@
     "restart": [
       "chalkos-registry.service"
     ],
-    "run": "",
+    "run": [],
     "start": true,
     "when": "cel.bind(d, ((\"storage.chalkos.dev/v1alpha1\" in config && \"Volume\" in config[\"storage.chalkos.dev/v1alpha1\"]) ? config[\"storage.chalkos.dev/v1alpha1\"].Volume : {}), d.map(n, d[n].spec)).filter(s, s.mountPoint != null && (s.mountPoint == \"/var/lib/chalkos-registry\" || \"/var/lib/chalkos-registry\".startsWith(s.mountPoint + \"/\"))) != cel.bind(d, ((\"storage.chalkos.dev/v1alpha1\" in oldConfig && \"Volume\" in oldConfig[\"storage.chalkos.dev/v1alpha1\"]) ? oldConfig[\"storage.chalkos.dev/v1alpha1\"].Volume : {}), d.map(n, d[n].spec)).filter(s, s.mountPoint != null && (s.mountPoint == \"/var/lib/chalkos-registry\" || \"/var/lib/chalkos-registry\".startsWith(s.mountPoint + \"/\")))"
   },
@@ -115,7 +118,7 @@
       "chalkos-containerd-config.service",
       "containerd.service"
     ],
-    "run": "",
+    "run": [],
     "start": false,
     "when": "cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in config && \"Cluster\" in config[\"kubernetes.chalkos.dev/v1alpha1\"]) ? config[\"kubernetes.chalkos.dev/v1alpha1\"].Cluster : {}), d.map(n, d[n].spec)).map(s, s.images.pause) != cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in oldConfig && \"Cluster\" in oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"]) ? oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"].Cluster : {}), d.map(n, d[n].spec)).map(s, s.images.pause)"
   },
@@ -128,7 +131,7 @@
     "restart": [
       "chalkos-controlplane.service"
     ],
-    "run": "",
+    "run": [],
     "start": false,
     "when": "cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in config && \"Node\" in config[\"kubernetes.chalkos.dev/v1alpha1\"]) ? config[\"kubernetes.chalkos.dev/v1alpha1\"].Node : {}), d.map(n, d[n].spec)) != cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in oldConfig && \"Node\" in oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"]) ? oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"].Node : {}), d.map(n, d[n].spec))"
   },
@@ -152,7 +155,7 @@
       "chalkos-kubernetes.service",
       "kubelet.service"
     ],
-    "run": "",
+    "run": [],
     "start": true,
     "when": "cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in config && \"Node\" in config[\"kubernetes.chalkos.dev/v1alpha1\"]) ? config[\"kubernetes.chalkos.dev/v1alpha1\"].Node : {}), d.map(n, d[n].spec)) != cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in oldConfig && \"Node\" in oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"]) ? oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"].Node : {}), d.map(n, d[n].spec)) || cel.bind(d, ((\"chalkos.dev/v1alpha1\" in config && \"Host\" in config[\"chalkos.dev/v1alpha1\"]) ? config[\"chalkos.dev/v1alpha1\"].Host : {}), d.map(n, d[n].spec)) != cel.bind(d, ((\"chalkos.dev/v1alpha1\" in oldConfig && \"Host\" in oldConfig[\"chalkos.dev/v1alpha1\"]) ? oldConfig[\"chalkos.dev/v1alpha1\"].Host : {}), d.map(n, d[n].spec)) || cel.bind(d, ((\"networkd.chalkos.dev/v1alpha1\" in config && \"Network\" in config[\"networkd.chalkos.dev/v1alpha1\"]) ? config[\"networkd.chalkos.dev/v1alpha1\"].Network : {}), d.map(n, has(d[n].spec.network) ? (type(d[n].spec.network) == list ? d[n].spec.network : [d[n].spec.network]).map(s, type(s) == map && has(s.address) ? s.address : null) : [])) != cel.bind(d, ((\"networkd.chalkos.dev/v1alpha1\" in oldConfig && \"Network\" in oldConfig[\"networkd.chalkos.dev/v1alpha1\"]) ? oldConfig[\"networkd.chalkos.dev/v1alpha1\"].Network : {}), d.map(n, has(d[n].spec.network) ? (type(d[n].spec.network) == list ? d[n].spec.network : [d[n].spec.network]).map(s, type(s) == map && has(s.address) ? s.address : null) : [])) || facts.cluster != oldFacts.cluster || cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in config && \"Cluster\" in config[\"kubernetes.chalkos.dev/v1alpha1\"]) ? config[\"kubernetes.chalkos.dev/v1alpha1\"].Cluster : {}), d.map(n, d[n].spec)) != cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in oldConfig && \"Cluster\" in oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"]) ? oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"].Cluster : {}), d.map(n, d[n].spec)) || cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in config && \"Flannel\" in config[\"kubernetes.chalkos.dev/v1alpha1\"]) ? config[\"kubernetes.chalkos.dev/v1alpha1\"].Flannel : {}), d.map(n, d[n].spec)) != cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in oldConfig && \"Flannel\" in oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"]) ? oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"].Flannel : {}), d.map(n, d[n].spec)) || cel.bind(was, oldFacts.share, cel.bind(gets, facts.share, was == null || gets == null ? was != gets : was.filter(k, k != \"nodeCA\").map(k, k + \"=\" + was[k]) != gets.filter(k, k != \"nodeCA\").map(k, k + \"=\" + gets[k])))"
   },
@@ -170,7 +173,7 @@
     "restart": [
       "chalkos-links.service"
     ],
-    "run": "",
+    "run": [],
     "start": true,
     "when": ""
   },
@@ -185,7 +188,7 @@
       "systemd-networkd.service"
     ],
     "restart": [],
-    "run": "",
+    "run": [],
     "start": false,
     "when": ""
   },
@@ -201,7 +204,7 @@
       "chalkos-registry-credentials.service",
       "kubelet.service"
     ],
-    "run": "",
+    "run": [],
     "start": false,
     "when": ""
   },
@@ -214,7 +217,7 @@
     "restart": [
       "chalkos-registry-mirrors.service"
     ],
-    "run": "",
+    "run": [],
     "start": false,
     "when": "cel.bind(d, ((\"oci.chalkos.dev/v1alpha1\" in config && \"Mirror\" in config[\"oci.chalkos.dev/v1alpha1\"]) ? config[\"oci.chalkos.dev/v1alpha1\"].Mirror : {}), d.map(n, d[n].spec)) != cel.bind(d, ((\"oci.chalkos.dev/v1alpha1\" in oldConfig && \"Mirror\" in oldConfig[\"oci.chalkos.dev/v1alpha1\"]) ? oldConfig[\"oci.chalkos.dev/v1alpha1\"].Mirror : {}), d.map(n, d[n].spec)) || cel.bind(d, ((\"oci.chalkos.dev/v1alpha1\" in config && \"Registry\" in config[\"oci.chalkos.dev/v1alpha1\"]) ? config[\"oci.chalkos.dev/v1alpha1\"].Registry : {}), d.map(n, d[n].spec)) != cel.bind(d, ((\"oci.chalkos.dev/v1alpha1\" in oldConfig && \"Registry\" in oldConfig[\"oci.chalkos.dev/v1alpha1\"]) ? oldConfig[\"oci.chalkos.dev/v1alpha1\"].Registry : {}), d.map(n, d[n].spec)) || cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in config && \"ClusterRegistry\" in config[\"kubernetes.chalkos.dev/v1alpha1\"]) ? config[\"kubernetes.chalkos.dev/v1alpha1\"].ClusterRegistry : {}), d.map(n, d[n].spec)) != cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in oldConfig && \"ClusterRegistry\" in oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"]) ? oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"].ClusterRegistry : {}), d.map(n, d[n].spec)) || (size(((\"kubernetes.chalkos.dev/v1alpha1\" in config && \"ClusterRegistry\" in config[\"kubernetes.chalkos.dev/v1alpha1\"]) ? config[\"kubernetes.chalkos.dev/v1alpha1\"].ClusterRegistry : {})) > 0 && cel.bind(d, ((\"networkd.chalkos.dev/v1alpha1\" in config && \"Network\" in config[\"networkd.chalkos.dev/v1alpha1\"]) ? config[\"networkd.chalkos.dev/v1alpha1\"].Network : {}), d.map(n, has(d[n].spec.network) ? (type(d[n].spec.network) == list ? d[n].spec.network : [d[n].spec.network]).map(s, type(s) == map && has(s.address) ? s.address : null) : [])) != cel.bind(d, ((\"networkd.chalkos.dev/v1alpha1\" in oldConfig && \"Network\" in oldConfig[\"networkd.chalkos.dev/v1alpha1\"]) ? oldConfig[\"networkd.chalkos.dev/v1alpha1\"].Network : {}), d.map(n, has(d[n].spec.network) ? (type(d[n].spec.network) == list ? d[n].spec.network : [d[n].spec.network]).map(s, type(s) == map && has(s.address) ? s.address : null) : [])))"
   }

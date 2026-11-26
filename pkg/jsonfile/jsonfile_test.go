@@ -77,3 +77,19 @@ func TestReadDefs(t *testing.T) {
 		t.Fatalf("ParseDefs of no object: %v", err)
 	}
 }
+
+// A definition file that holds a field the definitions lack is refused, so a field one side of
+// the image's build renames or adds alone does not go unread.
+func TestParseDefsRefusesUnknownFields(t *testing.T) {
+	type def struct {
+		Run []string `json:"run"`
+	}
+	accept := func(string, def) error { return nil }
+	if defs, err := ParseDefs("defs.json", []byte(`{"a": {"run": ["/bin/a"]}}`), "def", accept); err != nil || len(defs["a"].Run) != 1 {
+		t.Fatalf("ParseDefs = %v, %v", defs, err)
+	}
+	_, err := ParseDefs("defs.json", []byte(`{"a": {"run": ["/bin/a"], "waitFor": {}}}`), "def", accept)
+	if err == nil || !strings.Contains(err.Error(), `unknown field "waitFor"`) {
+		t.Fatalf("err = %v, want one for the unknown field waitFor", err)
+	}
+}

@@ -280,7 +280,7 @@ func TestInstallFromPartsRefusedByTheImage(t *testing.T) {
 	if err := os.Chmod(validate, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, filepath.Join(string(st), "nix/store/x/etc/chalkos/validators.json"), `{"disk": {"inputs": ["SystemDisk"], "program": "`+validate+`"}}`)
+	writeFile(t, filepath.Join(string(st), "nix/store/x/etc/chalkos/validators.json"), `{"disk": {"inputs": ["SystemDisk"], "program": ["`+validate+`"]}}`)
 	var got install.PartsRequest
 	var checked install.Checked
 	checkingFromParts(s, st, &got, new([]byte), &checked)

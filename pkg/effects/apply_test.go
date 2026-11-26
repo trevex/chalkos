@@ -20,7 +20,7 @@ func TestApply(t *testing.T) {
 	}}
 	a := ActionsOf(map[string]Definition{
 		"one": {Kinds: []string{"K"}, Reload: []string{"r.service"}},
-		"two": {Kinds: []string{"K"}, Restart: []string{"a.service", "b.service", "c.service"}, Run: "true now"},
+		"two": {Kinds: []string{"K"}, Restart: []string{"a.service", "b.service", "c.service"}, Run: []string{"true", "now"}},
 	}, []string{"one", "two"})
 	restarted, err := Apply(context.Background(), r, a)
 	if err != nil || !reflect.DeepEqual(restarted, []string{"a.service", "b.service", "c.service"}) {

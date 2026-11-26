@@ -177,9 +177,9 @@ the same documents below `/run/chalkos/config` without an output.
 
 ## Render with any program of the store
 
-`render` also takes a command: a program of the image's store, with its arguments, or a package
-that is such a program. chalkd splits the command on spaces and runs it without a shell, so the
-command cannot redirect output or expand `$OUT`. A script for execline, a language without a
+`render` also takes a command: a list of a program of the image's store and its arguments, a
+string that the image's build splits at white space into one, or a package that is such a
+program. chalkd runs the command without a shell, so it cannot redirect output or expand `$OUT`. A script for execline, a language without a
 shell, does both and keeps the image free of a shell, as
 [Keep an image shell-free](shell-free.md#write-small-programs-without-a-shell) shows. This one
 writes the servers as YAML with yq:

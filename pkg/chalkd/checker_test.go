@@ -110,7 +110,7 @@ func refusingImage(t *testing.T, s *Server) dirStore {
 		t.Fatal(err)
 	}
 	outputs, err := json.Marshal(map[string]any{"demo": map[string]any{
-		"inputs": []string{"Demo"}, "render": render, "dir": "/run/demo",
+		"inputs": []string{"Demo"}, "render": []string{render}, "dir": "/run/demo",
 		"user": strconv.Itoa(os.Getuid()), "group": strconv.Itoa(os.Getgid()), "mode": "0644",
 	}})
 	if err != nil {
@@ -122,7 +122,7 @@ func refusingImage(t *testing.T, s *Server) dirStore {
 	if err := os.Chmod(validate, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	write(t, filepath.Join(string(st), "nix/store/x/etc/chalkos/validators.json"), `{"veto": {"inputs": ["Demo"], "program": "`+validate+`"}}`)
+	write(t, filepath.Join(string(st), "nix/store/x/etc/chalkos/validators.json"), `{"veto": {"inputs": ["Demo"], "program": ["`+validate+`"]}}`)
 	return st
 }
 

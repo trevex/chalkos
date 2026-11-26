@@ -255,8 +255,8 @@ func writeFacts(t *testing.T, s *Server, cluster string) {
 	defined := map[string]facts.Definition{
 		"share":    {File: filepath.Join(s.Paths.StateDir, "kubernetes", "share.json"), Fields: []string{"kind"}, HashOthers: true},
 		"recorded": {File: filepath.Join(s.Paths.StateDir, "storage", "storage.json")},
-		"disks":    {Command: storageCommand + " facts disks"},
-		"fallback": {Command: storageCommand + " facts fallback", Inputs: []string{facts.FallbackSecret}},
+		"disks":    {Command: []string{storageCommand, "facts", "disks"}},
+		"fallback": {Command: []string{storageCommand, "facts", "fallback"}, Inputs: []string{facts.FallbackSecret}},
 	}
 	if cluster != "" {
 		defined["cluster"] = facts.Definition{File: cluster}

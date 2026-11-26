@@ -274,7 +274,7 @@ func TestApplyConfigRetriesEffectsOnKinds(t *testing.T) {
 
 // lateHookEffects restart demo.service when the demo output changes, and run hook after the
 // restarts' states are read, so a hook that fails ends a delivery that restarted demo.service.
-const lateHookEffects = `{"demo": {"outputs": ["demo"], "restart": ["demo.service"]}, "late": {"outputs": ["demo"], "run": "hook"}}`
+const lateHookEffects = `{"demo": {"outputs": ["demo"], "restart": ["demo.service"]}, "late": {"outputs": ["demo"], "run": ["hook"]}}`
 
 // TestApplyConfigUndoesAFailedDelivery: a delivery that fails after it restarted demo.service on
 // its config leaves demo.service running that config. The delivery of the config from before it,
@@ -346,7 +346,7 @@ func TestApplyConfigUndoesAFailedDeliveryOnItsFacts(t *testing.T) {
 	s, r := configServer(t)
 	writeContract(t, s, contract.FactsFile, `{"node": {"file": "`+filepath.Join(s.Loader.RunDir, "node.json")+`", "fields": ["hostname"]}}`)
 	writeContract(t, s, contract.EffectsFile, `{"namer": {"when": "facts.node != oldFacts.node", "restart": ["namer.service"]},
-	  "late": {"when": "facts.node != oldFacts.node", "run": "hook"}}`)
+	  "late": {"when": "facts.node != oldFacts.node", "run": ["hook"]}}`)
 	r.Rules = append([]tooltest.Rule{{Prefix: "hook", Err: errors.New("exit status 1"), Times: 1}}, r.Rules...)
 	if _, err := sendConfig(s, baseConfig+hostConfig("default", "h2")); err == nil || !strings.Contains(err.Error(), "run hook") {
 		t.Fatalf("err = %v, want the hook's failure", err)
@@ -392,9 +392,9 @@ func TestApplyConfigUndoesAFailedDeliveryOfTheSameConfig(t *testing.T) {
 	s, r := configServer(t)
 	lock := &factSequence{values: []string{`"a"`, `"b"`}}
 	s.Facts = lock
-	writeContract(t, s, contract.FactsFile, `{"lock": {"command": "/nix/store/x-lock/bin/lock"}}`)
+	writeContract(t, s, contract.FactsFile, `{"lock": {"command": ["/nix/store/x-lock/bin/lock"]}}`)
 	writeContract(t, s, contract.EffectsFile, `{"namer": {"when": "facts.lock != oldFacts.lock", "restart": ["namer.service"]},
-	  "late": {"when": "facts.lock != oldFacts.lock", "run": "hook"}}`)
+	  "late": {"when": "facts.lock != oldFacts.lock", "run": ["hook"]}}`)
 	r.Rules = append([]tooltest.Rule{{Prefix: "hook", Err: errors.New("exit status 1"), Times: 1}}, r.Rules...)
 	if _, err := sendConfig(s, baseConfig); err == nil || !strings.Contains(err.Error(), "run hook") {
 		t.Fatalf("err = %v, want the hook's failure", err)
@@ -569,7 +569,7 @@ func TestApplyConfigReloadsThenRestarts(t *testing.T) {
 	s, r := configServer(t)
 	writeContract(t, s, contract.EffectsFile, `{
 	  "demo": {"outputs": ["demo"], "restart": ["demo.service"]},
-	  "demo-reload": {"outputs": ["demo"], "reload": ["demo.service"], "run": "democtl reload"},
+	  "demo-reload": {"outputs": ["demo"], "reload": ["demo.service"], "run": ["democtl", "reload"]},
 	  "logger": {"outputs": ["demo"], "reload": ["logger.service"]},
 	  "stopped": {"when": "true", "reload": ["stopped.service"]},
 	  "watcher": {"when": "config[\"demo.example.org/v1alpha1\"].Demo.one.spec.name != oldConfig[\"demo.example.org/v1alpha1\"].Demo.one.spec.name", "restart": ["watcher.service"]},
@@ -1261,14 +1261,14 @@ func demoOutput(t *testing.T, s *Server, render, check string) outputs.Definitio
 	t.Helper()
 	d := outputs.Definition{
 		Inputs: []string{"Demo"},
-		Render: shellScript(t, render),
+		Render: []string{shellScript(t, render)},
 		Dir:    filepath.Join(s.Loader.Render.Root, "demo"),
 		User:   strconv.Itoa(os.Getuid()),
 		Group:  strconv.Itoa(os.Getgid()),
 		Mode:   "0644",
 	}
 	if check != "" {
-		d.Check = shellScript(t, check)
+		d.Check = []string{shellScript(t, check)}
 	}
 	return d
 }

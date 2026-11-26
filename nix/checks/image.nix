@@ -870,7 +870,7 @@ in
         refused ${brokenDiagnostic.chalkosRulesImage} 'diagnostic broken: parameter table: its regex: error parsing regexp: missing closing ]'
         # The check of chrony's output passes the servers its template renders, and refuses a
         # line chronyd does not parse or a sourcedir file does not take.
-        read -ra check < <(jq -r .chrony.check ${testing.test-metal.nixos.config.system.build.chalkosOutputs})
+        mapfile -t check < <(jq -r '.chrony.check[]' ${testing.test-metal.nixos.config.system.build.chalkosOutputs})
         mkdir chrony
         printf 'server a.example iburst nts\nserver 10.0.0.1 iburst port 12300\n' >chrony/servers.sources
         OUT=$PWD/chrony "''${check[@]}" </dev/null
@@ -880,7 +880,7 @@ in
         done
         # The check of the router's time server passes the lines its renderer writes, and refuses
         # a subnet chronyd -p takes and any line of another form.
-        read -ra check < <(jq -r '."chrony-server".check' ${routerBuild.chalkosOutputs})
+        mapfile -t check < <(jq -r '."chrony-server".check[]' ${routerBuild.chalkosOutputs})
         mkdir chrony-server
         printf '# header\nallow 192.0.2.0/24\nallow 2001:db8:1::/64\nratelimit interval 1 burst 16\nlocal stratum 15 orphan\n' >chrony-server/server.conf
         OUT=$PWD/chrony-server "''${check[@]}" </dev/null
@@ -890,7 +890,7 @@ in
         done
         # The check of the router's firewall passes the LAN example's ruleset and refuses one the
         # kernel would not load, with nft in a user and network namespace of its own.
-        read -ra check < <(jq -r '."router-nftables".check' ${routerBuild.chalkosOutputs})
+        mapfile -t check < <(jq -r '."router-nftables".check[]' ${routerBuild.chalkosOutputs})
         mkdir nftables
         install -m 644 ${routerRuleset "lan"} nftables/ruleset.nft
         OUT=$PWD/nftables "''${check[@]}" </dev/null
@@ -898,7 +898,7 @@ in
         refuses "the router's nftables check" 'Error: Interface does not exist' env OUT=$PWD/nftables "''${check[@]}" </dev/null
         # The check of FRR's config passes the edge example's and the IPv4 and IPv6 tracking of
         # the renderer's tests, and refuses a command no daemon takes, with vtysh alone.
-        read -ra check < <(jq -r .frr.check ${routerBuild.chalkosOutputs})
+        mapfile -t check < <(jq -r '.frr.check[]' ${routerBuild.chalkosOutputs})
         mkdir frr
         install -m 644 ${../../cmd/chalkos-render/testdata/router/tracked.frr} frr/frr.conf
         OUT=$PWD/frr "''${check[@]}" </dev/null
@@ -910,7 +910,7 @@ in
         # The check of the Kubernetes layer's FRR config passes the homelab's nodes' and that of
         # unnumbered and address sessions side by side, and refuses a command no daemon takes,
         # with vtysh alone.
-        read -ra check < <(jq -r .bgp.check ${examplesBuild.chalkosOutputs})
+        mapfile -t check < <(jq -r '.bgp.check[]' ${examplesBuild.chalkosOutputs})
         mkdir bgp
         install -m 644 ${../../modules/node/kubernetes/bgp/tests/mixed/bgp/frr.conf} bgp/frr.conf
         OUT=$PWD/bgp "''${check[@]}" </dev/null
@@ -921,7 +921,7 @@ in
         grep -qF 'neighbor peer-router-enp1s0 bfd sometimes' refused.log || fail "the Kubernetes FRR check refused another command: $(cat refused.log)"
         # The check of Jool's instances passes the edge example's and refuses a port past 65535,
         # with jool alone. It gets the edge example's instance file without its .veth.
-        read -ra check < <(jq -r .jool.check ${routerBuild.chalkosOutputs})
+        mapfile -t check < <(jq -r '.jool.check[]' ${routerBuild.chalkosOutputs})
         mkdir jool
         install -m 644 ${routerRendered "edge"}/jool/edge.json jool/edge.json
         OUT=$PWD/jool "''${check[@]}" </dev/null
@@ -930,8 +930,9 @@ in
         # The check of Unbound's config passes the LAN example's, with the trust anchor and zone
         # the image renders it with in place of the test result's, whose store paths have their
         # hashes written as e's, and refuses a record Unbound does not take.
-        read -ra check < <(jq -r .unbound.check ${routerBuild.chalkosOutputs})
-        read -r _ _ anchor zone < <(jq -r .unbound.render ${routerBuild.chalkosOutputs})
+        mapfile -t check < <(jq -r '.unbound.check[]' ${routerBuild.chalkosOutputs})
+        anchor=$(jq -r '.unbound.render[2]' ${routerBuild.chalkosOutputs})
+        zone=$(jq -r '.unbound.render[3]' ${routerBuild.chalkosOutputs})
         mkdir unbound
         sed -e "s|^\( *trust-anchor-file: \).*|\1\"$anchor\"|" -e "s|^\( *zonefile: \).*|\1\"$zone\"|" \
           ${routerRendered "lan"}/unbound/unbound.conf >unbound/unbound.conf

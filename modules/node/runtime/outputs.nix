@@ -14,6 +14,7 @@ let
     kindProblems
     plainName
     attrsetText
+    argv
     ;
 
   # The name of the file a renderer of path writes: the path's own, less suffix, and less the hash
@@ -25,47 +26,67 @@ let
       hashed = builtins.match "[0-9a-df-np-sv-z]{32}-(.+)" name;
     in
     lib.removeSuffix suffix (if hashed == null then name else lib.head hashed);
-  # The command of an output's render: a command as it is, or that of a renderer of
-  # chalkosLib.render; null for anything else.
-  renderCommand =
+  render = lib.getExe chalkos-render;
+  # The argv of an output's render: that of a command, or that of a renderer of chalkosLib.render;
+  # null for anything else.
+  renderArgv =
     r:
-    if lib.isString r then
-      r
+    if lib.isString r || lib.isList r then
+      argv r
     else if lib.attrNames r == [ "template" ] then
-      "${lib.getExe chalkos-render} template ${r.template} ${fileName ".tmpl" r.template}"
+      [
+        render
+        "template"
+        "${r.template}"
+        (fileName ".tmpl" r.template)
+      ]
     else if lib.attrNames r == [ "jq" ] then
-      "${lib.getExe chalkos-render} jq ${lib.getExe pkgs.jq} ${r.jq} ${fileName ".jq" r.jq}"
+      [
+        render
+        "jq"
+        (lib.getExe pkgs.jq)
+        "${r.jq}"
+        (fileName ".jq" r.jq)
+      ]
     else if lib.attrNames r == [ "documents" ] then
-      "${lib.getExe chalkos-render} documents ${lib.concatStringsSep " " r.documents}"
+      [
+        render
+        "documents"
+      ]
+      ++ lib.toList r.documents
     else
       null;
-  # The command of an output's check: "" for none, a command as it is, or that of a check of
-  # chalkosLib.check; null for anything else. chalkd splits a command at white space, so no
-  # argument of chalkosLib.check's holds any.
-  checkCommand =
+  # The argv of an output's check: [ ] for none, that of a command, or that of a check of
+  # chalkosLib.check; null for anything else.
+  checkArgv =
     c:
-    let
-      argv = map toString c.run;
-      plain = s: builtins.match ".*[[:space:]].*" s == null && s != "";
-      command = lib.concatStringsSep " " argv;
-    in
     if c == null then
-      ""
-    else if lib.isString c then
-      c
-    else if !(c ? run && lib.isList c.run && c.run != [ ] && lib.all plain argv) then
+      [ ]
+    else if lib.isString c || lib.isList c then
+      argv c
+    else if !(c ? run && lib.isList c.run && c.run != [ ]) then
       null
     else if lib.attrNames c == [ "run" ] then
-      "${lib.getExe chalkos-render} check run ${command}"
+      [
+        render
+        "check"
+        "run"
+      ]
+      ++ map toString c.run
     else if
       lib.attrNames c == [
         "each"
         "run"
       ]
       && lib.isString c.each
-      && plain c.each
     then
-      "${lib.getExe chalkos-render} check each ${c.each} ${command}"
+      [
+        render
+        "check"
+        "each"
+        c.each
+      ]
+      ++ map toString c.run
     else
       null;
 
@@ -235,12 +256,12 @@ let
     ++ lib.optional (dirProblem name o.dir != null) "${where}.dir: ${o.dir} ${dirProblem name o.dir}"
     ++ kindProblems config.chalkos.kinds "${where}.inputs" o.inputs
     ++
-      lib.optional (renderCommand o.render == null)
-        "${where}.render: a renderer is a command or one of chalkosLib.render.template, .jq and .documents, not ${attrsetText o.render}"
+      lib.optional (renderArgv o.render == null)
+        "${where}.render: a renderer is a command, a list of a program and its arguments or one of chalkosLib.render.template, .jq and .documents, not ${attrsetText o.render}"
     ++ documentsProblems where o
     ++
-      lib.optional (checkCommand o.check == null)
-        "${where}.check: a check is a command or one of chalkosLib.check.run and .each, each with a command whose arguments hold no white space, not ${attrsetText o.check}";
+      lib.optional (checkArgv o.check == null)
+        "${where}.check: a check is a command, a list of a program and its arguments or one of chalkosLib.check.run and .each, each with a non-empty list of a program and its arguments, not ${attrsetText o.check}";
   # An output as chalkd reads it.
   outputJSON = _: o: {
     inherit (o)
@@ -251,8 +272,8 @@ let
       group
       mode
       ;
-    render = renderCommand o.render;
-    check = checkCommand o.check;
+    render = renderArgv o.render;
+    check = checkArgv o.check;
   };
   outputsJSON = refuse (clashes ++ lib.concatLists (lib.mapAttrsToList outputProblems outputs)) (
     builtins.toJSON (lib.mapAttrs outputJSON outputs)

@@ -29,12 +29,13 @@ let
         description = "Keep the other keys of the file's JSON object too, each as the hex SHA-256 of its value, so rules see whether a value changed but not what it holds, as of a file of private keys.";
       };
       command = lib.mkOption {
-        type = lib.types.nullOr lib.types.str;
+        type = lib.types.nullOr chalkosLib.internal.commandType;
         default = null;
-        example = lib.literalExpression ''"''${pkgs.my-tool}/bin/my-tool facts"'';
+        example = lib.literalExpression ''[ "''${pkgs.my-tool}/bin/my-tool" "facts" ]'';
         description = ''
-          Program of the image's store, with its arguments, that prints the fact as JSON: the
-          program itself or a script that calls it, not a link to a multi-call binary.
+          Program of the image's store and its arguments, as a list or as a string split at
+          white space, that prints the fact as JSON: the program itself or a script that calls
+          it, not a link to a multi-call binary.
           [Facts](extension-runtime.md#facts) gives what it reads, and
           [Command fact sandbox](extension-runtime.md#command-fact-sandbox) its limits.
         '';
@@ -80,7 +81,10 @@ let
         // lib.optionalAttrs (f.fields != [ ]) { inherit (f) fields; }
         // lib.optionalAttrs f.hashOthers { inherit (f) hashOthers; }
       else
-        { inherit (f) command; } // lib.optionalAttrs (f.inputs != [ ]) { inherit (f) inputs; }
+        {
+          command = chalkosLib.internal.argv f.command;
+        }
+        // lib.optionalAttrs (f.inputs != [ ]) { inherit (f) inputs; }
     ) factsCfg
   );
   factsFile = pkgs.writeText "chalkos-facts.json" (builtins.toJSON facts);

@@ -38,7 +38,7 @@ type Definition struct {
 	When    string   `json:"when"`
 	Restart []string `json:"restart"`
 	Reload  []string `json:"reload"`
-	Run     string   `json:"run"`
+	Run     []string `json:"run"`
 	Start   bool     `json:"start"`
 	// Chalkd names a layer's action, <layer>:<action>; "" for none.
 	Chalkd  string     `json:"chalkd"`
@@ -95,14 +95,14 @@ func Read(path string) (map[string]Definition, error) {
 var layerAction = regexp.MustCompile(`^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$`)
 
 // Check refuses an effect chalkd could not carry out as declared: one nothing triggers or that does
-// nothing, a unit that is no unit name, a Chalkd that names no layer's action, or a hint without
-// text or with a relative file. chalkd splits Run on spaces, with no shell quoting, so its first
-// word must name a program.
+// nothing, a unit that is no unit name, a Chalkd that names no layer's action, a hint without text
+// or with a relative file, or a Run whose program is neither a bare program name nor one of the
+// image's store.
 func (d Definition) Check() error {
 	if len(d.Outputs) == 0 && len(d.Kinds) == 0 && d.When == "" {
 		return errors.New("it has none of outputs, kinds and when, so nothing triggers it")
 	}
-	if len(d.Restart) == 0 && len(d.Reload) == 0 && d.Run == "" && d.Chalkd == "" {
+	if len(d.Restart) == 0 && len(d.Reload) == 0 && len(d.Run) == 0 && d.Chalkd == "" {
 		return errors.New("it restarts, reloads and runs nothing")
 	}
 	for _, unit := range slices.Concat(d.Restart, d.Reload) {
@@ -126,13 +126,12 @@ func (d Definition) Check() error {
 			return err
 		}
 	}
-	if d.Run != "" {
-		argv := strings.Fields(d.Run)
-		switch {
-		case len(argv) == 0:
-			return errors.New("the command to run is empty")
-		case strings.Contains(argv[0], "/") && !command.InStore(argv[0]):
-			return fmt.Errorf("the command %q names %s, which is neither a program of the image's store nor a bare program name", d.Run, argv[0])
+	if len(d.Run) > 0 {
+		switch program := d.Run[0]; {
+		case program == "":
+			return errors.New("the command to run names no program")
+		case strings.Contains(program, "/") && !command.InStore(program):
+			return fmt.Errorf("the command %q names %s, which is neither a program of the image's store nor a bare program name", strings.Join(d.Run, " "), program)
 		}
 	}
 	return nil

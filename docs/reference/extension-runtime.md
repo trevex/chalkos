@@ -291,9 +291,9 @@ A renderer writes its files into the directory that the environment variable `OU
 runs a validator as `<program> validate <name>`: it appends `validate` and the validator's name to
 the command, which a program that serves several validators reads to tell them apart.
 
-A command that `render`, `check` or `program` names is a program of the image's store, with its
-arguments, or a package that is such a program. chalkd splits the command on spaces and runs it
-without a shell, so the command cannot redirect output, and `$OUT` in an argument reaches the
+A command that `render`, `check` or `program` names is a list of a program of the image's store
+and its arguments, a string that the image's build splits at white space into one, or a package
+that is such a program. chalkd runs it without a shell, so the command cannot redirect output, and `$OUT` in an argument reaches the
 program as it is written. `chalkosLib.check.run` and `chalkosLib.check.each` replace `$OUT` in
 a check's arguments. A program of your own, such as a script from `pkgs.writeShellScript`, reads
 `OUT` from its environment.
@@ -362,7 +362,7 @@ Most checks run a service's own test of its config on the files.
 `chalkosLib.check.run [ "${pkgs.nftables}/bin/nft" "--check" "--file" "$OUT/ruleset.nft" ]` runs
 the program once, and `chalkosLib.check.each "*.conf" [ "${unbound}/bin/unbound-checkconf" "$FILE" ]`
 runs it once for each matching file. Both replace `$OUT` in the arguments, and `each` replaces
-`$FILE` too. No argument may hold white space. What the program prints goes to the node's journal
+`$FILE` too. What the program prints goes to the node's journal
 when it fails. A check that needs more, such as a file of stand-ins for credentials, is a program of its
 own, as the check of `bird-conf` in [Render bird.conf](../guides/bgp-extension.md#render-birdconf)
 is.
