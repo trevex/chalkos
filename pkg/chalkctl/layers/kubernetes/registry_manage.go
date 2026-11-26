@@ -141,15 +141,31 @@ func (s endpoints) childrenOf(ctx context.Context, e netip.Addr, repo name.Repos
 	return m.Manifests, nil
 }
 
+// readRepo reads the tags of repo on the endpoint e and, for a digest ref, the tagged indexes
+// that name the digest.
+func (s endpoints) readRepo(ctx context.Context, e netip.Addr, repo name.Repository, ref imageRef) (map[string]v1.Descriptor, []string, error) {
+	tags, err := s.tagsOn(ctx, e, repo)
+	if err != nil || ref.digest == "" {
+		return tags, nil, err
+	}
+	parents, err := s.parentsOf(ctx, e, repo, tags, ref.digest)
+	return tags, parents, err
+}
+
 // delete deletes ref, a tag or a digest, below every endpoint, and fails unless each deleted it
 // or never held it. Before it deletes anything, it refuses a digest that a tagged index names, as
 // deleting it would break the index, and a digest that tags name, unless withTags and confirm
-// accepts deleting the tags. It reports each endpoint, a failed one to errOut.
+// accepts deleting the tags; as the prompt may wait for long, it then reads the tags again and
+// refuses when a tagged index names the digest or the tags naming it changed. It reports each
+// endpoint, a failed one to errOut.
 func (s endpoints) delete(ctx context.Context, out, errOut io.Writer, ref imageRef, withTags bool, confirm func(what string) error) error {
 	var failed []string
 	fail := func(e netip.Addr, err error) {
 		fmt.Fprintf(errOut, "%s: failed: %v\n", e, err)
 		failed = append(failed, e.String())
+	}
+	brokenIndex := func(parents []string) error {
+		return fmt.Errorf("%s is an image of the index %s; deleting it would break the index, so delete the index first", ref, strs.And(parents))
 	}
 	// The tags of the repository on each endpoint that could be read.
 	tagged := map[netip.Addr]map[string]v1.Descriptor{}
@@ -159,12 +175,8 @@ func (s endpoints) delete(ctx context.Context, out, errOut io.Writer, ref imageR
 		if err != nil {
 			return err
 		}
-		tags, err := s.tagsOn(ctx, e, repo)
-		if err == nil && ref.digest != "" {
-			var on []string
-			on, err = s.parentsOf(ctx, e, repo, tags, ref.digest)
-			parents = append(parents, on...)
-		}
+		tags, on, err := s.readRepo(ctx, e, repo, ref)
+		parents = append(parents, on...)
 		if err != nil {
 			fail(e, err)
 			continue
@@ -178,7 +190,7 @@ func (s endpoints) delete(ctx context.Context, out, errOut io.Writer, ref imageR
 		}
 	}
 	if len(parents) > 0 {
-		return fmt.Errorf("%s is an image of the index %s; deleting it would break the index, so delete the index first", ref, strs.And(parents))
+		return brokenIndex(parents)
 	}
 	slices.Sort(naming)
 	naming = slices.Compact(naming)
@@ -188,6 +200,23 @@ func (s endpoints) delete(ctx context.Context, out, errOut io.Writer, ref imageR
 	if len(naming) > 0 {
 		if err := confirm(fmt.Sprintf("registry delete deletes %s with the tags %s that name it on %s", ref, strs.And(naming), strs.And(namingOn))); err != nil {
 			return err
+		}
+		for _, e := range s.Endpoints {
+			confirmed, ok := tagged[e]
+			if !ok {
+				continue
+			}
+			repo, _ := s.repoAt(e, ref)
+			tags, on, err := s.readRepo(ctx, e, repo, ref)
+			switch {
+			case err != nil:
+				return fmt.Errorf("%s: %w", e, err)
+			case len(on) > 0:
+				return brokenIndex(on)
+			case !slices.Equal(tagsNaming(tags, ref.digest), tagsNaming(confirmed, ref.digest)):
+				return fmt.Errorf("the tags that name %s on %s changed while the prompt waited; delete again", ref, e)
+			}
+			tagged[e] = tags
 		}
 	}
 	// Digests that no tag names any more once their tag went.

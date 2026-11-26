@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-containerregistry/pkg/v1/empty"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 
 	"github.com/trevex/chalkos/pkg/pki"
@@ -109,6 +111,35 @@ func TestDeleteDigest(t *testing.T) {
 	}
 	if _, ok := te.digestAt(t, "192.0.2.1", "ghcr.io/a/b@"+child); !ok {
 		t.Error("a refused delete deleted the index's image")
+	}
+}
+
+// TestDeleteDigestAfterPrompt reads the tags again once the prompt returns, and refuses a digest
+// that a tag the prompt did not name, or a tagged index, names by then.
+func TestDeleteDigestAfterPrompt(t *testing.T) {
+	te := startEndpoints(t, nil, "192.0.2.1", "192.0.2.2")
+	img := randomImage(t)
+	d := digestOf(t, img).String()
+	te.pushTo(t, img, "docker.io/library/busybox:1.37.0", "192.0.2.1", "192.0.2.2")
+	idx := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{Add: img})
+	for _, tc := range []struct {
+		during func()
+		want   string
+	}{{
+		during: func() { te.pushTo(t, img, "docker.io/library/busybox:latest", "192.0.2.2") },
+		want:   "the tags that name docker.io/library/busybox@" + d + " on 192.0.2.2 changed while the prompt waited; delete again",
+	}, {
+		during: func() { te.pushTo(t, idx, "docker.io/library/busybox:multi", "192.0.2.1") },
+		want:   "docker.io/library/busybox@" + d + " is an image of the index docker.io/library/busybox:multi on 192.0.2.1; deleting it would break the index, so delete the index first",
+	}} {
+		te.reset()
+		err := te.delete(context.Background(), &te.out, &te.errOut, iref(t, "busybox@"+d), true, func(string) error { tc.during(); return nil })
+		if err == nil || err.Error() != tc.want {
+			t.Errorf("delete = %v, want %q", err, tc.want)
+		}
+		if _, ok := te.digestAt(t, "192.0.2.1", "docker.io/library/busybox@"+d); !ok || te.out.Len() != 0 {
+			t.Errorf("a refused delete deleted something: %q", te.out.String())
+		}
 	}
 }
 
