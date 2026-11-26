@@ -8,10 +8,12 @@ description: "Which chalkos releases receive security fixes, how to report a vul
 A chalkos node guarantees the following, as the [security model](../how-it-works/node/security.md)
 explains with what each attacker position reaches:
 
-- With Secure Boot on, the firmware boots only images signed with the cluster's db key, and
-  dm-verity checks every block of the store.
+- With Secure Boot on, the firmware boots only images signed with a certificate in db: the
+  cluster's db key, and Microsoft's CAs when `--microsoft` enrolled them or the firmware kept them
+  in db. dm-verity checks every block of the store.
 - Nothing runs that the image did not bring: there is no shell, every writable file system is
-  mounted noexec, and kernel modules load only from the signed image.
+  mounted noexec except the directories a layer runs programs from, such as containerd's root for
+  container images, and with Secure Boot on kernel modules load only from the signed image.
 - The TPM releases the disk keys only under the Secure Boot state the node was installed under.
 - Nobody logs in: chalkd serves the only API, over mutual TLS, and checks the role of every call.
 - The keys that sign images and issue certificates never reach a node.

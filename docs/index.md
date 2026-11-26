@@ -105,7 +105,8 @@ image does not boot healthy, the node returns to the image before.
     state only under the same Secure Boot state.
 
 :material-lock-check: Nothing runs that the image did not bring
-:   Nodes carry no shell, every writable file system is mounted noexec, and the kernel loads
+:   Nodes carry no shell, every writable file system is mounted noexec except the directories a
+    layer runs programs from, such as containerd's root, and with Secure Boot on the kernel loads
     modules only from the signed image. The [security model](how-it-works/node/security.md) lists
     what each attacker position reaches.
 

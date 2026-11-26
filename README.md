@@ -27,7 +27,8 @@ chalkos adds two things to that model, both about config:
   a fallback still boots with config its image understands.
 
 Nodes also run nothing the image did not bring. They carry no shell, every writable file system is
-mounted noexec, and the kernel loads modules only from the signed image. The
+mounted noexec except the directories a layer runs programs from, such as containerd's root, and
+with Secure Boot on the kernel loads modules only from the signed image. The
 [security model](https://trevex.github.io/chalkos/how-it-works/node/security/) lists what each
 attacker position reaches.
 
@@ -57,7 +58,9 @@ nix develop -c chalklab create --secrets=secrets.json
 `chalklab create` pulls the release's image, starts the virtual machines, installs the nodes,
 bootstraps the cluster and prints how to reach it with kubectl and chalkctl. `chalklab destroy`
 removes the lab. The [quick start](https://trevex.github.io/chalkos/get-started/quick-start-kubernetes/)
-walks through it, including a build of your own image and an upgrade.
+walks through it, and
+[Upgrade the lab to your own image](https://trevex.github.io/chalkos/build/upgrade-the-lab/) builds
+an image of your own and upgrades the lab to it.
 
 ## Development
 
