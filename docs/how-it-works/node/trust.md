@@ -52,7 +52,7 @@ The table lists each stage, what checks it and what happens when the check fails
 | UKI | The firmware, at every boot; chalkd and the installer before they write it | db and dbx | The firmware refuses to start it; chalkd and the installer refuse the upgrade or the install. |
 | Store | dm-verity, on every read | The root hash in the UKI's `usrhash=` | The block fails to read. A store of another image has other partition UUIDs, so the UKI does not boot it. |
 | Kernel modules | IPE, on every load | The store's root hash and the initrd, in a policy signed with the db key | The kernel refuses the module and logs an audit record. |
-| STATE, VAR and encrypted volumes | The TPM, in the initrd | PCR 7 at install | The console asks for the fallback: the recovery key or a password. |
+| STATE, VAR and encrypted volumes | The TPM, in the initrd | PCR 7 at install | The console asks for the fallback, the recovery key or a password. With fallback `none`, a volume can only be recreated empty, and a node whose STATE or VAR does not unlock has to be reinstalled. |
 | A client of the node API | chalkd, on every request | The OS CAs the node trusts at that moment | The handshake or the call fails. |
 
 [dm-verity ties every block of the store to the UKI](image.md#dm-verity-ties-every-block-of-the-store-to-the-uki),
@@ -174,7 +174,9 @@ key holder signed, including their stores through `usrhash=`.
 ### The node key can be copied
 
 The node key is a file. Root on the node, or anyone who unlocks STATE, can copy it and act as
-the node on the API until its certificate expires or the node CA is rotated. A key that the TPM
+the node on the API. On a Kubernetes node, the copy can also renew the certificate before it
+expires, so expiry alone does not end it. `chalkctl node revoke` stops the renewals, and the copy
+then works until its certificate expires or the OS CA is rotated. A key that the TPM
 generates and keeps cannot leave the TPM, and only that TPM could sign the TLS handshakes.
 
 ### No one outside the node can verify what it booted

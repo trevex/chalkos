@@ -59,8 +59,8 @@ compares the evidence with reference values. Each item builds on the ones before
 | Signed PCR 11 policies | Disk keys sealed to a key that signs each image's PCR 11 values at `chalkbuild sign`, so only images the key holder signed unseal them. |
 | A node key in the TPM | A node key that the TPM generates and never exports, which signs chalkd's TLS handshakes, so the node's identity cannot be copied off the machine. |
 | Evidence through the node API | A method that returns a TPM quote over PCRs 4, 7 and 11 with the event log, signed by an attestation key the TPM certifies. |
-| Reference values with each release | The expected PCR values of each image, computed at build time and published with the release and its signatures, so a verifier needs no node to learn them. |
-| A verifier in chalkctl | chalkctl checks a node's evidence against the reference values before it trusts the node's report of its image. |
+| Reference values with each release | The expected PCR 4 and PCR 11 values of each image, computed at build time and published with the release and its signatures, so a verifier needs no node to learn them. PCR 7 depends on each machine's Secure Boot variables, such as dbx, and not on the image, so a release carries no value for it. |
+| A verifier in chalkctl | chalkctl checks a node's PCR 4 and PCR 11 against the reference values, and its PCR 7 against the Secure Boot variables in the event log and the key holder's db certificate, before it trusts the node's report of its image. |
 | Bootstrap through TPM attestation | Nodes that install themselves from a management server that verifies their TPM. |
 | Confidential virtual machines | An exploration of AMD SEV-SNP and Intel TDX guests with a vTPM inside the guest, such as one that COCONUT-SVSM runs, so the hypervisor no longer controls the TPM. |
 
