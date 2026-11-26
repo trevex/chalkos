@@ -478,7 +478,8 @@ release it once its boot was found healthy: Kubernetes keeps etcd's quorum, drai
 uncordons it once it is Ready. A node that falls back to the image before stops the run. A node
 not found healthy within --timeout stops it too and stays held; the command run again waits for it
 and releases it, unless the node fell back meanwhile: like any node that fell back, it then stays
-held until a run installs a fixed image on it, or the same image once more with --retry-failed.
+held until a run reboots it into a fixed image, or into the same image once more with
+--retry-failed, and finds that boot healthy; staging or activating an image does not release it.
 --until stage or --until activate stops each node after that step and holds no node.
 
 Before any node gets its image, the image's layers check the versions it brings against what the
