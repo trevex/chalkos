@@ -11,14 +11,20 @@ import (
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/v1/types"
+	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/inventory"
 	"github.com/trevex/chalkos/pkg/lab"
 	"github.com/trevex/chalkos/pkg/ociimage"
+	"github.com/trevex/chalkos/pkg/sdk"
+	sdkkubernetes "github.com/trevex/chalkos/pkg/sdk/layers/kubernetes"
+	sdkrouter "github.com/trevex/chalkos/pkg/sdk/layers/router"
 )
 
 // TestUpgrade installs the signed test image under Secure Boot and upgrades it step by step to the
 // upgrade image, which the node pulls through a Mirror whose endpoint asks for credentials. It
 // then rolls back, takes an operator's upgrade with a pending config, and falls back from an image
-// that never turns healthy.
+// that never turns healthy. Another machine then installs the upgrade image in place from the
+// registry.
 func TestUpgrade(t *testing.T) {
 	requireEnv(t, append(secureBootEnv, append(chalkdEnv, "CHALKLAB_UPGRADE_IMAGE_DIR", "CHALKLAB_UNHEALTHY_IMAGE_DIR")...)...)
 	base, nextHash, badHash := rootHash(t, "CHALKLAB_IMAGE_DIR"), rootHash(t, "CHALKLAB_UPGRADE_IMAGE_DIR"), rootHash(t, "CHALKLAB_UNHEALTHY_IMAGE_DIR")
@@ -171,7 +177,72 @@ func TestUpgrade(t *testing.T) {
 		!strings.Contains(out, "units failed: chalktest-broken.service") || !inventoryConfig.MatchString(out) {
 		t.Errorf("status after the fallback: %v", err)
 	}
+
+	// Another machine boots the test image's disk in maintenance mode and installs in place the
+	// upgrade image from the registry through the SDK, as a Cluster API provider does: the node
+	// pulls it through the Mirror of the config, the upgrade image's checker passes the Farewell,
+	// a kind the test image does not have, and the node boots the upgrade image from slot B.
+	n.vm.Stop()
+	placed := time.Now()
+	placedDir := vmDir(t)
+	m := startNode(t, lab.VMConfig{
+		Dir: placedDir, FirmwareVars: os.Getenv("CHALKLAB_OVMF_VARS_ENROLLED"), Disks: []lab.VMDisk{prepareDisk(t, placedDir, diskOpts{sign: true})},
+		GuestForwards: []lab.GuestForward{{Guest: registryGuest, Host: reg.host}},
+	})
+	readFacts(t, m.vm, 5*time.Minute)
+	installFromRegistry(t, m, pullInventory, mirroredGuest+"/chalkos/test-upgrade:v1")
+	assertFacts(t, readFacts(t, m.vm, 5*time.Minute), map[string]string{
+		"secureboot":      "1",
+		"usr_verity":      "verified",
+		"store_label":     "store_" + nextHash[:16],
+		"store_partition": "5",
+		"state_tpm2":      "1",
+	})
+	waitForNode(t, m, "chalklab")
+	if out, err := chalkctl(t, m, "", "status", "chalklab", "--inventory", pullInventory); err != nil || !strings.Contains(out, "image "+nextHash[:12]+", booted from chalkos_2.efi\n") || !inventoryConfig.MatchString(out) {
+		t.Errorf("status after the install in place from the registry: %v\n%s", err, out)
+	}
+	t.Logf("installed %s in place from the registry in %v", nextHash[:12], time.Since(placed).Round(time.Second))
 	t.Logf("the test took %v", time.Since(start).Round(time.Second))
+}
+
+// installFromRegistry installs chalklab, the node n in maintenance mode, in place with the image
+// ref names in a registry, through the SDK, as a Cluster API provider installs a machine, with
+// the documents the inventory gives chalklab, filtered as chalkctl filters them. ref is resolved
+// to its digest first, with the default keychain.
+func installFromRegistry(t *testing.T, n *node, inventoryFile, ref string) {
+	t.Helper()
+	ctx := context.Background()
+	waitForChalkd(t, n, 5*time.Minute)
+	a, err := ociimage.Read(ctx, ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	layers := []sdk.Layer{sdkkubernetes.Layer{}, sdkrouter.Layer{}}
+	inv, err := inventory.Load(inventoryFile, func(docs []config.Document) []config.Document { return sdk.NodeDocuments(layers, docs) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	nc, err := inv.Node("chalklab")
+	if err != nil {
+		t.Fatal(err)
+	}
+	secrets, err := readSecrets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := sdk.AdminCertificate(secrets, "e2e", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, _, _, err := sdk.DialMaintenance(ctx, n.addr, sdk.Trust{Insecure: true}, cert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if err := sdk.Install(ctx, conn, sdk.InstallRequest{Node: "chalklab", Documents: nc.Documents, Secrets: secrets, Layers: layers, Image: a.Reference}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // inventoryConfig is status's line of a node that runs the config of the inventory it was given.

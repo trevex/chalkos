@@ -364,6 +364,11 @@ func (s *Server) ActivateImage(ctx context.Context, req *nodev1.ActivateImageReq
 func (s *Server) checkStagedSlot(rootHash []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.keepsStagedSlot(rootHash)
+}
+
+// keepsStagedSlot is checkStagedSlot for a caller that holds s.mu.
+func (s *Server) keepsStagedSlot(rootHash []byte) error {
 	if !s.keepsSlot(rootHash) {
 		return fmt.Errorf("STATE holds no config for the image %x, which an upgrade stages with its config; it would boot without config", rootHash)
 	}

@@ -1,6 +1,7 @@
 package chalkd
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
@@ -20,6 +21,7 @@ import (
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/ociimage"
@@ -32,7 +34,9 @@ import (
 // follows the header in chunks. An image the header names in a registry is pulled by the digest it
 // names, with the credentials of the delivered config's Registry of its host, and checked against
 // the header as a streamed one; its contract layer gives the repart definitions, schemas and
-// layers' facts.
+// layers' facts. In place, the node installs the image it runs or one it pulls, which goes into
+// the inactive slot as an upgrade's does and boots once the node is installed; the pulled image's
+// own checker checks the config.
 func (s *Server) Install(ctx context.Context, stream nodev1connect.NodeServiceInstallServerStream) (*nodev1.InstallResponse, error) {
 	return s.install(ctx, boundIdle(ctx, stream, s.idleBound()))
 }
@@ -50,8 +54,12 @@ func (s *Server) install(ctx context.Context, stream requests[*nodev1.InstallReq
 		if s.Installer {
 			return nil, layer.Errorf(connect.CodeFailedPrecondition, "the installer installs nodes onto a disk; name the target disk")
 		}
-		if h.Image != nil || h.GetSource() != nil {
-			return nil, layer.Errorf(connect.CodeInvalidArgument, "an install in place takes no image: the node runs its image already")
+		// The node installs in place the image it runs, or one it pulls from a registry.
+		if h.Image != nil && h.GetSource() == nil {
+			return nil, layer.Errorf(connect.CodeInvalidArgument, "an install in place takes no streamed image: name the image in a registry, which the node pulls")
+		}
+		if h.GetSource() != nil && h.Image == nil {
+			return nil, layer.Errorf(connect.CodeInvalidArgument, "the header describes no image of the source it names")
 		}
 	case *nodev1.InstallHeader_Disk:
 		if !s.Installer {
@@ -74,7 +82,7 @@ func (s *Server) install(ctx context.Context, stream requests[*nodev1.InstallReq
 	if s.installed {
 		return nil, layer.Errorf(connect.CodeFailedPrecondition, "the node is installed and reboots")
 	}
-	// An image the installer pulls brings the contract the config is translated with.
+	// An image the node pulls brings the contract the config is translated with.
 	contract := h.GetContract()
 	var pull *ociimage.Pull
 	if h.GetSource() != nil {
@@ -85,11 +93,26 @@ func (s *Server) install(ctx context.Context, stream requests[*nodev1.InstallReq
 		}
 		defer pull.Close()
 	}
+	// An image pulled to install in place goes into the inactive slot and checks the config there,
+	// unless the node runs it already; then the running image checks the config as without one.
+	var running []byte
+	placing := false
+	if _, ok := h.Target.(*nodev1.InstallHeader_InPlace); ok {
+		if running, err = uki.RunningHash(s.Paths.Cmdline); err != nil {
+			return nil, err
+		}
+		placing = pull != nil && !bytes.Equal(h.Image.GetRootHash(), running)
+		if pull != nil && !placing {
+			// The running image checks the config against its own contract; the header carries
+			// none, as its origin is the source.
+			contract = nil
+		}
+	}
 	name, err := headerName(h)
 	if err != nil {
 		return nil, err
 	}
-	stored, err := s.installConfig(ctx, h, name, contract)
+	stored, err := s.installConfig(ctx, h, name, contract, s.Installer || placing)
 	if err != nil {
 		return nil, err
 	}
@@ -106,9 +129,15 @@ func (s *Server) install(ctx context.Context, stream requests[*nodev1.InstallReq
 	}
 	switch target := h.Target.(type) {
 	case *nodev1.InstallHeader_InPlace:
-		running, rerr := uki.RunningHash(s.Paths.Cmdline)
-		if rerr != nil {
-			return nil, rerr
+		if placing {
+			// The payloads are planned against chalkd's own translation before anything changes,
+			// as from the installer.
+			if _, err := s.installPayloads(ctx, layer.Compiled[layer.Delivery](s.Plugins), h, stored.Identity); err != nil {
+				return nil, err
+			}
+			log.Printf("installing in place %q with the root hash %x, pulled from %s", h.Image.GetImageId(), h.Image.GetRootHash(), h.GetSource().GetOci().GetReference())
+			err = s.placeInPlace(ctx, h, name, stored, req, pull)
+			break
 		}
 		req.Config = stored
 		if req.Layers, err = s.installPayloads(ctx, layer.Active[layer.Delivery](s.Plugins), h, stored.Identity); err != nil {
@@ -159,15 +188,17 @@ func (s *Server) install(ctx context.Context, stream requests[*nodev1.InstallReq
 	return &nodev1.InstallResponse{}, nil
 }
 
-// installCheck has the image an install from the installer writes, in the store st of the
-// target's slot A with the NixOS system system, check docs for the node name with its own checker,
-// against no running config. The installer's machine has no STATE or volumes, so facts of what
-// the node holds read null; its hardware is the node's. It returns the image's config slot, Secret
-// values restored, and the header's payloads, checked against the checker's identity by the
-// layers compiled into the installer, which has no layer of its own. Install holds s.mu.
+// installCheck has the image an install writes, in the store st with the NixOS system system,
+// check docs for the node name with its own checker, against no running config: the image the
+// installer writes in the target's slot A, or the image an install in place pulled into the
+// inactive slot. The installer's machine has no STATE or volumes, so facts of what the node holds
+// read null; its hardware is the node's. In place every fact reads null, as the running image
+// reads them there. It returns the image's config slot, Secret values restored, and the header's
+// payloads, checked against the checker's identity by the layers compiled into chalkd, as the
+// image's layers need not run. Install holds s.mu.
 func (s *Server) installCheck(ctx context.Context, st imageStore, system string, h *nodev1.InstallHeader, name string, docs []config.Document) (install.Checked, error) {
 	root := h.GetImage().GetRootHash()
-	next, warnings, err := s.checkWithImage(ctx, st, system, h.GetImage().GetPlatform(), name, imageCheck{delivered: docs, secret: h.FallbackSecret, image: root, writing: root})
+	next, warnings, err := s.checkWithImage(ctx, st, system, h.GetImage().GetPlatform(), name, imageCheck{delivered: docs, secret: h.FallbackSecret, image: root, writing: root, install: !s.Installer})
 	if err != nil {
 		return install.Checked{}, err
 	}
@@ -177,6 +208,52 @@ func (s *Server) installCheck(ctx context.Context, st imageStore, system string,
 		return install.Checked{}, err
 	}
 	return install.Checked{Config: next, Layers: payloads}, nil
+}
+
+// placeInPlace installs the node in place with the image pull, which the node does not run, with
+// req, which holds the header's credentials. stored is chalkd's own translation of the config, of
+// the pulled image's schemas, which InPlace checks the request with before anything changes; the
+// pulled image's checker decides. Once those checks passed, the image goes into the inactive slot
+// through the slot writer of an upgrade and is staged there once installCheck passed the config
+// as delivered on its store. STATE then gets the storage, the config slot and the payloads that
+// check gave, and a provenance record of the image, and the image is activated before the node
+// is marked installed. An install that failed runs again: the slot writer passes over what it
+// wrote, and an image it staged is checked again. Install holds s.mu.
+func (s *Server) placeInPlace(ctx context.Context, h *nodev1.InstallHeader, name string, stored slot.Stored, req install.Request, pull *ociimage.Pull) error {
+	img := imageHeader(h.Image)
+	slots := s.imageSlots()
+	req.Config = stored
+	var err error
+	if req.Images, err = (upgrade.Images{}).Record(img.RootHash, img.Provenance, nil).Encode(); err != nil {
+		return fmt.Errorf("the record of the image's provenance: %w", err)
+	}
+	req.Place = func(ctx context.Context) (install.Checked, error) {
+		var checked install.Checked
+		res, err := slots.Place(ctx, img, func(st imageStore, system string) error {
+			var err error
+			checked, err = s.installCheck(ctx, st, system, h, name, stored.Delivered)
+			return err
+		}, pull)
+		if err != nil {
+			return install.Checked{}, err
+		}
+		// Only the node's known-good image is staged without a check, which an install in place
+		// never stages.
+		if len(checked.Config.Identity) == 0 {
+			return install.Checked{}, fmt.Errorf("the image %x staged as %s did not check the config, so the install cannot go on: an upgrade or a rollback must replace the image in the inactive slot first", img.RootHash, res.Entry)
+		}
+		log.Printf("%x is staged as %s", img.RootHash, res.Entry)
+		return checked, nil
+	}
+	req.ActivateImage = func(ctx context.Context) error {
+		res, err := slots.ActivatePlaced(ctx, img.RootHash)
+		if err != nil {
+			return fmt.Errorf("activate %x: %w", img.RootHash, err)
+		}
+		log.Printf("%x boots next as %s", img.RootHash, res.Entry)
+		return nil
+	}
+	return s.InPlace(ctx, req, img.RootHash)
 }
 
 // installPayloads hands the header's payloads to the layers among deliveries that take them,
@@ -195,11 +272,12 @@ func (s *Server) installPayloads(ctx context.Context, deliveries []layer.Deliver
 	return writers, nil
 }
 
-// pullInstall prepares the pull of the image an install from the installer names in a registry,
-// whose chunks the client does not send. It authenticates with the Registry of the reference's
-// host in the header's config, the only config the installer has. Before anything changes it
+// pullInstall prepares the pull of the image an install names in a registry, whose chunks the
+// client does not send. It authenticates with the Registry of the reference's host in the
+// header's config, the only config a node in maintenance mode has. Before anything changes it
 // fetches the manifest, header and contract layer, and returns the contract, which the manifest's
-// digest pins. Install logs each refusal it returns.
+// digest pins. The installer writes the image's boot loader to the target's ESP; an install in
+// place keeps the node's, so its header names none. Install logs each refusal it returns.
 func (s *Server) pullInstall(ctx context.Context, stream requests[*nodev1.InstallRequest], h *nodev1.InstallHeader) (*ociimage.Pull, *nodev1.ImageContract, error) {
 	ref := h.GetSource().GetOci().GetReference()
 	img := imageHeader(h.Image)
@@ -209,8 +287,11 @@ func (s *Server) pullInstall(ctx context.Context, stream requests[*nodev1.Instal
 	if err := img.Validate(); err != nil {
 		return nil, nil, layer.Errorf(connect.CodeInvalidArgument, "the image: %w", err)
 	}
-	if img.BootLoader.Size == 0 {
+	switch {
+	case s.Installer && img.BootLoader.Size == 0:
 		return nil, nil, layer.Errorf(connect.CodeInvalidArgument, "the image brings no boot loader, which an install writes to the ESP")
+	case !s.Installer && img.BootLoader.Size != 0:
+		return nil, nil, layer.Errorf(connect.CodeInvalidArgument, "an install in place keeps the node's boot loader: the header must describe none")
 	}
 	if err := noChunks(stream, "an install"); err != nil {
 		return nil, nil, err

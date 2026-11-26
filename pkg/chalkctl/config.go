@@ -86,15 +86,7 @@ func registryContract(nc *inventory.NodeConfig) (sdk.Contract, error) {
 	if err != nil {
 		return sdk.Contract{}, err
 	}
-	facts, err := sdk.ContractFacts(sdkLayers(), a.Contract.ReadFile)
-	if err != nil {
-		return sdk.Contract{}, err
-	}
-	c, err := sdk.SchemaContract(sdkLayers(), a.Contract.Schemas, facts)
-	if err != nil {
-		return sdk.Contract{}, fmt.Errorf("%s: %w", a.Reference, err)
-	}
-	return c, nil
+	return sdk.ArtifactContract(sdkLayers(), a)
 }
 
 // warnUnpinned prints the image references of the node's config that name a tag but no digest,

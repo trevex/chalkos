@@ -2,14 +2,21 @@ package sdk_test
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
+
+	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
 	"github.com/trevex/chalkos/pkg/chalkd"
 	"github.com/trevex/chalkos/pkg/chalkd/chalkdtest"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
@@ -19,12 +26,16 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/config"
+	imagecontract "github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/kubernetes/kubetest"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
+	"github.com/trevex/chalkos/pkg/ociimage"
+	"github.com/trevex/chalkos/pkg/ociimage/ocitest"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/schema/schematest"
 	"github.com/trevex/chalkos/pkg/sdk"
 	sdkkubernetes "github.com/trevex/chalkos/pkg/sdk/layers/kubernetes"
 	"github.com/trevex/chalkos/pkg/sdk/sdktest"
@@ -209,4 +220,81 @@ func kubernetesImage(t *testing.T, s *chalkd.Server) {
 	})
 	s.Plugins = chalkdtest.Plugins(t, s, layers.Of(layers.Kubernetes), k)
 	s.Loader.Layers = layer.Active[nodeconfig.Layer](s.Plugins)
+}
+
+// TestInstallFromAnOCIImageSendsTheSource installs in place from an image in a registry: the
+// config is checked against the image's contract layer, whose schemas take a Network that the
+// running image's do not, and the header the node receives describes the image without the boot
+// loader the node keeps and names it by its digest. A reference by tag is refused before the node
+// gets anything.
+func TestInstallFromAnOCIImageSendsTheSource(t *testing.T) {
+	secrets := generateSecrets(t)
+	host := ocitest.Registry(t)
+	root := strings.Repeat("cd", 32)
+	md := `{"schemaVersion": 0, "id": "chalkos", "name": "test-metal", "platform": "metal", "rootHash": "` + root + `", "kinds": []}`
+	img := ocitest.Image(t, ociimage.Header{ImageID: "chalkos", RootHash: root, Architecture: "x86-64", Platform: "metal", Tag: "v2"},
+		ociimage.Contract{Metadata: []byte(md), Schemas: schematest.Files(t, schematest.Builtin, schematest.Networkd), Definitions: map[string][]byte{"50-state.conf": []byte("[Partition]\nLabel=state\n")}})
+	ref := ocitest.Push(t, img, host+"/lab/test-metal:v2")
+
+	s := sdktest.Maintenance()
+	running := t.TempDir()
+	schematest.Copy(t, filepath.Join(running, imagecontract.SchemasDir), schematest.Builtin)
+	sdktest.LoadContract(t, s, running)
+	var got *nodev1.InstallHeader
+	fake := fakeInstall{got: &got}
+	node := sdktest.Serve(t, s, secrets.OSCA, secrets.NodeCA, "", func(h http.Handler) http.Handler {
+		server := connect.NewServer()
+		nodev1connect.RegisterNodeServiceHandler(server, fake)
+		installs := http.NewServeMux()
+		connecthttp.Mount(installs, server)
+		mux := http.NewServeMux()
+		mux.Handle(nodev1connect.NodeServiceInstallProcedure, installs)
+		mux.Handle("/", h)
+		return mux
+	})
+	cert, err := sdk.AdminCertificate(secrets, "sdk-test", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, _, _, err := sdk.DialMaintenance(context.Background(), node.Addr, sdk.Trust{Fingerprint: node.Fingerprint}, cert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+
+	r := installRequest(secrets, parseDocuments(t, w1SystemDisk, w1Network))
+	r.Image = host + "/lab/test-metal:v2"
+	if err := sdk.Install(context.Background(), conn, r); err == nil || !strings.Contains(err.Error(), "by digest") || got != nil {
+		t.Fatalf("install by tag = %v, sent %v; want it refused", err, got)
+	}
+	r.Image = ref
+	if err := sdk.Install(context.Background(), conn, r); err != nil {
+		t.Fatal(err)
+	}
+	if got.GetSource().GetOci().GetReference() != ref || got.GetContract() != nil || got.GetInPlace() == nil {
+		t.Errorf("header names the source %v, the contract %v, the target %v", got.GetSource(), got.GetContract(), got.GetTarget())
+	}
+	image := got.GetImage()
+	if hex.EncodeToString(image.GetRootHash()) != root || image.GetImageId() != "chalkos" || image.GetPlatform() != "metal" || image.GetArchitecture() != "x86-64" || image.GetTag() != "v2" ||
+		image.GetStore().GetSize() != uint64(len("store")) || image.GetUki().GetSize() != uint64(len("uki")) || image.GetHashTree().GetSize() != uint64(len("hash tree")) || image.GetBootLoader() != nil {
+		t.Errorf("image header = %v", image)
+	}
+	if !strings.Contains(got.GetConfig(), `"kind":"Network"`) {
+		t.Errorf("config = %q, want the Network the image's schemas take", got.GetConfig())
+	}
+}
+
+// fakeInstall answers Install as a node that installed, and keeps the header it received.
+type fakeInstall struct {
+	nodev1connect.UnimplementedNodeServiceHandler
+	got **nodev1.InstallHeader
+}
+
+func (f fakeInstall) Install(_ context.Context, stream nodev1connect.NodeServiceInstallServerStream) (*nodev1.InstallResponse, error) {
+	msg, err := stream.Receive()
+	if err != nil {
+		return nil, err
+	}
+	*f.got = msg.GetHeader()
+	return &nodev1.InstallResponse{}, nil
 }

@@ -133,9 +133,15 @@ message carries the header; when the node is the installer, the image's store da
 tree, UKI and boot loader follow as chunks, unless the header's source names an image in a
 registry, which the installer pulls. The installer has the image's own checker check the
 config once the image's store is on the target disk, before it writes STATE or the boot
-loader; a refusal fails the precondition and leaves a target that boots nothing. An install
-the installer did not finish continues when run again, from either. Available in maintenance
-mode to admins.
+loader; a refusal fails the precondition and leaves a target that boots nothing. In place,
+a header with a source names an image the node pulls and writes into its inactive slot; that
+image's checker checks the config there, and the image boots next once STATE is written,
+before the node counts as installed. When that image's first boot is never found healthy,
+the node falls back to the image it booted from, installed but without a config slot for
+it; RollbackImage, an Upgrade that carries config or a new machine recovers it. A power loss
+after the activation and before the node counts as installed boots the pulled image in
+maintenance mode, where the same Install repeated finishes the install. An install that did
+not finish continues when run again, from either. Available in maintenance mode to admins.
 
 Request: a stream of InstallRequest. Response: InstallResponse.
 
@@ -967,13 +973,13 @@ What an install delivers: the node's credentials and config, the target and the 
 | `node_key` | bytes | PEM key of node_certificate. |
 | `ca_certificate` | bytes | PEM certificates of the OS CAs the node trusts, the one that issues client certificates and the node CA first, then those still trusted while it rotates. |
 | `fallback_secret` | string | Recovery key or password enrolled as the second keyslot of every encrypted volume; empty when the node's fallback is none. |
-| `in_place` | InPlace, oneof target | Target of a node whose image already runs from its boot disk. |
-| `disk` | DiskReference, oneof target | Target disk, which the installer lays out and writes the streamed image to. |
-| `image` | ImageHeader | The image the installer writes to the target disk; it must name the boot loader. Installer only. |
+| `in_place` | InPlace, oneof target | Target of a node in maintenance mode on its boot disk, which runs an image already. The node installs the image it runs or, with an image source, the image it pulls, which goes into its inactive slot as an upgrade's does and boots once the node is installed. |
+| `disk` | DiskReference, oneof target | Target disk, which the installer lays out and writes the streamed or pulled image to. |
+| `image` | ImageHeader | The image the install writes. From the installer it must name the boot loader, which goes to the target's ESP. In place it comes from the image source and names no boot loader: the node keeps its own, and the disk layout of the image it booted from. |
 | `wipe_disk` | bool | Whether the installer may replace what the target disk holds, including an installed node. |
-| `config` | string | The node's config: YAML documents separated by ---. The image the node boots checks them as a set, fills in their defaults and translates them into what the node applies at boot, which STATE keeps with them: in place the running image, from the installer the image's own checker, once its store is on the target disk. Required. |
-| `contract` | ImageContract, oneof origin | The contract of an image whose parts follow the header as chunks. Installer only: in place, chalkd checks the config against the running image. |
-| `source` | ImageSource, oneof origin | An image in a registry, which the installer pulls. Its contract layer holds the image's contract, and the request carries nothing after the header. Installer only. |
+| `config` | string | The node's config: YAML documents separated by ---. The image the node boots checks them as a set, fills in their defaults and translates them into what the node applies at boot, which STATE keeps with them: in place the running image, or the pulled image's own checker once its store is in the inactive slot, and from the installer the image's own checker, once its store is on the target disk. Required. |
+| `contract` | ImageContract, oneof origin | The contract of an image whose parts follow the header as chunks. Installer only: in place, chalkd checks the config against the running image or the pulled one. |
+| `source` | ImageSource, oneof origin | An image in a registry by digest, which the node pulls with the credentials of the Registry of its host in config. Its contract layer holds the image's contract, and the request carries nothing after the header. In place, an image the node runs already is installed as without a source. |
 | `layers` | list of google.protobuf.Any | Payloads of the installed image's layers, such as chalkos.kubernetes.v1.Share, which the node keeps on STATE. The node refuses a payload no layer takes. |
 
 Field types: [InPlace](#message-inplace), [DiskReference](#message-diskreference), [ImageHeader](#message-imageheader), [ImageContract](#message-imagecontract), [ImageSource](#message-imagesource).

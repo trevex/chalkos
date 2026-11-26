@@ -233,9 +233,15 @@ type NodeServiceClient interface {
 	// tree, UKI and boot loader follow as chunks, unless the header's source names an image in a
 	// registry, which the installer pulls. The installer has the image's own checker check the
 	// config once the image's store is on the target disk, before it writes STATE or the boot
-	// loader; a refusal fails the precondition and leaves a target that boots nothing. An install
-	// the installer did not finish continues when run again, from either. Available in maintenance
-	// mode to admins.
+	// loader; a refusal fails the precondition and leaves a target that boots nothing. In place,
+	// a header with a source names an image the node pulls and writes into its inactive slot; that
+	// image's checker checks the config there, and the image boots next once STATE is written,
+	// before the node counts as installed. When that image's first boot is never found healthy,
+	// the node falls back to the image it booted from, installed but without a config slot for
+	// it; RollbackImage, an Upgrade that carries config or a new machine recovers it. A power loss
+	// after the activation and before the node counts as installed boots the pulled image in
+	// maintenance mode, where the same Install repeated finishes the install. An install that did
+	// not finish continues when run again, from either. Available in maintenance mode to admins.
 	Install(context.Context) (NodeServiceInstallClientStream, error)
 	// ApplyConfig replaces the config of an installed node, or delivers it payloads of its layers,
 	// such as a Kubernetes share, a node certificate or OS CAs. Destructive storage changes are
@@ -509,9 +515,15 @@ type NodeServiceHandler interface {
 	// tree, UKI and boot loader follow as chunks, unless the header's source names an image in a
 	// registry, which the installer pulls. The installer has the image's own checker check the
 	// config once the image's store is on the target disk, before it writes STATE or the boot
-	// loader; a refusal fails the precondition and leaves a target that boots nothing. An install
-	// the installer did not finish continues when run again, from either. Available in maintenance
-	// mode to admins.
+	// loader; a refusal fails the precondition and leaves a target that boots nothing. In place,
+	// a header with a source names an image the node pulls and writes into its inactive slot; that
+	// image's checker checks the config there, and the image boots next once STATE is written,
+	// before the node counts as installed. When that image's first boot is never found healthy,
+	// the node falls back to the image it booted from, installed but without a config slot for
+	// it; RollbackImage, an Upgrade that carries config or a new machine recovers it. A power loss
+	// after the activation and before the node counts as installed boots the pulled image in
+	// maintenance mode, where the same Install repeated finishes the install. An install that did
+	// not finish continues when run again, from either. Available in maintenance mode to admins.
 	Install(context.Context, NodeServiceInstallServerStream) (*v1.InstallResponse, error)
 	// ApplyConfig replaces the config of an installed node, or delivers it payloads of its layers,
 	// such as a Kubernetes share, a node certificate or OS CAs. Destructive storage changes are

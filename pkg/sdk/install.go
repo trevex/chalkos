@@ -8,10 +8,13 @@ import (
 	"net"
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/name"
+
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 )
@@ -49,6 +52,22 @@ type InstallRequest struct {
 	// Now is when the node's certificate and the layers' payloads are issued; the zero time is
 	// time.Now().
 	Now time.Time
+	// Image, when set, is the image the node installs in place of the one it runs: its reference
+	// in a registry by digest, repository@sha256:…. Install reads the image's header and contract
+	// layer with the credentials of the default keychain and checks the config against that
+	// contract. The node pulls the image with the credentials of the Registry of the reference's
+	// host among Documents, writes the image into its inactive slot, has the image's own checker
+	// check the config there and boots the image once it is installed. The node keeps the disk
+	// layout of the image it booted from, and its chalkd translates the config with the image's
+	// schemas only to plan the layers' payloads: the image's checker decides. Empty installs the
+	// image the node runs.
+	//
+	// Two failures are left to the caller. When the image's first boot is never found healthy, the
+	// node falls back to the image it booted from, installed but without a config slot for that
+	// image; RollbackImage, an Upgrade that carries config or a new machine recovers it. A power
+	// loss after the image is activated and before the node is marked installed boots the image
+	// in maintenance mode, where the same Install repeated finishes the install.
+	Image string
 }
 
 // NewInstallHeader returns the header of an install of the request: the checked config, the
@@ -98,11 +117,21 @@ func fallbackSecret(r InstallRequest, fallback string) (string, error) {
 	return "", fmt.Errorf("node %s has the unknown fallback %q", r.Node, fallback)
 }
 
-// Install installs in place the node in maintenance mode that conn reaches, with the image it runs.
-// A config the image refuses is a *check.Refusal. An install that failed continues when it is run
-// again.
+// Install installs in place the node in maintenance mode that conn reaches, with the image it runs
+// or with r.Image. A config the image refuses is a *check.Refusal. An install that failed
+// continues when it is run again.
 func Install(ctx context.Context, conn *client.Conn, r InstallRequest) error {
-	c, err := NodeContract(ctx, conn, r.Layers, r.Node)
+	var (
+		c   Contract
+		img *nodev1.ImageHeader
+		ref string
+		err error
+	)
+	if r.Image == "" {
+		c, err = NodeContract(ctx, conn, r.Layers, r.Node)
+	} else {
+		c, img, ref, err = registryImage(ctx, r)
+	}
 	if err != nil {
 		return err
 	}
@@ -115,6 +144,10 @@ func Install(ctx context.Context, conn *client.Conn, r InstallRequest) error {
 		return err
 	}
 	header.Target = &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}
+	if img != nil {
+		header.Image = img
+		header.Origin = &nodev1.InstallHeader_Source{Source: &nodev1.ImageSource{Source: &nodev1.ImageSource_Oci{Oci: &nodev1.RegistryImage{Reference: ref}}}}
+	}
 	stream, err := conn.Install(ctx)
 	if err != nil {
 		return err
@@ -126,4 +159,25 @@ func Install(ctx context.Context, conn *client.Conn, r InstallRequest) error {
 		return fmt.Errorf("install %s: %w", r.Node, err)
 	}
 	return nil
+}
+
+// registryImage reads the image in a registry r.Image names, by digest: its contract, the header
+// of an install in place of it, without the boot loader the node keeps, and its reference.
+func registryImage(ctx context.Context, r InstallRequest) (Contract, *nodev1.ImageHeader, string, error) {
+	if _, err := name.NewDigest(r.Image, name.StrictValidation); err != nil {
+		return Contract{}, nil, "", fmt.Errorf("install %s: the image %q is no reference by digest, repository@sha256:…: %w", r.Node, r.Image, err)
+	}
+	a, err := ociimage.Read(ctx, r.Image)
+	if err != nil {
+		return Contract{}, nil, "", fmt.Errorf("install %s: %w", r.Node, err)
+	}
+	c, err := ArtifactContract(r.Layers, a)
+	if err != nil {
+		return Contract{}, nil, "", fmt.Errorf("install %s: %w", r.Node, err)
+	}
+	h, err := RegistryImageHeader(a, false)
+	if err != nil {
+		return Contract{}, nil, "", fmt.Errorf("install %s: %w", r.Node, err)
+	}
+	return c, h, a.Reference, nil
 }

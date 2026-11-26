@@ -7,6 +7,7 @@ package install
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/trevex/chalkos/pkg/arch"
+	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
 	"github.com/trevex/chalkos/pkg/storage/hostops"
@@ -85,33 +87,29 @@ func ForInstaller(runDir string) *Installer {
 	return ForNode(filepath.Join(runDir, "target"), runDir)
 }
 
-// InPlace installs the node on the disk it booted from, where the node's image already runs.
+// InPlace installs the node on the disk it booted from. rootHash is the image the node boots once
+// installed, whose config slot the install writes: the running image, or one req.Place places in
+// the inactive slot, which req.ActivateImage makes boot next. The node keeps the disk layout of
+// the image it booted from.
 func (i *Installer) InPlace(ctx context.Context, req Request, rootHash []byte) error {
-	if err := req.validate(); err != nil {
+	boot, err := i.checkInPlace(req, rootHash)
+	if err != nil {
 		return err
 	}
-	if len(req.Config.Identity) == 0 {
-		return errors.New("no identity")
-	}
-	if len(rootHash) == 0 {
-		return errors.New("the request names no root hash of the running image, whose config slot the install writes")
-	}
-	if installed, err := Installed(i.StateDir); err != nil {
-		return err
-	} else if installed {
-		return errors.New("the node is installed already")
-	}
-	boot, err := i.Host.ResolvePath(i.BootDisk)
-	if err != nil {
-		return fmt.Errorf("find the disk the node booted from: %w", err)
-	}
-	ref := req.Section.Disks[storage.SystemDisk].Ref
-	system, err := i.Host.Resolve(ref)
-	if err != nil {
-		return fmt.Errorf("resolve the system disk %s: %w", ref, err)
-	}
-	if system.Name != boot.Name {
-		return fmt.Errorf("the config places the system on %s, but the node runs from %s; install it with the installer instead", system, boot)
+	if req.Place != nil {
+		checked, err := req.Place(ctx)
+		if err != nil {
+			return err
+		}
+		var id identity.Identity
+		if err := json.Unmarshal(checked.Config.Identity, &id); err != nil {
+			return fmt.Errorf("parse the identity the image's checker gave: %w", err)
+		}
+		req.Section, req.Config, req.Layers = id.Storage, checked.Config, checked.Layers
+		// The placed image's checker may translate the storage otherwise than chalkd did.
+		if boot, err = i.checkInPlace(req, rootHash); err != nil {
+			return err
+		}
 	}
 	defs, err := readDefinitions(i.Definitions)
 	if err != nil {
@@ -126,13 +124,52 @@ func (i *Installer) InPlace(ctx context.Context, req Request, rootHash []byte) e
 	if err := i.randomizeESP(ctx, boot); err != nil {
 		return err
 	}
+	if req.ActivateImage != nil {
+		if err := req.ActivateImage(ctx); err != nil {
+			return err
+		}
+	}
 	return i.markInstalled()
+}
+
+// checkInPlace refuses an install in place of req before anything changes: a request that does
+// not validate or names no identity or root hash, a node installed already, and a system disk
+// that is not the one the node booted from, which it returns.
+func (i *Installer) checkInPlace(req Request, rootHash []byte) (storage.BlockDisk, error) {
+	if err := req.validate(); err != nil {
+		return storage.BlockDisk{}, err
+	}
+	if len(req.Config.Identity) == 0 {
+		return storage.BlockDisk{}, errors.New("no identity")
+	}
+	if len(rootHash) == 0 {
+		return storage.BlockDisk{}, errors.New("the request names no root hash of the image the node boots, whose config slot the install writes")
+	}
+	if installed, err := Installed(i.StateDir); err != nil {
+		return storage.BlockDisk{}, err
+	} else if installed {
+		return storage.BlockDisk{}, errors.New("the node is installed already")
+	}
+	boot, err := i.Host.ResolvePath(i.BootDisk)
+	if err != nil {
+		return storage.BlockDisk{}, fmt.Errorf("find the disk the node booted from: %w", err)
+	}
+	ref := req.Section.Disks[storage.SystemDisk].Ref
+	system, err := i.Host.Resolve(ref)
+	if err != nil {
+		return storage.BlockDisk{}, fmt.Errorf("resolve the system disk %s: %w", ref, err)
+	}
+	if system.Name != boot.Name {
+		return storage.BlockDisk{}, fmt.Errorf("the config places the system on %s, but the node runs from %s; install it with the installer instead", system, boot)
+	}
+	return boot, nil
 }
 
 // installOn runs the steps both flows share on disk: STATE, the node's volumes, the fallback key
 // and the config slot of the image of rootHash, with the identity. defs are the image's repart
 // definitions of the system region. The config is checked already: in place by the running
-// image, from the installer by the image's checker on slot A's store.
+// image or the checker of the image chalkd placed in the inactive slot, from the installer by the
+// image's checker on slot A's store.
 func (i *Installer) installOn(ctx context.Context, disk storage.BlockDisk, defs map[string]string, req Request, rootHash []byte) error {
 	state, err := i.openState(ctx, disk, defs, req.Section.Encryption)
 	if err != nil {

@@ -6,13 +6,17 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 	"math/big"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -30,6 +34,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkd/chalkdtest"
 	kubernetesplugin "github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes"
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
+	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/imagecheck"
 	"github.com/trevex/chalkos/pkg/imagepart"
@@ -38,6 +43,8 @@ import (
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
+	"github.com/trevex/chalkos/pkg/ociimage"
+	"github.com/trevex/chalkos/pkg/ociimage/ocitest"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
@@ -590,4 +597,290 @@ func contractOf(h *nodev1.InstallHeader) *nodev1.ImageContract {
 		h.Origin = &nodev1.InstallHeader_Contract{Contract: &nodev1.ImageContract{}}
 	}
 	return h.GetContract()
+}
+
+// anonymousRegistry is a Registry of the host without credentials, which allows plain HTTP, as
+// the test registries serve it.
+func anonymousRegistry(host string) string {
+	return fmt.Sprintf("apiVersion: oci.chalkos.dev/v1alpha1\nkind: Registry\nmetadata: {name: lab}\nspec: {host: %q, insecure: true}\n", host)
+}
+
+// inPlaceFromRegistry pushes a small chalkos image with the root hash newImage, which the node does
+// not run, and a contract of the fixture schemas to the registry at host. It returns the header of
+// an install in place that pulls the image, as the SDK sends it: baseConfig with a Registry of the
+// host, and the image's store, hash tree and UKI, without the boot loader the node keeps.
+func inPlaceFromRegistry(t *testing.T, host string) *nodev1.InstallHeader {
+	t.Helper()
+	root := hex.EncodeToString(newImage)
+	md := `{"schemaVersion": 0, "id": "chalkos", "name": "node-metal", "platform": "metal", "rootHash": "` + root + `", "kinds": []}`
+	img := ocitest.Image(t, ociimage.Header{ImageID: "chalkos", RootHash: root, Architecture: "x86-64", Platform: "metal", Revision: "a1b2c3d4e5f6", Tag: "v2"},
+		ociimage.Contract{Metadata: []byte(md), Schemas: fixtureSchemas(t), Definitions: map[string][]byte{"50-state.conf": []byte("[Partition]\nLabel=state\n")}})
+	ref := ocitest.Push(t, img, host+"/lab/node-metal:v2")
+	h := header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
+	h.Config = baseConfig + "---\n" + anonymousRegistry(host)
+	h.Image = &nodev1.ImageHeader{ImageId: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: newImage, Revision: "a1b2c3d4e5f6", Tag: "v2",
+		Store: imagePart("store"), HashTree: imagePart("hash tree"), Uki: imagePart("uki")}
+	h.Origin = &nodev1.InstallHeader_Source{Source: &nodev1.ImageSource{Source: &nodev1.ImageSource_Oci{Oci: &nodev1.RegistryImage{Reference: ref}}}}
+	return h
+}
+
+// placement is what an install in place did to the fake inactive slot placeOn gives s: the header
+// of the image it placed there, the bytes it read for it, and the image it activated.
+type placement struct {
+	header    upgrade.Header
+	data      []byte
+	activated []byte
+}
+
+// placeOn gives s an inactive slot whose image's store is st: Place reads the whole image, as the
+// slot writer does, and has the image's checker check the config there, and ActivatePlaced
+// activates the image once STATE keeps its config slot, as the boot disk's do. Its InPlace does
+// on STATE what install.Installer.InPlace does there: it has the request place the image, writes
+// the config slot the placed image's checker gave for the root hash, has the request activate the
+// image and marks the node installed last.
+func placeOn(t *testing.T, s *Server, st dirStore) *placement {
+	t.Helper()
+	p := &placement{}
+	f := fakeImageSlots(t, s)
+	f.place = func(_ context.Context, h upgrade.Header, check func(imageStore, string) error, image io.Reader) (upgrade.Result, error) {
+		data, err := io.ReadAll(image)
+		if err != nil {
+			return upgrade.Result{}, err
+		}
+		if err := check(st, "/nix/store/x"); err != nil {
+			return upgrade.Result{}, &upgrade.CheckError{Err: err}
+		}
+		p.header, p.data = h, data
+		return upgrade.Result{Entry: ".staged-chalkos_2.efi", Wrote: true}, nil
+	}
+	f.activateIn = func(_ context.Context, rootHash []byte) (upgrade.Result, error) {
+		if !s.keepsSlot(rootHash) {
+			return upgrade.Result{}, errors.New("STATE holds no config for the image")
+		}
+		p.activated = rootHash
+		return upgrade.Result{Entry: "chalkos_2+3.efi", Active: true}, nil
+	}
+	s.InPlace = func(ctx context.Context, req install.Request, rootHash []byte) error {
+		if req.Place != nil {
+			checked, err := req.Place(ctx)
+			if err != nil {
+				return err
+			}
+			req.Config = checked.Config
+		}
+		if err := slot.Write(slot.Dir(s.Loader.Slots, rootHash), req.Config); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(s.Paths.StateDir, upgrade.ImagesRecord), req.Images, 0o644); err != nil {
+			return err
+		}
+		if req.ActivateImage != nil {
+			if err := req.ActivateImage(ctx); err != nil {
+				return err
+			}
+		}
+		return os.WriteFile(filepath.Join(s.Paths.StateDir, "installed"), []byte("now\n"), 0o644)
+	}
+	return p
+}
+
+// TestInstallInPlaceFromRegistryBootsThePulledImage installs in place from an image in a registry
+// that the node does not run: the image goes into the inactive slot through the slot writer,
+// its config slot holds the delivered config with the identity its checker gave, STATE records
+// its provenance, and it boots next once STATE is written, before the node counts as installed.
+func TestInstallInPlaceFromRegistryBootsThePulledImage(t *testing.T) {
+	host := ocitest.Registry(t)
+	s, _ := newTestServer(t, maintenance, vda)
+	p := placeOn(t, s, imageWith(t, s, fixtureSchemas(t), ""))
+	rebooted := make(chan struct{})
+	s.RebootNode = func() error { close(rebooted); return nil }
+	h := inPlaceFromRegistry(t, host)
+
+	if err := sendInstall(t, s, h, nil); err != nil {
+		t.Fatal(err)
+	}
+	if string(p.data) != "storehash treeuki" || !bytes.Equal(p.header.RootHash, newImage) || p.header.BootLoader.Size != 0 {
+		t.Errorf("placed %q for %+v", p.data, p.header)
+	}
+	if !bytes.Equal(p.activated, newImage) {
+		t.Errorf("activated %x, want the pulled image", p.activated)
+	}
+	stored, found, err := slot.Read(slot.Dir(s.Loader.Slots, newImage))
+	if err != nil || !found || stored.Version != hashOf(t, h.Config) {
+		t.Errorf("the pulled image's config slot = %+v, %v, %v", stored, found, err)
+	}
+	var id identity.Identity
+	if err := json.Unmarshal(stored.Identity, &id); err != nil || id.Hostname != "n1" || id.Platform != "metal" {
+		t.Errorf("identity = %s, %v", stored.Identity, err)
+	}
+	if prov := upgrade.ReadImages(filepath.Join(s.Paths.StateDir, upgrade.ImagesRecord)).Of(newImage); prov != (upgrade.Provenance{Revision: "a1b2c3d4e5f6", Tag: "v2"}) {
+		t.Errorf("the record of installed images names %+v", prov)
+	}
+	if installed, err := install.Installed(s.Paths.StateDir); err != nil || !installed {
+		t.Errorf("installed %v, %v", installed, err)
+	}
+	select {
+	case <-rebooted:
+	case <-time.After(time.Minute):
+		t.Fatal("the node did not reboot after installing")
+	}
+}
+
+// TestInstallInPlaceFromRegistryCheckedByThePulledImage has the pulled image's checker check the
+// config, not the running image's: the running image has no schemas, so it would refuse every
+// document, while the pulled image's take the config. A config the pulled image's renderer
+// refuses fails with its refusal and leaves the node uninstalled and the image inactive.
+func TestInstallInPlaceFromRegistryCheckedByThePulledImage(t *testing.T) {
+	host := ocitest.Registry(t)
+	t.Run("accepted", func(t *testing.T) {
+		s, _ := newTestServer(t, maintenance, vda)
+		p := placeOn(t, s, imageWith(t, s, fixtureSchemas(t), ""))
+		if err := sendInstall(t, s, inPlaceFromRegistry(t, host), nil); err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(p.activated, newImage) {
+			t.Errorf("activated %x, want the pulled image", p.activated)
+		}
+	})
+	t.Run("refused", func(t *testing.T) {
+		s, _ := newTestServer(t, maintenance, vda)
+		st := imageWith(t, s, fixtureSchemas(t), "")
+		demo := demoOutput(t, s, `grep -q first && exit 5; cat > "$OUT/demo.json"`, "")
+		demo.Dir = "/run/chalkos/outputs/demo"
+		withOutputs(t, st, map[string]outputs.Definition{"demo": demo})
+		p := placeOn(t, s, st)
+		err := sendInstall(t, s, inPlaceFromRegistry(t, host), nil)
+		if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "output demo: its renderer failed (exit 5)") {
+			t.Fatalf("install = %v, want the pulled image's refusal", err)
+		}
+		if installed, err := install.Installed(s.Paths.StateDir); err != nil || installed || s.installed {
+			t.Errorf("installed %v, %v", installed, err)
+		}
+		if p.activated != nil {
+			t.Errorf("activated %x", p.activated)
+		}
+	})
+}
+
+// TestInstallInPlaceFromRegistryResumes repeats an install whose pull failed part of the way, as
+// the registry did not serve the UKI: the node is not installed and no image is activated, and
+// the install repeated once the registry serves it installs the node.
+func TestInstallInPlaceFromRegistryResumes(t *testing.T) {
+	var failing atomic.Bool
+	failing.Store(true)
+	uki := fmt.Sprintf("/blobs/sha256:%x", sha256.Sum256([]byte("uki")))
+	host := ocitest.RegistryWith(t, func(w http.ResponseWriter, r *http.Request) bool {
+		if failing.Load() && strings.HasSuffix(r.URL.Path, uki) {
+			http.Error(w, "gone", http.StatusNotFound)
+			return true
+		}
+		return false
+	})
+	s, _ := newTestServer(t, maintenance, vda)
+	p := placeOn(t, s, imageWith(t, s, fixtureSchemas(t), ""))
+	h := inPlaceFromRegistry(t, host)
+	if err := sendInstall(t, s, h, nil); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), h.GetSource().GetOci().GetReference()) {
+		t.Fatalf("install with the UKI missing = %v, want a failure naming the reference", err)
+	}
+	if installed, err := install.Installed(s.Paths.StateDir); err != nil || installed || s.installed || p.activated != nil {
+		t.Fatalf("after the failed pull: installed %v, %v; activated %x", installed, err, p.activated)
+	}
+	failing.Store(false)
+	if err := sendInstall(t, s, h, nil); err != nil {
+		t.Fatal(err)
+	}
+	if installed, err := install.Installed(s.Paths.StateDir); err != nil || !installed || !bytes.Equal(p.activated, newImage) {
+		t.Errorf("after the repeated install: installed %v, %v; activated %x", installed, err, p.activated)
+	}
+}
+
+// TestInstallInPlaceFromRegistryOfTheRunningImage installs in place as without an image when the
+// registry's image is the one the node runs: the running image checks the config, and nothing is
+// written into the inactive slot.
+func TestInstallInPlaceFromRegistryOfTheRunningImage(t *testing.T) {
+	host := ocitest.Registry(t)
+	s, _ := newTestServer(t, maintenance, vda)
+	writeSchemas(t, s)
+	fakeImageSlots(t, s).place = func(context.Context, upgrade.Header, func(imageStore, string) error, io.Reader) (upgrade.Result, error) {
+		t.Error("placed the running image")
+		return upgrade.Result{}, nil
+	}
+	var gotHash []byte
+	var got install.Request
+	s.InPlace = func(_ context.Context, req install.Request, rootHash []byte) error {
+		got, gotHash = req, rootHash
+		return nil
+	}
+	h := pulledInstall(t, host, anonymousRegistry(host))
+	h.Config = baseConfig + "---\n" + anonymousRegistry(host)
+	h.Target = &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}
+	h.Image.BootLoader = nil
+	if err := sendInstall(t, s, h, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(gotHash, bytes.Repeat([]byte{0xab}, 32)) || got.Place != nil || got.ActivateImage != nil || got.Config.Version != hashOf(t, h.Config) {
+		t.Errorf("installed %x with %+v", gotHash, got)
+	}
+}
+
+// TestInstallInPlaceStillRefusesAStreamedImage refuses an install in place that describes an
+// image it does not name in a registry: the node pulls an image it installs in place, and takes
+// no chunks of one.
+func TestInstallInPlaceStillRefusesAStreamedImage(t *testing.T) {
+	s, _ := newTestServer(t, maintenance, vda)
+	s.InPlace = func(context.Context, install.Request, []byte) error { t.Error("installed in place"); return nil }
+	h := header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
+	h.Image = &nodev1.ImageHeader{ImageId: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: newImage,
+		Store: imagePart("store"), HashTree: imagePart("hash tree"), Uki: imagePart("uki")}
+	if err := sendInstall(t, s, h, []byte("storehash treeuki")); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "an install in place takes no streamed image") {
+		t.Errorf("install = %v, want the streamed image refused", err)
+	}
+}
+
+// TestInstallInPlaceFromRegistryReadsNoFacts has the pulled image's checker read every fact as
+// null, as the running image's check of an install in place does: a fact of a file this machine
+// holds reads null, as what an earlier attempt left on STATE is not the node's.
+func TestInstallInPlaceFromRegistryReadsNoFacts(t *testing.T) {
+	host := ocitest.Registry(t)
+	s, _ := newTestServer(t, maintenance, vda)
+	st := imageWith(t, s, fixtureSchemas(t), "")
+	probe := filepath.Join(t.TempDir(), "probe.json")
+	write(t, probe, `"machine"`)
+	write(t, filepath.Join(string(st), "nix/store/x/etc/chalkos/facts.json"), `{"probe": {"file": "`+probe+`"}}`)
+	probed := any("unread")
+	s.CheckImage = factProbe{run: s.CheckImage, name: "probe", got: &probed}
+	placeOn(t, s, st)
+	if err := sendInstall(t, s, inPlaceFromRegistry(t, host), nil); err != nil {
+		t.Fatal(err)
+	}
+	if probed != nil {
+		t.Errorf("the pulled image's checker read the fact probe as %v, want null", probed)
+	}
+}
+
+// TestPlaceTakesNoLockItsCallerHolds places and activates an image on the boot disk while the
+// caller holds s.mu, as Install does: the partition table is read under that lock without taking
+// it again, and the fake sfdisk, which prints no table, ends both with an error.
+func TestPlaceTakesNoLockItsCallerHolds(t *testing.T) {
+	s, r := newTestServer(t, maintenance, vda)
+	write(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_IMAGE=worker-metal\nCHALKOS_PLATFORM=metal\n")
+	write(t, s.Paths.Cmdline, "usrhash="+strings.Repeat("ab", 32)+"\n")
+	s.Run = lockWatcher{r, func(args []string) {
+		if s.mu.TryLock() {
+			s.mu.Unlock()
+			t.Errorf("sfdisk %v ran without the storage lock", args)
+		}
+	}}
+	part := imagepart.Part{Size: 1, SHA256: bytes.Repeat([]byte{1}, 32)}
+	h := upgrade.Header{ImageID: "chalkos", Platform: "metal", Architecture: "x86-64",
+		Image: storeslot.Image{RootHash: newImage, Store: part, Verity: part}, UKI: part}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	check := func(imageStore, string) error { t.Error("checked an image never written"); return nil }
+	if _, err := (bootDisk{s}).Place(context.Background(), h, check, bytes.NewReader(nil)); err == nil {
+		t.Error("the image was placed without a partition table")
+	}
+	if _, err := (bootDisk{s}).ActivatePlaced(context.Background(), newImage); err == nil {
+		t.Error("an image was activated without one staged")
+	}
 }

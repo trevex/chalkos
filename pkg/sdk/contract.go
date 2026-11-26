@@ -12,6 +12,7 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config"
 	imagecontract "github.com/trevex/chalkos/pkg/contract"
+	"github.com/trevex/chalkos/pkg/ociimage"
 )
 
 // Contract is what an image accepts as config: the platform it was built for, the schemas of its
@@ -122,4 +123,19 @@ func (c Contract) Checker() (check.Image, error) {
 		}
 	}
 	return check.Image{Schemas: c.Image.Schemas, Target: t, ChangeRules: set, Validators: linked}, nil
+}
+
+// ArtifactContract is the contract of the contract layer of an image in a registry, built for the
+// platform its header names.
+func ArtifactContract(layers []Layer, a *ociimage.Artifact) (Contract, error) {
+	facts, err := ContractFacts(layers, a.Contract.ReadFile)
+	if err != nil {
+		return Contract{}, err
+	}
+	c, err := SchemaContract(layers, a.Contract.Schemas, facts)
+	if err != nil {
+		return Contract{}, fmt.Errorf("%s: %w", a.Reference, err)
+	}
+	c.Platform = a.Header.Platform
+	return c, nil
 }
