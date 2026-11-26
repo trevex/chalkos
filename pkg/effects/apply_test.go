@@ -56,3 +56,13 @@ func TestApplyFails(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+// ByHand quotes the arguments of a command to run that white space, quotes or an empty argument
+// would change, so the operator runs the command's own arguments.
+func TestByHandQuotesArguments(t *testing.T) {
+	a := Actions{Run: [][]string{{"/bin/task", "--label", "blue green", "", "it's"}}}
+	want := `; the delivery is applied, so run /bin/task --label 'blue green' '' 'it'\''s' by hand once that is fixed, or deliver it again`
+	if got := a.ByHand(); got != want {
+		t.Errorf("ByHand = %s\nwant %s", got, want)
+	}
+}

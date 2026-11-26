@@ -63,7 +63,11 @@ func (a Actions) ByHand() string {
 		todo = append(todo, "reload "+strings.Join(a.Reload, " "))
 	}
 	for _, argv := range a.Run {
-		todo = append(todo, "run "+strings.Join(argv, " "))
+		quoted := make([]string, len(argv))
+		for i, arg := range argv {
+			quoted[i] = shellQuote(arg)
+		}
+		todo = append(todo, "run "+strings.Join(quoted, " "))
 	}
 	if len(a.Restart) > 0 {
 		todo = append(todo, "restart "+strings.Join(a.Restart, " "))
@@ -72,6 +76,14 @@ func (a Actions) ByHand() string {
 		return ""
 	}
 	return "; the delivery is applied, so " + strings.Join(todo, " and ") + " by hand once that is fixed, or deliver it again"
+}
+
+// shellQuote puts an argument in single quotes when it is empty or a shell would split or expand it.
+func shellQuote(arg string) string {
+	if arg != "" && !strings.ContainsAny(arg, " \t\n\"'\\$`;&|<>()*?[]{}~#!") {
+		return arg
+	}
+	return "'" + strings.ReplaceAll(arg, "'", `'\''`) + "'"
 }
 
 // ApplyError is what Apply could not do: Err, the failures joined, and ByHand, what the delivery
