@@ -35,6 +35,7 @@ import (
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/sdk"
 	"github.com/trevex/chalkos/pkg/sdk/sdktest"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/tool"
@@ -157,11 +158,11 @@ func (ta *testApp) identity(t *testing.T) identity.Identity {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d, err := checkNodeConfig(nc, ct)
+	d, err := sdk.Check(context.Background(), ct, nc.Name, nc.Documents)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return d.identity
+	return d.Identity
 }
 
 // startNode serves a chalkd in the mode with the test cluster's OS CA. In normal mode it serves

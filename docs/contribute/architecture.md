@@ -48,22 +48,25 @@ flowchart LR
     chalkd -->|config| state["STATE"]
 ```
 
-## A layer spans Nix modules and four Go plugins
+## A layer spans Nix modules and Go plugins
 
 A layer, such as Kubernetes or the router, is a set of NixOS modules plus a Go plugin in each
-program that serves it. `lib/layers.nix` exports the layers as the flake's `nixosModules`. An
-image lists one in its modules, which enables the layer's modules in `modules/node` and writes
-the layer's marker to `/etc/chalkos/layers`.
+program that serves it, and its part in the SDK, which chalkctl and other clients of chalkd share.
+`lib/layers.nix` exports the layers as the flake's `nixosModules`. An image lists one in its
+modules, which enables the layer's modules in `modules/node` and writes the layer's marker to
+`/etc/chalkos/layers`.
 
 | Program | The layer's plugin | Listed in |
 | --- | --- | --- |
 | chalkd | `pkg/chalkd/layers/<layer>`: the layer's API, loops, hooks, commands and actions | `cmd/chalkd/plugins.go` |
 | chalkctl | `pkg/chalkctl/layers/<layer>`: commands, status, delivery, upgrade and rotation hooks | `pkg/chalkctl/layers.go` |
+| SDK | `pkg/sdk/layers/<layer>`: the facts of its images, its linked validators, the documents a node gets and the payloads it issues | embedded by the chalkctl plugin; clients pass it to `pkg/sdk` |
 | Console | `pkg/console/layers/<layer>`: the layer's tab | `cmd/chalkos-console/layers.go` |
 | Status view | `pkg/statusview/layers/<layer>`: the layer's section of a node's status | used by the chalkctl plugin and the console tab |
 
-Common code names no layer. `pkg/inventory` takes its filters from chalkctl's plugins, and
-`pkg/identity` keeps each layer's part without interpreting it.
+Common code names no layer. `pkg/sdk` asks the layers its caller passes, `pkg/inventory` takes
+its filters from chalkctl's plugins through `pkg/sdk`, and `pkg/identity` keeps each layer's part
+without interpreting it.
 [Layer plugins](internals/layer-plugins.md) describes the hooks.
 
 ## Layout rules

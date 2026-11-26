@@ -16,6 +16,7 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/internal/poll"
+	"github.com/trevex/chalkos/pkg/sdk"
 )
 
 // rolloutTrial is how long an ordered delivery keeps a coordinator's config on trial without
@@ -122,11 +123,11 @@ func (r *configRollout) plan(ctx context.Context, names []string) error {
 				if err := trialOpen(name, st); err != nil {
 					return err
 				}
-				ct, err := nodeContract(ctx, conn, name)
+				ct, err := sdk.NodeContract(ctx, conn, sdkLayers(), name)
 				if err != nil {
 					return err
 				}
-				d, err := r.cluster.deliveryFor(name, ct)
+				d, err := r.cluster.deliveryFor(ctx, name, ct)
 				if err != nil {
 					return err
 				}
@@ -281,7 +282,7 @@ func (r *upgradeRun) checkImages(ctx context.Context) error {
 	images := map[string][]*anypb.Any{}
 	for name, n := range r.nodes {
 		if n.image != nil && n.image.contract != nil {
-			images[name] = n.image.contract.facts
+			images[name] = n.image.contract.Facts
 		}
 	}
 	for _, l := range layers {

@@ -8,17 +8,20 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
-	"github.com/trevex/chalkos/pkg/layers"
+	"github.com/trevex/chalkos/pkg/sdk"
+	sdkkubernetes "github.com/trevex/chalkos/pkg/sdk/layers/kubernetes"
 )
 
 // Plugin is chalkctl's Kubernetes layer.
-type Plugin struct{}
+type Plugin struct{ sdkkubernetes.Layer }
 
 var (
 	_ layer.Plugin        = (*Plugin)(nil)
 	_ layer.Commands      = (*Plugin)(nil)
 	_ layer.Status        = (*Plugin)(nil)
-	_ layer.ImageFacts    = (*Plugin)(nil)
+	_ sdk.ImageFacts      = (*Plugin)(nil)
+	_ sdk.Documents       = (*Plugin)(nil)
+	_ sdk.Payloads        = (*Plugin)(nil)
 	_ layer.Delivery      = (*Plugin)(nil)
 	_ layer.Upgrade       = (*Plugin)(nil)
 	_ layer.UpgradeFlags  = (*Plugin)(nil)
@@ -28,9 +31,6 @@ var (
 	_ layer.Rollout       = (*Plugin)(nil)
 	_ layer.Inventory     = (*Plugin)(nil)
 )
-
-// Name is the Kubernetes layer's.
-func (*Plugin) Name() string { return layers.Kubernetes }
 
 // Title is the Kubernetes layer's, which titles its commands in chalkctl's help.
 func (*Plugin) Title() string { return "Kubernetes" }

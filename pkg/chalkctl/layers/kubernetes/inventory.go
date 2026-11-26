@@ -7,11 +7,6 @@ import (
 	"github.com/trevex/chalkos/pkg/kubernetes/translate"
 )
 
-// NodeDocuments leaves the Addon documents to the control planes.
-func (*Plugin) NodeDocuments(docs []config.Document) []config.Document {
-	return translate.NodeDocuments(docs)
-}
-
 // CheckInventory refuses nodes that hold different Cluster, Flannel or ClusterRegistry specs, or a
 // node that holds two documents of one of these kinds.
 func (*Plugin) CheckInventory(c layer.Cluster) error {

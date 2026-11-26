@@ -87,13 +87,13 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 
 	header := &nodev1.InstallHeader{CaCertificate: []byte(t.secrets.OSCABundle()), WipeDisk: f.wipeDisk}
 	var img *diskImage
-	var c contract
+	var c sdk.Contract
 	if !info.Installer {
 		// The node runs its image already, which must be of the node's platform.
 		if err := t.cluster.samePlatform(t.name, info.Platform); err != nil {
 			return err
 		}
-		if c, err = nodeContract(ctx, conn, t.name); err != nil {
+		if c, err = sdk.NodeContract(ctx, conn, sdkLayers(), t.name); err != nil {
 			return err
 		}
 		header.Target = &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}
@@ -117,11 +117,11 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 				return err
 			}
 			header.Origin = &nodev1.InstallHeader_Contract{Contract: &nodev1.ImageContract{
-				SystemDefinitions: definitions, Schemas: c.image.Schemas.Files(), LayerFacts: c.facts,
+				SystemDefinitions: definitions, Schemas: c.Image.Schemas.Files(), LayerFacts: c.Facts,
 			}}
 		}
 	}
-	d, err := t.cluster.deliveryFor(t.name, c)
+	d, err := t.cluster.deliveryFor(ctx, t.name, c)
 	if err != nil {
 		return err
 	}
@@ -136,17 +136,21 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		return err
 	}
 	header.NodeCertificate, header.NodeKey = []byte(nodeCert.Certificate), []byte(nodeCert.Key)
-	fallback := d.identity.Storage.Fallback
+	fallback := d.Identity.Storage.Fallback
 	if header.FallbackSecret, err = a.fallbackSecret(ctx, t, fallback, f.passwordFile); err != nil {
 		return err
 	}
-	if header.Layers, err = payloadsOf(t, time.Now()); err != nil {
+	docs, err := t.cluster.Documents(t.name)
+	if err != nil {
+		return err
+	}
+	if header.Layers, err = sdk.PayloadsOf(sdkLayers(), t.secrets, t.name, docs, time.Now()); err != nil {
 		return err
 	}
 	if img == nil {
 		fmt.Fprintf(a.stdout, "installing %s in place\n", t.name)
 	} else {
-		ref := d.identity.Storage.Disks[storage.SystemDisk].Ref
+		ref := d.Identity.Storage.Disks[storage.SystemDisk].Ref
 		header.Target = &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{
 			Path: ref.Path, Model: ref.Selector.Model, Serial: ref.Selector.Serial,
 			Wwn: ref.Selector.WWN, Size: ref.Selector.Size, Type: ref.Selector.Type,

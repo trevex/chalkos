@@ -14,6 +14,7 @@ import (
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/internal/strs"
 	"github.com/trevex/chalkos/pkg/inventory"
+	"github.com/trevex/chalkos/pkg/sdk"
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
@@ -70,7 +71,7 @@ func (a *app) validate(ctx context.Context, f validateFlags, names []string) err
 	var failed failures
 	out := validation{Nodes: []nodeValidation{}, Warnings: []string{}}
 	for _, name := range nodes {
-		v, err := validateNode(c, name)
+		v, err := validateNode(ctx, c, name)
 		if err != nil {
 			failed.add(name, err)
 			out.Nodes = append(out.Nodes, nodeValidation{Node: name, Error: err.Error(), Warnings: []string{}})
@@ -193,7 +194,7 @@ func (v nodeValidation) line() string {
 
 // validateNode checks a node's config against the image the inventory names for it, as the node
 // would, with what a valid config warrants a warning for. Its errors and warnings name the node.
-func validateNode(cl *cluster, name string) (nodeValidation, error) {
+func validateNode(ctx context.Context, cl *cluster, name string) (nodeValidation, error) {
 	_, md, err := cl.image(name)
 	if err != nil {
 		return nodeValidation{}, err
@@ -206,7 +207,7 @@ func validateNode(cl *cluster, name string) (nodeValidation, error) {
 	if err != nil {
 		return nodeValidation{}, fmt.Errorf("node %s: %w", name, err)
 	}
-	d, err := checkNodeConfig(nc, c)
+	d, err := sdk.Check(ctx, c, nc.Name, nc.Documents)
 	if err != nil {
 		return nodeValidation{}, fmt.Errorf("node %s: %w", name, err)
 	}
@@ -214,11 +215,11 @@ func validateNode(cl *cluster, name string) (nodeValidation, error) {
 		Node: name, Valid: true, Image: nc.ImageName, ImageName: md.Name, Platform: md.Platform, RootHash: md.RootHash,
 		ConfigVersion: d.Version, Warnings: []string{},
 	}
-	for _, w := range d.unpinned {
+	for _, w := range d.Unpinned {
 		v.Warnings = append(v.Warnings, fmt.Sprintf("node %s: %s", name, w))
 	}
 	// STATE follows the SystemDisk's encryption mode, and holds the node's keys and secrets.
-	if d.identity.Storage.Encryption == storage.EncryptionNone {
+	if d.Identity.Storage.Encryption == storage.EncryptionNone {
 		v.Warnings = append(v.Warnings, fmt.Sprintf("node %s: its SystemDisk's encryption.mode is none, so STATE, which holds the node's keys and secrets, is not encrypted", name))
 	}
 	if nc.ImageOCI != "" {

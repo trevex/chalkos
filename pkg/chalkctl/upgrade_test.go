@@ -41,6 +41,7 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/schema/schematest"
+	"github.com/trevex/chalkos/pkg/sdk"
 	"github.com/trevex/chalkos/pkg/sdk/sdktest"
 	"github.com/trevex/chalkos/pkg/statusview"
 )
@@ -1749,11 +1750,19 @@ func TestImageContractReadsLayerFacts(t *testing.T) {
 	dir := t.TempDir()
 	schematest.Copy(t, filepath.Join(dir, "schemas"), sdktest.Schemas...)
 	writeFile(t, filepath.Join(dir, "image.json"), testImageJSON)
-	if c, err := imageContract(dir); err != nil || len(c.target.Translators) != 0 {
+	// translators counts those of the target the contract checks config for.
+	translators := func(c sdk.Contract) int {
+		img, err := c.Checker()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(img.Target.Translators)
+	}
+	if c, err := imageContract(dir); err != nil || translators(c) != 0 {
 		t.Fatalf("without facts/: contract = %+v, %v", c, err)
 	}
 	writeFile(t, filepath.Join(dir, "facts", "kubernetes.json"), testImageJSON)
-	if c, err := imageContract(dir); err != nil || len(c.target.Translators) == 0 {
+	if c, err := imageContract(dir); err != nil || translators(c) == 0 {
 		t.Fatalf("contract = %+v, %v", c, err)
 	}
 	writeFile(t, filepath.Join(dir, "facts", "kubernetes.json"), `{"version": ""}`)

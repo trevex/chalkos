@@ -16,6 +16,7 @@ import (
 	"github.com/trevex/chalkos/pkg/inventory"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
+	"github.com/trevex/chalkos/pkg/sdk"
 )
 
 // cluster is the inventory chalkctl operates on, named as the inventory. Without one it is partial
@@ -62,11 +63,8 @@ func loadInventory(ctx context.Context, path string) (*cluster, error) {
 // readInventory reads the inventory at path, each node's documents filtered by the compiled
 // layers, without checking it.
 func readInventory(ctx context.Context, path string) (*cluster, error) {
-	var filters []inventory.Filter
-	for _, p := range compiled[layer.Inventory]() {
-		filters = append(filters, p.NodeDocuments)
-	}
-	inv, err := inventory.Load(path, filters...)
+	ls := sdkLayers()
+	inv, err := inventory.Load(path, func(docs []config.Document) []config.Document { return sdk.NodeDocuments(ls, docs) })
 	if err != nil {
 		return nil, err
 	}

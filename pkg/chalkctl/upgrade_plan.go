@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/sdk"
 	"github.com/trevex/chalkos/pkg/statusview"
 )
 
@@ -20,7 +21,7 @@ import (
 type upgradeNode struct {
 	rebootNode
 	image    *diskImage
-	delivery *delivery
+	delivery *sdk.Delivery
 	// secret is the fallback secret the delivery's new encrypted volumes are enrolled with, asked
 	// for before any node is drained; empty when it adds none.
 	secret string

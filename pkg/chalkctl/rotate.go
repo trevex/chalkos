@@ -15,6 +15,7 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/internal/cli"
+	"github.com/trevex/chalkos/pkg/sdk"
 )
 
 type rotateFlags struct {
@@ -371,7 +372,11 @@ func (r *rotation) DeliverPayloads(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	payloads, err := payloadsOf(t, time.Now())
+	docs, err := t.cluster.Documents(name)
+	if err != nil {
+		return err
+	}
+	payloads, err := sdk.PayloadsOf(sdkLayers(), t.secrets, name, docs, time.Now())
 	if err != nil {
 		return err
 	}

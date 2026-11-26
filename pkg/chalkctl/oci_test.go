@@ -107,7 +107,7 @@ func TestOCIImageContractAndStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 	ct, err := c.imageContractOf("n1")
-	if err != nil || ct.platform != "metal" || len(ct.image.Schemas.Files()) == 0 {
+	if err != nil || ct.Platform != "metal" || len(ct.Image.Schemas.Files()) == 0 {
 		t.Errorf("imageContractOf = %+v, %v", ct, err)
 	}
 	same, _ := hex.DecodeString(testRootHash)

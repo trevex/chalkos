@@ -17,6 +17,7 @@ import (
 	"github.com/trevex/chalkos/pkg/image"
 	"github.com/trevex/chalkos/pkg/inventory"
 	"github.com/trevex/chalkos/pkg/ociimage"
+	"github.com/trevex/chalkos/pkg/sdk"
 	"github.com/trevex/chalkos/pkg/statusview"
 )
 
@@ -28,7 +29,7 @@ type diskImage struct {
 	header *nodev1.ImageHeader
 	// contract is what the image accepts as config, as its directory or its contract layer says,
 	// which chalkctl checks the inventory's config against.
-	contract *contract
+	contract *sdk.Contract
 	// definitions is the directory of the image's repart definitions of its system region.
 	definitions string
 	// source is where the node takes the image's parts from: nil when chalkctl streams them,
@@ -85,7 +86,7 @@ func openImage(ctx context.Context, path string, bootLoader bool, stderr io.Writ
 	if err != nil {
 		return nil, err
 	}
-	c.platform = img.Info.Platform()
+	c.Platform = img.Info.Platform()
 	img.contract = &c
 	return img, nil
 }

@@ -24,6 +24,7 @@ import (
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/internal/strs"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/sdk"
 	"github.com/trevex/chalkos/pkg/statusview"
 	"github.com/trevex/chalkos/pkg/storage"
 )
@@ -190,7 +191,7 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags, named []string) error
 	if err := r.checkImages(ctx); err != nil {
 		return err
 	}
-	if err := r.chooseConfig(f.diff); err != nil {
+	if err := r.chooseConfig(ctx, f.diff); err != nil {
 		return err
 	}
 	if f.diff {
@@ -211,7 +212,7 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags, named []string) error
 // chooseConfig decides whether the run delivers the inventory's config with the images, which
 // only an admin may, and checks it against them before any node is drained. upgrade --diff
 // needs the admin role.
-func (r *upgradeRun) chooseConfig(diff bool) error {
+func (r *upgradeRun) chooseConfig(ctx context.Context, diff bool) error {
 	switch {
 	case !r.role.Allows(pki.RoleAdmin) && diff:
 		return fmt.Errorf("upgrade --diff compares the config an upgrade delivers, which needs the admin role; the %s role cannot deliver config, so each node gives the image its pending config, else carries its own over", roleLabel(r.role))
@@ -223,7 +224,7 @@ func (r *upgradeRun) chooseConfig(diff bool) error {
 		}
 		return nil
 	}
-	return r.checkConfig()
+	return r.checkConfig(ctx)
 }
 
 // withhold keeps the run's config and fallback secrets from the nodes, which accept them with an
@@ -292,7 +293,7 @@ func roleLabel(role pki.Role) string {
 
 // deliveryOf is the config the node gets with its image; nil when the run withholds config or has
 // no inventory.
-func (r *upgradeRun) deliveryOf(n *upgradeNode) *delivery {
+func (r *upgradeRun) deliveryOf(n *upgradeNode) *sdk.Delivery {
 	if r.withheld.Load() {
 		return nil
 	}
@@ -356,7 +357,7 @@ func (r *upgradeRun) configChanges(ctx context.Context, conn *client.Conn, n *up
 // checkConfig checks each node's inventory config against its new image before any node is drained
 // or sent its image, and keeps it for delivery. Nodes that run the image already are checked too.
 // Each node checks the config again; on a partial cluster that is the only check.
-func (r *upgradeRun) checkConfig() error {
+func (r *upgradeRun) checkConfig(ctx context.Context) error {
 	if r.cluster.Partial() {
 		return nil
 	}
@@ -366,7 +367,7 @@ func (r *upgradeRun) checkConfig() error {
 		if err != nil {
 			return err
 		}
-		d, err := checkNodeConfig(nc, ct)
+		d, err := sdk.Check(ctx, ct, nc.Name, nc.Documents)
 		if err != nil {
 			return fmt.Errorf("the config of %s: %w", name, err)
 		}
@@ -560,7 +561,7 @@ func (r *upgradeRun) fallbacks(ctx context.Context) error {
 	for _, name := range slices.Sorted(maps.Keys(r.nodes)) {
 		n := r.nodes[name]
 		d := r.deliveryOf(n)
-		if d == nil || d.identity.Storage.Fallback == storage.FallbackNone {
+		if d == nil || d.Identity.Storage.Fallback == storage.FallbackNone {
 			continue
 		}
 		if err := r.reach.Call(name, func(conn *client.Conn) error {
@@ -575,7 +576,7 @@ func (r *upgradeRun) fallbacks(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			n.secret, err = r.a.fallbackOf(ctx, st, t, d.identity.Storage, r.passwordFile, "")
+			n.secret, err = r.a.fallbackOf(ctx, st, t, d.Identity.Storage, r.passwordFile, "")
 			return err
 		}); err != nil {
 			return err
