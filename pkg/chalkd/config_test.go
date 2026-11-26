@@ -1385,11 +1385,12 @@ func TestApplyConfigRefusesAnOutputThatFails(t *testing.T) {
 // from the image's checker.
 func TestApplyConfigRefusesAsTheChecker(t *testing.T) {
 	for name, tc := range map[string]struct {
-		next  string
-		stage check.Stage
+		next   string
+		stage  check.Stage
+		reason nodev1.ErrorReason
 	}{
-		"an invalid set": {baseConfig + "---\napiVersion: demo.example.org/v1alpha1\nkind: Demo\nmetadata: {name: one}\nspec: {name: twice}\n", check.StageConfig},
-		"a renderer":     {strings.Replace(baseConfig, "name: first", "name: second", 1), check.StageOutputs},
+		"an invalid set": {baseConfig + "---\napiVersion: demo.example.org/v1alpha1\nkind: Demo\nmetadata: {name: one}\nspec: {name: twice}\n", check.StageConfig, nodev1.ErrorReason_ERROR_REASON_CONFIG_REFUSED},
+		"a renderer":     {strings.Replace(baseConfig, "name: first", "name: second", 1), check.StageOutputs, nodev1.ErrorReason_ERROR_REASON_UNSPECIFIED},
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, _ := configServer(t)
@@ -1410,9 +1411,10 @@ func TestApplyConfigRefusesAsTheChecker(t *testing.T) {
 			if !ok {
 				t.Fatalf("the delivery: %v", delivered)
 			}
-			// The checker's refusal reads as the running image's refusal of the same config.
-			want := s.imageRefusal(&checkv1.Refusal{Stage: string(r.Stage), Message: r.Message}, "", nil)
-			if ce.Message() != want.Error() || ce.Code() != codeOf(want) {
+			// The checker's refusal reads as the running image's refusal of the same config, with
+			// its reason, which a renderer that fails does not have.
+			want := s.imageRefusal(&checkv1.Refusal{Stage: string(r.Stage), Message: r.Message, Reason: r.ErrorReason()}, "", nil)
+			if ce.Message() != want.Error() || ce.Code() != codeOf(want) || reasonOf(delivered) != tc.reason || reasonOf(want) != tc.reason {
 				t.Errorf("the delivery is refused with %v, the checker's refusal reads %v", ce, want)
 			}
 		})

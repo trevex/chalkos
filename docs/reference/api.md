@@ -1196,6 +1196,7 @@ the error as a ReasonDetail. Clients match on the reason, never on the message.
 | `ERROR_REASON_UNSPECIFIED` | 0 | No reason given. |
 | `ERROR_REASON_TRIAL_RECORD_UNREADABLE` | 1 | The record of the config's trial cannot be read. The node refuses other changes until RollbackConfig restores the previous config, which removes the record. The code is FAILED_PRECONDITION. |
 | `ERROR_REASON_NO_FALLBACK_SECRET` | 2 | A new TPM2-encrypted volume needs the fallback secret, and the request sent none. |
+| `ERROR_REASON_CONFIG_REFUSED` | 3 | The image refused the config itself, and the request fails the same way until the config or the image changes: the image's schemas or translation do not accept the set, its change rules, the storage change rules among them, are not met, or one of its validators or outputs reports refusals of the documents. A rule that cannot be evaluated, a fact that cannot be loaded and a program that fails without saying what it refuses refuse with no reason. A refusal by a change rule that names a reason of its own, such as NO_FALLBACK_SECRET, carries that reason instead. The code is INVALID_ARGUMENT for a set the schemas or translation refuse and FAILED_PRECONDITION otherwise. |
 
 ### Mode { #enum-mode }
 

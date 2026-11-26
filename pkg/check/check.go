@@ -80,7 +80,8 @@ const (
 
 // Refusal is a config a check refused: the stage that refused it and why. Failures holds the
 // change rules not met (StageRules), Failed the validators or outputs that failed. Reason is
-// the reason of the first failed rule that names one, which the refusal carries to the client.
+// the reason the refusal carries to the client: the reason of the first failed rule that names
+// one, or, for a refusal an image's checker reported, the reason ErrorReason gave there.
 type Refusal struct {
 	Stage    Stage
 	Message  string
@@ -91,8 +92,32 @@ type Refusal struct {
 
 func (r *Refusal) Error() string { return r.Message }
 
-// ErrorReason is the reason of the refusal, as constants.RuleReasons names it.
-func (r *Refusal) ErrorReason() string { return r.Reason }
+// RefusedReason is the reason of a lasting refusal whose rules name none: CONFIG_REFUSED, the
+// node API's ErrorReason of a config an image refuses, without its ERROR_REASON_ prefix.
+const RefusedReason = "CONFIG_REFUSED"
+
+// Lasting reports whether the image refuses the config itself, so the refusal stands until the
+// config or the image changes: a set the translation refuses, change rules the config does not
+// meet, or a validator or output that reports refusals of the documents. A rule that cannot be
+// evaluated, a fact that cannot be loaded or a program that fails without saying what it refuses
+// is not lasting.
+func (r *Refusal) Lasting() bool {
+	return r.Stage == StageConfig || len(r.Failures) > 0 ||
+		slices.ContainsFunc(r.Failed, func(f outputs.Failure) bool { return len(f.Refusals) > 0 })
+}
+
+// ErrorReason is the reason the refusal carries to the client: Reason when it has one, as
+// constants.RuleReasons names a rule's, RefusedReason for another lasting refusal, and none
+// otherwise.
+func (r *Refusal) ErrorReason() string {
+	switch {
+	case r.Reason != "":
+		return r.Reason
+	case r.Lasting():
+		return RefusedReason
+	}
+	return ""
+}
 
 // Rules checks in.Documents against the image's change rules, which compare it with in.Old. A rule
 // that cannot be checked, or reads a fact that cannot be loaded, refuses the config too. Without

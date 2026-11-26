@@ -2,8 +2,12 @@ package sdk
 
 import (
 	"context"
+	"slices"
 
+	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/constants"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/rules"
 )
@@ -55,4 +59,16 @@ func CheckRules(c Contract, next, old config.Redacted, node string) error {
 		return err
 	}
 	return img.Rules(rules.Input{Documents: next, Old: old.Defaulted(img.Schemas), Node: node})
+}
+
+// Refused reports whether err is a refusal of config by an image that stands until the config or
+// the image changes, so a caller that retries stops: a lasting *check.Refusal of Check or the
+// other local checks, or a node's refusal, either with the reason CONFIG_REFUSED or with a reason
+// a change rule may name, one of constants.RuleReasons such as NO_FALLBACK_SECRET; client.Reason
+// tells which. A refusal because a rule could not be evaluated, a fact could not be loaded or a
+// program failed without saying what it refuses carries no reason and is not Refused: it may pass
+// next time.
+func Refused(err error) bool {
+	reason := client.Reason(err)
+	return reason == nodev1.ErrorReason_ERROR_REASON_CONFIG_REFUSED || slices.Contains(constants.RuleReasons, client.ReasonName(reason))
 }

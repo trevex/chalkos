@@ -38,8 +38,10 @@ func (e *codedError) Code() connect.Code { return e.code }
 
 func (e *codedError) ErrorReason() string { return client.ReasonName(e.reason) }
 
-// Reasoned is an error that gives the reason of a refusal, such as an error of Reasonf or an image's
-// refusal of config by a rule that names one: the reason's name in the node API without its
+// Reasoned is an error that gives the reason of a refusal, such as an error of Reasonf or a
+// *check.Refusal, an image's refusal of config: the reason its failed rule names, or
+// CONFIG_REFUSED for a refusal that stands until the config or the image changes, as
+// check.Refusal.ErrorReason gives it. The reason is its name in the node API without the
 // ERROR_REASON_ prefix, as client.ReasonName gives it; empty for none.
 type Reasoned interface {
 	error

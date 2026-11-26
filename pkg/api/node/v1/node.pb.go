@@ -401,6 +401,15 @@ const (
 	ErrorReason_ERROR_REASON_TRIAL_RECORD_UNREADABLE ErrorReason = 1
 	// A new TPM2-encrypted volume needs the fallback secret, and the request sent none.
 	ErrorReason_ERROR_REASON_NO_FALLBACK_SECRET ErrorReason = 2
+	// The image refused the config itself, and the request fails the same way until the config or
+	// the image changes: the image's schemas or translation do not accept the set, its change rules,
+	// the storage change rules among them, are not met, or one of its validators or outputs reports
+	// refusals of the documents. A rule that cannot be evaluated, a fact that cannot be loaded and a
+	// program that fails without saying what it refuses refuse with no reason. A refusal by a change
+	// rule that names a reason of its own, such as NO_FALLBACK_SECRET, carries that reason instead.
+	// The code is INVALID_ARGUMENT for a set the schemas or translation refuse and
+	// FAILED_PRECONDITION otherwise.
+	ErrorReason_ERROR_REASON_CONFIG_REFUSED ErrorReason = 3
 )
 
 // Enum value maps for ErrorReason.
@@ -409,11 +418,13 @@ var (
 		0: "ERROR_REASON_UNSPECIFIED",
 		1: "ERROR_REASON_TRIAL_RECORD_UNREADABLE",
 		2: "ERROR_REASON_NO_FALLBACK_SECRET",
+		3: "ERROR_REASON_CONFIG_REFUSED",
 	}
 	ErrorReason_value = map[string]int32{
 		"ERROR_REASON_UNSPECIFIED":             0,
 		"ERROR_REASON_TRIAL_RECORD_UNREADABLE": 1,
 		"ERROR_REASON_NO_FALLBACK_SECRET":      2,
+		"ERROR_REASON_CONFIG_REFUSED":          3,
 	}
 )
 
@@ -6739,11 +6750,12 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x1cACTIVATION_STATE_IN_PROGRESS\x10\x03\x12 \n" +
 	"\x1cACTIVATION_STATE_INTERRUPTED\x10\x04\x12\x1b\n" +
 	"\x17ACTIVATION_STATE_FAILED\x10\x05\x12\x1d\n" +
-	"\x19ACTIVATION_STATE_COMPLETE\x10\x06*z\n" +
+	"\x19ACTIVATION_STATE_COMPLETE\x10\x06*\x9b\x01\n" +
 	"\vErrorReason\x12\x1c\n" +
 	"\x18ERROR_REASON_UNSPECIFIED\x10\x00\x12(\n" +
 	"$ERROR_REASON_TRIAL_RECORD_UNREADABLE\x10\x01\x12#\n" +
-	"\x1fERROR_REASON_NO_FALLBACK_SECRET\x10\x022\xd5\r\n" +
+	"\x1fERROR_REASON_NO_FALLBACK_SECRET\x10\x02\x12\x1f\n" +
+	"\x1bERROR_REASON_CONFIG_REFUSED\x10\x032\xd5\r\n" +
 	"\vNodeService\x12C\n" +
 	"\x04Info\x12\x1c.chalkos.node.v1.InfoRequest\x1a\x1d.chalkos.node.v1.InfoResponse\x12F\n" +
 	"\x05Disks\x12\x1d.chalkos.node.v1.DisksRequest\x1a\x1e.chalkos.node.v1.DisksResponse\x12O\n" +

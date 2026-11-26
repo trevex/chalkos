@@ -15,6 +15,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/check"
+	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/contract"
@@ -48,11 +49,15 @@ func writeValidators(t *testing.T, s *Server, programs map[string]string) {
 
 // A validator that refuses or fails refuses a delivery after the rules and before the renderers,
 // before it changes anything: the refusal reads as a renderer's, and what the program wrote to
-// standard error stays in the journal. A dry run refuses it alike.
+// standard error stays in the journal. A dry run refuses it alike. A refusal of the documents
+// carries the reason CONFIG_REFUSED, and a program that fails none.
 func TestApplyConfigRefusesByAValidator(t *testing.T) {
-	for name, tc := range map[string]struct{ program, want string }{
-		"a refusal": {vetoes, "the config is refused: Demo/one: spec.name: the name is vetoed"},
-		"a failure": {`echo "read $(cat)" >&2; exit 2`, "validator veto: its program failed (exit 2); see the node's journal"},
+	for name, tc := range map[string]struct {
+		program, want string
+		reason        nodev1.ErrorReason
+	}{
+		"a refusal": {vetoes, "the config is refused: Demo/one: spec.name: the name is vetoed", nodev1.ErrorReason_ERROR_REASON_CONFIG_REFUSED},
+		"a failure": {`echo "read $(cat)" >&2; exit 2`, "validator veto: its program failed (exit 2); see the node's journal", nodev1.ErrorReason_ERROR_REASON_UNSPECIFIED},
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, r := configServer(t)
@@ -66,7 +71,7 @@ func TestApplyConfigRefusesByAValidator(t *testing.T) {
 			_, dryErr := dryRun(s, next)
 			_, err := sendConfig(s, next)
 			for _, err := range []error{dryErr, err} {
-				if codeOf(err) != connect.CodeFailedPrecondition || !strings.HasSuffix(err.Error(), tc.want) || strings.Contains(err.Error(), "read ") {
+				if codeOf(err) != connect.CodeFailedPrecondition || reasonOf(err) != tc.reason || !strings.HasSuffix(err.Error(), tc.want) || strings.Contains(err.Error(), "read ") {
 					t.Errorf("err = %v, want %q", err, tc.want)
 				}
 			}
@@ -124,7 +129,8 @@ func TestApplyConfigRefusesByAValidatorAsTheChecker(t *testing.T) {
 	}
 }
 
-// An install in place runs the running image's validators before it installs anything.
+// An install in place runs the running image's validators before it installs anything. A program
+// that fails without saying what it refuses gives the refusal no reason: it may pass next time.
 func TestInstallInPlaceRunsTheValidators(t *testing.T) {
 	s, _ := newTestServer(t, maintenance, vda)
 	writeSchemas(t, s)
@@ -134,7 +140,7 @@ func TestInstallInPlaceRunsTheValidators(t *testing.T) {
 	h := header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
 	h.Config = baseConfig
 	err := sendInstall(t, s, h, nil)
-	if installed || connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "validator veto: its program failed (exit 2)") {
+	if installed || connect.CodeOf(err) != connect.CodeFailedPrecondition || client.Reason(err) != nodev1.ErrorReason_ERROR_REASON_UNSPECIFIED || !strings.Contains(err.Error(), "validator veto: its program failed (exit 2)") {
 		t.Errorf("install: %v, installed %v", err, installed)
 	}
 }

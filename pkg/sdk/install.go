@@ -123,8 +123,8 @@ func fallbackSecret(r InstallRequest, fallback string) (string, error) {
 }
 
 // Install installs in place the node in maintenance mode that conn reaches, with the image it runs
-// or with r.Image. A config the image refuses is a *check.Refusal. An install that failed
-// continues when it is run again.
+// or with r.Image. A config the image refuses, as Install checks it first or as the node checks
+// it, is Refused. An install that failed continues when it is run again.
 func Install(ctx context.Context, conn *client.Conn, r InstallRequest) error {
 	var (
 		c   Contract

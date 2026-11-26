@@ -198,8 +198,10 @@ type Refusal struct {
 	Message string `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
 	// The change rules the config does not meet, each as a refusal names it, for the stage rules.
 	Failures []string `protobuf:"bytes,3,rep,name=failures,proto3" json:"failures,omitempty"`
-	// The reason the failed rule names, for the stage rules, as constants.RuleReasons in
-	// pkg/constants names it, such as NO_FALLBACK_SECRET; empty when it names none.
+	// The reason the refusal carries to the client, as the node API's ErrorReason names it without
+	// its ERROR_REASON_ prefix: the reason the failed rule names, as constants.RuleReasons in
+	// pkg/constants names it, such as NO_FALLBACK_SECRET, or else CONFIG_REFUSED for a refusal that
+	// stands until the config or the image changes; empty for any other refusal.
 	Reason        string `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
