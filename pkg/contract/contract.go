@@ -153,7 +153,8 @@ func Load(dir string, opts ...Option) (*Contract, error) {
 func (c *Contract) checkWithheld() error {
 	withheld := map[string]bool{}
 	for _, k := range c.Schemas.Kinds() {
-		withheld[k.Kind] = k.Withheld
+		// Inputs name kinds without their version: a name is withheld when one of its versions is.
+		withheld[k.Kind] = withheld[k.Kind] || k.Withheld
 	}
 	var errs []error
 	check := func(file, what, name string, kinds []string) {

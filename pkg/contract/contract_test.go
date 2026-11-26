@@ -212,3 +212,31 @@ func TestZeroContractHasNoRules(t *testing.T) {
 		t.Errorf("EffectRules = %v, %v", effects, err)
 	}
 }
+
+// TestLoadRefusesWithheldKindOfOneVersion refuses an output of Addon while one of the schemas of
+// that name withholds it, also when the schema of another version, read after it, does not.
+func TestLoadRefusesWithheldKindOfOneVersion(t *testing.T) {
+	dir := newDir(t, map[string]string{
+		OutputsFile: `{"demo": {"inputs": ["Addon"], "render": ["/nix/store/x-demo/bin/render"], "dir": "/run/demo", "user": "root", "group": "root", "mode": "0644"}}`,
+	})
+	raw, err := os.ReadFile(filepath.Join(dir, SchemasDir, "kubernetes.chalkos.dev_v1alpha1_Addon.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sch map[string]any
+	if err := json.Unmarshal(raw, &sch); err != nil {
+		t.Fatal(err)
+	}
+	sch["properties"].(map[string]any)["apiVersion"] = map[string]any{"const": "kubernetes.chalkos.dev/v1alpha2"}
+	kind := sch["x-chalkos-kind"].(map[string]any)
+	kind["version"] = "v1alpha2"
+	kind["withheld"] = false
+	raw, _ = json.Marshal(sch)
+	if err := os.WriteFile(filepath.Join(dir, SchemasDir, "kubernetes.chalkos.dev_v1alpha2_Addon.json"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(dir, OutputsFile) + ": output demo: the image withholds Addon documents"
+	if _, err := Load(dir); err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("err = %v\nwant one with %q", err, want)
+	}
+}
