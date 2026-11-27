@@ -17,6 +17,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
@@ -152,14 +153,21 @@ func clusterName(n, domain string) string {
 	return ""
 }
 
+// ControlPlaneLabel marks the Nodes of control planes, as kubeadm's are marked. The kubelet may not
+// set it itself: it refuses node-role.kubernetes.io labels among its --node-labels.
+const ControlPlaneLabel = "node-role.kubernetes.io/control-plane"
+
 // Approver approves kubelet serving certificate requests that Approvable accepts and leaves
 // the others pending, as it does those of revoked nodes. It also keeps the revoked nodes'
-// admission policy in step with their ConfigMap.
+// admission policy in step with their ConfigMap and labels its control plane's Node.
 type Approver struct {
 	Client kubernetes.Interface
 	// Cluster is the cluster whose ranges, virtual addresses, endpoint and domain no node's
 	// serving certificate may hold.
 	Cluster k8s.Cluster
+	// Node is the name of the control plane the approver runs on, whose Node it labels with
+	// ControlPlaneLabel; empty labels none.
+	Node string
 	// Revoked returns the revoked nodes; nil reads them through Client. Tests replace it.
 	Revoked func(context.Context) (revoked.List, error)
 	// refused remembers the requests already logged as refused.
@@ -169,8 +177,8 @@ type Approver struct {
 	enforced *string
 }
 
-// Run approves requests and enforces the revoked nodes' admission policy every interval until
-// ctx ends.
+// Run approves requests, enforces the revoked nodes' admission policy and labels the control
+// plane's Node every interval until ctx ends.
 func (a *Approver) Run(ctx context.Context, interval time.Duration) {
 	for {
 		if err := a.Once(ctx); err != nil && ctx.Err() == nil {
@@ -178,6 +186,9 @@ func (a *Approver) Run(ctx context.Context, interval time.Duration) {
 		}
 		if err := a.Enforce(ctx); err != nil && ctx.Err() == nil {
 			log.Printf("enforce the revoked nodes' admission policy: %v", err)
+		}
+		if err := a.Label(ctx); err != nil && ctx.Err() == nil {
+			log.Printf("label the control plane's Node: %v", err)
 		}
 		select {
 		case <-ctx.Done():
@@ -337,4 +348,25 @@ func (a *Approver) Enforce(ctx context.Context) error {
 	}
 	a.enforced = &version
 	return nil
+}
+
+// Label gives the approver's control plane's Node the label ControlPlaneLabel, once the kubelet
+// registered it.
+func (a *Approver) Label(ctx context.Context) error {
+	if a.Node == "" {
+		return nil
+	}
+	n, err := a.Client.CoreV1().Nodes().Get(ctx, a.Node, metav1.GetOptions{})
+	switch {
+	case apierrors.IsNotFound(err):
+		return nil
+	case err != nil:
+		return err
+	}
+	if _, ok := n.Labels[ControlPlaneLabel]; ok {
+		return nil
+	}
+	patch := []byte(`{"metadata":{"labels":{"` + ControlPlaneLabel + `":""}}}`)
+	_, err = a.Client.CoreV1().Nodes().Patch(ctx, a.Node, types.MergePatchType, patch, metav1.PatchOptions{FieldManager: FieldManager})
+	return err
 }
