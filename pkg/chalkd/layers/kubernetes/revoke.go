@@ -22,7 +22,6 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
-	"github.com/trevex/chalkos/pkg/internal/strs"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kapply "github.com/trevex/chalkos/pkg/kubernetes/apply"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
@@ -36,18 +35,16 @@ func (p *Plugin) RevokeNode(ctx context.Context, req *kubernetesv1.RevokeNodeReq
 		return nil, err
 	}
 	// A bootstrapped control plane's API server keeps the revoked nodes.
-	cs, cp, err := p.k.apiClient(p.k.etcdMember)
+	cs, _, err := p.k.apiClient(p.k.etcdMember)
 	if err != nil {
 		return nil, err
 	}
 	var list revoked.List
 	var at time.Time
 	if req.Refresh {
-		// A refresh keeps the node revoked, so it prunes nothing: the node's entry may have expired
-		// although it holds new certificates.
 		at, list, err = refreshRevocation(ctx, cs, name)
 	} else {
-		at, list, err = revokeNode(ctx, cs, cp.cluster, name)
+		at, list, err = revokeNode(ctx, cs, name)
 	}
 	if err != nil {
 		return nil, err
@@ -80,10 +77,9 @@ func (p *Plugin) RevokeNode(ctx context.Context, req *kubernetesv1.RevokeNodeReq
 	}, nil
 }
 
-// revokeNode lists the node as revoked, keeping the time of an earlier revocation, once the
-// expired nodes are dropped to make room for it. It returns the time and the revoked nodes with it.
-func revokeNode(ctx context.Context, cs kubernetes.Interface, c k8s.Cluster, name string) (time.Time, revoked.List, error) {
-	pruneExpiredLogged(ctx, cs, c)
+// revokeNode lists the node as revoked, keeping the time of an earlier revocation, if the list has
+// room for it. It returns the time and the revoked nodes with it.
+func revokeNode(ctx context.Context, cs kubernetes.Interface, name string) (time.Time, revoked.List, error) {
 	list, err := policyRoom(ctx, cs, name)
 	if err != nil {
 		return time.Time{}, nil, err
@@ -151,7 +147,6 @@ func (p *Plugin) UnrevokeNode(ctx context.Context, req *kubernetesv1.UnrevokeNod
 	if !listed {
 		return nil, layer.Errorf(connect.CodeNotFound, "node %s is not revoked", name)
 	}
-	pruneExpiredLogged(ctx, cs, cp.cluster)
 	if len(stale) > 0 {
 		log.Printf("kubernetes: unrevoked node %s, forced: %s", name, staleWarning(name, at, stale))
 	} else {
@@ -180,8 +175,9 @@ func policyRoom(ctx context.Context, cs kubernetes.Interface, name string) (revo
 	if n := revoked.LiteralLength(list); n > revoked.MaxLiteralLength {
 		return nil, layer.Reasonf(connect.CodeFailedPrecondition, nodev1.ErrorReason_ERROR_REASON_REVOKED_LIST_FULL,
 			"revoking %s would make the admission policy's map of the %d revoked nodes %d characters long, "+
-				"past the %d chalkos allows below the API server's limit on an expression; make room: rotate the CAs with "+
-				"chalkctl rotate os-ca and chalkctl rotate kubernetes-ca, each to its finish, which drops the nodes revoked before both",
+				"past the %d chalkos allows below the API server's limit on an expression; make room: drop the expired revocations with "+
+				"chalkctl node prune-revoked, or rotate the CAs with chalkctl rotate os-ca and chalkctl rotate kubernetes-ca, "+
+				"each to its finish, which drops the nodes revoked before both",
 			name, len(list), n, revoked.MaxLiteralLength)
 	}
 	return list, nil
@@ -205,53 +201,13 @@ func certValidity(c k8s.Cluster) time.Duration {
 	return v
 }
 
-// dropExpired drops the revoked nodes whose certificates have all expired by now, when the
-// cluster c signs them for certValidity, and applies the admission policy again when it dropped
-// one. Its errors start with "prune the revoked nodes: ".
-//
-// Each control plane drops expired nodes by itself, through its own API server: when it revokes
-// or unrevokes a node, and every Timing.PruneRevoked. That rule depends on the entry alone. Nodes
-// revoked before every trusted OS CA and Kubernetes CA was made are dropped only by
-// PruneRevoked, called once every node confirmed the finish of a CA's rotation: control planes
-// finish a rotation one after another, and an entry one of them could drop for its CAs may still
-// keep a node out of another that trusts an old CA yet.
-func dropExpired(ctx context.Context, cs kubernetes.Interface, c k8s.Cluster) error {
-	validity, now := certValidity(c), time.Now()
-	removed, err := revoked.Prune(ctx, cs, func(_ string, at time.Time) bool {
-		return revoked.Expired(at, now, validity)
-	})
-	if err != nil || len(removed) == 0 {
-		return err
-	}
-	log.Printf("kubernetes: dropped the revoked nodes %s: their certificates expired", strings.Join(removed, ", "))
-	if err := kapply.EnforceRevoked(ctx, cs); err != nil {
-		return fmt.Errorf("prune the revoked nodes: %w", err)
-	}
-	return nil
-}
-
-// pruneExpired drops, through the node's own API server, the revoked nodes whose certificates
-// have all expired.
-func (k *side) pruneExpired(ctx context.Context) error {
-	cs, cp, err := k.apiClient(k.etcdMember)
-	if err != nil {
-		return fmt.Errorf("prune the revoked nodes: %w", err)
-	}
-	return dropExpired(ctx, cs, cp.cluster)
-}
-
-// pruneExpiredLogged drops the expired revoked nodes and logs a failure, which holds up no
-// revocation or unrevocation.
-func pruneExpiredLogged(ctx context.Context, cs kubernetes.Interface, c k8s.Cluster) {
-	if err := dropExpired(ctx, cs, c); err != nil {
-		log.Printf("kubernetes: %v", err)
-	}
-}
-
 // PruneRevoked drops the revoked nodes whose certificates have all expired, and those revoked
 // before every OS CA and Kubernetes CA the control plane trusts was made, whose certificates
 // chain to no trusted CA. It applies the admission policy again even when it dropped none, so
 // calling it again applies a policy an earlier call failed to.
+//
+// A control plane drops no revoked node by itself: only this call does, which chalkctl makes once
+// it knows that no revocation it handed certificates past is left unrefreshed.
 func (p *Plugin) PruneRevoked(ctx context.Context, _ *kubernetesv1.PruneRevokedRequest) (*kubernetesv1.PruneRevokedResponse, error) {
 	cs, cp, err := p.k.apiClient(p.k.etcdMember)
 	if err != nil {
@@ -287,35 +243,6 @@ func (p *Plugin) PruneRevoked(ctx context.Context, _ *kubernetesv1.PruneRevokedR
 		ListLength:   uint32(revoked.LiteralLength(list)),
 		ListCapacity: revoked.MaxLiteralLength,
 	}, nil
-}
-
-// pruneRevokedEvery prunes the revoked nodes with hooks.PruneRevoked now and every
-// timing.PruneRevoked until ctx ends. A failed prune, as while the API server does not answer yet
-// after a restart, is tried again after timing.Poll, then after twice as long each time, up to
-// timing.PruneRevoked. The first failure of a streak and the prune that ends it are logged.
-func (k *side) pruneRevokedEvery(ctx context.Context) {
-	failed, retry := 0, k.timing.Poll
-	for {
-		wait := k.timing.PruneRevoked
-		switch err := k.hooks.PruneRevoked(ctx); {
-		case ctx.Err() != nil:
-			return
-		case err != nil:
-			if failed == 0 {
-				log.Printf("kubernetes: %v; trying again in %v, then less and less often", err, retry)
-			}
-			failed++
-			wait, retry = retry, min(2*retry, k.timing.PruneRevoked)
-		case failed > 0:
-			log.Printf("kubernetes: pruned the revoked nodes after %s", strs.Count(failed, "failed attempt"))
-			failed, retry = 0, k.timing.Poll
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(wait):
-		}
-	}
 }
 
 // checkNodeName refuses what is no Kubernetes node name, which the revoked nodes would never

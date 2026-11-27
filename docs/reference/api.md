@@ -1197,7 +1197,7 @@ the error as a ReasonDetail. Clients match on the reason, never on the message.
 | `ERROR_REASON_TRIAL_RECORD_UNREADABLE` | 1 | The record of the config's trial cannot be read. The node refuses other changes until RollbackConfig restores the previous config, which removes the record. The code is FAILED_PRECONDITION. |
 | `ERROR_REASON_NO_FALLBACK_SECRET` | 2 | A new TPM2-encrypted volume needs the fallback secret, and the request sent none. |
 | `ERROR_REASON_CONFIG_REFUSED` | 3 | The image refused the config itself, and the request fails the same way until the config or the image changes: the image's schemas or translation do not accept the set, its change rules, the storage change rules among them, are not met, or one of its validators or outputs reports refusals of the documents. A rule that cannot be evaluated, a fact that cannot be loaded and a program that fails without saying what it refuses refuse with no reason. A refusal by a change rule that names a reason of its own, such as NO_FALLBACK_SECRET, carries that reason instead. The code is INVALID_ARGUMENT for a set the schemas or translation refuse and FAILED_PRECONDITION otherwise. |
-| `ERROR_REASON_REVOKED_LIST_FULL` | 4 | The revoked nodes' list has no room for another node: the admission policy's map of revoked nodes would grow longer than the API server compiles. RevokeNode refuses so with FAILED_PRECONDITION. Control planes drop the nodes whose certificates have all expired, and the Kubernetes layer's PruneRevoked, which chalkctl rotate --finish calls, those revoked before every trusted OS CA and Kubernetes CA was made, so rotating the OS CA and the Kubernetes CA makes room. |
+| `ERROR_REASON_REVOKED_LIST_FULL` | 4 | The revoked nodes' list has no room for another node: the admission policy's map of revoked nodes would grow longer than the API server compiles. RevokeNode refuses so with FAILED_PRECONDITION. The Kubernetes layer's PruneRevoked, which chalkctl node prune-revoked calls, makes room: it drops the nodes whose certificates have all expired, and those revoked before every trusted OS CA and Kubernetes CA was made, which chalkctl rotate --finish of the OS CA and the Kubernetes CA leaves. |
 | `ERROR_REASON_BOOTSTRAPPED_ALREADY` | 5 | The node is an etcd member of a cluster already: it bootstrapped the cluster or joined it. Bootstrap refuses so with FAILED_PRECONDITION; a caller that bootstraps the first control plane once treats the refusal as done. |
 | `ERROR_REASON_INSTALLED_AND_REBOOTS` | 6 | The node accepted an install and reboots into it. Install and EnrollSecureBoot refuse so with FAILED_PRECONDITION until the node answers from the installed image. |
 
@@ -1555,12 +1555,11 @@ kube-system/chalkos-revoked-nodes, applies the API server's admission policy
 chalkos-revoked-nodes, which then denies the node's writes, and deletes its Node object.
 Control planes then refuse to renew its node certificate. A node revoked already keeps the
 time of its first revocation, unless refresh lists it as revoked now. A call that fails after
-listing the node says so; calling again finishes it. Without refresh, it first drops the
-nodes whose certificates have all expired. A node not revoked
-yet is refused with FAILED_PRECONDITION and the reason REVOKED_LIST_FULL while the policy's
-map of revoked nodes would grow too long for the API server to compile with it; PruneRevoked
-after rotations of the OS CA and the Kubernetes CA makes room. It answers on bootstrapped
-control-plane nodes. Available in normal mode to admins, on images with the Kubernetes layer.
+listing the node says so; calling again finishes it. A node not revoked yet is refused with
+FAILED_PRECONDITION and the reason REVOKED_LIST_FULL while the policy's map of revoked nodes
+would grow too long for the API server to compile with it; PruneRevoked makes room. It
+answers on bootstrapped control-plane nodes. Available in normal mode to admins, on images
+with the Kubernetes layer.
 
 Request: RevokeNodeRequest. Response: RevokeNodeResponse.
 
@@ -1571,7 +1570,7 @@ The request of RevokeNode.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `node` | string | The node's name in Kubernetes, which its node certificate carries too. |
-| `refresh` | bool | Whether the node, revoked already, is listed as revoked now in place of its earlier time, as after it was handed certificates while revoked: its entry then lasts until those expire too. A node not revoked is refused with NOT_FOUND and stays unlisted. The call drops no expired node first. |
+| `refresh` | bool | Whether the node, revoked already, is listed as revoked now in place of its earlier time, as after it was handed certificates while revoked: its entry then lasts until those expire too. A node not revoked is refused with NOT_FOUND and stays unlisted. |
 
 #### RevokeNodeResponse { #kubernetes-message-revokenoderesponse }
 
@@ -1619,11 +1618,10 @@ The response of UnrevokeNode.
 PruneRevoked drops from the revoked nodes those nothing lets back in: the nodes whose
 certificates have all expired, and those revoked before every OS CA and Kubernetes CA the
 control plane trusts was made, whose certificates chain to no trusted CA. It then applies the
-admission policy again. RevokeNode, UnrevokeNode and every bootstrapped control plane, daily,
-drop expired nodes by themselves. Only this call drops nodes for the CAs, because control
-planes finish a rotation one after another: call it once every node confirmed the finish of a
-rotation of the OS CA or the Kubernetes CA, as chalkctl rotate --finish does. It answers on
-bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
+admission policy again. Only this call drops revoked nodes. Control planes finish a rotation
+one after another, so call it while no rotation of the OS CA or the Kubernetes CA runs, as
+once every node confirmed the finish of one, which chalkctl rotate --finish does. It answers
+on bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
 Kubernetes layer.
 
 Request: PruneRevokedRequest. Response: PruneRevokedResponse.

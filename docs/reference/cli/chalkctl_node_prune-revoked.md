@@ -11,11 +11,11 @@ chalkctl node prune-revoked [flags]
 
 Drops from the revoked nodes those that nothing lets back in: the nodes whose certificates have
 all expired, and those revoked before both the OS CA and the Kubernetes CA that the control plane
-trusts were made, as no CA it trusts vouches for their old certificates. chalkctl rotate os-ca
---finish and chalkctl rotate kubernetes-ca --finish prune the same way once every node applied the
-finish; run this command when that prune failed. Each control plane drops the expired nodes by
-itself once a day, also those the secrets file records as not refreshed: the next command that
-retries their refresh revokes those it notes as listed again.
+trusts were made, as no CA it trusts vouches for their old certificates. Control planes drop no
+revoked node by themselves: run this command to drop the expired ones, as when chalkctl status or
+chalkctl node revoke warns that the list fills up. chalkctl rotate os-ca --finish and chalkctl
+rotate kubernetes-ca --finish prune the same way once every node applied the finish; run this
+command when that prune failed.
 
 With the secrets file, the command refuses while the file records a rotation of the OS CA or the
 Kubernetes CAs: a node that has not applied its finish may still trust the old CA. A client file
@@ -43,7 +43,8 @@ The command needs an admin client file or the secrets file.
 ## Examples
 
 ```sh
-# Prune after chalkctl rotate os-ca --finish warned that its prune failed.
+# Drop the expired revocations once chalkctl status warns that the list fills up, or prune after
+# chalkctl rotate os-ca --finish warned that its prune failed.
 chalkctl node prune-revoked
 ```
 

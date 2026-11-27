@@ -114,8 +114,7 @@ func TestRevokedLine(t *testing.T) {
 			"revoked node w1 (since 2026-10-23T12:00:00Z); it had no Node object to delete"},
 		{&kubernetesv1.RevokeNodeResponse{RevokedAt: timestamppb.New(at), NodeDeleted: true, ListLength: 80_000, ListCapacity: 90_000},
 			"revoked node w1 (since 2026-10-23T12:00:00Z); deleted its Node object\n" +
-				"the revoked nodes fill 88% of their room; rotate the CAs with chalkctl rotate os-ca and chalkctl rotate kubernetes-ca, " +
-				"each to its finish, which drops the nodes revoked before both"},
+				"the revoked nodes fill 88% of their room; " + kubernetesview.MakeRevokedRoom},
 	} {
 		if got := revokedLine("w1", tc.resp); got != tc.want {
 			t.Errorf("revokedLine(%v) = %q, want %q", tc.resp, got, tc.want)

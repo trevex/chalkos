@@ -2,7 +2,6 @@ package kubernetes
 
 import (
 	"cmp"
-	"context"
 	"crypto/tls"
 	"errors"
 	"os"
@@ -71,8 +70,6 @@ func kubernetesNode(t *testing.T, kind string, share bool) (*Plugin, *tooltest.R
 			ClusterAnswers:    kubernetestest.NoClusterAnswers,
 			CheckControlPlane: kubernetestest.ControlPlaneCurrent,
 			APIClient:         kubernetestest.EmptyAPIServer,
-			// The pruning loop makes no API calls the tests of other loops count.
-			PruneRevoked: func(context.Context) error { return nil },
 		},
 	})
 	// The loops a test started would run on against its removed files, and load the tests after

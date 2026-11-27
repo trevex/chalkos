@@ -219,12 +219,11 @@ type KubernetesServiceClient interface {
 	// chalkos-revoked-nodes, which then denies the node's writes, and deletes its Node object.
 	// Control planes then refuse to renew its node certificate. A node revoked already keeps the
 	// time of its first revocation, unless refresh lists it as revoked now. A call that fails after
-	// listing the node says so; calling again finishes it. Without refresh, it first drops the
-	// nodes whose certificates have all expired. A node not revoked
-	// yet is refused with FAILED_PRECONDITION and the reason REVOKED_LIST_FULL while the policy's
-	// map of revoked nodes would grow too long for the API server to compile with it; PruneRevoked
-	// after rotations of the OS CA and the Kubernetes CA makes room. It answers on bootstrapped
-	// control-plane nodes. Available in normal mode to admins, on images with the Kubernetes layer.
+	// listing the node says so; calling again finishes it. A node not revoked yet is refused with
+	// FAILED_PRECONDITION and the reason REVOKED_LIST_FULL while the policy's map of revoked nodes
+	// would grow too long for the API server to compile with it; PruneRevoked makes room. It
+	// answers on bootstrapped control-plane nodes. Available in normal mode to admins, on images
+	// with the Kubernetes layer.
 	RevokeNode(context.Context, *v1.RevokeNodeRequest) (*v1.RevokeNodeResponse, error)
 	// UnrevokeNode removes a node from the revoked nodes and applies the admission policy without
 	// it, so a node of that name may join again. The old node's certificates work again too, unless
@@ -237,11 +236,10 @@ type KubernetesServiceClient interface {
 	// PruneRevoked drops from the revoked nodes those nothing lets back in: the nodes whose
 	// certificates have all expired, and those revoked before every OS CA and Kubernetes CA the
 	// control plane trusts was made, whose certificates chain to no trusted CA. It then applies the
-	// admission policy again. RevokeNode, UnrevokeNode and every bootstrapped control plane, daily,
-	// drop expired nodes by themselves. Only this call drops nodes for the CAs, because control
-	// planes finish a rotation one after another: call it once every node confirmed the finish of a
-	// rotation of the OS CA or the Kubernetes CA, as chalkctl rotate --finish does. It answers on
-	// bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
+	// admission policy again. Only this call drops revoked nodes. Control planes finish a rotation
+	// one after another, so call it while no rotation of the OS CA or the Kubernetes CA runs, as
+	// once every node confirmed the finish of one, which chalkctl rotate --finish does. It answers
+	// on bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
 	// Kubernetes layer.
 	PruneRevoked(context.Context, *v1.PruneRevokedRequest) (*v1.PruneRevokedResponse, error)
 }
@@ -312,12 +310,11 @@ type KubernetesServiceHandler interface {
 	// chalkos-revoked-nodes, which then denies the node's writes, and deletes its Node object.
 	// Control planes then refuse to renew its node certificate. A node revoked already keeps the
 	// time of its first revocation, unless refresh lists it as revoked now. A call that fails after
-	// listing the node says so; calling again finishes it. Without refresh, it first drops the
-	// nodes whose certificates have all expired. A node not revoked
-	// yet is refused with FAILED_PRECONDITION and the reason REVOKED_LIST_FULL while the policy's
-	// map of revoked nodes would grow too long for the API server to compile with it; PruneRevoked
-	// after rotations of the OS CA and the Kubernetes CA makes room. It answers on bootstrapped
-	// control-plane nodes. Available in normal mode to admins, on images with the Kubernetes layer.
+	// listing the node says so; calling again finishes it. A node not revoked yet is refused with
+	// FAILED_PRECONDITION and the reason REVOKED_LIST_FULL while the policy's map of revoked nodes
+	// would grow too long for the API server to compile with it; PruneRevoked makes room. It
+	// answers on bootstrapped control-plane nodes. Available in normal mode to admins, on images
+	// with the Kubernetes layer.
 	RevokeNode(context.Context, *v1.RevokeNodeRequest) (*v1.RevokeNodeResponse, error)
 	// UnrevokeNode removes a node from the revoked nodes and applies the admission policy without
 	// it, so a node of that name may join again. The old node's certificates work again too, unless
@@ -330,11 +327,10 @@ type KubernetesServiceHandler interface {
 	// PruneRevoked drops from the revoked nodes those nothing lets back in: the nodes whose
 	// certificates have all expired, and those revoked before every OS CA and Kubernetes CA the
 	// control plane trusts was made, whose certificates chain to no trusted CA. It then applies the
-	// admission policy again. RevokeNode, UnrevokeNode and every bootstrapped control plane, daily,
-	// drop expired nodes by themselves. Only this call drops nodes for the CAs, because control
-	// planes finish a rotation one after another: call it once every node confirmed the finish of a
-	// rotation of the OS CA or the Kubernetes CA, as chalkctl rotate --finish does. It answers on
-	// bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
+	// admission policy again. Only this call drops revoked nodes. Control planes finish a rotation
+	// one after another, so call it while no rotation of the OS CA or the Kubernetes CA runs, as
+	// once every node confirmed the finish of one, which chalkctl rotate --finish does. It answers
+	// on bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
 	// Kubernetes layer.
 	PruneRevoked(context.Context, *v1.PruneRevokedRequest) (*v1.PruneRevokedResponse, error)
 }

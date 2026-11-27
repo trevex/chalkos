@@ -1702,8 +1702,7 @@ type RevokeNodeRequest struct {
 	Node string `protobuf:"bytes,1,opt,name=node,proto3" json:"node,omitempty"`
 	// Whether the node, revoked already, is listed as revoked now in place of its earlier time, as
 	// after it was handed certificates while revoked: its entry then lasts until those expire too.
-	// A node not revoked is refused with NOT_FOUND and stays unlisted. The call drops no expired
-	// node first.
+	// A node not revoked is refused with NOT_FOUND and stays unlisted.
 	Refresh       bool `protobuf:"varint,2,opt,name=refresh,proto3" json:"refresh,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

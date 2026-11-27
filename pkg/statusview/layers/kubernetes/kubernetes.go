@@ -130,8 +130,8 @@ func podLines(k *kubernetesv1.StatusResponse) []string {
 }
 
 // MakeRevokedRoom says how to make room in a control plane's list of revoked nodes.
-const MakeRevokedRoom = "rotate the CAs with chalkctl rotate os-ca and chalkctl rotate kubernetes-ca, " +
-	"each to its finish, which drops the nodes revoked before both"
+const MakeRevokedRoom = "drop the expired revocations with chalkctl node prune-revoked, or rotate the CAs with " +
+	"chalkctl rotate os-ca and chalkctl rotate kubernetes-ca, each to its finish, which drops the nodes revoked before both"
 
 // RevokedFill is how full a control plane's list of revoked nodes is at that length of a
 // capacity, in whole percent, and whether it is more than 80% full, which chalkctl warns about.

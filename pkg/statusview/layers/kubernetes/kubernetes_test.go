@@ -32,7 +32,7 @@ func TestRevokedLines(t *testing.T) {
 	}
 }
 
-// The revoked nodes' fill is warned about past 80%, naming the CA rotations that make room.
+// The revoked nodes' fill is warned about past 80%, naming the prune and the CA rotations that make room.
 func TestRevokedFill(t *testing.T) {
 	k := &kubernetesv1.StatusResponse{
 		RevokedNodes:        []*kubernetesv1.RevokedNode{{Name: "w1"}},
@@ -57,7 +57,8 @@ func TestRevokedFill(t *testing.T) {
 	if want := "revoked nodes:\n  w1  at an unknown time\n  the list is 80% full; " + MakeRevokedRoom + "\n"; !strings.Contains(b.String(), want) {
 		t.Errorf("no %q in\n%s", want, b.String())
 	}
-	if !strings.Contains(MakeRevokedRoom, "chalkctl rotate os-ca and chalkctl rotate kubernetes-ca, each to its finish") {
+	if !strings.HasPrefix(MakeRevokedRoom, "drop the expired revocations with chalkctl node prune-revoked") ||
+		!strings.Contains(MakeRevokedRoom, "chalkctl rotate os-ca and chalkctl rotate kubernetes-ca, each to its finish") {
 		t.Errorf("MakeRevokedRoom = %q", MakeRevokedRoom)
 	}
 	if p := Problems(k); !slices.Equal(p, []string{"revoked nodes list 80% full"}) {

@@ -68,18 +68,19 @@ func etcdMemberRefusal(name string, members []*kubernetesv1.EtcdMember) error {
 }
 
 // RevokedListFull reports whether err is a control plane's refusal of RevokeNode because the
-// revoked nodes' list has no room, by the reason REVOKED_LIST_FULL. Rotating the OS CA and the
-// Kubernetes CA makes room: chalkctl rotate --finish then calls PruneRevoked, which drops the nodes
-// revoked before both.
+// revoked nodes' list has no room, by the reason REVOKED_LIST_FULL. PruneRevoked makes room by
+// dropping the expired revocations, and so does rotating the OS CA and the Kubernetes CA:
+// chalkctl rotate --finish then calls PruneRevoked, which also drops the nodes revoked before both.
 func RevokedListFull(err error) bool {
 	return client.Reason(err) == nodev1.ErrorReason_ERROR_REASON_REVOKED_LIST_FULL
 }
 
 // PruneRevoked has the control plane via drop the revoked nodes nothing lets back in: those whose
 // certificates have all expired, and those revoked before every OS CA and Kubernetes CA it trusts
-// was made. Call it once every node confirmed the finish of a rotation of the OS CA or the
-// Kubernetes CA; before that, a control plane that has not finished the rotation may still trust
-// an old CA a dropped node's certificates chain to. Control planes drop expired nodes by
+// was made. Call it while no rotation of the OS CA or the Kubernetes CA runs, as once every node
+// confirmed the finish of one: a control plane that has not finished the rotation may still trust
+// an old CA a dropped node's certificates chain to. Call it only once the revocation of every node
+// handed certificates while revoked was refreshed. Control planes drop no revoked node by
 // themselves.
 func PruneRevoked(ctx context.Context, via *client.Conn) (*kubernetesv1.PruneRevokedResponse, error) {
 	return Client(via).PruneRevoked(ctx, &kubernetesv1.PruneRevokedRequest{})
