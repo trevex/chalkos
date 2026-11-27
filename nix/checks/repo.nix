@@ -328,7 +328,8 @@ in
   # validate accepts the router's and the nodes' YAML, BGPSpeaker and BGPPeer documents included,
   # with those images where their groups point, and validatePinned checks its Cluster document's
   # images. chalkctl validate accepts the air-gapped variant's inventory too, without the NAT64 and
-  # with the cluster registry and the router's time.
+  # with the cluster registry and the router's time. vm/vm.sh, the script that creates the lab as
+  # libvirt VMs on a workstation, parses and passes shellcheck.
   example-homelab =
     let
       packages = homelab.packages.${pkgs.stdenv.hostPlatform.system};
@@ -345,6 +346,8 @@ in
       command = ''
         ${validatePinned}
         chalkctl validate --inventory chalkos-air-gapped.yaml
+        ${pkgs.bash}/bin/bash -n vm/vm.sh
+        ${pkgs.shellcheck}/bin/shellcheck vm/vm.sh
       '';
     };
 
