@@ -93,15 +93,38 @@ type Delivery interface {
 }
 
 // Revocations is a plugin whose layer lists revoked nodes. A command run with --ignore-revoked,
-// such as node renew or rotate, may hand a revoked node certificates or CA material; once it has,
-// chalkctl asks every compiled plugin to refresh the revocations, so that no pruning of the list
-// drops the node while what it got is still valid.
+// such as node renew or rotate, may hand a revoked node certificates or CA material. Before it
+// does, chalkctl asks every compiled plugin which of the nodes it lists as revoked; once it has,
+// it has the plugin refresh their revocations, so that no pruning of the list drops a node while
+// what it got is still valid. The secrets file records the revocations a refresh failed for, by
+// layer, and chalkctl retries them through the plugin.
 type Revocations interface {
-	// RefreshRevoked lists those of names that the layer lists as revoked as revoked now, through
-	// nodes, and returns a line saying so for each. Its error names the nodes whose revocation was
-	// not refreshed, or which may be revoked when the list cannot be read, and what to run for
-	// them.
-	RefreshRevoked(ctx context.Context, nodes Nodes, names []string) ([]string, error)
+	// RevokedAmong reads through nodes which of names the layer lists as revoked, before they are
+	// handed anything, as Revocations with Listed set. With install, names are nodes about to be
+	// installed, which are not asked: a control plane that does not answer as an installed node
+	// counts as not installed yet, as AdmitInstall counts it, and a name the list can be read for
+	// only once its node is installed is returned with Later set. The error says why the list
+	// cannot be read; chalkctl then has the plugin read it again for each name once they were
+	// handed what they got.
+	RevokedAmong(ctx context.Context, nodes Nodes, names []string, install bool) ([]Revocation, error)
+	// RefreshRevoked lists the revocations as revoked now, through nodes, and returns a line saying
+	// so for each. A Listed one that is no longer listed it revokes again, as it may have been
+	// pruned in between; of the others it refreshes those it lists. It returns the revocations it
+	// did not refresh, Listed when it read that they are revoked, and an error that names them
+	// and what to run for them.
+	RefreshRevoked(ctx context.Context, nodes Nodes, rs []Revocation) (lines []string, failed []Revocation, err error)
+}
+
+// Revocation is a node whose revocation a layer is to refresh once it was handed certificates or
+// CA material while revoked.
+type Revocation struct {
+	Node string
+	// Listed is set when the layer listed the node as revoked before it was handed what it got;
+	// otherwise whether it was revoked is unknown.
+	Listed bool
+	// Later is set when whether the node is revoked can be read only once it is back from its
+	// install: chalkctl leaves its refresh to the commands that retry the recorded ones.
+	Later bool
 }
 
 // ApplyFlags are config apply's flags of a layer, as Delivery registered them.
@@ -216,6 +239,15 @@ type Host interface {
 	// for a service of the nodes other than chalkd: their client certificate, and the OS CAs as
 	// the roots it verifies the nodes' certificates by. role is the role the credentials grant.
 	ClientTLS(ctx context.Context, f NodeFlags) (config *tls.Config, role pki.Role, err error)
+	// RetryRefresh refreshes again, through the plugin of the layer called layer and through
+	// nodes, the revocations of the layer that the secrets file records as not refreshed, and
+	// records which are left. Its error names those left. Without the secrets file, as with a
+	// client file, it does nothing.
+	RetryRefresh(ctx context.Context, f NodeFlags, nodes Nodes, layer string) error
+	// Refreshed drops the revocation of node by the layer called layer from those the secrets
+	// file records as not refreshed, once it was refreshed or the node unrevoked. Without the
+	// secrets file, as with a client file, it does nothing.
+	Refreshed(ctx context.Context, f NodeFlags, layer, node string) error
 }
 
 // Cluster is what chalkctl knows of the cluster from its inventory.

@@ -76,7 +76,10 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 	}
 	defer conn.Close()
 	t.nodes.release.check(t.name, info.GetChalkosVersion())
-	if !f.ignoreRevoked {
+	var before refreshes
+	if f.ignoreRevoked {
+		before = revokedBefore(ctx, t.nodes, []string{t.name}, true)
+	} else {
 		for _, d := range compiled[layer.Delivery]() {
 			if err := d.AdmitInstall(ctx, t); err != nil {
 				return err
@@ -140,7 +143,7 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 	}
 	if f.ignoreRevoked {
 		// The secrets may have reached the node although its install failed.
-		err = errors.Join(err, refreshRevoked(ctx, a.stdout, t.nodes, []string{t.name}))
+		err = errors.Join(err, a.refreshAndRecord(ctx, f.node.Secrets, t.nodes, before, t.secrets.Unrefreshed))
 	}
 	return err
 }

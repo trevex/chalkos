@@ -1,10 +1,6 @@
 package chalkctl
 
 import (
-	"context"
-	"errors"
-	"fmt"
-	"io"
 	"slices"
 
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
@@ -84,22 +80,4 @@ func coordinatorsFirst(names []string, coordinator func(name string) bool) []str
 		}
 	}
 	return append(first, rest...)
-}
-
-// refreshRevoked has every compiled layer list those of names it lists as revoked as revoked now,
-// through nodes, once a command run with --ignore-revoked handed them certificates or CA
-// material, and writes what each refreshed to w. It joins the layers' errors, which say what to
-// run.
-func refreshRevoked(ctx context.Context, w io.Writer, nodes layer.Nodes, names []string) error {
-	var errs []error
-	for _, p := range compiled[layer.Revocations]() {
-		lines, err := p.RefreshRevoked(ctx, nodes, names)
-		for _, line := range lines {
-			fmt.Fprintln(w, line)
-		}
-		if err != nil {
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
 }

@@ -1,6 +1,7 @@
 package chalkctl
 
 import (
+	"context"
 	"encoding/json"
 	"net"
 	"os"
@@ -456,4 +457,91 @@ func TestRotateIgnoreRevokedFailedRefresh(t *testing.T) {
 	if got := l.ta.stderr.String(); !strings.Contains(got, "the revoked nodes were not pruned: their revocations were not refreshed") {
 		t.Errorf("stderr = %q, want the prune skipped", got)
 	}
+}
+
+// TestRotateRecordsAFailedRefresh checks that the secrets file records a refresh that failed with
+// --ignore-revoked, so that later runs without the flag retry it first and the finish prunes
+// nothing while it fails; once node prune-revoked refreshes it, the record is gone and it prunes.
+func TestRotateRecordsAFailedRefresh(t *testing.T) {
+	l := newRotationLab(t)
+	l.revoked = []*kubernetesv1.RevokedNode{{Name: "w1", RevokedAt: timestamppb.New(revokedAt)}}
+	l.refreshErr = connect.NewError(connect.CodeUnavailable, "the API server does not answer")
+	err := l.rotate("os-ca", "--ignore-revoked")
+	if err == nil || !strings.Contains(err.Error(), "the secrets file records the revocations not refreshed") {
+		t.Errorf("err = %v, want the record named", err)
+	}
+	want := []clustersecrets.Unrefreshed{{Layer: "kubernetes", Node: "w1", Listed: true}}
+	if got := l.secrets().Unrefreshed; !slices.Equal(got, want) {
+		t.Fatalf("the secrets file records %v, want %v", got, want)
+	}
+	for _, args := range [][]string{{"os-ca", "--resume"}, {"os-ca", "--finish"}} {
+		l.takeEvents()
+		if err := l.rotate(args...); err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+		if events := l.takeEvents(); len(events) == 0 || events[0] != "cp1 refresh w1" {
+			t.Errorf("%v: events %v, want the refresh retried first", args, events)
+		} else if slices.Contains(events, "cp1 prune revoked") || slices.Contains(events, "cp2 prune revoked") {
+			t.Errorf("%v: events %v: the finish pruned", args, events)
+		}
+	}
+	if l.secrets().Rotation != nil {
+		t.Error("the secrets file still records the rotation")
+	}
+	if got := l.ta.stderr.String(); !strings.Contains(got, "the revoked nodes were not pruned: the secrets file records the revocations of w1 as not refreshed") ||
+		!strings.Contains(got, "chalkctl node prune-revoked") {
+		t.Errorf("stderr = %q, want the prune skipped for the record", got)
+	}
+	if got := l.secrets().Unrefreshed; !slices.Equal(got, want) {
+		t.Fatalf("the secrets file records %v, want %v", got, want)
+	}
+
+	err = l.run("node", "prune-revoked")
+	if err == nil || !strings.Contains(err.Error(), "the API server does not answer") || !strings.Contains(err.Error(), "node prune-revoked prunes once") {
+		t.Errorf("node prune-revoked with the refresh failing: %v", err)
+	}
+	l.refreshErr = nil
+	l.takeEvents()
+	if err := l.run("node", "prune-revoked"); err != nil {
+		t.Fatal(err)
+	}
+	if events := l.takeEvents(); !slices.Equal(events, []string{"cp1 refresh w1", "cp1 prune revoked"}) {
+		t.Errorf("events %v, want the refresh, then the prune", events)
+	}
+	if got := l.secrets().Unrefreshed; got != nil {
+		t.Errorf("the secrets file still records %v", got)
+	}
+}
+
+// TestRotateIgnoreRevokedRevokesAgain checks that a node listed as revoked before a phase, and
+// dropped from the list while the phase ran, is revoked again after it rather than skipped.
+func TestRotateIgnoreRevokedRevokesAgain(t *testing.T) {
+	l := newRotationLab(t)
+	l.revoked = []*kubernetesv1.RevokedNode{{Name: "w1", RevokedAt: timestamppb.New(revokedAt)}}
+	var once sync.Once
+	l.onShare = func(node string) {
+		once.Do(func() {
+			l.mu.Lock()
+			defer l.mu.Unlock()
+			l.revoked = nil
+		})
+	}
+	if err := l.rotate("kubernetes-ca", "--ignore-revoked"); err != nil {
+		t.Fatal(err)
+	}
+	if events := l.takeEvents(); !slices.Contains(events, "cp1 revoke w1") {
+		t.Errorf("events %v, want w1 revoked again", events)
+	}
+	if out := l.ta.stdout.String(); !strings.Contains(out, "revoked node w1 again (since 2026-10-23T13:00:00Z): it was dropped from the revoked nodes") {
+		t.Errorf("stdout = %q", out)
+	}
+}
+
+// run runs chalkctl with the lab's cluster, reaching each node where it serves.
+func (l *rotationLab) run(args ...string) error {
+	args = append(slices.Clone(args), "--inventory", l.ta.inventory)
+	for name, addr := range l.addrs {
+		args = append(args, "--address", name+"="+addr)
+	}
+	return l.ta.run(context.Background(), args)
 }

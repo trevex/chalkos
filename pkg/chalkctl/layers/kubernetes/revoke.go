@@ -16,6 +16,7 @@ import (
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/internal/strs"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/layers"
 	sdkkubernetes "github.com/trevex/chalkos/pkg/sdk/layers/kubernetes"
 	kubernetesview "github.com/trevex/chalkos/pkg/statusview/layers/kubernetes"
 )
@@ -80,6 +81,7 @@ func nodeRefresh(h layer.Host, ctx context.Context, f viaFlags, name string) err
 		return err
 	}
 	fmt.Fprintln(h.Stdout(), refreshedLine(name, resp))
+	forgetUnrefreshed(h, ctx, f.node, name)
 	return nil
 }
 
@@ -242,6 +244,8 @@ func nodeUnrevoke(h layer.Host, ctx context.Context, f viaFlags, pos []string) e
 		at = resp.RevokedAt.AsTime()
 	}
 	fmt.Fprintln(h.Stdout(), unrevokedLine(pos[0], at, resp.StaleCas))
+	// An unrevoked node is no longer refreshed, nor revoked again.
+	forgetUnrefreshed(h, ctx, f.node, pos[0])
 	return nil
 }
 
@@ -290,6 +294,9 @@ func nodePruneRevoked(h layer.Host, ctx context.Context, f viaFlags) error {
 	if err := noCARotation(h, ctx, f.node); err != nil {
 		return err
 	}
+	if err := retryRefresh(h, ctx, f); err != nil {
+		return err
+	}
 	var resp *kubernetesv1.PruneRevokedResponse
 	err := throughControlPlane(h, ctx, f, "", layer.Fetch(&resp, func(conn *client.Conn) (*kubernetesv1.PruneRevokedResponse, error) {
 		return sdkkubernetes.PruneRevoked(ctx, conn)
@@ -328,4 +335,30 @@ type revokeFlags struct {
 	skipReadCheck bool
 	// refresh lists a node revoked already as revoked now.
 	refresh bool
+}
+
+// retryRefresh refreshes the revocations the secrets file records as not refreshed, when the
+// command authenticates with it, and refuses to prune while one is left: pruning may drop that
+// node while the certificates it was handed are valid.
+func retryRefresh(h layer.Host, ctx context.Context, f viaFlags) error {
+	if f.node.Secrets.Path == "" || f.node.Config != "" {
+		return nil
+	}
+	nodes, err := h.Nodes(ctx, f.node, f.via)
+	if err != nil {
+		return err
+	}
+	if err := h.RetryRefresh(ctx, f.node, nodes, layers.Kubernetes); err != nil {
+		return fmt.Errorf("%w; node prune-revoked prunes once every revocation the secrets file records as not refreshed is refreshed", err)
+	}
+	return nil
+}
+
+// forgetUnrefreshed drops the node from the revocations the secrets file records as not
+// refreshed, and warns when that fails: the command did what it was asked, and the next retry
+// of the refresh drops it.
+func forgetUnrefreshed(h layer.Host, ctx context.Context, f layer.NodeFlags, name string) {
+	if err := h.Refreshed(ctx, f, layers.Kubernetes, name); err != nil {
+		fmt.Fprintf(h.Stderr(), "chalkctl: warning: %v\n", err)
+	}
 }

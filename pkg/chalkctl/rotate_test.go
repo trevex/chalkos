@@ -246,18 +246,25 @@ func (n fakeKubernetes) PruneRevoked(context.Context, *kubernetesv1.PruneRevoked
 	return &kubernetesv1.PruneRevokedResponse{Pruned: n.lab.pruned, ListLength: 2, ListCapacity: 90_000}, nil
 }
 
-// RevokeNode refreshes the revocation of a node the lab lists as revoked, the one call of it a
-// rotation makes.
+// RevokeNode refreshes the revocation of a node the lab lists as revoked, or revokes one again, as
+// a refresh does for a node dropped from the list since it was read.
 func (n fakeKubernetes) RevokeNode(_ context.Context, req *kubernetesv1.RevokeNodeRequest) (*kubernetesv1.RevokeNodeResponse, error) {
 	if err := n.refuse(); err != nil {
 		return nil, err
 	}
 	if !req.Refresh {
-		return nil, connect.NewError(connect.CodeUnimplemented, "the lab refreshes revocations alone")
+		n.lab.record(n.name + " revoke " + req.Node)
+		n.lab.mu.Lock()
+		defer n.lab.mu.Unlock()
+		n.lab.revoked = append(n.lab.revoked, &kubernetesv1.RevokedNode{Name: req.Node, RevokedAt: timestamppb.New(refreshedAt)})
+		return &kubernetesv1.RevokeNodeResponse{RevokedAt: timestamppb.New(refreshedAt)}, nil
 	}
 	n.lab.record(n.name + " refresh " + req.Node)
 	n.lab.mu.Lock()
 	defer n.lab.mu.Unlock()
+	if n.lab.onRefresh != nil {
+		n.lab.onRefresh(req.Node)
+	}
 	if n.lab.refreshErr != nil {
 		return nil, n.lab.refreshErr
 	}
@@ -369,8 +376,10 @@ type rotationLab struct {
 	// pruned are the nodes PruneRevoked drops; pruneErr, when set, is its error.
 	pruned   []string
 	pruneErr error
-	// refreshErr, when set, is the error of every refresh of a revocation.
+	// refreshErr, when set, is the error of every refresh of a revocation; onRefresh, when set,
+	// runs first, with the lab locked.
 	refreshErr error
+	onRefresh  func(node string)
 }
 
 func (l *rotationLab) record(event string) {

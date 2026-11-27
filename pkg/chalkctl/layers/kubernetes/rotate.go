@@ -76,10 +76,15 @@ func (p *Plugin) RevokedNodes(ctx context.Context, r layer.Rotating) (map[string
 // confirmed the finish of a rotation of either CA: from then on, no node trusts a CA the dropped
 // nodes' certificates chain to. Other rotations and a cluster without control planes prune nothing.
 // A revoked node a phase run with --ignore-revoked handed certificates of the new CA had its
-// revocation refreshed after it, so it was revoked after the new CA was made and stays listed.
+// revocation refreshed after it, so it was revoked after the new CA was made and stays listed;
+// while the secrets file records a revocation of the layer as not refreshed, nothing is pruned.
 func (p *Plugin) PruneRevoked(ctx context.Context, r layer.Rotating, kind clustersecrets.RotationKind) error {
 	if kind != clustersecrets.RotateOSCA && kind != clustersecrets.RotateKubernetesCA || len(rotatingNodesOf(r, k8s.KindControlPlane)) == 0 {
 		return nil
+	}
+	if names := unrefreshedOf(r.Secrets()); len(names) > 0 {
+		return fmt.Errorf("the secrets file records the revocations of %s as not refreshed after they were handed certificates, and pruning could drop them while those are valid; "+
+			"refresh each with %s, then prune with chalkctl node prune-revoked", strs.And(names), refreshCommand("<node>"))
 	}
 	var resp *kubernetesv1.PruneRevokedResponse
 	if err := rotationThroughControlPlane(ctx, r, func(ctx context.Context, conn *client.Conn) error {

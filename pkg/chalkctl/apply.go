@@ -230,10 +230,18 @@ func refusedByNode(err error) bool {
 // deliverConfig delivers the inventory's config to the node t, or with --dry-run has the node
 // check it and prints what the delivery would change.
 func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) (err error) {
-	for _, l := range f.layers {
-		if l.f.Requested() && !f.ignoreRevoked && !f.diff {
-			if err := l.d.Admit(ctx, t, l.f.Does()); err != nil {
-				return err
+	// A dry run and a diff hand the node nothing.
+	handsOut := f.payloads() && !f.diff && !f.dryRun
+	var before refreshes
+	switch {
+	case handsOut && f.ignoreRevoked:
+		before = revokedBefore(ctx, t.nodes, []string{t.name}, false)
+	case !f.diff:
+		for _, l := range f.layers {
+			if l.f.Requested() && !f.ignoreRevoked {
+				if err := l.d.Admit(ctx, t, l.f.Does()); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -349,9 +357,11 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 		defer cancel()
 		fmt.Fprintf(a.stdout, "%s: delivering config %s on trial until %s\n", t.name, d.Version, deadline.UTC().Format(time.RFC3339))
 	}
-	if f.ignoreRevoked && len(payloads) > 0 {
+	if handsOut && f.ignoreRevoked {
 		// The payloads may reach the node although the delivery fails.
-		defer func() { err = errors.Join(err, refreshRevoked(ctx, a.stdout, t.nodes, []string{t.name})) }()
+		defer func() {
+			err = errors.Join(err, a.refreshAndRecord(ctx, f.node.Secrets, t.nodes, before, t.secrets.Unrefreshed))
+		}()
 	}
 	resp, err := conn.ApplyConfig(applyCtx, req)
 	if err != nil {
