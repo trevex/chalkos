@@ -375,9 +375,6 @@ func TestNodePruneRevokedRefusesDuringACARotation(t *testing.T) {
 	ta := newTestApp(t)
 	addr, cs := revokeNode(t, ta)
 	ctx := context.Background()
-	if _, err := revoked.Revoke(ctx, cs, "w1", time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)); err != nil {
-		t.Fatal(err)
-	}
 	path := filepath.Join(ta.dir, "secrets.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -388,6 +385,10 @@ func TestNodePruneRevokedRefusesDuringACARotation(t *testing.T) {
 		clustersecrets.RotateKubernetesCA:  true,
 		clustersecrets.RotateEncryptionKey: false,
 	} {
+		// A prune the rotation does not refuse drops w1, so each kind starts with it listed.
+		if _, err := revoked.Revoke(ctx, cs, "w1", time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)); err != nil {
+			t.Fatal(err)
+		}
 		s, err := clustersecrets.Read(data, nil)
 		if err != nil {
 			t.Fatal(err)
