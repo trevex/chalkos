@@ -35,6 +35,7 @@ func nodeRevokeCommand(h layer.Host) *cobra.Command {
 	fs.StringVar(&f.via, "via", "", "control plane that revokes the node, which a bare --address reaches (default the first other one that answers)")
 	fs.BoolVar(&f.override, "allow-control-plane", false, "revoke the node although it is a control plane, an etcd member or the one --via names")
 	fs.BoolVar(&f.skipReadCheck, "skip-read-check", false, "revoke the node although a control plane does not answer or cannot read the revoked nodes")
+	fs.BoolVar(&f.refresh, "refresh", false, "list the node, revoked already, as revoked now, as after it was handed certificates while revoked, so its entry lasts until they expire too")
 	return cmd
 }
 
@@ -46,7 +47,9 @@ func nodeRevoke(h layer.Host, ctx context.Context, f revokeFlags, pos []string) 
 	if f.via == name && !f.override {
 		return fmt.Errorf("%s is the control plane asked to revoke it; %s", name, controlPlaneRevocation(name))
 	}
-	if !f.skipReadCheck {
+	// A refresh changes the time of a node revoked already, whose certificates no control plane
+	// renews.
+	if !f.skipReadCheck && !f.refresh {
 		if err := controlPlanesRead(h, ctx, f.viaFlags, name); err != nil {
 			return err
 		}
@@ -54,11 +57,18 @@ func nodeRevoke(h layer.Host, ctx context.Context, f revokeFlags, pos []string) 
 	var resp *kubernetesv1.RevokeNodeResponse
 	// A control plane is not asked to revoke itself.
 	err := throughControlPlane(h, ctx, f.viaFlags, name, layer.Fetch(&resp, func(conn *client.Conn) (*kubernetesv1.RevokeNodeResponse, error) {
+		if f.refresh {
+			return sdkkubernetes.RefreshRevocation(ctx, conn, name)
+		}
 		r, err := sdkkubernetes.RevokeNode(ctx, conn, name, f.override)
 		return r, revocationRefusal(name, err)
 	}))
 	if err != nil {
 		return err
+	}
+	if f.refresh {
+		fmt.Fprintln(h.Stdout(), refreshedLine(name, resp))
+		return nil
 	}
 	fmt.Fprintln(h.Stdout(), revokedLine(name, resp))
 	return nil
@@ -76,6 +86,11 @@ func revokedLine(name string, resp *kubernetesv1.RevokeNodeResponse) string {
 		line += "\n" + fillLine(resp.ListLength, resp.ListCapacity)
 	}
 	return line
+}
+
+// refreshedLine says that the node's revocation was refreshed, with its new time.
+func refreshedLine(name string, resp *kubernetesv1.RevokeNodeResponse) string {
+	return fmt.Sprintf("refreshed the revocation of %s: revoked since %s", name, resp.RevokedAt.AsTime().UTC().Format(time.RFC3339))
 }
 
 // fillLine says how full the revoked nodes' list is, as a share of the room the admission policy
@@ -302,4 +317,6 @@ type revokeFlags struct {
 	viaFlags
 	// skipReadCheck revokes the node although a control plane cannot say which nodes are revoked.
 	skipReadCheck bool
+	// refresh lists a node revoked already as revoked now.
+	refresh bool
 }

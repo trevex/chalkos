@@ -229,7 +229,7 @@ func refusedByNode(err error) bool {
 
 // deliverConfig delivers the inventory's config to the node t, or with --dry-run has the node
 // check it and prints what the delivery would change.
-func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) error {
+func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) (err error) {
 	for _, l := range f.layers {
 		if l.f.Requested() && !f.ignoreRevoked && !f.diff {
 			if err := l.d.Admit(ctx, t, l.f.Does()); err != nil {
@@ -348,6 +348,10 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 		applyCtx, cancel = context.WithDeadline(ctx, deadline)
 		defer cancel()
 		fmt.Fprintf(a.stdout, "%s: delivering config %s on trial until %s\n", t.name, d.Version, deadline.UTC().Format(time.RFC3339))
+	}
+	if f.ignoreRevoked && len(payloads) > 0 {
+		// The payloads may reach the node although the delivery fails.
+		defer func() { err = errors.Join(err, refreshRevoked(ctx, a.stdout, t.nodes, []string{t.name})) }()
 	}
 	resp, err := conn.ApplyConfig(applyCtx, req)
 	if err != nil {

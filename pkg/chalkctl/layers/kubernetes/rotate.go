@@ -74,16 +74,11 @@ func (p *Plugin) RevokedNodes(ctx context.Context, r layer.Rotating) (map[string
 // PruneRevoked has the first control plane that answers drop the revoked nodes revoked before both
 // the OS CA and the Kubernetes CA it trusts, or whose certificates expired, once every node
 // confirmed the finish of a rotation of either CA: from then on, no node trusts a CA the dropped
-// nodes' certificates chain to. Other rotations and a cluster without control planes prune nothing,
-// and neither does a rotation a phase of which ran with --ignore-revoked: it handed revoked nodes
-// left in the inventory certificates of the new CA.
+// nodes' certificates chain to. Other rotations and a cluster without control planes prune nothing.
+// A revoked node a phase run with --ignore-revoked handed certificates of the new CA had its
+// revocation refreshed after it, so it was revoked after the new CA was made and stays listed.
 func (p *Plugin) PruneRevoked(ctx context.Context, r layer.Rotating, rot clustersecrets.Rotation) error {
 	if rot.Kind != clustersecrets.RotateOSCA && rot.Kind != clustersecrets.RotateKubernetesCA || len(rotatingNodesOf(r, k8s.KindControlPlane)) == 0 {
-		return nil
-	}
-	if rot.IgnoredRevoked {
-		r.Say("kept the revoked nodes: a phase of the rotation ran with --ignore-revoked, which handed revoked nodes left in the inventory " +
-			"certificates that pruning would let back in; they stay listed until their certificates expire")
 		return nil
 	}
 	var resp *kubernetesv1.PruneRevokedResponse

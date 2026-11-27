@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"connectrpc.com/connect/v2"
@@ -11,6 +12,7 @@ import (
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/internal/strs"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	sdkkubernetes "github.com/trevex/chalkos/pkg/sdk/layers/kubernetes"
 	kubernetesview "github.com/trevex/chalkos/pkg/statusview/layers/kubernetes"
@@ -120,4 +122,65 @@ func everBootstrapped(k *kubernetesv1.StatusResponse) bool {
 		return true
 	}
 	return false
+}
+
+// RefreshRevoked lists those of names a control plane lists as revoked as revoked now, each
+// through the first control plane that answers, the node itself last. It reads the list as Admit
+// does. A cluster without control planes keeps no revoked nodes, and a node unrevoked in between
+// is left alone.
+func (p *Plugin) RefreshRevoked(ctx context.Context, nodes layer.Nodes, names []string) ([]string, error) {
+	controlPlanes, err := nodesOf(nodes.Cluster(), k8s.KindControlPlane, "")
+	if err != nil || len(controlPlanes) == 0 || len(names) == 0 {
+		return nil, err
+	}
+	list, err := revokedNodesOf(ctx, controlPlanes, nodeStatusOf(nodes.Call))
+	if err != nil {
+		return nil, unknownRevoked(names, err)
+	}
+	var lines, failed, why []string
+	for _, name := range names {
+		if _, ok := list[name]; !ok {
+			continue
+		}
+		via := slices.DeleteFunc(slices.Clone(controlPlanes), func(cp string) bool { return cp == name })
+		if len(via) < len(controlPlanes) {
+			via = append(via, name)
+		}
+		var resp *kubernetesv1.RevokeNodeResponse
+		err := nodes.ViaFirst(via, sdkkubernetes.TryNextControlPlane, layer.Fetch(&resp, func(conn *client.Conn) (*kubernetesv1.RevokeNodeResponse, error) {
+			return sdkkubernetes.RefreshRevocation(ctx, conn, name)
+		}))
+		switch {
+		case sdkkubernetes.NotRevoked(err):
+		case err != nil:
+			failed, why = append(failed, name), append(why, err.Error())
+		default:
+			lines = append(lines, refreshedLine(name, resp))
+		}
+	}
+	if len(failed) == 0 {
+		return lines, nil
+	}
+	if len(failed) == 1 {
+		return lines, fmt.Errorf("the revocation of %s, which was handed certificates while revoked, was not refreshed (%s); pruning may drop it from the revoked nodes while they are valid, so refresh it with %s",
+			failed[0], why[0], refreshCommand(failed[0]))
+	}
+	return lines, fmt.Errorf("the revocations of %s, which were handed certificates while revoked, were not refreshed (%s); pruning may drop them from the revoked nodes while those are valid, so refresh each with %s",
+		strs.And(failed), strings.Join(why, "; "), refreshCommand("<node>"))
+}
+
+// unknownRevoked is the error of a refresh of the names' revocations while no control plane says
+// which nodes are revoked.
+func unknownRevoked(names []string, err error) error {
+	if len(names) == 1 {
+		return fmt.Errorf("%w; whether %s is revoked is unknown, so its revocation was not refreshed after it was handed certificates: if it is revoked, pruning may drop it from the revoked nodes while they are valid, so once a control plane answers, refresh it with %s",
+			err, names[0], refreshCommand(names[0]))
+	}
+	return fmt.Errorf("%w; which of %s are revoked is unknown, so no revocation was refreshed after they were handed certificates: pruning may drop a revoked one from the revoked nodes while those are valid, so once a control plane answers, refresh each revoked one with %s",
+		err, strs.And(names), refreshCommand("<node>"))
+}
+
+// refreshCommand is the command that refreshes the revocation of node.
+func refreshCommand(node string) string {
+	return "chalkctl node revoke " + node + " --refresh"
 }

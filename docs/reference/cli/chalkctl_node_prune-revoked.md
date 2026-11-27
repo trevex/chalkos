@@ -18,10 +18,9 @@ itself once a day.
 
 With the secrets file, the command refuses while the file records a rotation of the OS CA or the
 Kubernetes CAs: a node that has not applied its finish may still trust the old CA. A client file
-records no rotation, so make sure none runs. After a rotation of which a phase ran with
---ignore-revoked, a revoked node left in the inventory holds certificates of the new CA, and
-pruning lets it back in: the finish of such a rotation keeps the revoked nodes, so do not prune
-them by hand either.
+records no rotation, so make sure none runs. A command run with --ignore-revoked that handed a
+revoked node certificates refreshes its revocation, so pruning keeps it; when that refresh failed,
+refresh it with chalkctl node revoke --refresh before pruning.
 
 A control plane prunes the revoked nodes: --via, or the first one that answers.
 

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -300,8 +301,16 @@ func TestInstallRefusesRevokedNames(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "n1 is revoked since 2026-10-23T12:00:00Z") || !strings.Contains(err.Error(), "chalkctl node unrevoke n1") || !strings.Contains(err.Error(), "--ignore-revoked") {
 		t.Errorf("installing a revoked name: %v", err)
 	}
+	l.takeEvents()
 	if err := l.install("--ignore-revoked"); err != nil {
 		t.Errorf("--ignore-revoked: %v", err)
+	}
+	// The installed name's revocation is refreshed after the install.
+	if events := l.takeEvents(); !slices.Equal(events, []string{"cp1 refresh n1"}) {
+		t.Errorf("--ignore-revoked: events %v, want cp1 to refresh n1", events)
+	}
+	if out := l.ta.stdout.String(); !strings.Contains(out, "n1 is installed and reboots\n") || !strings.HasSuffix(out, "\nrefreshed the revocation of n1: revoked since 2026-10-23T13:00:00Z\n") {
+		t.Errorf("--ignore-revoked: stdout = %q", out)
 	}
 
 	l.revoked = nil
@@ -414,5 +423,75 @@ func TestNodePruneRevokedRefusesDuringACARotation(t *testing.T) {
 		if list, _ := revoked.Load(ctx, cs); len(list) != 1 {
 			t.Errorf("the refusal pruned: %v", list)
 		}
+	}
+}
+
+// node revoke --refresh lists a revoked node as revoked now, and refuses a node not revoked.
+func TestNodeRevokeRefresh(t *testing.T) {
+	ta := newTestApp(t)
+	addr, cs := revokeNode(t, ta)
+	ctx := context.Background()
+	if _, err := revoked.Revoke(ctx, cs, "w1", revokedAt); err != nil {
+		t.Fatal(err)
+	}
+	if err := ta.run(ctx, ta.args([]string{"node", "revoke", "w1", "--via", "n1", "--refresh"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	list, _ := revoked.Load(ctx, cs)
+	if !list["w1"].After(revokedAt) {
+		t.Errorf("revoked nodes %v, want w1 refreshed", list)
+	}
+	if got, want := ta.stdout.String(), "refreshed the revocation of w1: revoked since "+list["w1"].Format(time.RFC3339)+"\n"; got != want {
+		t.Errorf("stdout = %q, want %q", got, want)
+	}
+	err := ta.run(ctx, ta.args([]string{"node", "revoke", "w2", "--via", "n1", "--refresh"}, addr))
+	if err == nil || !strings.Contains(err.Error(), "node w2 is not revoked") {
+		t.Errorf("refreshing w2, not revoked: %v", err)
+	}
+	if list, _ := revoked.Load(ctx, cs); len(list) != 1 {
+		t.Errorf("revoked nodes %v, want w1 alone", list)
+	}
+}
+
+// node renew and config apply --kubernetes-share with --ignore-revoked refresh the revocation of
+// the revoked node they handed certificates, once they did; a failed refresh fails the command and
+// names the command that refreshes it.
+func TestIgnoreRevokedRefreshes(t *testing.T) {
+	for _, cmd := range [][]string{{"node", "renew", "n1", "--ignore-revoked"}, {"config", "apply", "n1", "--kubernetes-share", "--ignore-revoked"}} {
+		t.Run(cmd[0], func(t *testing.T) {
+			ta := newTestApp(t)
+			addr, cs := revokeNode(t, ta)
+			ctx := context.Background()
+			if _, err := revoked.Revoke(ctx, cs, "n1", revokedAt); err != nil {
+				t.Fatal(err)
+			}
+			if err := ta.run(ctx, ta.args(cmd, addr)); err != nil {
+				t.Fatal(err)
+			}
+			list, _ := revoked.Load(ctx, cs)
+			if !list["n1"].After(revokedAt) {
+				t.Errorf("revoked nodes %v, want n1 refreshed", list)
+			}
+			out := ta.stdout.String()
+			if want := "refreshed the revocation of n1: revoked since " + list["n1"].Format(time.RFC3339) + "\n"; !strings.HasSuffix(out, want) {
+				t.Errorf("stdout = %q, want it to end with %q", out, want)
+			}
+
+			// n1 is listed with its old time again, so the refresh writes the list.
+			if _, _, err := revoked.Unrevoke(ctx, cs, "n1", nil); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := revoked.Revoke(ctx, cs, "n1", revokedAt); err != nil {
+				t.Fatal(err)
+			}
+			cs.PrependReactor("update", "configmaps", func(k8stesting.Action) (bool, runtime.Object, error) {
+				return true, nil, errors.New("connection refused")
+			})
+			err := ta.run(ctx, ta.args(cmd, addr))
+			if err == nil || !strings.Contains(err.Error(), "the revocation of n1, which was handed certificates while revoked, was not refreshed") ||
+				!strings.Contains(err.Error(), "connection refused") || !strings.Contains(err.Error(), "chalkctl node revoke n1 --refresh") {
+				t.Errorf("with the refresh failing: %v", err)
+			}
+		})
 	}
 }

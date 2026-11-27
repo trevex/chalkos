@@ -26,7 +26,9 @@ The command first asks every other control plane whether it reads the revoked no
 while one does not answer or does not say it read them. --allow-control-plane revokes a control
 plane, an etcd member or the node --via names all the same, and --skip-read-check revokes the node
 without asking the other control planes. A control plane revokes the node: --via, or the first
-other one that answers.
+other one that answers. --refresh lists a node revoked already as revoked now, as after it was
+handed certificates while revoked, so it stays listed until they expire; commands run with
+--ignore-revoked refresh by themselves, and say when they could not.
 
 The command needs an admin client file or the secrets file.
 
@@ -39,6 +41,7 @@ The command needs an admin client file or the secrets file.
 | `--config`{ #flag-config } | string | $CHALKOSCONFIG, else ~/.config/chalkos/config, unless --secrets is given | Client file to authenticate with instead of the secrets file. |
 | `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |
 | `--inventory`{ #flag-inventory } | string | $CHALKOSINVENTORY, else chalkos.yaml in the current directory, when it exists | Inventory naming the cluster's nodes, their addresses and their config files. |
+| `--refresh`{ #flag-refresh } | boolean | `false` | List the node, revoked already, as revoked now, as after it was handed certificates while revoked, so its entry lasts until they expire too. |
 | `--secrets`{ #flag-secrets } | string | — | Cluster secrets path (.age, .enc.*, or plaintext), provider URI, or - for standard input. |
 | `--skip-read-check`{ #flag-skip-read-check } | boolean | `false` | Revoke the node although a control plane does not answer or cannot read the revoked nodes. |
 | `--via`{ #flag-via } | string | the first other one that answers | Control plane that revokes the node, which a bare --address reaches. |
@@ -48,6 +51,10 @@ The command needs an admin client file or the secrets file.
 ```sh
 # Cut off w1, which was removed from the cluster.
 chalkctl node revoke w1
+
+# Refresh the revocation of w1, which node renew --ignore-revoked handed a certificate, when the
+# command said that it could not.
+chalkctl node revoke w1 --refresh
 ```
 
 ## See also

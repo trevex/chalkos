@@ -128,17 +128,21 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		// sdk.Install reads the node's contract and checks the config once more; chalkctl checked
 		// it above to warn of unpinned images and learn whether the storage needs a password.
 		fmt.Fprintf(a.stdout, "installing %s in place\n", t.name)
-		if err := sdk.Install(ctx, conn, r); err != nil {
-			return err
+		err = sdk.Install(ctx, conn, r)
+	} else {
+		err = a.installOnto(ctx, conn, t, f.wipeDisk, r, d, img, definitions)
+	}
+	if err == nil {
+		fmt.Fprintf(a.stdout, "%s is installed and reboots\n", t.name)
+		if fallback == storage.FallbackRecoveryKey {
+			fmt.Fprintf(a.stdout, "chalkctl recovery-key %s prints the key that unlocks it when its TPM fails\n", t.name)
 		}
-	} else if err := a.installOnto(ctx, conn, t, f.wipeDisk, r, d, img, definitions); err != nil {
-		return err
 	}
-	fmt.Fprintf(a.stdout, "%s is installed and reboots\n", t.name)
-	if fallback == storage.FallbackRecoveryKey {
-		fmt.Fprintf(a.stdout, "chalkctl recovery-key %s prints the key that unlocks it when its TPM fails\n", t.name)
+	if f.ignoreRevoked {
+		// The secrets may have reached the node although its install failed.
+		err = errors.Join(err, refreshRevoked(ctx, a.stdout, t.nodes, []string{t.name}))
 	}
-	return nil
+	return err
 }
 
 // installOnto has the installer that conn reaches install img onto the node's system disk with

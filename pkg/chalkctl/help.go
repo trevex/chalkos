@@ -89,7 +89,9 @@ to recovering a node; renewing node certificates before they expire avoids it.
 
 A node revoked with chalkctl node revoke is refused, as is any node while a layer cannot say
 which nodes are revoked: in a Kubernetes cluster the control planes are asked first, and one
-whose own certificate expired cannot answer. --ignore-revoked renews without asking.`
+whose own certificate expired cannot answer. --ignore-revoked renews without asking, then has a
+control plane refresh the revocation of a revoked node, so that it stays revoked until the new
+certificate expires; the command fails, naming what to run, when that refresh fails.`
 
 const nodeRenewExample = `  chalkctl node renew w1`
 
@@ -178,7 +180,8 @@ https://trevex.github.io/chalkos/how-it-works/node/overview/#an-install-turns-a-
 
 A name revoked with chalkctl node revoke is refused, as is any node while a layer cannot say which
 names are revoked, as when a bootstrapped Kubernetes cluster's control planes do not answer;
---ignore-revoked installs without asking. chalkctl warns of each image reference in the config
+--ignore-revoked installs without asking, then refreshes the revocation of a revoked name as node
+renew does. chalkctl warns of each image reference in the config
 that names a tag but no digest.`
 
 // installConfirms says when install asks, for its Meta.
@@ -285,7 +288,8 @@ it at once.
 
 A layer's payload flag, such as --kubernetes-share, delivers the layer's payload too. It is refused
 to a node revoked with chalkctl node revoke, and while the layer cannot say which nodes are revoked;
---ignore-revoked delivers it without asking.`
+--ignore-revoked delivers it without asking, then refreshes the revocation of a revoked node as
+node renew does.`
 
 const applyConfigExample = `  # Apply w1's changed network and labels.
   chalkctl config apply w1 --secrets secrets.age
@@ -475,10 +479,12 @@ secrets file, holding <file>.lock.
 
 Nodes revoked with chalkctl node revoke are skipped and named; rotate stops while a layer cannot
 say which nodes are revoked, as when no Kubernetes control plane answers, unless none was
-bootstrapped yet. --ignore-revoked rotates without the lists, and every node of the inventory
-takes part, so remove revoked nodes from the inventory first. --finish refuses while a kind asks
-to wait, as the service-account key does within the hour after its switch; --finish --now
-finishes all the same. Once every node confirmed the finish of a rotation of the OS CA or the
+bootstrapped yet. --ignore-revoked rotates every node of the inventory, revoked or not; after each
+phase it refreshes the revocations of the revoked ones, so they stay revoked until what they got
+expires. A phase whose refresh fails is applied, but rotate fails and names what to run, and the
+finish then prunes nothing. Remove revoked nodes from the inventory first. --finish refuses
+while a kind asks to wait, as the service-account key does within the hour after its switch;
+--finish --now finishes all the same. Once every node confirmed the finish of a rotation of the OS CA or the
 Kubernetes CA, a Kubernetes control plane drops the nodes revoked before both CAs from the revoked
 nodes; rotate warns if it cannot.`
 

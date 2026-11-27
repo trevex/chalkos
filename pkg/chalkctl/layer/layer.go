@@ -83,12 +83,25 @@ type Delivery interface {
 	// Payloads issues the layer's payloads.
 	sdk.Payloads
 	// ApplyFlags registers config apply's flags that ask for the layer's payloads; chalkctl
-	// registers --ignore-revoked, which delivers them without Admit.
+	// registers --ignore-revoked, which delivers them without Admit and then refreshes the
+	// revocations through Revocations.
 	ApplyFlags(fs *pflag.FlagSet) ApplyFlags
 	// Admit refuses to deliver t what the secrets file issues it, which does says.
 	Admit(ctx context.Context, t Target, does string) error
 	// AdmitInstall refuses to install t.
 	AdmitInstall(ctx context.Context, t Target) error
+}
+
+// Revocations is a plugin whose layer lists revoked nodes. A command run with --ignore-revoked,
+// such as node renew or rotate, may hand a revoked node certificates or CA material; once it has,
+// chalkctl asks every compiled plugin to refresh the revocations, so that no pruning of the list
+// drops the node while what it got is still valid.
+type Revocations interface {
+	// RefreshRevoked lists those of names that the layer lists as revoked as revoked now, through
+	// nodes, and returns a line saying so for each. Its error names the nodes whose revocation was
+	// not refreshed, or which may be revoked when the list cannot be read, and what to run for
+	// them.
+	RefreshRevoked(ctx context.Context, nodes Nodes, names []string) ([]string, error)
 }
 
 // ApplyFlags are config apply's flags of a layer, as Delivery registered them.

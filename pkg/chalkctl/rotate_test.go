@@ -246,6 +246,29 @@ func (n fakeKubernetes) PruneRevoked(context.Context, *kubernetesv1.PruneRevoked
 	return &kubernetesv1.PruneRevokedResponse{Pruned: n.lab.pruned, ListLength: 2, ListCapacity: 90_000}, nil
 }
 
+// RevokeNode refreshes the revocation of a node the lab lists as revoked, the one call of it a
+// rotation makes.
+func (n fakeKubernetes) RevokeNode(_ context.Context, req *kubernetesv1.RevokeNodeRequest) (*kubernetesv1.RevokeNodeResponse, error) {
+	if err := n.refuse(); err != nil {
+		return nil, err
+	}
+	if !req.Refresh {
+		return nil, connect.NewError(connect.CodeUnimplemented, "the lab refreshes revocations alone")
+	}
+	n.lab.record(n.name + " refresh " + req.Node)
+	n.lab.mu.Lock()
+	defer n.lab.mu.Unlock()
+	if n.lab.refreshErr != nil {
+		return nil, n.lab.refreshErr
+	}
+	for _, r := range n.lab.revoked {
+		if r.Name == req.Node {
+			return &kubernetesv1.RevokeNodeResponse{RevokedAt: timestamppb.New(refreshedAt)}, nil
+		}
+	}
+	return nil, connect.NewError(connect.CodeNotFound, "node "+req.Node+" is not revoked")
+}
+
 func (n fakeKubernetes) RotationStep(ctx context.Context, req *kubernetesv1.RotationStepRequest) (*kubernetesv1.RotationStepResponse, error) {
 	if err := n.refuse(); err != nil {
 		return nil, err
@@ -346,6 +369,8 @@ type rotationLab struct {
 	// pruned are the nodes PruneRevoked drops; pruneErr, when set, is its error.
 	pruned   []string
 	pruneErr error
+	// refreshErr, when set, is the error of every refresh of a revocation.
+	refreshErr error
 }
 
 func (l *rotationLab) record(event string) {
@@ -967,17 +992,19 @@ func TestRotateReadsRevokedNodesBeforeEachPhase(t *testing.T) {
 	}
 }
 
-// TestRotateIgnoreRevoked rotates every node without reading the revoked nodes, as while no
-// control plane can say which are, and warns that revoked nodes in the inventory take part.
+// TestRotateIgnoreRevoked rotates every node, as while no control plane can say which nodes are
+// revoked, and warns that revoked nodes in the inventory take part. Each run applies its phases
+// and then fails, as no revocation could be refreshed after them.
 func TestRotateIgnoreRevoked(t *testing.T) {
 	l := newRotationLab(t)
 	l.revoked = []*kubernetesv1.RevokedNode{{Name: "w1"}}
 	l.revokedErr = map[string]string{"cp1": "read the revoked nodes: connection refused", "cp2": "read the revoked nodes: connection refused"}
-	if err := l.rotate("os-ca", "--ignore-revoked"); err != nil {
-		t.Fatal(err)
-	}
-	if err := l.rotate("os-ca", "--resume", "--ignore-revoked"); err != nil {
-		t.Fatal(err)
+	for _, args := range [][]string{{"os-ca", "--ignore-revoked"}, {"os-ca", "--resume", "--ignore-revoked"}} {
+		err := l.rotate(args...)
+		if err == nil || !strings.Contains(err.Error(), "no control-plane node said which nodes are revoked") ||
+			!strings.Contains(err.Error(), "which of cp1, cp2, n1 and w1 are revoked is unknown") || !strings.Contains(err.Error(), "chalkctl node revoke <node> --refresh") {
+			t.Errorf("%v: err = %v, want the refresh's failure", args, err)
+		}
 	}
 	if l.phase() != "refresh applied" {
 		t.Fatalf("the secrets file records %q, want the refresh applied", l.phase())
@@ -988,7 +1015,7 @@ func TestRotateIgnoreRevoked(t *testing.T) {
 	if fps, _ := pki.Fingerprints(l.nodes["w1"].cert.OSCA()); len(fps) != 2 {
 		t.Errorf("w1 trusts %d OS CAs, want both", len(fps))
 	}
-	warning := "chalkctl: warning: --ignore-revoked: rotate reads no revoked nodes, so a revoked node still in the inventory receives"
+	warning := "chalkctl: warning: --ignore-revoked: rotate skips no revoked node, so a revoked node still in the inventory receives"
 	if got := l.ta.stderr.String(); strings.Count(got, warning) != 2 || !strings.Contains(got, "remove revoked nodes from the inventory first") {
 		t.Errorf("stderr = %q, want the warning once a run", got)
 	}

@@ -28,7 +28,8 @@ next install of the image continues there. The node then reboots into the image.
 
 A name revoked with chalkctl node revoke is refused, as is any node while a layer cannot say which
 names are revoked, as when a bootstrapped Kubernetes cluster's control planes do not answer;
---ignore-revoked installs without asking. chalkctl warns of each image reference in the config
+--ignore-revoked installs without asking, then refreshes the revocation of a revoked name as node
+renew does. chalkctl warns of each image reference in the config
 that names a tag but no digest.
 
 The command needs the secrets file. It asks for the node's name on the terminal before the installer

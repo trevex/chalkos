@@ -84,10 +84,16 @@ The command first asks every other control plane whether it reads the revoked no
 while one does not answer or does not say it read them. --allow-control-plane revokes a control
 plane, an etcd member or the node --via names all the same, and --skip-read-check revokes the node
 without asking the other control planes. A control plane revokes the node: --via, or the first
-other one that answers.`
+other one that answers. --refresh lists a node revoked already as revoked now, as after it was
+handed certificates while revoked, so it stays listed until they expire; commands run with
+--ignore-revoked refresh by themselves, and say when they could not.`
 
 const nodeRevokeExample = `  # Cut off w1, which was removed from the cluster.
-  chalkctl node revoke w1`
+  chalkctl node revoke w1
+
+  # Refresh the revocation of w1, which node renew --ignore-revoked handed a certificate, when the
+  # command said that it could not.
+  chalkctl node revoke w1 --refresh`
 
 const nodeUnrevokeLong = `Removes a node from the revoked nodes, so a node of that name may join the cluster again. The old
 node's certificates would work again too, so the control plane refuses while the OS CA or the
@@ -119,10 +125,9 @@ itself once a day.
 
 With the secrets file, the command refuses while the file records a rotation of the OS CA or the
 Kubernetes CAs: a node that has not applied its finish may still trust the old CA. A client file
-records no rotation, so make sure none runs. After a rotation of which a phase ran with
---ignore-revoked, a revoked node left in the inventory holds certificates of the new CA, and
-pruning lets it back in: the finish of such a rotation keeps the revoked nodes, so do not prune
-them by hand either.
+records no rotation, so make sure none runs. A command run with --ignore-revoked that handed a
+revoked node certificates refreshes its revocation, so pruning keeps it; when that refresh failed,
+refresh it with chalkctl node revoke --refresh before pruning.
 
 A control plane prunes the revoked nodes: --via, or the first one that answers.`
 

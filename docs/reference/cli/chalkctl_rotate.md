@@ -23,10 +23,12 @@ secrets file, holding &lt;file>.lock.
 
 Nodes revoked with chalkctl node revoke are skipped and named; rotate stops while a layer cannot
 say which nodes are revoked, as when no Kubernetes control plane answers, unless none was
-bootstrapped yet. --ignore-revoked rotates without the lists, and every node of the inventory
-takes part, so remove revoked nodes from the inventory first. --finish refuses while a kind asks
-to wait, as the service-account key does within the hour after its switch; --finish --now
-finishes all the same. Once every node confirmed the finish of a rotation of the OS CA or the
+bootstrapped yet. --ignore-revoked rotates every node of the inventory, revoked or not; after each
+phase it refreshes the revocations of the revoked ones, so they stay revoked until what they got
+expires. A phase whose refresh fails is applied, but rotate fails and names what to run, and the
+finish then prunes nothing. Remove revoked nodes from the inventory first. --finish refuses
+while a kind asks to wait, as the service-account key does within the hour after its switch;
+--finish --now finishes all the same. Once every node confirmed the finish of a rotation of the OS CA or the
 Kubernetes CA, a Kubernetes control plane drops the nodes revoked before both CAs from the revoked
 nodes; rotate warns if it cannot.
 
@@ -39,7 +41,7 @@ The command needs the secrets file.
 | `--address`{ #flag-address } | list of NODE=ADDR | each node's address in the inventory | Address of a node's chalkd as NODE=ADDR, where ADDR is host or host:port; may be repeated. |
 | `--finish`{ #flag-finish } | boolean | `false` | Remove the old value from every node and the secrets file. |
 | `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |
-| `--ignore-revoked`{ #flag-ignore-revoked } | boolean | `false` | Rotate every node of the inventory, revoked ones included, without reading the revoked nodes, as while no layer can say which are. |
+| `--ignore-revoked`{ #flag-ignore-revoked } | boolean | `false` | Rotate every node of the inventory, revoked ones included, as while no layer can say which are revoked, and refresh the revoked ones' revocations after each phase. |
 | `--inventory`{ #flag-inventory } | string | $CHALKOSINVENTORY, else chalkos.yaml in the current directory, when it exists | Inventory naming the cluster's nodes, their addresses and their config files. |
 | `--now`{ #flag-now } | boolean | `false` | With --finish, finish now although the kind asks to wait, as the service-account key does within the hour after its switch. |
 | `--out`{ #flag-out } | string | — | New file to write the changed secrets file to, instead of updating the secrets file in place. |
