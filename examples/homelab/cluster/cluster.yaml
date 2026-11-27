@@ -31,9 +31,11 @@ spec:
 ---
 # flannel would take the MTU of node0, the dummy interface that holds the node's address, which
 # says nothing of the fabric's. Its VXLAN devices and the pods get spec.mtu less 50 bytes, and
-# VXLAN over IPv6 takes 70, so spec.mtu is the fabric's 1500 less 20.
+# VXLAN over IPv6 takes 70, so spec.mtu is the fabric's 1500 less 20. flannel takes its VXLAN, which
+# carries the pods' traffic unauthenticated, only from the block of the nodes' addresses.
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Flannel
 metadata: {name: default}
 spec:
   mtu: 1480
+  vxlanSourceSubnets: ["fdc8:a1b2:c3d4:ff::/64"]

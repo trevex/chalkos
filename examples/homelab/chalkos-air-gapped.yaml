@@ -19,7 +19,8 @@ spec:
       imageName: node-metal
       files: [cluster/*.yaml, bgp/fabric.yaml, bgp/secrets.yaml, air-gapped/nodes.yaml]
   nodes:
-    router: {address: 192.168.1.2, groups: [router]}
+    # The static lease of the lab's WAN network; on real hardware the reservation on the home router.
+    router: {address: 192.168.246.2, groups: [router]}
     node1: {address: "fdc8:a1b2:c3d4:ff::11", groups: [nodes], files: [nodes/node1.yaml]}
     node2: {address: "fdc8:a1b2:c3d4:ff::12", groups: [nodes], files: [nodes/node2.yaml]}
     node3: {address: "fdc8:a1b2:c3d4:ff::13", groups: [nodes], files: [nodes/node3.yaml]}

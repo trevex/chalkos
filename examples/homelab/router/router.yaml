@@ -170,11 +170,12 @@ spec:
 ---
 # The workstation, whose public key goes here. Its own WireGuard config takes the address
 # fdc8:a1b2:c3d4:f0::2/64, its private key, and one peer: the router's public key, which wg pubkey
-# prints for the key of router/secrets.yaml, the endpoint <router's wan address>:51820, allowed IPs
-# fdc8:a1b2:c3d4::/48 and a persistent keepalive of 25 seconds. The workstation reaches the
-# internet as before, so 64:ff9b::/96 stays out of its allowed IPs. The keepalive matters: each
-# delivery to the router sets its peers anew, and the router reaches the workstation again once
-# the workstation sends.
+# prints for the key of router/secrets.yaml, the endpoint 192.168.246.2:51820, allowed IPs
+# fdc8:a1b2:c3d4::/48 and a persistent keepalive of 25 seconds. The endpoint's address is the
+# static lease of the lab's WAN network; on real hardware the reservation on the home router. The
+# workstation reaches the internet as before, so 64:ff9b::/96 stays out of its allowed IPs. The
+# keepalive matters: each delivery to the router sets its peers anew, and the router reaches the
+# workstation again once the workstation sends.
 apiVersion: router.chalkos.dev/v1alpha1
 kind: WireGuardPeer
 metadata: {name: workstation}

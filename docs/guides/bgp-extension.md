@@ -226,7 +226,7 @@ spec:
     router: {imageName: router-metal, files: [router/*.yaml]}
     nodes: {imageName: node-metal, files: [cluster/*.yaml, bgp/fabric.yaml, bgp/secrets.yaml]}
   nodes:
-    router: {address: 192.168.1.2, groups: [router]}
+    router: {address: 192.168.246.2, groups: [router]}
     node1:
       address: "fdc8:a1b2:c3d4:ff::11"
       imageName: node-bird-metal
