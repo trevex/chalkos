@@ -44,12 +44,13 @@ func nodeRevoke(h layer.Host, ctx context.Context, f revokeFlags, pos []string) 
 	if err := keepsRevokedNodes(h, ctx, f.viaFlags); err != nil {
 		return err
 	}
+	if f.refresh {
+		return nodeRefresh(h, ctx, f.viaFlags, name)
+	}
 	if f.via == name && !f.override {
 		return fmt.Errorf("%s is the control plane asked to revoke it; %s", name, controlPlaneRevocation(name))
 	}
-	// A refresh changes the time of a node revoked already, whose certificates no control plane
-	// renews.
-	if !f.skipReadCheck && !f.refresh {
+	if !f.skipReadCheck {
 		if err := controlPlanesRead(h, ctx, f.viaFlags, name); err != nil {
 			return err
 		}
@@ -57,20 +58,28 @@ func nodeRevoke(h layer.Host, ctx context.Context, f revokeFlags, pos []string) 
 	var resp *kubernetesv1.RevokeNodeResponse
 	// A control plane is not asked to revoke itself.
 	err := throughControlPlane(h, ctx, f.viaFlags, name, layer.Fetch(&resp, func(conn *client.Conn) (*kubernetesv1.RevokeNodeResponse, error) {
-		if f.refresh {
-			return sdkkubernetes.RefreshRevocation(ctx, conn, name)
-		}
 		r, err := sdkkubernetes.RevokeNode(ctx, conn, name, f.override)
 		return r, revocationRefusal(name, err)
 	}))
 	if err != nil {
 		return err
 	}
-	if f.refresh {
-		fmt.Fprintln(h.Stdout(), refreshedLine(name, resp))
-		return nil
-	}
 	fmt.Fprintln(h.Stdout(), revokedLine(name, resp))
+	return nil
+}
+
+// nodeRefresh is node revoke --refresh: it changes the time of a node revoked already, whose
+// certificates no control plane renews, so it reads no control plane's list first. A control
+// plane refreshes its own revocation too, asked last, as RefreshRevoked asks it.
+func nodeRefresh(h layer.Host, ctx context.Context, f viaFlags, name string) error {
+	var resp *kubernetesv1.RevokeNodeResponse
+	err := throughControlPlaneLast(h, ctx, f, name, layer.Fetch(&resp, func(conn *client.Conn) (*kubernetesv1.RevokeNodeResponse, error) {
+		return sdkkubernetes.RefreshRevocation(ctx, conn, name)
+	}))
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(h.Stdout(), refreshedLine(name, resp))
 	return nil
 }
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 
 	"connectrpc.com/connect/v2"
@@ -142,10 +141,7 @@ func (p *Plugin) RefreshRevoked(ctx context.Context, nodes layer.Nodes, names []
 		if _, ok := list[name]; !ok {
 			continue
 		}
-		via := slices.DeleteFunc(slices.Clone(controlPlanes), func(cp string) bool { return cp == name })
-		if len(via) < len(controlPlanes) {
-			via = append(via, name)
-		}
+		via := othersFirst(controlPlanes, name)
 		var resp *kubernetesv1.RevokeNodeResponse
 		err := nodes.ViaFirst(via, sdkkubernetes.TryNextControlPlane, layer.Fetch(&resp, func(conn *client.Conn) (*kubernetesv1.RevokeNodeResponse, error) {
 			return sdkkubernetes.RefreshRevocation(ctx, conn, name)

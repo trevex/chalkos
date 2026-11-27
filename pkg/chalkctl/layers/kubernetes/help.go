@@ -85,8 +85,10 @@ while one does not answer or does not say it read them. --allow-control-plane re
 plane, an etcd member or the node --via names all the same, and --skip-read-check revokes the node
 without asking the other control planes. A control plane revokes the node: --via, or the first
 other one that answers. --refresh lists a node revoked already as revoked now, as after it was
-handed certificates while revoked, so it stays listed until they expire; commands run with
---ignore-revoked refresh by themselves, and say when they could not.`
+handed certificates while revoked, so it stays listed until they expire. A control plane
+refreshes it, also its own revocation without --allow-control-plane: --via, or the first one
+that answers, the node itself last. Commands run with --ignore-revoked refresh by themselves, and
+say when they could not.`
 
 const nodeRevokeExample = `  # Cut off w1, which was removed from the cluster.
   chalkctl node revoke w1

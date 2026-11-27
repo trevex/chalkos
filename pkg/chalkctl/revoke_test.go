@@ -455,6 +455,18 @@ func TestNodeRevokeRefresh(t *testing.T) {
 	if list, _ := revoked.Load(ctx, cs); len(list) != 1 {
 		t.Errorf("revoked nodes %v, want w1 alone", list)
 	}
+
+	// A control plane refreshes its own revocation without --allow-control-plane, as the
+	// refresh after --ignore-revoked asks it last: it is revoked already.
+	if _, err := revoked.Revoke(ctx, cs, "n1", revokedAt); err != nil {
+		t.Fatal(err)
+	}
+	if err := ta.run(ctx, ta.args([]string{"node", "revoke", "n1", "--via", "n1", "--refresh"}, addr)); err != nil {
+		t.Fatalf("refreshing n1 through itself: %v", err)
+	}
+	if list, _ := revoked.Load(ctx, cs); !list["n1"].After(revokedAt) {
+		t.Errorf("revoked nodes %v, want n1 refreshed", list)
+	}
 }
 
 // node renew and config apply --kubernetes-share with --ignore-revoked refresh the revocation of
