@@ -265,9 +265,9 @@ func TestExpired(t *testing.T) {
 		want     bool
 	}{
 		"within the validity":        {first, first.Add(year), year, false},
-		"within the margin":          {first, first.Add(year + ExpiryMargin), year, false},
-		"past validity and margin":   {first, first.Add(year + ExpiryMargin + time.Second), year, true},
-		"a longer validity":          {first, first.Add(year + ExpiryMargin + time.Second), 2 * year, false},
+		"within the margin":          {first, first.Add(year + expiryMargin), year, false},
+		"past validity and margin":   {first, first.Add(year + expiryMargin + time.Second), year, true},
+		"a longer validity":          {first, first.Add(year + expiryMargin + time.Second), 2 * year, false},
 		"revoked at an unknown time": {time.Time{}, first.Add(100 * year), year, false},
 	} {
 		if got := Expired(tc.at, tc.now, tc.validity); got != tc.want {

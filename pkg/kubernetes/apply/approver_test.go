@@ -445,13 +445,13 @@ func TestApproverLabelsItsControlPlane(t *testing.T) {
 	ctx := t.Context()
 	cs := fake.NewClientset(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "w1"}})
 	a := &Approver{Client: cs, Node: "cp1"}
-	if err := a.Label(ctx); err != nil {
+	if err := a.label(ctx); err != nil {
 		t.Fatalf("before the Node registered: %v", err)
 	}
 	if _, err := cs.CoreV1().Nodes().Create(ctx, &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "cp1"}}, metav1.CreateOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.Label(ctx); err != nil {
+	if err := a.label(ctx); err != nil {
 		t.Fatal(err)
 	}
 	n, err := cs.CoreV1().Nodes().Get(ctx, "cp1", metav1.GetOptions{})
@@ -466,7 +466,7 @@ func TestApproverLabelsItsControlPlane(t *testing.T) {
 	}
 	patches := 0
 	cs.PrependReactor("patch", "nodes", func(k8stesting.Action) (bool, runtime.Object, error) { patches++; return false, nil, nil })
-	if err := a.Label(ctx); err != nil || patches != 0 {
+	if err := a.label(ctx); err != nil || patches != 0 {
 		t.Errorf("a labelled Node: %v, %d patches", err, patches)
 	}
 }

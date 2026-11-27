@@ -133,16 +133,16 @@ func Unrevoke(ctx context.Context, cs kubernetes.Interface, name string, allow f
 	return at, listed, nil
 }
 
-// ExpiryMargin is how long after its certificates' validity a revoked node's entry is kept: a
+// expiryMargin is how long after its certificates' validity a revoked node's entry is kept: a
 // renewal in flight when the node was revoked may have issued a certificate a moment later.
-const ExpiryMargin = 24 * time.Hour
+const expiryMargin = 24 * time.Hour
 
 // Expired reports whether every certificate of a node revoked at has expired by now, when the
 // node's certificates are valid for validity: a revoked node renews none, so its last was issued
-// at the revocation at the latest, give or take ExpiryMargin. A node revoked at an unknown time,
+// at the revocation at the latest, give or take expiryMargin. A node revoked at an unknown time,
 // the zero time, never expires.
 func Expired(at, now time.Time, validity time.Duration) bool {
-	return !at.IsZero() && now.After(at.Add(validity+ExpiryMargin))
+	return !at.IsZero() && now.After(at.Add(validity+expiryMargin))
 }
 
 // Prune removes the nodes for which drop reports true from the list and returns their names in

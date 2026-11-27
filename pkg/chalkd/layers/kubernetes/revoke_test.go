@@ -514,9 +514,10 @@ func (l *revokeLab) revokeAt(t *testing.T, nodes map[string]time.Time) {
 	}
 }
 
-// expiredAt is a revocation time whose node's certificates have all expired by now.
+// expiredAt is a revocation time whose node's certificates have all expired by now, a year past
+// the margin the revoked nodes keep entries for after their validity.
 func expiredAt() time.Time {
-	return time.Now().Add(-(pki.LeafValidity + revoked.ExpiryMargin + time.Hour))
+	return time.Now().Add(-2 * pki.LeafValidity)
 }
 
 // A revocation and an unrevocation first drop the entries whose certificates expired, and apply

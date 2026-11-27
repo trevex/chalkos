@@ -187,7 +187,7 @@ func (a *Approver) Run(ctx context.Context, interval time.Duration) {
 		if err := a.Enforce(ctx); err != nil && ctx.Err() == nil {
 			log.Printf("enforce the revoked nodes' admission policy: %v", err)
 		}
-		if err := a.Label(ctx); err != nil && ctx.Err() == nil {
+		if err := a.label(ctx); err != nil && ctx.Err() == nil {
 			log.Printf("label the control plane's Node: %v", err)
 		}
 		select {
@@ -350,9 +350,9 @@ func (a *Approver) Enforce(ctx context.Context) error {
 	return nil
 }
 
-// Label gives the approver's control plane's Node the label ControlPlaneLabel, once the kubelet
+// label gives the approver's control plane's Node the label ControlPlaneLabel, once the kubelet
 // registered it.
-func (a *Approver) Label(ctx context.Context) error {
+func (a *Approver) label(ctx context.Context) error {
 	if a.Node == "" {
 		return nil
 	}
