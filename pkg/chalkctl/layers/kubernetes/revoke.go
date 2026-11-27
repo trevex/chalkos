@@ -12,6 +12,7 @@ import (
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/internal/strs"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
@@ -240,6 +241,60 @@ func unrevokedLine(name string, at time.Time, stale []string) string {
 		"the old %s's kubelet does not register its Node again by itself: reboot it with chalkctl node reboot %s --no-drain, or restart its kubelet; "+
 		"a node installed afresh as %s registers as usual",
 		name, when, strings.Join(stale, " and "), verb, name, name, name)
+}
+
+func nodePruneRevokedCommand(h layer.Host) *cobra.Command {
+	var f viaFlags
+	cmd := h.Command(&cobra.Command{
+		Use:         "prune-revoked",
+		Short:       "Drop the revoked nodes that nothing lets back in",
+		Long:        nodePruneRevokedLong,
+		Example:     nodePruneRevokedExample,
+		Args:        cli.NoArgs,
+		Annotations: layer.Meta{Credentials: layer.Admin}.Annotations(),
+	}, func(h layer.Host, ctx context.Context, _ []string) error { return nodePruneRevoked(h, ctx, f) })
+	fs := cmd.Flags()
+	f.node.RegisterClient(fs)
+	fs.StringVar(&f.via, "via", "", "control plane that prunes the revoked nodes (default the first one that answers)")
+	return cmd
+}
+
+func nodePruneRevoked(h layer.Host, ctx context.Context, f viaFlags) error {
+	if err := keepsRevokedNodes(h, ctx, f); err != nil {
+		return err
+	}
+	if err := noCARotation(h, ctx, f.node); err != nil {
+		return err
+	}
+	var resp *kubernetesv1.PruneRevokedResponse
+	err := throughControlPlane(h, ctx, f, "", layer.Fetch(&resp, func(conn *client.Conn) (*kubernetesv1.PruneRevokedResponse, error) {
+		return sdkkubernetes.PruneRevoked(ctx, conn)
+	}))
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(h.Stdout(), prunedLines(resp))
+	return nil
+}
+
+// noCARotation refuses while the secrets file, when the command authenticates with it, records a
+// rotation of the OS CA or the Kubernetes CAs: until every node applied its finish, a node may
+// still trust the old CA, to which the certificates of a node revoked before the new one chain. A
+// client file records no rotation.
+func noCARotation(h layer.Host, ctx context.Context, f layer.NodeFlags) error {
+	if f.Secrets.Path == "" || f.Config != "" {
+		return nil
+	}
+	s, err := h.Secrets(ctx, f.Secrets)
+	if err != nil {
+		return err
+	}
+	rot := s.Rotation
+	if rot == nil || rot.Kind != clustersecrets.RotateOSCA && rot.Kind != clustersecrets.RotateKubernetesCA {
+		return nil
+	}
+	return fmt.Errorf("the secrets file records the rotation of the %s in its %s phase, and a node that has not applied its finish may still trust the old CA; "+
+		"chalkctl rotate %s --finish prunes the revoked nodes once every node applied it", rot.Kind.Name(), rot.Phase, rot.Kind)
 }
 
 // revokeFlags are node revoke's flags: --allow-control-plane is the override of viaFlags.

@@ -354,3 +354,27 @@ func (s *secretSources) resolve(nc *inventory.NodeConfig, placeholders bool) (_ 
 	}
 	return &resolved, encrypted, nil
 }
+
+// stdin reads in, standard input, once for the command: a command that reads the secrets file
+// from it twice, as to check the file and then to reach the nodes with it, gets the same bytes
+// again. Without secretSources it reads in each time.
+func (s *secretSources) stdin(in io.Reader) ([]byte, error) {
+	if s == nil {
+		return io.ReadAll(in)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := secretSource{path: "-"}
+	if data, ok := s.files[key]; ok {
+		return data, nil
+	}
+	data, err := io.ReadAll(in)
+	if err != nil {
+		return nil, err
+	}
+	if s.files == nil {
+		s.files = make(map[secretSource][]byte)
+	}
+	s.files[key] = data
+	return data, nil
+}

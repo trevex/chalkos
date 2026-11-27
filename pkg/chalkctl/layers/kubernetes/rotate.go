@@ -92,7 +92,7 @@ func (p *Plugin) PruneRevoked(ctx context.Context, r layer.Rotating, rot cluster
 		resp, err = sdkkubernetes.PruneRevoked(ctx, conn)
 		return err
 	}); err != nil {
-		return err
+		return fmt.Errorf("%w; once that is fixed, prune them with chalkctl node prune-revoked", err)
 	}
 	r.Say("%s", prunedLines(resp))
 	return nil

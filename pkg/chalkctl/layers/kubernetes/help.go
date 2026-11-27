@@ -110,6 +110,25 @@ const nodeUnrevokeExample = `  # Reuse the name w1 once the rotations of os-ca a
   chalkctl node unrevoke w1 --allow-old-ca
   chalkctl node reboot w1 --no-drain`
 
+const nodePruneRevokedLong = `Drops from the revoked nodes those that nothing lets back in: the nodes whose certificates have
+all expired, and those revoked before both the OS CA and the Kubernetes CA that the control plane
+trusts were made, as no CA it trusts vouches for their old certificates. chalkctl rotate os-ca
+--finish and chalkctl rotate kubernetes-ca --finish prune the same way once every node applied the
+finish; run this command when that prune failed. Each control plane drops the expired nodes by
+itself once a day.
+
+With the secrets file, the command refuses while the file records a rotation of the OS CA or the
+Kubernetes CAs: a node that has not applied its finish may still trust the old CA. A client file
+records no rotation, so make sure none runs. After a rotation of which a phase ran with
+--ignore-revoked, a revoked node left in the inventory holds certificates of the new CA, and
+pruning lets it back in: the finish of such a rotation keeps the revoked nodes, so do not prune
+them by hand either.
+
+A control plane prunes the revoked nodes: --via, or the first one that answers.`
+
+const nodePruneRevokedExample = `  # Prune after chalkctl rotate os-ca --finish warned that its prune failed.
+  chalkctl node prune-revoked`
+
 const registryLong = `Manages the images of the cluster registry, which chalkos-registry serves on the nodes that a
 ClusterRegistry document's endpoints name. Nothing copies images between the endpoints, so each
 command acts on every one of them, one after the other, and reports each.`

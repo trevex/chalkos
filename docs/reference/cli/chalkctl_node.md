@@ -9,9 +9,9 @@ Manages one node: renews its node certificate, makes the image staged on it boot
 held by its layers, and lists and runs the diagnostics its image declares. Layers add commands of
 their own.
 
-node renew needs the secrets file; node revoke and node unrevoke need an admin client file or the
-secrets file; node activate and node reboot need an operator client file or the secrets file; node
-diag and node routes need a reader client file or the secrets file.
+node renew needs the secrets file; node prune-revoked, node revoke and node unrevoke need an admin
+client file or the secrets file; node activate and node reboot need an operator client file or the
+secrets file; node diag and node routes need a reader client file or the secrets file.
 
 ## Examples
 
@@ -27,6 +27,7 @@ chalkctl node diag w1 route-get address=2001:db8::1
 - [chalkctl](chalkctl.md): Install and operate chalkos clusters
 - [chalkctl node activate](chalkctl_node_activate.md): Make the image staged on a node boot next
 - [chalkctl node diag](chalkctl_node_diag.md): List or run a node's diagnostics
+- [chalkctl node prune-revoked](chalkctl_node_prune-revoked.md): Drop the revoked nodes that nothing lets back in
 - [chalkctl node reboot](chalkctl_node_reboot.md): Reboot a node, held by its layers, and wait until it is healthy again
 - [chalkctl node renew](chalkctl_node_renew.md): Issue a node a new node certificate, also once its own expired
 - [chalkctl node revoke](chalkctl_node_revoke.md): Cut a node off the cluster by name

@@ -384,7 +384,8 @@ func TestRotateFinishSurvivesAFailedPrune(t *testing.T) {
 	if l.secrets().Rotation != nil {
 		t.Error("the secrets file still records the rotation")
 	}
-	if got := l.ta.stderr.String(); !strings.Contains(got, "warning") || !strings.Contains(got, "the API server does not answer") {
+	if got := l.ta.stderr.String(); !strings.Contains(got, "warning") || !strings.Contains(got, "the API server does not answer") ||
+		!strings.Contains(got, "chalkctl node prune-revoked") {
 		t.Errorf("stderr = %q, want a warning with the prune's error", got)
 	}
 }

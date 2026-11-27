@@ -1,6 +1,7 @@
 package chalkctl
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -19,6 +20,7 @@ import (
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	kubernetesplugin "github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes"
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
@@ -322,3 +324,94 @@ func TestInstallRefusesRevokedNames(t *testing.T) {
 
 // revokedAt is when the tests revoke a node.
 var revokedAt = time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
+
+// node prune-revoked drops the revoked nodes nothing lets back in and says how full the list is.
+func TestNodePruneRevoked(t *testing.T) {
+	ta := newTestApp(t)
+	addr, cs := revokeNode(t, ta)
+	ctx := context.Background()
+	// The cluster's CAs were made now: after w1's revocation, before w2's.
+	future := time.Now().Add(2 * time.Hour).UTC().Truncate(time.Second)
+	for name, at := range map[string]time.Time{"w1": time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC), "w2": future} {
+		if _, err := revoked.Revoke(ctx, cs, name, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := ta.run(ctx, ta.args([]string{"node", "prune-revoked", "--via", "n1"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := ta.stdout.String(), "dropped 1 node from the revoked nodes, which nothing lets back in: w1\nthe revoked nodes fill 0% of their room\n"; got != want {
+		t.Errorf("stdout = %q, want %q", got, want)
+	}
+	if list, _ := revoked.Load(ctx, cs); len(list) != 1 || !list["w2"].Equal(future) {
+		t.Errorf("revoked nodes %v, want w2 alone", list)
+	}
+	if err := ta.run(ctx, ta.args([]string{"node", "prune-revoked", "w2", "--via", "n1"}, addr)); !errors.Is(err, cli.ErrUsage) {
+		t.Errorf("with a node named: %v, want the usage", err)
+	}
+}
+
+// node prune-revoked reads the secrets file from standard input once, though it reads the
+// rotation and reaches the control plane with it.
+func TestNodePruneRevokedSecretsFromStdin(t *testing.T) {
+	ta := newTestApp(t)
+	addr, _ := revokeNode(t, ta)
+	data, err := os.ReadFile(filepath.Join(ta.dir, "secrets.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ta.stdin = bytes.NewReader(data)
+	if err := ta.run(context.Background(), ta.args([]string{"node", "prune-revoked", "--via", "n1", "--secrets", "-"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if got := ta.stdout.String(); !strings.HasPrefix(got, "dropped no node from the revoked nodes\n") {
+		t.Errorf("stdout = %q", got)
+	}
+}
+
+// node prune-revoked refuses while the secrets file records a rotation of the OS CA or the
+// Kubernetes CAs: a node that has not applied its finish yet may trust the old CA.
+func TestNodePruneRevokedRefusesDuringACARotation(t *testing.T) {
+	ta := newTestApp(t)
+	addr, cs := revokeNode(t, ta)
+	ctx := context.Background()
+	if _, err := revoked.Revoke(ctx, cs, "w1", time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(ta.dir, "secrets.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for kind, refused := range map[clustersecrets.RotationKind]bool{
+		clustersecrets.RotateOSCA:          true,
+		clustersecrets.RotateKubernetesCA:  true,
+		clustersecrets.RotateEncryptionKey: false,
+	} {
+		s, err := clustersecrets.Read(data, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.BeginRotation(kind, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		rotating, err := s.Encode()
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, path, string(rotating))
+		err = ta.run(ctx, ta.args([]string{"node", "prune-revoked", "--via", "n1"}, addr))
+		if !refused {
+			if err != nil {
+				t.Errorf("during a rotation of the %s: %v", kind.Name(), err)
+			}
+			continue
+		}
+		if err == nil || !strings.Contains(err.Error(), "records the rotation of the "+kind.Name()) || !strings.Contains(err.Error(), "chalkctl rotate "+string(kind)+" --finish") {
+			t.Errorf("during a rotation of the %s: %v, want a refusal", kind.Name(), err)
+		}
+		if list, _ := revoked.Load(ctx, cs); len(list) != 1 {
+			t.Errorf("the refusal pruned: %v", list)
+		}
+	}
+}

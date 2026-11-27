@@ -38,7 +38,7 @@ func (a *app) loadSecrets(ctx context.Context, s layer.SecretsFlags) (clustersec
 		return clustersecrets.Secrets{}, err
 	}
 	if path == "-" {
-		data, err := io.ReadAll(a.stdin)
+		data, err := sourcesIn(ctx).stdin(a.stdin)
 		if err != nil {
 			return clustersecrets.Secrets{}, fmt.Errorf("read the secrets file: %w", err)
 		}
