@@ -131,7 +131,7 @@ in
           echo "${osCA} is not version ${publicVersion}; chalkos reads version ${publicVersion} only, so generate new secrets with chalkctl gen secrets" >&2
           exit 1
         fi
-        jq -er .osCA.certificate ${osCA} > $out
+        jq -ej .osCA.certificate ${osCA} > $out
       '';
     };
   };

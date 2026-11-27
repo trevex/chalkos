@@ -412,8 +412,9 @@ func closing(t string) int {
 }
 
 // tableCell escapes the pipes of a table cell's text outside its code spans, and what Markdown
-// would take for an HTML tag there, as <path>, as prose does. The site's tables leave a pipe
-// within a code span to the span, where an escape would show.
+// would take for an HTML tag there, as <path>, as prose does. A code span that holds a pipe
+// becomes a code element, since the site's tables leave a pipe within a code span to the span
+// and show an escape there, while GitHub and markdownlint split the cell at the pipe.
 func tableCell(s string) string {
 	var b strings.Builder
 	for i := 0; i < len(s); {
@@ -424,7 +425,7 @@ func tableCell(s string) string {
 			}
 			fence := s[i : i+n]
 			if end := strings.Index(s[i+n:], fence); end >= 0 {
-				b.WriteString(s[i : i+n+end+n])
+				b.WriteString(codeElement(s[i+n:i+n+end], s[i:i+n+end+n]))
 				i += n + end + n
 				continue
 			}
@@ -442,5 +443,28 @@ func tableCell(s string) string {
 		}
 		i++
 	}
+	return b.String()
+}
+
+// codeElement is the text of a code span that holds a pipe as an HTML code element, with its
+// ASCII punctuation as character references, so that neither a table nor other Markdown reads
+// any of it. A span without a pipe stays as it is.
+func codeElement(text, span string) string {
+	if !strings.Contains(text, "|") {
+		return span
+	}
+	if len(text) > 2 && text[0] == ' ' && text[len(text)-1] == ' ' {
+		text = text[1 : len(text)-1]
+	}
+	var b strings.Builder
+	b.WriteString("<code>")
+	for _, r := range text {
+		if strings.ContainsRune("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~", r) {
+			fmt.Fprintf(&b, "&#%d;", r)
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	b.WriteString("</code>")
 	return b.String()
 }

@@ -11,9 +11,9 @@ import (
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
-// imageSlots are the node's two image slots on its boot disk, which upgrades, activations and
-// image rollbacks change and staged config checks read. bootDisk is the node's; tests supply
-// their own.
+// imageSlots are the node's two image slots on its boot disk, which upgrades, activations, image
+// rollbacks and installs in place of a pulled image change and staged config checks read.
+// bootDisk is the node's; tests supply their own.
 type imageSlots interface {
 	// Install installs an upgrade's image with the config and the fallback secret the upgrade
 	// delivers, stages it and, unless stageOnly is set, activates it. Next to the result it returns
@@ -31,6 +31,16 @@ type imageSlots interface {
 	// passes it to read with the image's NixOS system in it. The caller holds the Server's lock
 	// (s.mu), which bootDisk reads the partition table under.
 	Read(ctx context.Context, rootHash []byte, read func(st imageStore, system string) error) error
+	// Place installs the image an install in place pulled into the inactive slot and stages it,
+	// as Install does with stageOnly, but check, not an upgrade's config, has the image's checker
+	// check the config, in the store st with the NixOS system system. An image the slot holds
+	// already is checked again. The caller, Install, holds the Server's lock (s.mu) alone and not
+	// the lock of upgrades (s.upgrading): Upgrade, ActivateImage, RollbackImage and trials run in
+	// normal mode only, and Install in maintenance mode only.
+	Place(ctx context.Context, h upgrade.Header, check func(st imageStore, system string) error, image io.Reader) (upgrade.Result, error)
+	// ActivatePlaced makes the image Place staged, by its root hash, boot next, as Activate does,
+	// once STATE keeps its config slot. The caller holds the Server's lock (s.mu), as for Place.
+	ActivatePlaced(ctx context.Context, rootHash []byte) (upgrade.Result, error)
 }
 
 // imageSlots are s's image slots: those tests supply, or else the boot disk's.
@@ -90,6 +100,24 @@ func (d bootDisk) Read(ctx context.Context, rootHash []byte, read func(st imageS
 		return err
 	}
 	return n.ReadImage(ctx, rootHash, func(st upgrade.Store) error { return read(st, st.Toplevel) })
+}
+
+func (d bootDisk) Place(ctx context.Context, h upgrade.Header, check func(st imageStore, system string) error, image io.Reader) (upgrade.Result, error) {
+	n, err := d.s.upgradeNodeLocked()
+	if err != nil {
+		return upgrade.Result{}, err
+	}
+	n.CheckStore = func(st upgrade.Store) error { return check(st, st.Toplevel) }
+	return n.Install(ctx, h, image)
+}
+
+func (d bootDisk) ActivatePlaced(ctx context.Context, rootHash []byte) (upgrade.Result, error) {
+	n, err := d.s.upgradeNodeLocked()
+	if err != nil {
+		return upgrade.Result{}, err
+	}
+	n.CheckStaged = d.s.keepsStagedSlot
+	return n.Activate(ctx, rootHash)
 }
 
 // upgradeNode is the node an upgrade changes. It reads and changes the boot disk's partition

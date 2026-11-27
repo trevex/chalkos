@@ -2,13 +2,11 @@ package chalkctl
 
 import (
 	"slices"
-	"time"
-
-	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	kuberneteslayer "github.com/trevex/chalkos/pkg/chalkctl/layers/kubernetes"
 	routerlayer "github.com/trevex/chalkos/pkg/chalkctl/layers/router"
+	"github.com/trevex/chalkos/pkg/sdk"
 )
 
 // plugins are chalkctl's layers, in the order of their names.
@@ -36,18 +34,8 @@ func pluginsOf[T any](names []string) []T {
 	return list
 }
 
-// payloadsOf are the payloads every compiled layer issues t at now.
-func payloadsOf(t *target, now time.Time) ([]*anypb.Any, error) {
-	var payloads []*anypb.Any
-	for _, d := range compiled[layer.Delivery]() {
-		p, err := d.Payloads(t, now)
-		if err != nil {
-			return nil, err
-		}
-		payloads = append(payloads, p...)
-	}
-	return payloads, nil
-}
+// sdkLayers are the compiled plugins as the SDK takes them.
+func sdkLayers() []sdk.Layer { return compiled[sdk.Layer]() }
 
 // nodeCAHolders are the nodes that every compiled layer names as holders of the node CA, in the
 // layers' order and each once.

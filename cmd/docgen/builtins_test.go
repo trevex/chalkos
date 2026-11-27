@@ -80,15 +80,16 @@ func TestWriteBuiltins(t *testing.T) {
 	for _, want := range []string{
 		// A kind rule comes first, then the field rules by path, also those of a $ref, each with
 		// what it guards, or — without a description. A long expression follows the table; a pipe
-		// outside a code span is escaped, and one inside is not, and so is a placeholder.
+		// outside a code span is escaped, a span with a pipe is a code element, and a placeholder
+		// is escaped.
 		"| Rule | Field | Guards | Takes | Expression | Message |\n| --- | --- | --- | --- | --- | --- |\n" +
 			"| 1 | — | A volume keeps its recorded size, and its disk is plugged in. | `reset` | after the table | after the table |\n" +
-			"| 2 | `spec.size` | A volume keeps its size, &lt;size>. | `refuse` | `self == oldSelf || facts.recorded == null` | the size \\| stays |\n" +
+			"| 2 | `spec.size` | A volume keeps its size, &lt;size>. | `refuse` | <code>self &#61;&#61; oldSelf &#124;&#124; facts&#46;recorded &#61;&#61; null</code> | the size \\| stays |\n" +
 			"| 3 | `spec.taint.key` | — | `refuse` | `self != ''` | a key |\n",
 		"\nExpression of rule 1:\n\n```text\nfacts.recorded == null || documents.all(n, documents[n].spec.size == facts.recorded.volumes[n].size && facts.disks[n].present)\n```\n",
 		"\nMessage of rule 1:\n\n```text\ndocuments.filter(n, true)\n  .join(\"; \")\n```\n",
-		"| 1 | — | The node keeps the type of its share. | `refuse` | `facts.share == null || documents.all(n, documents[n].spec.type == facts.share.kind)` | `\"the type is \" + facts.share.kind` |\n" +
-			"| 2 | `spec.labels` | — | `refuse` | `facts.share == null || self == oldSelf` | the labels are fixed |\n",
+		"| 1 | — | The node keeps the type of its share. | `refuse` | <code>facts&#46;share &#61;&#61; null &#124;&#124; documents&#46;all&#40;n&#44; documents&#91;n&#93;&#46;spec&#46;type &#61;&#61; facts&#46;share&#46;kind&#41;</code> | `\"the type is \" + facts.share.kind` |\n" +
+			"| 2 | `spec.labels` | — | `refuse` | <code>facts&#46;share &#61;&#61; null &#124;&#124; self &#61;&#61; oldSelf</code> | the labels are fixed |\n",
 		// Store paths show as the names of their programs and files.
 		"| Fact | Reads | Read by |\n| --- | --- | --- |\n" +
 			"| `disks`{ #fact-disks } | What `chalkos-storage-facts disks` prints. | The rules of `Volume`. |\n" +
@@ -114,7 +115,7 @@ func TestWriteBuiltins(t *testing.T) {
 		"| Diagnostic | Does | Parameters | Role | Capabilities |\n| --- | --- | --- | --- | --- |\n" +
 			"| `ping`{ #diagnostic-ping } | Sends ICMP echo requests to an address. Runs `ping -n -w 10 -c {count} {address}`. | `address`, address; `count`, int from 1 to 10, default `4` | operator | `CAP_NET_RAW` |\n" +
 			"| `route-get`{ #diagnostic-route-get } | The route the kernel takes to an address. Runs `ip -json route get {address}`. | `address`, address | reader | — |\n" +
-			"| `routes`{ #diagnostic-routes } | The routes of one family in one table. Runs `ip -json -family {family} route show table {table}`. | `family`, enum of `inet` or `inet6`, default `inet`; `table`, pattern `^(main|local|default|all|[0-9]+)$`, default `main` | reader | — |\n" +
+			"| `routes`{ #diagnostic-routes } | The routes of one family in one table. Runs `ip -json -family {family} route show table {table}`. | `family`, enum of `inet` or `inet6`, default `inet`; `table`, pattern <code>&#94;&#40;main&#124;local&#124;default&#124;all&#124;&#91;0&#45;9&#93;&#43;&#41;&#36;</code>, default `main` | reader | — |\n" +
 			"| `tcp-connect`{ #diagnostic-tcp-connect } | Opens a TCP connection to an address and port. Runs `bash -c <script> tcp-connect {address} {port}`, with the script after the table. | `address`, address; `port`, int from 1 to 65535 | operator | — |\n" +
 			"\nScript of `tcp-connect`:\n\n```text\nif : <>\"/dev/tcp/$1/$2\"; then\n  echo \"connected to $1 port $2\"\nfi\n```\n",
 		"| `crictl-pods`{ #diagnostic-crictl-pods } | The pods the kubelet runs, as crictl pods prints them. Runs `crictl pods`. | — | reader | — |\n",

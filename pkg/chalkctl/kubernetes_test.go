@@ -31,6 +31,7 @@ import (
 	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/sdk/sdktest"
 )
 
 // withKind makes n1 a Kubernetes node of the kind, on an image with Kubernetes.
@@ -43,7 +44,7 @@ func withKind(t *testing.T, ta *testApp, kind string) {
 
 func installShare(t *testing.T, ta *testApp) (install.Request, error) {
 	t.Helper()
-	s := maintenanceNode()
+	s := sdktest.Maintenance()
 	var got install.Request
 	s.InPlace = func(_ context.Context, req install.Request, _ []byte) error { got = req; return nil }
 	if ta.kind != "" {
@@ -152,7 +153,7 @@ func kubernetesNodeWith(t *testing.T, ta *testApp, o kubernetesplugin.Options) (
 	// The cluster file chalkd writes from the node's config.
 	writeFile(t, kubernetesState(s).Cluster, clusterFile(t, "worker"))
 	// The facts the kubelet's restart rules read, as the image declares them.
-	writeContract(t, s, imagecontract.FactsFile, `{"recorded": {"file": "`+filepath.Join(s.Paths.StateDir, "storage", "storage.json")+`"},
+	sdktest.WriteContract(t, s, imagecontract.FactsFile, `{"recorded": {"file": "`+filepath.Join(s.Paths.StateDir, "storage", "storage.json")+`"},
 	  "share": {"file": "`+kubernetesState(s).Share()+`", "fields": ["kind"], "hashOthers": true},
 	  "cluster": {"file": "`+kubernetesState(s).Cluster+`"}}`)
 	return s, r

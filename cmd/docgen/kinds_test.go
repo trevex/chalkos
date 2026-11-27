@@ -55,7 +55,7 @@ func TestWriteKinds(t *testing.T) {
 		"| `spec.disk` | object | — | The disk the volume is on. |\n| `spec.disk.path` | string | — | Path below /dev, as &lt;path>. |\n| `spec.encryption.mode` | one of `tpm2`, `none` | `\"tpm2\"` | Encryption of the volume. |\n| `spec.extra` |",
 		"| `spec.labels` | map of string | `{}` | Labels \\| with a pipe. |\n",
 		"| `spec.password` | secret reference or null | `null` |  |\n",
-		"| `spec.extra` | object, any fields | — | Any fields, as `a|b`. |\n| `spec.labels` |",
+		"| `spec.extra` | object, any fields | — | Any fields, as <code>a&#124;b</code>. |\n| `spec.labels` |",
 		"| `spec.mode` | `l2` | `\"l2\"` |  |\n| `spec.objects` | list of Kubernetes object | — |  |\n| `spec.password` |",
 		// A list's bound and a field's uniqueness declarations end its description, a sentence each.
 		"| `spec.size` | integer from 1 to 100 | — | Unique among the Volume documents. |\n| `spec.source` | name of a Volume, or `none` | — |  |\n",

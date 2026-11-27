@@ -136,7 +136,7 @@ The build writes six entries:
 - `repart.d` holds the partition definitions of the system region, which the installer lays out
   on a target disk.
 - `metadata.json` names the image's root hash, name and platform, the revision and tag it was
-  built from, and the kinds it accepts.
+  built from, the OS CA it carries and the kinds it accepts.
 - `schemas` holds the JSON Schema of each kind the image accepts.
 - `facts` holds a `<layer>.json` for each of the image's layers that has facts. On an image with
   Kubernetes, `facts/kubernetes.json` records what the image fixes about Kubernetes: the release of

@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 )
 
 // APIServerFlags are the flags chalkos sets on the API server. Extra flags must not override
@@ -74,14 +75,14 @@ var conflictingAPIServerFlags = map[string]flagConflict{
 
 // protectedKubeletFlags are the kubelet's flags chalkos sets: where it finds its configuration,
 // credentials, credential provider, certificates and static pods, the node's name, addresses,
-// labels and taints, and who may use its API. Extra flags come last on the kubelet's command
-// line, so they would override them.
+// provider ID, labels and taints, and who may use its API. Extra flags come last on the kubelet's
+// command line, so they would override them.
 var protectedKubeletFlags = []string{
 	"anonymous-auth", "authentication-token-webhook", "authorization-mode", "bootstrap-kubeconfig",
 	"cert-dir", "client-ca-file", "config", "config-dir", "hostname-override",
 	"image-credential-provider-bin-dir", "image-credential-provider-config", "kubeconfig", "node-ip",
-	"node-labels", "pod-manifest-path", "read-only-port", "register-with-taints", "rotate-certificates",
-	"tls-cert-file", "tls-private-key-file",
+	"node-labels", "pod-manifest-path", "provider-id", "read-only-port", "register-with-taints",
+	"rotate-certificates", "tls-cert-file", "tls-private-key-file",
 }
 
 // flagName is a flag's name as the Kubernetes components read it: they take _ for -, so
@@ -106,8 +107,8 @@ func (c Cluster) validateExtraArgs() error {
 // flagNamePattern refuses, that are protected in any spelling, or that conflict with chalkos's;
 // errors start with the flag. The API server's disable-admission-plugins must not name
 // requiredAdmissionPlugins. Kubelet flags reach it through KUBELET_ARGS, which systemd reads from
-// an environment file that drops backslashes and ExecStart splits at whitespace, so they hold
-// neither.
+// an environment file that drops backslashes, and ExecStart splits at whitespace and then drops
+// quotes, so they hold none of those.
 func ValidateFlags(component string, flags map[string]string) error {
 	protected := map[string]func(string) bool{
 		"kube-apiserver": protectedAPIServerFlag,
@@ -126,11 +127,14 @@ func ValidateFlags(component string, flags map[string]string) error {
 			if component == "kubelet" && (flagName(name) == "node-labels" || flagName(name) == "register-with-taints") {
 				err = fmt.Errorf("%w; give the node's labels and taints in the Node document's labels and taints", err)
 			}
+			if component == "kubelet" && flagName(name) == "provider-id" {
+				err = fmt.Errorf("%w; give the node's provider ID in the Node document's providerID", err)
+			}
 			return err
 		}
 		if component != "kube-apiserver" {
-			if component == "kubelet" && strings.ContainsAny(name+flags[name], " \t\r\n\\") {
-				return fmt.Errorf("--%s=%q: the kubelet's flags cannot hold whitespace or backslashes", name, flags[name])
+			if component == "kubelet" && !KubeletArgument(name+flags[name]) {
+				return fmt.Errorf("--%s=%q: the kubelet's flags cannot hold whitespace, quotes, control characters or backslashes", name, flags[name])
 			}
 			continue
 		}
@@ -146,6 +150,16 @@ func ValidateFlags(component string, flags map[string]string) error {
 		}
 	}
 	return nil
+}
+
+// KubeletArgument reports whether s can be part of one of the kubelet's arguments, which reach it
+// through an environment variable that ExecStart splits at whitespace and then strips quotes
+// from, from an environment file that drops backslashes: s holds no whitespace, quote, control
+// character or backslash.
+func KubeletArgument(s string) bool {
+	return !strings.ContainsFunc(s, func(r rune) bool {
+		return unicode.IsSpace(r) || unicode.IsControl(r) || r == '\\' || r == '\'' || r == '"'
+	})
 }
 
 // MergeFlags returns a component's flags: base with the extra flags on top. The API server's

@@ -457,6 +457,8 @@ func TestInPlaceKeepsMatchingState(t *testing.T) {
 	}
 }
 
+// TestInPlaceRefusals refuses an install in place before anything changes: nothing runs, and an
+// image to place, such as one chalkd pulled, is not placed.
 func TestInPlaceRefusals(t *testing.T) {
 	for _, c := range []struct {
 		name   string
@@ -502,6 +504,10 @@ func TestInPlaceRefusals(t *testing.T) {
 			r.add(inPlaceRules(i)...)
 			req := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))
 			c.change(t, i, &req)
+			req.Place = func(context.Context) (Checked, error) {
+				t.Error("placed the image of a refused install")
+				return Checked{}, errors.New("placed")
+			}
 			err := i.InPlace(context.Background(), req, runningHash)
 			if err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Fatalf("err = %v, want %q", err, c.want)
@@ -762,4 +768,88 @@ func TestRemoveState(t *testing.T) {
 	if err := i.RemoveState(context.Background()); err == nil || !strings.Contains(err.Error(), "installed") {
 		t.Errorf("RemoveState of an installed node = %v", err)
 	}
+}
+
+// TestInPlaceActivatesBeforeTheMarker has an install in place of an image the node placed in its
+// inactive slot activate that image once STATE holds its config slot, before the node is marked
+// installed; an activation that fails leaves the node uninstalled, and the install repeated
+// activates and marks it.
+func TestInPlaceActivatesBeforeTheMarker(t *testing.T) {
+	placed := bytes.Repeat([]byte{0xcd}, 32)
+	r := &fakeRunner{}
+	i := newTestInstaller(t, r, vda, vdb)
+	r.add(inPlaceRules(i)...)
+	req := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))
+	fail := true
+	req.ActivateImage = func(context.Context) error {
+		if _, found, err := slot.Read(slot.Dir(filepath.Join(i.StateDir, "config"), placed)); err != nil || !found {
+			t.Errorf("activated without the image's config slot: %v", err)
+		}
+		if installed(t, i.StateDir) {
+			t.Error("activated once the node was marked installed")
+		}
+		if fail {
+			return errors.New("the ESP went away")
+		}
+		return nil
+	}
+	if err := i.InPlace(context.Background(), req, placed); err == nil || !strings.Contains(err.Error(), "the ESP went away") {
+		t.Fatalf("install = %v, want the activation's error", err)
+	}
+	if installed(t, i.StateDir) {
+		t.Fatal("the node counts as installed although its image was not activated")
+	}
+	fail = false
+	if err := i.InPlace(context.Background(), req, placed); err != nil {
+		t.Fatal(err)
+	}
+	if !installed(t, i.StateDir) {
+		t.Error("the node is not marked installed")
+	}
+}
+
+// TestInPlaceTakesThePlacedImagesConfig places the image to install once the request passed its
+// checks, before STATE changes, and writes the config slot, storage and payloads the placed
+// image's checker gave. A section of the checker that puts the system on another disk is refused
+// before STATE changes.
+func TestInPlaceTakesThePlacedImagesConfig(t *testing.T) {
+	placed := bytes.Repeat([]byte{0xcd}, 32)
+	t.Run("written", func(t *testing.T) {
+		r := &fakeRunner{}
+		i := newTestInstaller(t, r, vda, vdb)
+		r.add(inPlaceRules(i)...)
+		req := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))
+		checked := req.Config
+		checked.Version = "placed"
+		wrote := false
+		req.Place = func(context.Context) (Checked, error) {
+			if len(r.Calls) != 0 {
+				t.Errorf("placed the image after %v", r.Calls)
+			}
+			return Checked{Config: checked, Layers: []func(string) error{func(string) error { wrote = true; return nil }}}, nil
+		}
+		if err := i.InPlace(context.Background(), req, placed); err != nil {
+			t.Fatal(err)
+		}
+		if got, found, err := slot.Read(slot.Dir(filepath.Join(i.StateDir, "config"), placed)); err != nil || !found || got.Version != "placed" {
+			t.Errorf("the placed image's slot = %+v, %v, %v", got, found, err)
+		}
+		if !wrote {
+			t.Error("the placed image's payloads were not written")
+		}
+	})
+	t.Run("another system disk", func(t *testing.T) {
+		r := &fakeRunner{}
+		i := newTestInstaller(t, r, vda, vdb)
+		r.add(inPlaceRules(i)...)
+		req := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vda"))
+		other := testRequest(t, testSection(storage.EncryptionTPM2, "recovery-key", "/dev/vdb"))
+		req.Place = func(context.Context) (Checked, error) { return Checked{Config: other.Config}, nil }
+		if err := i.InPlace(context.Background(), req, placed); err == nil || !strings.Contains(err.Error(), "install it with the installer") {
+			t.Fatalf("install = %v, want the placed image's system disk refused", err)
+		}
+		if len(r.Calls) != 0 {
+			t.Errorf("ran %v", r.Calls)
+		}
+	})
 }

@@ -44,6 +44,9 @@ type imageCheck struct {
 	// image whose slot is written, which a refusal of a storage change leaves out of those it
 	// names.
 	image, writing []byte
+	// install reads every fact as null, as at an install in place: what an attempt before it left
+	// on STATE is not the node's.
+	install bool
 }
 
 // checkWithImage has the image in the store st, whose NixOS system is system, check c for the node
@@ -144,6 +147,7 @@ func (s *Server) stagedFacts(ctx context.Context, st imageStore, system string, 
 	}
 	l := facts.NewLoader(ctx, defs, run)
 	l.Inputs = map[string]any{facts.FallbackSecret: c.secret}
+	l.Install = c.install
 	sf := servedFacts{l: l, overrides: map[string]any{}}
 	if c.recorded != nil {
 		sf.overrides["recorded"] = jsonValue(*c.recorded)

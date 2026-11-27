@@ -165,11 +165,11 @@ A node's config holds at most one.
 
 ### Node { #node }
 
-The node's part in the Kubernetes cluster: its type, the labels and taints it registers with, its address, the interface of the VIP and its kubelet's flags.
+The node's part in the Kubernetes cluster: its type, the provider ID, labels and taints it registers with, its address, the interface of the VIP and its kubelet's flags.
 
 `apiVersion: kubernetes.chalkos.dev/v1alpha1`
 
-A node's config holds at most one. It has 4 [change rules](builtins.md#rules-node).
+A node's config holds at most one. It has 5 [change rules](builtins.md#rules-node).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -177,6 +177,7 @@ A node's config holds at most one. It has 4 [change rules](builtins.md#rules-nod
 | `spec.labels` | map of string | `{}` | Kubernetes labels the node registers with; they are fixed once the node holds a Kubernetes share. |
 | `spec.nodeIP.addresses` | list of IP address or null | `null` | Fixed addresses of the node, at most one per family; null takes the first static address of each family unless validSubnets apply. |
 | `spec.nodeIP.validSubnets` | list of string or null | `null` | Subnets the node picks its address from, which replace the Cluster's nodeIP.validSubnets as a whole; null takes the Cluster's. |
+| `spec.providerID` | string or null | `null` | Provider ID the node registers with, such as kubevirt://w1, by which Cluster API finds the node of a Machine; null registers the node without one. It holds no whitespace, quotes, control characters or backslashes, as it is one of the kubelet's arguments. It is fixed once the node holds a Kubernetes share. |
 | `spec.taints` | list of object | `[]` | Kubernetes taints the node registers with; they are fixed once the node holds a Kubernetes share. |
 | `spec.taints[].effect` | one of `NoSchedule`, `PreferNoSchedule`, `NoExecute` | required | Effect of the taint on pods that do not tolerate it. |
 | `spec.taints[].key` | string | required | Taint key. |
@@ -707,7 +708,7 @@ A node's config may hold several, each with a name of its own. It has 4 [change 
 | --- | --- | --- | --- |
 | `spec.default` | one of `accept`, `reject` | `"reject"` | What the router does with a route no term matches. |
 | `spec.terms` | list of object | `[]` | Terms in order: the first whose match holds for a route decides. |
-| `spec.terms[].match.asPath` | string or null | `null` | Regular expression the route's AS path matches, with `_` for the start, the end or a space between two ASes; null matches every path. It holds up to 200 digits, single spaces and `_^$.*+?()|{},-`. The schema and rules check these characters alone; the output frr refuses an expression that bgpd cannot compile. |
+| `spec.terms[].match.asPath` | string or null | `null` | Regular expression the route's AS path matches, with `_` for the start, the end or a space between two ASes; null matches every path. It holds up to 200 digits, single spaces and <code>&#95;&#94;&#36;&#46;&#42;&#43;&#63;&#40;&#41;&#124;&#123;&#125;&#44;&#45;</code>. The schema and rules check these characters alone; the output frr refuses an expression that bgpd cannot compile. |
 | `spec.terms[].match.communityList` | name of a CommunityList or null | `null` | CommunityList one of whose communities the route carries; null matches every route. |
 | `spec.terms[].match.prefixList` | name of a PrefixList or null | `null` | PrefixList the route's prefix matches; null matches every prefix. |
 | `spec.terms[].then` | object | required |  |

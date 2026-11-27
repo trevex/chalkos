@@ -17,6 +17,8 @@ type fakeSlots struct {
 	activate   func(ctx context.Context, rootHash []byte) (upgrade.Result, error)
 	reactivate func(ctx context.Context, rootHash []byte, record func() error) (upgrade.Result, error)
 	read       func(ctx context.Context, rootHash []byte, read func(imageStore, string) error) error
+	place      func(ctx context.Context, h upgrade.Header, check func(imageStore, string) error, image io.Reader) (upgrade.Result, error)
+	activateIn func(ctx context.Context, rootHash []byte) (upgrade.Result, error)
 }
 
 // fakeImageSlots are s's fakeSlots, which it is given unless it has them already.
@@ -81,4 +83,18 @@ func (f *fakeSlots) Read(ctx context.Context, rootHash []byte, read func(imageSt
 		return f.disk.Read(ctx, rootHash, read)
 	}
 	return f.read(ctx, rootHash, read)
+}
+
+func (f *fakeSlots) Place(ctx context.Context, h upgrade.Header, check func(imageStore, string) error, image io.Reader) (upgrade.Result, error) {
+	if f.place == nil {
+		return f.disk.Place(ctx, h, check, image)
+	}
+	return f.place(ctx, h, check, image)
+}
+
+func (f *fakeSlots) ActivatePlaced(ctx context.Context, rootHash []byte) (upgrade.Result, error) {
+	if f.activateIn == nil {
+		return f.disk.ActivatePlaced(ctx, rootHash)
+	}
+	return f.activateIn(ctx, rootHash)
 }

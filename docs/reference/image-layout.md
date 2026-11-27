@@ -215,7 +215,7 @@ holds six entries:
 | `chalkos.raw` | The raw disk image: the ESP, with the UKI as `/EFI/Linux/chalkos_1.efi`, and slot A labelled with its root hash, with no slot B and no STATE. |
 | `repart-output.json` | systemd-repart's description of the raw image's partitions: type, label, UUID, offset, size and the store's root hash, with slot A's labels as the raw image carries them. `chalkbuild sign` and `chalkctl install` find the partitions with it. |
 | `repart.d` | The system region's definitions, `00-esp.conf` to `50-state.conf`, as the image carries them in `/etc/chalkos/repart.d`. |
-| `metadata.json` | What the image is: `schemaVersion` of this file (0), the image ID, the image's `name`, its `platform` and the store's root hash (`rootHash`), the `revision` and `tag` mkImages was given, null without them, and `annotations`, those of the image's [OCI manifest](#oci-annotations), such as the Kubernetes version of an image with the Kubernetes layer. chalkctl reads the root hash and the platform from it, and sends the revision and tag with the image when the file names its root hash; chalkctl warns of a file it ignores. |
+| `metadata.json` | What the image is: `schemaVersion` of this file (0), the image ID, the image's `name`, its `platform` and the store's root hash (`rootHash`), the `revision` and `tag` mkImages was given, null without them, `annotations`, those of the image's [OCI manifest](#oci-annotations), such as the Kubernetes version of an image with the Kubernetes layer, and `osCA`, the PEM certificate of the [OS CA](mkimages.md#osca) the image carries, null without one. chalkctl reads the root hash and the platform from it, and sends the revision and tag with the image when the file names its root hash; chalkctl warns of a file it ignores. An install from a registry with the SDK refuses an image whose `osCA` is none of the cluster's OS CAs before the node receives anything. |
 | `schemas` | One JSON Schema (draft 2020-12, the schema dialect of OpenAPI 3.1) per kind, named `<group>_<version>_<kind>.json`, as the image carries them in `/etc/chalkos/schemas`. |
 | `facts` | The facts of the image's layers, one `<layer>.json` for each layer that sets [`chalkos.imageDirectory.facts`](extension-api.md#chalkosimagedirectoryfacts); empty on an image without such layers. On an image with Kubernetes, `facts/kubernetes.json` is what the image fixes about Kubernetes, the file the image carries as `/etc/chalkos/kubernetes/image.json`: the release of its kubelet and its pod network (`{"version": "1.37.2", "cni": "flannel"}`). An install from the installer sends the facts with `schemas`, or the installer reads both from the contract layer of an image it pulls, so the installer translates the node's config for the image it writes to lay out the target disk; an upgrade checks each node's config from the inventory against both before it drains a node, and chalkd checks the config it carries against those of the image it wrote. |
 
@@ -253,7 +253,7 @@ whose `repart.d` was changed by other means.
 The installer's directory holds `chalkos-installer.raw` and its `repart-output.json`, the hybrid
 ISO `chalkos-installer.iso`, `chalkos-installer.iso.json`, which describes the ISO's partitions
 as `repart-output.json` does, and a `metadata.json` of the same fields, with the ID
-`chalkos-installer`, no name or platform, and the installer's root hash, revision and tag.
+`chalkos-installer`, no name or platform, and the installer's root hash, revision, tag and OS CA.
 
 ## OCI artifact { #oci-artifact }
 

@@ -13,6 +13,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/google/go-containerregistry/pkg/authn"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 
 	"github.com/trevex/chalkos/pkg/atomicfile"
@@ -49,7 +50,7 @@ func Layout(ctx context.Context, ref, dir string) (Pulled, error) {
 // pull reads ref's header and contract, refuses a dir that holds another image, as held reads
 // its digest, and writes dir with write unless it holds the image already.
 func pull(ctx context.Context, ref, dir string, held func(ctx context.Context, dir string) (v1.Hash, error), write func(ctx context.Context, tmp string, a *ociimage.Artifact) error) (Pulled, error) {
-	a, err := ociimage.Read(ctx, ref)
+	a, err := ociimage.Read(ctx, ref, authn.DefaultKeychain)
 	if err != nil {
 		return Pulled{}, fmt.Errorf("pull %s: %w", ref, err)
 	}

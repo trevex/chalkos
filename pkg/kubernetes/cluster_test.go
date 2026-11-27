@@ -229,9 +229,9 @@ func TestClusterValidate(t *testing.T) {
 }
 
 // The kubelet's extra flags come after chalkos's own, so they would override where it finds its
-// configuration, credentials and credential provider, the node's name, addresses, labels and
-// taints, and who may use its API. The components take _ for - anywhere in a name, so the names are
-// refused in either spelling; one flag of each list stands for the others.
+// configuration, credentials and credential provider, the node's name, addresses, provider ID,
+// labels and taints, and who may use its API. The components take _ for - anywhere in a name, so
+// the names are refused in either spelling; one flag of each list stands for the others.
 func TestClusterValidateRefusesProtectedFlags(t *testing.T) {
 	valid, err := ReadCluster(writeFile(t, clusterJSON))
 	if err != nil {
@@ -247,8 +247,8 @@ func TestClusterValidateRefusesProtectedFlags(t *testing.T) {
 		"anonymous-auth", "authentication-token-webhook", "authorization-mode", "bootstrap-kubeconfig",
 		"cert-dir", "client-ca-file", "config", "config-dir", "hostname-override",
 		"image-credential-provider-bin-dir", "image-credential-provider-config", "kubeconfig", "node-ip",
-		"node-labels", "pod-manifest-path", "read-only-port", "register-with-taints", "rotate-certificates",
-		"tls-cert-file", "tls-private-key-file",
+		"node-labels", "pod-manifest-path", "provider-id", "read-only-port", "register-with-taints",
+		"rotate-certificates", "tls-cert-file", "tls-private-key-file",
 	) {
 		c := valid
 		c.ExtraArgs = map[string]map[string]string{"kubelet": {"v": "2", name: "x"}}
@@ -282,11 +282,14 @@ func TestClusterValidateRefusesProtectedFlags(t *testing.T) {
 		}
 	}
 	// The kubelet's flags reach it through an environment variable that ExecStart splits at
-	// whitespace, from an environment file that drops backslashes.
-	for name, value := range map[string]string{"space": "a=b c=d", "tab": "2\t", "newline": "2\nX=1", "carriage return": "2\r", "backslash": `a=b\c`} {
+	// whitespace and then strips quotes from, from an environment file that drops backslashes.
+	for name, value := range map[string]string{
+		"space": "a=b c=d", "tab": "2\t", "newline": "2\nX=1", "carriage return": "2\r", "control character": "2\x1b",
+		"backslash": `a=b\c`, "single quote": `a='b'`, "double quote": `a="b"`,
+	} {
 		c := valid
 		c.ExtraArgs = map[string]map[string]string{"kubelet": {"eviction-hard": value}}
-		if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "cannot hold whitespace or backslashes") {
+		if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "cannot hold whitespace, quotes, control characters or backslashes") {
 			t.Errorf("kubelet flag with a %s: err = %v", name, err)
 		}
 	}
@@ -294,6 +297,10 @@ func TestClusterValidateRefusesProtectedFlags(t *testing.T) {
 	c.ExtraArgs = map[string]map[string]string{"kubelet": {"node_labels": "a=b"}}
 	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "in the Node document's labels and taints") {
 		t.Errorf("node_labels: err = %v, want the labels' document named", err)
+	}
+	c.ExtraArgs = map[string]map[string]string{"kubelet": {"provider-id": "x"}}
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "in the Node document's providerID") {
+		t.Errorf("provider-id: err = %v, want the provider ID's document named", err)
 	}
 	// Flags reach the components as --name=value: a name with its dashes, an = or whitespace would
 	// set another flag than it names, such as a protected one. The check is the same for every
@@ -674,5 +681,15 @@ func TestClusterFileRoundTrip(t *testing.T) {
 	}
 	if string(again)+"\n" != string(data) {
 		t.Errorf("%s reads back as\n%s", path, again)
+	}
+}
+
+func TestParseNodeProviderID(t *testing.T) {
+	n, err := ParseNode([]byte(`{"layers": {"kubernetes": {"nodeName": "w1", "providerID": "kubevirt://w1"}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n.ProviderID != "kubevirt://w1" {
+		t.Errorf("provider ID = %q, want kubevirt://w1", n.ProviderID)
 	}
 }

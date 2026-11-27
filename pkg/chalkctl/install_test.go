@@ -26,6 +26,8 @@ import (
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/schema/schematest"
+	"github.com/trevex/chalkos/pkg/sdk/sdktest"
 	"github.com/trevex/chalkos/pkg/statusview"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/upgrade"
@@ -33,7 +35,7 @@ import (
 
 func TestInstallInPlace(t *testing.T) {
 	ta := newTestApp(t)
-	s := maintenanceNode()
+	s := sdktest.Maintenance()
 	var got install.Request
 	s.InPlace = func(_ context.Context, req install.Request, _ []byte) error { got = req; return nil }
 	addr := ta.startNode(t, s)
@@ -79,7 +81,7 @@ func TestInstallInPlace(t *testing.T) {
 func TestInstallInPlaceRefusesAnotherPlatform(t *testing.T) {
 	ta := newTestApp(t)
 	writeImageDir(t, filepath.Join(ta.dir, "images", "test-metal"), "test-kvm", "kvm", testRootHash, false)
-	s := maintenanceNode()
+	s := sdktest.Maintenance()
 	called := false
 	s.InPlace = func(context.Context, install.Request, []byte) error { called = true; return nil }
 	addr := ta.startNode(t, s)
@@ -94,7 +96,7 @@ func TestInstallInPlaceRefusesAnotherPlatform(t *testing.T) {
 
 func TestInstallRefusesWrongFingerprint(t *testing.T) {
 	ta := newTestApp(t)
-	s := maintenanceNode()
+	s := sdktest.Maintenance()
 	called := false
 	s.InPlace = func(context.Context, install.Request, []byte) error { called = true; return nil }
 	addr := ta.startNode(t, s)
@@ -110,6 +112,17 @@ func TestInstallRefusesWrongFingerprint(t *testing.T) {
 	}
 }
 
+// TestInstallNamesTheSourceOfAnUnreachableAddress names an address install cannot reach with
+// where it comes from, as status does.
+func TestInstallNamesTheSourceOfAnUnreachableAddress(t *testing.T) {
+	ta := newTestApp(t)
+	// Port 1 refuses the connection at once.
+	err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--insecure"}, "127.0.0.1:1"))
+	if err == nil || !strings.Contains(err.Error(), "127.0.0.1:1 (from --address)") {
+		t.Errorf("an unreachable --address: %v, want it named with --address", err)
+	}
+}
+
 // TestInstallFromPartsStreamsTheImage sends the installer the image's store, hash tree, UKI and
 // boot loader with the header describing them, and the image's definitions. The image may be
 // another than the node's image in the inventory: the installer checks the config against the
@@ -117,7 +130,7 @@ func TestInstallRefusesWrongFingerprint(t *testing.T) {
 func TestInstallFromPartsStreamsTheImage(t *testing.T) {
 	ta := newTestApp(t)
 	imageDir := testUpgradeImage(t, "gpu-metal", "0.1.0")
-	copySchemas(t, filepath.Join(imageDir, "schemas"))
+	schematest.Copy(t, filepath.Join(imageDir, "schemas"), sdktest.Schemas...)
 	writeFile(t, filepath.Join(imageDir, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
 	// The build named its revision and tag, which the node records.
 	md, err := os.ReadFile(filepath.Join(imageDir, "metadata.json"))
@@ -125,7 +138,7 @@ func TestInstallFromPartsStreamsTheImage(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeFile(t, filepath.Join(imageDir, "metadata.json"), strings.Replace(string(md), `"kinds"`, `"revision": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678", "tag": "v1.5.0", "kinds"`, 1))
-	s := maintenanceNode()
+	s := sdktest.Maintenance()
 	s.Installer = true
 	var got install.PartsRequest
 	var streamed []byte
@@ -169,7 +182,7 @@ func TestInstallFromPartsStreamsTheImage(t *testing.T) {
 // the inventory before the installer is sent anything.
 func TestInstallChecksThePlatform(t *testing.T) {
 	ta := newTestApp(t)
-	s := maintenanceNode()
+	s := sdktest.Maintenance()
 	s.Installer = true
 	sent := false
 	s.FromParts = func(context.Context, install.PartsRequest) error {
@@ -179,7 +192,7 @@ func TestInstallChecksThePlatform(t *testing.T) {
 	addr := ta.startNode(t, s)
 	img := testImageOf(t, "test-kvm", "kvm", "0.1.0", 512, nil)
 	writeFile(t, filepath.Join(img, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
-	copySchemas(t, filepath.Join(img, "schemas"))
+	schematest.Copy(t, filepath.Join(img, "schemas"), sdktest.Schemas...)
 	err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--fingerprint", s.Fingerprint, "--image", img}, addr))
 	if err == nil || !strings.Contains(err.Error(), "n1 runs on metal; the image is built for kvm") {
 		t.Errorf("install = %v, want the platform refused", err)
@@ -191,7 +204,7 @@ func TestInstallChecksThePlatform(t *testing.T) {
 
 func TestInstallReportsNodeRefusal(t *testing.T) {
 	ta := newTestApp(t)
-	s := maintenanceNode()
+	s := sdktest.Maintenance()
 	s.InPlace = func(context.Context, install.Request, []byte) error {
 		return errors.New("the identity places the system on /dev/vdb, but the node runs from /dev/vda")
 	}
@@ -206,7 +219,7 @@ func TestInstallReportsNodeRefusal(t *testing.T) {
 // another name than its image's: the node checks the config against its image's schemas.
 func TestInstallInPlaceOnAnImageOfAnotherName(t *testing.T) {
 	ta := newTestApp(t)
-	s := maintenanceNode()
+	s := sdktest.Maintenance()
 	called := false
 	s.InPlace = func(context.Context, install.Request, []byte) error { called = true; return nil }
 	s.Paths.OSRelease = filepath.Join(t.TempDir(), "os-release")
@@ -229,7 +242,7 @@ func newCheckerStore(t *testing.T, imageJSON string) checkerStore {
 	root := t.TempDir()
 	system := filepath.Join(root, "nix/store/x")
 	writeFile(t, filepath.Join(system, "sw/bin/chalkd"), "")
-	copySchemas(t, filepath.Join(system, "etc/chalkos/schemas"))
+	schematest.Copy(t, filepath.Join(system, "etc/chalkos/schemas"), sdktest.Schemas...)
 	if imageJSON != "" {
 		writeFile(t, filepath.Join(system, kubernetes.ImageFile), imageJSON)
 	}
@@ -271,7 +284,7 @@ func TestInstallFromPartsRefusedByTheImage(t *testing.T) {
 	ta := newTestApp(t)
 	imageDir := testUpgradeImage(t, "test-metal", "0.1.0")
 	writeFile(t, filepath.Join(imageDir, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
-	s := maintenanceNode()
+	s := sdktest.Maintenance()
 	s.Installer = true
 	st := newCheckerStore(t, "")
 	validate := filepath.Join(t.TempDir(), "validate")
@@ -300,10 +313,10 @@ func TestInstallFromPartsSendsTheImageContract(t *testing.T) {
 	ta := newTestApp(t)
 	withKind(t, ta, kubernetes.KindWorker)
 	imageDir := testUpgradeImage(t, "gpu-metal", "0.1.0")
-	copySchemas(t, filepath.Join(imageDir, "schemas"))
+	schematest.Copy(t, filepath.Join(imageDir, "schemas"), sdktest.Schemas...)
 	writeFile(t, filepath.Join(imageDir, "facts", "kubernetes.json"), testImageJSON)
 	writeFile(t, filepath.Join(imageDir, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
-	s := maintenanceNode()
+	s := sdktest.Maintenance()
 	s.Installer = true
 	// The installer's image carries no layer; its compiled plugins read the sent image's facts.
 	s.Plugins = chalkdtest.Plugins(t, s, layers.Of())
@@ -312,7 +325,7 @@ func TestInstallFromPartsSendsTheImageContract(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(none, imagecontract.SchemasDir), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	loadContract(t, s, none)
+	sdktest.LoadContract(t, s, none)
 	var got install.PartsRequest
 	var checked install.Checked
 	checkingFromParts(s, newCheckerStore(t, testImageJSON), &got, new([]byte), &checked)

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
+	sdkkubernetes "github.com/trevex/chalkos/pkg/sdk/layers/kubernetes"
 )
 
 // revokedNodesOf counts a control plane whose image has no Kubernetes layer among those not
@@ -22,7 +23,7 @@ func TestRevokedNodesOfWithoutTheKubernetesLayer(t *testing.T) {
 		case "down":
 			return nil, errors.New("connection refused")
 		}
-		return nil, fmt.Errorf("%s: %w", name, errNoKubernetes)
+		return nil, fmt.Errorf("%s: %w", name, sdkkubernetes.ErrNoKubernetes)
 	}
 	if list, err := revokedNodesOf(context.Background(), []string{"router"}, status); err != nil || len(list) != 0 {
 		t.Errorf("without the layer: %v, %v; want no revoked node", list, err)

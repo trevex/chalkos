@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,7 +14,7 @@ import (
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/internal/cli"
-	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
+	sdkkubernetes "github.com/trevex/chalkos/pkg/sdk/layers/kubernetes"
 )
 
 type kubeconfigFlags struct {
@@ -82,20 +81,9 @@ func kubeconfig(h layer.Host, ctx context.Context, f kubeconfigFlags) error {
 	if err != nil {
 		return err
 	}
-	k := secrets.Kubernetes
-	admin, err := kpki.IssueAdmin(secrets.KubeconfigCA(), f.name, f.ttl, time.Now())
-	if err != nil {
-		return err
-	}
-	kc := kpki.Kubeconfig{Name: contextName, Server: server, CA: []byte(k.CABundle()), Client: admin}
-	if f.server != "" {
-		u, err := url.Parse(server)
-		if err != nil {
-			return fmt.Errorf("the cluster endpoint: %w", err)
-		}
-		kc.Server, kc.ServerName = f.server, u.Hostname()
-	}
-	data, err := kc.Encode()
+	data, err := sdkkubernetes.Kubeconfig(secrets, sdkkubernetes.KubeconfigRequest{
+		Context: contextName, Server: server, Via: f.server, User: f.name, TTL: f.ttl,
+	}, time.Now())
 	if err != nil {
 		return err
 	}

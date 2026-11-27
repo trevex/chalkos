@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"connectrpc.com/connect/v2"
-	"connectrpc.com/connect/v2/connectproto"
 	"github.com/spf13/cobra"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
@@ -15,6 +13,7 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	sdkkubernetes "github.com/trevex/chalkos/pkg/sdk/layers/kubernetes"
 )
 
 // throughControlPlane calls call on the control-plane node via, or else on the cluster's
@@ -42,36 +41,7 @@ func throughControlPlane(h layer.Host, ctx context.Context, f viaFlags, skip str
 	if len(names) == 0 {
 		return errors.New("the cluster has no other control-plane node to ask")
 	}
-	return nodes.ViaFirst(names, tryNextControlPlane, call)
-}
-
-// tryNextControlPlane reports whether another control plane may answer where one failed with
-// err: one that is down, or one that is no etcd member, as before it joined.
-func tryNextControlPlane(err error) bool {
-	switch connect.CodeOf(err) {
-	case connect.CodeUnavailable, connect.CodeDeadlineExceeded:
-		return true
-	case connect.CodeFailedPrecondition:
-		return notEtcdMember(err)
-	}
-	return false
-}
-
-// notEtcdMember reports whether chalkd refused a request because the node is no etcd member, by
-// the NotEtcdMember detail of its error.
-func notEtcdMember(err error) bool {
-	ce, ok := errors.AsType[*connect.Error](err)
-	if !ok {
-		return false
-	}
-	for _, d := range ce.Details() {
-		if v, err := connectproto.UnmarshalErrorDetail(d); err == nil {
-			if _, ok := v.(*kubernetesv1.NotEtcdMember); ok {
-				return true
-			}
-		}
-	}
-	return false
+	return nodes.ViaFirst(names, sdkkubernetes.TryNextControlPlane, call)
 }
 
 // viaFlags are the flags of the commands that act through a control plane: the etcd commands,
@@ -111,7 +81,7 @@ func etcdMembersCommand(h layer.Host) *cobra.Command {
 func etcdMembers(h layer.Host, ctx context.Context, f viaFlags, output layer.Output) error {
 	var resp *kubernetesv1.EtcdMembersResponse
 	err := throughControlPlane(h, ctx, f, "", layer.Fetch(&resp, func(conn *client.Conn) (*kubernetesv1.EtcdMembersResponse, error) {
-		return Client(conn).EtcdMembers(ctx, &kubernetesv1.EtcdMembersRequest{})
+		return sdkkubernetes.Client(conn).EtcdMembers(ctx, &kubernetesv1.EtcdMembersRequest{})
 	}))
 	if err != nil {
 		return err
@@ -157,7 +127,7 @@ func etcdRemoveMemberCommand(h layer.Host) *cobra.Command {
 func etcdRemoveMember(h layer.Host, ctx context.Context, f viaFlags, pos []string) error {
 	var resp *kubernetesv1.EtcdRemoveMemberResponse
 	err := throughControlPlane(h, ctx, f, pos[0], layer.Fetch(&resp, func(conn *client.Conn) (*kubernetesv1.EtcdRemoveMemberResponse, error) {
-		return Client(conn).EtcdRemoveMember(client.Unbounded(ctx), &kubernetesv1.EtcdRemoveMemberRequest{Member: pos[0], Force: f.override})
+		return sdkkubernetes.EtcdRemoveMember(ctx, conn, pos[0], f.override)
 	}))
 	if err != nil {
 		return err
@@ -187,8 +157,7 @@ func etcdLeave(h layer.Host, ctx context.Context, f viaFlags, pos []string) erro
 		return err
 	}
 	if err := t.Call(func(conn *client.Conn) error {
-		_, err := Client(conn).EtcdLeave(client.Unbounded(ctx), &kubernetesv1.EtcdLeaveRequest{Force: f.override})
-		return err
+		return sdkkubernetes.EtcdLeave(ctx, conn, f.override)
 	}); err != nil {
 		return err
 	}

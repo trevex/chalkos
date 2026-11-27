@@ -17,12 +17,13 @@ import (
 	"github.com/trevex/chalkos/pkg/internal/strs"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/layers"
+	sdkkubernetes "github.com/trevex/chalkos/pkg/sdk/layers/kubernetes"
 )
 
 // UpgradeRole reads the node's part in its cluster: a control plane coordinates, and a node that
 // is part of the cluster, so its Node exists, is a member.
 func (p *Plugin) UpgradeRole(ctx context.Context, conn *client.Conn) (layer.UpgradeRole, error) {
-	k, err := Status(ctx, conn)
+	k, err := sdkkubernetes.Status(ctx, conn)
 	if err != nil {
 		return layer.UpgradeRole{}, err
 	}
@@ -92,7 +93,7 @@ func (p *Plugin) Ready(ctx context.Context, conn *client.Conn, role layer.Upgrad
 	if !role.Member {
 		return nil
 	}
-	k, err := Status(ctx, conn)
+	k, err := sdkkubernetes.Status(ctx, conn)
 	if err != nil {
 		return err
 	}
@@ -123,8 +124,8 @@ func quorum(ctx context.Context, u layer.Upgrading, allowDowntime bool, name str
 // With 4 voters a reboot needs 3 healthy others, a removal 2.
 func quorumOnce(ctx context.Context, u layer.Upgrading, allowDowntime bool, name string, reboot bool) error {
 	var resp *kubernetesv1.EtcdMembersResponse
-	err := viaControlPlanes(u, name, tryNextControlPlane, layer.Fetch(&resp, func(conn *client.Conn) (*kubernetesv1.EtcdMembersResponse, error) {
-		return Client(conn).EtcdMembers(ctx, &kubernetesv1.EtcdMembersRequest{})
+	err := viaControlPlanes(u, name, sdkkubernetes.TryNextControlPlane, layer.Fetch(&resp, func(conn *client.Conn) (*kubernetesv1.EtcdMembersResponse, error) {
+		return sdkkubernetes.Client(conn).EtcdMembers(ctx, &kubernetesv1.EtcdMembersRequest{})
 	}))
 	if err != nil {
 		return fmt.Errorf("etcd's members: %w", err)
@@ -166,14 +167,14 @@ func quorumOnce(ctx context.Context, u layer.Upgrading, allowDowntime bool, name
 // after it timed out, when the node's pods may still be stopping and another drain would only
 // wait as long again.
 func drainElsewhere(err error) bool {
-	return connect.CodeOf(err) != connect.CodeDeadlineExceeded && tryNextControlPlane(err)
+	return connect.CodeOf(err) != connect.CodeDeadlineExceeded && sdkkubernetes.TryNextControlPlane(err)
 }
 
 // drain cordons a node of the cluster and evicts its pods.
 func drain(ctx context.Context, u layer.Upgrading, deleteEmptyDir bool, name string) error {
 	var resp *kubernetesv1.DrainNodeResponse
 	err := viaControlPlanes(u, name, drainElsewhere, layer.Fetch(&resp, func(conn *client.Conn) (*kubernetesv1.DrainNodeResponse, error) {
-		return Client(conn).DrainNode(client.Unbounded(ctx), &kubernetesv1.DrainNodeRequest{Node: name, TimeoutSeconds: uint32(u.DrainTimeout() / time.Second), DeleteEmptydirData: deleteEmptyDir})
+		return sdkkubernetes.Client(conn).DrainNode(client.Unbounded(ctx), &kubernetesv1.DrainNodeRequest{Node: name, TimeoutSeconds: uint32(u.DrainTimeout() / time.Second), DeleteEmptydirData: deleteEmptyDir})
 	}))
 	if err != nil {
 		return fmt.Errorf("drain %s: %w", name, err)
@@ -192,8 +193,8 @@ func drain(ctx context.Context, u layer.Upgrading, deleteEmptyDir bool, name str
 // uncordon makes a node of the cluster schedulable again, when the upgrade cordoned it.
 func uncordon(ctx context.Context, u layer.Upgrading, name string) error {
 	var resp *kubernetesv1.UncordonNodeResponse
-	err := viaControlPlanes(u, name, tryNextControlPlane, layer.Fetch(&resp, func(conn *client.Conn) (*kubernetesv1.UncordonNodeResponse, error) {
-		return Client(conn).UncordonNode(ctx, &kubernetesv1.UncordonNodeRequest{Node: name})
+	err := viaControlPlanes(u, name, sdkkubernetes.TryNextControlPlane, layer.Fetch(&resp, func(conn *client.Conn) (*kubernetesv1.UncordonNodeResponse, error) {
+		return sdkkubernetes.Client(conn).UncordonNode(ctx, &kubernetesv1.UncordonNodeRequest{Node: name})
 	}))
 	if err != nil {
 		return fmt.Errorf("uncordon %s: %w", name, err)

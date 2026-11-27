@@ -55,8 +55,9 @@ Three flags chalkos sets take your value: `kubelet-preferred-address-types`, `pr
 
 `kubeletExtraArgs` of a `Node` document refuses these flags, also spelt with `_` for `-`. They set
 where the kubelet finds its configuration, credentials, credential provider and static pods, the
-node's name, addresses, labels and taints, and who may use the kubelet's API. A refused
-`node-labels` or `register-with-taints` names the `Node` document's `labels` and `taints` instead.
+node's name, addresses, provider ID, labels and taints, and who may use the kubelet's API. A
+refused `node-labels` or `register-with-taints` names the `Node` document's `labels` and `taints`
+instead, and a refused `provider-id` names its `providerID`.
 
 - `anonymous-auth`
 - `authentication-token-webhook`
@@ -73,14 +74,16 @@ node's name, addresses, labels and taints, and who may use the kubelet's API. A 
 - `node-ip`
 - `node-labels`
 - `pod-manifest-path`
+- `provider-id`
 - `read-only-port`
 - `register-with-taints`
 - `rotate-certificates`
 - `tls-cert-file`
 - `tls-private-key-file`
 
-A kubelet flag's name and value also hold no whitespace and no backslash, because the flags reach
-the kubelet through an environment file that systemd splits at whitespace.
+A kubelet flag's name and value also hold no whitespace, quotes, control characters or
+backslashes, because the flags reach the kubelet through an environment file that systemd splits
+at whitespace and strips quotes from.
 
 ## Conflicting API server flags
 

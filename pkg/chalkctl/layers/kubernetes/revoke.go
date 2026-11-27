@@ -14,6 +14,7 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	sdkkubernetes "github.com/trevex/chalkos/pkg/sdk/layers/kubernetes"
 )
 
 func nodeRevokeCommand(h layer.Host) *cobra.Command {
@@ -49,22 +50,10 @@ func nodeRevoke(h layer.Host, ctx context.Context, f revokeFlags, pos []string) 
 	}
 	var resp *kubernetesv1.RevokeNodeResponse
 	// A control plane is not asked to revoke itself.
-	err := throughControlPlane(h, ctx, f.viaFlags, name, func(conn *client.Conn) error {
-		if !f.override {
-			m, err := Client(conn).EtcdMembers(ctx, &kubernetesv1.EtcdMembersRequest{})
-			if err != nil {
-				return err
-			}
-			if err := etcdMemberRefusal(name, m.Members); err != nil {
-				return err
-			}
-		}
-		r, err := Client(conn).RevokeNode(ctx, &kubernetesv1.RevokeNodeRequest{Node: name})
-		if err == nil {
-			resp = r
-		}
-		return err
-	})
+	err := throughControlPlane(h, ctx, f.viaFlags, name, layer.Fetch(&resp, func(conn *client.Conn) (*kubernetesv1.RevokeNodeResponse, error) {
+		r, err := sdkkubernetes.RevokeNode(ctx, conn, name, f.override)
+		return r, revocationRefusal(name, err)
+	}))
 	if err != nil {
 		return err
 	}
@@ -109,7 +98,7 @@ func everyControlPlaneReads(ctx context.Context, controlPlanes []string, name st
 	var why []string
 	for _, cp := range controlPlanes {
 		k, err := status(ctx, cp)
-		if errors.Is(err, errNoKubernetes) {
+		if errors.Is(err, sdkkubernetes.ErrNoKubernetes) {
 			continue
 		}
 		if err != nil {
@@ -126,14 +115,13 @@ func everyControlPlaneReads(ctx context.Context, controlPlanes []string, name st
 	return fmt.Errorf("not every control-plane node reads the revoked nodes (%s); repair those, or pass --skip-read-check to revoke %s anyway", strings.Join(why, "; "), name)
 }
 
-// etcdMemberRefusal refuses to revoke a node that is still an etcd member, a control plane.
-func etcdMemberRefusal(name string, members []*kubernetesv1.EtcdMember) error {
-	for _, m := range members {
-		if name != "" && m.Name == name {
-			return fmt.Errorf("%s is still an etcd member; %s", name, controlPlaneRevocation(name))
-		}
+// revocationRefusal says what to do instead when err refuses to revoke the node called name
+// because it is still an etcd member; other errors it returns as they are.
+func revocationRefusal(name string, err error) error {
+	if _, ok := errors.AsType[*sdkkubernetes.EtcdMemberError](err); ok {
+		return fmt.Errorf("%s is still an etcd member; %s", name, controlPlaneRevocation(name))
 	}
-	return nil
+	return err
 }
 
 // controlPlaneRevocation says why revoking a control plane does not cut it off, and what does.
@@ -186,7 +174,7 @@ func nodeUnrevoke(h layer.Host, ctx context.Context, f viaFlags, pos []string) e
 	}
 	var resp *kubernetesv1.UnrevokeNodeResponse
 	err := throughControlPlane(h, ctx, f, "", layer.Fetch(&resp, func(conn *client.Conn) (*kubernetesv1.UnrevokeNodeResponse, error) {
-		return Client(conn).UnrevokeNode(ctx, &kubernetesv1.UnrevokeNodeRequest{Node: pos[0], Force: f.override})
+		return sdkkubernetes.Client(conn).UnrevokeNode(ctx, &kubernetesv1.UnrevokeNodeRequest{Node: pos[0], Force: f.override})
 	}))
 	if err != nil {
 		return err

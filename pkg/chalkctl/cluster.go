@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"net"
 	"os"
 	"slices"
 	"strings"
@@ -16,6 +15,7 @@ import (
 	"github.com/trevex/chalkos/pkg/inventory"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
+	"github.com/trevex/chalkos/pkg/sdk"
 )
 
 // cluster is the inventory chalkctl operates on, named as the inventory. Without one it is partial
@@ -62,11 +62,8 @@ func loadInventory(ctx context.Context, path string) (*cluster, error) {
 // readInventory reads the inventory at path, each node's documents filtered by the compiled
 // layers, without checking it.
 func readInventory(ctx context.Context, path string) (*cluster, error) {
-	var filters []inventory.Filter
-	for _, p := range compiled[layer.Inventory]() {
-		filters = append(filters, p.NodeDocuments)
-	}
-	inv, err := inventory.Load(path, filters...)
+	ls := sdkLayers()
+	inv, err := inventory.Load(path, func(docs []config.Document) []config.Document { return sdk.NodeDocuments(ls, docs) })
 	if err != nil {
 		return nil, err
 	}
@@ -188,22 +185,7 @@ func (c *cluster) certNames(name string) (pki.NodeNames, error) {
 	if err != nil {
 		return pki.NodeNames{}, err
 	}
-	hostnames := []string{name}
-	if nc.Hostname != "" && nc.Hostname != name {
-		hostnames = append(hostnames, nc.Hostname)
-	}
-	return pki.NodeNames{CommonName: name, DNSNames: hostnames, IPs: ipAddresses(nc.StaticAddresses())}, nil
-}
-
-// ipAddresses parses the addresses that are IPs, for the node certificate.
-func ipAddresses(addrs []string) []net.IP {
-	var ips []net.IP
-	for _, a := range addrs {
-		if ip := net.ParseIP(a); ip != nil {
-			ips = append(ips, ip)
-		}
-	}
-	return ips
+	return sdk.NodeNames(name, nc.Documents), nil
 }
 
 // samePlatform refuses a node that runs an image of another platform than its config's image:

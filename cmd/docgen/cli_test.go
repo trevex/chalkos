@@ -99,8 +99,8 @@ func TestWriteCLI(t *testing.T) {
 		"| `--no-descriptions`{ #flag-no-descriptions } | boolean | `false` |",
 		"## Shells\n\n| Shell | Current session | Every new session |\n| --- | --- | --- |\n" +
 			"| bash | `source <(tool completion bash)` | With the bash-completion package installed, `tool completion bash > ~/.local/share/bash-completion/completions/tool` once. |\n",
-		"| fish | `tool completion fish | source` | `tool completion fish > ~/.config/fish/completions/tool.fish` once. |\n",
-		"| powershell | `tool completion powershell | Out-String | Invoke-Expression` | `tool completion powershell | Out-String | Invoke-Expression` in the PowerShell profile, `$PROFILE`. |\n",
+		"| fish | <code>tool completion fish &#124; source</code> | `tool completion fish > ~/.config/fish/completions/tool.fish` once. |\n",
+		"| powershell | <code>tool completion powershell &#124; Out&#45;String &#124; Invoke&#45;Expression</code> | <code>tool completion powershell &#124; Out&#45;String &#124; Invoke&#45;Expression</code> in the PowerShell profile, `$PROFILE`. |\n",
 		"| zsh | `source <(tool completion zsh)` | With completion enabled by `autoload -U compinit; compinit` in `~/.zshrc`, `tool completion zsh > \"${fpath[1]}/_tool\"` once. |\n",
 		"## See also\n\n- [tool](tool.md): A tool\n",
 	} {

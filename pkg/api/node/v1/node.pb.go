@@ -401,6 +401,15 @@ const (
 	ErrorReason_ERROR_REASON_TRIAL_RECORD_UNREADABLE ErrorReason = 1
 	// A new TPM2-encrypted volume needs the fallback secret, and the request sent none.
 	ErrorReason_ERROR_REASON_NO_FALLBACK_SECRET ErrorReason = 2
+	// The image refused the config itself, and the request fails the same way until the config or
+	// the image changes: the image's schemas or translation do not accept the set, its change rules,
+	// the storage change rules among them, are not met, or one of its validators or outputs reports
+	// refusals of the documents. A rule that cannot be evaluated, a fact that cannot be loaded and a
+	// program that fails without saying what it refuses refuse with no reason. A refusal by a change
+	// rule that names a reason of its own, such as NO_FALLBACK_SECRET, carries that reason instead.
+	// The code is INVALID_ARGUMENT for a set the schemas or translation refuse and
+	// FAILED_PRECONDITION otherwise.
+	ErrorReason_ERROR_REASON_CONFIG_REFUSED ErrorReason = 3
 )
 
 // Enum value maps for ErrorReason.
@@ -409,11 +418,13 @@ var (
 		0: "ERROR_REASON_UNSPECIFIED",
 		1: "ERROR_REASON_TRIAL_RECORD_UNREADABLE",
 		2: "ERROR_REASON_NO_FALLBACK_SECRET",
+		3: "ERROR_REASON_CONFIG_REFUSED",
 	}
 	ErrorReason_value = map[string]int32{
 		"ERROR_REASON_UNSPECIFIED":             0,
 		"ERROR_REASON_TRIAL_RECORD_UNREADABLE": 1,
 		"ERROR_REASON_NO_FALLBACK_SECRET":      2,
+		"ERROR_REASON_CONFIG_REFUSED":          3,
 	}
 )
 
@@ -1277,17 +1288,19 @@ type InstallHeader struct {
 	//	*InstallHeader_InPlace
 	//	*InstallHeader_Disk
 	Target isInstallHeader_Target `protobuf_oneof:"target"`
-	// The image the installer writes to the target disk; it must name the boot loader. Installer
-	// only.
+	// The image the install writes. From the installer it must name the boot loader, which goes to
+	// the target's ESP. In place it comes from the image source and names no boot loader: the node
+	// keeps its own, and the disk layout of the image it booted from.
 	Image *ImageHeader `protobuf:"bytes,7,opt,name=image,proto3" json:"image,omitempty"`
 	// Whether the installer may replace what the target disk holds, including an installed node.
 	WipeDisk bool `protobuf:"varint,8,opt,name=wipe_disk,json=wipeDisk,proto3" json:"wipe_disk,omitempty"`
 	// The node's config: YAML documents separated by ---. The image the node boots checks them as a
 	// set, fills in their defaults and translates them into what the node applies at boot, which
-	// STATE keeps with them: in place the running image, from the installer the image's own
-	// checker, once its store is on the target disk. Required.
+	// STATE keeps with them: in place the running image, or the pulled image's own checker once
+	// its store is in the inactive slot, and from the installer the image's own checker, once its
+	// store is on the target disk. Required.
 	Config string `protobuf:"bytes,9,opt,name=config,proto3" json:"config,omitempty"`
-	// Where the installer takes the contract and the parts of the image it writes from.
+	// Where the install takes the contract and the parts of the image it writes from.
 	//
 	// Types that are valid to be assigned to Origin:
 	//
@@ -1442,12 +1455,14 @@ type isInstallHeader_Target interface {
 }
 
 type InstallHeader_InPlace struct {
-	// Target of a node whose image already runs from its boot disk.
+	// Target of a node in maintenance mode on its boot disk, which runs an image already. The
+	// node installs the image it runs or, with an image source, the image it pulls, which goes
+	// into its inactive slot as an upgrade's does and boots once the node is installed.
 	InPlace *InPlace `protobuf:"bytes,5,opt,name=in_place,json=inPlace,proto3,oneof"`
 }
 
 type InstallHeader_Disk struct {
-	// Target disk, which the installer lays out and writes the streamed image to.
+	// Target disk, which the installer lays out and writes the streamed or pulled image to.
 	Disk *DiskReference `protobuf:"bytes,6,opt,name=disk,proto3,oneof"`
 }
 
@@ -1461,13 +1476,15 @@ type isInstallHeader_Origin interface {
 
 type InstallHeader_Contract struct {
 	// The contract of an image whose parts follow the header as chunks. Installer only: in place,
-	// chalkd checks the config against the running image.
+	// chalkd checks the config against the running image or the pulled one.
 	Contract *ImageContract `protobuf:"bytes,10,opt,name=contract,proto3,oneof"`
 }
 
 type InstallHeader_Source struct {
-	// An image in a registry, which the installer pulls. Its contract layer holds the image's
-	// contract, and the request carries nothing after the header. Installer only.
+	// An image in a registry by digest, which the node pulls with the credentials of the
+	// Registry of its host in config. Its contract layer holds the image's contract, and the
+	// request carries nothing after the header. In place, an image the node runs already is
+	// installed as without a source.
 	Source *ImageSource `protobuf:"bytes,11,opt,name=source,proto3,oneof"`
 }
 
@@ -6733,11 +6750,12 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x1cACTIVATION_STATE_IN_PROGRESS\x10\x03\x12 \n" +
 	"\x1cACTIVATION_STATE_INTERRUPTED\x10\x04\x12\x1b\n" +
 	"\x17ACTIVATION_STATE_FAILED\x10\x05\x12\x1d\n" +
-	"\x19ACTIVATION_STATE_COMPLETE\x10\x06*z\n" +
+	"\x19ACTIVATION_STATE_COMPLETE\x10\x06*\x9b\x01\n" +
 	"\vErrorReason\x12\x1c\n" +
 	"\x18ERROR_REASON_UNSPECIFIED\x10\x00\x12(\n" +
 	"$ERROR_REASON_TRIAL_RECORD_UNREADABLE\x10\x01\x12#\n" +
-	"\x1fERROR_REASON_NO_FALLBACK_SECRET\x10\x022\xd5\r\n" +
+	"\x1fERROR_REASON_NO_FALLBACK_SECRET\x10\x02\x12\x1f\n" +
+	"\x1bERROR_REASON_CONFIG_REFUSED\x10\x032\xd5\r\n" +
 	"\vNodeService\x12C\n" +
 	"\x04Info\x12\x1c.chalkos.node.v1.InfoRequest\x1a\x1d.chalkos.node.v1.InfoResponse\x12F\n" +
 	"\x05Disks\x12\x1d.chalkos.node.v1.DisksRequest\x1a\x1e.chalkos.node.v1.DisksResponse\x12O\n" +

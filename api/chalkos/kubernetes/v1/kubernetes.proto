@@ -161,6 +161,13 @@ message StatusResponse {
   string pods_error = 17;
   // How many pods on the node do not run, of which pods_not_running lists the first 20.
   uint32 pods_not_running_total = 18;
+  // On a bootstrapped control-plane node: whether the control plane's loop applied chalkos's
+  // add-ons and the objects of the Addon documents since the loop started. The loop starts when
+  // chalkd starts and when the loops restart, as after a change to the cluster's settings; the
+  // field is false from then until the loop, or one stopped while a bootstrap waited for it,
+  // applied them. It stays true through a reload for a changed share or config, also before the
+  // loop applied the changed objects, and when the loop fails later. False on other nodes.
+  bool addons_applied = 19;
 }
 
 // The request of BGPStatus.

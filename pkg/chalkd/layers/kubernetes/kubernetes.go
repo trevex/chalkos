@@ -348,6 +348,20 @@ func (k *side) startLocked() chan struct{} {
 	return done
 }
 
+// appliedLocked reports whether the control plane's loop applied the manifests since it started;
+// k.mu is held.
+func (k *side) appliedLocked() bool {
+	if k.done == nil {
+		return false
+	}
+	select {
+	case <-k.done:
+		return true
+	default:
+		return false
+	}
+}
+
 // restart starts the loops again, as after the cluster's settings changed: the VIP election,
 // the join and the control plane's loop read them when they start. ctx bounds the wait for the
 // loops to stop.

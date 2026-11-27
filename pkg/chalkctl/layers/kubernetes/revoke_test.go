@@ -9,6 +9,7 @@ import (
 	"time"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
+	sdkkubernetes "github.com/trevex/chalkos/pkg/sdk/layers/kubernetes"
 )
 
 func TestUnrevokedLine(t *testing.T) {
@@ -34,16 +35,21 @@ func reregister(name string) string {
 		", or restart its kubelet; a node installed afresh as " + name + " registers as usual"
 }
 
-func TestEtcdMemberRefusal(t *testing.T) {
-	members := []*kubernetesv1.EtcdMember{{Name: "cp1"}, {Name: "cp2", Learner: true}, {}}
-	for name, want := range map[string]bool{"cp1": true, "cp2": true, "w1": false, "": false} {
-		err := etcdMemberRefusal(name, members)
-		if (err != nil) != want {
-			t.Errorf("%q: %v, want refused %v", name, err, want)
-		}
-		if err != nil && (!strings.Contains(err.Error(), "chalkctl etcd remove-member "+name) || !strings.Contains(err.Error(), "chalkctl rotate os-ca")) {
-			t.Errorf("%q: %v, want the remedy named", name, err)
-		}
+// A refusal to revoke an etcd member says how to cut the control plane off instead; other errors
+// pass unchanged.
+func TestRevocationRefusal(t *testing.T) {
+	err := revocationRefusal("cp1", fmt.Errorf("cp2: %w", &sdkkubernetes.EtcdMemberError{Node: "cp1"}))
+	if err == nil || !strings.HasPrefix(err.Error(), "cp1 is still an etcd member; ") ||
+		!strings.Contains(err.Error(), "chalkctl etcd remove-member cp1") || !strings.Contains(err.Error(), "chalkctl rotate os-ca") ||
+		!strings.Contains(err.Error(), "pass --allow-control-plane") {
+		t.Errorf("refusal: %v, want the remedy named", err)
+	}
+	other := errors.New("connection refused")
+	if err := revocationRefusal("cp1", other); err != other {
+		t.Errorf("other error: %v", err)
+	}
+	if err := revocationRefusal("cp1", nil); err != nil {
+		t.Errorf("no error: %v", err)
 	}
 }
 
@@ -62,7 +68,7 @@ func TestEveryControlPlaneReadsRevoked(t *testing.T) {
 		}
 		if name == "router" {
 			// Wrapped, as chalkctl returns it.
-			return nil, fmt.Errorf("%s: %w", name, errNoKubernetes)
+			return nil, fmt.Errorf("%s: %w", name, sdkkubernetes.ErrNoKubernetes)
 		}
 		return nil, errors.New("connection refused")
 	}

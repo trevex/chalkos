@@ -36,6 +36,10 @@ type Metadata struct {
 	Platform string `json:"platform"`
 	// RootHash is the store's dm-verity root hash, in hex; it identifies the image's content.
 	RootHash string `json:"rootHash"`
+	// OSCA is the OS CA certificate the image carries, in PEM, from which chalkd in maintenance
+	// mode accepts client certificates; empty when the image accepts any client until it is
+	// installed.
+	OSCA string `json:"osCA,omitempty"`
 	// Annotations are the annotations of the image's OCI manifest, such as its git revision and
 	// tag and its layer's version, as chalkos.imageDirectory.annotations names them.
 	Annotations map[string]string `json:"annotations,omitempty"`

@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -15,7 +14,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/internal/cli"
-	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/sdk"
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
@@ -54,35 +53,29 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		return err
 	}
 	cert := t.creds.cert
-	conn, err := p.dial(t.addr, t.source, cert)
-	if err != nil {
+	if err := p.validate(); err != nil {
 		return err
 	}
-	// The insecure connection is replaced below, so whichever is current is closed.
-	defer func() { conn.Close() }()
-	if p.insecure {
-		// An insecure connection's fingerprint vouches only for that connection. The secrets go
-		// over a new one pinned to the fingerprint printed here.
-		if _, err := conn.Info(ctx, &nodev1.InfoRequest{}); err != nil {
-			return maintenanceError(ctx, t, err)
-		}
-		fp := conn.Fingerprint()
+	trust := sdk.Trust{Fingerprint: p.fingerprint, Insecure: p.insecure, Source: t.source}
+	conn, info, fp, err := sdk.DialMaintenance(ctx, t.addr, trust, cert)
+	if p.insecure && fp != "" {
+		// An insecure connection's fingerprint vouches only for the connection sdk.DialMaintenance
+		// pinned it to. The secrets go over that one alone; print it whether or not the node
+		// turns out installed already.
 		fmt.Fprintf(a.stderr, "chalkctl: the node's certificate fingerprint is %s\n", fp)
-		pinned, err := client.Dial(t.addr, client.Options{Verify: client.ByFingerprint(fp), Certificate: cert, Source: t.source})
-		if err != nil {
-			return err
-		}
-		conn.Close()
-		conn = pinned
 	}
-	info, err := conn.Info(ctx, &nodev1.InfoRequest{})
-	if err != nil {
-		return maintenanceError(ctx, t, err)
-	}
-	t.nodes.release.check(t.name, info.GetChalkosVersion())
-	if info.Mode != nodev1.Mode_MODE_MAINTENANCE {
+	switch {
+	case errors.Is(err, sdk.ErrInstalled):
+		// Warn of the installed node's release, as for any node that answers.
+		t.nodes.release.check(t.name, info.GetChalkosVersion())
 		return fmt.Errorf("%s at %s is installed already", t.name, t.addr)
+	case errors.Is(err, sdk.ErrOSCARefused):
+		return fmt.Errorf("reach %s at %s: the maintenance image trusts another OS CA than the secrets file, so it refuses chalkctl's certificate; build the image and the installer media again from the current secrets.pub.json", t.name, t.addr)
+	case err != nil:
+		return fmt.Errorf("reach %s at %s: %w", t.name, t.addr, err)
 	}
+	defer conn.Close()
+	t.nodes.release.check(t.name, info.GetChalkosVersion())
 	if !f.ignoreRevoked {
 		for _, d := range compiled[layer.Delivery]() {
 			if err := d.AdmitInstall(ctx, t); err != nil {
@@ -91,18 +84,17 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		}
 	}
 
-	header := &nodev1.InstallHeader{CaCertificate: []byte(t.secrets.OSCABundle()), WipeDisk: f.wipeDisk}
 	var img *diskImage
-	var c contract
+	var c sdk.Contract
+	var definitions map[string]string
 	if !info.Installer {
 		// The node runs its image already, which must be of the node's platform.
 		if err := t.cluster.samePlatform(t.name, info.Platform); err != nil {
 			return err
 		}
-		if c, err = nodeContract(ctx, conn, t.name); err != nil {
+		if c, err = sdk.NodeContract(ctx, conn, sdkLayers(), t.name); err != nil {
 			return err
 		}
-		header.Target = &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}
 	} else {
 		if img, err = a.installerImage(ctx, t, f.image); err != nil {
 			return err
@@ -112,63 +104,75 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 		if err := checkInstallImage(t, img); err != nil {
 			return err
 		}
-		header.Image = img.header
 		// The installer runs another image than the one it installs, so it gets that image's
 		// contract with the config; an image it pulls brings its contract along.
-		if img.source != nil {
-			header.Origin = &nodev1.InstallHeader_Source{Source: img.source}
-		} else {
-			definitions, err := readDefinitions(img.definitions)
-			if err != nil {
+		if img.source == nil {
+			if definitions, err = readDefinitions(img.definitions); err != nil {
 				return err
 			}
-			header.Origin = &nodev1.InstallHeader_Contract{Contract: &nodev1.ImageContract{
-				SystemDefinitions: definitions, Schemas: c.image.Schemas.Files(), LayerFacts: c.facts,
-			}}
 		}
 	}
-	d, err := t.cluster.deliveryFor(t.name, c)
+	d, docs, err := t.cluster.deliveryFor(ctx, t.name, c)
 	if err != nil {
 		return err
 	}
 	a.warnUnpinned(t.name, d)
-	header.Config = d.Text
-	names, err := t.cluster.certNames(t.name)
-	if err != nil {
-		return err
-	}
-	nodeCert, err := pki.IssueNode(t.secrets.NodeCA, names, time.Now())
-	if err != nil {
-		return err
-	}
-	header.NodeCertificate, header.NodeKey = []byte(nodeCert.Certificate), []byte(nodeCert.Key)
-	fallback := d.identity.Storage.Fallback
-	if header.FallbackSecret, err = a.fallbackSecret(ctx, t, fallback, f.passwordFile); err != nil {
-		return err
-	}
-	if header.Layers, err = payloadsOf(t, time.Now()); err != nil {
-		return err
+	r := sdk.InstallRequest{Node: t.name, Documents: docs, Secrets: t.secrets, Layers: sdkLayers()}
+	fallback := d.Identity.Storage.Fallback
+	if fallback == storage.FallbackPassword {
+		if r.Password, err = a.password(ctx, t, f.passwordFile); err != nil {
+			return err
+		}
 	}
 	if img == nil {
+		// sdk.Install reads the node's contract and checks the config once more; chalkctl checked
+		// it above to warn of unpinned images and learn whether the storage needs a password.
 		fmt.Fprintf(a.stdout, "installing %s in place\n", t.name)
-	} else {
-		ref := d.identity.Storage.Disks[storage.SystemDisk].Ref
-		header.Target = &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{
-			Path: ref.Path, Model: ref.Selector.Model, Serial: ref.Selector.Serial,
-			Wwn: ref.Selector.WWN, Size: ref.Selector.Size, Type: ref.Selector.Type,
-		}}
-		if src := img.source.GetOci().GetReference(); src != "" {
-			fmt.Fprintf(a.stdout, "installing %s onto %s: %s %s, which the installer pulls from %s\n", t.name, ref, img.header.GetImageId(), img.name(), src)
-		} else {
-			fmt.Fprintf(a.stdout, "installing %s onto %s from %s: %s %s, sending %s of store, hash tree, UKI and boot loader\n", t.name, ref, img.path, img.header.GetImageId(), img.name(), binarySize(img.size()))
+		if err := sdk.Install(ctx, conn, r); err != nil {
+			return err
 		}
-		if f.wipeDisk {
-			if err := a.confirm(ctx, fmt.Sprintf("with --wipe-disk, the installer replaces whatever the disk %s of the machine at %s holds, an installed node included", ref, t.addr), t.name); err != nil {
-				return err
-			}
+	} else if err := a.installOnto(ctx, conn, t, f.wipeDisk, r, d, img, definitions); err != nil {
+		return err
+	}
+	fmt.Fprintf(a.stdout, "%s is installed and reboots\n", t.name)
+	if fallback == storage.FallbackRecoveryKey {
+		fmt.Fprintf(a.stdout, "chalkctl recovery-key %s prints the key that unlocks it when its TPM fails\n", t.name)
+	}
+	return nil
+}
+
+// installOnto has the installer that conn reaches install img onto the node's system disk with
+// the request r and the checked config d: from the registry the image's source names, or from
+// img's files, which it sends with its contract's repart definitions, definitions.
+func (a *app) installOnto(ctx context.Context, conn *client.Conn, t *target, wipeDisk bool, r sdk.InstallRequest, d sdk.Delivery, img *diskImage, definitions map[string]string) error {
+	header, err := sdk.NewInstallHeader(r, d)
+	if err != nil {
+		return err
+	}
+	header.WipeDisk = wipeDisk
+	header.Image = img.header
+	if img.source != nil {
+		header.Origin = &nodev1.InstallHeader_Source{Source: img.source}
+	} else {
+		header.Origin = &nodev1.InstallHeader_Contract{Contract: &nodev1.ImageContract{
+			SystemDefinitions: definitions, Schemas: img.contract.Image.Schemas.Files(), LayerFacts: img.contract.Facts,
+		}}
+	}
+	ref := d.Identity.Storage.Disks[storage.SystemDisk].Ref
+	header.Target = &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{
+		Path: ref.Path, Model: ref.Selector.Model, Serial: ref.Selector.Serial,
+		Wwn: ref.Selector.WWN, Size: ref.Selector.Size, Type: ref.Selector.Type,
+	}}
+	if src := img.source.GetOci().GetReference(); src != "" {
+		fmt.Fprintf(a.stdout, "installing %s onto %s: %s %s, which the installer pulls from %s\n", t.name, ref, img.header.GetImageId(), img.name(), src)
+	} else {
+		fmt.Fprintf(a.stdout, "installing %s onto %s from %s: %s %s, sending %s of store, hash tree, UKI and boot loader\n", t.name, ref, img.path, img.header.GetImageId(), img.name(), binarySize(img.size()))
+	}
+	if wipeDisk {
+		if err := a.confirm(ctx, fmt.Sprintf("with --wipe-disk, the installer replaces whatever the disk %s of the machine at %s holds, an installed node included", ref, t.addr), t.name); err != nil {
+			return err
 		}
 	}
-
 	stream, err := conn.Install(ctx)
 	if err != nil {
 		return err
@@ -176,7 +180,7 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 	if err := stream.Send(&nodev1.InstallRequest{Message: &nodev1.InstallRequest_Header{Header: header}}); err != nil && !errors.Is(err, io.EOF) {
 		return err
 	}
-	if img != nil && img.source == nil {
+	if img.source == nil {
 		parts, done, err := img.stream()
 		if err != nil {
 			return err
@@ -190,10 +194,6 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 	}
 	if _, err := stream.CloseAndReceive(); err != nil {
 		return fmt.Errorf("install %s: %w", t.name, err)
-	}
-	fmt.Fprintf(a.stdout, "%s is installed and reboots\n", t.name)
-	if fallback == storage.FallbackRecoveryKey {
-		fmt.Fprintf(a.stdout, "chalkctl recovery-key %s prints the key that unlocks it when its TPM fails\n", t.name)
 	}
 	return nil
 }
@@ -224,16 +224,6 @@ func (a *app) installerImage(ctx context.Context, t *target, path string) (*disk
 		}
 	}
 	return img, nil
-}
-
-// maintenanceError explains why a node in maintenance mode did not answer. A node in maintenance
-// mode whose image carries an OS CA accepts clients of that OS CA alone; it refuses chalkctl's
-// certificate when the image was built from a secrets.pub.json before the OS CA rotated.
-func maintenanceError(ctx context.Context, t *target, err error) error {
-	if client.RefusesCertificate(ctx, err, t.addr, t.creds.cert) {
-		return fmt.Errorf("reach %s at %s: the maintenance image trusts another OS CA than the secrets file, so it refuses chalkctl's certificate; build the image and the installer media again from the current secrets.pub.json", t.name, t.addr)
-	}
-	return fmt.Errorf("reach %s at %s: %w", t.name, t.addr, err)
 }
 
 // readDefinitions reads an image's repart.d files.

@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trevex/chalkos/pkg/sdk/sdktest"
 	"github.com/trevex/chalkos/pkg/secureboot"
 	"github.com/trevex/chalkos/pkg/secureboot/secureboottest"
 )
@@ -63,7 +64,7 @@ type enrolledNode struct {
 func enrollNode(t *testing.T, ta *testApp, secureBootAfter byte, early bool, eventLog []byte) *enrolledNode {
 	t.Helper()
 	n := &enrolledNode{written: map[string]secureboot.ParsedUpdate{}, rebooted: make(chan string, 1)}
-	s := maintenanceNode()
+	s := sdktest.Maintenance()
 	s.Paths.EFIVars = t.TempDir()
 	s.Paths.EventLog = filepath.Join(t.TempDir(), "binary_bios_measurements")
 	if eventLog != nil {

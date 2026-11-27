@@ -41,7 +41,7 @@ A plain `ApplyConfig` goes to the staged image too. The functions run in this or
    image it replaces the pending config instead.
 
 An image's checker compares with the running slot's delivered documents and fills in its own
-defaults (`config.Redacted.Defaulted`), as chalkctl's `checkRules` does.
+defaults (`config.Redacted.Defaulted`), as `sdk.CheckRules` does.
 
 ## A trial holds the staged slot back
 

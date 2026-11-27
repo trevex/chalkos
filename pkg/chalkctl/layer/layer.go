@@ -1,7 +1,9 @@
 // Package layer defines how chalkctl's layers plug in. A Plugin is compiled into chalkctl, adds to
 // it through the optional interfaces below, which chalkctl finds by type assertion, and reaches
 // nodes through Host. Each interface says whether chalkctl asks every compiled plugin or only the
-// layers a node's Info names.
+// layers a node's Info names. A plugin that is also an sdk.Layer adds the SDK's hooks too:
+// image facts, linked validators, the filter of a node's documents and the payloads of a
+// delivery. chalkctl passes the SDK every compiled plugin.
 package layer
 
 import (
@@ -15,14 +17,12 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/config"
-	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
-	"github.com/trevex/chalkos/pkg/schema"
+	"github.com/trevex/chalkos/pkg/sdk"
 )
 
 // Plugin is a layer of chalkctl.
@@ -61,33 +61,9 @@ type StatusSection struct {
 	Problems []string
 }
 
-// Validators is a plugin whose layer links the Go code of its images' validator programs, which
-// chalkctl runs in-process wherever it checks config against a node's image, as validate and config
-// apply do, so it refuses a config before it reaches the node. The image runs its own programs
-// again, which decide. chalkctl asks every compiled plugin.
-type Validators interface {
-	// Validators are the layer's validators that an image of the schemas runs, by the names the
-	// image gives them; none for an image without the layer's kinds.
-	Validators(s *schema.Schemas) []outputs.LinkedValidator
-}
-
-// ImageFacts is a plugin whose layer's images carry facts config is translated with. chalkctl
-// asks every compiled plugin.
-type ImageFacts interface {
-	// ContractFacts reads the facts of an image's contract: read takes a file name within the
-	// image's directory, as its contract layer holds it. They are nil for an image without them.
-	ContractFacts(read func(name string) ([]byte, error)) (*anypb.Any, error)
-	// Target adds to t's translators the layer's translation of an image with the facts; claimed
-	// is false for facts of another layer.
-	Target(facts *anypb.Any, t *config.Target) (claimed bool, err error)
-}
-
-// Inventory is a plugin whose layer filters each node's documents and checks an inventory's nodes
-// together. chalkctl asks every compiled plugin.
+// Inventory is a plugin whose layer checks an inventory's nodes together. chalkctl asks every
+// compiled plugin.
 type Inventory interface {
-	// NodeDocuments are the documents of a node's files that the node gets, as an
-	// inventory.Filter: docs or a new slice, with no document changed.
-	NodeDocuments(docs []config.Document) []config.Document
 	// CheckInventory refuses the cluster's nodes when their documents do not go together, such as
 	// nodes of one cluster that describe it differently. chalkctl checks every inventory it loads.
 	CheckInventory(c Cluster) error
@@ -104,9 +80,8 @@ type InventoryWarnings interface {
 // Delivery is a plugin whose layer takes payloads that chalkctl issues a node from the secrets
 // file, and which admits a node to them. chalkctl asks every compiled plugin.
 type Delivery interface {
-	// Payloads are the layer's payloads for t, issued from its secrets at now; none for a node
-	// the layer gives nothing.
-	Payloads(t Target, now time.Time) ([]*anypb.Any, error)
+	// Payloads issues the layer's payloads.
+	sdk.Payloads
 	// ApplyFlags registers config apply's flags that ask for the layer's payloads; chalkctl
 	// registers --ignore-revoked, which delivers them without Admit.
 	ApplyFlags(fs *pflag.FlagSet) ApplyFlags
@@ -243,8 +218,8 @@ type Cluster interface {
 	// NodeNames are the inventory's nodes in name order; none on a partial cluster.
 	NodeNames() []string
 	// Documents are the node's config documents as the inventory gives them, after every
-	// Inventory plugin's NodeDocuments; none on a partial cluster. They are the inventory's own,
-	// which callers read and never change.
+	// compiled layer's sdk.Documents filter; none on a partial cluster. They are the inventory's
+	// own, which callers read and never change.
 	Documents(name string) ([]config.Document, error)
 }
 
@@ -257,9 +232,6 @@ type Target interface {
 	// Call runs fn on a connection to the installed node; fn's error carries the node's name in
 	// place of <node>.
 	Call(fn func(conn *client.Conn) error) error
-	// Secrets are those of the secrets file chalkctl reaches the node with; empty with a client
-	// file.
-	Secrets() clustersecrets.Secrets
 	// Nodes reaches the cluster's nodes with the target's credentials, each at the address
 	// --address gave for it or else at the inventory's.
 	Nodes() Nodes

@@ -97,8 +97,8 @@ func imageOf(c *contract.Contract, render outputs.Renderer) (check.Image, error)
 
 // refusal is err as chalkd answers with it when it is an image's refusal of config: a set the
 // image does not accept as "the config does not suit the image: ...", whichever image refused it,
-// and every other refusal as its stage says it. domainCodes gives each its code, and a refusal by
-// a rule that names a reason carries it to the client.
+// and every other refusal as its stage says it. domainCodes gives each its code, and each carries
+// to the client the reason check.Refusal.ErrorReason gives it, if any.
 func refusal(err error) error {
 	if r, ok := errors.AsType[*check.Refusal](err); ok && r.Stage == check.StageConfig {
 		return fmt.Errorf("the config does not suit the image: %w", err)
@@ -134,18 +134,19 @@ func (s *Server) recordRefused(err error) {
 // installConfig translates the config an install header delivers for the node name and returns
 // the config slot of the image installed. In place, that image is the running one, which checks
 // the config with check.Run before anything changes, with no old config and every fact null, so
-// a retried install reads nothing an earlier attempt left on STATE; it plans no effects. From the
-// installer, the header and contract describe the image, and the installer's own translation only
-// gives the storage the target disk is laid out by; the image's checker checks the config once
-// its store is written (installCheck).
-func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader, name string, contract *nodev1.ImageContract) (slot.Stored, error) {
+// a retried install reads nothing an earlier attempt left on STATE; it plans no effects. byImage
+// says the image installed is another one, which the installer writes or an install in place
+// pulls: the header and contract describe that image, and chalkd's own translation only gives the
+// storage the install starts from; the image's checker checks the config once its store is
+// written (installCheck).
+func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader, name string, contract *nodev1.ImageContract, byImage bool) (slot.Stored, error) {
 	var (
 		t       config.Target
 		schemas *schema.Schemas
 		err     error
 	)
 	switch {
-	case s.Installer:
+	case byImage:
 		t, schemas, err = s.headerTarget(h, contract)
 	case contract != nil:
 		err = layer.Errorf(connect.CodeInvalidArgument, "an install in place checks the config against the running image; the header must carry no schemas or layer facts")
@@ -156,7 +157,7 @@ func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader, nam
 		return slot.Stored{}, err
 	}
 	stored, err := configure(name, h.Config, schemas, t)
-	if err != nil || s.Installer {
+	if err != nil || byImage {
 		return stored, err
 	}
 	img, err := s.runningImage()
@@ -197,9 +198,9 @@ func headerName(h *nodev1.InstallHeader) (string, error) {
 	return cert.Subject.CommonName, nil
 }
 
-// headerTarget is the image an install from the installer writes, as its header and contract
-// describe it, and the contract's schemas: what the installer translates the config with to lay
-// the target disk out.
+// headerTarget is the image an install writes that the node does not run, as its header and
+// contract describe it, and the contract's schemas: what chalkd translates the config with before
+// that image checks it, as the installer lays the target disk out by it.
 func (s *Server) headerTarget(h *nodev1.InstallHeader, contract *nodev1.ImageContract) (config.Target, *schema.Schemas, error) {
 	if len(contract.GetSchemas()) == 0 {
 		return config.Target{}, nil, layer.Errorf(connect.CodeInvalidArgument, "the header carries config but not the schemas of the image it installs")

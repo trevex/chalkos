@@ -80,7 +80,7 @@ func TestNode(t *testing.T) {
 	if got := kinds(cp1.Documents); !slices.Equal(got, []string{"Cluster/default", "Addon/monitoring", "Node/default", "Host/default", "Network/10-uplink"}) {
 		t.Errorf("documents of cp1 = %q", got)
 	}
-	if cp1.Hostname != "cp1.lab" || cp1.ImageName != "node-metal" || cp1.ImageDir != filepath.Join(dir, "images", "node-metal") {
+	if config.Hostname(cp1.Documents) != "cp1.lab" || cp1.ImageName != "node-metal" || cp1.ImageDir != filepath.Join(dir, "images", "node-metal") {
 		t.Errorf("cp1 = %+v", cp1)
 	}
 	if got := cp1.StaticAddresses(); !slices.Equal(got, []string{"10.0.0.11"}) {
@@ -103,14 +103,13 @@ func TestNode(t *testing.T) {
 		if inv, err = Load(filepath.Join(dir, "chalkos.yaml")); err != nil {
 			t.Fatal(err)
 		}
-		if w1, err = inv.Node("w1"); err != nil || w1.Hostname != "" {
-			t.Errorf("%s: hostname = %q, %v, want none", name, w1.Hostname, err)
+		if w1, err = inv.Node("w1"); err != nil || config.Hostname(w1.Documents) != "" {
+			t.Errorf("%s: hostname = %q, %v, want none", name, config.Hostname(w1.Documents), err)
 		}
 	}
 }
 
-// TestNodeFilters passes a node's documents through the inventory's filters in their order, and
-// takes the hostname from its files' documents whatever the filters leave.
+// TestNodeFilters passes a node's documents through the inventory's filters in their order.
 func TestNodeFilters(t *testing.T) {
 	dir := homelabDir(t)
 	var seen [][]string
@@ -134,8 +133,8 @@ func TestNodeFilters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := kinds(w1.Documents); !slices.Equal(got, []string{"Cluster/default", "Node/default", "Network/10-uplink"}) || w1.Hostname != "w1.lab" {
-		t.Errorf("documents of w1 = %q, hostname %q", got, w1.Hostname)
+	if got := kinds(w1.Documents); !slices.Equal(got, []string{"Cluster/default", "Node/default", "Network/10-uplink"}) {
+		t.Errorf("documents of w1 = %q", got)
 	}
 	if len(seen) != 2 || len(seen[0]) != 5 || slices.Contains(seen[1], "Addon/monitoring") {
 		t.Errorf("the filters saw %q, want the second without the Addon", seen)

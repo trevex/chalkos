@@ -3,20 +3,18 @@ package chalkctl
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 
-	"github.com/google/go-containerregistry/pkg/v1/types"
 	"golang.org/x/term"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/image"
 	"github.com/trevex/chalkos/pkg/inventory"
-	"github.com/trevex/chalkos/pkg/ociimage"
+	"github.com/trevex/chalkos/pkg/sdk"
 	"github.com/trevex/chalkos/pkg/statusview"
 )
 
@@ -28,7 +26,7 @@ type diskImage struct {
 	header *nodev1.ImageHeader
 	// contract is what the image accepts as config, as its directory or its contract layer says,
 	// which chalkctl checks the inventory's config against.
-	contract *contract
+	contract *sdk.Contract
 	// definitions is the directory of the image's repart definitions of its system region.
 	definitions string
 	// source is where the node takes the image's parts from: nil when chalkctl streams them,
@@ -85,7 +83,7 @@ func openImage(ctx context.Context, path string, bootLoader bool, stderr io.Writ
 	if err != nil {
 		return nil, err
 	}
-	c.platform = img.Info.Platform()
+	c.Platform = img.Info.Platform()
 	img.contract = &c
 	return img, nil
 }
@@ -124,32 +122,9 @@ func ociImage(nc *inventory.NodeConfig, bootLoader bool) (*diskImage, error) {
 	if err != nil {
 		return nil, err
 	}
-	root, err := hex.DecodeString(a.Header.RootHash)
+	h, err := sdk.RegistryImageHeader(a, bootLoader)
 	if err != nil {
-		return nil, fmt.Errorf("%s: the root hash: %w", a.Reference, err)
-	}
-	h := &nodev1.ImageHeader{
-		ImageId: a.Header.ImageID, Platform: a.Header.Platform, Architecture: a.Header.Architecture,
-		RootHash: root, Revision: a.Header.Revision, Tag: a.Header.Tag,
-	}
-	type layer struct {
-		mediaType types.MediaType
-		part      **nodev1.ImagePart
-	}
-	layers := []layer{{ociimage.StoreType, &h.Store}, {ociimage.HashTreeType, &h.HashTree}, {ociimage.UKIType, &h.Uki}}
-	if bootLoader {
-		layers = append(layers, layer{ociimage.BootLoaderType, &h.BootLoader})
-	}
-	for _, p := range layers {
-		d, err := a.Descriptor(p.mediaType)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", a.Reference, err)
-		}
-		sum, err := hex.DecodeString(d.Digest.Hex)
-		if d.Digest.Algorithm != "sha256" || err != nil || len(sum) != sha256.Size {
-			return nil, fmt.Errorf("%s: the %s layer's digest %s is no SHA-256", a.Reference, p.mediaType, d.Digest)
-		}
-		*p.part = &nodev1.ImagePart{Size: uint64(d.Size), Sha256: sum}
+		return nil, err
 	}
 	c, err := inventoryContract(nc, a.Header.Platform)
 	if err != nil {

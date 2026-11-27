@@ -9,6 +9,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
 	imagecontract "github.com/trevex/chalkos/pkg/contract"
+	"github.com/trevex/chalkos/pkg/sdk"
 )
 
 // greetingSchema is a Greeting kind whose message is refused when longer than 12 characters, or
@@ -46,13 +47,13 @@ func greeting(message string) string {
 }
 
 // schemasContract is the contract of an image of the schema files and the layers' facts given.
-func schemasContract(t *testing.T, files map[string][]byte, facts []*anypb.Any) (contract, error) {
+func schemasContract(t *testing.T, files map[string][]byte, facts []*anypb.Any) (sdk.Contract, error) {
 	t.Helper()
 	image, err := imagecontract.FromSchemas(files)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return newContract(image, facts)
+	return sdk.NewContract(sdkLayers(), image, facts)
 }
 
 // A contract whose facts no layer chalkctl knows claims is refused.
@@ -62,8 +63,8 @@ func TestNewContractRefusesUnknownFacts(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = schemasContract(t, map[string][]byte{"greeting.example.org_v1alpha1_Greeting.json": []byte(greetingSchema)}, []*anypb.Any{other})
-	if err == nil || !strings.Contains(err.Error(), "carries facts of type type.googleapis.com/chalkos.node.v1.InfoRequest, which this chalkctl does not know") {
-		t.Errorf("newContract = %v, want a refusal", err)
+	if err == nil || !strings.Contains(err.Error(), "carries facts of type type.googleapis.com/chalkos.node.v1.InfoRequest, which none of the layers given claims") {
+		t.Errorf("NewContract = %v, want a refusal", err)
 	}
 }
 
@@ -91,12 +92,12 @@ func TestCheckRules(t *testing.T) {
 				old = config.Redact(greetings(t, tc.old))
 			}
 			next := greetings(t, tc.next)
-			filled, err := c.image.Schemas.Default(next[0].Object)
+			filled, err := c.Image.Schemas.Default(next[0].Object)
 			if err != nil {
 				t.Fatal(err)
 			}
 			next[0].Object = filled
-			err = checkRules(c, config.Redact(next), old, "n1")
+			err = sdk.CheckRules(c, config.Redact(next), old, "n1")
 			if tc.want == "" && err != nil || tc.want != "" && (err == nil || err.Error() != tc.want) {
 				t.Errorf("err = %v, want %q", err, tc.want)
 			}
@@ -140,7 +141,7 @@ func TestCheckRulesHashesAddonSecrets(t *testing.T) {
 		{"other", `the config is refused: Addon/a: spec.objects: the objects are fixed`},
 	} {
 		served := config.Redact(greetings(t, addon(tc.node)))
-		err := checkRules(c, config.Redact(greetings(t, addon("test"))), served, "n1")
+		err := sdk.CheckRules(c, config.Redact(greetings(t, addon("test"))), served, "n1")
 		if tc.want == "" && err != nil || tc.want != "" && (err == nil || err.Error() != tc.want) {
 			t.Errorf("node token %s: err = %v, want %q", tc.node, err, tc.want)
 		}

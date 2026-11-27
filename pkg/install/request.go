@@ -34,6 +34,16 @@ type Request struct {
 	// Images is the provenance record STATE starts with, as chalkd keeps it in
 	// chalkd/images.json; nil writes none.
 	Images []byte
+	// Place, when set, places the image an install in place installs, which the node does not run,
+	// in the inactive slot once the install's checks of the request passed and before anything
+	// else changes, and returns the config slot and the payloads that image's checker passed. The
+	// install takes the storage section, Config and Layers from there on, and checks the section
+	// again. Its error stops the install there.
+	Place func(ctx context.Context) (Checked, error)
+	// ActivateImage, when set, makes the image Place placed boot next, once STATE holds its config
+	// slot and before the node is marked installed. Its error stops the install there, and the
+	// install runs again.
+	ActivateImage func(ctx context.Context) error
 }
 
 // validate checks what both flows take before they change anything; the config only an install in

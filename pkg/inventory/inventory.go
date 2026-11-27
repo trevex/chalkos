@@ -18,6 +18,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/authn"
+
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/schema"
@@ -284,7 +286,7 @@ func (inv *Inventory) Artifact(ref string) (*ociimage.Artifact, error) {
 	}
 	ctx, cancel := context.WithTimeout(parent, readTimeout)
 	defer cancel()
-	a, err := ociimage.Read(ctx, ref)
+	a, err := ociimage.Read(ctx, ref, authn.DefaultKeychain)
 	if err != nil && parent.Err() == nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		err = fmt.Errorf("the registry of %s did not answer within %s: %w", ref, readTimeout, err)
 	}

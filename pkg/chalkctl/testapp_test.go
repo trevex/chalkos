@@ -4,10 +4,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
-	"net"
 	"net/http"
 	"net/netip"
 	"os"
@@ -29,7 +27,6 @@ import (
 	"github.com/trevex/chalkos/pkg/config/slot"
 	imagecontract "github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/identity"
-	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/kubetest"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
@@ -38,7 +35,8 @@ import (
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
-	"github.com/trevex/chalkos/pkg/schema/schematest"
+	"github.com/trevex/chalkos/pkg/sdk"
+	"github.com/trevex/chalkos/pkg/sdk/sdktest"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
@@ -160,79 +158,48 @@ func (ta *testApp) identity(t *testing.T) identity.Identity {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d, err := checkNodeConfig(nc, ct)
+	d, err := sdk.Check(context.Background(), ct, nc.Name, nc.Documents)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return d.identity
+	return d.Identity
 }
 
 // startNode serves a chalkd in the mode with the test cluster's OS CA. In normal mode it serves
 // a node certificate for n1, which names the node to chalkd too.
 func (ta *testApp) startNode(t *testing.T, s *chalkd.Server) string {
 	t.Helper()
-	cert := ta.secrets.OSCA
-	var err error
-	if s.Mode == nodev1.Mode_MODE_NORMAL {
-		cert, err = pki.IssueNode(ta.secrets.NodeCA, pki.NodeNames{CommonName: "n1", DNSNames: []string{"n1"}}, time.Now())
-	} else {
-		cert, err = pki.SelfSigned("chalkd", time.Now())
-	}
-	if err != nil {
-		t.Fatal(err)
-	}
-	if s.Mode == nodev1.Mode_MODE_NORMAL && s.Certificate == nil {
-		dir := filepath.Join(t.TempDir(), "chalkd")
-		writeFile(t, filepath.Join(dir, chalkd.NodeCertificateFile), cert.Certificate+cert.Key)
-		writeFile(t, filepath.Join(dir, chalkd.CAFile), ta.secrets.OSCA.Certificate)
-		if s.Certificate, err = chalkd.LoadNodeCertificate(dir); err != nil {
-			t.Fatal(err)
-		}
-	}
-	pair, _ := tls.X509KeyPair([]byte(cert.Certificate), []byte(cert.Key))
-	leaf, _ := x509.ParseCertificate(pair.Certificate[0])
-	s.Fingerprint = pki.Fingerprint(leaf.Raw)
-	// The node runs the test node's image in the inventory.
-	if s.Paths.OSRelease == "" {
-		s.Paths.OSRelease = filepath.Join(t.TempDir(), "os-release")
-		writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_IMAGE=test-metal\nCHALKOS_PLATFORM=metal\n")
-	}
-	contractDir(t, s)
-	// It boots the store of the root hash abab…, whose config slot an install in place writes.
-	if s.Paths.Cmdline == "" {
-		s.Paths.Cmdline = filepath.Join(t.TempDir(), "cmdline")
-		writeFile(t, s.Paths.Cmdline, "init=/x usrhash="+strings.Repeat("ab", 32)+"\n")
-	}
-	ca, _ := pki.ParseCertificate([]byte(ta.secrets.OSCA.Certificate))
-	pool := x509.NewCertPool()
-	pool.AddCert(ca)
-	s.ClientCAs = chalkd.StaticCAs(pool)
-	h := s.Handler()
-	record := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		procedure := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
-		ta.mu.Lock()
-		if ta.requests == nil {
-			ta.requests = map[string][]string{}
-		}
-		ta.requests[procedure] = append(ta.requests[procedure], r.RemoteAddr)
-		wrap := ta.wrap
-		ta.mu.Unlock()
-		if wrap != nil {
-			wrap(h).ServeHTTP(w, r)
-			return
-		}
-		h.ServeHTTP(w, r)
-	})
-	served := &atomic.Pointer[tls.Certificate]{}
-	served.Store(&pair)
-	addr := serveTLS(t, record, chalkd.TLSConfig(func(*tls.ClientHelloInfo) (*tls.Certificate, error) { return served.Load(), nil }, s.ClientCAs))
+	node := sdktest.Serve(t, s, ta.secrets.OSCA, ta.secrets.NodeCA, "n1", ta.recordingWrap())
 	ta.mu.Lock()
 	defer ta.mu.Unlock()
 	if ta.served == nil {
 		ta.served = map[string]*atomic.Pointer[tls.Certificate]{}
 	}
-	ta.served[addr] = served
-	return addr
+	ta.served[node.Addr] = node.Served
+	return node.Addr
+}
+
+// recordingWrap wraps the node's handler with one that records the remote address of each
+// request against the procedure it called, which remotes returns, and applies ta.wrap, read anew
+// for each request so a test that calls setWrap after the node started still takes effect.
+func (ta *testApp) recordingWrap() func(http.Handler) http.Handler {
+	return func(h http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			procedure := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
+			ta.mu.Lock()
+			if ta.requests == nil {
+				ta.requests = map[string][]string{}
+			}
+			ta.requests[procedure] = append(ta.requests[procedure], r.RemoteAddr)
+			wrap := ta.wrap
+			ta.mu.Unlock()
+			if wrap != nil {
+				wrap(h).ServeHTTP(w, r)
+				return
+			}
+			h.ServeHTTP(w, r)
+		})
+	}
 }
 
 // renewMaintenanceCertificate has the node at addr present a new self-signed certificate, as
@@ -251,76 +218,6 @@ func (ta *testApp) renewMaintenanceCertificate(t *testing.T, addr string) string
 	defer ta.mu.Unlock()
 	ta.served[addr].Store(&pair)
 	return pki.Fingerprint(pair.Certificate[0])
-}
-
-// serveTLS serves h with the configuration as chalkd does, and returns the address. httptest's
-// servers would add a certificate of their own, which TLS prefers to GetCertificate.
-func serveTLS(t *testing.T, h http.Handler, cfg *tls.Config) string {
-	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	srv := &http.Server{Handler: h, TLSConfig: cfg}
-	go srv.ServeTLS(ln, "", "")
-	t.Cleanup(func() { srv.Close() })
-	return ln.Addr().String()
-}
-
-// stayUp is a reboot or shutdown of a test node that does not start, so the node keeps serving
-// and its change locks stay free.
-func stayUp() error { return errors.New("the test node stays up") }
-
-func maintenanceNode() *chalkd.Server {
-	return &chalkd.Server{
-		Mode:       nodev1.Mode_MODE_MAINTENANCE,
-		InPlace:    func(context.Context, install.Request, []byte) error { return errors.New("unexpected install in place") },
-		FromParts:  func(context.Context, install.PartsRequest) error { return errors.New("unexpected install onto a disk") },
-		RebootNode: stayUp,
-	}
-}
-
-// fixtureSchemas are the schemas of the built-in kinds and of networkd's Network.
-var fixtureSchemas = []string{schematest.Builtin, schematest.Networkd}
-
-// copySchemas writes the fixture schemas into dir, as an image ships them.
-func copySchemas(t *testing.T, dir string) {
-	t.Helper()
-	schematest.Copy(t, dir, fixtureSchemas...)
-}
-
-// contractDir is the directory of s's contract; a server without one gets the fixture schemas.
-func contractDir(t *testing.T, s *chalkd.Server) string {
-	t.Helper()
-	if s.Loader.Contract == nil {
-		dir := t.TempDir()
-		copySchemas(t, filepath.Join(dir, imagecontract.SchemasDir))
-		loadContract(t, s, dir)
-	}
-	return s.Loader.Contract.Dir
-}
-
-// writeContract writes the file name of s's contract and loads the contract again, as chalkd loads
-// the running image's as it starts.
-func writeContract(t *testing.T, s *chalkd.Server, name, content string) {
-	t.Helper()
-	dir := contractDir(t, s)
-	writeFile(t, filepath.Join(dir, name), content)
-	loadContract(t, s, dir)
-}
-
-// loadContract makes the contract of dir s's.
-func loadContract(t *testing.T, s *chalkd.Server, dir string) {
-	t.Helper()
-	var opts []imagecontract.Option
-	if s.Loader.Render.Root != "" {
-		opts = append(opts, imagecontract.RenderRoot(s.Loader.Render.Root))
-	}
-	c, err := imagecontract.Load(dir, opts...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s.Loader.Contract = c
 }
 
 // clusterFile is the cluster file chalkd writes for a node of the kind.
@@ -350,7 +247,7 @@ func installedNode(t *testing.T, ta *testApp, recorded []byte) (*chalkd.Server, 
 		Paths:      chalkd.PathsUnder(root),
 		Run:        r,
 		Host:       storage.Host{SysRoot: filepath.Join(root, "sys"), UdevRoot: filepath.Join(root, "udev"), DevRoot: filepath.Join(root, "dev")},
-		RebootNode: stayUp,
+		RebootNode: sdktest.StayUp,
 	}
 	s.Loader = nodeconfig.LoaderUnder(root)
 	s.Loader.Render.Run = outputs.Direct{}
@@ -367,7 +264,7 @@ func installedNode(t *testing.T, ta *testApp, recorded []byte) (*chalkd.Server, 
 	section, _ := json.Marshal(ta.identity(t).Storage)
 	writeFile(t, filepath.Join(s.Paths.StateDir, "storage", "storage.json"), string(section))
 	// The storage rules compare the config with the section STATE records.
-	writeContract(t, s, imagecontract.FactsFile, `{"recorded": {"file": "`+filepath.Join(s.Paths.StateDir, "storage", "storage.json")+`"}}`)
+	sdktest.WriteContract(t, s, imagecontract.FactsFile, `{"recorded": {"file": "`+filepath.Join(s.Paths.StateDir, "storage", "storage.json")+`"}}`)
 	writeFile(t, s.Paths.MountInfo, "41 30 253:1 / /var rw - ext4 /dev/mapper/var rw\n")
 	s.Plugins = chalkdtest.Plugins(t, s, layers.Of())
 	writeEffects(t, s)
@@ -382,7 +279,7 @@ func writeEffects(t *testing.T, s *chalkd.Server) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeContract(t, s, imagecontract.EffectsFile, string(data))
+	sdktest.WriteContract(t, s, imagecontract.EffectsFile, string(data))
 }
 
 // kubernetesState is the state the Kubernetes layer of s reads and writes.

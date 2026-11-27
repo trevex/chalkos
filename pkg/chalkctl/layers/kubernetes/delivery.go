@@ -2,38 +2,12 @@ package kubernetes
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/spf13/pflag"
-	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/internal/cli"
-	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 )
-
-// Payloads are the node's share, issued from the secrets for its Node type; none for a node
-// without one.
-func (p *Plugin) Payloads(t layer.Target, now time.Time) ([]*anypb.Any, error) {
-	kind, err := kindOf(t.Cluster(), t.Name())
-	if err != nil || kind == "" {
-		return nil, err
-	}
-	secrets := t.Secrets()
-	share, err := kpki.ShareFor(&secrets, kind, t.Name(), now)
-	if err != nil {
-		return nil, err
-	}
-	data, err := share.Encode()
-	if err != nil {
-		return nil, err
-	}
-	payload, err := kpki.Payload(data)
-	if err != nil {
-		return nil, err
-	}
-	return []*anypb.Any{payload}, nil
-}
 
 type applyFlags struct{ share bool }
 

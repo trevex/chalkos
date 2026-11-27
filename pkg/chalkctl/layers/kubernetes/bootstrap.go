@@ -15,6 +15,7 @@ import (
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/internal/strs"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	sdkkubernetes "github.com/trevex/chalkos/pkg/sdk/layers/kubernetes"
 )
 
 type bootstrapFlags struct {
@@ -66,7 +67,7 @@ func bootstrap(h layer.Host, ctx context.Context, f bootstrapFlags, pos []string
 	ctx, cancel := context.WithTimeout(ctx, f.timeout)
 	defer cancel()
 	fmt.Fprintf(h.Stdout(), "bootstrapping %s; the control plane pulls its images and starts\n", t.Name())
-	resp, err := Client(conn).Bootstrap(ctx, &kubernetesv1.BootstrapRequest{})
+	resp, err := sdkkubernetes.Bootstrap(ctx, conn)
 	if err != nil {
 		return fmt.Errorf("bootstrap %s: %w", t.Name(), err)
 	}
@@ -100,7 +101,7 @@ func noOtherMember(ctx context.Context, controlPlanes []string, status statusFun
 	for _, name := range controlPlanes {
 		k, err := status(ctx, name)
 		switch {
-		case errors.Is(err, errNoKubernetes):
+		case errors.Is(err, sdkkubernetes.ErrNoKubernetes):
 			continue
 		case err != nil:
 			fmt.Fprintf(stderr, "warning: %s does not say whether it is a member of a cluster: %v\n", name, err)

@@ -110,14 +110,17 @@ func kubeletConfig(p Paths, c kubernetes.Cluster) kubeletConfiguration {
 	return config
 }
 
-// kubeletFlags are the kubelet's node-specific flags, its name, addresses, labels and taints,
-// followed by the cluster's extra kubelet flags in name order. Coming last, the extra flags
-// override chalkos's, except the protected ones, which Cluster.Validate refuses. Control-plane
-// nodes are tainted unless the cluster allows workloads on them.
+// kubeletFlags are the kubelet's node-specific flags, its name, addresses, provider ID, labels and
+// taints, followed by the cluster's extra kubelet flags in name order. Coming last, the extra
+// flags override chalkos's, except the protected ones, which Cluster.Validate refuses.
+// Control-plane nodes are tainted unless the cluster allows workloads on them.
 func kubeletFlags(c kubernetes.Cluster, n kubernetes.Node) []string {
 	flags := []string{"--hostname-override=" + n.Name}
 	if len(n.IPs) > 0 {
 		flags = append(flags, "--node-ip="+strs.Join(n.IPs, ","))
+	}
+	if n.ProviderID != "" {
+		flags = append(flags, "--provider-id="+n.ProviderID)
 	}
 	var labels []string
 	for k, v := range n.Labels {

@@ -21,6 +21,7 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/internal/strs"
+	"github.com/trevex/chalkos/pkg/sdk"
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
@@ -243,16 +244,16 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 	defer conn.Close()
 	// The staged image is the inventory's image for the node; the node checks the config against it
 	// again, and without one holds the config pending for the next upgrade's image.
-	var c contract
+	var c sdk.Contract
 	if f.staged {
 		c, err = t.cluster.imageContractOf(t.name)
 	} else {
-		c, err = nodeContract(ctx, conn, t.name)
+		c, err = sdk.NodeContract(ctx, conn, sdkLayers(), t.name)
 	}
 	if err != nil {
 		return err
 	}
-	d, err := t.cluster.deliveryFor(t.name, c)
+	d, _, err := t.cluster.deliveryFor(ctx, t.name, c)
 	if err != nil {
 		return err
 	}
@@ -303,7 +304,7 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 			return layer.Named(t.name, err)
 		}
 	}
-	if err := checkRules(c, d.documents, baseline, t.name); err != nil {
+	if err := sdk.CheckRules(c, d.Redacted, baseline, t.name); err != nil {
 		return &layer.NodeError{Node: t.name, Err: err, Refused: true}
 	}
 	// A pending config carries no fallback secret; the upgrade that adds an encrypted volume brings
@@ -311,16 +312,20 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 	// secret; a rerun succeeds.
 	var fallback string
 	if !pending {
-		if fallback, err = a.fallbackOf(ctx, st, t, d.identity.Storage, f.passwordFile, ""); err != nil {
+		if fallback, err = a.fallbackOf(ctx, st, t, d.Identity.Storage, f.passwordFile, ""); err != nil {
 			return err
 		}
+	}
+	docs, err := t.cluster.Documents(t.name)
+	if err != nil {
+		return err
 	}
 	var payloads []*anypb.Any
 	for _, l := range f.layers {
 		if !l.f.Requested() {
 			continue
 		}
-		p, err := l.d.Payloads(t, time.Now())
+		p, err := l.d.Payloads(t.secrets, t.name, docs, time.Now())
 		if err != nil {
 			return err
 		}
@@ -622,11 +627,11 @@ func (a *app) resetVolume(ctx context.Context, f resetVolumeFlags, pos []string)
 		return err
 	}
 	defer conn.Close()
-	c, err := nodeContract(ctx, conn, t.name)
+	c, err := sdk.NodeContract(ctx, conn, sdkLayers(), t.name)
 	if err != nil {
 		return err
 	}
-	d, err := t.cluster.deliveryFor(t.name, c)
+	d, _, err := t.cluster.deliveryFor(ctx, t.name, c)
 	if err != nil {
 		return err
 	}
@@ -635,12 +640,12 @@ func (a *app) resetVolume(ctx context.Context, f resetVolumeFlags, pos []string)
 	}
 	// Without a fallback the node is not asked for its volumes.
 	var fallback string
-	if d.identity.Storage.Fallback != storage.FallbackNone {
+	if d.Identity.Storage.Fallback != storage.FallbackNone {
 		st, err := conn.Status(ctx, &nodev1.StatusRequest{})
 		if err != nil {
 			return fmt.Errorf("ask %s for its volumes: %w", t.name, err)
 		}
-		if fallback, err = a.fallbackOf(ctx, st, t, d.identity.Storage, f.passwordFile, pos[1]); err != nil {
+		if fallback, err = a.fallbackOf(ctx, st, t, d.Identity.Storage, f.passwordFile, pos[1]); err != nil {
 			return err
 		}
 	}

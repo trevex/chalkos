@@ -13,6 +13,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
+	"github.com/trevex/chalkos/pkg/sdk"
 )
 
 // nodeFlags are the flags of a command that reaches a cluster's nodes, with what the command
@@ -125,20 +126,16 @@ func dialNode(t *target, ignoreValidity bool) (*client.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	verify := client.ByCA(roots, t.name)
-	if ignoreValidity {
-		verify = client.ByCAIgnoringValidity(roots, t.name)
-	}
-	o := client.Options{Verify: verify, Certificate: t.creds.cert, Source: t.source}
+	trust := sdk.Trust{OSCAs: roots, Name: t.name, IgnoreValidity: ignoreValidity, Source: t.source}
 	if path := t.creds.configPath; t.creds.config != nil {
-		o.Untrusted = func(err error, refused bool) error {
+		trust.Untrusted = func(err error, refused bool) error {
 			if refused {
 				return fmt.Errorf("the node does not accept this client file, %s; is it another cluster's? (%w)", path, err)
 			}
 			return fmt.Errorf("this client file's OS CA does not verify the node's certificate, %s: is the file another cluster's or from before an OS CA rotation, or does the address reach another cluster's node? (%w)", path, err)
 		}
 	}
-	conn, err := client.Dial(t.addr, o)
+	conn, err := sdk.Dial(t.addr, trust, t.creds.cert)
 	if err != nil {
 		return nil, err
 	}
@@ -158,18 +155,22 @@ func (p *pinFlags) register(fs *pflag.FlagSet) {
 
 func (p pinFlags) set() bool { return p.fingerprint != "" || p.insecure }
 
-func (p pinFlags) dial(addr, source string, cert *tls.Certificate) (*client.Conn, error) {
+// validate refuses flags that name neither a fingerprint nor --insecure, or both.
+func (p pinFlags) validate() error {
 	if p.fingerprint != "" && p.insecure {
-		return nil, errors.New("pass either --fingerprint or --insecure")
+		return errors.New("pass either --fingerprint or --insecure")
 	}
 	if !p.set() {
-		return nil, errors.New("a node in maintenance mode is verified by its certificate's fingerprint; pass --fingerprint FP, or --insecure to accept any certificate")
+		return errors.New("a node in maintenance mode is verified by its certificate's fingerprint; pass --fingerprint FP, or --insecure to accept any certificate")
 	}
-	verify := client.ByFingerprint(p.fingerprint)
-	if p.insecure {
-		verify = client.AnyCertificate()
+	return nil
+}
+
+func (p pinFlags) dial(addr, source string, cert *tls.Certificate) (*client.Conn, error) {
+	if err := p.validate(); err != nil {
+		return nil, err
 	}
-	return client.Dial(addr, client.Options{Verify: verify, Certificate: cert, Source: source})
+	return sdk.Dial(addr, sdk.Trust{Fingerprint: p.fingerprint, Insecure: p.insecure, Source: source}, cert)
 }
 
 // nodePinFlags are the flags of a command that reaches an installed node or, with a fingerprint

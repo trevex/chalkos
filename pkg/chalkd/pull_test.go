@@ -383,9 +383,9 @@ func TestInstallPassesOverAStoreItHolds(t *testing.T) {
 }
 
 // TestInstallRefusesAPull refuses an install that pulls its image with the image's contract or
-// chunks of its own, in place, without credentials the registry accepts, or of another image
-// than the header's. Each refusal comes before the target disk is touched; a registry's refusal
-// names the reference.
+// chunks of its own, in place without the image's header or with a boot loader, without
+// credentials the registry accepts, or of another image than the header's. Each refusal comes
+// before the disk is touched; a registry's refusal names the reference.
 func TestInstallRefusesAPull(t *testing.T) {
 	host := ocitest.AuthRegistry(t, "ci-bot", "s3cret")
 	for name, tc := range map[string]struct {
@@ -395,13 +395,14 @@ func TestInstallRefusesAPull(t *testing.T) {
 		want    string
 		inPlace bool
 	}{
-		"without a reference":     {edit: func(h *nodev1.InstallHeader) { h.GetSource().GetOci().Reference = "" }, code: connect.CodeInvalidArgument, want: "names no image in a registry"},
-		"without config":          {edit: func(h *nodev1.InstallHeader) { h.Config = "" }, code: connect.CodeInvalidArgument, want: "the header delivers no config"},
-		"without a boot loader":   {edit: func(h *nodev1.InstallHeader) { h.Image.BootLoader = nil }, code: connect.CodeInvalidArgument, want: "brings no boot loader"},
-		"of an invalid image":     {edit: func(h *nodev1.InstallHeader) { h.Image.ImageId = "" }, code: connect.CodeInvalidArgument, want: "the image: the image's ID and platform are required"},
-		"with chunks":             {chunk: true, code: connect.CodeInvalidArgument, want: "an install that pulls its image carries no chunks"},
-		"in place":                {inPlace: true, code: connect.CodeInvalidArgument, want: "an install in place takes no image"},
-		"with a reference by tag": {edit: func(h *nodev1.InstallHeader) { h.GetSource().GetOci().Reference = host + "/lab/worker-metal:v1" }, code: connect.CodeInvalidArgument, want: "is no image reference by digest"},
+		"without a reference":                 {edit: func(h *nodev1.InstallHeader) { h.GetSource().GetOci().Reference = "" }, code: connect.CodeInvalidArgument, want: "names no image in a registry"},
+		"without config":                      {edit: func(h *nodev1.InstallHeader) { h.Config = "" }, code: connect.CodeInvalidArgument, want: "the header delivers no config"},
+		"without a boot loader":               {edit: func(h *nodev1.InstallHeader) { h.Image.BootLoader = nil }, code: connect.CodeInvalidArgument, want: "brings no boot loader"},
+		"of an invalid image":                 {edit: func(h *nodev1.InstallHeader) { h.Image.ImageId = "" }, code: connect.CodeInvalidArgument, want: "the image: the image's ID and platform are required"},
+		"with chunks":                         {chunk: true, code: connect.CodeInvalidArgument, want: "an install that pulls its image carries no chunks"},
+		"in place without the image's header": {inPlace: true, edit: func(h *nodev1.InstallHeader) { h.Image = nil }, code: connect.CodeInvalidArgument, want: "the header describes no image"},
+		"in place with a boot loader":         {inPlace: true, code: connect.CodeInvalidArgument, want: "an install in place keeps the node's boot loader"},
+		"with a reference by tag":             {edit: func(h *nodev1.InstallHeader) { h.GetSource().GetOci().Reference = host + "/lab/worker-metal:v1" }, code: connect.CodeInvalidArgument, want: "is no image reference by digest"},
 		"with bad Registry documents": {edit: func(h *nodev1.InstallHeader) {
 			h.Config = workerConfig + "---\n" + strings.Replace(registryConfig(host), "key: token", "key: other", 1)
 		}, code: connect.CodeInvalidArgument, want: "the Registry and Mirror documents"},
@@ -418,7 +419,7 @@ func TestInstallRefusesAPull(t *testing.T) {
 			s.InPlace = func(context.Context, install.Request, []byte) error { t.Error("installed in place"); return nil }
 			h := pulledInstall(t, host, registryConfig(host))
 			if tc.inPlace {
-				h.Target, h.Image = &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}, nil
+				h.Target = &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}
 			}
 			if tc.edit != nil {
 				tc.edit(h)

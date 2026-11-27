@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/random"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -35,7 +36,7 @@ func TestPushAndRead(t *testing.T) {
 	if want := host + "/chalkos/node-metal@" + d.String(); err != nil || pinned != want {
 		t.Fatalf("Push = %s, %v; want %s", pinned, err, want)
 	}
-	a, err := ociimage.Read(ctx, host+"/chalkos/node-metal:v1")
+	a, err := ociimage.Read(ctx, host+"/chalkos/node-metal:v1", authn.DefaultKeychain)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +98,7 @@ func TestReadRefuses(t *testing.T) {
 		host + "/other/none:v1":    "NAME_UNKNOWN",
 		host + "/chalkos/other:v1": `the contract layer's metadata.json names the root hash "abab`,
 	} {
-		if _, err := ociimage.Read(ctx, ref); err == nil || !strings.Contains(err.Error(), want) {
+		if _, err := ociimage.Read(ctx, ref, authn.DefaultKeychain); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("Read(%s) = %v, want %q", ref, err, want)
 		}
 	}
@@ -110,7 +111,7 @@ func TestReadRefusesASwappedManifest(t *testing.T) {
 	other.RootHash = strings.Repeat("cd", 32)
 	host, digestA := swappingRegistry(t, ocitest.Image(t, ocitest.Header(), c), ocitest.Image(t, other, c))
 	pinnedRef := host + "/chalkos/x@" + digestA.String()
-	if _, err := ociimage.Read(context.Background(), pinnedRef); err == nil || !strings.Contains(err.Error(), "does not match requested digest") {
+	if _, err := ociimage.Read(context.Background(), pinnedRef, authn.DefaultKeychain); err == nil || !strings.Contains(err.Error(), "does not match requested digest") {
 		t.Errorf("Read(%s) = %v, want a digest mismatch", pinnedRef, err)
 	}
 }

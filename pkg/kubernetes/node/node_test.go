@@ -899,6 +899,10 @@ func TestKubeletFlags(t *testing.T) {
 	if got, want := kubeletFlags(c, kubernetes.Node{Name: "w1"}), []string{"--hostname-override=w1", "--max-pods=50", "--v=2"}; !slices.Equal(got, want) {
 		t.Errorf("flags = %v, want %v", got, want)
 	}
+	// A node with a provider ID registers with it; the one above, without, has no --provider-id.
+	if got, want := kubeletFlags(c, kubernetes.Node{Name: "w1", ProviderID: "kubevirt://w1"}), []string{"--hostname-override=w1", "--provider-id=kubevirt://w1", "--max-pods=50", "--v=2"}; !slices.Equal(got, want) {
+		t.Errorf("flags = %v, want %v", got, want)
+	}
 }
 
 func staticPods(t *testing.T, s State) []string {

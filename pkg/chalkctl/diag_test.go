@@ -18,6 +18,7 @@ import (
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/internal/golden"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/sdk/sdktest"
 )
 
 // testDiagnostics declares route-get and journal, which readers run, and ping, which needs an
@@ -66,7 +67,7 @@ func (f *fakeDiagnose) recorded() []diagnostics.Run {
 func diagNode(t *testing.T, ta *testApp, f *fakeDiagnose) string {
 	t.Helper()
 	s, _ := installedNode(t, ta, nil)
-	writeContract(t, s, imagecontract.DiagnosticsFile, testDiagnostics)
+	sdktest.WriteContract(t, s, imagecontract.DiagnosticsFile, testDiagnostics)
 	s.Diagnose = f
 	return ta.startNode(t, s)
 }

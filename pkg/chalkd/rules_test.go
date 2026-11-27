@@ -18,13 +18,14 @@ import (
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 )
 
-// A fact a rule reads that cannot be loaded refuses the config, and changes nothing.
+// A fact a rule reads that cannot be loaded refuses the config, without a reason, as it may load
+// next time, and changes nothing.
 func TestApplyConfigRefusesWhenAFactCannotBeLoaded(t *testing.T) {
 	s, r := clusterServer(t, k8s.KindWorker)
 	write(t, kubernetesState(s).Share(), "{")
 	r.Calls = nil
 	_, err := sendConfig(s, workerConfig)
-	if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "cannot check: fact share: ") || !strings.Contains(err.Error(), "share.json is not JSON") {
+	if codeOf(err) != connect.CodeFailedPrecondition || reasonOf(err) != nodev1.ErrorReason_ERROR_REASON_UNSPECIFIED || !strings.Contains(err.Error(), "cannot check: fact share: ") || !strings.Contains(err.Error(), "share.json is not JSON") {
 		t.Fatalf("err = %v", err)
 	}
 	if len(r.Calls) != 0 {

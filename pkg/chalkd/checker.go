@@ -63,7 +63,7 @@ func (s *Server) checkInput(ctx context.Context, system, dir string, in *checkv1
 	refusal, refused := errors.AsType[*check.Refusal](err)
 	switch {
 	case refused:
-		r := &checkv1.Refusal{Stage: string(refusal.Stage), Message: refusal.Message, Reason: refusal.Reason}
+		r := &checkv1.Refusal{Stage: string(refusal.Stage), Message: refusal.Message, Reason: refusal.ErrorReason()}
 		for _, f := range refusal.Failures {
 			r.Failures = append(r.Failures, f.String())
 		}

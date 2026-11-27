@@ -54,16 +54,20 @@ live in `pkg/chalkd/layers/kubernetes` and `pkg/chalkd/layers/router`.
 
 - commands;
 - a node's status section;
-- image facts;
-- the payloads of a delivery and their admission;
+- the admission of a delivery's payloads;
 - the coordinators that upgrade and rotate take first;
 - an upgrade's checks;
-- the rotation kinds a layer runs;
-- the validators it links.
+- the rotation kinds a layer runs.
 
-`Inventory` filters the documents each node of an inventory gets and checks the inventory's nodes
-together. chalkctl passes the filters to `inventory.Load` and runs the checks on every inventory
-it loads. `UpgradeFlags` adds a layer's flags to `chalkctl upgrade` and `chalkctl node reboot`,
+What other clients of chalkd need too lives in the layer's part of the SDK,
+`pkg/sdk/layers/<layer>`, which the chalkctl plugin embeds. `pkg/sdk` declares its hooks:
+`ImageFacts` for the facts of the layer's images, `Validators` for the validators it links,
+`Documents` for the filter of the documents each node of an inventory gets, and `Payloads` for
+the payloads of a delivery. chalkctl passes every compiled plugin to `pkg/sdk`, and the filter to
+`inventory.Load`.
+
+`Inventory` checks the inventory's nodes together; chalkctl runs the check on every inventory it
+loads. `UpgradeFlags` adds a layer's flags to `chalkctl upgrade` and `chalkctl node reboot`,
 such as the Kubernetes plugin's `--allow-downtime`. The layer's hooks of the reboot step read them
 back. A plugin also names the nodes every rotation leaves out and those that hold the node CA.
 

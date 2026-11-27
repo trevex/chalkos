@@ -23,21 +23,22 @@ func ParseReference(ref string) (name.Reference, error) {
 	return r, nil
 }
 
-// options are the remote options of Push and Read: ctx and the default keychain.
-// go-containerregistry uses plain HTTP for localhost:<port>, *.localhost, 127.0.0.1, ::1 and
-// RFC 1918 addresses, each with an optional port, and HTTPS for any other registry.
-func options(ctx context.Context) []remote.Option {
-	return []remote.Option{remote.WithContext(ctx), remote.WithAuthFromKeychain(authn.DefaultKeychain)}
+// options are the remote options of Push, Read and Image: ctx and the keychain that resolves the
+// registry's credentials. go-containerregistry uses plain HTTP for localhost:<port>, *.localhost,
+// 127.0.0.1, ::1 and RFC 1918 addresses, each with an optional port, and HTTPS for any other
+// registry.
+func options(ctx context.Context, kc authn.Keychain) []remote.Option {
+	return []remote.Option{remote.WithContext(ctx), remote.WithAuthFromKeychain(kc)}
 }
 
-// Push pushes a chalkos image to ref and returns the reference of its manifest by digest,
-// repository@sha256:….
+// Push pushes a chalkos image to ref, with the credentials of the default keychain, and returns
+// the reference of its manifest by digest, repository@sha256:….
 func Push(ctx context.Context, img v1.Image, ref string) (string, error) {
 	r, err := ParseReference(ref)
 	if err != nil {
 		return "", err
 	}
-	if err := remote.Write(r, img, options(ctx)...); err != nil {
+	if err := remote.Write(r, img, options(ctx, authn.DefaultKeychain)...); err != nil {
 		return "", fmt.Errorf("push %s: %w", ref, err)
 	}
 	d, err := img.Digest()
@@ -65,15 +66,15 @@ func (a *Artifact) Descriptor(mediaType types.MediaType) (v1.Descriptor, error) 
 }
 
 // Read resolves ref, by tag or by digest, to its manifest's digest and reads the header and the
-// contract layer of the chalkos image there, with the credentials of the default keychain. It
-// refuses an index, an image of another artifact type, and a contract whose metadata.json
-// describes another image than the header.
-func Read(ctx context.Context, ref string) (*Artifact, error) {
+// contract layer of the chalkos image there, with the credentials kc resolves. It refuses an
+// index, an image of another artifact type, and a contract whose metadata.json describes another
+// image than the header.
+func Read(ctx context.Context, ref string, kc authn.Keychain) (*Artifact, error) {
 	r, err := ParseReference(ref)
 	if err != nil {
 		return nil, err
 	}
-	desc, err := remote.Get(r, options(ctx)...)
+	desc, err := remote.Get(r, options(ctx, kc)...)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +105,7 @@ func Image(ctx context.Context, ref string) (v1.Image, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%q is no image reference by digest, repository@sha256:…: %w", ref, err)
 	}
-	return remote.Image(d, options(ctx)...)
+	return remote.Image(d, options(ctx, authn.DefaultKeychain)...)
 }
 
 // imageOf is the image a descriptor names, refusing an index.

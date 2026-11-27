@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/rest"
 
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	"github.com/trevex/chalkos/pkg/chalkd/renewal"
@@ -40,12 +41,18 @@ import (
 
 func TestBootstrap(t *testing.T) {
 	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
+	if kubernetestest.Status(t, s).AddonsApplied {
+		t.Error("the add-ons are applied before the bootstrap")
+	}
 	resp, err := kubernetestest.Bootstrap(context.Background(), s)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if resp.Applied != 19 {
 		t.Errorf("applied %d objects", resp.Applied)
+	}
+	if !kubernetestest.Status(t, s).AddonsApplied {
+		t.Error("the add-ons are not applied after the bootstrap")
 	}
 	p := s.k.state
 	if m, _, err := p.ReadMembership(); err != nil || m != knode.MembershipBootstrapped {
@@ -187,6 +194,93 @@ func TestRestartDuringBootstrap(t *testing.T) {
 		}
 		if d := time.Since(start); d != 0 {
 			t.Errorf("the bootstrap returned %v after the add-ons were applied", d)
+		}
+	})
+}
+
+// The status says the add-ons are applied once the control plane's loop applied them: after a
+// restart of the loops or of chalkd, only once the loop started since applied them again. A
+// reload of the loop keeps them applied.
+func TestAddonsAppliedByTheRunningLoop(t *testing.T) {
+	testwait.Bubble(t, func(t *testing.T) {
+		s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
+		apply := make(chan struct{})
+		controlPlane := func(ctx context.Context, _ kpki.Share, applied func(int)) error {
+			select {
+			case <-apply:
+				applied(3)
+			case <-ctx.Done():
+			}
+			<-ctx.Done()
+			return ctx.Err()
+		}
+		s.k.hooks.ControlPlane = controlPlane
+		ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+		defer cancel()
+		bootstrapped := make(chan error, 1)
+		go func() {
+			_, err := kubernetestest.Bootstrap(ctx, s)
+			bootstrapped <- err
+		}()
+		synctest.Wait()
+		if st := kubernetestest.Status(t, s); st.Phase != kubernetesv1.Phase_PHASE_BOOTSTRAPPED || st.AddonsApplied {
+			t.Errorf("before the loop applied them: phase %v, add-ons applied %v", st.Phase, st.AddonsApplied)
+		}
+		apply <- struct{}{}
+		if err := <-bootstrapped; err != nil {
+			t.Fatal(err)
+		}
+		if !kubernetestest.Status(t, s).AddonsApplied {
+			t.Error("the add-ons are not applied after the bootstrap")
+		}
+
+		if err := s.Actions()["reload"](context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		if !kubernetestest.Status(t, s).AddonsApplied {
+			t.Error("the add-ons are not applied after a reload")
+		}
+		apply <- struct{}{}
+
+		if err := s.Actions()["restart"](context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		if kubernetestest.Status(t, s).AddonsApplied {
+			t.Error("the add-ons are applied after a restart before the loop applied them again")
+		}
+		apply <- struct{}{}
+		synctest.Wait()
+		if !kubernetestest.Status(t, s).AddonsApplied {
+			t.Error("the add-ons are not applied once the loop applied them again")
+		}
+
+		// chalkd starts again: a new layer over the same files. It gets the hooks the test set
+		// alone, one by one: New fills the others with methods of the layer it makes, and those of
+		// s.k would reach the stopped layer's state.
+		s.Stop()
+		h := s.k.hooks
+		again := New(s.node, Options{
+			Paths:       s.k.state.Paths,
+			ImageFile:   s.k.o.ImageFile,
+			ClusterFile: s.k.o.ClusterFile,
+			Hooks: Hooks{
+				Slot: h.Slot, Objects: h.Objects, ControlPlane: controlPlane, Node: h.Node, Pods: h.Pods,
+				EtcdEndpoints: h.EtcdEndpoints, ClusterAnswers: h.ClusterAnswers,
+				CheckControlPlane: h.CheckControlPlane, APIClient: h.APIClient,
+			},
+		})
+		t.Cleanup(again.Stop)
+		again.k.startLoops()
+		synctest.Wait()
+		if st := kubernetestest.Status(t, again); st.Phase != kubernetesv1.Phase_PHASE_BOOTSTRAPPED || st.AddonsApplied {
+			t.Errorf("after chalkd started again: phase %v, add-ons applied %v", st.Phase, st.AddonsApplied)
+		}
+		apply <- struct{}{}
+		synctest.Wait()
+		if !kubernetestest.Status(t, again).AddonsApplied {
+			t.Error("the add-ons are not applied once the loop of the chalkd started again applied them")
 		}
 	})
 }

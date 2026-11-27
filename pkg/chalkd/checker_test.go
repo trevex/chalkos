@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	checkv1 "github.com/trevex/chalkos/pkg/api/check/v1"
+	"github.com/trevex/chalkos/pkg/check"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/imagecheck"
@@ -79,7 +80,7 @@ func TestCheckRefuses(t *testing.T) {
 	withoutDemo := fixtureSchemas(t)
 	delete(withoutDemo, "demo.example.org_v1alpha1_Demo.json")
 	res := checkWith(t, s, imageWith(t, s, withoutDemo, ""), baseConfig)
-	if r := res.GetRefusal(); r.GetStage() != "config" || strings.HasPrefix(r.GetMessage(), "the config") || !strings.Contains(r.GetMessage(), `does not accept kind "Demo"`) {
+	if r := res.GetRefusal(); r.GetStage() != "config" || r.GetReason() != check.RefusedReason || strings.HasPrefix(r.GetMessage(), "the config") || !strings.Contains(r.GetMessage(), `does not accept kind "Demo"`) {
 		t.Errorf("refusal = %v", r)
 	}
 	broken := imageWith(t, s, nil, "")
@@ -127,21 +128,23 @@ func refusingImage(t *testing.T, s *Server) dirStore {
 }
 
 // chalkd check refuses config by the image's rules, its validators and its renderers, with the
-// stage and the identity of the translation.
+// stage, the identity of the translation and the reason the node gives the client: CONFIG_REFUSED
+// for rules the config does not meet and a validator's refusal of its documents, none for a
+// renderer that fails.
 func TestCheckRefusesByRulesAndOutputs(t *testing.T) {
 	s, _ := configServer(t)
 	st := refusingImage(t, s)
 	if res := checkWith(t, s, st, baseConfig); res.GetRefusal() != nil || res.GetError() != "" || len(res.GetDocuments()) == 0 {
 		t.Fatalf("result = %v, want a pass", res)
 	}
-	for name, want := range map[string]struct{ stage, message string }{
-		"refuse": {"rules", "the name refuses"},
-		"veto":   {"validators", "the config is refused: Demo/one: spec.name: the name is vetoed"},
-		"fail":   {"outputs", "output demo: its renderer failed (exit 1)"},
+	for name, want := range map[string]struct{ stage, message, reason string }{
+		"refuse": {"rules", "the name refuses", check.RefusedReason},
+		"veto":   {"validators", "the config is refused: Demo/one: spec.name: the name is vetoed", check.RefusedReason},
+		"fail":   {"outputs", "output demo: its renderer failed (exit 1)", ""},
 	} {
 		res := checkWith(t, s, st, strings.Replace(baseConfig, "name: first", "name: "+name, 1))
 		r := res.GetRefusal()
-		if r.GetStage() != want.stage || !strings.Contains(r.GetMessage(), want.message) || res.GetIdentity() == "" {
+		if r.GetStage() != want.stage || r.GetReason() != want.reason || !strings.Contains(r.GetMessage(), want.message) || res.GetIdentity() == "" {
 			t.Errorf("%s: result = %v, want a refusal of %s with the identity", name, res, want.stage)
 		}
 	}
