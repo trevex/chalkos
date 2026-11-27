@@ -2,8 +2,10 @@ package kubernetes
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/trevex/chalkos/pkg/internal/testwait"
@@ -76,4 +78,52 @@ func TestLeftoverJoinLeavesTheNextGeneration(t *testing.T) {
 	if !k.joining || k.group != next {
 		t.Errorf("the leftover join changed the next generation: joining %v, its group kept %v", k.joining, k.group == next)
 	}
+}
+
+// The pruning loop prunes when it starts and every Timing.PruneRevoked after, a day by default,
+// and logs a failure without ending.
+func TestPruneRevokedEvery(t *testing.T) {
+	testwait.Bubble(t, func(t *testing.T) {
+		s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
+		if d := s.k.timing.PruneRevoked; d != 24*time.Hour {
+			t.Errorf("the revoked nodes are pruned every %v, want 24h", d)
+		}
+		var calls atomic.Int32
+		s.k.hooks.PruneRevoked = func(context.Context) error {
+			calls.Add(1)
+			return errors.New("the API server does not answer")
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() { s.k.pruneRevokedEvery(ctx); close(done) }()
+		synctest.Wait()
+		if n := calls.Load(); n != 1 {
+			t.Fatalf("%d prunes at the start, want 1", n)
+		}
+		time.Sleep(s.k.timing.PruneRevoked)
+		synctest.Wait()
+		if n := calls.Load(); n != 2 {
+			t.Errorf("%d prunes after a day, want 2", n)
+		}
+		cancel()
+		<-done
+	})
+}
+
+// The control plane's loops prune the revoked nodes as they start.
+func TestControlPlaneLoopsPruneRevoked(t *testing.T) {
+	testwait.Bubble(t, func(t *testing.T) {
+		s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
+		var calls atomic.Int32
+		s.k.hooks.PruneRevoked = func(context.Context) error {
+			calls.Add(1)
+			return nil
+		}
+		s.k.start()
+		synctest.Wait()
+		if n := calls.Load(); n != 1 {
+			t.Errorf("%d prunes once the loops started, want 1", n)
+		}
+		s.Stop()
+	})
 }

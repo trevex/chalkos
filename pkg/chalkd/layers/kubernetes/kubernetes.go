@@ -103,6 +103,9 @@ type Hooks struct {
 	// RevokedNodes returns the nodes revoked in the cluster, whose node certificates a control
 	// plane does not renew, read through the node's own API server.
 	RevokedNodes func(ctx context.Context) (revoked.List, error)
+	// PruneRevoked drops, through the node's own API server, the revoked nodes whose certificates
+	// have all expired.
+	PruneRevoked func(ctx context.Context) error
 }
 
 // Timing holds the waits and timeouts of the Kubernetes side. A zero field takes its default
@@ -129,6 +132,9 @@ type Timing struct {
 	// Poll is the time between two looks at what a rotation step, a drain or a joining learner
 	// waits for.
 	Poll time.Duration
+	// PruneRevoked is the time between two prunes of the revoked nodes on a bootstrapped control
+	// plane, which also prunes when its loops start.
+	PruneRevoked time.Duration
 }
 
 // withDefaults returns t with each zero field but EtcdStatusTimeout set to its default.
@@ -140,6 +146,7 @@ func (t Timing) withDefaults() Timing {
 	t.EtcdTimeout = cmp.Or(t.EtcdTimeout, 30*time.Second)
 	t.EtcdRetry = cmp.Or(t.EtcdRetry, time.Second)
 	t.Poll = cmp.Or(t.Poll, 2*time.Second)
+	t.PruneRevoked = cmp.Or(t.PruneRevoked, 24*time.Hour)
 	return t
 }
 
@@ -225,6 +232,9 @@ func newSide(o Options) *side {
 	}
 	if h.RevokedNodes == nil {
 		h.RevokedNodes = k.loadRevoked
+	}
+	if h.PruneRevoked == nil {
+		h.PruneRevoked = k.pruneExpired
 	}
 	return k
 }
@@ -331,6 +341,7 @@ func (k *side) startLocked() chan struct{} {
 		k.leaves = k.controlPlaneRenewal()
 	}
 	g.Go("the certificate renewal", k.leaves.Run)
+	g.Go("the pruning of the revoked nodes", k.pruneRevokedEvery)
 	reload := k.reload
 	g.Go("the control plane's loop", func(ctx context.Context) {
 		k.superviseControlPlane(ctx, func(n int) {

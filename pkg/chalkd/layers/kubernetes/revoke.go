@@ -171,13 +171,33 @@ func (p *Plugin) pruneRevoked(ctx context.Context, cs kubernetes.Interface, cp c
 		return err
 	}
 	validity := certValidity(cp.cluster)
-	removed, err := revoked.Prune(ctx, cs, func(_ string, at time.Time) bool {
+	return dropRevoked(ctx, cs, "their certificates expired or chain only to CAs made since", func(_ string, at time.Time) bool {
 		return revoked.Expired(at, now, validity) || len(staleAt(osCAs, kubernetesCAs, at)) == 0
 	})
+}
+
+// pruneExpired drops, through the node's own API server, the revoked nodes whose certificates have
+// all expired by now. It leaves the CAs aside: control planes finish a CA rotation at different
+// times, and an entry one of them could drop for its CAs may still keep a node out of another.
+func (k *side) pruneExpired(ctx context.Context) error {
+	cs, cp, err := k.apiClient(k.etcdMember)
+	if err != nil {
+		return err
+	}
+	validity, now := certValidity(cp.cluster), time.Now()
+	return dropRevoked(ctx, cs, "their certificates expired", func(_ string, at time.Time) bool {
+		return revoked.Expired(at, now, validity)
+	})
+}
+
+// dropRevoked removes the revoked nodes drop picks, logs them with why they were dropped, and
+// applies the admission policy again when it removed one.
+func dropRevoked(ctx context.Context, cs kubernetes.Interface, why string, drop func(name string, at time.Time) bool) error {
+	removed, err := revoked.Prune(ctx, cs, drop)
 	if err != nil || len(removed) == 0 {
 		return err
 	}
-	log.Printf("kubernetes: dropped the revoked nodes %s: their certificates expired or chain only to CAs made since", strings.Join(removed, ", "))
+	log.Printf("kubernetes: dropped the revoked nodes %s: %s", strings.Join(removed, ", "), why)
 	return kapply.EnforceRevoked(ctx, cs)
 }
 
@@ -186,6 +206,21 @@ func (p *Plugin) pruneRevoked(ctx context.Context, cs kubernetes.Interface, cp c
 func (p *Plugin) pruneRevokedLogged(ctx context.Context, cs kubernetes.Interface, cp controlPlaneNode) {
 	if err := p.pruneRevoked(ctx, cs, cp, time.Now()); err != nil {
 		log.Printf("kubernetes: prune the revoked nodes: %v", err)
+	}
+}
+
+// pruneRevokedEvery prunes the revoked nodes with hooks.PruneRevoked now and every
+// timing.PruneRevoked until ctx ends. A failed prune is logged; the next one tries again.
+func (k *side) pruneRevokedEvery(ctx context.Context) {
+	for {
+		if err := k.hooks.PruneRevoked(ctx); err != nil && ctx.Err() == nil {
+			log.Printf("kubernetes: prune the revoked nodes: %v", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(k.timing.PruneRevoked):
+		}
 	}
 }
 

@@ -500,6 +500,35 @@ func TestRevokeNodePrunesAfterRotation(t *testing.T) {
 	}
 }
 
+// The pruning loop drops only the entries whose certificates expired: one revoked before every
+// CA this control plane trusts stays, as another control plane may not have finished the CAs'
+// rotation yet.
+func TestPruneExpired(t *testing.T) {
+	l := newRevokeLab(t)
+	now := time.Now()
+	ancient := now.Add(-(pki.LeafValidity + revoked.ExpiryMargin + time.Hour))
+	// newRevokeLab's CAs are made as the tests start, backdated an hour: w-rotated was revoked
+	// before them.
+	for name, at := range map[string]time.Time{"w-ancient": ancient, "w-rotated": now.Add(-48 * time.Hour)} {
+		if _, err := revoked.Revoke(context.Background(), l.cs, name, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := l.s.k.pruneExpired(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	list := l.list(t)
+	if _, ok := list["w-ancient"]; ok {
+		t.Error("an entry past its certificates' validity is kept")
+	}
+	if _, ok := list["w-rotated"]; !ok {
+		t.Error("an entry revoked before every trusted CA is dropped by expiry alone")
+	}
+	if names := l.policyNames(t); strings.Contains(names, "w-ancient") || !strings.Contains(names, "w-rotated") {
+		t.Errorf("the policy names %s, want w-rotated and not w-ancient", names)
+	}
+}
+
 // A cluster whose controller-manager signs kubelet certificates for longer than a node
 // certificate keeps entries for that long.
 func TestCertValidity(t *testing.T) {
