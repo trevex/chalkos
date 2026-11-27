@@ -52,15 +52,20 @@ func (p *Plugin) RevokeNode(ctx context.Context, req *kubernetesv1.RevokeNodeReq
 	if err != nil {
 		return nil, err
 	}
+	// What fails once the list is written, the same call repairs.
+	done, again := name+" is revoked", "revoking it again"
+	if req.Refresh {
+		done, again = "the revocation of "+name+" is refreshed", "refreshing it again"
+	}
 	if err := kapply.EnforceRevoked(ctx, cs); err != nil {
-		return nil, layer.Errorf(connect.CodeUnavailable, "%s is revoked, but the API server's admission policy was not updated: %w; revoking it again applies it", name, err)
+		return nil, layer.Errorf(connect.CodeUnavailable, "%s, but the API server's admission policy was not updated: %w; %s applies it", done, err, again)
 	}
 	deleted := true
 	switch err := cs.CoreV1().Nodes().Delete(ctx, name, metav1.DeleteOptions{}); {
 	case apierrors.IsNotFound(err):
 		deleted = false
 	case err != nil:
-		return nil, layer.Errorf(connect.CodeUnavailable, "%s is revoked, but deleting its Node failed: %w; revoking it again deletes it", name, err)
+		return nil, layer.Errorf(connect.CodeUnavailable, "%s, but deleting its Node failed: %w; %s deletes it", done, err, again)
 	}
 	if req.Refresh {
 		log.Printf("kubernetes: refreshed the revocation of node %s", name)
@@ -206,7 +211,7 @@ func certValidity(c k8s.Cluster) time.Duration {
 //
 // Each control plane drops expired nodes by itself, through its own API server: when it revokes
 // or unrevokes a node, and every Timing.PruneRevoked. That rule depends on the entry alone. Nodes
-// whose certificates chain only to CAs made after their revocation are dropped only by
+// revoked before every trusted OS CA and Kubernetes CA was made are dropped only by
 // PruneRevoked, called once every node confirmed the finish of a CA's rotation: control planes
 // finish a rotation one after another, and an entry one of them could drop for its CAs may still
 // keep a node out of another that trusts an old CA yet.
@@ -264,7 +269,7 @@ func (p *Plugin) PruneRevoked(ctx context.Context, _ *kubernetesv1.PruneRevokedR
 		return nil, layer.Errorf(connect.CodeUnavailable, "%w", err)
 	}
 	if len(removed) > 0 {
-		log.Printf("kubernetes: dropped the revoked nodes %s: their certificates expired or chain only to CAs made since", strings.Join(removed, ", "))
+		log.Printf("kubernetes: dropped the revoked nodes %s: their certificates expired, or they were revoked before every trusted OS CA and Kubernetes CA was made", strings.Join(removed, ", "))
 	}
 	if err := kapply.EnforceRevoked(ctx, cs); err != nil {
 		dropped := "no revoked node was dropped"

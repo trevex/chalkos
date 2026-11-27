@@ -179,6 +179,26 @@ func TestRevokeNodeRefresh(t *testing.T) {
 	if _, ok := l.list(t)["w2"]; ok {
 		t.Error("refreshing w2, not revoked, lists it")
 	}
+
+	// A refresh that fails after the list was written says so, and that refreshing again repairs it.
+	policyFails := true
+	l.cs.PrependReactor("patch", "validatingadmissionpolicies", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return policyFails, nil, errors.New("connection reset")
+	})
+	_, err = l.s.RevokeNode(context.Background(), &kubernetesv1.RevokeNodeRequest{Node: "w1", Refresh: true})
+	if err == nil || !strings.Contains(err.Error(), "the revocation of w1 is refreshed, but the API server's admission policy was not updated") ||
+		!strings.Contains(err.Error(), "refreshing it again applies it") {
+		t.Errorf("a refresh with the policy failing: %v", err)
+	}
+	l.cs.PrependReactor("delete", "nodes", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("connection reset")
+	})
+	policyFails = false
+	_, err = l.s.RevokeNode(context.Background(), &kubernetesv1.RevokeNodeRequest{Node: "w1", Refresh: true})
+	if err == nil || !strings.Contains(err.Error(), "the revocation of w1 is refreshed, but deleting its Node failed") ||
+		!strings.Contains(err.Error(), "refreshing it again deletes it") {
+		t.Errorf("a refresh with the Node's deletion failing: %v", err)
+	}
 }
 
 // TestRevokeNodeOnControlPlanesOnly refuses the calls on the revoked nodes where no list is kept.
