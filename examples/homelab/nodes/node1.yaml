@@ -2,16 +2,33 @@
 # dummy interface node0, and FRR announces it over a session on each port, so the address stays
 # reachable while one port or cable works.
 #
-# The ports' Network documents and the BGPPeers lie in bgp/fabric.yaml, under the names the kernel
-# gives the ports, which identical machines share. A node whose ports have other names leaves
-# bgp/fabric.yaml out and brings its own Network and BGPPeer documents.
+# The ports' Network documents and the BGPPeers lie in bgp/fabric.yaml, under the names fabric-a
+# and fabric-b, which the Link documents below give the ports.
 #
-# Replace the disk with the node's own, by its path below /dev/disk/by-id.
+# The node's two fabric ports by MAC, so BGP follows the same cables whatever names the kernel
+# gives them. These are the VM's MACs; on real hardware put the ports' MACs, which the
+# addresses diagnostic shows.
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Link
+metadata: {name: 10-fabric-a}
+spec:
+  match: {permanentMACAddress: "02:00:00:00:11:01"}
+  link: {name: fabric-a}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Link
+metadata: {name: 10-fabric-b}
+spec:
+  match: {permanentMACAddress: "02:00:00:00:11:02"}
+  link: {name: fabric-b}
+---
+# The system disk by its serial, which vm/vm.sh gives the VM's disk. On real hardware put the
+# SSD's serial, which chalkctl disks shows.
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: SystemDisk
 metadata: {name: system}
 spec:
-  disk: {path: /dev/disk/by-id/nvme-EXAMPLE_SSD_node1}
+  disk: {serial: chalkos-node1}
 ---
 # node0 holds the node's address, and the API's VIP while the node holds it. chalkd adds the VIP
 # with a preferred lifetime of 0, which networkd counts as a dynamic address, so keepConfiguration
