@@ -40,6 +40,7 @@ let
       "go-lint"
       "go-unit"
       "kubernetes-bgp-nht"
+      "module-paths"
       "nix-lint"
       "noexec-mounts"
       "registry-mirrors"
