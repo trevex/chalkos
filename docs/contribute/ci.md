@@ -285,8 +285,11 @@ The fast check `release-eval` evaluates every release image and holds it to its 
 provenance and annotations without building it. Each `release-image-<name>` check, with the dots
 of the name as dashes, builds one image and its OCI image layout and compares the manifest's
 annotations with the image's. It also builds the image's SBOM, `releaseImages.<name>.sbom`, and
-validates it as the `sbom` check does. They run in the `e2e` tier, one job each, as four full
-images are too heavy for every pull request.
+validates it as the `sbom` check does. The check of a KVM image also builds its containerDisk,
+`releaseImages.<name>.containerDisk`, which a release pushes to `<name>-disk`, and checks its
+layout, the digests of its blobs, its one layer of `disk/chalkos.qcow2` owned by 107:107, and that
+its annotations are the image's with the image's name and the root hash of its header. They run in
+the `e2e` tier, one job each, as four full images are too heavy for every pull request.
 
 Each release image's `sbom` attribute builds its SPDX 2.3 SBOM, the release asset
 `<name>.spdx.json`. It is the image's own `sbom`, which every image of `mkImage` has, named after

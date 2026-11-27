@@ -3,9 +3,10 @@
 # marked that pull request ready for review and merged it, release-please tags the release and
 # creates its GitHub release. The same run then publishes the
 # release from the tagged commit: it pushes each image of the flake output releaseImages to its
-# repository, signs it with cosign and attests its provenance and its SBOM, uploads the installer,
-# chalkctl and chalkbuild and the SBOMs of the images and the programs with their checksums,
-# signatures and attestations, and adds the images' digests to the release notes.
+# repository, signs it with cosign and attests its provenance and its SBOM, does the same for a KVM
+# image's KubeVirt containerDisk but for the SBOM, uploads the installer, chalkctl and chalkbuild
+# and the SBOMs of the images and the programs with their checksums, signatures and attestations,
+# and adds the images' digests to the release notes.
 #
 # release-please acts with a GitHub App's token, from the secrets RELEASE_APP_ID and
 # RELEASE_APP_PRIVATE_KEY, because a pull request, a label, a tag or a return to draft that the
@@ -91,7 +92,8 @@ jobs:
           done
 
   # The commit to build, whether the run publishes, and the release images to build, from
-  # releaseImages, one job each.
+  # releaseImages, one job each, with the repository of a KVM image's containerDisk as disk, empty
+  # for a metal image.
   # Publishes start one at a time and are never cancelled; dry runs queue by ref. The lock is on
   # this job rather than the workflow, so a long publish or dry run never holds up release-please.
   plan:
@@ -122,7 +124,7 @@ jobs:
           RELEASE_TAG: ${{ needs.release-please.outputs.tag }}
         run: |
           images=$(nix eval --json .#releaseImages.x86_64-linux --apply \
-            'images: builtins.attrValues (builtins.mapAttrs (name: image: { inherit name; inherit (image) repository tag; }) images)')
+            'images: builtins.attrValues (builtins.mapAttrs (name: image: { inherit name; inherit (image) repository tag; disk = image.containerDisk.repository or ""; }) images)')
           jq . <<<"$images"
           tag=$(jq -r '[.[].tag] | unique | if length == 1 then .[0] else error("the release images name different tags") end' <<<"$images")
           if [ "$CREATED" = true ]; then
@@ -142,7 +144,8 @@ jobs:
           } >>"$GITHUB_OUTPUT"
 
   # Builds a release image's OCI layout and its SBOM and, when the run publishes, pushes it, signs
-  # its digest and attests its provenance and its SBOM in the registry.
+  # its digest and attests its provenance and its SBOM in the registry. A KVM image's job does the
+  # same for its containerDisk, without an SBOM.
   image:
     needs: plan
     if: ${{ !cancelled() && needs.plan.result == 'success' }}
@@ -245,6 +248,49 @@ jobs:
           subject-name: ${{ matrix.repository }}
           subject-digest: ${{ steps.build.outputs.digest }}
           sbom-path: sbom.spdx.json
+          push-to-registry: true
+          create-storage-record: false
+      # A KVM image's raw disk as a KubeVirt containerDisk, pushed to <name>-disk with the image's
+      # tag. chalkbuild pushes chalkos images alone, so crane from the flake's nixpkgs pushes it.
+      # It holds the image the job pushed above, whose SBOM describes it, so it has no SBOM of its
+      # own.
+      - name: Build the containerDisk
+        if: matrix.disk != ''
+        id: disk
+        env:
+          NAME: ${{ matrix.name }}
+          DISK: ${{ matrix.disk }}
+          TAG: ${{ matrix.tag }}
+        run: |
+          nix build --print-build-logs -o disk ".#releaseImages.x86_64-linux.\"$NAME\".containerDisk"
+          digest=$(jq -r '.manifests[0].digest' disk/index.json)
+          jq -n --arg name "$NAME-disk" --arg repository "$DISK" --arg tag "$TAG" --arg digest "$digest" \
+            '{$name, $repository, $tag, $digest}' >"image/$NAME-disk.json"
+          echo "digest=$digest" >>"$GITHUB_OUTPUT"
+          echo "- \`$DISK:$TAG@$digest\`, the containerDisk of $NAME" >>"$GITHUB_STEP_SUMMARY"
+      - name: Push the containerDisk
+        if: matrix.disk != '' && needs.plan.outputs.publish == 'true'
+        env:
+          DISK: ${{ matrix.disk }}
+          TAG: ${{ matrix.tag }}
+          DIGEST: ${{ steps.disk.outputs.digest }}
+        run: |
+          pushed=$(nix run --inputs-from . nixpkgs#crane -- push disk "$DISK:$TAG")
+          if [ "$pushed" != "$DISK@$DIGEST" ]; then
+            echo "::error title=Wrong digest::crane pushed $pushed, not $DISK@$DIGEST"
+            exit 1
+          fi
+      - name: Sign the containerDisk
+        if: matrix.disk != '' && needs.plan.outputs.publish == 'true'
+        env:
+          DISK: ${{ matrix.disk }}
+          DIGEST: ${{ steps.disk.outputs.digest }}
+        run: cosign sign --yes "$DISK@$DIGEST"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        if: matrix.disk != '' && needs.plan.outputs.publish == 'true'
+        with:
+          subject-name: ${{ matrix.disk }}
+          subject-digest: ${{ steps.disk.outputs.digest }}
           push-to-registry: true
           create-storage-record: false
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -404,7 +450,7 @@ jobs:
             echo '<!-- chalkos release images -->'
             echo '## Images'
             echo
-            echo "Name an image by its digest in the inventory's \`spec.images\`:"
+            echo "Name an image by its digest in the inventory's \`spec.images\`. An image \`<name>-disk\` holds the disk of the KVM image \`<name>\` as a KubeVirt containerDisk, for a VM's DataVolume or containerDisk volume:"
             echo
             echo '```text'
             jq -rs 'sort_by(.name) | .[] | "\(.repository):\(.tag)@\(.digest)"' images/*.json
@@ -427,7 +473,7 @@ jobs:
             echo
             echo '## SBOMs'
             echo
-            echo "Each image has an SPDX SBOM, as the asset \`<image>.spdx.json\` and as attestations on its digest; chalkctl and chalkbuild have CycloneDX SBOMs, \`<program>-linux-amd64.cdx.json\`:"
+            echo "Each image has an SPDX SBOM, as the asset \`<image>.spdx.json\` and as attestations on its digest; an image \`<name>-disk\` has none of its own, since the SBOM of \`<name>\` describes it. chalkctl and chalkbuild have CycloneDX SBOMs, \`<program>-linux-amd64.cdx.json\`:"
             echo
             echo '```sh'
             echo "cosign verify-attestation $first --type spdxjson \\"

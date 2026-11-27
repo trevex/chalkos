@@ -330,6 +330,33 @@ The manifest of a release image reads, in part:
 }
 ```
 
+## KubeVirt containerDisk { #container-disk }
+
+A containerDisk holds a KVM image's raw disk for KubeVirt, which boots a virtual machine from it
+or imports it into a DataVolume with CDI. An image of `mkImage` on the `kvm` platform carries it as
+`containerDisk`, such as `images.node-kvm.containerDisk`, an OCI image layout of one manifest, and
+a chalkos release pushes it as `<image>-disk`, as
+[Run an image in KubeVirt](../get-started/releases.md#run-an-image-in-kubevirt) describes. An
+image of another platform has none.
+
+| Part | Media type | Content |
+| --- | --- | --- |
+| config | `application/vnd.oci.image.config.v1+json` | An image config with the image's architecture, such as `amd64`, the OS `linux` and the layer's digest as its one diff ID. |
+| layer | `application/vnd.oci.image.layer.v1.tar` | An uncompressed tar of `disk/` and `disk/chalkos.qcow2`, the raw disk converted to qcow2, owned by 107:107, the qemu user KubeVirt runs the virtual machine as. |
+
+The tar's entries are in name order with the modification time 0, so the same image always makes
+the same layer and the same manifest. The manifest's annotations are the image's, as
+[Annotations](#oci-annotations) lists them, and two that name the image the disk holds:
+
+| Annotation | Value |
+| --- | --- |
+| `dev.chalkos.image.name` | The image's name, `name` of `metadata.json`. |
+| `dev.chalkos.image.root-hash` | The store's root hash, `rootHash` of `metadata.json` and of the OCI artifact's header. |
+
+The disk holds the image as Nix builds it, without a Secure Boot signature:
+[`chalkbuild sign`](cli/chalkbuild_sign.md) signs image directories and OCI artifacts, and no
+containerDisk.
+
 ## Device links
 
 udev rules in the image name the disk systemd-boot was loaded from, so the node never mistakes

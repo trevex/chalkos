@@ -128,6 +128,9 @@ mkImage returns the image directory, built only when asked for, with these attri
 - `oci`: the image directory as an OCI image layout, as
   [`chalkbuild oci`](cli/chalkbuild_oci.md) writes it, built only when asked for;
   [Publish images to a registry](../build/publish-images.md) signs and pushes it.
+- `containerDisk`: on a `kvm` image alone, the image's raw disk as a KubeVirt containerDisk, an
+  OCI image layout that [Image layout](image-layout.md#container-disk) describes, built only when
+  asked for.
 - `nixos`: the evaluated NixOS system, to read the image's options, such as
   `images.node-metal.nixos.config.chalkos.kubernetes.package.version`.
 - `sbom`: the image's software bill of materials (SBOM) in SPDX 2.3 JSON, built only when asked

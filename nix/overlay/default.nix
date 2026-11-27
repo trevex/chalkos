@@ -1,6 +1,7 @@
-# Adds pkgs.chalkos: the Go toolchain go.mod names, buildGoProgram, trimPackage, and a package per
-# file of nix/packages. Updating Go is a change to go.mod's go line. mkImage applies the overlay to
-# the images' nixpkgs, so images of another nixpkgs build chalkos's programs with this Go too.
+# Adds pkgs.chalkos: the Go toolchain go.mod names, buildGoProgram, trimPackage, containerDisk and
+# a package per file of nix/packages. Updating Go is a change to go.mod's go line. mkImage applies
+# the overlay to the images' nixpkgs, so images of another nixpkgs build chalkos's programs with
+# this Go too.
 { go-overlay }:
 final: _: {
   chalkos = final.lib.makeScope final.newScope (
@@ -22,6 +23,16 @@ final: _: {
           runCommand
           patchelf
           removeReferencesTo
+          ;
+      };
+      # A KubeVirt containerDisk of an image directory; see container-disk.nix.
+      containerDisk = import ./container-disk.nix {
+        inherit (final)
+          gnutar
+          jq
+          qemu-utils
+          runCommand
+          stdenv
           ;
       };
       # kea.nix and frr.nix wrap nixpkgs's packages, whose names inside the scope are their own,

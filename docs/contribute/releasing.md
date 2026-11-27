@@ -98,7 +98,7 @@ The same run then publishes the release from the tagged commit:
 | Job | What it does |
 | --- | --- |
 | `plan` | Lists the images of the flake output `releaseImages` and fails when their tag is not the release's. |
-| `image <name>` | One job per image: builds its OCI layout and its SBOM, `releaseImages.<name>.sbom`, pushes the image with `chalkbuild push` to its repository and tag, signs the digest with `cosign sign`, attests its provenance in the registry, and attaches the SBOM to the digest with `cosign attest --type spdxjson` and with a GitHub SBOM attestation. |
+| `image <name>` | One job per image: builds its OCI layout and its SBOM, `releaseImages.<name>.sbom`, pushes the image with `chalkbuild push` to its repository and tag, signs the digest with `cosign sign`, attests its provenance in the registry, and attaches the SBOM to the digest with `cosign attest --type spdxjson` and with a GitHub SBOM attestation. A KVM image's job also builds its containerDisk, `releaseImages.<name>.containerDisk`, pushes it with `crane push` from the flake's nixpkgs to `<name>-disk` with the same tag, since `chalkbuild push` pushes chalkos images alone, signs it and attests its provenance; it has no SBOM of its own, since it holds the same image. |
 | `assets` | Waits for the images. Builds the generic installer, chalkctl and chalkbuild with their SBOMs, `chalkctl.sbom` and `chalkbuild.sbom`, compresses the installer's raw image, adds the images' SBOMs as `<image>.spdx.json`, writes `SHA256SUMS`, signs every file with `cosign sign-blob`, attests their provenance and the programs' SBOMs and uploads them to the release. |
 | `notes` | Appends the images' references by digest and the commands that verify them to the release's notes. |
 

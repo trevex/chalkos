@@ -29,7 +29,7 @@ and checks it.
 
 | Path | What it holds |
 | --- | --- |
-| `nix/overlay/` | `default.nix`, the overlay that adds `pkgs.chalkos`, the scope of chalkos's packages, and the scope's helpers: `build-go-program.nix` (`buildGoProgram`), `go-paths.nix` (`treeGoPaths`) and `trim-package.nix` (`trimPackage`). |
+| `nix/overlay/` | `default.nix`, the overlay that adds `pkgs.chalkos`, the scope of chalkos's packages, and the scope's helpers: `build-go-program.nix` (`buildGoProgram`), `go-paths.nix` (`treeGoPaths`), `trim-package.nix` (`trimPackage`) and `container-disk.nix` (`containerDisk`, the KubeVirt containerDisk of a KVM image). |
 | `nix/packages/` | The scope's packages, one file each, named as the package. The overlay finds them with `lib.packagesFromDirectoryRecursive`. |
 | `nix/outputs/` | The flake outputs that one file builds: `packages.nix`, `apps.nix` and `shell.nix`, the development shell. |
 | `nix/release.nix` | The images a release publishes, the flake output `releaseImages`. [Continuous integration](ci.md#release-images) describes them. |
