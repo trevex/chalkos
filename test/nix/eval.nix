@@ -123,7 +123,8 @@ in
     ];
   };
   # mkImages builds each image of its list by its name, each the image directory with its name,
-  # platform, layer, OCI layout, SBOM, NixOS system and tests, and the installer.
+  # platform, layer, OCI layout, SBOM, NixOS system and tests, a KVM image's containerDisk too,
+  # and the installer.
   testMkImagesNames = {
     expr =
       let
@@ -157,6 +158,10 @@ in
         nixos = r.b.nixos.config.chalkos.image.name;
         tests = r.a.tests.drvPath == r.a.nixos.config.system.build.chalkosTests.drvPath;
         sbom = lib.isDerivation r.a.sbom && lib.hasSuffix "-a.spdx.json.drv" r.a.sbom.drvPath;
+        containerDisk = {
+          a = r.a ? containerDisk;
+          b = lib.isDerivation r.b.containerDisk && lib.hasSuffix "-b-container-disk" r.b.containerDisk.name;
+        };
       };
     expected = {
       names = [
@@ -176,6 +181,10 @@ in
       nixos = "b";
       tests = true;
       sbom = true;
+      containerDisk = {
+        a = false;
+        b = true;
+      };
     };
   };
   # mkImages refuses two images of one name and an image named installer.

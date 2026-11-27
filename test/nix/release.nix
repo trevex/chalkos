@@ -114,6 +114,35 @@ in
       inherit tag;
     }) expected;
   };
+  # Each KVM image's containerDisk goes to the image's repository with -disk, with the same tag, and
+  # its system region is as large as the docs say; a metal image has none.
+  testContainerDisks = {
+    expr = lib.mapAttrs (
+      _: i:
+      if i ? containerDisk then
+        {
+          inherit (i.containerDisk) repository tag;
+          derivation = lib.isString i.containerDisk.drvPath;
+          inherit ((config i).chalkos.disk) systemRegionSize;
+        }
+      else
+        null
+    ) images;
+    expected = lib.mapAttrs (
+      name: image:
+      if image.platform == "kvm" then
+        {
+          repository = "ghcr.io/trevex/chalkos/${name}-disk";
+          inherit tag;
+          derivation = true;
+          # 1 MiB, the 1 GiB ESP, two slots of 3 GiB and 128 MiB, the 128 MiB STATE and 1 MiB, as
+          # Run an image in KubeVirt on the Releases page names it.
+          systemRegionSize = 7920943104;
+        }
+      else
+        null
+    ) expected;
+  };
   # Every image and its OCI image layout evaluate to a derivation.
   testDerivations = {
     expr = lib.all (i: lib.isString i.drvPath && lib.isString i.oci.drvPath) (lib.attrValues images);

@@ -20,13 +20,14 @@ patch version.
 
 ## What a release publishes
 
-Each release pushes one image per Kubernetes minor and platform, and one router image per
-platform:
+Each release pushes one image per Kubernetes minor and platform, one router image per platform,
+and for each `kvm` image the same image as a disk for KubeVirt:
 
 | Image | Holds |
 | --- | --- |
 | `ghcr.io/trevex/chalkos/kubernetes-<minor>-<platform>:<tag>` | The Kubernetes layer with the kubelet of the minor, such as `kubernetes-1.37-metal`. |
 | `ghcr.io/trevex/chalkos/router-<platform>:<tag>` | The router layer. |
+| `ghcr.io/trevex/chalkos/<image>-disk:<tag>` | The disk of a `kvm` image as a KubeVirt containerDisk, such as `kubernetes-1.37-kvm-disk`, as [Run an image in KubeVirt](#run-an-image-in-kubevirt) describes. |
 
 `<platform>` is `metal` for physical machines or `kvm` for virtual machines, as
 [Images and platforms](../build/images-and-platforms.md) describes. `<tag>` is the release's tag,
@@ -130,6 +131,77 @@ gh attestation verify oci://ghcr.io/trevex/chalkos/kubernetes-1.37-metal@sha256:
   --repo trevex/chalkos
 ```
 
+## Run an image in KubeVirt
+
+Each `kvm` image has a second repository with `-disk` appended, such as
+`ghcr.io/trevex/chalkos/kubernetes-1.37-kvm-disk`, which holds the image's raw disk in the form
+KubeVirt and its Containerized Data Importer (CDI) read: a containerDisk, an OCI image whose one
+layer holds the disk as `disk/chalkos.qcow2`. A virtual machine boots from it as a node boots
+from the installed image, so a machine in KubeVirt needs no installer. The release tags it with
+the image's tag and signs it and attests its provenance like the image itself. It has no SBOM of
+its own, because it holds the same image, whose SBOM describes it. The release notes list each
+disk's digest after its image's.
+
+Two annotations of its manifest name the image the disk holds: `dev.chalkos.image.name`, the
+image's name, such as `kubernetes-kvm`, and `dev.chalkos.image.root-hash`, the root hash of its
+store, which the image's header records too. The other annotations are those of the image.
+[Image layout](../reference/image-layout.md#container-disk) describes the layout.
+
+A DataVolume imports the disk into a persistent volume, so the node keeps its state across
+restarts of its virtual machine. CDI's registry source names the disk by its digest alone, since
+CDI refuses a reference with both a tag and a digest:
+
+```yaml title="vm.yaml"
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata: {name: w1}
+spec:
+  runStrategy: Always
+  dataVolumeTemplates:
+    - metadata: {name: w1-system}
+      spec:
+        source:
+          registry: {url: "docker://ghcr.io/trevex/chalkos/kubernetes-1.37-kvm-disk@sha256:<digest>"}
+        storage:
+          accessModes: [ReadWriteOnce]
+          resources: {requests: {storage: 20Gi}}
+  template:
+    spec:
+      domain:
+        memory: {guest: 3Gi}
+        # The image boots with UEFI and is unsigned, and KubeVirt's Secure Boot variables hold
+        # Microsoft's keys alone, so Secure Boot is off.
+        firmware:
+          bootloader:
+            efi: {secureBoot: false, persistent: true}
+        features:
+          smm: {enabled: true}
+        devices:
+          tpm: {persistent: true}
+          disks:
+            - name: system
+              disk: {bus: virtio}
+      volumes:
+        - name: system
+          dataVolume: {name: w1-system}
+```
+
+The disk holds the ESP and the store's slot A, and a node's first boot adds slot B and STATE
+behind them, so the disk's virtual size is the whole system region: 7,920,943,104 bytes
+(7554 MiB) for the release images. That is 1 MiB for the partition table, the 1 GiB ESP, two
+slots of a 3 GiB store and its 128 MiB hash tree, the 128 MiB STATE and 1 MiB for the backup
+partition table. The persistent volume must be at least that large. CDI grows the disk to the
+volume's size, and VAR, which holds etcd, containerd's images and the logs, takes the space
+behind the system region, so the example's 20 GiB leaves VAR about 12.6 GiB.
+[Size VAR](../operate/storage-volumes.md#size-var) covers how much VAR a node needs. A persistent
+TPM and EFI variable store keep the node's sealed disk keys and its boot entries across restarts.
+
+A `containerDisk` volume,
+`{name: system, containerDisk: {image: "ghcr.io/trevex/chalkos/kubernetes-1.37-kvm-disk@sha256:<digest>"}}`,
+boots the disk without CDI, at its own size. That leaves no room for VAR, and KubeVirt discards
+the volume's writes when the virtual machine stops, so the node loses its config and secrets on
+every restart. Use a DataVolume for a node.
+
 ## Download chalkctl and the installer
 
 Download chalkctl, the checksums and the signature bundles from the release, and check each file
@@ -183,13 +255,14 @@ has no OS CA; a cluster that needs one builds its own installer with `mkImages`.
 ## Fetch and verify an SBOM
 
 A software bill of materials (SBOM) lists what an image or a program is made of. Each release image
-has an SBOM in [SPDX](https://spdx.dev/) 2.3 JSON. It lists each package of the image's NixOS
-system and the kernel that its UKI carries, with the package's version, its licence, the URL of its
-source and its package URL (purl), all taken from the package's metadata in nixpkgs. A package whose
-metadata names no licence has the licence `NOASSERTION`. Files that the system generates, such as
-configuration files and systemd units, belong to no package and are not listed. chalkctl and
-chalkbuild each have an SBOM in [CycloneDX](https://cyclonedx.org/) JSON, which lists the Go modules
-linked into the binary with their versions and licences.
+has an SBOM in [SPDX](https://spdx.dev/) 2.3 JSON, which the `-disk` image of a `kvm` image
+shares. It lists each package of the image's NixOS system and the kernel that its UKI carries,
+with the package's version, its licence, the URL of its source and its package URL (purl), all
+taken from the package's metadata in nixpkgs. A package whose metadata names no licence has the
+licence `NOASSERTION`. Files that the system generates, such as configuration files and systemd
+units, belong to no package and are not listed. chalkctl and chalkbuild each have an SBOM in
+[CycloneDX](https://cyclonedx.org/) JSON, which lists the Go modules linked into the binary with
+their versions and licences.
 
 A release publishes each SBOM in two places:
 

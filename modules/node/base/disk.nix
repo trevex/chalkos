@@ -97,9 +97,33 @@ in
       default = "128M";
       description = "Size of the STATE partition holding the node's config and secrets; at least 64M, the smallest encrypted ext4 partition systemd-repart makes.";
     };
+    systemRegionSize = lib.mkOption {
+      type = lib.types.nullOr lib.types.int;
+      readOnly = true;
+      internal = true;
+      description = ''
+        The bytes the system region takes from the start of a disk: 1 MiB for the GPT, the ESP,
+        both store slots, STATE and 1 MiB for the backup GPT. Null when a store size is null,
+        since slot A's size is then known only once the image is built. The containerDisk is
+        this large, so a first boot finds room for slot B and STATE.
+      '';
+    };
   };
 
   config = {
+    chalkos.disk.systemRegionSize =
+      let
+        mib = 1024 * 1024;
+        sizes = map (s: if s == null then null else bytes s) [
+          cfg.storeSize
+          cfg.storeVeritySize
+        ];
+      in
+      if lib.elem null sizes || espBytes == null || stateBytes == null then
+        null
+      else
+        builtins.floor (mib + espBytes + 2 * lib.foldl' builtins.add 0 sizes + stateBytes + mib);
+
     assertions = [
       # systemd-repart formats a vfat ESP with no less than 260 MiB, whatever its definition says,
       # so a smaller one would not match the definitions an installed disk is compared with.

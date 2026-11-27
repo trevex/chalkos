@@ -7,7 +7,8 @@
 # whoever enrols Secure Boot keys signs them. Their manifests name chalkos's source, its licence
 # Apache-2.0 and, as the time they were created, the commit's. A Kubernetes image is named
 # kubernetes-<platform> whatever its minor, so chalkctl upgrade --image finds the nodes of the
-# previous minor by its name.
+# previous minor by its name. A KVM image also carries its containerDisk, which a release pushes to
+# <name>-disk, such as router-kvm-disk, with the same tag.
 {
   self,
   lib,
@@ -82,6 +83,14 @@ let
           sbom = image.sbom.override (
             { inherit name; } // lib.optionalAttrs (self ? lastModifiedDate) { inherit created; }
           );
+        }
+        # A KVM image's containerDisk goes to <name>-disk with the same tag. It holds the same
+        # image, so it shares the image's SBOM.
+        // lib.optionalAttrs (image ? containerDisk) {
+          containerDisk = image.containerDisk // {
+            repository = "${registry}/${name}-disk";
+            inherit tag;
+          };
         }
       )
     ) platforms;

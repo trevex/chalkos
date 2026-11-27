@@ -114,6 +114,16 @@ let
           };
       # The image's chalkos.tests, which a flake exports as its checks so nix flake check runs them.
       tests = system.config.system.build.chalkosTests;
+    }
+    # A KVM image's raw disk as a KubeVirt containerDisk, an OCI image layout, which the image's
+    # own nixpkgs builds.
+    // lib.optionalAttrs (cfg.platform == "kvm") {
+      containerDisk = pkgs.chalkos.containerDisk {
+        inherit image;
+        inherit (cfg) name;
+        raw = system.config.image.fileName;
+        size = system.config.chalkos.disk.systemRegionSize;
+      };
     };
 
   # The installer: a raw image and a hybrid ISO that boot chalkd in maintenance mode.
