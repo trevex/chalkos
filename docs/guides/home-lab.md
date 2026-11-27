@@ -309,16 +309,16 @@ vm/vm.sh console router
 The stick comes second in the boot order, after the empty system disk, so the firmware boots the
 installer. With Secure Boot, insert the signed copy with
 `vm/vm.sh insert router installer-signed/chalkos-installer.raw` instead. Ctrl+] leaves the console.
-Its header shows chalkd's fingerprint, 64 hex characters, and the address the WAN network's DHCP
-server gave the `wan` port:
+chalkd prints its certificate's fingerprint, 64 hex characters, and the address the WAN network's
+DHCP server gave the `wan` port:
 
 ```text
-nixos  installer  up 1m
-image 81bd81bd81bd
-installer: chalkctl install installs nodes from here
-fingerprint <fingerprint>
-addresses 192.168.246.2
+chalkd: maintenance mode, accepting clients of the OS CA; certificate fingerprint <fingerprint>
+chalkd: addresses 192.168.246.2; certificate fingerprint <fingerprint>
 ```
+
+The VM's screen, which `vm/vm.sh screen router` opens, shows the same in the header of the
+installer's console.
 
 The WAN network leases `192.168.246.2` to the router's MAC, the address `chalkos.yaml` names for
 the router, so the commands below need no `--address`. They check the machine's certificate with
@@ -398,7 +398,7 @@ chalkctl recovery-key router prints the key that unlocks it when its TPM fails
 
 `chalkctl validate` prints a line per node, and names the document and field of each mistake. The
 router reboots into its image, renames its ports and takes `192.168.246.2` on `wan` again. Unplug
-the stick once the console's header shows `normal`:
+the stick once the console shows `chalkd: normal mode`:
 
 ```sh
 vm/vm.sh eject router
@@ -529,19 +529,19 @@ vm/vm.sh start node1
 vm/vm.sh console node1
 ```
 
-The router's advertisements give each port an address of the fabric's prefix, made from the port's
-MAC address, and the console's header shows both:
+chalkd prints `addresses none yet` until the router's advertisements arrive. They give each port
+two addresses of the fabric's prefix, one made from the port's MAC address and one at random, and
+chalkd then prints all four:
 
 ```text
-nixos  installer  up 1m
-image 81bd81bd81bd
-installer: chalkctl install installs nodes from here
-fingerprint <fingerprint>
-addresses fdc8:a1b2:c3d4:1:0:ff:fe00:1101 fdc8:a1b2:c3d4:1:0:ff:fe00:1102
+chalkd: maintenance mode, accepting clients of the OS CA; certificate fingerprint <fingerprint>
+chalkd: addresses none yet; certificate fingerprint <fingerprint>
+chalkd: addresses fdc8:a1b2:c3d4:1:0:ff:fe00:1101 fdc8:a1b2:c3d4:1:0:ff:fe00:1102 fdc8:a1b2:c3d4:1:d2f5:b77f:bb0a:eb2e fdc8:a1b2:c3d4:1:e332:910b:7ad2:12b2; certificate fingerprint <fingerprint>
 ```
 
-The header shows no link-local address. A port without an address of the fabric has no link, or
-the router sends no advertisements: [Troubleshooting](#troubleshooting) covers both. The
+The ones made from the MAC addresses end in `1101` and `1102`; the commands below use them. A
+port without an address of the fabric has no link, or the router sends no advertisements:
+[Troubleshooting](#troubleshooting) covers both. The
 workstation reaches the installer over the tunnel. `chalkos.yaml` names node1's own address, which
 the node takes only once installed, so pass the installer's with `--address`. With Secure Boot,
 enrol your keys at that address as for the router, and note the new fingerprint.
@@ -596,7 +596,7 @@ chalkctl install node1 --secrets=secrets.age \
 
 chalkctl prints the lines that the router's install printed. The node reboots into its image,
 brings up `node0` and starts FRR, whose sessions announce the node's address to the router. Unplug
-the stick once the console's header shows `normal`:
+the stick once the console shows `chalkd: normal mode`:
 
 ```sh
 vm/vm.sh eject node1
@@ -628,8 +628,9 @@ wrote kubeconfig; its certificate is valid for 24h0m0s
 
 The bootstrap starts etcd and the control plane on node1. node1 then wins the election for the VIP,
 adds `fdc8:a1b2:c3d4:ff::10` to `node0`, and FRR announces it. node2 and node3 find the cluster at
-the endpoint and join etcd one after the other. Pulling the images through the NAT64 takes most of
-the bootstrap's time.
+the endpoint and join etcd one after the other. With fewer nodes, the bootstrap warns that it does
+not reach the missing ones, and goes on. Pulling the images through the NAT64 takes most of the
+bootstrap's time.
 
 List the nodes through the VIP:
 
@@ -650,10 +651,10 @@ the inventory; a node whose VM you did not create shows as `unreachable`:
 ```console
 $ chalkctl status
 NODE    IMAGE    BOOT     CONFIG       PROBLEMS
-router  <image>  healthy  inventory's  0
 node1   <image>  healthy  inventory's  0
 node2   <image>  healthy  inventory's  0
 node3   <image>  healthy  inventory's  0
+router  <image>  healthy  inventory's  0
 ```
 
 The nodes reach the IPv4 internet through the router. The diagnostic `dns-query` asks the node's
