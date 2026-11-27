@@ -50,6 +50,13 @@ func TestRevokedFill(t *testing.T) {
 	if got := revokedLines(k); !slices.Equal(got, want) {
 		t.Errorf("lines = %q, want %q", got, want)
 	}
+	var b bytes.Buffer
+	if err := Write(&b, k); err != nil {
+		t.Fatal(err)
+	}
+	if want := "revoked nodes:\n  w1  at an unknown time\n  the list is 80% full; " + MakeRevokedRoom + "\n"; !strings.Contains(b.String(), want) {
+		t.Errorf("no %q in\n%s", want, b.String())
+	}
 	if !strings.Contains(MakeRevokedRoom, "chalkctl rotate os-ca and chalkctl rotate kubernetes-ca, each to its finish") {
 		t.Errorf("MakeRevokedRoom = %q", MakeRevokedRoom)
 	}
