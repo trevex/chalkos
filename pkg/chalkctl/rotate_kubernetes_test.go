@@ -18,6 +18,7 @@ import (
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/pki"
 )
 
 // TestRotateOneAtATime checks that a rotation refuses another, and the finish of another kind.
@@ -543,4 +544,28 @@ func (l *rotationLab) run(args ...string) error {
 		args = append(args, "--address", name+"="+addr)
 	}
 	return l.ta.run(context.Background(), args)
+}
+
+// A rotation without --ignore-revoked skips a node whose revocation the secrets file records as
+// not refreshed, as when the revoked nodes dropped its entry, and the refresh it retries first
+// fails: the node may hold what an earlier run handed it.
+func TestRotateSkipsARecordedNode(t *testing.T) {
+	l := newRotationLab(t)
+	l.ta.recordUnrefreshed(t, []clustersecrets.Unrefreshed{{Layer: "kubernetes", Node: "w1", Listed: true}})
+	l.refreshErr = connect.NewError(connect.CodeUnavailable, "the API server does not answer")
+	l.takeEvents()
+	if err := l.rotate("os-ca"); err != nil {
+		t.Fatal(err)
+	}
+	if out := l.ta.stdout.String(); strings.Count(out, "skipping w1: the secrets file records its revocation as not refreshed\n") != 1 {
+		t.Errorf("stdout does not skip w1 once:\n%s", out)
+	}
+	for _, e := range l.takeEvents() {
+		if strings.HasPrefix(e, "w1 ") {
+			t.Errorf("the rotation asked w1: %s", e)
+		}
+	}
+	if fps, _ := pki.Fingerprints(l.nodes["w1"].cert.OSCA()); len(fps) != 1 {
+		t.Errorf("w1 trusts %d OS CAs, want the old one alone", len(fps))
+	}
 }

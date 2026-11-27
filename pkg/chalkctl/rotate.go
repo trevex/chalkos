@@ -308,23 +308,34 @@ func kindList(kinds []clustersecrets.RotationKind, last string) string {
 	return strings.Join(names[:len(names)-1], ", ") + last + names[len(names)-1]
 }
 
-// skipRevoked leaves the nodes the layers list as revoked out of the rotation and names each the
-// first time. Without a layer's list no phase runs, so no revoked node gets a certificate. A
-// skipped node stays skipped for the run, as it missed the earlier phases.
+// skipRevoked leaves the nodes the layers list as revoked out of the rotation, and those whose
+// revocations by a layer the secrets file records as not refreshed, which the list may have
+// dropped while they hold what an earlier run handed them, and names each the first time. Without
+// a layer's list no phase runs, so no revoked node gets a certificate. A skipped node stays
+// skipped for the run, as it missed the earlier phases.
 func (r *rotation) skipRevoked(ctx context.Context) error {
 	if r.ignoreRevoked {
 		return nil
 	}
 	nodes := r.allNodes()
 	list := map[string]string{}
-	for _, p := range compiled[layer.RotationNodes]() {
-		revoked, err := p.RevokedNodes(ctx, r)
+	for _, p := range plugins {
+		rn, ok := p.(layer.RotationNodes)
+		if !ok {
+			continue
+		}
+		revoked, err := rn.RevokedNodes(ctx, r)
 		if err != nil {
 			return fmt.Errorf("%w; rotate runs only once one does, so it never hands a certificate to a revoked node, or with --ignore-revoked", err)
 		}
 		for name, since := range revoked {
 			if _, ok := list[name]; !ok {
-				list[name] = since
+				list[name] = "revoked " + since
+			}
+		}
+		for _, name := range r.file.secrets.UnrefreshedOf(p.Name()) {
+			if _, ok := list[name]; !ok {
+				list[name] = "the secrets file records its revocation as not refreshed"
 			}
 		}
 	}
@@ -334,7 +345,7 @@ func (r *rotation) skipRevoked(ctx context.Context) error {
 	for _, name := range slices.Sorted(maps.Keys(list)) {
 		if slices.Contains(nodes, name) && !r.revoked[name] {
 			r.revoked[name] = true
-			r.Say("skipping %s: revoked %s", name, list[name])
+			r.Say("skipping %s: %s", name, list[name])
 		}
 	}
 	return nil

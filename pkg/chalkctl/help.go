@@ -489,12 +489,13 @@ bootstrapped yet. --ignore-revoked rotates every node of the inventory, revoked 
 phase it refreshes the revocations of those read as revoked before it, so they stay revoked until
 what they got expires. A phase whose refresh fails is applied, but rotate fails and names what to
 run, and the secrets file records the revocations not refreshed. Every run refreshes the recorded
-ones first, and while one is left the finish prunes nothing. Remove revoked nodes from the
-inventory first. --finish refuses
-while a kind asks to wait, as the service-account key does within the hour after its switch;
---finish --now finishes all the same. Once every node confirmed the finish of a rotation of the OS CA or the
-Kubernetes CA, a Kubernetes control plane drops the nodes revoked before both CAs from the revoked
-nodes; rotate warns if it cannot.`
+ones first. Without --ignore-revoked, it skips and names a node whose revocation is still
+recorded, though the revoked nodes may have dropped it, and while one is recorded the finish
+prunes nothing. Remove revoked nodes from the inventory first. --finish refuses while a kind asks
+to wait, as the service-account key does within the hour after its switch; --finish --now
+finishes all the same. Once every node confirmed the finish of a rotation of the OS CA or the
+Kubernetes CA, a Kubernetes control plane drops from the revoked nodes those whose certificates
+expired and those revoked before both CAs; rotate warns if it cannot.`
 
 const rotateExample = `  # Rotate the Kubernetes CA. It pauses after the accept phase, so kubeconfigs and workloads can
   # trust the new CA before it issues certificates. It pauses again after the refresh.
