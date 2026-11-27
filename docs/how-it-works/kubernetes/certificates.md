@@ -277,21 +277,38 @@ cannot tell whether one runs.
 `chalkctl node renew`, `chalkctl install`, `chalkctl config apply --kubernetes-share` and
 `chalkctl rotate` hand a revoked node left in the inventory certificates or CAs when they run
 with `--ignore-revoked`. Both pruning rules count from the entry's time, and a certificate issued
-after it would outlive the entry. So once such a command has handed out what it delivers, also
-when the delivery failed, it reads the list and has a control plane refresh the entry of each
-revoked node it reached: RevokeNode with `refresh` sets the entry's time to now and applies the
-policy again. rotate refreshes after every phase. The entry then expires a full validity after
-the last certificate the node got, and a CA made before the refresh lets no prune drop it.
-chalkctl prints each refresh:
+after it would outlive the entry. So such a command reads the list before it hands anything out,
+and once it has, also when the delivery failed, has a control plane refresh the entry of each
+node it found listed: RevokeNode with `refresh` sets the entry's time to now and applies the
+policy again. A node listed before the hand-out and dropped from the list since, as by the daily
+prune, is revoked again. When no control plane said beforehand which nodes are revoked, the
+command reads the list again afterwards. rotate reads before every phase and refreshes after it.
+The entry then expires a full validity after the last certificate the node got, and a CA made
+before the refresh lets no prune drop it. chalkctl prints each refresh:
 
 ```text
 refreshed the revocation of w1: revoked since 2026-11-27T18:00:00Z
 ```
 
+`chalkctl install` reads the list as its check does: a control plane that does not answer counts
+as not installed yet, so installing the cluster's first nodes refreshes nothing. A control plane
+installed while no other one was bootstrapped may hold the list itself, so its refresh waits for
+a later command, as below.
+
 When the refresh fails, or no control plane says which nodes are revoked, the command fails. Its
 error names the nodes and `chalkctl node revoke <node> --refresh`, which refreshes an entry by
-hand. rotate keeps the phase applied, and its finish prunes nothing while the last refresh
-failed. A refresh never lists a node that is not revoked.
+hand. rotate keeps the phase applied. The secrets file records each revocation not refreshed
+under `unrefreshedRevocations`, so the record outlasts the run:
+
+- rotate and `chalkctl node prune-revoked` refresh the recorded revocations first, as does every
+  later command run with `--ignore-revoked`, and drop those refreshed from the record.
+- While the record holds a node, rotate's finish prunes nothing and
+  `chalkctl node prune-revoked` refuses.
+- `chalkctl node revoke <node> --refresh` and `chalkctl node unrevoke <node>` drop the node from
+  the record. A node recorded as listed that a later refresh finds unlisted is revoked again, so
+  unrevoke such a node with the secrets file.
+
+A refresh never lists a node it did not find revoked.
 
 A revoked node that got certificates of a new CA this way stays listed after the rotation's
 finish, as the CA predates the refresh. Removing revoked nodes from the inventory before such a

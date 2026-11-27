@@ -89,9 +89,13 @@ to recovering a node; renewing node certificates before they expire avoids it.
 
 A node revoked with chalkctl node revoke is refused, as is any node while a layer cannot say
 which nodes are revoked: in a Kubernetes cluster the control planes are asked first, and one
-whose own certificate expired cannot answer. --ignore-revoked renews without asking, then has a
-control plane refresh the revocation of a revoked node, so that it stays revoked until the new
-certificate expires; the command fails, naming what to run, when that refresh fails.`
+whose own certificate expired cannot answer. --ignore-revoked renews without asking whether to:
+it reads which nodes are revoked beforehand, and after the delivery, also a failed one, has a
+control plane refresh the revocation of the node if it was revoked, so that it stays revoked
+until the new certificate expires. A node dropped from the list in between is revoked again.
+When the refresh fails, the command fails, naming what to run, and the secrets file records the
+revocation as not refreshed: chalkctl prunes no revoked node while it does, and rotate, node
+prune-revoked and the next command run with --ignore-revoked refresh it first.`
 
 const nodeRenewExample = `  chalkctl node renew w1`
 
@@ -181,7 +185,9 @@ https://trevex.github.io/chalkos/how-it-works/node/overview/#an-install-turns-a-
 A name revoked with chalkctl node revoke is refused, as is any node while a layer cannot say which
 names are revoked, as when a bootstrapped Kubernetes cluster's control planes do not answer;
 --ignore-revoked installs without asking, then refreshes the revocation of a revoked name as node
-renew does. chalkctl warns of each image reference in the config
+renew does, reading the list as the check does. A control plane installed while no other one was
+bootstrapped may hold the list itself, so the secrets file records its revocation as not
+refreshed until a later command reads the list from it. chalkctl warns of each image reference in the config
 that names a tag but no digest.`
 
 // installConfirms says when install asks, for its Meta.
@@ -480,9 +486,11 @@ secrets file, holding <file>.lock.
 Nodes revoked with chalkctl node revoke are skipped and named; rotate stops while a layer cannot
 say which nodes are revoked, as when no Kubernetes control plane answers, unless none was
 bootstrapped yet. --ignore-revoked rotates every node of the inventory, revoked or not; after each
-phase it refreshes the revocations of the revoked ones, so they stay revoked until what they got
-expires. A phase whose refresh fails is applied, but rotate fails and names what to run, and the
-finish then prunes nothing. Remove revoked nodes from the inventory first. --finish refuses
+phase it refreshes the revocations of those read as revoked before it, so they stay revoked until
+what they got expires. A phase whose refresh fails is applied, but rotate fails and names what to
+run, and the secrets file records the revocations not refreshed. Every run refreshes the recorded
+ones first, and while one is left the finish prunes nothing. Remove revoked nodes from the
+inventory first. --finish refuses
 while a kind asks to wait, as the service-account key does within the hour after its switch;
 --finish --now finishes all the same. Once every node confirmed the finish of a rotation of the OS CA or the
 Kubernetes CA, a Kubernetes control plane drops the nodes revoked before both CAs from the revoked

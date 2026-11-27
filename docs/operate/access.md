@@ -73,8 +73,10 @@ server, so that it never renews a revoked node's. During a long outage of the AP
 renewal succeeds, the control plane's own included. `chalkctl node renew --ignore-revoked` renews a node's
 certificate without asking the control planes. It then reads the revoked nodes to refresh the
 node's revocation if the node is revoked, so during the outage it renews the certificate but
-fails with `whether w1 is revoked is unknown, ...`. Once the API server answers, refresh a
-revoked node with `chalkctl node revoke w1 --refresh`.
+fails with `whether w1 is revoked is unknown, ...`, and the secrets file records w1's revocation
+as not refreshed. Once the API server answers, `chalkctl node prune-revoked`, rotate and the next
+command with `--ignore-revoked` refresh it first; `chalkctl node revoke w1 --refresh` refreshes a
+revoked node by hand.
 
 A node whose image runs no Kubernetes has no control plane to ask. Renew its certificate with
 `chalkctl node renew` once a year, before it expires:
@@ -316,8 +318,10 @@ certificate's expiry, and a problem beside it when one needs doing, such as a re
   from the inventory first. chalkctl warns of this at each run. After each phase, rotate
   refreshes the revocation of each revoked node, so it stays revoked until what it got expires.
   While no control plane says which nodes are revoked, each run applies its phases and then fails
-  with `which of cp1, cp2 and w1 are revoked is unknown, ...`, and the finish prunes nothing. Once
-  a control plane answers, refresh each revoked node with `chalkctl node revoke <node> --refresh`.
+  with `which of cp1, cp2 and w1 are revoked is unknown, ...`. The secrets file records those
+  revocations as not refreshed; each later run refreshes them first, and the finish prunes nothing
+  while one is recorded. Once a control plane answers, the next run clears the record, or refresh
+  each revoked node with `chalkctl node revoke <node> --refresh`.
 - A node unrevoked while a rotation is paused takes part from the next run on, but it missed the
   earlier phases, and the rotation may stop at it. Unrevoke nodes before or after a rotation.
 

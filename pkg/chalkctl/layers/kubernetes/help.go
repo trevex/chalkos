@@ -129,7 +129,9 @@ With the secrets file, the command refuses while the file records a rotation of 
 Kubernetes CAs: a node that has not applied its finish may still trust the old CA. A client file
 records no rotation, so make sure none runs. A command run with --ignore-revoked that handed a
 revoked node certificates refreshes its revocation, so pruning keeps it; when that refresh failed,
-refresh it with chalkctl node revoke --refresh before pruning.
+the secrets file records the revocation as not refreshed. The command refreshes the recorded ones
+first, and refuses while one is left; chalkctl node revoke --refresh and chalkctl node unrevoke
+drop a node from the record. A client file holds no record, so refresh such nodes first.
 
 A control plane prunes the revoked nodes: --via, or the first one that answers.`
 

@@ -263,7 +263,9 @@ too. It refuses a node that is installed already, with
     A control plane that does not answer as an installed node, such as one in maintenance mode or
     switched off, counts as not installed yet, so the cluster's first nodes install while the
     others wait. `--ignore-revoked` installs without asking, then refreshes the revocation of a
-    revoked name.
+    revoked name, reading the list the same way. A control plane installed while no other one was
+    bootstrapped may hold the list itself, so the secrets file records its revocation as not
+    refreshed until a later command, such as `chalkctl node prune-revoked`, reads it from there.
     [Reuse a removed node's name](add-remove-nodes.md#reuse-a-removed-nodes-name) frees the name.
 
 The installer gets the image as well. For an image in a registry it pulls the image itself, as the

@@ -311,9 +311,10 @@ Remove the revoked node from the inventory before you rotate with `--ignore-revo
 rotation gives every node of the inventory certificates of the new CA, the old node too. After
 each phase it refreshes the old node's revocation, so the name stays listed: the new CA predates
 the refresh, and the expiry counts from it. Freeing the name then takes the two rotations
-above again, each to its finish. When a refresh fails, rotate fails and names
-`chalkctl node revoke <node> --refresh`; run it once a control plane answers, before anything
-prunes the revoked nodes.
+above again, each to its finish. When a refresh fails, rotate fails, names
+`chalkctl node revoke <node> --refresh`, and records the revocation in the secrets file. Later
+runs refresh it first, and the finish prunes nothing while it is recorded; run the named command
+once a control plane answers.
 [Pruning drops entries that keep no node out](../how-it-works/kubernetes/certificates.md#pruning-drops-entries-that-keep-no-node-out)
 explains the rules.
 
