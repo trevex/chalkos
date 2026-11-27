@@ -488,8 +488,7 @@ func TestRotateRecordsAFailedRefresh(t *testing.T) {
 	if l.secrets().Rotation != nil {
 		t.Error("the secrets file still records the rotation")
 	}
-	if got := l.ta.stderr.String(); !strings.Contains(got, "the revoked nodes were not pruned: the secrets file records the revocations of w1 as not refreshed") ||
-		!strings.Contains(got, "chalkctl node prune-revoked") {
+	if got := l.ta.stderr.String(); !strings.Contains(got, "the kubernetes layer was not asked to prune its revoked nodes: the secrets file records the revocations of w1 as not refreshed") {
 		t.Errorf("stderr = %q, want the prune skipped for the record", got)
 	}
 	if got := l.secrets().Unrefreshed; !slices.Equal(got, want) {

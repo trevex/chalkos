@@ -1158,3 +1158,43 @@ func TestRotationKeepsTheVersionBeforeIt(t *testing.T) {
 func servesNodeCA(n *fakeNode, nodeCA string) bool {
 	return pki.Fingerprint(n.cert.Current().TLS.Certificate[1]) == nodeCA
 }
+
+// forgetfulLayer is a layer that prunes its revoked nodes without asking whether the secrets file
+// records one of its revocations as not refreshed.
+type forgetfulLayer struct{ pruned *bool }
+
+func (forgetfulLayer) Name() string { return "forgetful" }
+func (forgetfulLayer) RevokedNodes(context.Context, layer.Rotating) (map[string]string, error) {
+	return nil, nil
+}
+func (forgetfulLayer) NodeCAHolders(layer.Cluster) ([]string, error) { return nil, nil }
+func (l forgetfulLayer) PruneRevoked(context.Context, layer.Rotating, clustersecrets.RotationKind) error {
+	*l.pruned = true
+	return nil
+}
+
+// TestPruneRevokedSkipsARecordedLayer checks that the finish of a rotation asks no layer to prune
+// while the secrets file records one of its revocations as not refreshed, though the layer does
+// not check that itself.
+func TestPruneRevokedSkipsARecordedLayer(t *testing.T) {
+	saved := plugins
+	var pruned bool
+	plugins = []layer.Plugin{forgetfulLayer{&pruned}}
+	t.Cleanup(func() { plugins = saved })
+	var stderr strings.Builder
+	r := &rotation{a: &app{stderr: &stderr}, file: &secretsFile{secrets: clustersecrets.Secrets{
+		Unrefreshed: []clustersecrets.Unrefreshed{{Layer: "forgetful", Node: "w1", Listed: true}},
+	}}}
+	r.pruneRevoked(context.Background(), clustersecrets.RotateOSCA)
+	if pruned {
+		t.Error("the layer was asked to prune while the secrets file records w1")
+	}
+	if got := stderr.String(); !strings.Contains(got, "the forgetful layer was not asked to prune its revoked nodes: the secrets file records the revocations of w1 as not refreshed") {
+		t.Errorf("stderr = %q", got)
+	}
+	r.file.secrets.Unrefreshed = []clustersecrets.Unrefreshed{{Layer: "other", Node: "w1"}}
+	r.pruneRevoked(context.Background(), clustersecrets.RotateOSCA)
+	if !pruned {
+		t.Error("the layer was not asked to prune though the secrets file records none of its revocations")
+	}
+}

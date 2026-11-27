@@ -16,6 +16,7 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/internal/cli"
+	"github.com/trevex/chalkos/pkg/internal/strs"
 	"github.com/trevex/chalkos/pkg/sdk"
 )
 
@@ -381,14 +382,26 @@ func (r *rotation) refreshRevoked(ctx context.Context, pending refreshes) error 
 // pruneRevoked has every layer drop the revoked nodes the finished rotation of kind left nothing
 // to let back in. A layer that fails to is warned of: the rotation is finished all the same.
 // While the last refresh of the revocations failed, nothing is pruned: the revoked nodes it did
-// not refresh hold what the rotation handed out.
+// not refresh hold what the rotation handed out. Nor is a layer whose revocations the secrets file
+// records as not refreshed asked to prune.
 func (r *rotation) pruneRevoked(ctx context.Context, kind clustersecrets.RotationKind) {
 	if r.unrefreshed != nil {
 		fmt.Fprintln(r.a.stderr, "chalkctl: warning: the revoked nodes were not pruned: their revocations were not refreshed, and pruning could drop those that hold what the rotation handed out")
 		return
 	}
-	for _, p := range compiled[layer.RotationNodes]() {
-		if err := p.PruneRevoked(ctx, r, kind); err != nil {
+	for _, p := range plugins {
+		rn, ok := p.(layer.RotationNodes)
+		if !ok {
+			continue
+		}
+		// A layer is not asked to prune while the secrets file records one of its revocations as
+		// not refreshed, whether or not the layer checks that itself.
+		if names := r.file.secrets.UnrefreshedOf(p.Name()); len(names) > 0 {
+			fmt.Fprintf(r.a.stderr, "chalkctl: warning: the %s layer was not asked to prune its revoked nodes: the secrets file records the revocations of %s as not refreshed, and pruning could drop them while what they were handed is valid; refresh them, then prune them\n",
+				p.Name(), strs.And(names))
+			continue
+		}
+		if err := rn.PruneRevoked(ctx, r, kind); err != nil {
 			fmt.Fprintf(r.a.stderr, "chalkctl: warning: the revoked nodes were not pruned: %v\n", err)
 		}
 	}
