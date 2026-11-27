@@ -11,6 +11,7 @@ import (
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
 )
 
 // A node that etcd lists as a member is revoked only when the caller allows a control plane; a
@@ -59,5 +60,18 @@ func TestRevokedListFull(t *testing.T) {
 	full = full.WithDetail(detail)
 	if !RevokedListFull(fmt.Errorf("revoke w1: %w", full)) {
 		t.Error("a refusal with the reason is not RevokedListFull")
+	}
+}
+
+// A bootstrapped control plane prunes the revoked nodes and says how full their list is.
+func TestPruneRevoked(t *testing.T) {
+	t.Parallel()
+	conn, _ := etcdMember(t)
+	resp, err := PruneRevoked(context.Background(), conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Pruned) != 0 || resp.ListCapacity != revoked.MaxLiteralLength {
+		t.Errorf("pruned %q, capacity %d; want none of %d", resp.Pruned, resp.ListCapacity, revoked.MaxLiteralLength)
 	}
 }

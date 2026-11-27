@@ -1,8 +1,14 @@
 package kubernetes
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log"
+	"os"
+	"slices"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -80,33 +86,77 @@ func TestLeftoverJoinLeavesTheNextGeneration(t *testing.T) {
 	}
 }
 
-// The pruning loop prunes when it starts and every Timing.PruneRevoked after, a day by default,
-// and logs a failure without ending.
+// lockedBuffer is a buffer the log writes to and a test reads.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// The pruning loop prunes when it starts and every Timing.PruneRevoked after, a day by default.
+// A failed prune is tried again after Timing.Poll, then after twice as long each time, up to
+// Timing.PruneRevoked. Only the first failure of a streak and the prune that ends it are logged.
 func TestPruneRevokedEvery(t *testing.T) {
 	testwait.Bubble(t, func(t *testing.T) {
 		s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
 		if d := s.k.timing.PruneRevoked; d != 24*time.Hour {
 			t.Errorf("the revoked nodes are pruned every %v, want 24h", d)
 		}
-		var calls atomic.Int32
+		s.k.timing.Poll, s.k.timing.PruneRevoked = time.Second, 5*time.Second
+		var logs lockedBuffer
+		log.SetOutput(&logs)
+		t.Cleanup(func() { log.SetOutput(os.Stderr) })
+		start := time.Now()
+		var mu sync.Mutex
+		var at []time.Duration
+		var failing atomic.Bool
+		failing.Store(true)
 		s.k.hooks.PruneRevoked = func(context.Context) error {
-			calls.Add(1)
-			return errors.New("the API server does not answer")
+			mu.Lock()
+			at = append(at, time.Since(start))
+			mu.Unlock()
+			if failing.Load() {
+				return errors.New("the API server does not answer")
+			}
+			return nil
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan struct{})
 		go func() { s.k.pruneRevokedEvery(ctx); close(done) }()
+		time.Sleep(12*time.Second + time.Second/2)
+		failing.Store(false)
+		time.Sleep(10 * time.Second)
+		failing.Store(true)
+		time.Sleep(6 * time.Second)
 		synctest.Wait()
-		if n := calls.Load(); n != 1 {
-			t.Fatalf("%d prunes at the start, want 1", n)
-		}
-		time.Sleep(s.k.timing.PruneRevoked)
-		synctest.Wait()
-		if n := calls.Load(); n != 2 {
-			t.Errorf("%d prunes after a day, want 2", n)
-		}
 		cancel()
 		<-done
+		var want []time.Duration
+		for _, s := range []int{0, 1, 3, 7, 12, 17, 22, 27, 28} {
+			want = append(want, time.Duration(s)*time.Second)
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if !slices.Equal(at, want) {
+			t.Errorf("prunes at %v, want %v", at, want)
+		}
+		if n := strings.Count(logs.String(), "does not answer"); n != 2 {
+			t.Errorf("%d failures logged, want the first of each streak, 2:\n%s", n, logs.String())
+		}
+		if !strings.Contains(logs.String(), "after 5 failed attempts") {
+			t.Errorf("the end of the streak is not logged:\n%s", logs.String())
+		}
 	})
 }
 

@@ -412,9 +412,10 @@ const (
 	ErrorReason_ERROR_REASON_CONFIG_REFUSED ErrorReason = 3
 	// The revoked nodes' list has no room for another node: the admission policy's map of revoked
 	// nodes would grow longer than the API server compiles. RevokeNode refuses so with
-	// FAILED_PRECONDITION. Control planes drop the nodes whose certificates have all expired or
-	// chain only to CAs made after their revocation, so rotating the OS CA and the Kubernetes CA
-	// makes room.
+	// FAILED_PRECONDITION. Control planes drop the nodes whose certificates have all expired, and
+	// the Kubernetes layer's PruneRevoked, which chalkctl rotate --finish calls, those that chain
+	// only to CAs made after their revocation, so rotating the OS CA and the Kubernetes CA makes
+	// room.
 	ErrorReason_ERROR_REASON_REVOKED_LIST_FULL ErrorReason = 4
 	// The node is an etcd member of a cluster already: it bootstrapped the cluster or joined it.
 	// Bootstrap refuses so with FAILED_PRECONDITION; a caller that bootstraps the first control

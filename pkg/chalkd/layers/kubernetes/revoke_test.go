@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -144,7 +145,7 @@ func TestRevokeNode(t *testing.T) {
 	}
 }
 
-// TestRevokeNodeOnControlPlanesOnly refuses both calls where no list is kept.
+// TestRevokeNodeOnControlPlanesOnly refuses the calls on the revoked nodes where no list is kept.
 func TestRevokeNodeOnControlPlanesOnly(t *testing.T) {
 	worker, _ := kubernetesNode(t, k8s.KindWorker, true)
 	unbootstrapped, _ := kubernetesNode(t, k8s.KindControlPlane, true)
@@ -162,6 +163,10 @@ func TestRevokeNodeOnControlPlanesOnly(t *testing.T) {
 		_, err = tc.s.UnrevokeNode(context.Background(), &kubernetesv1.UnrevokeNodeRequest{Node: "w1"})
 		if layer.CodeOf(err) != connect.CodeFailedPrecondition {
 			t.Errorf("unrevoke on %s: %v, want FailedPrecondition", name, err)
+		}
+		_, err = tc.s.PruneRevoked(context.Background(), &kubernetesv1.PruneRevokedRequest{})
+		if layer.CodeOf(err) != connect.CodeFailedPrecondition {
+			t.Errorf("prune on %s: %v, want FailedPrecondition", name, err)
 		}
 	}
 }
@@ -437,42 +442,25 @@ func asList(data map[string]string) revoked.List {
 	return l
 }
 
-// A revocation first drops the entries whose certificates expired and those revoked before every
-// CA the control plane trusts, and applies the policy without them.
-func TestRevokeNodePrunes(t *testing.T) {
-	l := newRevokeLab(t)
-	now := time.Now()
-	// The OS CA is made as the tests start, backdated an hour; the Kubernetes CA predates w-old.
-	l.kubernetesCAs(t, now.Add(-72*time.Hour))
-	old := now.Add(-2 * time.Hour)
-	ancient := now.Add(-(pki.LeafValidity + revoked.ExpiryMargin + time.Hour))
-	for name, at := range map[string]time.Time{"w-old": old, "w-ancient": ancient} {
+// revokeAt lists each node as revoked at its time.
+func (l *revokeLab) revokeAt(t *testing.T, nodes map[string]time.Time) {
+	t.Helper()
+	for name, at := range nodes {
 		if _, err := revoked.Revoke(context.Background(), l.cs, name, at); err != nil {
 			t.Fatal(err)
 		}
 	}
-	got, err := l.revoke("w1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	list := l.list(t)
-	if _, ok := list["w-ancient"]; ok {
-		t.Error("an entry past its certificates' validity is kept")
-	}
-	if _, ok := list["w-old"]; !ok {
-		t.Error("an entry whose Kubernetes CA predates its revocation is dropped")
-	}
-	if want := uint32(revoked.LiteralLength(list)); got.ListLength != want {
-		t.Errorf("list length %d, want %d", got.ListLength, want)
-	}
-	if names := l.policyNames(t); strings.Contains(names, "w-ancient") || !strings.Contains(names, "w-old") {
-		t.Errorf("the policy names %s, want w-old and not w-ancient", names)
-	}
 }
 
-// Once both the OS CA and the Kubernetes CA were made after a revocation, the entry is dropped,
-// on a revocation and on an unrevocation.
-func TestRevokeNodePrunesAfterRotation(t *testing.T) {
+// expiredAt is a revocation time whose node's certificates have all expired by now.
+func expiredAt() time.Time {
+	return time.Now().Add(-(pki.LeafValidity + revoked.ExpiryMargin + time.Hour))
+}
+
+// A revocation and an unrevocation first drop the entries whose certificates expired, and apply
+// the policy without them. They keep an entry revoked before every CA this control plane trusts:
+// another control plane may not have finished the CAs' rotation yet.
+func TestRevokeNodePrunesExpired(t *testing.T) {
 	for name, call := range map[string]func(*revokeLab) error{
 		"revoke": func(l *revokeLab) error { _, err := l.revoke("w1"); return err },
 		"unrevoke": func(l *revokeLab) error {
@@ -487,16 +475,150 @@ func TestRevokeNodePrunesAfterRotation(t *testing.T) {
 			l := newRevokeLab(t)
 			// newRevokeLab's CAs are made as the tests start, backdated an hour: w-rotated was
 			// revoked before them.
-			if _, err := revoked.Revoke(context.Background(), l.cs, "w-rotated", time.Now().Add(-48*time.Hour)); err != nil {
-				t.Fatal(err)
-			}
+			l.revokeAt(t, map[string]time.Time{"w-rotated": time.Now().Add(-48 * time.Hour), "w-ancient": expiredAt()})
 			if err := call(l); err != nil {
 				t.Fatal(err)
 			}
-			if _, ok := l.list(t)["w-rotated"]; ok {
-				t.Error("an entry revoked before every trusted CA is kept")
+			list := l.list(t)
+			if _, ok := list["w-ancient"]; ok {
+				t.Error("an entry past its certificates' validity is kept")
+			}
+			if _, ok := list["w-rotated"]; !ok {
+				t.Error("an entry revoked before every trusted CA is dropped")
+			}
+			if names := l.policyNames(t); strings.Contains(names, "w-ancient") || !strings.Contains(names, "w-rotated") {
+				t.Errorf("the policy names %s, want w-rotated and not w-ancient", names)
 			}
 		})
+	}
+}
+
+// A revocation's list length counts the list after the prune.
+func TestRevokeNodeListLength(t *testing.T) {
+	l := newRevokeLab(t)
+	l.revokeAt(t, map[string]time.Time{"w-old": time.Now().Add(-2 * time.Hour), "w-ancient": expiredAt()})
+	got, err := l.revoke("w1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := uint32(revoked.LiteralLength(l.list(t))); got.ListLength != want {
+		t.Errorf("list length %d, want %d", got.ListLength, want)
+	}
+}
+
+// A prune that fails holds up no revocation or unrevocation.
+func TestRevokeNodeDespiteAFailedPrune(t *testing.T) {
+	l := newRevokeLab(t)
+	l.revokeAt(t, map[string]time.Time{"w-ancient": expiredAt(), "w2": time.Now()})
+	// The revocation prunes before it writes the list, the unrevocation after.
+	var writes, failing int
+	l.cs.PrependReactor("update", "configmaps", func(k8stesting.Action) (bool, runtime.Object, error) {
+		if writes++; writes == failing {
+			return true, nil, errors.New("connection reset")
+		}
+		return false, nil, nil
+	})
+	failing = 1
+	if _, err := l.revoke("w1"); err != nil {
+		t.Fatalf("revoke with the prune failing: %v", err)
+	}
+	if _, ok := l.list(t)["w1"]; !ok {
+		t.Error("w1 is not revoked")
+	}
+	writes, failing = 0, 2
+	if _, err := l.unrevoke("w2", true); err != nil {
+		t.Fatalf("unrevoke with the prune failing: %v", err)
+	}
+	if _, ok := l.list(t)["w2"]; ok {
+		t.Error("w2 is still revoked")
+	}
+	if _, ok := l.list(t)["w-ancient"]; !ok {
+		t.Error("the prunes did not fail")
+	}
+}
+
+// PruneRevoked drops the entries whose certificates expired and those revoked before every OS CA
+// and Kubernetes CA the control plane trusts, and applies the policy without them. It keeps those
+// revoked after a CA was made, or at an unknown time.
+func TestPruneRevoked(t *testing.T) {
+	l := newRevokeLab(t)
+	now := time.Now()
+	// The OS CA is made as the tests start, backdated an hour; the Kubernetes CA was made a day
+	// ago, so only w-before was revoked before both.
+	l.kubernetesCAs(t, now.Add(-24*time.Hour))
+	l.revokeAt(t, map[string]time.Time{
+		"w-ancient": expiredAt(),
+		"w-before":  now.Add(-48 * time.Hour),
+		"w-between": now.Add(-2 * time.Hour),
+		"w-recent":  now.Add(-30 * time.Minute),
+	})
+	cm, err := l.cs.CoreV1().ConfigMaps(revoked.Namespace).Get(context.Background(), revoked.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cm.Data["w-unknown"] = "yesterday"
+	if _, err := l.cs.CoreV1().ConfigMaps(revoked.Namespace).Update(context.Background(), cm, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := l.s.PruneRevoked(context.Background(), &kubernetesv1.PruneRevokedRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"w-ancient", "w-before"}; !slices.Equal(got.Pruned, want) {
+		t.Errorf("pruned %q, want %q", got.Pruned, want)
+	}
+	list := l.list(t)
+	if want := []string{"w-between", "w-recent", "w-unknown"}; !slices.Equal(slices.Sorted(maps.Keys(list)), want) {
+		t.Errorf("revoked nodes %v, want %q", list, want)
+	}
+	if want := uint32(revoked.LiteralLength(list)); got.ListLength != want || got.ListCapacity != revoked.MaxLiteralLength {
+		t.Errorf("list %d of %d, want %d of %d", got.ListLength, got.ListCapacity, want, revoked.MaxLiteralLength)
+	}
+	if names := l.policyNames(t); strings.Contains(names, "w-before") || !strings.Contains(names, "w-between") {
+		t.Errorf("the policy names %s, want w-between and not w-before", names)
+	}
+
+	again, err := l.s.PruneRevoked(context.Background(), &kubernetesv1.PruneRevokedRequest{})
+	if err != nil || len(again.Pruned) != 0 || again.ListLength != got.ListLength {
+		t.Errorf("pruning again: %v, %v; want nothing pruned", again, err)
+	}
+}
+
+// PruneRevoked applies the policy even when it drops no node, so calling it again applies a
+// policy an earlier call failed to.
+func TestPruneRevokedAppliesThePolicy(t *testing.T) {
+	l := newRevokeLab(t)
+	l.revokeAt(t, map[string]time.Time{"w-before": time.Now().Add(-48 * time.Hour)})
+	failing := true
+	l.cs.PrependReactor("patch", "validatingadmissionpolicies", func(k8stesting.Action) (bool, runtime.Object, error) {
+		if failing {
+			return true, nil, errors.New("connection reset")
+		}
+		return false, nil, nil
+	})
+	_, err := l.s.PruneRevoked(context.Background(), &kubernetesv1.PruneRevokedRequest{})
+	if layer.CodeOf(err) != connect.CodeUnavailable || !strings.Contains(err.Error(), "w-before") || !strings.Contains(err.Error(), "again") {
+		t.Errorf("prune with the policy failing: %v, want Unavailable naming w-before", err)
+	}
+	failing = false
+	if _, err := l.s.PruneRevoked(context.Background(), &kubernetesv1.PruneRevokedRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := l.policyNames(t); got != "{}" {
+		t.Errorf("pruning again: the policy names %s", got)
+	}
+}
+
+// Without the CAs the node trusts, PruneRevoked drops nothing.
+func TestPruneRevokedWithoutCAs(t *testing.T) {
+	l := newRevokeLab(t)
+	l.revokeAt(t, map[string]time.Time{"w-before": time.Now().Add(-48 * time.Hour)})
+	l.s.node.(*fakeNode).cert = nil
+	if _, err := l.s.PruneRevoked(context.Background(), &kubernetesv1.PruneRevokedRequest{}); layer.CodeOf(err) != connect.CodeInternal {
+		t.Errorf("prune without an OS CA: %v, want Internal", err)
+	}
+	if _, ok := l.list(t)["w-before"]; !ok {
+		t.Error("w-before was dropped")
 	}
 }
 
@@ -505,16 +627,13 @@ func TestRevokeNodePrunesAfterRotation(t *testing.T) {
 // rotation yet.
 func TestPruneExpired(t *testing.T) {
 	l := newRevokeLab(t)
-	now := time.Now()
-	ancient := now.Add(-(pki.LeafValidity + revoked.ExpiryMargin + time.Hour))
 	// newRevokeLab's CAs are made as the tests start, backdated an hour: w-rotated was revoked
 	// before them.
-	for name, at := range map[string]time.Time{"w-ancient": ancient, "w-rotated": now.Add(-48 * time.Hour)} {
-		if _, err := revoked.Revoke(context.Background(), l.cs, name, at); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := l.s.k.pruneExpired(context.Background()); err != nil {
+	l.revokeAt(t, map[string]time.Time{"w-ancient": expiredAt(), "w-rotated": time.Now().Add(-48 * time.Hour)})
+	// The loop prunes with pruneExpired unless the options name another hook.
+	lab := l.s.k
+	k := newSide(Options{Paths: lab.state.Paths, ImageFile: lab.o.ImageFile, ClusterFile: lab.o.ClusterFile, Hooks: Hooks{APIClient: lab.hooks.APIClient}})
+	if err := k.hooks.PruneRevoked(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	list := l.list(t)

@@ -71,7 +71,7 @@ func revokedLine(name string, resp *kubernetesv1.RevokeNodeResponse) string {
 	line := fmt.Sprintf("revoked node %s (since %s); %s", name, resp.RevokedAt.AsTime().UTC().Format(time.RFC3339), deleted)
 	if c := uint64(resp.ListCapacity); c > 0 && uint64(resp.ListLength)*5 > c*4 {
 		line += fmt.Sprintf("\nthe revoked nodes fill %d%% of their room; rotate the CAs with chalkctl rotate os-ca and chalkctl rotate kubernetes-ca, "+
-			"each to its finish, so the control planes drop the nodes revoked before them", uint64(resp.ListLength)*100/c)
+			"each to its finish, which drops the nodes revoked before both", uint64(resp.ListLength)*100/c)
 	}
 	return line
 }
