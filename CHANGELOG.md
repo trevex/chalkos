@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.8.0](https://github.com/trevex/chalkos/compare/v0.7.2...v0.8.0) (2026-11-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* typed error reasons, one wording of transport errors, and Status that degrades per section ([#171](https://github.com/trevex/chalkos/issues/171))
+* **chalkctl:** -o json and cluster status, grouped help, wait states and release warnings ([#167](https://github.com/trevex/chalkos/issues/167))
+* strict Nix/Go contract: strict definition files, argv lists, one home per check, shared constants ([#166](https://github.com/trevex/chalkos/issues/166))
+* **chalkctl:** scripts pass --yes to the commands that confirm, and each meaning of --force has a flag of its own.
+
+### Features
+
+* actionable rule, render and kind errors; Nix helpers (trimPackage, usr links, hardening checks, Kubernetes features) ([#170](https://github.com/trevex/chalkos/issues/170)) ([658a1b8](https://github.com/trevex/chalkos/commit/658a1b8c6037acec5f86f5596e7feebc86352a92))
+* **chalkctl:** -o json and cluster status, grouped help, wait states and release warnings ([#167](https://github.com/trevex/chalkos/issues/167)) ([5f74bb4](https://github.com/trevex/chalkos/commit/5f74bb45555d0c7af56e88107c1cc6cdc8be9b48))
+* **chalkctl:** confirm destructive commands and rename the meanings of --force ([#163](https://github.com/trevex/chalkos/issues/163)) ([940306f](https://github.com/trevex/chalkos/commit/940306f37f02a7b92230c7b9093bf131d2605b3e))
+* fail-safe unit sandboxes, a unit-sandbox image check and public presets ([#162](https://github.com/trevex/chalkos/issues/162)) ([d1e4cea](https://github.com/trevex/chalkos/commit/d1e4ceab4738e412fb772ed291efd8c52e41b92d))
+* **sdk:** a Go SDK for chalkctl and Cluster API providers, and in-place install from a registry ([#172](https://github.com/trevex/chalkos/issues/172)) ([0a4c84f](https://github.com/trevex/chalkos/commit/0a4c84f304e1a8f76e6d1a5634aff803524df475))
+* strict Nix/Go contract: strict definition files, argv lists, one home per check, shared constants ([#166](https://github.com/trevex/chalkos/issues/166)) ([7707235](https://github.com/trevex/chalkos/commit/7707235b1e74b932834e38e31f5ed721d951f741))
+* typed error reasons, one wording of transport errors, and Status that degrades per section ([#171](https://github.com/trevex/chalkos/issues/171)) ([f1ed3af](https://github.com/trevex/chalkos/commit/f1ed3afa7e6529c660c3767e2c1194c192f90bba))
+
+
+### Bug Fixes
+
+* allow opening brackets in module paths ([#174](https://github.com/trevex/chalkos/issues/174)) ([ab78bc7](https://github.com/trevex/chalkos/commit/ab78bc78631085be69bb2a493123734fcbf08bee))
+* keep the repository's paths valid in a Go module ([#173](https://github.com/trevex/chalkos/issues/173)) ([46f2752](https://github.com/trevex/chalkos/commit/46f275276f65a3a5fb980487a429b2315ec47c60))
+* one sandbox for renderers, diagnostics, facts and the image checker; per-client stream and diagnostic slots ([#161](https://github.com/trevex/chalkos/issues/161)) ([da3aab4](https://github.com/trevex/chalkos/commit/da3aab4586c12b5883061e0fb63e63c1d3b20ebc))
+
 ## [0.7.2](https://github.com/trevex/chalkos/compare/v0.7.1...v0.7.2) (2026-11-26)
 
 

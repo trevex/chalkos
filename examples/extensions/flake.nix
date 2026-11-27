@@ -1,7 +1,7 @@
 {
   description = "chalkos extension kinds: a node's rack position and hardware";
 
-  inputs.chalkos.url = "github:trevex/chalkos/v0.7.2"; # x-release-please-version
+  inputs.chalkos.url = "github:trevex/chalkos/v0.8.0"; # x-release-please-version
 
   outputs =
     { self, chalkos, ... }:
