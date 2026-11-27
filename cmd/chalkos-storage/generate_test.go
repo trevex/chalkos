@@ -60,6 +60,22 @@ func TestGenerateGolden(t *testing.T) {
 		name, target, _ := strings.Cut(line, " -> ")
 		want[name] = "-> " + target
 	}
+	// A systemd-escaped unit name can hold a backslash, which a Go module zip refuses as a file
+	// path, so the golden tree stores those units under a safe name and this file maps each back
+	// to the real unit name runGenerate writes.
+	escaped, err := os.ReadFile("testdata/generate/escaped")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(escaped)), "\n") {
+		safe, real, _ := strings.Cut(line, " -> ")
+		content, ok := want[safe]
+		if !ok {
+			t.Fatalf("testdata/generate/escaped maps %s, which testdata/generate/units does not hold", safe)
+		}
+		delete(want, safe)
+		want[real] = content
+	}
 
 	for _, name := range slices.Sorted(maps.Keys(want)) {
 		if got[name] != want[name] {

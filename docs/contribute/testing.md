@@ -276,6 +276,7 @@ they build.
 | `registry-mirrors` | The `chalkos-registry-mirrors` unit writes the registry hosts containerd reads from `Mirror` and `Registry` documents, keeps them when a document cannot be read, and writes none without documents. |
 | `fixtures` | Every node of the end-to-end fixtures has config its image accepts, as `chalkctl validate` checks it, and the inventories the tests want refused are refused with their message. |
 | `nix-lint` | The Nix files are formatted as `nix fmt` formats them, hold no unused binding or argument (deadnix) and pass statix, except for the lints `statix.toml` leaves out. |
+| `module-paths` | No path of the repository holds a character `golang.org/x/mod/zip` refuses when it builds this module's zip for `go get`. |
 | `security-insights` | `security-insights.yml` is valid against the schema of the OpenSSF Security Insights version it names. |
 | `ci-tiers` | Every check is in exactly one tier of `nix/checks/tiers.nix`, and `.github/labels.yml` has a label for each end-to-end check and the label `ci-failure`. This page or `ci.md` names every check other than the `release-image-<name>` checks, and this page names every file of `test/e2e/*_test.go` and every test helper package of `pkg/`. See [Continuous integration](ci.md#tiers). |
 | `api-generated` | The generated API code is what buf generates from the proto files. |

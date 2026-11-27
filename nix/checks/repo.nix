@@ -9,6 +9,22 @@
 let
   inherit (pkgs) lib;
   inherit (checkLib) chalkPkgs testEnv;
+  # Every file of the repository, by its path relative to the root.
+  repoFiles =
+    let
+      walk =
+        dir: path:
+        lib.concatLists (
+          lib.mapAttrsToList (
+            name: type:
+            let
+              sub = if path == "" then name else "${path}/${name}";
+            in
+            if type == "directory" then walk (dir + "/${name}") sub else [ sub ]
+          ) (builtins.readDir dir)
+        );
+    in
+    walk ../.. "";
   # The image directories the e2e fixtures' inventories name, by their paths below
   # test/fixtures/clusters. images.json there names, for each path, the variable that names the
   # image in the e2e tests, which read it too.
@@ -507,6 +523,27 @@ in
         statix check --config statix.toml .
         touch $out
       '';
+
+  # No path of the repository holds a character golang.org/x/mod/zip refuses when it builds this
+  # module's zip for `go get`. golang.org/x/mod/module.CheckFilePath allows a letter, a digit, a
+  # space, the path separator / and !#$%&()+,-.=@[]^_{}~, plus any other Unicode letter; this
+  # check allows the same ASCII set and refuses every other ASCII character and, since a Nix
+  # regex cannot ask whether a rune is a Unicode letter, every non-ASCII byte too. Two testdata
+  # fixtures of cmd/chalkos-storage need a systemd-escaped name, which holds a backslash; they
+  # keep that name out of their own path, in cmd/chalkos-storage/testdata/generate/escaped, which
+  # cmd/chalkos-storage/generate_test.go maps back to the name runGenerate writes.
+  module-paths =
+    let
+      bad = lib.filter (p: builtins.match ".*[^]!#$%&()+,.=@^_{}~ /A-Za-z0-9-].*" p != null) repoFiles;
+    in
+    pkgs.runCommand "chalkos-module-paths" { bad = lib.concatLines bad; } ''
+      if [ -n "$bad" ]; then
+        echo "error: these paths hold a character golang.org/x/mod/zip refuses when it builds this module's zip for \`go get\`:" >&2
+        printf '%s' "$bad" >&2
+        exit 1
+      fi
+      touch $out
+    '';
 
   # The documentation site builds strictly and shows only commands that exist.
   docs = docs.check;
