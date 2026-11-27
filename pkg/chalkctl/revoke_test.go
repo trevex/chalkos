@@ -379,7 +379,7 @@ func TestInstallIgnoreRevokedBeforeTheControlPlanes(t *testing.T) {
 	if err := l.installNode("cp1", nil, "--ignore-revoked"); err != nil {
 		t.Fatalf("installing cp1: %v", err)
 	}
-	if got, want := l.secrets().Unrefreshed, []clustersecrets.Unrefreshed{{Layer: "kubernetes", Node: "cp1"}}; !slices.Equal(got, want) {
+	if got, want := l.secrets().Unrefreshed, []clustersecrets.Unrefreshed{{Layer: "kubernetes", Node: "cp1"}}; !slices.Equal(unstamped(got), want) {
 		t.Errorf("the secrets file records %v, want %v", got, want)
 	}
 	if got := l.ta.stderr.String(); !strings.Contains(got, "whether cp1 is revoked is read once it is back from its install") {
@@ -607,7 +607,7 @@ func TestIgnoreRevokedRefreshes(t *testing.T) {
 				t.Errorf("with the refresh failing: %v", err)
 			}
 			want := []clustersecrets.Unrefreshed{{Layer: "kubernetes", Node: "n1", Listed: true}}
-			if got := ta.secretsFile(t).Unrefreshed; !slices.Equal(got, want) {
+			if got := ta.secretsFile(t).Unrefreshed; !slices.Equal(unstamped(got), want) {
 				t.Errorf("the secrets file records %v, want %v", got, want)
 			}
 			failing = false
@@ -652,11 +652,12 @@ func TestRefreshAndUnrevokeClearTheRecord(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	ta.recordUnrefreshed(t, []clustersecrets.Unrefreshed{{Layer: "kubernetes", Node: "w1", Listed: true}, {Layer: "kubernetes", Node: "w2", Listed: true}})
+	recorded := time.Date(2026, 11, 1, 8, 0, 0, 0, time.UTC)
+	ta.recordUnrefreshed(t, []clustersecrets.Unrefreshed{{Layer: "kubernetes", Node: "w1", Listed: true, Recorded: recorded}, {Layer: "kubernetes", Node: "w2", Listed: true, Recorded: recorded}})
 	if err := ta.run(ctx, ta.args([]string{"node", "revoke", "w1", "--via", "n1", "--refresh"}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := ta.secretsFile(t).Unrefreshed, []clustersecrets.Unrefreshed{{Layer: "kubernetes", Node: "w2", Listed: true}}; !slices.Equal(got, want) {
+	if got, want := ta.secretsFile(t).Unrefreshed, []clustersecrets.Unrefreshed{{Layer: "kubernetes", Node: "w2", Listed: true, Recorded: recorded}}; !slices.Equal(got, want) {
 		t.Errorf("after the refresh of w1 the secrets file records %v, want %v", got, want)
 	}
 	if err := ta.run(ctx, ta.args([]string{"node", "unrevoke", "w2", "--via", "n1", "--allow-old-ca"}, addr)); err != nil {
@@ -882,4 +883,38 @@ func TestRotateEncryptedSecretsFromStdin(t *testing.T) {
 	if data, err := os.ReadFile(out); err != nil || !bytes.HasPrefix(data, []byte("age-encryption.org/")) {
 		t.Errorf("%s = %.20q, %v; want it age-encrypted", out, data, err)
 	}
+}
+
+// A refresh drops from the record only what it read there before it refreshed: a failure
+// another command records for the node while the refresh runs stays recorded.
+func TestRefreshKeepsAFailureRecordedMeanwhile(t *testing.T) {
+	ta := newTestApp(t)
+	addr, cs := revokeNode(t, ta)
+	ctx := context.Background()
+	if _, err := revoked.Revoke(ctx, cs, "w1", revokedAt, pki.LeafValidity); err != nil {
+		t.Fatal(err)
+	}
+	first := time.Date(2026, 11, 1, 8, 0, 0, 0, time.UTC)
+	ta.recordUnrefreshed(t, []clustersecrets.Unrefreshed{{Layer: "kubernetes", Node: "w1", Listed: true, Recorded: first}})
+	again := []clustersecrets.Unrefreshed{{Layer: "kubernetes", Node: "w1", Listed: true, Recorded: first.Add(time.Hour)}}
+	cs.PrependReactor("update", "configmaps", func(k8stesting.Action) (bool, runtime.Object, error) {
+		ta.recordUnrefreshed(t, again)
+		return false, nil, nil
+	})
+	if err := ta.run(ctx, ta.args([]string{"node", "revoke", "w1", "--via", "n1", "--refresh"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if got := ta.secretsFile(t).Unrefreshed; !slices.Equal(got, again) {
+		t.Errorf("the secrets file records %v, want the failure recorded meanwhile, %v", got, again)
+	}
+}
+
+// unstamped is the record without the times its failures were recorded at.
+func unstamped(record []clustersecrets.Unrefreshed) []clustersecrets.Unrefreshed {
+	var out []clustersecrets.Unrefreshed
+	for _, u := range record {
+		u.Recorded = time.Time{}
+		out = append(out, u)
+	}
+	return out
 }

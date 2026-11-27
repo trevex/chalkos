@@ -3,6 +3,7 @@ package clustersecrets
 import (
 	"slices"
 	"strings"
+	"time"
 )
 
 // Unrefreshed is the revocation of a node, which a layer lists as revoked, that a command run with
@@ -17,24 +18,38 @@ type Unrefreshed struct {
 	// so a refresh that finds it dropped from the list since revokes it again. Otherwise whether
 	// it was revoked was unknown, and a refresh first reads whether it is.
 	Listed bool `json:"listed,omitempty"`
+	// Recorded is when the failed refresh was recorded. A refresh that read the record before
+	// another command recorded the revocation again clears only what it read, which the time
+	// tells apart.
+	Recorded time.Time `json:"recorded,omitzero"`
 }
 
 // RecordRefreshes updates Unrefreshed after a refresh of the revocations tried, of which those in
-// left were not refreshed: it drops the others of tried, lists each of left once, in place of an
-// entry for the same layer and node, and keeps every other entry. It reports whether the record
-// changed. The slice it replaces is left as it was.
-func (s *Secrets) RecordRefreshes(tried, left []Unrefreshed) bool {
+// left were not refreshed. Each of tried carries the time the record held it with when the
+// refresh read the record, the zero time if it held none. RecordRefreshes drops an entry of
+// tried unless it is left or another command recorded it again since, at another time; it lists
+// each of left once, recorded at now, in place of an entry for the same layer and node, and
+// listed if either is; it keeps every other entry. It reports whether the record changed. The
+// slice it replaces is left as it was.
+func (s *Secrets) RecordRefreshes(tried, left []Unrefreshed, now time.Time) bool {
 	same := func(a Unrefreshed) func(Unrefreshed) bool {
 		return func(b Unrefreshed) bool { return a.Layer == b.Layer && a.Node == b.Node }
 	}
+	left = slices.Clone(left)
 	var record []Unrefreshed
 	for _, u := range s.Unrefreshed {
-		if !slices.ContainsFunc(tried, same(u)) && !slices.ContainsFunc(left, same(u)) {
+		if i := slices.IndexFunc(left, same(u)); i >= 0 {
+			// Left again: recorded anew below.
+			left[i].Listed = left[i].Listed || u.Listed
+			continue
+		}
+		if !slices.ContainsFunc(tried, func(t Unrefreshed) bool { return same(u)(t) && t.Recorded.Equal(u.Recorded) }) {
 			record = append(record, u)
 		}
 	}
 	for _, u := range left {
 		if !slices.ContainsFunc(record, same(u)) {
+			u.Recorded = now.UTC()
 			record = append(record, u)
 		}
 	}
@@ -44,7 +59,9 @@ func (s *Secrets) RecordRefreshes(tried, left []Unrefreshed) bool {
 		}
 		return strings.Compare(a.Node, b.Node)
 	})
-	if slices.Equal(record, s.Unrefreshed) {
+	if slices.EqualFunc(record, s.Unrefreshed, func(a, b Unrefreshed) bool {
+		return same(a)(b) && a.Listed == b.Listed && a.Recorded.Equal(b.Recorded)
+	}) {
 		return false
 	}
 	s.Unrefreshed = record

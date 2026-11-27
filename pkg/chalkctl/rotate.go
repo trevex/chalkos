@@ -358,18 +358,17 @@ func (r *rotation) revokedBefore(ctx context.Context) refreshes {
 // too, so it is the last refresh's that counts.
 func (r *rotation) refreshRevoked(ctx context.Context, pending refreshes) error {
 	recorded := r.file.secrets.Unrefreshed
-	rs := pending.withRecorded(recorded)
-	if len(rs) == 0 {
+	if len(pending) == 0 && len(recorded) == 0 {
 		return nil
 	}
 	nodes, err := r.nodes()
 	if err != nil {
 		return err
 	}
-	tried, left, err := r.a.refreshRevocations(ctx, nodes, rs)
-	s := r.file.secrets
-	if s.RecordRefreshes(tried, left) {
-		if serr := r.save(func(s *clustersecrets.Secrets) error { s.RecordRefreshes(tried, left); return nil }); serr != nil {
+	tried, left, err := r.a.refreshRevocations(ctx, nodes, pending, recorded)
+	s, now := r.file.secrets, time.Now()
+	if s.RecordRefreshes(tried, left, now) {
+		if serr := r.save(func(s *clustersecrets.Secrets) error { s.RecordRefreshes(tried, left, now); return nil }); serr != nil {
 			return errors.Join(err, serr)
 		}
 	}

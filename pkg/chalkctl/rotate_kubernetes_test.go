@@ -471,7 +471,7 @@ func TestRotateRecordsAFailedRefresh(t *testing.T) {
 		t.Errorf("err = %v, want the record named", err)
 	}
 	want := []clustersecrets.Unrefreshed{{Layer: "kubernetes", Node: "w1", Listed: true}}
-	if got := l.secrets().Unrefreshed; !slices.Equal(got, want) {
+	if got := l.secrets().Unrefreshed; !slices.Equal(unstamped(got), want) {
 		t.Fatalf("the secrets file records %v, want %v", got, want)
 	}
 	for _, args := range [][]string{{"os-ca", "--resume"}, {"os-ca", "--finish"}} {
@@ -491,7 +491,7 @@ func TestRotateRecordsAFailedRefresh(t *testing.T) {
 	if got := l.ta.stderr.String(); !strings.Contains(got, "the kubernetes layer was not asked to prune its revoked nodes: the secrets file records the revocations of w1 as not refreshed") {
 		t.Errorf("stderr = %q, want the prune skipped for the record", got)
 	}
-	if got := l.secrets().Unrefreshed; !slices.Equal(got, want) {
+	if got := l.secrets().Unrefreshed; !slices.Equal(unstamped(got), want) {
 		t.Fatalf("the secrets file records %v, want %v", got, want)
 	}
 

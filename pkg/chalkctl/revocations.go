@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
@@ -70,16 +71,21 @@ func (rs refreshes) withRecorded(recorded []clustersecrets.Unrefreshed) refreshe
 	return all
 }
 
-// refreshRevocations has each layer refresh its revocations in rs, through nodes, and writes what
-// each refreshed to stdout. A revocation Later is left without a try, with a warning. It returns
-// the revocations tried and those left, as the secrets file records them, and the layers' errors,
-// which say what to run.
-func (a *app) refreshRevocations(ctx context.Context, nodes layer.Nodes, rs refreshes) (tried, left []clustersecrets.Unrefreshed, err error) {
+// refreshRevocations has each layer refresh its revocations in rs and those recorded as not
+// refreshed, through nodes, and writes what each refreshed to stdout. A revocation Later is left
+// without a try, with a warning. It returns the revocations tried, each with the time recorded
+// gives it, and those left, as the secrets file records them, and the layers' errors, which say
+// what to run.
+func (a *app) refreshRevocations(ctx context.Context, nodes layer.Nodes, rs refreshes, recorded []clustersecrets.Unrefreshed) (tried, left []clustersecrets.Unrefreshed, err error) {
+	rs = rs.withRecorded(recorded)
 	var errs []error
 	for _, l := range revocationLayers() {
 		var now []layer.Revocation
 		for _, r := range rs[l.name] {
 			u := clustersecrets.Unrefreshed{Layer: l.name, Node: r.Node, Listed: r.Listed}
+			if i := slices.IndexFunc(recorded, func(v clustersecrets.Unrefreshed) bool { return v.Layer == u.Layer && v.Node == u.Node }); i >= 0 {
+				u.Recorded = recorded[i].Recorded
+			}
 			tried = append(tried, u)
 			if r.Later {
 				left = append(left, u)
@@ -108,7 +114,7 @@ func (a *app) refreshRevocations(ctx context.Context, nodes layer.Nodes, rs refr
 // refreshAndRecord refreshes rs and the revocations recorded as not refreshed, through nodes,
 // and records in the secrets file sf names which are left. It fails while one is left.
 func (a *app) refreshAndRecord(ctx context.Context, sf layer.SecretsFlags, nodes layer.Nodes, rs refreshes, recorded []clustersecrets.Unrefreshed) error {
-	tried, left, err := a.refreshRevocations(ctx, nodes, rs.withRecorded(recorded))
+	tried, left, err := a.refreshRevocations(ctx, nodes, rs, recorded)
 	if len(recorded) == 0 && len(left) == 0 {
 		return err
 	}
@@ -130,7 +136,8 @@ func (a *app) refreshAndRecord(ctx context.Context, sf layer.SecretsFlags, nodes
 const recordedNote = "the secrets file records the revocations not refreshed; chalkctl prunes none of a layer's revoked nodes while it records one, and refreshes them again first"
 
 // recordRefreshes records in the secrets file sf names that the revocations tried were refreshed
-// but for those left, keeping what other commands recorded since it was read. The secrets file
+// but for those left, keeping what other commands recorded since the record was read, which the
+// times tried carries tell apart. The secrets file
 // from standard input records nothing: it fails while one is left, or while it records one tried.
 func (a *app) recordRefreshes(ctx context.Context, sf layer.SecretsFlags, tried, left []clustersecrets.Unrefreshed) error {
 	if sf.Path == "-" {
@@ -160,7 +167,7 @@ func (a *app) recordRefreshes(ctx context.Context, sf layer.SecretsFlags, tried,
 	// The record is no part of the public half.
 	file.publicOut = ""
 	s := file.secrets
-	if !s.RecordRefreshes(tried, left) {
+	if !s.RecordRefreshes(tried, left, time.Now()) {
 		return nil
 	}
 	if err := a.writeSecretsFile(file, s); err != nil {
