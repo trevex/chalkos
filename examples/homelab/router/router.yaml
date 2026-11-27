@@ -7,9 +7,10 @@
 #
 # The two Link documents name the ports by their permanent MAC addresses, which a VLAN or a bond
 # on a port does not take, so the other documents name wan and fabric whatever the kernel calls
-# the ports. Replace the addresses with those of your router. A rename of a running router's port
-# changes every document that names the port in the same delivery, its Network, firewall zone and
-# the management interfaces among them, best with chalkctl config apply --try.
+# the ports. These are the MACs vm/vm.sh gives the VM; on real hardware put the ports' MACs, which
+# the addresses diagnostic shows. A rename of a running router's port changes every document that
+# names the port in the same delivery, its Network, firewall zone and the management interfaces
+# among them, best with chalkctl config apply --try.
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Link
 metadata: {name: 10-wan}
@@ -24,21 +25,25 @@ spec:
   match: {permanentMACAddress: "02:00:00:00:01:02"}
   link: {name: fabric}
 ---
-# Replace the disk with the router's own, by its path below /dev/disk/by-id.
+# The system disk by its serial, which vm/vm.sh gives the VM's disk. On real hardware put the
+# SSD's serial, which chalkctl disks shows.
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: SystemDisk
 metadata: {name: system}
 spec:
-  disk: {path: /dev/disk/by-id/nvme-EXAMPLE_SSD_router}
+  disk: {serial: chalkos-router}
 ---
 # The home network gives wan an IPv4 address and the default route. The router takes no router
-# advertisements there, so the fabric's prefix stays the one IPv6 network it has.
+# advertisements there, so the fabric's prefix stays the one IPv6 network it has. Its MAC address
+# is its DHCP client identifier, so the lease reserved for that MAC, on the lab's WAN network or
+# the home router, matches.
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network
 metadata: {name: 10-wan}
 spec:
   match: {name: wan}
   network: {dhcp: ipv4, ipv6AcceptRA: false}
+  dhcpv4: {clientIdentifier: mac}
 ---
 # The fabric's two addresses, ::1 and ::2, to which each node's two ports run a BGP session each,
 # and its router advertisements: the prefix, from which each node's ports take their addresses,
