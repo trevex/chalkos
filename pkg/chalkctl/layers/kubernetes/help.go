@@ -88,7 +88,9 @@ other one that answers. --refresh lists a node revoked already as revoked now, a
 handed certificates while revoked, so it stays listed until they expire. A control plane
 refreshes it, also its own revocation without --allow-control-plane: --via, or the first one
 that answers, the node itself last. Commands run with --ignore-revoked refresh by themselves, and
-say when they could not.`
+say when they could not. When the secrets file records the node's revocation as not refreshed,
+--refresh retries it as those commands do: it revokes the node again if the list dropped it since,
+and clears the record.`
 
 const nodeRevokeExample = `  # Cut off w1, which was removed from the cluster.
   chalkctl node revoke w1
@@ -109,6 +111,11 @@ old node does not come back by itself: its kubelet registers its Node once as it
 it with chalkctl node reboot --no-drain, as its Node is gone and holds nothing to drain, or restart
 its kubelet.
 
+With the secrets file, the command also drops the node from the revocations the file records as
+not refreshed, which would revoke it again, and does so for a node the list dropped already. The
+secrets file from standard input cannot be written back and a client file holds no record, so
+with either the command warns that the record may still hold the node.
+
 A control plane unrevokes the node: --via, or the first one that answers.`
 
 const nodeUnrevokeExample = `  # Reuse the name w1 once the rotations of os-ca and kubernetes-ca have finished.
@@ -123,7 +130,8 @@ all expired, and those revoked before both the OS CA and the Kubernetes CA that 
 trusts were made, as no CA it trusts vouches for their old certificates. chalkctl rotate os-ca
 --finish and chalkctl rotate kubernetes-ca --finish prune the same way once every node applied the
 finish; run this command when that prune failed. Each control plane drops the expired nodes by
-itself once a day.
+itself once a day, also those the secrets file records as not refreshed: the next command that
+retries their refresh revokes those it notes as listed again.
 
 With the secrets file, the command refuses while the file records a rotation of the OS CA or the
 Kubernetes CAs: a node that has not applied its finish may still trust the old CA. A client file

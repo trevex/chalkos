@@ -240,14 +240,15 @@ type Host interface {
 	// the roots it verifies the nodes' certificates by. role is the role the credentials grant.
 	ClientTLS(ctx context.Context, f NodeFlags) (config *tls.Config, role pki.Role, err error)
 	// RetryRefresh refreshes again, through the plugin of the layer called layer and through
-	// nodes, the revocations of the layer that the secrets file records as not refreshed, and
-	// records which are left. Its error names those left. Without the secrets file, as with a
-	// client file, it does nothing.
-	RetryRefresh(ctx context.Context, f NodeFlags, nodes Nodes, layer string) error
-	// Refreshed drops the revocation of node by the layer called layer from those the secrets
-	// file records as not refreshed, once it was refreshed or the node unrevoked. Without the
-	// secrets file, as with a client file, it does nothing.
-	Refreshed(ctx context.Context, f NodeFlags, layer, node string) error
+	// nodes, the revocations of the layer that the secrets file records as not refreshed, only
+	// node's when node is set, and records which are left. Its error names those left. Without
+	// the secrets file, as with a client file, it does nothing.
+	RetryRefresh(ctx context.Context, f NodeFlags, nodes Nodes, layer, node string) error
+	// Unrevoked drops the revocation of node by the layer called layer from those the secrets
+	// file records as not refreshed, once the node was unrevoked. Its error says why the record
+	// may still hold it, as when the secrets file comes from standard input. Without the secrets
+	// file, as with a client file, it does nothing.
+	Unrevoked(ctx context.Context, f NodeFlags, layer, node string) error
 }
 
 // Cluster is what chalkctl knows of the cluster from its inventory.
@@ -280,6 +281,9 @@ type Target interface {
 	// Nodes reaches the cluster's nodes with the target's credentials, each at the address
 	// --address gave for it or else at the inventory's.
 	Nodes() Nodes
+	// Unrefreshed are the nodes whose revocations by the layer called layer the secrets file
+	// records as not refreshed; none with a client file.
+	Unrefreshed(layer string) []string
 }
 
 // Nodes reaches the nodes of a cluster with one set of credentials.

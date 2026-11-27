@@ -13,7 +13,6 @@ import (
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
-	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/internal/strs"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/layers"
@@ -86,13 +85,14 @@ func installStatus(status statusFunc) statusFunc {
 
 // AdmitInstall refuses to install a node under a name a control plane lists as revoked, or
 // while control planes were bootstrapped and none says which nodes are revoked, as installStatus
-// reads them.
+// reads them, or while the secrets file records its revocation as not refreshed.
 func (p *Plugin) AdmitInstall(ctx context.Context, t layer.Target) error {
 	return admit(ctx, t, t.Name(), installStatus(nodeStatusOf(t.Nodes().Call)), "install installs "+t.Name())
 }
 
 // Admit refuses to deliver the target what the secrets file issues it, which does says, while
-// a control plane lists it as revoked or while no control plane says which nodes are.
+// a control plane lists it as revoked, while no control plane says which nodes are, or while the
+// secrets file records its revocation as not refreshed.
 func (p *Plugin) Admit(ctx context.Context, t layer.Target, does string) error {
 	status := nodeStatusOf(t.Nodes().Call)
 	// The target is reached where the command reaches it, the others where the inventory says.
@@ -106,7 +106,9 @@ func (p *Plugin) Admit(ctx context.Context, t layer.Target, does string) error {
 }
 
 // admit refuses what does says while a control plane other than skip lists the target as
-// revoked, or while none of them says which nodes are.
+// revoked, or while none of them says which nodes are. It refuses too while the secrets file
+// records the target's revocation as not refreshed: the list may have dropped it by its expiry
+// since, while what it was handed is valid.
 func admit(ctx context.Context, t layer.Target, skip string, status statusFunc, does string) error {
 	controlPlanes, err := nodesOf(t.Cluster(), k8s.KindControlPlane, skip)
 	if err != nil {
@@ -116,8 +118,14 @@ func admit(ctx context.Context, t layer.Target, skip string, status statusFunc, 
 	if err != nil {
 		return fmt.Errorf("%w; %s only once one does, or with --ignore-revoked", err, does)
 	}
-	if n, ok := list[t.Name()]; ok {
-		return fmt.Errorf("%s is revoked %s, and %s only once chalkctl node unrevoke %s lets it back in, or with --ignore-revoked", t.Name(), kubernetesview.RevokedSince(n), does, t.Name())
+	name := t.Name()
+	if n, ok := list[name]; ok {
+		return fmt.Errorf("%s is revoked %s, and %s only once chalkctl node unrevoke %s lets it back in, or with --ignore-revoked", name, kubernetesview.RevokedSince(n), does, name)
+	}
+	if slices.Contains(t.Unrefreshed(layers.Kubernetes), name) {
+		return fmt.Errorf("the secrets file records the revocation of %s as not refreshed, so the revoked nodes may have dropped it by its expiry; "+
+			"%s only once %s lists it again and clears the record, or chalkctl node unrevoke %s with the secrets file lets it back in, or with --ignore-revoked",
+			name, does, refreshCommand(name), name)
 	}
 	return nil
 }
@@ -244,8 +252,9 @@ func refreshRevocation(ctx context.Context, nodes layer.Nodes, via []string, nam
 	if err != nil {
 		return "", fmt.Errorf("it was dropped from the revoked nodes, and revoking it again failed: %w", err)
 	}
-	return fmt.Sprintf("revoked node %s again (since %s): it was dropped from the revoked nodes after it was handed certificates while revoked",
-		name, resp.RevokedAt.AsTime().UTC().Format(time.RFC3339)), nil
+	return fmt.Sprintf("revoked node %s again (since %s): it was handed certificates while revoked, then dropped from the revoked nodes, pruned or unrevoked; "+
+		"if it was unrevoked deliberately, run chalkctl node unrevoke %s with the secrets file",
+		name, resp.RevokedAt.AsTime().UTC().Format(time.RFC3339), name), nil
 }
 
 // notRefreshedError is the error of a refresh that failed for the revoked nodes, each for why.
@@ -272,16 +281,4 @@ func unknownRevoked(names []string, err error) error {
 // refreshCommand is the command that refreshes the revocation of node.
 func refreshCommand(node string) string {
 	return "chalkctl node revoke " + node + " --refresh"
-}
-
-// unrefreshedOf are the nodes whose revocations by the Kubernetes layer the secrets file records as
-// not refreshed.
-func unrefreshedOf(s clustersecrets.Secrets) []string {
-	var names []string
-	for _, u := range s.Unrefreshed {
-		if u.Layer == layers.Kubernetes {
-			names = append(names, u.Node)
-		}
-	}
-	return names
 }

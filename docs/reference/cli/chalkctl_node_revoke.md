@@ -30,7 +30,9 @@ other one that answers. --refresh lists a node revoked already as revoked now, a
 handed certificates while revoked, so it stays listed until they expire. A control plane
 refreshes it, also its own revocation without --allow-control-plane: --via, or the first one
 that answers, the node itself last. Commands run with --ignore-revoked refresh by themselves, and
-say when they could not.
+say when they could not. When the secrets file records the node's revocation as not refreshed,
+--refresh retries it as those commands do: it revokes the node again if the list dropped it since,
+and clears the record.
 
 The command needs an admin client file or the secrets file.
 

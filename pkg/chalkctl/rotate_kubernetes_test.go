@@ -532,7 +532,7 @@ func TestRotateIgnoreRevokedRevokesAgain(t *testing.T) {
 	if events := l.takeEvents(); !slices.Contains(events, "cp1 revoke w1") {
 		t.Errorf("events %v, want w1 revoked again", events)
 	}
-	if out := l.ta.stdout.String(); !strings.Contains(out, "revoked node w1 again (since 2026-10-23T13:00:00Z): it was dropped from the revoked nodes") {
+	if out := l.ta.stdout.String(); !strings.Contains(out, "revoked node w1 again (since 2026-10-23T13:00:00Z): it was handed certificates while revoked, then dropped from the revoked nodes, pruned or unrevoked; if it was unrevoked deliberately, run chalkctl node unrevoke w1 with the secrets file") {
 		t.Errorf("stdout = %q", out)
 	}
 }

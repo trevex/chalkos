@@ -33,6 +33,7 @@ import (
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
+	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/sdk/sdktest"
 )
 
@@ -663,6 +664,130 @@ func TestRefreshAndUnrevokeClearTheRecord(t *testing.T) {
 	}
 	if got := ta.secretsFile(t).Unrefreshed; got != nil {
 		t.Errorf("after the unrevoke of w2 the secrets file records %v", got)
+	}
+}
+
+// node unrevoke warns when the secrets file may still record the node's revocation as not
+// refreshed, which would revoke it again: the secrets file from standard input cannot be written
+// back, and a client file cannot read it. With the secrets file, unrevoking the node, though no
+// longer listed, clears the record.
+func TestUnrevokeWarnsOfTheRecordItLeaves(t *testing.T) {
+	ta := newTestApp(t)
+	addr, cs := revokeNode(t, ta)
+	ctx := context.Background()
+	still := "the next refresh revokes it again; run chalkctl node unrevoke w1 with the secrets file"
+	record := []clustersecrets.Unrefreshed{{Layer: "kubernetes", Node: "w1", Listed: true}}
+	ta.recordUnrefreshed(t, record)
+	data, err := os.ReadFile(filepath.Join(ta.dir, "secrets.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := revoked.Revoke(ctx, cs, "w1", revokedAt); err != nil {
+		t.Fatal(err)
+	}
+	ta.stdin = bytes.NewReader(data)
+	if err := ta.run(ctx, ta.args([]string{"node", "unrevoke", "w1", "--via", "n1", "--allow-old-ca", "--secrets", "-"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if got := ta.stderr.String(); !strings.Contains(got, "the secrets file still records w1; "+still) {
+		t.Errorf("with --secrets -: stderr = %q", got)
+	}
+
+	ta.stderr.Reset()
+	if _, err := revoked.Revoke(ctx, cs, "w1", revokedAt); err != nil {
+		t.Fatal(err)
+	}
+	admin := ta.writeConfig(t, "alice", pki.RoleAdmin, 24*time.Hour, time.Now())
+	if err := ta.run(ctx, ta.args([]string{"node", "unrevoke", "w1", "--via", "n1", "--allow-old-ca", "--config", admin}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if got := ta.stderr.String(); !strings.Contains(got, "a client file cannot clear the secrets file's record of the revocations not refreshed: if it records w1, "+still) {
+		t.Errorf("with a client file: stderr = %q", got)
+	}
+	if got := ta.secretsFile(t).Unrefreshed; !slices.Equal(got, record) {
+		t.Fatalf("the secrets file records %v, want %v", got, record)
+	}
+
+	// w1 is no longer listed; only the record would revoke it again.
+	ta.stdout.Reset()
+	if err := ta.run(ctx, ta.args([]string{"node", "unrevoke", "w1", "--via", "n1"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := ta.stdout.String(), "node w1 is not revoked; dropped it from the revocations the secrets file records as not refreshed, so no refresh revokes it again\n"; got != want {
+		t.Errorf("stdout = %q, want %q", got, want)
+	}
+	if got := ta.secretsFile(t).Unrefreshed; got != nil {
+		t.Errorf("the secrets file still records %v", got)
+	}
+	if err := ta.run(ctx, ta.args([]string{"node", "unrevoke", "w1", "--via", "n1"}, addr)); err == nil || !strings.Contains(err.Error(), "node w1 is not revoked") {
+		t.Errorf("unrevoking w1 without a record: %v", err)
+	}
+}
+
+// node renew refuses a node whose revocation the secrets file records as not refreshed, as the
+// revoked nodes may have dropped it by its expiry, unless --ignore-revoked; node revoke --refresh
+// lists such a node again and clears the record.
+func TestAdmitRefusesARecordedNode(t *testing.T) {
+	ta := newTestApp(t)
+	addr, cs := revokeNode(t, ta)
+	ctx := context.Background()
+	ta.recordUnrefreshed(t, []clustersecrets.Unrefreshed{{Layer: "kubernetes", Node: "n1"}})
+	err := ta.run(ctx, ta.args([]string{"node", "renew", "n1"}, addr))
+	if err == nil || !strings.Contains(err.Error(), "the secrets file records the revocation of n1 as not refreshed") ||
+		!strings.Contains(err.Error(), "chalkctl node revoke n1 --refresh") || !strings.Contains(err.Error(), "chalkctl node unrevoke n1 with the secrets file") ||
+		!strings.Contains(err.Error(), "--ignore-revoked") {
+		t.Errorf("renewing n1: %v, want the record named", err)
+	}
+	// The retry after the renewal reads that n1 is not revoked, and clears the record.
+	if err := ta.run(ctx, ta.args([]string{"node", "renew", "n1", "--ignore-revoked"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if got := ta.secretsFile(t).Unrefreshed; got != nil {
+		t.Errorf("the secrets file still records %v", got)
+	}
+
+	// w1 was listed when it was handed certificates, then dropped.
+	ta.recordUnrefreshed(t, []clustersecrets.Unrefreshed{{Layer: "kubernetes", Node: "w1", Listed: true}})
+	ta.stdout.Reset()
+	if err := ta.run(ctx, ta.args([]string{"node", "revoke", "w1", "--via", "n1", "--refresh"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if list, _ := revoked.Load(ctx, cs); list["w1"].IsZero() {
+		t.Errorf("revoked nodes %v, want w1 listed again", list)
+	}
+	if got := ta.stdout.String(); !strings.HasPrefix(got, "revoked node w1 again") {
+		t.Errorf("stdout = %q", got)
+	}
+	if got := ta.secretsFile(t).Unrefreshed; got != nil {
+		t.Errorf("the secrets file still records %v", got)
+	}
+}
+
+// A refresh with the secrets file from standard input says that the record it cannot write back
+// still holds the revocations it refreshed.
+func TestRefreshFromStdinNotesTheRecord(t *testing.T) {
+	ta := newTestApp(t)
+	addr, cs := revokeNode(t, ta)
+	ctx := context.Background()
+	if _, err := revoked.Revoke(ctx, cs, "w1", revokedAt); err != nil {
+		t.Fatal(err)
+	}
+	ta.recordUnrefreshed(t, []clustersecrets.Unrefreshed{{Layer: "kubernetes", Node: "w1", Listed: true}})
+	data, err := os.ReadFile(filepath.Join(ta.dir, "secrets.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ta.stdin = bytes.NewReader(data)
+	if err := ta.run(ctx, ta.args([]string{"node", "revoke", "w1", "--via", "n1", "--refresh", "--secrets", "-"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if list, _ := revoked.Load(ctx, cs); !list["w1"].After(revokedAt) {
+		t.Errorf("revoked nodes %v, want w1 refreshed", list)
+	}
+	want := "chalkctl: warning: the secrets file from standard input cannot be written back, so its record of the revocations not refreshed still holds w1; a refresh retried with the secrets file clears the record\n"
+	if got := ta.stderr.String(); got != want {
+		t.Errorf("stderr = %q, want %q", got, want)
 	}
 }
 

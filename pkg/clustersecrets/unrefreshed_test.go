@@ -65,3 +65,13 @@ func TestUnrefreshedRoundTrip(t *testing.T) {
 		t.Errorf("read back %v, want %v", read.Unrefreshed, s.Unrefreshed)
 	}
 }
+
+func TestUnrefreshedOf(t *testing.T) {
+	s := Secrets{Unrefreshed: []Unrefreshed{{Layer: "kubernetes", Node: "w1"}, {Layer: "kubernetes", Node: "w2"}, {Layer: "router", Node: "r1"}}}
+	if got := s.UnrefreshedOf("kubernetes"); !slices.Equal(got, []string{"w1", "w2"}) {
+		t.Errorf("kubernetes: %v, want w1 and w2", got)
+	}
+	if got := s.UnrefreshedOf("other"); got != nil {
+		t.Errorf("other: %v, want none", got)
+	}
+}

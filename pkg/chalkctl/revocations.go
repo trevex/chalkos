@@ -8,6 +8,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
+	"github.com/trevex/chalkos/pkg/internal/strs"
 )
 
 // revocationLayer is a compiled plugin whose layer lists revoked nodes, with the layer's name.
@@ -114,7 +115,7 @@ func (a *app) refreshAndRecord(ctx context.Context, sf layer.SecretsFlags, nodes
 	if rerr := a.recordRefreshes(ctx, sf, tried, left); rerr != nil {
 		if len(left) == 0 {
 			// Every revocation is refreshed; the next retry finds them refreshed and drops them.
-			fmt.Fprintf(a.stderr, "chalkctl: warning: %v\n", rerr)
+			fmt.Fprintf(a.stderr, "chalkctl: warning: %v; a refresh retried with the secrets file clears the record\n", rerr)
 			return nil
 		}
 		return errors.Join(err, rerr)
@@ -129,13 +130,27 @@ func (a *app) refreshAndRecord(ctx context.Context, sf layer.SecretsFlags, nodes
 const recordedNote = "the secrets file records the revocations not refreshed; chalkctl prunes none of a layer's revoked nodes while it records one, and refreshes them again first"
 
 // recordRefreshes records in the secrets file sf names that the revocations tried were refreshed
-// but for those left, keeping what other commands recorded since it was read.
+// but for those left, keeping what other commands recorded since it was read. The secrets file
+// from standard input records nothing: it fails while one is left, or while it records one tried.
 func (a *app) recordRefreshes(ctx context.Context, sf layer.SecretsFlags, tried, left []clustersecrets.Unrefreshed) error {
 	if sf.Path == "-" {
-		if len(left) == 0 {
+		if len(left) > 0 {
+			return errors.New("the secrets file from standard input cannot record the revocations not refreshed; refresh them before the revoked nodes are pruned")
+		}
+		s, err := a.loadSecrets(ctx, sf)
+		if err != nil {
+			return err
+		}
+		var kept []string
+		for _, u := range tried {
+			if slices.ContainsFunc(s.Unrefreshed, func(r clustersecrets.Unrefreshed) bool { return r.Layer == u.Layer && r.Node == u.Node }) {
+				kept = append(kept, u.Node)
+			}
+		}
+		if len(kept) == 0 {
 			return nil
 		}
-		return errors.New("the secrets file from standard input cannot record the revocations not refreshed; refresh them before the revoked nodes are pruned")
+		return fmt.Errorf("the secrets file from standard input cannot be written back, so its record of the revocations not refreshed still holds %s", strs.And(kept))
 	}
 	file, err := a.openSecrets(ctx, sf, changeFlags{})
 	if err != nil {
@@ -154,18 +169,19 @@ func (a *app) recordRefreshes(ctx context.Context, sf layer.SecretsFlags, tried,
 	return nil
 }
 
-// RetryRefresh refreshes the layer's revocations the secrets file records as not refreshed.
-func (h host) RetryRefresh(ctx context.Context, f layer.NodeFlags, nodes layer.Nodes, name string) error {
-	recorded, err := h.recorded(ctx, f, func(u clustersecrets.Unrefreshed) bool { return u.Layer == name })
+// RetryRefresh refreshes the layer's revocations the secrets file records as not refreshed, only
+// node's when node is set.
+func (h host) RetryRefresh(ctx context.Context, f layer.NodeFlags, nodes layer.Nodes, name, node string) error {
+	recorded, err := h.recorded(ctx, f, func(u clustersecrets.Unrefreshed) bool { return u.Layer == name && (node == "" || u.Node == node) })
 	if err != nil || len(recorded) == 0 {
 		return err
 	}
 	return h.a.refreshAndRecord(ctx, f.Secrets, nodes, refreshes{}, recorded)
 }
 
-// Refreshed drops the layer's revocation of node from those the secrets file records as not
+// Unrevoked drops the layer's revocation of node from those the secrets file records as not
 // refreshed.
-func (h host) Refreshed(ctx context.Context, f layer.NodeFlags, name, node string) error {
+func (h host) Unrevoked(ctx context.Context, f layer.NodeFlags, name, node string) error {
 	recorded, err := h.recorded(ctx, f, func(u clustersecrets.Unrefreshed) bool { return u.Layer == name && u.Node == node })
 	if err != nil || len(recorded) == 0 {
 		return err

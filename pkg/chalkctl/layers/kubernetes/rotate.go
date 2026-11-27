@@ -18,6 +18,7 @@ import (
 	"github.com/trevex/chalkos/pkg/internal/strs"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
+	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/pki"
 	sdkkubernetes "github.com/trevex/chalkos/pkg/sdk/layers/kubernetes"
 	kubernetesview "github.com/trevex/chalkos/pkg/statusview/layers/kubernetes"
@@ -82,7 +83,7 @@ func (p *Plugin) PruneRevoked(ctx context.Context, r layer.Rotating, kind cluste
 	if kind != clustersecrets.RotateOSCA && kind != clustersecrets.RotateKubernetesCA || len(rotatingNodesOf(r, k8s.KindControlPlane)) == 0 {
 		return nil
 	}
-	if names := unrefreshedOf(r.Secrets()); len(names) > 0 {
+	if names := r.Secrets().UnrefreshedOf(layers.Kubernetes); len(names) > 0 {
 		return fmt.Errorf("the secrets file records the revocations of %s as not refreshed after they were handed certificates, and pruning could drop them while those are valid; "+
 			"refresh each with %s, then prune with chalkctl node prune-revoked", strs.And(names), refreshCommand("<node>"))
 	}

@@ -50,3 +50,15 @@ func (s *Secrets) RecordRefreshes(tried, left []Unrefreshed) bool {
 	s.Unrefreshed = record
 	return true
 }
+
+// UnrefreshedOf are the nodes whose revocations by the layer called layer Unrefreshed records, in
+// name order.
+func (s Secrets) UnrefreshedOf(layer string) []string {
+	var names []string
+	for _, u := range s.Unrefreshed {
+		if u.Layer == layer {
+			names = append(names, u.Node)
+		}
+	}
+	return names
+}

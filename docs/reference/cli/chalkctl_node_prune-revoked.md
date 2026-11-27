@@ -14,7 +14,8 @@ all expired, and those revoked before both the OS CA and the Kubernetes CA that 
 trusts were made, as no CA it trusts vouches for their old certificates. chalkctl rotate os-ca
 --finish and chalkctl rotate kubernetes-ca --finish prune the same way once every node applied the
 finish; run this command when that prune failed. Each control plane drops the expired nodes by
-itself once a day.
+itself once a day, also those the secrets file records as not refreshed: the next command that
+retries their refresh revokes those it notes as listed again.
 
 With the secrets file, the command refuses while the file records a rotation of the OS CA or the
 Kubernetes CAs: a node that has not applied its finish may still trust the old CA. A client file

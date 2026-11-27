@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -71,17 +72,29 @@ func nodeRevoke(h layer.Host, ctx context.Context, f revokeFlags, pos []string) 
 
 // nodeRefresh is node revoke --refresh: it changes the time of a node revoked already, whose
 // certificates no control plane renews, so it reads no control plane's list first. A control
-// plane refreshes its own revocation too, asked last, as RefreshRevoked asks it.
+// plane refreshes its own revocation too, asked last, as RefreshRevoked asks it. A revocation the
+// secrets file records as not refreshed is refreshed as a retry of the record refreshes it, which
+// revokes the node again when the list dropped it since, and clears the record.
 func nodeRefresh(h layer.Host, ctx context.Context, f viaFlags, name string) error {
+	recorded, err := recordsUnrefreshed(h, ctx, f.node, name)
+	if err != nil {
+		return err
+	}
+	if recorded {
+		nodes, err := h.Nodes(ctx, f.node, f.via)
+		if err != nil {
+			return err
+		}
+		return h.RetryRefresh(ctx, f.node, nodes, layers.Kubernetes, name)
+	}
 	var resp *kubernetesv1.RevokeNodeResponse
-	err := throughControlPlaneLast(h, ctx, f, name, layer.Fetch(&resp, func(conn *client.Conn) (*kubernetesv1.RevokeNodeResponse, error) {
+	err = throughControlPlaneLast(h, ctx, f, name, layer.Fetch(&resp, func(conn *client.Conn) (*kubernetesv1.RevokeNodeResponse, error) {
 		return sdkkubernetes.RefreshRevocation(ctx, conn, name)
 	}))
 	if err != nil {
 		return err
 	}
 	fmt.Fprintln(h.Stdout(), refreshedLine(name, resp))
-	forgetUnrefreshed(h, ctx, f.node, name)
 	return nil
 }
 
@@ -229,13 +242,26 @@ func nodeUnrevokeCommand(h layer.Host) *cobra.Command {
 }
 
 func nodeUnrevoke(h layer.Host, ctx context.Context, f viaFlags, pos []string) error {
+	name := pos[0]
 	if err := keepsRevokedNodes(h, ctx, f); err != nil {
 		return err
 	}
 	var resp *kubernetesv1.UnrevokeNodeResponse
 	err := throughControlPlane(h, ctx, f, "", layer.Fetch(&resp, func(conn *client.Conn) (*kubernetesv1.UnrevokeNodeResponse, error) {
-		return sdkkubernetes.Client(conn).UnrevokeNode(ctx, &kubernetesv1.UnrevokeNodeRequest{Node: pos[0], Force: f.override})
+		return sdkkubernetes.Client(conn).UnrevokeNode(ctx, &kubernetesv1.UnrevokeNodeRequest{Node: name, Force: f.override})
 	}))
+	if sdkkubernetes.NotRevoked(err) {
+		// The list may have dropped the node, by its expiry, while the secrets file records its
+		// revocation as not refreshed: only the record would revoke it again.
+		if recorded, rerr := recordsUnrefreshed(h, ctx, f.node, name); rerr != nil || !recorded {
+			return errors.Join(err, rerr)
+		}
+		if !forgetUnrevoked(h, ctx, f.node, name) {
+			return err
+		}
+		fmt.Fprintf(h.Stdout(), "node %s is not revoked; dropped it from the revocations the secrets file records as not refreshed, so no refresh revokes it again\n", name)
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -243,9 +269,8 @@ func nodeUnrevoke(h layer.Host, ctx context.Context, f viaFlags, pos []string) e
 	if resp.RevokedAt != nil {
 		at = resp.RevokedAt.AsTime()
 	}
-	fmt.Fprintln(h.Stdout(), unrevokedLine(pos[0], at, resp.StaleCas))
-	// An unrevoked node is no longer refreshed, nor revoked again.
-	forgetUnrefreshed(h, ctx, f.node, pos[0])
+	fmt.Fprintln(h.Stdout(), unrevokedLine(name, at, resp.StaleCas))
+	forgetUnrevoked(h, ctx, f.node, name)
 	return nil
 }
 
@@ -313,7 +338,7 @@ func nodePruneRevoked(h layer.Host, ctx context.Context, f viaFlags) error {
 // still trust the old CA, to which the certificates of a node revoked before the new one chain. A
 // client file records no rotation.
 func noCARotation(h layer.Host, ctx context.Context, f layer.NodeFlags) error {
-	if f.Secrets.Path == "" || f.Config != "" {
+	if clientFile(f) {
 		return nil
 	}
 	s, err := h.Secrets(ctx, f.Secrets)
@@ -341,24 +366,49 @@ type revokeFlags struct {
 // command authenticates with it, and refuses to prune while one is left: pruning may drop that
 // node while the certificates it was handed are valid.
 func retryRefresh(h layer.Host, ctx context.Context, f viaFlags) error {
-	if f.node.Secrets.Path == "" || f.node.Config != "" {
+	if clientFile(f.node) {
 		return nil
 	}
 	nodes, err := h.Nodes(ctx, f.node, f.via)
 	if err != nil {
 		return err
 	}
-	if err := h.RetryRefresh(ctx, f.node, nodes, layers.Kubernetes); err != nil {
+	if err := h.RetryRefresh(ctx, f.node, nodes, layers.Kubernetes, ""); err != nil {
 		return fmt.Errorf("%w; node prune-revoked prunes once every revocation the secrets file records as not refreshed is refreshed", err)
 	}
 	return nil
 }
 
-// forgetUnrefreshed drops the node from the revocations the secrets file records as not
-// refreshed, and warns when that fails: the command did what it was asked, and the next retry
-// of the refresh drops it.
-func forgetUnrefreshed(h layer.Host, ctx context.Context, f layer.NodeFlags, name string) {
-	if err := h.Refreshed(ctx, f, layers.Kubernetes, name); err != nil {
-		fmt.Fprintf(h.Stderr(), "chalkctl: warning: %v\n", err)
+// clientFile reports whether the command authenticates with a client file, which records no
+// revocations.
+func clientFile(f layer.NodeFlags) bool { return f.Secrets.Path == "" || f.Config != "" }
+
+// recordsUnrefreshed reports whether the secrets file, when the command authenticates with it,
+// records the node's revocation as not refreshed.
+func recordsUnrefreshed(h layer.Host, ctx context.Context, f layer.NodeFlags, name string) (bool, error) {
+	if clientFile(f) {
+		return false, nil
 	}
+	s, err := h.Secrets(ctx, f.Secrets)
+	if err != nil {
+		return false, err
+	}
+	return slices.Contains(s.UnrefreshedOf(layers.Kubernetes), name), nil
+}
+
+// forgetUnrevoked drops the unrevoked node from the revocations the secrets file records as not
+// refreshed, and reports whether the record no longer holds it. While the record holds it, the
+// next refresh finds it unlisted and revokes it again, so it warns when the record may still hold
+// it: when dropping it failed, and with a client file, which cannot read the record.
+func forgetUnrevoked(h layer.Host, ctx context.Context, f layer.NodeFlags, name string) bool {
+	again := fmt.Sprintf("the next refresh revokes it again; run chalkctl node unrevoke %s with the secrets file", name)
+	if clientFile(f) {
+		fmt.Fprintf(h.Stderr(), "chalkctl: warning: a client file cannot clear the secrets file's record of the revocations not refreshed: if it records %s, %s\n", name, again)
+		return false
+	}
+	if err := h.Unrevoked(ctx, f, layers.Kubernetes, name); err != nil {
+		fmt.Fprintf(h.Stderr(), "chalkctl: warning: %v: the secrets file still records %s; %s\n", err, name, again)
+		return false
+	}
+	return true
 }
