@@ -77,7 +77,8 @@ fails with `whether w1 is revoked is unknown, ...`, and the secrets file records
 as not refreshed. Once the API server answers, `chalkctl node prune-revoked`, rotate and the next
 command with `--ignore-revoked` refresh it first; `chalkctl node revoke w1 --refresh` retries it
 by hand. While the record holds w1, `chalkctl node renew w1` refuses it without
-`--ignore-revoked`, as the daily expiry prune may have dropped it from the revoked nodes.
+`--ignore-revoked`, and rotate skips it, as a prune that read no record may have dropped it from
+the revoked nodes.
 
 A node whose image runs no Kubernetes has no control plane to ask. Renew its certificate with
 `chalkctl node renew` once a year, before it expires:

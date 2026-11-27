@@ -234,21 +234,23 @@ revoked nodes:
 ```
 
 The list has room for about 2,000 short names, because the API server compiles the admission
-policy only up to a length. A control plane drops a revoked node from the list by itself once
-the node's certificates have all expired, a year and a day after the revocation by default. The
-finishes of `chalkctl rotate os-ca` and `chalkctl rotate kubernetes-ca` drop every node revoked
-before both rotations, as [Reuse a removed node's name](#reuse-a-removed-nodes-name) describes.
+policy only up to a length. Control planes drop no revoked node by themselves.
+[`chalkctl node prune-revoked`](../reference/cli/chalkctl_node_prune-revoked.md) drops each node
+whose certificates have all expired, a year and a day after the revocation by default. The
+finishes of `chalkctl rotate os-ca` and `chalkctl rotate kubernetes-ca` drop those too, and every
+node revoked before both rotations, as [Reuse a removed node's name](#reuse-a-removed-nodes-name)
+describes.
 Once the list is more than 80% full, `chalkctl status` adds a line under `revoked nodes:`:
 
 ```text
-  the list is 83% full; rotate the CAs with chalkctl rotate os-ca and chalkctl rotate kubernetes-ca, each to its finish, which drops the nodes revoked before both
+  the list is 83% full; drop the expired revocations with chalkctl node prune-revoked, or rotate the CAs with chalkctl rotate os-ca and chalkctl rotate kubernetes-ca, each to its finish, which drops the nodes revoked before both
 ```
 
 The status summary counts it as the problem `revoked nodes list 83% full`, and
 `chalkctl node revoke` prints `the revoked nodes fill 83% of their room;` with the same advice
-after the revocation. Rotate the OS CA and the Kubernetes CA to make room. A control plane refuses
-a revocation that would overfill the list, with the same advice and the reason
-`REVOKED_LIST_FULL`.
+after the revocation. Run `chalkctl node prune-revoked` to make room, and rotate the OS CA and the
+Kubernetes CA when that is not enough. A control plane refuses a revocation that would overfill
+the list, with the same advice and the reason `REVOKED_LIST_FULL`.
 
 The revoked node keeps its certificates until they expire, and the API server still answers its
 kubelet's reads. [What revoking a node cuts off](../how-it-works/kubernetes/certificates.md#revoking-a-node-cuts-off-its-writes-and-renewals)

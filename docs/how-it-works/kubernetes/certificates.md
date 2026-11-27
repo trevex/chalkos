@@ -182,8 +182,9 @@ revoked nodes:
 ```
 
 [`chalkctl node revoke`](../../reference/cli/chalkctl_node_revoke.md) asks a control plane to add
-the node's name and the time to the ConfigMap `kube-system/chalkos-revoked-nodes`, and to delete
-the node's Node object. The list takes effect in three places:
+the node's name and the time, with the time its entry expires, to the ConfigMap
+`kube-system/chalkos-revoked-nodes`, and to delete the node's Node object. The list takes effect
+in three places:
 
 - A control plane's RenewNodeCertificate refuses a certificate that names a listed node. The
   node's status shows the refusal on its node certificate:
@@ -237,13 +238,15 @@ drops an entry in two cases:
 
 - Every certificate of the node has expired. A revoked node renews none, so its last certificate
   was issued at the revocation at the latest, or at the entry's refresh after a command with
-  `--ignore-revoked` handed it one, which sets the entry's time anew. The entry expires the longest validity after the
-  revocation, plus a day for a renewal in flight at that moment. chalkos issues node certificates
-  for a year, and the controller-manager signs kubelet client certificates for its
-  `cluster-signing-duration`, a year unless the Cluster's extra flags set it longer. With the
-  defaults, an entry expires a year and a day after the revocation. The control plane reads the
-  flag from the Cluster it runs now, so lowering the flag lets entries expire earlier, while the
-  certificates signed before keep the validity they were signed with.
+  `--ignore-revoked` handed it one, which sets the entry's time anew. chalkos issues node
+  certificates for a year, and the controller-manager signs kubelet client certificates for its
+  `cluster-signing-duration`, a year unless the Cluster's extra flags set it longer. When a
+  control plane revokes a node or refreshes its entry, it stores the entry's expiry in the entry:
+  the longer of the two validities after the entry's time, plus a day for a renewal in flight at
+  that moment. With the defaults, an entry expires a year and a day after the revocation. A later
+  revocation or refresh moves the expiry later, never earlier, so lowering the flag shortens no
+  stored expiry. An entry without a stored expiry, such as one written by hand, expires by the
+  flag that the control plane reads when it prunes.
 - The OS CA and the Kubernetes CA that the control plane trusts were both made after the
   revocation, so none of the node's certificates chains to a trusted CA. This is the check that
   `chalkctl node unrevoke` makes.
@@ -251,15 +254,11 @@ drops an entry in two cases:
 An entry revoked at an unknown time, such as one whose time was broken by a hand edit, matches
 neither case and stays until it is unrevoked.
 
-Each control plane drops expired entries by itself, through its own API server: when it revokes
-or unrevokes a node, when its loops start and once a day after that. This expiry prune drops
-entries that the secrets file records as not refreshed too, as
-[A command with --ignore-revoked refreshes the revocation](#a-command-with-ignore-revoked-refreshes-the-revocation)
-explains. It drops entries for rotated CAs only when PruneRevoked asks it to. The nodes apply the
-finish of a rotation one after another, and until every node has, one may still trust the old CA
-that a revoked node's certificates chain to. `chalkctl rotate os-ca --finish` and
-`chalkctl rotate kubernetes-ca --finish` call PruneRevoked through a control plane once every
-node confirmed the finish, and print what it dropped:
+Control planes drop no entry by themselves. Every prune goes through PruneRevoked, which chalkctl
+calls once it has checked the secrets file.
+[`chalkctl node prune-revoked`](../../reference/cli/chalkctl_node_prune-revoked.md) calls it to
+drop the expired entries. `chalkctl rotate os-ca --finish` and `chalkctl rotate kubernetes-ca --finish`
+call it through a control plane once every node confirmed the finish, and print what it dropped:
 
 ```text
 dropped 1 node from the revoked nodes, which nothing lets back in: w1
@@ -269,9 +268,11 @@ the revoked nodes fill 0% of their room
 The finish of the first of the two rotations drops no entry for the CAs, because the other CA is
 still older than the revocations. When this prune fails, the finish still completes, and chalkctl warns
 `the revoked nodes were not pruned: ...; once that is fixed, prune them with chalkctl node prune-revoked`.
-[`chalkctl node prune-revoked`](../../reference/cli/chalkctl_node_prune-revoked.md) calls
-PruneRevoked by hand. With the secrets file, it refuses while the file records a rotation of the
-OS CA or the Kubernetes CAs. A client file records no rotation, so with a client file the command
+PruneRevoked drops the entries for rotated CAs too, so call it only while no rotation runs: the
+nodes apply the finish of a rotation one after another, and until every node has, one may still
+trust the old CA that a revoked node's certificates chain to. With the secrets file,
+`chalkctl node prune-revoked` refuses while the file records a rotation of the OS CA or the
+Kubernetes CAs. A client file records no rotation, so with a client file the command
 cannot tell whether one runs.
 
 ### A command with --ignore-revoked refreshes the revocation
@@ -282,11 +283,11 @@ with `--ignore-revoked`. Both pruning rules count from the entry's time, and a c
 after it would outlive the entry. So such a command reads the list before it hands anything out,
 and once it has, also when the delivery failed, has a control plane refresh the entry of each
 node it found listed: RevokeNode with `refresh` sets the entry's time to now and applies the
-policy again. A node listed before the hand-out and dropped from the list since, as by the daily
-prune, is revoked again. When no control plane said beforehand which nodes are revoked, the
-command reads the list again afterwards. rotate reads before every phase and refreshes after it.
-The entry then expires a full validity after the last certificate the node got, and a CA made
-before the refresh lets no prune drop it. chalkctl prints each refresh:
+policy again. A node listed before the hand-out and dropped from the list since, as by a prune
+run meanwhile, is revoked again. When no control plane said beforehand which nodes are revoked,
+the command reads the list again afterwards. rotate reads before every phase and refreshes after
+it. The entry then expires a full validity after the last certificate the node got, and a CA
+made before the refresh lets no prune drop it. chalkctl prints each refresh:
 
 ```text
 refreshed the revocation of w1: revoked since 2026-11-27T18:00:00Z
@@ -306,12 +307,15 @@ under `unrefreshedRevocations`, so the record outlasts the run:
   later command run with `--ignore-revoked`, and drop those refreshed from the record.
 - While the record holds a node, rotate's finish prunes nothing and
   `chalkctl node prune-revoked` refuses.
-- The record does not hold back chalkd's daily expiry prune, which knows nothing of the secrets
-  file. A recorded node whose entry expires drops from the list. The record notes whether the node
-  was listed when it was handed certificates, and the next chalkctl command that retries the
-  refresh revokes a node noted as listed again. Until then, `chalkctl node renew`,
-  `chalkctl install` and `chalkctl config apply --kubernetes-share` refuse any recorded name,
-  unless run with `--ignore-revoked`.
+- A prune that does not read the record, as `chalkctl node prune-revoked` with a client file, may
+  drop a recorded node's entry. The record notes whether the node was listed when it was handed
+  certificates, and the next chalkctl command that retries the refresh revokes a node noted as
+  listed again. Until then, without `--ignore-revoked`, rotate skips and names any recorded node,
+  and `chalkctl node renew`, `chalkctl install` and `chalkctl config apply --kubernetes-share`
+  refuse it.
+- Each entry of the record carries the time chalkctl recorded it. A command clears only the
+  entries it read before it refreshed, so a failure that another command records for the same
+  node in the meantime stays recorded.
 - `chalkctl node revoke <node> --refresh` retries the node's recorded refresh: it refreshes the
   entry, or revokes the node again when the list dropped it, and clears the record.
 - `chalkctl node unrevoke <node>` drops the node from the record, also when the list dropped it
@@ -361,6 +365,11 @@ lists for every node, it leaves these:
   length and the limit, and `chalkctl node revoke` and `chalkctl status` warn once the list is more
   than 80% full. [Pruning drops entries that keep no node out](#pruning-drops-entries-that-keep-no-node-out)
   describes how the list shrinks.
+- An entry's expiry follows `cluster-signing-duration` as the control plane reads it when it
+  revokes or refreshes. A kubelet client certificate signed before the flag was lowered keeps its
+  longer validity, so a node revoked while it holds one can outlast its entry. After lowering the
+  flag, wait out the old validity before you prune, or rotate the Kubernetes CA, whose finish
+  leaves such a certificate chaining to no trusted CA.
 - Every rotation skips a revoked node left in the inventory, and other commands still reach it
   until it is removed from the inventory.
 - The cluster registry checks no revocation list, so a revoked node's certificate still pulls
