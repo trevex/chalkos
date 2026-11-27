@@ -84,10 +84,20 @@ The command first asks every other control plane whether it reads the revoked no
 while one does not answer or does not say it read them. --allow-control-plane revokes a control
 plane, an etcd member or the node --via names all the same, and --skip-read-check revokes the node
 without asking the other control planes. A control plane revokes the node: --via, or the first
-other one that answers.`
+other one that answers. --refresh lists a node revoked already as revoked now, as after it was
+handed certificates while revoked, so it stays listed until they expire. A control plane
+refreshes it, also its own revocation without --allow-control-plane: --via, or the first one
+that answers, the node itself last. Commands run with --ignore-revoked refresh by themselves, and
+say when they could not. When the secrets file records the node's revocation as not refreshed,
+--refresh retries it as those commands do: it revokes the node again if the list dropped it since,
+and clears the record.`
 
 const nodeRevokeExample = `  # Cut off w1, which was removed from the cluster.
-  chalkctl node revoke w1`
+  chalkctl node revoke w1
+
+  # Refresh the revocation of w1, which node renew --ignore-revoked handed a certificate, when the
+  # command said that it could not.
+  chalkctl node revoke w1 --refresh`
 
 const nodeUnrevokeLong = `Removes a node from the revoked nodes, so a node of that name may join the cluster again. The old
 node's certificates would work again too, so the control plane refuses while the OS CA or the
@@ -101,6 +111,11 @@ old node does not come back by itself: its kubelet registers its Node once as it
 it with chalkctl node reboot --no-drain, as its Node is gone and holds nothing to drain, or restart
 its kubelet.
 
+With the secrets file, the command also drops the node from the revocations the file records as
+not refreshed, which would revoke it again, and does so for a node the list dropped already. The
+secrets file from standard input cannot be written back and a client file holds no record, so
+with either the command warns that the record may still hold the node.
+
 A control plane unrevokes the node: --via, or the first one that answers.`
 
 const nodeUnrevokeExample = `  # Reuse the name w1 once the rotations of os-ca and kubernetes-ca have finished.
@@ -109,6 +124,28 @@ const nodeUnrevokeExample = `  # Reuse the name w1 once the rotations of os-ca a
   # Let the old w1 back in, certificates and all.
   chalkctl node unrevoke w1 --allow-old-ca
   chalkctl node reboot w1 --no-drain`
+
+const nodePruneRevokedLong = `Drops from the revoked nodes those that nothing lets back in: the nodes whose certificates have
+all expired, and those revoked before both the OS CA and the Kubernetes CA that the control plane
+trusts were made, as no CA it trusts vouches for their old certificates. Control planes drop no
+revoked node by themselves: run this command to drop the expired ones, as when chalkctl status or
+chalkctl node revoke warns that the list fills up. chalkctl rotate os-ca --finish and chalkctl
+rotate kubernetes-ca --finish prune the same way once every node applied the finish; run this
+command when that prune failed.
+
+With the secrets file, the command refuses while the file records a rotation of the OS CA or the
+Kubernetes CAs: a node that has not applied its finish may still trust the old CA. A client file
+records no rotation, so make sure none runs. A command run with --ignore-revoked that handed a
+revoked node certificates refreshes its revocation, so pruning keeps it; when that refresh failed,
+the secrets file records the revocation as not refreshed. The command refreshes the recorded ones
+first, and refuses while one is left; chalkctl node revoke --refresh and chalkctl node unrevoke
+drop a node from the record. A client file holds no record, so refresh such nodes first.
+
+A control plane prunes the revoked nodes: --via, or the first one that answers.`
+
+const nodePruneRevokedExample = `  # Drop the expired revocations once chalkctl status warns that the list fills up, or prune after
+  # chalkctl rotate os-ca --finish warned that its prune failed.
+  chalkctl node prune-revoked`
 
 const registryLong = `Manages the images of the cluster registry, which chalkos-registry serves on the nodes that a
 ClusterRegistry document's endpoints name. Nothing copies images between the endpoints, so each

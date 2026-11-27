@@ -2,6 +2,7 @@ package chalkctl
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -15,6 +16,7 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/internal/cli"
+	"github.com/trevex/chalkos/pkg/internal/strs"
 	"github.com/trevex/chalkos/pkg/sdk"
 )
 
@@ -44,7 +46,7 @@ func (a *app) rotateCommand() *cobra.Command {
 	fs.BoolVar(&f.resume, "resume", false, "continue the rotation the secrets file records")
 	fs.BoolVar(&f.finish, "finish", false, "remove the old value from every node and the secrets file")
 	fs.BoolVar(&f.now, "now", false, "with --finish, finish now although the kind asks to wait, as the service-account key does within the hour after its switch")
-	fs.BoolVar(&f.ignoreRevoked, "ignore-revoked", false, "rotate every node of the inventory, revoked ones included, without reading the revoked nodes, as while no layer can say which are")
+	fs.BoolVar(&f.ignoreRevoked, "ignore-revoked", false, "rotate every node of the inventory, revoked ones included, as while no layer can say which are revoked, and refresh the revoked ones' revocations after each phase")
 	fs.DurationVar(&f.timeout, "timeout", 10*time.Minute, "how long to wait for each node to apply a phase")
 	return cmd
 }
@@ -87,8 +89,12 @@ func (a *app) rotate(ctx context.Context, f rotateFlags, pos []string) error {
 	defer file.Close()
 	r := &rotation{a: a, cluster: c, file: file, addresses: addresses, timeout: f.timeout, poll: a.poll(), ignoreRevoked: f.ignoreRevoked}
 	if f.ignoreRevoked {
-		fmt.Fprintln(a.stderr, "chalkctl: warning: --ignore-revoked: rotate reads no revoked nodes, so a revoked node still in the inventory "+
-			"receives the new value and certificates of it like any other; remove revoked nodes from the inventory first")
+		fmt.Fprintln(a.stderr, "chalkctl: warning: --ignore-revoked: rotate skips no revoked node, so a revoked node still in the inventory "+
+			"receives the new value and certificates of it like any other, and each phase then refreshes its revocation; remove revoked nodes from the inventory first")
+	}
+	// What an earlier run did not refresh is refreshed first, so the finish prunes after it.
+	if err := r.refreshRevoked(ctx, nil); err != nil {
+		fmt.Fprintf(a.stderr, "chalkctl: warning: %v\n", err)
 	}
 	if err := r.skipRevoked(ctx); err != nil {
 		return err
@@ -113,9 +119,11 @@ type rotation struct {
 	// timeout bounds each wait for a node; poll is the time between two looks.
 	timeout, poll time.Duration
 	// revoked are the nodes the rotation skips, because a layer lists them as revoked. With
-	// ignoreRevoked, the lists are not read and no node is skipped.
+	// ignoreRevoked, no node is skipped, and the lists are read only to refresh the revocations.
 	revoked       map[string]bool
 	ignoreRevoked bool
+	// unrefreshed is why the last refresh of the revocations failed, with --ignore-revoked.
+	unrefreshed error
 }
 
 // Say prints a line of the rotation's progress.
@@ -186,8 +194,13 @@ func (r *rotation) finish(ctx context.Context, kind clustersecrets.RotationKind,
 }
 
 // run applies the phase the secrets file records and the ones after it, up to the kind's pause
-// or the end of the finish.
+// or the end of the finish. It fails while the last refresh of the revocations failed.
 func (r *rotation) run(ctx context.Context) error {
+	return errors.Join(r.phases(ctx), r.unrefreshed)
+}
+
+// phases is run but for the refresh of the revocations.
+func (r *rotation) phases(ctx context.Context) error {
 	// rotate read the revoked nodes before the first phase; a node revoked while a phase ran is
 	// left out of the phases after it.
 	first := true
@@ -201,8 +214,17 @@ func (r *rotation) run(ctx context.Context) error {
 				}
 			}
 			first = false
+			var pending refreshes
+			if r.ignoreRevoked {
+				pending = r.revokedBefore(ctx)
+			}
 			r.Say("%s: the %s phase", rot.Kind, rot.Phase)
-			if err := rotator.ApplyRotation(ctx, r, rot.Kind, rot.Phase); err != nil {
+			err := rotator.ApplyRotation(ctx, r, rot.Kind, rot.Phase)
+			// The phase handed out what it delivered to some nodes also when it stopped.
+			if r.ignoreRevoked {
+				r.unrefreshed = r.refreshRevoked(ctx, pending)
+			}
+			if err != nil {
 				return fmt.Errorf("the %s phase of the rotation of the %s stopped: %w; once that is fixed, continue with chalkctl rotate %s --resume", rot.Phase, rot.Kind.Name(), err, rot.Kind)
 			}
 			if err := r.save(func(s *clustersecrets.Secrets) error { return s.RecordApplied(time.Now()) }); err != nil {
@@ -237,6 +259,7 @@ func (r *rotation) run(ctx context.Context) error {
 			if advice != "" {
 				r.Say("%s", advice)
 			}
+			r.pruneRevoked(ctx, rot.Kind)
 			return nil
 		}
 		if err != nil {
@@ -285,23 +308,34 @@ func kindList(kinds []clustersecrets.RotationKind, last string) string {
 	return strings.Join(names[:len(names)-1], ", ") + last + names[len(names)-1]
 }
 
-// skipRevoked leaves the nodes the layers list as revoked out of the rotation and names each the
-// first time. Without a layer's list no phase runs, so no revoked node gets a certificate. A
-// skipped node stays skipped for the run, as it missed the earlier phases.
+// skipRevoked leaves the nodes the layers list as revoked out of the rotation, and those whose
+// revocations by a layer the secrets file records as not refreshed, which the list may have
+// dropped while they hold what an earlier run handed them, and names each the first time. Without
+// a layer's list no phase runs, so no revoked node gets a certificate. A skipped node stays
+// skipped for the run, as it missed the earlier phases.
 func (r *rotation) skipRevoked(ctx context.Context) error {
 	if r.ignoreRevoked {
 		return nil
 	}
 	nodes := r.allNodes()
 	list := map[string]string{}
-	for _, p := range compiled[layer.RotationNodes]() {
-		revoked, err := p.RevokedNodes(ctx, r)
+	for _, p := range plugins {
+		rn, ok := p.(layer.RotationNodes)
+		if !ok {
+			continue
+		}
+		revoked, err := rn.RevokedNodes(ctx, r)
 		if err != nil {
 			return fmt.Errorf("%w; rotate runs only once one does, so it never hands a certificate to a revoked node, or with --ignore-revoked", err)
 		}
 		for name, since := range revoked {
 			if _, ok := list[name]; !ok {
-				list[name] = since
+				list[name] = "revoked " + since
+			}
+		}
+		for _, name := range r.file.secrets.UnrefreshedOf(p.Name()) {
+			if _, ok := list[name]; !ok {
+				list[name] = "the secrets file records its revocation as not refreshed"
 			}
 		}
 	}
@@ -311,10 +345,76 @@ func (r *rotation) skipRevoked(ctx context.Context) error {
 	for _, name := range slices.Sorted(maps.Keys(list)) {
 		if slices.Contains(nodes, name) && !r.revoked[name] {
 			r.revoked[name] = true
-			r.Say("skipping %s: revoked %s", name, list[name])
+			r.Say("skipping %s: %s", name, list[name])
 		}
 	}
 	return nil
+}
+
+// revokedBefore reads, with --ignore-revoked, which of the nodes that take part the layers list as
+// revoked, before a phase hands them what it delivers.
+func (r *rotation) revokedBefore(ctx context.Context) refreshes {
+	nodes, err := r.nodes()
+	if err != nil {
+		// The refresh after the phase fails the same way, and the run with it.
+		return nil
+	}
+	return revokedBefore(ctx, nodes, r.NodeNames(), false)
+}
+
+// refreshRevoked refreshes pending, the revocations of the revoked nodes the phase that ran last
+// handed what it delivers, so that pruning keeps them listed while it is valid, and those the
+// secrets file records as not refreshed; it records which are left. Its error, while one is left,
+// is the run's when it follows a phase: the refresh covers what every earlier phase handed out
+// too, so it is the last refresh's that counts.
+func (r *rotation) refreshRevoked(ctx context.Context, pending refreshes) error {
+	recorded := r.file.secrets.Unrefreshed
+	if len(pending) == 0 && len(recorded) == 0 {
+		return nil
+	}
+	nodes, err := r.nodes()
+	if err != nil {
+		return err
+	}
+	tried, left, err := r.a.refreshRevocations(ctx, nodes, pending, recorded)
+	s, now := r.file.secrets, time.Now()
+	if s.RecordRefreshes(tried, left, now) {
+		if serr := r.save(func(s *clustersecrets.Secrets) error { s.RecordRefreshes(tried, left, now); return nil }); serr != nil {
+			return errors.Join(err, serr)
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("%w\n%s", err, recordedNote)
+	}
+	return nil
+}
+
+// pruneRevoked has every layer drop the revoked nodes the finished rotation of kind left nothing
+// to let back in. A layer that fails to is warned of: the rotation is finished all the same.
+// While the last refresh of the revocations failed, nothing is pruned: the revoked nodes it did
+// not refresh hold what the rotation handed out. Nor is a layer whose revocations the secrets file
+// records as not refreshed asked to prune.
+func (r *rotation) pruneRevoked(ctx context.Context, kind clustersecrets.RotationKind) {
+	if r.unrefreshed != nil {
+		fmt.Fprintln(r.a.stderr, "chalkctl: warning: the revoked nodes were not pruned: their revocations were not refreshed, and pruning could drop those that hold what the rotation handed out")
+		return
+	}
+	for _, p := range plugins {
+		rn, ok := p.(layer.RotationNodes)
+		if !ok {
+			continue
+		}
+		// A layer is not asked to prune while the secrets file records one of its revocations as
+		// not refreshed, whether or not the layer checks that itself.
+		if names := r.file.secrets.UnrefreshedOf(p.Name()); len(names) > 0 {
+			fmt.Fprintf(r.a.stderr, "chalkctl: warning: the %s layer was not asked to prune its revoked nodes: the secrets file records the revocations of %s as not refreshed, and pruning could drop them while what they were handed is valid; refresh them, then prune them\n",
+				p.Name(), strs.And(names))
+			continue
+		}
+		if err := rn.PruneRevoked(ctx, r, kind); err != nil {
+			fmt.Fprintf(r.a.stderr, "chalkctl: warning: the revoked nodes were not pruned: %v\n", err)
+		}
+	}
 }
 
 // NodeNames lists the cluster's nodes in name order, but the revoked ones.

@@ -54,7 +54,7 @@ func (s *Server) EnrollSecureBoot(ctx context.Context, req *nodev1.EnrollSecureB
 	defer s.mu.Unlock()
 	defer s.muBy.hold("a Secure Boot enrolment")()
 	if s.installed {
-		return nil, layer.Errorf(connect.CodeFailedPrecondition, "the node is installed and reboots")
+		return nil, layer.Reasonf(connect.CodeFailedPrecondition, nodev1.ErrorReason_ERROR_REASON_INSTALLED_AND_REBOOTS, "the node is installed and reboots")
 	}
 	setup, err := secureboot.ReadVariable(s.Paths.EFIVars, "SetupMode", secureboot.GlobalVendor)
 	if err != nil {

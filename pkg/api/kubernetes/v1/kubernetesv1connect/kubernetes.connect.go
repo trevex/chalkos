@@ -61,6 +61,9 @@ const (
 	// KubernetesServiceUnrevokeNodeProcedure is the procedure name of the KubernetesService's
 	// UnrevokeNode RPC.
 	KubernetesServiceUnrevokeNodeProcedure = "/chalkos.kubernetes.v1.KubernetesService/UnrevokeNode"
+	// KubernetesServicePruneRevokedProcedure is the procedure name of the KubernetesService's
+	// PruneRevoked RPC.
+	KubernetesServicePruneRevokedProcedure = "/chalkos.kubernetes.v1.KubernetesService/PruneRevoked"
 )
 
 var (
@@ -148,6 +151,13 @@ var (
 			Procedure:  KubernetesServiceUnrevokeNodeProcedure,
 		}
 	})
+	kubernetesServicePruneRevokedSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_chalkos_kubernetes_v1_kubernetes_proto.Services().ByName("KubernetesService").Methods().ByName("PruneRevoked"),
+			Procedure:  KubernetesServicePruneRevokedProcedure,
+		}
+	})
 )
 
 // KubernetesServiceClient is a client for the chalkos.kubernetes.v1.KubernetesService service.
@@ -208,11 +218,12 @@ type KubernetesServiceClient interface {
 	// kube-system/chalkos-revoked-nodes, applies the API server's admission policy
 	// chalkos-revoked-nodes, which then denies the node's writes, and deletes its Node object.
 	// Control planes then refuse to renew its node certificate. A node revoked already keeps the
-	// time of its first revocation. A call that fails after listing the node says so; calling again
-	// finishes it. A node not revoked yet is refused with FAILED_PRECONDITION while the policy's
-	// map of revoked nodes would grow too long for the API server to compile with it. It answers on
-	// bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
-	// Kubernetes layer.
+	// time of its first revocation, unless refresh lists it as revoked now. A call that fails after
+	// listing the node says so; calling again finishes it. A node not revoked yet is refused with
+	// FAILED_PRECONDITION and the reason REVOKED_LIST_FULL while the policy's map of revoked nodes
+	// would grow too long for the API server to compile with it; PruneRevoked makes room. It
+	// answers on bootstrapped control-plane nodes. Available in normal mode to admins, on images
+	// with the Kubernetes layer.
 	RevokeNode(context.Context, *v1.RevokeNodeRequest) (*v1.RevokeNodeResponse, error)
 	// UnrevokeNode removes a node from the revoked nodes and applies the admission policy without
 	// it, so a node of that name may join again. The old node's certificates work again too, unless
@@ -222,6 +233,15 @@ type KubernetesServiceClient interface {
 	// bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
 	// Kubernetes layer.
 	UnrevokeNode(context.Context, *v1.UnrevokeNodeRequest) (*v1.UnrevokeNodeResponse, error)
+	// PruneRevoked drops from the revoked nodes those nothing lets back in: the nodes whose
+	// certificates have all expired, and those revoked before every OS CA and Kubernetes CA the
+	// control plane trusts was made, whose certificates chain to no trusted CA. It then applies the
+	// admission policy again. Only this call drops revoked nodes. Control planes finish a rotation
+	// one after another, so call it while no rotation of the OS CA or the Kubernetes CA runs, as
+	// once every node confirmed the finish of one, which chalkctl rotate --finish does. It answers
+	// on bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
+	// Kubernetes layer.
+	PruneRevoked(context.Context, *v1.PruneRevokedRequest) (*v1.PruneRevokedResponse, error)
 }
 
 // NewKubernetesServiceClient constructs a client for the chalkos.kubernetes.v1.KubernetesService
@@ -289,11 +309,12 @@ type KubernetesServiceHandler interface {
 	// kube-system/chalkos-revoked-nodes, applies the API server's admission policy
 	// chalkos-revoked-nodes, which then denies the node's writes, and deletes its Node object.
 	// Control planes then refuse to renew its node certificate. A node revoked already keeps the
-	// time of its first revocation. A call that fails after listing the node says so; calling again
-	// finishes it. A node not revoked yet is refused with FAILED_PRECONDITION while the policy's
-	// map of revoked nodes would grow too long for the API server to compile with it. It answers on
-	// bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
-	// Kubernetes layer.
+	// time of its first revocation, unless refresh lists it as revoked now. A call that fails after
+	// listing the node says so; calling again finishes it. A node not revoked yet is refused with
+	// FAILED_PRECONDITION and the reason REVOKED_LIST_FULL while the policy's map of revoked nodes
+	// would grow too long for the API server to compile with it; PruneRevoked makes room. It
+	// answers on bootstrapped control-plane nodes. Available in normal mode to admins, on images
+	// with the Kubernetes layer.
 	RevokeNode(context.Context, *v1.RevokeNodeRequest) (*v1.RevokeNodeResponse, error)
 	// UnrevokeNode removes a node from the revoked nodes and applies the admission policy without
 	// it, so a node of that name may join again. The old node's certificates work again too, unless
@@ -303,6 +324,15 @@ type KubernetesServiceHandler interface {
 	// bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
 	// Kubernetes layer.
 	UnrevokeNode(context.Context, *v1.UnrevokeNodeRequest) (*v1.UnrevokeNodeResponse, error)
+	// PruneRevoked drops from the revoked nodes those nothing lets back in: the nodes whose
+	// certificates have all expired, and those revoked before every OS CA and Kubernetes CA the
+	// control plane trusts was made, whose certificates chain to no trusted CA. It then applies the
+	// admission policy again. Only this call drops revoked nodes. Control planes finish a rotation
+	// one after another, so call it while no rotation of the OS CA or the Kubernetes CA runs, as
+	// once every node confirmed the finish of one, which chalkctl rotate --finish does. It answers
+	// on bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
+	// Kubernetes layer.
+	PruneRevoked(context.Context, *v1.PruneRevokedRequest) (*v1.PruneRevokedResponse, error)
 }
 
 // RegisterKubernetesServiceHandler registers svc as the chalkos.kubernetes.v1.KubernetesService
@@ -322,6 +352,7 @@ func RegisterKubernetesServiceHandler(server *connect.Server, svc KubernetesServ
 		connect.Method{Spec: kubernetesServiceUncordonNodeSpec(), Handler: adapter.uncordonNode},
 		connect.Method{Spec: kubernetesServiceRevokeNodeSpec(), Handler: adapter.revokeNode},
 		connect.Method{Spec: kubernetesServiceUnrevokeNodeSpec(), Handler: adapter.unrevokeNode},
+		connect.Method{Spec: kubernetesServicePruneRevokedSpec(), Handler: adapter.pruneRevoked},
 	)
 }
 
@@ -374,6 +405,10 @@ func (UnimplementedKubernetesServiceHandler) RevokeNode(context.Context, *v1.Rev
 
 func (UnimplementedKubernetesServiceHandler) UnrevokeNode(context.Context, *v1.UnrevokeNodeRequest) (*v1.UnrevokeNodeResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "chalkos.kubernetes.v1.KubernetesService.UnrevokeNode is not implemented")
+}
+
+func (UnimplementedKubernetesServiceHandler) PruneRevoked(context.Context, *v1.PruneRevokedRequest) (*v1.PruneRevokedResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "chalkos.kubernetes.v1.KubernetesService.PruneRevoked is not implemented")
 }
 
 type kubernetesServiceClient struct {
@@ -471,6 +506,14 @@ func (c *kubernetesServiceClient) RevokeNode(ctx context.Context, req *v1.Revoke
 func (c *kubernetesServiceClient) UnrevokeNode(ctx context.Context, req *v1.UnrevokeNodeRequest) (*v1.UnrevokeNodeResponse, error) {
 	var res v1.UnrevokeNodeResponse
 	if err := c.client.CallUnary(ctx, kubernetesServiceUnrevokeNodeSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *kubernetesServiceClient) PruneRevoked(ctx context.Context, req *v1.PruneRevokedRequest) (*v1.PruneRevokedResponse, error) {
+	var res v1.PruneRevokedResponse
+	if err := c.client.CallUnary(ctx, kubernetesServicePruneRevokedSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -616,6 +659,18 @@ func (h kubernetesServiceHandler) unrevokeNode(ctx context.Context, _ connect.Sp
 		return err
 	}
 	res, err := h.svc.UnrevokeNode(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h kubernetesServiceHandler) pruneRevoked(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.PruneRevokedRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.PruneRevoked(ctx, &req)
 	if err != nil {
 		return err
 	}

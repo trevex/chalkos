@@ -1,6 +1,7 @@
 package chalkctl
 
 import (
+	"context"
 	"encoding/json"
 	"net"
 	"os"
@@ -11,8 +12,13 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect/v2"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/pki"
 )
 
 // TestRotateOneAtATime checks that a rotation refuses another, and the finish of another kind.
@@ -320,5 +326,246 @@ func (l *rotationLab) switchedAgo(d time.Duration) {
 	}
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		l.t.Fatal(err)
+	}
+}
+
+// TestRotateFinishPrunesRevoked checks that the finish of a rotation of the OS CA or the
+// Kubernetes CA has a control plane drop the revoked nodes once every node confirmed it, and says
+// how many it dropped; the other kinds prune nothing.
+func TestRotateFinishPrunesRevoked(t *testing.T) {
+	for kind, prunes := range map[clustersecrets.RotationKind]bool{
+		clustersecrets.RotateOSCA:          true,
+		clustersecrets.RotateKubernetesCA:  true,
+		clustersecrets.RotateNodeCA:        false,
+		clustersecrets.RotateEncryptionKey: false,
+	} {
+		t.Run(string(kind), func(t *testing.T) {
+			l := newRotationLab(t)
+			l.pruned = []string{"w-old", "w-older"}
+			for _, args := range [][]string{{string(kind)}, {string(kind), "--resume"}} {
+				if l.secrets().Rotation == nil && len(args) > 1 {
+					break
+				}
+				if err := l.rotate(args...); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if l.secrets().Rotation != nil {
+				if err := l.rotate(string(kind), "--finish"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			events := l.takeEvents()
+			if got := slices.Contains(events, "cp1 prune revoked"); got != prunes {
+				t.Fatalf("events %v: pruned %v, want %v", events, got, prunes)
+			}
+			if !prunes {
+				return
+			}
+			if events[len(events)-1] != "cp1 prune revoked" {
+				t.Errorf("events %v: want the prune after every node applied the finish", events)
+			}
+			if want := "dropped 2 nodes from the revoked nodes, which nothing lets back in: w-old, w-older\nthe revoked nodes fill 0% of their room\n"; !strings.Contains(l.ta.stdout.String(), want) {
+				t.Errorf("the finish does not say %q: %s", want, l.ta.stdout)
+			}
+		})
+	}
+}
+
+// TestRotateFinishSurvivesAFailedPrune checks that a prune that fails is a warning: the rotation
+// is finished all the same.
+func TestRotateFinishSurvivesAFailedPrune(t *testing.T) {
+	l := newRotationLab(t)
+	for _, args := range [][]string{{"os-ca"}, {"os-ca", "--resume"}} {
+		if err := l.rotate(args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	l.pruneErr = connect.NewError(connect.CodeUnavailable, "the API server does not answer")
+	if err := l.rotate("os-ca", "--finish"); err != nil {
+		t.Fatalf("finish with the prune failing: %v", err)
+	}
+	if l.secrets().Rotation != nil {
+		t.Error("the secrets file still records the rotation")
+	}
+	if got := l.ta.stderr.String(); !strings.Contains(got, "warning") || !strings.Contains(got, "the API server does not answer") ||
+		!strings.Contains(got, "chalkctl node prune-revoked") {
+		t.Errorf("stderr = %q, want a warning with the prune's error", got)
+	}
+}
+
+// refreshedAt is when the lab's control planes refresh a revocation.
+var refreshedAt = revokedAt.Add(time.Hour)
+
+// TestRotateIgnoreRevokedRefreshes checks that each phase run with --ignore-revoked, once it
+// handed every node of the inventory what it delivers, refreshes the revocations of the revoked
+// ones, so the finish prunes after them; a node in no inventory is left alone.
+func TestRotateIgnoreRevokedRefreshes(t *testing.T) {
+	l := newRotationLab(t)
+	l.revoked = []*kubernetesv1.RevokedNode{{Name: "w1", RevokedAt: timestamppb.New(revokedAt)}, {Name: "gone", RevokedAt: timestamppb.New(revokedAt)}}
+	for _, args := range [][]string{{"os-ca"}, {"os-ca", "--resume"}, {"os-ca", "--finish"}} {
+		l.takeEvents()
+		if err := l.rotate(append(args, "--ignore-revoked")...); err != nil {
+			t.Fatal(err)
+		}
+		events := l.takeEvents()
+		refreshes := slices.DeleteFunc(slices.Clone(events), func(e string) bool { return !strings.Contains(e, " refresh ") })
+		if len(refreshes) == 0 || slices.ContainsFunc(refreshes, func(e string) bool { return e != "cp1 refresh w1" }) {
+			t.Errorf("%v: events %v, want cp1 to refresh w1 alone", args, events)
+		}
+		// Each refresh follows the phase that handed w1 something.
+		for i, e := range events {
+			if strings.HasPrefix(e, "w1 ") && !slices.Contains(events[i:], "cp1 refresh w1") {
+				t.Errorf("%v: events %v: no refresh after %q", args, events, e)
+			}
+		}
+	}
+	out := l.ta.stdout.String()
+	if want := "refreshed the revocation of w1: revoked since 2026-10-23T13:00:00Z\n"; strings.Count(out, want) != 4 {
+		t.Errorf("stdout does not say %q after each of the four phases:\n%s", want, out)
+	}
+	if i, j := strings.LastIndex(out, "refreshed the revocation"), strings.Index(out, "dropped no node"); j < i {
+		t.Errorf("the finish pruned before the refresh:\n%s", out)
+	}
+}
+
+// TestRotateIgnoreRevokedFailedRefresh checks that a phase whose refresh failed is applied and the
+// run fails, naming the node and the command that refreshes it, and that the finish then prunes
+// nothing.
+func TestRotateIgnoreRevokedFailedRefresh(t *testing.T) {
+	l := newRotationLab(t)
+	l.revoked = []*kubernetesv1.RevokedNode{{Name: "w1", RevokedAt: timestamppb.New(revokedAt)}}
+	l.refreshErr = connect.NewError(connect.CodeUnavailable, "the API server does not answer")
+	err := l.rotate("os-ca", "--ignore-revoked")
+	if err == nil || !strings.Contains(err.Error(), "the revocation of w1, which was handed certificates while revoked, was not refreshed") ||
+		!strings.Contains(err.Error(), "the API server does not answer") || !strings.Contains(err.Error(), "chalkctl node revoke w1 --refresh") {
+		t.Errorf("err = %v, want the failed refresh of w1", err)
+	}
+	if l.phase() != "accept applied" {
+		t.Fatalf("the secrets file records %q, want the accept applied", l.phase())
+	}
+	for _, args := range [][]string{{"os-ca", "--resume"}, {"os-ca", "--finish"}} {
+		if err := l.rotate(append(args, "--ignore-revoked")...); err == nil {
+			t.Fatalf("%v: no error", args)
+		}
+	}
+	if l.secrets().Rotation != nil {
+		t.Error("the secrets file still records the rotation")
+	}
+	if events := l.takeEvents(); slices.Contains(events, "cp1 prune revoked") {
+		t.Errorf("events %v: the finish pruned", events)
+	}
+	if got := l.ta.stderr.String(); !strings.Contains(got, "the revoked nodes were not pruned: their revocations were not refreshed") {
+		t.Errorf("stderr = %q, want the prune skipped", got)
+	}
+}
+
+// TestRotateRecordsAFailedRefresh checks that the secrets file records a refresh that failed with
+// --ignore-revoked, so that later runs without the flag retry it first and the finish prunes
+// nothing while it fails; once node prune-revoked refreshes it, the record is gone and it prunes.
+func TestRotateRecordsAFailedRefresh(t *testing.T) {
+	l := newRotationLab(t)
+	l.revoked = []*kubernetesv1.RevokedNode{{Name: "w1", RevokedAt: timestamppb.New(revokedAt)}}
+	l.refreshErr = connect.NewError(connect.CodeUnavailable, "the API server does not answer")
+	err := l.rotate("os-ca", "--ignore-revoked")
+	if err == nil || !strings.Contains(err.Error(), "the secrets file records the revocations not refreshed") {
+		t.Errorf("err = %v, want the record named", err)
+	}
+	want := []clustersecrets.Unrefreshed{{Layer: "kubernetes", Node: "w1", Listed: true}}
+	if got := l.secrets().Unrefreshed; !slices.Equal(unstamped(got), want) {
+		t.Fatalf("the secrets file records %v, want %v", got, want)
+	}
+	for _, args := range [][]string{{"os-ca", "--resume"}, {"os-ca", "--finish"}} {
+		l.takeEvents()
+		if err := l.rotate(args...); err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+		if events := l.takeEvents(); len(events) == 0 || events[0] != "cp1 refresh w1" {
+			t.Errorf("%v: events %v, want the refresh retried first", args, events)
+		} else if slices.Contains(events, "cp1 prune revoked") || slices.Contains(events, "cp2 prune revoked") {
+			t.Errorf("%v: events %v: the finish pruned", args, events)
+		}
+	}
+	if l.secrets().Rotation != nil {
+		t.Error("the secrets file still records the rotation")
+	}
+	if got := l.ta.stderr.String(); !strings.Contains(got, "the kubernetes layer was not asked to prune its revoked nodes: the secrets file records the revocations of w1 as not refreshed") {
+		t.Errorf("stderr = %q, want the prune skipped for the record", got)
+	}
+	if got := l.secrets().Unrefreshed; !slices.Equal(unstamped(got), want) {
+		t.Fatalf("the secrets file records %v, want %v", got, want)
+	}
+
+	err = l.run("node", "prune-revoked")
+	if err == nil || !strings.Contains(err.Error(), "the API server does not answer") || !strings.Contains(err.Error(), "node prune-revoked prunes once") {
+		t.Errorf("node prune-revoked with the refresh failing: %v", err)
+	}
+	l.refreshErr = nil
+	l.takeEvents()
+	if err := l.run("node", "prune-revoked"); err != nil {
+		t.Fatal(err)
+	}
+	if events := l.takeEvents(); !slices.Equal(events, []string{"cp1 refresh w1", "cp1 prune revoked"}) {
+		t.Errorf("events %v, want the refresh, then the prune", events)
+	}
+	if got := l.secrets().Unrefreshed; got != nil {
+		t.Errorf("the secrets file still records %v", got)
+	}
+}
+
+// TestRotateIgnoreRevokedRevokesAgain checks that a node listed as revoked before a phase, and
+// dropped from the list while the phase ran, is revoked again after it rather than skipped.
+func TestRotateIgnoreRevokedRevokesAgain(t *testing.T) {
+	l := newRotationLab(t)
+	l.revoked = []*kubernetesv1.RevokedNode{{Name: "w1", RevokedAt: timestamppb.New(revokedAt)}}
+	var once sync.Once
+	l.onShare = func(node string) {
+		once.Do(func() {
+			l.mu.Lock()
+			defer l.mu.Unlock()
+			l.revoked = nil
+		})
+	}
+	if err := l.rotate("kubernetes-ca", "--ignore-revoked"); err != nil {
+		t.Fatal(err)
+	}
+	if events := l.takeEvents(); !slices.Contains(events, "cp1 revoke w1") {
+		t.Errorf("events %v, want w1 revoked again", events)
+	}
+	if out := l.ta.stdout.String(); !strings.Contains(out, "revoked node w1 again (since 2026-10-23T13:00:00Z): it was handed certificates while revoked, then dropped from the revoked nodes, pruned or unrevoked; if it was unrevoked deliberately, run chalkctl node unrevoke w1 with the secrets file") {
+		t.Errorf("stdout = %q", out)
+	}
+}
+
+// run runs chalkctl with the lab's cluster, reaching each node where it serves.
+func (l *rotationLab) run(args ...string) error {
+	args = append(slices.Clone(args), "--inventory", l.ta.inventory)
+	for name, addr := range l.addrs {
+		args = append(args, "--address", name+"="+addr)
+	}
+	return l.ta.run(context.Background(), args)
+}
+
+// A rotation without --ignore-revoked skips a node whose revocation the secrets file records as
+// not refreshed, as when the revoked nodes dropped its entry, and the refresh it retries first
+// fails: the node may hold what an earlier run handed it.
+func TestRotateSkipsARecordedNode(t *testing.T) {
+	l := newRotationLab(t)
+	l.ta.recordUnrefreshed(t, []clustersecrets.Unrefreshed{{Layer: "kubernetes", Node: "w1", Listed: true}})
+	l.refreshErr = connect.NewError(connect.CodeUnavailable, "the API server does not answer")
+	l.takeEvents()
+	if err := l.rotate("os-ca"); err != nil {
+		t.Fatal(err)
+	}
+	if out := l.ta.stdout.String(); strings.Count(out, "skipping w1: the secrets file records its revocation as not refreshed\n") != 1 {
+		t.Errorf("stdout does not skip w1 once:\n%s", out)
+	}
+	for _, e := range l.takeEvents() {
+		if strings.HasPrefix(e, "w1 ") {
+			t.Errorf("the rotation asked w1: %s", e)
+		}
+	}
+	if fps, _ := pki.Fingerprints(l.nodes["w1"].cert.OSCA()); len(fps) != 1 {
+		t.Errorf("w1 trusts %d OS CAs, want the old one alone", len(fps))
 	}
 }

@@ -220,7 +220,11 @@ A control plane is tainted `node-role.kubernetes.io/control-plane:NoSchedule` un
 document sets `allowSchedulingOnControlPlanes: true`. The kubelet applies the labels and taints,
 this taint among them, only when it registers the node. So `labels`, `taints` and
 `allowSchedulingOnControlPlanes` are fixed once the node holds a Kubernetes share, and kubectl
-changes them on the Kubernetes node. `kubeletExtraArgs` of a node's `Node` document adds flags to
+changes them on the Kubernetes node. The kubelet may not set `node-role.kubernetes.io/` labels on
+its own node, so chalkd on each control plane labels its Node
+`node-role.kubernetes.io/control-plane` through the API server once the kubelet registered it. It
+checks the label about every 10 seconds and sets it again when it is gone.
+`kubeletExtraArgs` of a node's `Node` document adds flags to
 its kubelet. [Protected kubelet flags](../../reference/kubernetes.md#protected-kubelet-flags) lists
 the flags chalkos refuses there.
 

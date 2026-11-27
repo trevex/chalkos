@@ -128,10 +128,18 @@ kubernetes-ca: the finish phase
 kubernetes-ca: every node applied the finish phase
 the rotation of the Kubernetes CAs is finished: every node trusts the new value alone; the version from before the rotation is secrets.age.prev; secrets.pub.json holds the new public half
 Kubeconfigs issued during the rotation still trust the old Kubernetes CA besides the new one when they verify the API server, so whoever holds the old CA's key could pose as the API server to them; issue them again with chalkctl kubeconfig.
+dropped no node from the revoked nodes
+the revoked nodes fill 0% of their room
 ```
 
 Issue every kubeconfig once more after the finish. A kubeconfig issued during the rotation still
 trusts the old CA when it verifies the API server.
+
+The last two lines come from a control plane, which drops the revoked nodes that nothing lets
+back in once every node confirmed the finish. A node revoked before both the new Kubernetes CA
+and the current OS CA were made is dropped, and the first line names it.
+[Reuse a removed node's name](../operate/add-remove-nodes.md#reuse-a-removed-nodes-name) covers
+the prune and what to do when it fails.
 
 ## Rotate the service-account key
 

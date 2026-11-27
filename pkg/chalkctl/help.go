@@ -89,7 +89,13 @@ to recovering a node; renewing node certificates before they expire avoids it.
 
 A node revoked with chalkctl node revoke is refused, as is any node while a layer cannot say
 which nodes are revoked: in a Kubernetes cluster the control planes are asked first, and one
-whose own certificate expired cannot answer. --ignore-revoked renews without asking.`
+whose own certificate expired cannot answer. --ignore-revoked renews without asking whether to:
+it reads which nodes are revoked beforehand, and after the delivery, also a failed one, has a
+control plane refresh the revocation of the node if it was revoked, so that it stays revoked
+until the new certificate expires. A node dropped from the list in between is revoked again.
+When the refresh fails, the command fails, naming what to run, and the secrets file records the
+revocation as not refreshed: chalkctl prunes no revoked node while it does, and rotate, node
+prune-revoked and the next command run with --ignore-revoked refresh it first.`
 
 const nodeRenewExample = `  chalkctl node renew w1`
 
@@ -178,7 +184,10 @@ https://trevex.github.io/chalkos/how-it-works/node/overview/#an-install-turns-a-
 
 A name revoked with chalkctl node revoke is refused, as is any node while a layer cannot say which
 names are revoked, as when a bootstrapped Kubernetes cluster's control planes do not answer;
---ignore-revoked installs without asking. chalkctl warns of each image reference in the config
+--ignore-revoked installs without asking, then refreshes the revocation of a revoked name as node
+renew does, reading the list as the check does. A control plane installed while no other one was
+bootstrapped may hold the list itself, so the secrets file records its revocation as not
+refreshed until a later command reads the list from it. chalkctl warns of each image reference in the config
 that names a tag but no digest.`
 
 // installConfirms says when install asks, for its Meta.
@@ -285,7 +294,8 @@ it at once.
 
 A layer's payload flag, such as --kubernetes-share, delivers the layer's payload too. It is refused
 to a node revoked with chalkctl node revoke, and while the layer cannot say which nodes are revoked;
---ignore-revoked delivers it without asking.`
+--ignore-revoked delivers it without asking, then refreshes the revocation of a revoked node as
+node renew does.`
 
 const applyConfigExample = `  # Apply w1's changed network and labels.
   chalkctl config apply w1 --secrets secrets.age
@@ -475,10 +485,17 @@ secrets file, holding <file>.lock.
 
 Nodes revoked with chalkctl node revoke are skipped and named; rotate stops while a layer cannot
 say which nodes are revoked, as when no Kubernetes control plane answers, unless none was
-bootstrapped yet. --ignore-revoked rotates without the lists, and every node of the inventory
-takes part, so remove revoked nodes from the inventory first. --finish refuses while a kind asks
+bootstrapped yet. --ignore-revoked rotates every node of the inventory, revoked or not; after each
+phase it refreshes the revocations of those read as revoked before it, so they stay revoked until
+what they got expires. A phase whose refresh fails is applied, but rotate fails and names what to
+run, and the secrets file records the revocations not refreshed. Every run refreshes the recorded
+ones first. Without --ignore-revoked, it skips and names a node whose revocation is still
+recorded, though the revoked nodes may have dropped it, and while one is recorded the finish
+prunes nothing. Remove revoked nodes from the inventory first. --finish refuses while a kind asks
 to wait, as the service-account key does within the hour after its switch; --finish --now
-finishes all the same.`
+finishes all the same. Once every node confirmed the finish of a rotation of the OS CA or the
+Kubernetes CA, a Kubernetes control plane drops from the revoked nodes those whose certificates
+expired and those revoked before both CAs; rotate warns if it cannot.`
 
 const rotateExample = `  # Rotate the Kubernetes CA. It pauses after the accept phase, so kubeconfigs and workloads can
   # trust the new CA before it issues certificates. It pauses again after the refresh.

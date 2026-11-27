@@ -1197,6 +1197,9 @@ the error as a ReasonDetail. Clients match on the reason, never on the message.
 | `ERROR_REASON_TRIAL_RECORD_UNREADABLE` | 1 | The record of the config's trial cannot be read. The node refuses other changes until RollbackConfig restores the previous config, which removes the record. The code is FAILED_PRECONDITION. |
 | `ERROR_REASON_NO_FALLBACK_SECRET` | 2 | A new TPM2-encrypted volume needs the fallback secret, and the request sent none. |
 | `ERROR_REASON_CONFIG_REFUSED` | 3 | The image refused the config itself, and the request fails the same way until the config or the image changes: the image's schemas or translation do not accept the set, its change rules, the storage change rules among them, are not met, or one of its validators or outputs reports refusals of the documents. A rule that cannot be evaluated, a fact that cannot be loaded and a program that fails without saying what it refuses refuse with no reason. A refusal by a change rule that names a reason of its own, such as NO_FALLBACK_SECRET, carries that reason instead. The code is INVALID_ARGUMENT for a set the schemas or translation refuse and FAILED_PRECONDITION otherwise. |
+| `ERROR_REASON_REVOKED_LIST_FULL` | 4 | The revoked nodes' list has no room for another node: the admission policy's map of revoked nodes would grow longer than the API server compiles. RevokeNode refuses so with FAILED_PRECONDITION. The Kubernetes layer's PruneRevoked, which chalkctl node prune-revoked calls, makes room: it drops the nodes whose certificates have all expired, and those revoked before every trusted OS CA and Kubernetes CA was made, which chalkctl rotate --finish of the OS CA and the Kubernetes CA leaves. |
+| `ERROR_REASON_BOOTSTRAPPED_ALREADY` | 5 | The node is an etcd member of a cluster already: it bootstrapped the cluster or joined it. Bootstrap refuses so with FAILED_PRECONDITION; a caller that bootstraps the first control plane once treats the refusal as done. |
+| `ERROR_REASON_INSTALLED_AND_REBOOTS` | 6 | The node accepted an install and reboots into it. Install and EnrollSecureBoot refuse so with FAILED_PRECONDITION until the node answers from the installed image. |
 
 ### Mode { #enum-mode }
 
@@ -1302,6 +1305,8 @@ The response of Status: the state of the node's Kubernetes.
 | `pods_error` | string | Why the node's pods could not be read; empty when they were. |
 | `pods_not_running_total` | uint32 | How many pods on the node do not run, of which pods_not_running lists the first 20. |
 | `addons_applied` | bool | On a bootstrapped control-plane node: whether the control plane's loop applied chalkos's add-ons and the objects of the Addon documents since the loop started. The loop starts when chalkd starts and when the loops restart, as after a change to the cluster's settings; the field is false from then until the loop, or one stopped while a bootstrap waited for it, applied them. It stays true through a reload for a changed share or config, also before the loop applied the changed objects, and when the loop fails later. False on other nodes. |
+| `revoked_list_length` | uint32 | On a bootstrapped control-plane node: the length of the admission policy's map of the revoked nodes, in code points, as RevokeNodeResponse.list_length counts it; 0 when they could not be read. |
+| `revoked_list_capacity` | uint32 | On a bootstrapped control-plane node: the length revoked_list_length may reach before RevokeNode refuses new nodes, with the reason REVOKED_LIST_FULL. 0 on other nodes. |
 
 Field types: [Phase](#kubernetes-enum-phase), [RevokedNode](#kubernetes-message-revokednode), [NodePod](#kubernetes-message-nodepod).
 
@@ -1549,11 +1554,12 @@ RevokeNode cuts a node off the cluster by name: it lists the node in the ConfigM
 kube-system/chalkos-revoked-nodes, applies the API server's admission policy
 chalkos-revoked-nodes, which then denies the node's writes, and deletes its Node object.
 Control planes then refuse to renew its node certificate. A node revoked already keeps the
-time of its first revocation. A call that fails after listing the node says so; calling again
-finishes it. A node not revoked yet is refused with FAILED_PRECONDITION while the policy's
-map of revoked nodes would grow too long for the API server to compile with it. It answers on
-bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
-Kubernetes layer.
+time of its first revocation, unless refresh lists it as revoked now. A call that fails after
+listing the node says so; calling again finishes it. A node not revoked yet is refused with
+FAILED_PRECONDITION and the reason REVOKED_LIST_FULL while the policy's map of revoked nodes
+would grow too long for the API server to compile with it; PruneRevoked makes room. It
+answers on bootstrapped control-plane nodes. Available in normal mode to admins, on images
+with the Kubernetes layer.
 
 Request: RevokeNodeRequest. Response: RevokeNodeResponse.
 
@@ -1564,6 +1570,7 @@ The request of RevokeNode.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `node` | string | The node's name in Kubernetes, which its node certificate carries too. |
+| `refresh` | bool | Whether the node, revoked already, is listed as revoked now in place of its earlier time, as after it was handed certificates while revoked: its entry then lasts until those expire too. A node not revoked is refused with NOT_FOUND and stays unlisted. |
 
 #### RevokeNodeResponse { #kubernetes-message-revokenoderesponse }
 
@@ -1573,6 +1580,8 @@ The response of RevokeNode.
 | ----- | ---- | ----------- |
 | `revoked_at` | google.protobuf.Timestamp | When the node was revoked: now, or at an earlier revocation. |
 | `node_deleted` | bool | Whether the call deleted the node's Node object; false when the cluster had none. |
+| `list_length` | uint32 | The length of the admission policy's map of revoked nodes after the call, in code points, as the API server counts an expression's length. |
+| `list_capacity` | uint32 | The length list_length may reach: RevokeNode refuses a new node, with the reason REVOKED_LIST_FULL, that would make the map longer. |
 
 ### UnrevokeNode { #kubernetes-method-unrevokenode }
 
@@ -1603,6 +1612,35 @@ The response of UnrevokeNode.
 | ----- | ---- | ----------- |
 | `revoked_at` | google.protobuf.Timestamp | When the node was revoked; unset when the time it is listed with cannot be read, which counts every CA as made before the revocation. |
 | `stale_cas` | list of string | The CAs issued before the revocation, by the names chalkctl rotate takes: os-ca, kubernetes-ca. The old node's certificates work again until they expire or these CAs are rotated. Empty when both were rotated after the revocation. |
+
+### PruneRevoked { #kubernetes-method-prunerevoked }
+
+PruneRevoked drops from the revoked nodes those nothing lets back in: the nodes whose
+certificates have all expired, and those revoked before every OS CA and Kubernetes CA the
+control plane trusts was made, whose certificates chain to no trusted CA. It then applies the
+admission policy again. Only this call drops revoked nodes. Control planes finish a rotation
+one after another, so call it while no rotation of the OS CA or the Kubernetes CA runs, as
+once every node confirmed the finish of one, which chalkctl rotate --finish does. It answers
+on bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
+Kubernetes layer.
+
+Request: PruneRevokedRequest. Response: PruneRevokedResponse.
+
+#### PruneRevokedRequest { #kubernetes-message-prunerevokedrequest }
+
+The request of PruneRevoked.
+
+No fields.
+
+#### PruneRevokedResponse { #kubernetes-message-prunerevokedresponse }
+
+The response of PruneRevoked.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `pruned` | list of string | The nodes the call dropped from the revoked nodes, in name order. |
+| `list_length` | uint32 | The length of the admission policy's map of revoked nodes after the call, in code points, as the API server counts an expression's length. |
+| `list_capacity` | uint32 | The length list_length may reach: RevokeNode refuses a new node, with the reason REVOKED_LIST_FULL, that would make the map longer. |
 
 ## Messages of chalkos.kubernetes.v1 { #kubernetes-messages }
 
@@ -1652,9 +1690,12 @@ A pod on the node that does not run.
 ### NotEtcdMember { #kubernetes-message-notetcdmember }
 
 The error detail of a request that needs an etcd member, from a control-plane node that is
-none, as before it joined the cluster or after it left etcd. The request fails with FAILED_PRECONDITION, and another
-control-plane node may answer it. EtcdMembers, EtcdRemoveMember, RotationStep, DrainNode,
-UncordonNode, RevokeNode and UnrevokeNode give it.
+none, as before it joined the cluster or after it left etcd. The request fails with
+FAILED_PRECONDITION, and another control-plane node may answer it. EtcdMembers,
+EtcdRemoveMember, RotationStep, DrainNode, UncordonNode, RevokeNode, UnrevokeNode and
+PruneRevoked give it. EtcdLeave gives it for a node that is no
+member or left etcd already: there it means the node has nothing to leave, and asking another
+node does not help.
 
 No fields.
 

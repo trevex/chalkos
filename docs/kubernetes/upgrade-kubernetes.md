@@ -416,11 +416,11 @@ kubectl uncordon w1
 
 ```console
 $ kubectl get nodes
-NAME   STATUS   ROLES    AGE   VERSION
-cp1    Ready    <none>   19m   v1.37.2
-cp2    Ready    <none>   19m   v1.37.2
-cp3    Ready    <none>   19m   v1.37.2
-w1     Ready    <none>   19m   v1.37.2
+NAME   STATUS   ROLES           AGE   VERSION
+cp1    Ready    control-plane   19m   v1.37.2
+cp2    Ready    control-plane   19m   v1.37.2
+cp3    Ready    control-plane   19m   v1.37.2
+w1     Ready    <none>          19m   v1.37.2
 ```
 
 `chalkctl etcd members` shows every control plane as a healthy voter again.

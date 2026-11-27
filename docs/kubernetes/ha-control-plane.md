@@ -350,11 +350,11 @@ them disagree. Then check that the API server answers through the VIP:
 
 ```console
 $ kubectl get nodes
-NAME   STATUS   ROLES    AGE   VERSION
-cp1    Ready    <none>   41s   v1.37.2
-cp2    Ready    <none>   39s   v1.37.2
-cp3    Ready    <none>   38s   v1.37.2
-w1     Ready    <none>   37s   v1.37.2
+NAME   STATUS   ROLES           AGE   VERSION
+cp1    Ready    control-plane   41s   v1.37.2
+cp2    Ready    control-plane   39s   v1.37.2
+cp3    Ready    control-plane   38s   v1.37.2
+w1     Ready    <none>          37s   v1.37.2
 ```
 
 ## If something goes wrong

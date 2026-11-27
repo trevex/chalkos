@@ -221,7 +221,7 @@ func newSide(o Options) *side {
 		h.APIClient = k.ownAPIClient
 	}
 	if h.Approve == nil {
-		h.Approve = approveServing
+		h.Approve = k.approveServing
 	}
 	if h.RevokedNodes == nil {
 		h.RevokedNodes = k.loadRevoked

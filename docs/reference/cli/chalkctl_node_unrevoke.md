@@ -21,6 +21,11 @@ old node does not come back by itself: its kubelet registers its Node once as it
 it with chalkctl node reboot --no-drain, as its Node is gone and holds nothing to drain, or restart
 its kubelet.
 
+With the secrets file, the command also drops the node from the revocations the file records as
+not refreshed, which would revoke it again, and does so for a node the list dropped already. The
+secrets file from standard input cannot be written back and a client file holds no record, so
+with either the command warns that the record may still hold the node.
+
 A control plane unrevokes the node: --via, or the first one that answers.
 
 The command needs an admin client file or the secrets file.

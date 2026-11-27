@@ -438,3 +438,35 @@ func TestApproverRunEnforcesRevokedNodes(t *testing.T) {
 		return err == nil
 	})
 }
+
+// The approver labels its control plane's Node once the kubelet registered it, as kubeadm's
+// control planes are labelled, and leaves a labelled Node and other Nodes alone.
+func TestApproverLabelsItsControlPlane(t *testing.T) {
+	ctx := t.Context()
+	cs := fake.NewClientset(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "w1"}})
+	a := &Approver{Client: cs, Node: "cp1"}
+	if err := a.label(ctx); err != nil {
+		t.Fatalf("before the Node registered: %v", err)
+	}
+	if _, err := cs.CoreV1().Nodes().Create(ctx, &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "cp1"}}, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.label(ctx); err != nil {
+		t.Fatal(err)
+	}
+	n, err := cs.CoreV1().Nodes().Get(ctx, "cp1", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := n.Labels[ControlPlaneLabel]; !ok || v != "" {
+		t.Errorf("cp1's labels %v", n.Labels)
+	}
+	if w, err := cs.CoreV1().Nodes().Get(ctx, "w1", metav1.GetOptions{}); err != nil || len(w.Labels) != 0 {
+		t.Errorf("w1: %v, labels %v", err, w.Labels)
+	}
+	patches := 0
+	cs.PrependReactor("patch", "nodes", func(k8stesting.Action) (bool, runtime.Object, error) { patches++; return false, nil, nil })
+	if err := a.label(ctx); err != nil || patches != 0 {
+		t.Errorf("a labelled Node: %v, %d patches", err, patches)
+	}
+}

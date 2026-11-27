@@ -162,7 +162,7 @@ which have no logins, so it has no `completion` command.
 | `kubernetes` | The node's Kubernetes cluster as `kubernetes/translate` builds it from the config and the image's facts, its flags and address ranges, the node as the Kubernetes part of its identity (`NodeIdentity`) names it, the kinds of Kubernetes nodes (control plane and worker), and the control plane's ports and paths on a node. |
 | `kubernetes/translate` | The Kubernetes layer's part of a config's translation: builds the cluster from the Node, Cluster and Flannel documents and the image's facts, adds the node's Kubernetes settings to its identity, and reads the sandbox image and the Addon objects. For chalkctl and chalklab it reads a node's type, leaves the Addon documents to control planes, and checks that an inventory's nodes hold the same Cluster, Flannel and ClusterRegistry specs, whose endpoint it returns. Reads the ClusterRegistry for chalkd and chalkctl. |
 | `kubernetes/addons` | Renders the objects chalkos applies to every cluster before its own manifests: RBAC for chalkos's identities, kube-proxy, flannel and CoreDNS. |
-| `kubernetes/apply` | Server-side apply of manifests and approval of kubelet serving certificates. |
+| `kubernetes/apply` | Server-side apply of manifests, approval of kubelet serving certificates and the `node-role.kubernetes.io/control-plane` label on control planes' Nodes. |
 | `kubernetes/clusterregistry` | The cluster registry as Go reads the ClusterRegistry kind: the mirrored hosts as repository path prefixes, the endpoints in the order a node pulls from them, and the URLs containerd pulls a host's images from. Standard library alone, so that chalkos-render can link it. |
 | `kubernetes/credprovider` | The kubelet's image credential provider: writes its config and the node's registry credentials from the Registry documents, and answers the kubelet's requests. |
 | `kubernetes/etcd` | etcd membership: learners, promotion, quorum-safe removal, the node's own member; finds the members from etcd's mirror pods and counts encrypted values by key. |
@@ -170,7 +170,7 @@ which have no logins, so it has no `completion` command.
 | `kubernetes/node` | The node's Kubernetes files at boot: addresses, kubelet credentials and flags, control-plane certificates, the check that they are prepared, the removal of the static pods. |
 | `kubernetes/nodeip` | Picks the node's address of each family. |
 | `kubernetes/pki` | The Kubernetes certificates: the share, the control plane's leaves, admin kubeconfigs, and the names chalkd's status gives them. |
-| `kubernetes/revoked` | The ConfigMap of revoked nodes, which control planes read before they renew a node certificate, and the admission policy that shuts those nodes out. |
+| `kubernetes/revoked` | The ConfigMap of revoked nodes, which control planes read before they renew a node certificate and prune once an entry keeps no node out, and the admission policy that shuts those nodes out. |
 | `kubernetes/vip` | The etcd election of the control plane that holds the VIPs; adds a VIP to an interface and announces it. |
 | `kubernetes/vxlan` | The nftables table `chalkos-vxlan`: marks VXLAN to the node's addresses for the firewall and drops pods' VXLAN to the source ranges. |
 | `imageref` | Reads container image references as config names them: a repository with its registry, a tag, a digest, or both. A tag of the form vX.Y.Z carries the version of what the image runs. |

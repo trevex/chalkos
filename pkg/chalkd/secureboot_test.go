@@ -287,6 +287,22 @@ func TestEnrollSecureBootRebootsAfterTheWrites(t *testing.T) {
 	}
 }
 
+// TestEnrollSecureBootAfterAnInstall refuses with the reason INSTALLED_AND_REBOOTS while the node
+// reboots into an accepted install.
+func TestEnrollSecureBootAfterAnInstall(t *testing.T) {
+	k, _ := testEnrolKeys(t)
+	_, _, other := imagetest.Signer(t, t.TempDir(), "other")
+	s, fw := enrolServer(t, true, other)
+	s.installed = true
+	_, err := s.EnrollSecureBoot(context.Background(), enrolRequest(t, k))
+	if codeOf(err) != connect.CodeFailedPrecondition || reasonOf(err) != nodev1.ErrorReason_ERROR_REASON_INSTALLED_AND_REBOOTS {
+		t.Errorf("EnrollSecureBoot = %v, want FailedPrecondition with the reason INSTALLED_AND_REBOOTS", err)
+	}
+	if len(fw.writes) > 0 {
+		t.Errorf("wrote %v", fw.writes)
+	}
+}
+
 // TestEnrollSecureBootWithoutESP refuses at once when udev found no ESP on the boot disk, rather
 // than waiting for the ESP's mount.
 func TestEnrollSecureBootWithoutESP(t *testing.T) {

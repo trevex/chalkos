@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -318,4 +319,22 @@ func (f fakeInstall) Install(_ context.Context, stream nodev1connect.NodeService
 	}
 	*f.got = msg.GetHeader()
 	return &nodev1.InstallResponse{}, nil
+}
+
+// A node's refusal because it reboots into an accepted install is told by its reason alone.
+func TestInstalledAndReboots(t *testing.T) {
+	for name, tc := range map[string]struct {
+		err  error
+		want bool
+	}{
+		"the reason":       {nodeError(t, connect.CodeFailedPrecondition, nodev1.ErrorReason_ERROR_REASON_INSTALLED_AND_REBOOTS), true},
+		"wrapped":          {fmt.Errorf("install n1: %w", nodeError(t, connect.CodeFailedPrecondition, nodev1.ErrorReason_ERROR_REASON_INSTALLED_AND_REBOOTS)), true},
+		"the message only": {connect.NewError(connect.CodeFailedPrecondition, "the node is installed and reboots"), false},
+		"another reason":   {nodeError(t, connect.CodeFailedPrecondition, nodev1.ErrorReason_ERROR_REASON_CONFIG_REFUSED), false},
+		"none":             {nil, false},
+	} {
+		if got := sdk.InstalledAndReboots(tc.err); got != tc.want {
+			t.Errorf("%s: InstalledAndReboots = %v, want %v", name, got, tc.want)
+		}
+	}
 }

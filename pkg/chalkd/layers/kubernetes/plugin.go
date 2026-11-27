@@ -56,6 +56,7 @@ func (p *Plugin) Permissions() map[string]layer.Permission {
 		kubernetesv1connect.KubernetesServiceUncordonNodeProcedure:         {Modes: layer.NormalOnly, Role: pki.RoleOperator},
 		kubernetesv1connect.KubernetesServiceRevokeNodeProcedure:           {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
 		kubernetesv1connect.KubernetesServiceUnrevokeNodeProcedure:         {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
+		kubernetesv1connect.KubernetesServicePruneRevokedProcedure:         {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
 	}
 }
 

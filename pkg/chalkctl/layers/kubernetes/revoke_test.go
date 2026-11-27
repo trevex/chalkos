@@ -8,8 +8,11 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	sdkkubernetes "github.com/trevex/chalkos/pkg/sdk/layers/kubernetes"
+	kubernetesview "github.com/trevex/chalkos/pkg/statusview/layers/kubernetes"
 )
 
 func TestUnrevokedLine(t *testing.T) {
@@ -94,6 +97,47 @@ func TestEveryControlPlaneReadsRevoked(t *testing.T) {
 			if !strings.Contains(err.Error(), w) {
 				t.Errorf("%v: %v, want %q", tc.controlPlanes, err, w)
 			}
+		}
+	}
+}
+
+// The line after a revocation warns while the revoked nodes fill more than 80% of their room.
+func TestRevokedLine(t *testing.T) {
+	at := time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		resp *kubernetesv1.RevokeNodeResponse
+		want string
+	}{
+		{&kubernetesv1.RevokeNodeResponse{RevokedAt: timestamppb.New(at), NodeDeleted: true, ListLength: 100, ListCapacity: 90_000},
+			"revoked node w1 (since 2026-10-23T12:00:00Z); deleted its Node object"},
+		{&kubernetesv1.RevokeNodeResponse{RevokedAt: timestamppb.New(at), ListLength: 72_000, ListCapacity: 90_000},
+			"revoked node w1 (since 2026-10-23T12:00:00Z); it had no Node object to delete"},
+		{&kubernetesv1.RevokeNodeResponse{RevokedAt: timestamppb.New(at), NodeDeleted: true, ListLength: 80_000, ListCapacity: 90_000},
+			"revoked node w1 (since 2026-10-23T12:00:00Z); deleted its Node object\n" +
+				"the revoked nodes fill 88% of their room; " + kubernetesview.MakeRevokedRoom},
+	} {
+		if got := revokedLine("w1", tc.resp); got != tc.want {
+			t.Errorf("revokedLine(%v) = %q, want %q", tc.resp, got, tc.want)
+		}
+	}
+}
+
+// The lines after a prune name the nodes dropped and say how full the list is, with how to make
+// room past 80%.
+func TestPrunedLines(t *testing.T) {
+	for _, tc := range []struct {
+		resp *kubernetesv1.PruneRevokedResponse
+		want string
+	}{
+		{&kubernetesv1.PruneRevokedResponse{ListLength: 2, ListCapacity: 90_000},
+			"dropped no node from the revoked nodes\nthe revoked nodes fill 0% of their room"},
+		{&kubernetesv1.PruneRevokedResponse{Pruned: []string{"w1", "w2"}, ListLength: 45_000, ListCapacity: 90_000},
+			"dropped 2 nodes from the revoked nodes, which nothing lets back in: w1, w2\nthe revoked nodes fill 50% of their room"},
+		{&kubernetesv1.PruneRevokedResponse{Pruned: []string{"w1"}, ListLength: 81_000, ListCapacity: 90_000},
+			"dropped 1 node from the revoked nodes, which nothing lets back in: w1\nthe revoked nodes fill 90% of their room; " + kubernetesview.MakeRevokedRoom},
+	} {
+		if got := prunedLines(tc.resp); got != tc.want {
+			t.Errorf("prunedLines(%v) = %q, want %q", tc.resp, got, tc.want)
 		}
 	}
 }

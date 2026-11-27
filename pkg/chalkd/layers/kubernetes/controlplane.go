@@ -181,14 +181,21 @@ func (k *side) serveControlPlane(ctx context.Context, c k8s.Cluster, cfg *rest.C
 	return ctx.Err()
 }
 
-// approveServing approves kubelet serving certificates of cluster c until ctx ends.
-func approveServing(ctx context.Context, c k8s.Cluster, cfg *rest.Config) {
+// approveServing approves kubelet serving certificates of cluster c, enforces the revoked nodes'
+// admission policy and labels the node's own Node until ctx ends.
+func (k *side) approveServing(ctx context.Context, c k8s.Cluster, cfg *rest.Config) {
 	client, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
 		log.Printf("kubernetes: approve kubelet serving certificates: %v", err)
 		return
 	}
-	(&kapply.Approver{Client: client, Cluster: c}).Run(ctx, 10*time.Second)
+	a := &kapply.Approver{Client: client, Cluster: c}
+	if n, err := k8s.ReadNode(k.state.NodeFile); err == nil {
+		a.Node = n.Name
+	} else {
+		log.Printf("kubernetes: the node's name for its control-plane label: %v", err)
+	}
+	a.Run(ctx, 10*time.Second)
 }
 
 func (k *side) applyOnce(ctx context.Context, c k8s.Cluster, cfg *rest.Config) (int, error) {

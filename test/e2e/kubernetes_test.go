@@ -126,6 +126,18 @@ func TestKubernetesCluster(t *testing.T) {
 		}
 		waitFor(t, 15*time.Minute, "both nodes Ready", func() error { return nodesReady(ctx, cs, "cp1", "w1") })
 		waitFor(t, 5*time.Minute, "approved kubelet serving certificates", func() error { return servingCertificates(ctx, cs, "cp1", "w1") })
+		waitFor(t, time.Minute, "the control-plane label on cp1 alone", func() error {
+			for name, want := range map[string]bool{"cp1": true, "w1": false} {
+				n, err := cs.CoreV1().Nodes().Get(ctx, name, metav1.GetOptions{})
+				if err != nil {
+					return err
+				}
+				if _, ok := n.Labels["node-role.kubernetes.io/control-plane"]; ok != want {
+					return fmt.Errorf("%s has the labels %v", name, n.Labels)
+				}
+			}
+			return nil
+		})
 		if out, err := chalkctl(t, nodes["w1"], "base", "status", "w1"); err != nil || !strings.Contains(out, "kubernetes worker: joined, node ready: True") || strings.Contains(out, "pods unknown") {
 			t.Errorf("status of w1: %v\n%s", err, out)
 		}

@@ -16,9 +16,9 @@ client file names no cluster: its OS CA ties it to one, and a node of another cl
 handshake, which chalkctl reports as a node that does not accept the client file.
 
 A client file works for bootstrap, disks, etcd leave, etcd members, etcd remove-member, logs, node
-activate, node diag, node reboot, node revoke, node routes, node unrevoke, registry delete, registry
-gc, registry list, registry push, secureboot enroll, status, storage reset and upgrade; every other
-command needs the secrets file or neither file.
+activate, node diag, node prune-revoked, node reboot, node revoke, node routes, node unrevoke,
+registry delete, registry gc, registry list, registry push, secureboot enroll, status, storage reset
+and upgrade; every other command needs the secrets file or neither file.
 
 A reader may read nodes' information, disks, status and logs, etcd's members and the cluster
 registry's images; an operator may also upgrade, activate staged images, reboot, drain and

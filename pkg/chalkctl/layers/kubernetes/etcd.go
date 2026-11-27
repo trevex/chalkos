@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -19,6 +20,30 @@ import (
 // throughControlPlane calls call on the control-plane node via, or else on the cluster's
 // control-plane nodes but skip in name order, moving on past nodes that are down or no etcd member.
 func throughControlPlane(h layer.Host, ctx context.Context, f viaFlags, skip string, call func(conn *client.Conn) error) error {
+	return throughOrdered(h, ctx, f, func(names []string) []string {
+		return slices.DeleteFunc(names, func(name string) bool { return name == skip })
+	}, call)
+}
+
+// throughControlPlaneLast is throughControlPlane, but asks the control plane last after the
+// others rather than never.
+func throughControlPlaneLast(h layer.Host, ctx context.Context, f viaFlags, last string, call func(conn *client.Conn) error) error {
+	return throughOrdered(h, ctx, f, func(names []string) []string { return othersFirst(names, last) }, call)
+}
+
+// othersFirst moves last, when it is among names, to their end.
+func othersFirst(names []string, last string) []string {
+	others := slices.DeleteFunc(slices.Clone(names), func(name string) bool { return name == last })
+	if len(others) < len(names) {
+		others = append(others, last)
+	}
+	return others
+}
+
+// throughOrdered calls call on the control-plane node via, or else on the cluster's
+// control-plane nodes in the order order puts them in, moving on past nodes that are down or no
+// etcd member.
+func throughOrdered(h layer.Host, ctx context.Context, f viaFlags, order func([]string) []string, call func(conn *client.Conn) error) error {
 	// Host.Nodes refuses a bare address without via too; this error names --via.
 	if f.via == "" && f.node.Address.Bare() != "" {
 		return errors.New("--address reaches one node; name it with --via")
@@ -34,10 +59,11 @@ func throughControlPlane(h layer.Host, ctx context.Context, f viaFlags, skip str
 	if c.Partial() {
 		return errors.New("an inventory names the control planes; name one with --via, or pass --inventory")
 	}
-	names, err := nodesOf(c, k8s.KindControlPlane, skip)
+	names, err := nodesOf(c, k8s.KindControlPlane, "")
 	if err != nil {
 		return err
 	}
+	names = order(names)
 	if len(names) == 0 {
 		return errors.New("the cluster has no other control-plane node to ask")
 	}

@@ -71,7 +71,14 @@ doing until `chalkctl status` reports a problem on the `node` line under `certif
 A control plane renews a certificate only while it can read the revoked nodes from its API
 server, so that it never renews a revoked node's. During a long outage of the API server, no
 renewal succeeds, the control plane's own included. `chalkctl node renew --ignore-revoked` renews a node's
-certificate without asking the control planes.
+certificate without asking the control planes. It then reads the revoked nodes to refresh the
+node's revocation if the node is revoked, so during the outage it renews the certificate but
+fails with `whether w1 is revoked is unknown, ...`, and the secrets file records w1's revocation
+as not refreshed. Once the API server answers, `chalkctl node prune-revoked`, rotate and the next
+command with `--ignore-revoked` refresh it first; `chalkctl node revoke w1 --refresh` retries it
+by hand. While the record holds w1, `chalkctl node renew w1` refuses it without
+`--ignore-revoked`, and rotate skips it, as a prune that read no record may have dropped it from
+the revoked nodes.
 
 A node whose image runs no Kubernetes has no control plane to ask. Renew its certificate with
 `chalkctl node renew` once a year, before it expires:
@@ -169,8 +176,9 @@ keys, with which it can issue itself new certificates. A cluster without Kuberne
 of revoked nodes. `chalkctl rotate node-ca` cuts off no node, because chalkd trusts every node CA
 the OS CA signed.
 
-A revoked name stays blocked until `chalkctl node unrevoke` lets it back in. Reusing the name
-takes both rotations first.
+A revoked name stays blocked until the finishes of both rotations drop it from the revoked nodes,
+until the old node's certificates have expired, or until `chalkctl node unrevoke` lets it back in.
+Reusing the name takes both rotations first.
 [Add and remove nodes](add-remove-nodes.md#revoke-a-removed-node) shows both commands, and
 [Kubernetes certificates](../how-it-works/kubernetes/certificates.md#revoking-a-node-cuts-off-its-writes-and-renewals)
 lists what a revoked node can still do.
@@ -267,7 +275,9 @@ chalkctl rotate os-ca --finish --secrets=secrets.age
 
 The finish ends with
 `the rotation of the OS CA is finished: every node trusts the new value alone`, followed by where
-the files went and the reminder to issue the client files again.
+the files went and the reminder to issue the client files again. With the Kubernetes layer, a
+control plane then drops the revoked nodes that nothing lets back in, and chalkctl names them, as
+[Reuse a removed node's name](add-remove-nodes.md#reuse-a-removed-nodes-name) shows.
 
 A config or image rollback restores no trust: the OS CAs are the node's own, kept apart from its
 config and its image. A node rolled back after the finish still trusts the new OS CA alone, so it
@@ -305,9 +315,15 @@ certificate's expiry, and a problem beside it when one needs doing, such as a re
 - `no control-plane node said which nodes are revoked (...); rotate runs only once one does, so it
   never hands a certificate to a revoked node, or with --ignore-revoked`: the API server is down,
   or the control planes run a chalkd from before node revocation. Fix that, or rotate with
-  `--ignore-revoked`, which reads no list and rotates every node of the inventory. A revoked node
+  `--ignore-revoked`, which skips no node and rotates every node of the inventory. A revoked node
   still in the inventory then receives the new CA and its certificates, so remove revoked nodes
-  from the inventory first. chalkctl warns of this at each run.
+  from the inventory first. chalkctl warns of this at each run. After each phase, rotate
+  refreshes the revocation of each revoked node, so it stays revoked until what it got expires.
+  While no control plane says which nodes are revoked, each run applies its phases and then fails
+  with `which of cp1, cp2 and w1 are revoked is unknown, ...`. The secrets file records those
+  revocations as not refreshed; each later run refreshes them first, and the finish prunes nothing
+  while one is recorded. Once a control plane answers, the next run clears the record, or refresh
+  each revoked node with `chalkctl node revoke <node> --refresh`.
 - A node unrevoked while a rotation is paused takes part from the next run on, but it missed the
   earlier phases, and the rotation may stop at it. Unrevoke nodes before or after a rotation.
 

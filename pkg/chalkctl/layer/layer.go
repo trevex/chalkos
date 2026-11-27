@@ -83,12 +83,48 @@ type Delivery interface {
 	// Payloads issues the layer's payloads.
 	sdk.Payloads
 	// ApplyFlags registers config apply's flags that ask for the layer's payloads; chalkctl
-	// registers --ignore-revoked, which delivers them without Admit.
+	// registers --ignore-revoked, which delivers them without Admit and then refreshes the
+	// revocations through Revocations.
 	ApplyFlags(fs *pflag.FlagSet) ApplyFlags
 	// Admit refuses to deliver t what the secrets file issues it, which does says.
 	Admit(ctx context.Context, t Target, does string) error
 	// AdmitInstall refuses to install t.
 	AdmitInstall(ctx context.Context, t Target) error
+}
+
+// Revocations is a plugin whose layer lists revoked nodes. A command run with --ignore-revoked,
+// such as node renew or rotate, may hand a revoked node certificates or CA material. Before it
+// does, chalkctl asks every compiled plugin which of the nodes it lists as revoked; once it has,
+// it has the plugin refresh their revocations, so that no pruning of the list drops a node while
+// what it got is still valid. The secrets file records the revocations a refresh failed for, by
+// layer, and chalkctl retries them through the plugin.
+type Revocations interface {
+	// RevokedAmong reads through nodes which of names the layer lists as revoked, before they are
+	// handed anything, as Revocations with Listed set. With install, names are nodes about to be
+	// installed, which are not asked: a control plane that does not answer as an installed node
+	// counts as not installed yet, as AdmitInstall counts it, and a name the list can be read for
+	// only once its node is installed is returned with Later set. The error says why the list
+	// cannot be read; chalkctl then has the plugin read it again for each name once they were
+	// handed what they got.
+	RevokedAmong(ctx context.Context, nodes Nodes, names []string, install bool) ([]Revocation, error)
+	// RefreshRevoked lists the revocations as revoked now, through nodes, and returns a line saying
+	// so for each. A Listed one that is no longer listed it revokes again, as it may have been
+	// pruned in between; of the others it refreshes those it lists. It returns the revocations it
+	// did not refresh, Listed when it read that they are revoked, and an error that names them
+	// and what to run for them.
+	RefreshRevoked(ctx context.Context, nodes Nodes, rs []Revocation) (lines []string, failed []Revocation, err error)
+}
+
+// Revocation is a node whose revocation a layer is to refresh once it was handed certificates or
+// CA material while revoked.
+type Revocation struct {
+	Node string
+	// Listed is set when the layer listed the node as revoked before it was handed what it got;
+	// otherwise whether it was revoked is unknown.
+	Listed bool
+	// Later is set when whether the node is revoked can be read only once it is back from its
+	// install: chalkctl leaves its refresh to the commands that retry the recorded ones.
+	Later bool
 }
 
 // ApplyFlags are config apply's flags of a layer, as Delivery registered them.
@@ -203,6 +239,16 @@ type Host interface {
 	// for a service of the nodes other than chalkd: their client certificate, and the OS CAs as
 	// the roots it verifies the nodes' certificates by. role is the role the credentials grant.
 	ClientTLS(ctx context.Context, f NodeFlags) (config *tls.Config, role pki.Role, err error)
+	// RetryRefresh refreshes again, through the plugin of the layer called layer and through
+	// nodes, the revocations of the layer that the secrets file records as not refreshed, only
+	// node's when node is set, and records which are left. Its error names those left. Without
+	// the secrets file, as with a client file, it does nothing.
+	RetryRefresh(ctx context.Context, f NodeFlags, nodes Nodes, layer, node string) error
+	// Unrevoked drops the revocation of node by the layer called layer from those the secrets
+	// file records as not refreshed, once the node was unrevoked. Its error says why the record
+	// may still hold it, as when the secrets file comes from standard input. Without the secrets
+	// file, as with a client file, it does nothing.
+	Unrevoked(ctx context.Context, f NodeFlags, layer, node string) error
 }
 
 // Cluster is what chalkctl knows of the cluster from its inventory.
@@ -235,6 +281,9 @@ type Target interface {
 	// Nodes reaches the cluster's nodes with the target's credentials, each at the address
 	// --address gave for it or else at the inventory's.
 	Nodes() Nodes
+	// Unrefreshed are the nodes whose revocations by the layer called layer the secrets file
+	// records as not refreshed; none with a client file.
+	Unrefreshed(layer string) []string
 }
 
 // Nodes reaches the nodes of a cluster with one set of credentials.

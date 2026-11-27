@@ -17,7 +17,13 @@ to recovering a node; renewing node certificates before they expire avoids it.
 
 A node revoked with chalkctl node revoke is refused, as is any node while a layer cannot say
 which nodes are revoked: in a Kubernetes cluster the control planes are asked first, and one
-whose own certificate expired cannot answer. --ignore-revoked renews without asking.
+whose own certificate expired cannot answer. --ignore-revoked renews without asking whether to:
+it reads which nodes are revoked beforehand, and after the delivery, also a failed one, has a
+control plane refresh the revocation of the node if it was revoked, so that it stays revoked
+until the new certificate expires. A node dropped from the list in between is revoked again.
+When the refresh fails, the command fails, naming what to run, and the secrets file records the
+revocation as not refreshed: chalkctl prunes no revoked node while it does, and rotate, node
+prune-revoked and the next command run with --ignore-revoked refresh it first.
 
 The command needs the secrets file.
 

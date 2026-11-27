@@ -320,6 +320,9 @@ func TestEtcdLeaveAfterLeftWithJoiningMarker(t *testing.T) {
 	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the node left etcd already") {
 		t.Fatalf("leave again: %v, want a refusal saying it left already", err)
 	}
+	if !hasNotEtcdMember(err) {
+		t.Errorf("leave again: %v, want the NotEtcdMember detail", err)
+	}
 }
 
 // A node whose member an operator removed while it joined still leaves: etcd has nothing left to
@@ -468,8 +471,22 @@ func TestEtcdLeaveRefusedWithoutQuorum(t *testing.T) {
 	}
 }
 
+// hasNotEtcdMember reports whether err, as the interceptor answers it, carries the NotEtcdMember
+// detail.
+func hasNotEtcdMember(err error) bool {
+	for _, d := range layer.Codes(nil).Error(err).Details() {
+		if v, err := connectproto.UnmarshalErrorDetail(d); err == nil {
+			if _, ok := v.(*kubernetesv1.NotEtcdMember); ok {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // A node that is no etcd member refuses to list or leave etcd. A control plane says so in an error
-// detail, which tells chalkctl to ask the next one; a worker's refusal has no such detail.
+// detail, which tells chalkctl to ask the next one and a client that removes the node that its
+// leave is done; a worker's refusal has no such detail.
 func TestEtcdNeedsMember(t *testing.T) {
 	worker, _ := kubernetesNode(t, k8s.KindWorker, true)
 	waiting, _ := kubernetesNode(t, k8s.KindControlPlane, true)
@@ -481,20 +498,20 @@ func TestEtcdNeedsMember(t *testing.T) {
 		if layer.CodeOf(err) != connect.CodeFailedPrecondition {
 			t.Errorf("members on %s: %v", name, err)
 		}
-		if err := leave(tc.s, false); layer.CodeOf(err) != connect.CodeFailedPrecondition {
+		if got := hasNotEtcdMember(err); got != tc.want {
+			t.Errorf("members on %s: %v has the NotEtcdMember detail: %v, want %v", name, err, got, tc.want)
+		}
+		err = leave(tc.s, false)
+		if layer.CodeOf(err) != connect.CodeFailedPrecondition {
 			t.Errorf("leaving on %s: %v", name, err)
 		}
-		// The error as the interceptor answers it.
-		ce := layer.Codes(nil).Error(err)
-		got := false
-		for _, d := range ce.Details() {
-			if v, err := connectproto.UnmarshalErrorDetail(d); err == nil {
-				_, got = v.(*kubernetesv1.NotEtcdMember)
-			}
+		if got := hasNotEtcdMember(err); got != tc.want {
+			t.Errorf("leaving on %s: %v has the NotEtcdMember detail: %v, want %v", name, err, got, tc.want)
 		}
-		if got != tc.want {
-			t.Errorf("%s: %v has the NotEtcdMember detail: %v, want %v", name, err, got, tc.want)
-		}
+	}
+	// EtcdLeave gives its own text, not the default that sends the client to another node.
+	if err := leave(waiting, false); err == nil || err.Error() != "the node is not an etcd member" {
+		t.Errorf("leaving on a node that is not bootstrapped: %v, want %q", err, "the node is not an etcd member")
 	}
 }
 

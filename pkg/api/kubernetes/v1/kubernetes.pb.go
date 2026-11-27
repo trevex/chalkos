@@ -299,8 +299,15 @@ type StatusResponse struct {
 	// applied them. It stays true through a reload for a changed share or config, also before the
 	// loop applied the changed objects, and when the loop fails later. False on other nodes.
 	AddonsApplied bool `protobuf:"varint,19,opt,name=addons_applied,json=addonsApplied,proto3" json:"addons_applied,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// On a bootstrapped control-plane node: the length of the admission policy's map of the revoked
+	// nodes, in code points, as RevokeNodeResponse.list_length counts it; 0 when they could not be
+	// read.
+	RevokedListLength uint32 `protobuf:"varint,20,opt,name=revoked_list_length,json=revokedListLength,proto3" json:"revoked_list_length,omitempty"`
+	// On a bootstrapped control-plane node: the length revoked_list_length may reach before
+	// RevokeNode refuses new nodes, with the reason REVOKED_LIST_FULL. 0 on other nodes.
+	RevokedListCapacity uint32 `protobuf:"varint,21,opt,name=revoked_list_capacity,json=revokedListCapacity,proto3" json:"revoked_list_capacity,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *StatusResponse) Reset() {
@@ -464,6 +471,20 @@ func (x *StatusResponse) GetAddonsApplied() bool {
 		return x.AddonsApplied
 	}
 	return false
+}
+
+func (x *StatusResponse) GetRevokedListLength() uint32 {
+	if x != nil {
+		return x.RevokedListLength
+	}
+	return 0
+}
+
+func (x *StatusResponse) GetRevokedListCapacity() uint32 {
+	if x != nil {
+		return x.RevokedListCapacity
+	}
+	return 0
 }
 
 // The request of BGPStatus.
@@ -763,9 +784,12 @@ func (x *BootstrapResponse) GetApplied() uint32 {
 }
 
 // The error detail of a request that needs an etcd member, from a control-plane node that is
-// none, as before it joined the cluster or after it left etcd. The request fails with FAILED_PRECONDITION, and another
-// control-plane node may answer it. EtcdMembers, EtcdRemoveMember, RotationStep, DrainNode,
-// UncordonNode, RevokeNode and UnrevokeNode give it.
+// none, as before it joined the cluster or after it left etcd. The request fails with
+// FAILED_PRECONDITION, and another control-plane node may answer it. EtcdMembers,
+// EtcdRemoveMember, RotationStep, DrainNode, UncordonNode, RevokeNode, UnrevokeNode and
+// PruneRevoked give it. EtcdLeave gives it for a node that is no
+// member or left etcd already: there it means the node has nothing to leave, and asking another
+// node does not help.
 type NotEtcdMember struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -1675,7 +1699,11 @@ func (x *UncordonNodeResponse) GetUncordoned() bool {
 type RevokeNodeRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The node's name in Kubernetes, which its node certificate carries too.
-	Node          string `protobuf:"bytes,1,opt,name=node,proto3" json:"node,omitempty"`
+	Node string `protobuf:"bytes,1,opt,name=node,proto3" json:"node,omitempty"`
+	// Whether the node, revoked already, is listed as revoked now in place of its earlier time, as
+	// after it was handed certificates while revoked: its entry then lasts until those expire too.
+	// A node not revoked is refused with NOT_FOUND and stays unlisted.
+	Refresh       bool `protobuf:"varint,2,opt,name=refresh,proto3" json:"refresh,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1717,13 +1745,26 @@ func (x *RevokeNodeRequest) GetNode() string {
 	return ""
 }
 
+func (x *RevokeNodeRequest) GetRefresh() bool {
+	if x != nil {
+		return x.Refresh
+	}
+	return false
+}
+
 // The response of RevokeNode.
 type RevokeNodeResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// When the node was revoked: now, or at an earlier revocation.
 	RevokedAt *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=revoked_at,json=revokedAt,proto3" json:"revoked_at,omitempty"`
 	// Whether the call deleted the node's Node object; false when the cluster had none.
-	NodeDeleted   bool `protobuf:"varint,2,opt,name=node_deleted,json=nodeDeleted,proto3" json:"node_deleted,omitempty"`
+	NodeDeleted bool `protobuf:"varint,2,opt,name=node_deleted,json=nodeDeleted,proto3" json:"node_deleted,omitempty"`
+	// The length of the admission policy's map of revoked nodes after the call, in code points, as
+	// the API server counts an expression's length.
+	ListLength uint32 `protobuf:"varint,3,opt,name=list_length,json=listLength,proto3" json:"list_length,omitempty"`
+	// The length list_length may reach: RevokeNode refuses a new node, with the reason
+	// REVOKED_LIST_FULL, that would make the map longer.
+	ListCapacity  uint32 `protobuf:"varint,4,opt,name=list_capacity,json=listCapacity,proto3" json:"list_capacity,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1770,6 +1811,20 @@ func (x *RevokeNodeResponse) GetNodeDeleted() bool {
 		return x.NodeDeleted
 	}
 	return false
+}
+
+func (x *RevokeNodeResponse) GetListLength() uint32 {
+	if x != nil {
+		return x.ListLength
+	}
+	return 0
+}
+
+func (x *RevokeNodeResponse) GetListCapacity() uint32 {
+	if x != nil {
+		return x.ListCapacity
+	}
+	return 0
 }
 
 // The request of UnrevokeNode.
@@ -1886,6 +1941,109 @@ func (x *UnrevokeNodeResponse) GetStaleCas() []string {
 	return nil
 }
 
+// The request of PruneRevoked.
+type PruneRevokedRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PruneRevokedRequest) Reset() {
+	*x = PruneRevokedRequest{}
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PruneRevokedRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PruneRevokedRequest) ProtoMessage() {}
+
+func (x *PruneRevokedRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PruneRevokedRequest.ProtoReflect.Descriptor instead.
+func (*PruneRevokedRequest) Descriptor() ([]byte, []int) {
+	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{29}
+}
+
+// The response of PruneRevoked.
+type PruneRevokedResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The nodes the call dropped from the revoked nodes, in name order.
+	Pruned []string `protobuf:"bytes,1,rep,name=pruned,proto3" json:"pruned,omitempty"`
+	// The length of the admission policy's map of revoked nodes after the call, in code points, as
+	// the API server counts an expression's length.
+	ListLength uint32 `protobuf:"varint,2,opt,name=list_length,json=listLength,proto3" json:"list_length,omitempty"`
+	// The length list_length may reach: RevokeNode refuses a new node, with the reason
+	// REVOKED_LIST_FULL, that would make the map longer.
+	ListCapacity  uint32 `protobuf:"varint,3,opt,name=list_capacity,json=listCapacity,proto3" json:"list_capacity,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PruneRevokedResponse) Reset() {
+	*x = PruneRevokedResponse{}
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PruneRevokedResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PruneRevokedResponse) ProtoMessage() {}
+
+func (x *PruneRevokedResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PruneRevokedResponse.ProtoReflect.Descriptor instead.
+func (*PruneRevokedResponse) Descriptor() ([]byte, []int) {
+	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *PruneRevokedResponse) GetPruned() []string {
+	if x != nil {
+		return x.Pruned
+	}
+	return nil
+}
+
+func (x *PruneRevokedResponse) GetListLength() uint32 {
+	if x != nil {
+		return x.ListLength
+	}
+	return 0
+}
+
+func (x *PruneRevokedResponse) GetListCapacity() uint32 {
+	if x != nil {
+		return x.ListCapacity
+	}
+	return 0
+}
+
 // A node's Kubernetes share, as ApplyConfig and Install deliver it in their layers.
 type Share struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -1898,7 +2056,7 @@ type Share struct {
 
 func (x *Share) Reset() {
 	*x = Share{}
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[29]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1910,7 +2068,7 @@ func (x *Share) String() string {
 func (*Share) ProtoMessage() {}
 
 func (x *Share) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[29]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1923,7 +2081,7 @@ func (x *Share) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Share.ProtoReflect.Descriptor instead.
 func (*Share) Descriptor() ([]byte, []int) {
-	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{29}
+	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *Share) GetShare() []byte {
@@ -1944,7 +2102,7 @@ type ImageFacts struct {
 
 func (x *ImageFacts) Reset() {
 	*x = ImageFacts{}
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[30]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1956,7 +2114,7 @@ func (x *ImageFacts) String() string {
 func (*ImageFacts) ProtoMessage() {}
 
 func (x *ImageFacts) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[30]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1969,7 +2127,7 @@ func (x *ImageFacts) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImageFacts.ProtoReflect.Descriptor instead.
 func (*ImageFacts) Descriptor() ([]byte, []int) {
-	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{30}
+	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *ImageFacts) GetImageJson() []byte {
@@ -1984,7 +2142,7 @@ var File_chalkos_kubernetes_v1_kubernetes_proto protoreflect.FileDescriptor
 const file_chalkos_kubernetes_v1_kubernetes_proto_rawDesc = "" +
 	"\n" +
 	"&chalkos/kubernetes/v1/kubernetes.proto\x12\x15chalkos.kubernetes.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1achalkos/node/v1/node.proto\"\x0f\n" +
-	"\rStatusRequest\"\xd2\x06\n" +
+	"\rStatusRequest\"\xb6\a\n" +
 	"\x0eStatusResponse\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x122\n" +
@@ -2007,7 +2165,9 @@ const file_chalkos_kubernetes_v1_kubernetes_proto_rawDesc = "" +
 	"\n" +
 	"pods_error\x18\x11 \x01(\tR\tpodsError\x123\n" +
 	"\x16pods_not_running_total\x18\x12 \x01(\rR\x13podsNotRunningTotal\x12%\n" +
-	"\x0eaddons_applied\x18\x13 \x01(\bR\raddonsApplied\"\x12\n" +
+	"\x0eaddons_applied\x18\x13 \x01(\bR\raddonsApplied\x12.\n" +
+	"\x13revoked_list_length\x18\x14 \x01(\rR\x11revokedListLength\x122\n" +
+	"\x15revoked_list_capacity\x18\x15 \x01(\rR\x13revokedListCapacity\"\x12\n" +
 	"\x10BGPStatusRequest\"A\n" +
 	"\x11BGPStatusResponse\x12,\n" +
 	"\x03bgp\x18\x01 \x01(\v2\x1a.chalkos.node.v1.BGPStatusR\x03bgp\"\\\n" +
@@ -2073,20 +2233,30 @@ const file_chalkos_kubernetes_v1_kubernetes_proto_rawDesc = "" +
 	"\x14UncordonNodeResponse\x12\x1e\n" +
 	"\n" +
 	"uncordoned\x18\x01 \x01(\bR\n" +
-	"uncordoned\"'\n" +
+	"uncordoned\"A\n" +
 	"\x11RevokeNodeRequest\x12\x12\n" +
-	"\x04node\x18\x01 \x01(\tR\x04node\"r\n" +
+	"\x04node\x18\x01 \x01(\tR\x04node\x12\x18\n" +
+	"\arefresh\x18\x02 \x01(\bR\arefresh\"\xb8\x01\n" +
 	"\x12RevokeNodeResponse\x129\n" +
 	"\n" +
 	"revoked_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\trevokedAt\x12!\n" +
-	"\fnode_deleted\x18\x02 \x01(\bR\vnodeDeleted\"?\n" +
+	"\fnode_deleted\x18\x02 \x01(\bR\vnodeDeleted\x12\x1f\n" +
+	"\vlist_length\x18\x03 \x01(\rR\n" +
+	"listLength\x12#\n" +
+	"\rlist_capacity\x18\x04 \x01(\rR\flistCapacity\"?\n" +
 	"\x13UnrevokeNodeRequest\x12\x12\n" +
 	"\x04node\x18\x01 \x01(\tR\x04node\x12\x14\n" +
 	"\x05force\x18\x02 \x01(\bR\x05force\"n\n" +
 	"\x14UnrevokeNodeResponse\x129\n" +
 	"\n" +
 	"revoked_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\trevokedAt\x12\x1b\n" +
-	"\tstale_cas\x18\x02 \x03(\tR\bstaleCas\"\x1d\n" +
+	"\tstale_cas\x18\x02 \x03(\tR\bstaleCas\"\x15\n" +
+	"\x13PruneRevokedRequest\"t\n" +
+	"\x14PruneRevokedResponse\x12\x16\n" +
+	"\x06pruned\x18\x01 \x03(\tR\x06pruned\x12\x1f\n" +
+	"\vlist_length\x18\x02 \x01(\rR\n" +
+	"listLength\x12#\n" +
+	"\rlist_capacity\x18\x03 \x01(\rR\flistCapacity\"\x1d\n" +
 	"\x05Share\x12\x14\n" +
 	"\x05share\x18\x01 \x01(\fR\x05share\"+\n" +
 	"\n" +
@@ -2111,7 +2281,8 @@ const file_chalkos_kubernetes_v1_kubernetes_proto_rawDesc = "" +
 	" ROTATION_STEP_LIST_TOKEN_SECRETS\x10\x02\x12#\n" +
 	"\x1fROTATION_STEP_REWRITE_ENCRYPTED\x10\x03\x12!\n" +
 	"\x1dROTATION_STEP_COUNT_ENCRYPTED\x10\x04\x12'\n" +
-	"#ROTATION_STEP_RENEW_KUBELET_SERVING\x10\x052\xe4\t\n" +
+	"#ROTATION_STEP_RENEW_KUBELET_SERVING\x10\x052\xcd\n" +
+	"\n" +
 	"\x11KubernetesService\x12U\n" +
 	"\x06Status\x12$.chalkos.kubernetes.v1.StatusRequest\x1a%.chalkos.kubernetes.v1.StatusResponse\x12^\n" +
 	"\tBGPStatus\x12'.chalkos.kubernetes.v1.BGPStatusRequest\x1a(.chalkos.kubernetes.v1.BGPStatusResponse\x12^\n" +
@@ -2125,7 +2296,8 @@ const file_chalkos_kubernetes_v1_kubernetes_proto_rawDesc = "" +
 	"\fUncordonNode\x12*.chalkos.kubernetes.v1.UncordonNodeRequest\x1a+.chalkos.kubernetes.v1.UncordonNodeResponse\x12a\n" +
 	"\n" +
 	"RevokeNode\x12(.chalkos.kubernetes.v1.RevokeNodeRequest\x1a).chalkos.kubernetes.v1.RevokeNodeResponse\x12g\n" +
-	"\fUnrevokeNode\x12*.chalkos.kubernetes.v1.UnrevokeNodeRequest\x1a+.chalkos.kubernetes.v1.UnrevokeNodeResponseB>Z<github.com/trevex/chalkos/pkg/api/kubernetes/v1;kubernetesv1b\x06proto3"
+	"\fUnrevokeNode\x12*.chalkos.kubernetes.v1.UnrevokeNodeRequest\x1a+.chalkos.kubernetes.v1.UnrevokeNodeResponse\x12g\n" +
+	"\fPruneRevoked\x12*.chalkos.kubernetes.v1.PruneRevokedRequest\x1a+.chalkos.kubernetes.v1.PruneRevokedResponseB>Z<github.com/trevex/chalkos/pkg/api/kubernetes/v1;kubernetesv1b\x06proto3"
 
 var (
 	file_chalkos_kubernetes_v1_kubernetes_proto_rawDescOnce sync.Once
@@ -2140,7 +2312,7 @@ func file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP() []byte {
 }
 
 var file_chalkos_kubernetes_v1_kubernetes_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
+var file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes = make([]protoimpl.MessageInfo, 33)
 var file_chalkos_kubernetes_v1_kubernetes_proto_goTypes = []any{
 	(Phase)(0),                           // 0: chalkos.kubernetes.v1.Phase
 	(RotationStep)(0),                    // 1: chalkos.kubernetes.v1.RotationStep
@@ -2173,23 +2345,25 @@ var file_chalkos_kubernetes_v1_kubernetes_proto_goTypes = []any{
 	(*RevokeNodeResponse)(nil),           // 28: chalkos.kubernetes.v1.RevokeNodeResponse
 	(*UnrevokeNodeRequest)(nil),          // 29: chalkos.kubernetes.v1.UnrevokeNodeRequest
 	(*UnrevokeNodeResponse)(nil),         // 30: chalkos.kubernetes.v1.UnrevokeNodeResponse
-	(*Share)(nil),                        // 31: chalkos.kubernetes.v1.Share
-	(*ImageFacts)(nil),                   // 32: chalkos.kubernetes.v1.ImageFacts
-	(*v1.BGPStatus)(nil),                 // 33: chalkos.node.v1.BGPStatus
-	(*timestamppb.Timestamp)(nil),        // 34: google.protobuf.Timestamp
+	(*PruneRevokedRequest)(nil),          // 31: chalkos.kubernetes.v1.PruneRevokedRequest
+	(*PruneRevokedResponse)(nil),         // 32: chalkos.kubernetes.v1.PruneRevokedResponse
+	(*Share)(nil),                        // 33: chalkos.kubernetes.v1.Share
+	(*ImageFacts)(nil),                   // 34: chalkos.kubernetes.v1.ImageFacts
+	(*v1.BGPStatus)(nil),                 // 35: chalkos.node.v1.BGPStatus
+	(*timestamppb.Timestamp)(nil),        // 36: google.protobuf.Timestamp
 }
 var file_chalkos_kubernetes_v1_kubernetes_proto_depIdxs = []int32{
 	0,  // 0: chalkos.kubernetes.v1.StatusResponse.phase:type_name -> chalkos.kubernetes.v1.Phase
 	6,  // 1: chalkos.kubernetes.v1.StatusResponse.revoked_nodes:type_name -> chalkos.kubernetes.v1.RevokedNode
 	7,  // 2: chalkos.kubernetes.v1.StatusResponse.pods_not_running:type_name -> chalkos.kubernetes.v1.NodePod
-	33, // 3: chalkos.kubernetes.v1.BGPStatusResponse.bgp:type_name -> chalkos.node.v1.BGPStatus
-	34, // 4: chalkos.kubernetes.v1.RevokedNode.revoked_at:type_name -> google.protobuf.Timestamp
+	35, // 3: chalkos.kubernetes.v1.BGPStatusResponse.bgp:type_name -> chalkos.node.v1.BGPStatus
+	36, // 4: chalkos.kubernetes.v1.RevokedNode.revoked_at:type_name -> google.protobuf.Timestamp
 	11, // 5: chalkos.kubernetes.v1.EtcdMembersResponse.members:type_name -> chalkos.kubernetes.v1.EtcdMember
 	11, // 6: chalkos.kubernetes.v1.EtcdRemoveMemberResponse.removed:type_name -> chalkos.kubernetes.v1.EtcdMember
 	1,  // 7: chalkos.kubernetes.v1.RotationStepRequest.step:type_name -> chalkos.kubernetes.v1.RotationStep
 	22, // 8: chalkos.kubernetes.v1.RotationStepResponse.encrypted:type_name -> chalkos.kubernetes.v1.EncryptedObjects
-	34, // 9: chalkos.kubernetes.v1.RevokeNodeResponse.revoked_at:type_name -> google.protobuf.Timestamp
-	34, // 10: chalkos.kubernetes.v1.UnrevokeNodeResponse.revoked_at:type_name -> google.protobuf.Timestamp
+	36, // 9: chalkos.kubernetes.v1.RevokeNodeResponse.revoked_at:type_name -> google.protobuf.Timestamp
+	36, // 10: chalkos.kubernetes.v1.UnrevokeNodeResponse.revoked_at:type_name -> google.protobuf.Timestamp
 	2,  // 11: chalkos.kubernetes.v1.KubernetesService.Status:input_type -> chalkos.kubernetes.v1.StatusRequest
 	4,  // 12: chalkos.kubernetes.v1.KubernetesService.BGPStatus:input_type -> chalkos.kubernetes.v1.BGPStatusRequest
 	8,  // 13: chalkos.kubernetes.v1.KubernetesService.Bootstrap:input_type -> chalkos.kubernetes.v1.BootstrapRequest
@@ -2202,20 +2376,22 @@ var file_chalkos_kubernetes_v1_kubernetes_proto_depIdxs = []int32{
 	25, // 20: chalkos.kubernetes.v1.KubernetesService.UncordonNode:input_type -> chalkos.kubernetes.v1.UncordonNodeRequest
 	27, // 21: chalkos.kubernetes.v1.KubernetesService.RevokeNode:input_type -> chalkos.kubernetes.v1.RevokeNodeRequest
 	29, // 22: chalkos.kubernetes.v1.KubernetesService.UnrevokeNode:input_type -> chalkos.kubernetes.v1.UnrevokeNodeRequest
-	3,  // 23: chalkos.kubernetes.v1.KubernetesService.Status:output_type -> chalkos.kubernetes.v1.StatusResponse
-	5,  // 24: chalkos.kubernetes.v1.KubernetesService.BGPStatus:output_type -> chalkos.kubernetes.v1.BGPStatusResponse
-	9,  // 25: chalkos.kubernetes.v1.KubernetesService.Bootstrap:output_type -> chalkos.kubernetes.v1.BootstrapResponse
-	13, // 26: chalkos.kubernetes.v1.KubernetesService.EtcdMembers:output_type -> chalkos.kubernetes.v1.EtcdMembersResponse
-	15, // 27: chalkos.kubernetes.v1.KubernetesService.EtcdRemoveMember:output_type -> chalkos.kubernetes.v1.EtcdRemoveMemberResponse
-	17, // 28: chalkos.kubernetes.v1.KubernetesService.EtcdLeave:output_type -> chalkos.kubernetes.v1.EtcdLeaveResponse
-	19, // 29: chalkos.kubernetes.v1.KubernetesService.RenewNodeCertificate:output_type -> chalkos.kubernetes.v1.RenewNodeCertificateResponse
-	21, // 30: chalkos.kubernetes.v1.KubernetesService.RotationStep:output_type -> chalkos.kubernetes.v1.RotationStepResponse
-	24, // 31: chalkos.kubernetes.v1.KubernetesService.DrainNode:output_type -> chalkos.kubernetes.v1.DrainNodeResponse
-	26, // 32: chalkos.kubernetes.v1.KubernetesService.UncordonNode:output_type -> chalkos.kubernetes.v1.UncordonNodeResponse
-	28, // 33: chalkos.kubernetes.v1.KubernetesService.RevokeNode:output_type -> chalkos.kubernetes.v1.RevokeNodeResponse
-	30, // 34: chalkos.kubernetes.v1.KubernetesService.UnrevokeNode:output_type -> chalkos.kubernetes.v1.UnrevokeNodeResponse
-	23, // [23:35] is the sub-list for method output_type
-	11, // [11:23] is the sub-list for method input_type
+	31, // 23: chalkos.kubernetes.v1.KubernetesService.PruneRevoked:input_type -> chalkos.kubernetes.v1.PruneRevokedRequest
+	3,  // 24: chalkos.kubernetes.v1.KubernetesService.Status:output_type -> chalkos.kubernetes.v1.StatusResponse
+	5,  // 25: chalkos.kubernetes.v1.KubernetesService.BGPStatus:output_type -> chalkos.kubernetes.v1.BGPStatusResponse
+	9,  // 26: chalkos.kubernetes.v1.KubernetesService.Bootstrap:output_type -> chalkos.kubernetes.v1.BootstrapResponse
+	13, // 27: chalkos.kubernetes.v1.KubernetesService.EtcdMembers:output_type -> chalkos.kubernetes.v1.EtcdMembersResponse
+	15, // 28: chalkos.kubernetes.v1.KubernetesService.EtcdRemoveMember:output_type -> chalkos.kubernetes.v1.EtcdRemoveMemberResponse
+	17, // 29: chalkos.kubernetes.v1.KubernetesService.EtcdLeave:output_type -> chalkos.kubernetes.v1.EtcdLeaveResponse
+	19, // 30: chalkos.kubernetes.v1.KubernetesService.RenewNodeCertificate:output_type -> chalkos.kubernetes.v1.RenewNodeCertificateResponse
+	21, // 31: chalkos.kubernetes.v1.KubernetesService.RotationStep:output_type -> chalkos.kubernetes.v1.RotationStepResponse
+	24, // 32: chalkos.kubernetes.v1.KubernetesService.DrainNode:output_type -> chalkos.kubernetes.v1.DrainNodeResponse
+	26, // 33: chalkos.kubernetes.v1.KubernetesService.UncordonNode:output_type -> chalkos.kubernetes.v1.UncordonNodeResponse
+	28, // 34: chalkos.kubernetes.v1.KubernetesService.RevokeNode:output_type -> chalkos.kubernetes.v1.RevokeNodeResponse
+	30, // 35: chalkos.kubernetes.v1.KubernetesService.UnrevokeNode:output_type -> chalkos.kubernetes.v1.UnrevokeNodeResponse
+	32, // 36: chalkos.kubernetes.v1.KubernetesService.PruneRevoked:output_type -> chalkos.kubernetes.v1.PruneRevokedResponse
+	24, // [24:37] is the sub-list for method output_type
+	11, // [11:24] is the sub-list for method input_type
 	11, // [11:11] is the sub-list for extension type_name
 	11, // [11:11] is the sub-list for extension extendee
 	0,  // [0:11] is the sub-list for field type_name
@@ -2232,7 +2408,7 @@ func file_chalkos_kubernetes_v1_kubernetes_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_chalkos_kubernetes_v1_kubernetes_proto_rawDesc), len(file_chalkos_kubernetes_v1_kubernetes_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   31,
+			NumMessages:   33,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

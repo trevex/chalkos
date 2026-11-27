@@ -637,10 +637,10 @@ List the nodes through the VIP:
 ```console
 $ export KUBECONFIG=$PWD/kubeconfig
 $ kubectl get nodes
-NAME    STATUS   ROLES    AGE   VERSION
-node1   Ready    <none>   4m    v1.37.2
-node2   Ready    <none>   2m    v1.37.2
-node3   Ready    <none>   1m    v1.37.2
+NAME    STATUS   ROLES           AGE   VERSION
+node1   Ready    control-plane   4m    v1.37.2
+node2   Ready    control-plane   2m    v1.37.2
+node3   Ready    control-plane   1m    v1.37.2
 ```
 
 A node may show `NotReady` for the first minute, until flannel runs on it. `kubectl get nodes -o

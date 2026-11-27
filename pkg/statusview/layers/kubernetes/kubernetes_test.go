@@ -32,6 +32,50 @@ func TestRevokedLines(t *testing.T) {
 	}
 }
 
+// The revoked nodes' fill is warned about past 80%, naming the prune and the CA rotations that make room.
+func TestRevokedFill(t *testing.T) {
+	k := &kubernetesv1.StatusResponse{
+		RevokedNodes:        []*kubernetesv1.RevokedNode{{Name: "w1"}},
+		RevokedListLength:   72_001,
+		RevokedListCapacity: 90_000,
+	}
+	if p, warn := RevokedFill(k.RevokedListLength, k.RevokedListCapacity); p != 80 || !warn {
+		t.Errorf("RevokedFill = %d, %v; want 80 and a warning past 80%%", p, warn)
+	}
+	want := []string{
+		"revoked nodes:",
+		"  w1\tat an unknown time",
+		"  the list is 80% full; " + MakeRevokedRoom,
+	}
+	if got := revokedLines(k); !slices.Equal(got, want) {
+		t.Errorf("lines = %q, want %q", got, want)
+	}
+	var b bytes.Buffer
+	if err := Write(&b, k); err != nil {
+		t.Fatal(err)
+	}
+	if want := "revoked nodes:\n  w1  at an unknown time\n  the list is 80% full; " + MakeRevokedRoom + "\n"; !strings.Contains(b.String(), want) {
+		t.Errorf("no %q in\n%s", want, b.String())
+	}
+	if !strings.HasPrefix(MakeRevokedRoom, "drop the expired revocations with chalkctl node prune-revoked") ||
+		!strings.Contains(MakeRevokedRoom, "chalkctl rotate os-ca and chalkctl rotate kubernetes-ca, each to its finish") {
+		t.Errorf("MakeRevokedRoom = %q", MakeRevokedRoom)
+	}
+	if p := Problems(k); !slices.Equal(p, []string{"revoked nodes list 80% full"}) {
+		t.Errorf("problems %q", p)
+	}
+	k.RevokedListLength = 72_000
+	if _, warn := RevokedFill(k.RevokedListLength, k.RevokedListCapacity); warn {
+		t.Error("exactly 80% warns")
+	}
+	if len(Problems(k)) != 0 || len(revokedLines(k)) != 2 {
+		t.Errorf("at 80%%: problems %q, lines %q", Problems(k), revokedLines(k))
+	}
+	if p, warn := RevokedFill(0, 0); p != 0 || warn {
+		t.Error("a worker's status warns")
+	}
+}
+
 func TestVersionsLine(t *testing.T) {
 	for want, k := range map[string]*kubernetesv1.StatusResponse{
 		"kubernetes versions: API server 1.37.2, kubelet 1.37.1": {Kind: "worker", ApiServerVersion: "1.37.2", KubeletVersion: "1.37.1"},

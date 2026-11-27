@@ -471,3 +471,27 @@ func TestDirectorySyncedAfterWrites(t *testing.T) {
 		t.Errorf("the file was not replaced: %v", err)
 	}
 }
+
+// A command that opens the secrets file from standard input and then loads it reads the same
+// secrets both times.
+func TestOpenThenLoadSecretsFromStdin(t *testing.T) {
+	ta := newTestApp(t)
+	data, err := ta.secrets.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ta.stdin = bytes.NewReader(data)
+	ctx := context.WithValue(t.Context(), secretSourcesKey{}, &secretSources{ctx: t.Context(), app: ta.app})
+	f, err := ta.openSecrets(ctx, layer.SecretsFlags{Path: "-"}, changeFlags{out: filepath.Join(ta.dir, "out.json")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	loaded, err := ta.loadSecrets(ctx, layer.SecretsFlags{Path: "-"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.OSCA != f.secrets.OSCA || loaded.OSCA != ta.secrets.OSCA {
+		t.Error("the secrets loaded after the open differ")
+	}
+}

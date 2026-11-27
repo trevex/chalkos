@@ -2,6 +2,7 @@ package chalkctl
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -43,7 +44,10 @@ func (a *app) nodeRenew(ctx context.Context, f nodeRenewFlags, pos []string) err
 	if err != nil {
 		return err
 	}
-	if !f.ignoreRevoked {
+	var before refreshes
+	if f.ignoreRevoked {
+		before = revokedBefore(ctx, t.nodes, []string{t.name}, false)
+	} else {
 		for _, d := range compiled[layer.Delivery]() {
 			if err := d.Admit(ctx, t, "node renew issues it a node certificate"); err != nil {
 				return err
@@ -63,6 +67,17 @@ func (a *app) nodeRenew(ctx context.Context, f nodeRenewFlags, pos []string) err
 	if err != nil {
 		return err
 	}
+	err = a.deliverNodeCertificate(ctx, conn, t, cert)
+	if f.ignoreRevoked {
+		// The certificate may have reached the node although its delivery failed.
+		err = errors.Join(err, a.refreshAndRecord(ctx, f.node.Secrets, t.nodes, before, t.secrets.Unrefreshed))
+	}
+	return err
+}
+
+// deliverNodeCertificate delivers the node certificate cert to the node t and says until when it
+// is valid.
+func (a *app) deliverNodeCertificate(ctx context.Context, conn *client.Conn, t *target, cert pki.CertKey) error {
 	resp, err := conn.ApplyConfig(client.Unbounded(ctx), &nodev1.ApplyConfigRequest{
 		NodeCertificate: []byte(cert.Certificate),
 		NodeKey:         []byte(cert.Key),

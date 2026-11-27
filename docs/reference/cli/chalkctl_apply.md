@@ -89,7 +89,8 @@ it at once.
 
 A layer's payload flag, such as --kubernetes-share, delivers the layer's payload too. It is refused
 to a node revoked with chalkctl node revoke, and while the layer cannot say which nodes are revoked;
---ignore-revoked delivers it without asking.
+--ignore-revoked delivers it without asking, then refreshes the revocation of a revoked node as
+node renew does.
 
 ## Flags
 

@@ -105,5 +105,6 @@ func (t *target) Cluster() layer.Cluster                      { return t.cluster
 func (t *target) Dial() (*client.Conn, error)                 { return dialInstalled(t) }
 func (t *target) Call(fn func(conn *client.Conn) error) error { return callNode(t, fn) }
 func (t *target) Nodes() layer.Nodes                          { return t.nodes }
+func (t *target) Unrefreshed(layer string) []string           { return t.secrets.UnrefreshedOf(layer) }
 
 func (s nodeSet) Cluster() layer.Cluster { return s.cluster }

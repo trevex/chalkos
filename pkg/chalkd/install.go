@@ -80,7 +80,7 @@ func (s *Server) install(ctx context.Context, stream requests[*nodev1.InstallReq
 	defer s.mu.Unlock()
 	defer s.muBy.hold("an install")()
 	if s.installed {
-		return nil, layer.Errorf(connect.CodeFailedPrecondition, "the node is installed and reboots")
+		return nil, layer.Reasonf(connect.CodeFailedPrecondition, nodev1.ErrorReason_ERROR_REASON_INSTALLED_AND_REBOOTS, "the node is installed and reboots")
 	}
 	// An image the node pulls brings the contract the config is translated with.
 	contract := h.GetContract()

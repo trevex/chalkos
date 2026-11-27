@@ -19,8 +19,10 @@ import (
 	"k8s.io/client-go/kubernetes"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
+	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
+	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kapply "github.com/trevex/chalkos/pkg/kubernetes/apply"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
@@ -33,29 +35,79 @@ func (p *Plugin) RevokeNode(ctx context.Context, req *kubernetesv1.RevokeNodeReq
 		return nil, err
 	}
 	// A bootstrapped control plane's API server keeps the revoked nodes.
-	cs, _, err := p.k.apiClient(p.k.etcdMember)
+	cs, cp, err := p.k.apiClient(p.k.etcdMember)
 	if err != nil {
 		return nil, err
 	}
-	if err := policyRoom(ctx, cs, name); err != nil {
+	validity := certValidity(cp.cluster)
+	var list revoked.List
+	var at time.Time
+	if req.Refresh {
+		at, list, err = refreshRevocation(ctx, cs, name, validity)
+	} else {
+		at, list, err = revokeNode(ctx, cs, name, validity)
+	}
+	if err != nil {
 		return nil, err
 	}
-	at, err := revoked.Revoke(ctx, cs, name, time.Now())
-	if err != nil {
-		return nil, layer.Errorf(connect.CodeUnavailable, "%w", err)
+	// What fails once the list is written, the same call repairs.
+	done, again := name+" is revoked", "revoking it again"
+	if req.Refresh {
+		done, again = "the revocation of "+name+" is refreshed", "refreshing it again"
 	}
 	if err := kapply.EnforceRevoked(ctx, cs); err != nil {
-		return nil, layer.Errorf(connect.CodeUnavailable, "%s is revoked, but the API server's admission policy was not updated: %w; revoking it again applies it", name, err)
+		return nil, layer.Errorf(connect.CodeUnavailable, "%s, but the API server's admission policy was not updated: %w; %s applies it", done, err, again)
 	}
 	deleted := true
 	switch err := cs.CoreV1().Nodes().Delete(ctx, name, metav1.DeleteOptions{}); {
 	case apierrors.IsNotFound(err):
 		deleted = false
 	case err != nil:
-		return nil, layer.Errorf(connect.CodeUnavailable, "%s is revoked, but deleting its Node failed: %w; revoking it again deletes it", name, err)
+		return nil, layer.Errorf(connect.CodeUnavailable, "%s, but deleting its Node failed: %w; %s deletes it", done, err, again)
 	}
-	log.Printf("kubernetes: revoked node %s", name)
-	return &kubernetesv1.RevokeNodeResponse{RevokedAt: timestamppb.New(at), NodeDeleted: deleted}, nil
+	if req.Refresh {
+		log.Printf("kubernetes: refreshed the revocation of node %s", name)
+	} else {
+		log.Printf("kubernetes: revoked node %s", name)
+	}
+	return &kubernetesv1.RevokeNodeResponse{
+		RevokedAt:    timestamppb.New(at),
+		NodeDeleted:  deleted,
+		ListLength:   uint32(revoked.LiteralLength(list)),
+		ListCapacity: revoked.MaxLiteralLength,
+	}, nil
+}
+
+// revokeNode lists the node as revoked, keeping the time of an earlier revocation, if the list has
+// room for it. It returns the time and the revoked nodes with it.
+func revokeNode(ctx context.Context, cs kubernetes.Interface, name string, validity time.Duration) (time.Time, revoked.List, error) {
+	list, err := policyRoom(ctx, cs, name)
+	if err != nil {
+		return time.Time{}, nil, err
+	}
+	at, err := revoked.Revoke(ctx, cs, name, time.Now(), validity)
+	if err != nil {
+		return time.Time{}, nil, layer.Errorf(connect.CodeUnavailable, "%w", err)
+	}
+	list[name] = at
+	return at, list, nil
+}
+
+// refreshRevocation lists the node, revoked already, as revoked now, and refuses a node not
+// revoked with NOT_FOUND. It returns the time and the revoked nodes as it left them.
+func refreshRevocation(ctx context.Context, cs kubernetes.Interface, name string, validity time.Duration) (time.Time, revoked.List, error) {
+	at, listed, err := revoked.Refresh(ctx, cs, name, time.Now(), validity)
+	if err != nil {
+		return time.Time{}, nil, layer.Errorf(connect.CodeUnavailable, "%w", err)
+	}
+	if !listed {
+		return time.Time{}, nil, layer.Errorf(connect.CodeNotFound, "node %s is not revoked, so its revocation is not refreshed", name)
+	}
+	list, err := revoked.Load(ctx, cs)
+	if err != nil {
+		return time.Time{}, nil, layer.Errorf(connect.CodeUnavailable, "%w", err)
+	}
+	return at, list, nil
 }
 
 func (p *Plugin) UnrevokeNode(ctx context.Context, req *kubernetesv1.UnrevokeNodeRequest) (*kubernetesv1.UnrevokeNodeResponse, error) {
@@ -108,24 +160,91 @@ func (p *Plugin) UnrevokeNode(ctx context.Context, req *kubernetesv1.UnrevokeNod
 	return resp, nil
 }
 
-// policyRoom refuses to revoke a node not revoked yet while the admission policy's map of revoked
-// nodes would grow past revoked.MaxLiteralLength with it, which the API server could not compile.
-func policyRoom(ctx context.Context, cs kubernetes.Interface, name string) error {
+// policyRoom refuses, with the reason REVOKED_LIST_FULL, to revoke a node not revoked yet while
+// the admission policy's map of revoked nodes would grow past revoked.MaxLiteralLength with it,
+// which the API server could not compile. It returns the revoked nodes as it read them, with the
+// node among them.
+func policyRoom(ctx context.Context, cs kubernetes.Interface, name string) (revoked.List, error) {
 	list, err := revoked.Load(ctx, cs)
 	if err != nil {
-		return layer.Errorf(connect.CodeUnavailable, "%w", err)
+		return nil, layer.Errorf(connect.CodeUnavailable, "%w", err)
 	}
 	if _, ok := list[name]; ok {
-		return nil
+		return list, nil
 	}
 	list[name] = time.Now()
 	if n := revoked.LiteralLength(list); n > revoked.MaxLiteralLength {
-		return layer.Errorf(connect.CodeFailedPrecondition, "revoking %s would make the admission policy's map of the %d revoked nodes %d characters long, "+
-			"past the %d chalkos allows below the API server's limit on an expression; make room first: rotate the CAs with chalkctl rotate os-ca "+
-			"and chalkctl rotate kubernetes-ca, each to its finish, then unrevoke the nodes revoked before them with chalkctl node unrevoke",
+		return nil, layer.Reasonf(connect.CodeFailedPrecondition, nodev1.ErrorReason_ERROR_REASON_REVOKED_LIST_FULL,
+			"revoking %s would make the admission policy's map of the %d revoked nodes %d characters long, "+
+				"past the %d chalkos allows below the API server's limit on an expression; make room: drop the expired revocations with "+
+				"chalkctl node prune-revoked, or rotate the CAs with chalkctl rotate os-ca and chalkctl rotate kubernetes-ca, "+
+				"each to its finish, which drops the nodes revoked before both",
 			name, len(list), n, revoked.MaxLiteralLength)
 	}
-	return nil
+	return list, nil
+}
+
+// certValidity is how long a node's certificates are valid: chalkos's node certificates for
+// pki.LeafValidity, the kubelet's client certificates for the controller-manager's
+// cluster-signing-duration, a year unless the Cluster's extra flags set it longer. It reads the
+// Cluster as the control plane has it now. A revocation and a refresh store the expiry it gives
+// in the node's entry, which lowering the flag later does not shorten; PruneRevoked applies it only
+// to an entry stored without an expiry.
+func certValidity(c k8s.Cluster) time.Duration {
+	v := pki.LeafValidity
+	for name, value := range c.ExtraArgs["kube-controller-manager"] {
+		if k8s.FlagName(name) != "cluster-signing-duration" {
+			continue
+		}
+		if d, err := time.ParseDuration(value); err == nil && d > v {
+			v = d
+		}
+	}
+	return v
+}
+
+// PruneRevoked drops the revoked nodes whose certificates have all expired, and those revoked
+// before every OS CA and Kubernetes CA the control plane trusts was made, whose certificates
+// chain to no trusted CA. It applies the admission policy again even when it dropped none, so
+// calling it again applies a policy an earlier call failed to.
+//
+// A control plane drops no revoked node by itself: only this call does, which chalkctl makes once
+// it knows that no revocation it handed certificates past is left unrefreshed.
+func (p *Plugin) PruneRevoked(ctx context.Context, _ *kubernetesv1.PruneRevokedRequest) (*kubernetesv1.PruneRevokedResponse, error) {
+	cs, cp, err := p.k.apiClient(p.k.etcdMember)
+	if err != nil {
+		return nil, err
+	}
+	osCAs, kubernetesCAs, err := p.trustedCAs(cp.share)
+	if err != nil {
+		return nil, layer.Errorf(connect.CodeInternal, "%w", err)
+	}
+	validity, now := certValidity(cp.cluster), time.Now()
+	removed, err := revoked.Prune(ctx, cs, func(_ string, e revoked.Entry) bool {
+		return e.Expired(now, validity) || len(staleAt(osCAs, kubernetesCAs, e.At)) == 0
+	})
+	if err != nil {
+		return nil, layer.Errorf(connect.CodeUnavailable, "%w", err)
+	}
+	if len(removed) > 0 {
+		log.Printf("kubernetes: dropped the revoked nodes %s: their certificates expired, or they were revoked before every trusted OS CA and Kubernetes CA was made", strings.Join(removed, ", "))
+	}
+	if err := kapply.EnforceRevoked(ctx, cs); err != nil {
+		dropped := "no revoked node was dropped"
+		if len(removed) > 0 {
+			dropped = "the revoked nodes " + strings.Join(removed, ", ") + " were dropped"
+		}
+		return nil, layer.Errorf(connect.CodeUnavailable, "%s, but the API server's admission policy was not updated: %w; pruning again applies it", dropped, err)
+	}
+	list, err := revoked.Load(ctx, cs)
+	if err != nil {
+		return nil, layer.Errorf(connect.CodeUnavailable, "%w", err)
+	}
+	return &kubernetesv1.PruneRevokedResponse{
+		Pruned:       removed,
+		ListLength:   uint32(revoked.LiteralLength(list)),
+		ListCapacity: revoked.MaxLiteralLength,
+	}, nil
 }
 
 // checkNodeName refuses what is no Kubernetes node name, which the revoked nodes would never
@@ -167,9 +286,10 @@ func (k *side) loadRevoked(ctx context.Context) (revoked.List, error) {
 	return revoked.Load(ctx, cs)
 }
 
-// revokedStatus lists the revoked nodes in a bootstrapped control plane's status, or why they
-// could not be read.
+// revokedStatus lists the revoked nodes in a bootstrapped control plane's status, with how full
+// their list is, or why they could not be read.
 func (k *side) revokedStatus(ctx context.Context, st *kubernetesv1.StatusResponse) {
+	st.RevokedListCapacity = revoked.MaxLiteralLength
 	list, err := k.loadRevoked(ctx)
 	if err != nil {
 		st.RevokedNodesError = err.Error()
@@ -182,29 +302,34 @@ func (k *side) revokedStatus(ctx context.Context, st *kubernetesv1.StatusRespons
 		}
 		st.RevokedNodes = append(st.RevokedNodes, n)
 	}
+	st.RevokedListLength = uint32(revoked.LiteralLength(list))
 }
 
-// staleCAs names, as chalkctl rotate does, the CAs made before a node was revoked at that its
-// certificates may chain to. chalkd verifies a node against the OS CAs alone, so a node CA any
-// of them signed, rotated or not, still vouches for it; the kubelet's certificates chain to the
-// Kubernetes CAs.
-func (p *Plugin) staleCAs(share kpki.Share, at time.Time) ([]string, error) {
+// trustedCAs are the OS CAs the node trusts and the Kubernetes CAs of the share: the one that
+// issues and those accepted during a rotation.
+func (p *Plugin) trustedCAs(share kpki.Share) (osCAs, kubernetesCAs []*x509.Certificate, err error) {
 	cert := p.node.NodeCertificate()
 	if cert == nil {
-		return nil, errors.New("the node trusts no OS CA")
+		return nil, nil, errors.New("the node trusts no OS CA")
 	}
-	osCAs, err := pki.ParseBundle(cert.OSCA())
-	if err != nil {
-		return nil, fmt.Errorf("the OS CA: %w", err)
+	if osCAs, err = pki.ParseBundle(cert.OSCA()); err != nil {
+		return nil, nil, fmt.Errorf("the OS CA: %w", err)
 	}
 	trusted := []string{share.CA.Certificate}
 	if share.Accepted != nil {
 		trusted = append(trusted, share.Accepted.CA...)
 	}
-	kubernetesCAs, err := pki.ParseBundle(pki.Bundle(trusted...))
-	if err != nil {
-		return nil, fmt.Errorf("the Kubernetes CA: %w", err)
+	if kubernetesCAs, err = pki.ParseBundle(pki.Bundle(trusted...)); err != nil {
+		return nil, nil, fmt.Errorf("the Kubernetes CA: %w", err)
 	}
+	return osCAs, kubernetesCAs, nil
+}
+
+// staleAt names, as chalkctl rotate does, the CAs made before a node was revoked at that its
+// certificates may chain to. chalkd verifies a node against the OS CAs alone, so a node CA any
+// of them signed, rotated or not, still vouches for it; the kubelet's certificates chain to the
+// Kubernetes CAs. At the zero time, an unknown one, every CA is stale.
+func staleAt(osCAs, kubernetesCAs []*x509.Certificate, at time.Time) []string {
 	var stale []string
 	if madeBefore(osCAs, at) {
 		stale = append(stale, string(clustersecrets.RotateOSCA))
@@ -212,7 +337,16 @@ func (p *Plugin) staleCAs(share kpki.Share, at time.Time) ([]string, error) {
 	if madeBefore(kubernetesCAs, at) {
 		stale = append(stale, string(clustersecrets.RotateKubernetesCA))
 	}
-	return stale, nil
+	return stale
+}
+
+// staleCAs is staleAt for the CAs the node trusts.
+func (p *Plugin) staleCAs(share kpki.Share, at time.Time) ([]string, error) {
+	osCAs, kubernetesCAs, err := p.trustedCAs(share)
+	if err != nil {
+		return nil, err
+	}
+	return staleAt(osCAs, kubernetesCAs, at), nil
 }
 
 // madeBefore reports whether any of the CAs was made no later than at; every CA was when at is

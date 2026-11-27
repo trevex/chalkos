@@ -70,7 +70,10 @@ wait and watch `chalkctl status cp1`. Do not bootstrap again: chalkd refuses the
 Bootstrap one control plane only. A second bootstrap would start a second etcd cluster, so chalkos
 refuses it in these cases:
 
-- On a node that is bootstrapped already, chalkd answers `the node is bootstrapped already`.
+- On a node that is bootstrapped already, chalkd answers `the node is bootstrapped already`, and on
+  a control plane that joined the cluster, `the node joined the cluster already`. Both refusals
+  carry the reason `BOOTSTRAPPED_ALREADY`, so a program that bootstraps a cluster's first control
+  plane can tell a bootstrap that is done from one that failed.
 - On a node whose cluster answers at the endpoint, chalkd answers `the cluster's API server answers
   at https://192.168.1.10:6443; this node joins it on its own`.
 - On a worker, chalkctl refuses before it sends anything: `w1 is not a control-plane node;
@@ -165,15 +168,17 @@ List the nodes with the kubeconfig:
 
 ```console
 $ kubectl --kubeconfig kubeconfig get nodes
-NAME   STATUS   ROLES    AGE   VERSION
-cp1    Ready    <none>   4m    v1.37.2
-cp2    Ready    <none>   2m    v1.37.2
-cp3    Ready    <none>   1m    v1.37.2
+NAME   STATUS   ROLES           AGE   VERSION
+cp1    Ready    control-plane   4m    v1.37.2
+cp2    Ready    control-plane   2m    v1.37.2
+cp3    Ready    control-plane   1m    v1.37.2
 ```
 
 Every node of the inventory appears, with the Kubernetes release of its image.
-`ROLES` is empty because chalkos sets no `node-role` label. A node may show `NotReady` for the first
-minute, until flannel runs on it.
+`ROLES` shows `control-plane` for the control planes: chalkd on each control plane labels its
+Node `node-role.kubernetes.io/control-plane` once the kubelet registered it, and labels it again
+within about 10 seconds when the label is removed. A worker's `ROLES` shows `<none>`. A node may
+show `NotReady` for the first minute, until flannel runs on it.
 
 `chalkctl status` shows each node's Kubernetes line, as in the sections above.
 

@@ -10,6 +10,7 @@ import (
 	"connectrpc.com/connect/v2"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
+	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
@@ -51,7 +52,7 @@ func (p *Plugin) bootstrap(ctx context.Context, c k8s.Cluster) (chan struct{}, e
 	}
 	switch {
 	case m == knode.MembershipBootstrapped:
-		return nil, layer.Errorf(connect.CodeFailedPrecondition, "the node is bootstrapped already")
+		return nil, layer.Reasonf(connect.CodeFailedPrecondition, nodev1.ErrorReason_ERROR_REASON_BOOTSTRAPPED_ALREADY, "the node is bootstrapped already")
 	case m == knode.MembershipLeft:
 		return nil, layer.Errorf(connect.CodeFailedPrecondition, "the node left etcd; reinstall it to join the cluster again")
 	case leftovers.EtcdData:
@@ -85,7 +86,7 @@ func (p *Plugin) bootstrap(ctx context.Context, c k8s.Cluster) (chan struct{}, e
 	}
 	switch {
 	case m == knode.MembershipBootstrapped:
-		return nil, layer.Errorf(connect.CodeFailedPrecondition, "the node joined the cluster already")
+		return nil, layer.Reasonf(connect.CodeFailedPrecondition, nodev1.ErrorReason_ERROR_REASON_BOOTSTRAPPED_ALREADY, "the node joined the cluster already")
 	case m == knode.MembershipLeft:
 		return nil, layer.Errorf(connect.CodeFailedPrecondition, "the node left etcd; reinstall it to join the cluster again")
 	case m == knode.MembershipJoining:

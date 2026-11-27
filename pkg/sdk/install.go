@@ -171,6 +171,13 @@ func Install(ctx context.Context, conn *client.Conn, r InstallRequest) error {
 	return nil
 }
 
+// InstalledAndReboots reports whether err is a node's refusal because it accepted an install and
+// reboots into it, by the reason INSTALLED_AND_REBOOTS. A caller waits until the node answers from
+// the installed image.
+func InstalledAndReboots(err error) bool {
+	return client.Reason(err) == nodev1.ErrorReason_ERROR_REASON_INSTALLED_AND_REBOOTS
+}
+
 // registryImage reads the image in a registry r.Image names, by digest: its contract, the header
 // of an install in place of it, without the boot loader the node keeps, and its reference. It
 // refuses an image whose OS CA the secrets do not trust.

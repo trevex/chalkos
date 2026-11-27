@@ -1,6 +1,7 @@
 package kubernetes
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -69,12 +70,14 @@ func (k *side) etcdMember() (controlPlaneNode, error) {
 	return cp, nil
 }
 
-// notEtcdMemberError refuses a request that needs an etcd member. Its NotEtcdMember detail tells
-// clients, such as chalkctl, to ask the next control-plane node.
-type notEtcdMemberError struct{}
+// notEtcdMemberError refuses a request that needs an etcd member, and the leave of a node that is
+// none. Its NotEtcdMember detail tells clients, such as chalkctl, to ask the next control-plane
+// node, and a client that removes the node that its leave is done. message replaces the default
+// text when set.
+type notEtcdMemberError struct{ message string }
 
-func (notEtcdMemberError) Error() string {
-	return "the node is not an etcd member; ask another control-plane node"
+func (e notEtcdMemberError) Error() string {
+	return cmp.Or(e.message, "the node is not an etcd member; ask another control-plane node")
 }
 
 func (notEtcdMemberError) Code() connect.Code { return connect.CodeFailedPrecondition }
@@ -257,11 +260,11 @@ func (p *Plugin) EtcdLeave(ctx context.Context, req *kubernetesv1.EtcdLeaveReque
 		defer k.membership.Unlock()
 		err = k.finishLeave(ctx, cp.cluster)
 	case m == knode.MembershipLeft:
-		return nil, layer.Errorf(connect.CodeFailedPrecondition, "the node left etcd already; reinstall it to join the cluster again")
+		return nil, notEtcdMemberError{message: "the node left etcd already; reinstall it to join the cluster again"}
 	case mayBeMember(m, leftovers):
 		err = k.leaveEtcd(ctx, cp, m == knode.MembershipBootstrapped, req.Force)
 	default:
-		return nil, layer.Errorf(connect.CodeFailedPrecondition, "the node is not an etcd member")
+		return nil, notEtcdMemberError{message: "the node is not an etcd member"}
 	}
 	if err != nil {
 		return nil, err

@@ -1,14 +1,21 @@
 package chalkctl
 
 import (
+	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/pem"
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"golang.org/x/crypto/ssh"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -18,12 +25,15 @@ import (
 	k8stesting "k8s.io/client-go/testing"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
+	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
 	kubernetesplugin "github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes"
+	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
+	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/sdk/sdktest"
 )
 
@@ -84,7 +94,7 @@ func TestNodeUnrevoke(t *testing.T) {
 	old := time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)
 	future := time.Now().Add(2 * time.Hour).UTC().Truncate(time.Second)
 	for name, at := range map[string]time.Time{"w1": old, "w2": future} {
-		if _, err := revoked.Revoke(ctx, cs, name, at); err != nil {
+		if _, err := revoked.Revoke(ctx, cs, name, at, pki.LeafValidity); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -124,7 +134,7 @@ func TestStatusListsRevokedNodes(t *testing.T) {
 	ta := newTestApp(t)
 	addr, cs := revokeNode(t, ta)
 	at := revokedAt
-	if _, err := revoked.Revoke(context.Background(), cs, "w1", at); err != nil {
+	if _, err := revoked.Revoke(context.Background(), cs, "w1", at, pki.LeafValidity); err != nil {
 		t.Fatal(err)
 	}
 	cm, _ := cs.CoreV1().ConfigMaps(revoked.Namespace).Get(context.Background(), revoked.Name, metav1.GetOptions{})
@@ -147,7 +157,7 @@ func TestCertificatesRefusedToRevokedNodes(t *testing.T) {
 	ta := newTestApp(t)
 	addr, cs := revokeNode(t, ta)
 	ctx := context.Background()
-	if _, err := revoked.Revoke(ctx, cs, "n1", revokedAt); err != nil {
+	if _, err := revoked.Revoke(ctx, cs, "n1", revokedAt, pki.LeafValidity); err != nil {
 		t.Fatal(err)
 	}
 	for _, cmd := range [][]string{{"node", "renew", "n1"}, {"config", "apply", "n1", "--kubernetes-share"}} {
@@ -270,10 +280,20 @@ func installLab(t *testing.T) *rotationLab {
 
 // install installs n1 in the lab, on a node in maintenance mode started for it.
 func (l *rotationLab) install(args ...string) error {
+	return l.installNode("n1", nil, args...)
+}
+
+// installNode installs the node called name in the lab, on a node in maintenance mode started for
+// it, with Kubernetes when the node is a Kubernetes node, whose install fails with failure when
+// that is set.
+func (l *rotationLab) installNode(name string, failure error, args ...string) error {
 	s := sdktest.Maintenance()
-	s.InPlace = func(context.Context, install.Request, []byte) error { return nil }
+	s.InPlace = func(context.Context, install.Request, []byte) error { return failure }
+	if n := l.nodes[name]; n != nil && n.kind != "" {
+		kubernetesImage(l.t, s)
+	}
 	addr := l.ta.startNode(l.t, s)
-	return l.ta.run(context.Background(), append([]string{"install", "n1", "--insecure", "--inventory", l.ta.inventory, "--address", addr}, args...))
+	return l.ta.run(context.Background(), append([]string{"install", name, "--insecure", "--inventory", l.ta.inventory, "--address", addr}, args...))
 }
 
 // install asks the control planes about the name at the addresses --address gives them as
@@ -298,8 +318,16 @@ func TestInstallRefusesRevokedNames(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "n1 is revoked since 2026-10-23T12:00:00Z") || !strings.Contains(err.Error(), "chalkctl node unrevoke n1") || !strings.Contains(err.Error(), "--ignore-revoked") {
 		t.Errorf("installing a revoked name: %v", err)
 	}
+	l.takeEvents()
 	if err := l.install("--ignore-revoked"); err != nil {
 		t.Errorf("--ignore-revoked: %v", err)
+	}
+	// The installed name's revocation is refreshed after the install.
+	if events := l.takeEvents(); !slices.Equal(events, []string{"cp1 refresh n1"}) {
+		t.Errorf("--ignore-revoked: events %v, want cp1 to refresh n1", events)
+	}
+	if out := l.ta.stdout.String(); !strings.Contains(out, "n1 is installed and reboots\n") || !strings.HasSuffix(out, "\nrefreshed the revocation of n1: revoked since 2026-10-23T13:00:00Z\n") {
+		t.Errorf("--ignore-revoked: stdout = %q", out)
 	}
 
 	l.revoked = nil
@@ -320,5 +348,573 @@ func TestInstallRefusesRevokedNames(t *testing.T) {
 	}
 }
 
+// install --ignore-revoked refreshes the revocation also when the install failed, as the secrets
+// may have reached the node.
+func TestInstallIgnoreRevokedRefreshesAfterAFailure(t *testing.T) {
+	l := installLab(t)
+	l.revoked = []*kubernetesv1.RevokedNode{{Name: "n1", RevokedAt: timestamppb.New(revokedAt)}}
+	err := l.installNode("n1", errors.New("the disk broke"), "--ignore-revoked")
+	if err == nil || !strings.Contains(err.Error(), "the disk broke") {
+		t.Errorf("err = %v, want the install's failure", err)
+	}
+	if events := l.takeEvents(); !slices.Equal(events, []string{"cp1 refresh n1"}) {
+		t.Errorf("events %v, want cp1 to refresh n1", events)
+	}
+}
+
+// install --ignore-revoked of the cluster's first nodes, while the other control planes are not
+// installed yet, refreshes nothing and fails no read of the revoked nodes. A control plane whose
+// list only it may hold is recorded as not refreshed, so its revocation is read once it is back.
+func TestInstallIgnoreRevokedBeforeTheControlPlanes(t *testing.T) {
+	l := installLab(t)
+	writeImageDir(t, filepath.Join(l.ta.dir, "images", "cp-metal"), "cp-metal", "metal", testRootHash, true)
+	l.nodes["cp1"].down = true
+	l.nodes["cp2"].down = true
+	if err := l.install("--ignore-revoked"); err != nil {
+		t.Fatalf("installing n1: %v", err)
+	}
+	if got := l.secrets().Unrefreshed; got != nil {
+		t.Errorf("the secrets file records %v", got)
+	}
+	if err := l.installNode("cp1", nil, "--ignore-revoked"); err != nil {
+		t.Fatalf("installing cp1: %v", err)
+	}
+	if got, want := l.secrets().Unrefreshed, []clustersecrets.Unrefreshed{{Layer: "kubernetes", Node: "cp1"}}; !slices.Equal(unstamped(got), want) {
+		t.Errorf("the secrets file records %v, want %v", got, want)
+	}
+	if got := l.ta.stderr.String(); !strings.Contains(got, "whether cp1 is revoked is read once it is back from its install") {
+		t.Errorf("stderr = %q", got)
+	}
+	if events := l.takeEvents(); len(events) != 0 {
+		t.Errorf("events %v, want none", events)
+	}
+	// Once the control planes are back, cp1 is read not to be revoked, and the record goes.
+	l.nodes["cp1"].down = false
+	l.nodes["cp2"].down = false
+	if err := l.run("node", "prune-revoked"); err != nil {
+		t.Fatal(err)
+	}
+	if got := l.secrets().Unrefreshed; got != nil {
+		t.Errorf("the secrets file still records %v", got)
+	}
+}
+
 // revokedAt is when the tests revoke a node.
 var revokedAt = time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
+
+// node prune-revoked drops the revoked nodes nothing lets back in and says how full the list is.
+func TestNodePruneRevoked(t *testing.T) {
+	ta := newTestApp(t)
+	addr, cs := revokeNode(t, ta)
+	ctx := context.Background()
+	// The cluster's CAs were made now: after w1's revocation, before w2's.
+	future := time.Now().Add(2 * time.Hour).UTC().Truncate(time.Second)
+	for name, at := range map[string]time.Time{"w1": time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC), "w2": future} {
+		if _, err := revoked.Revoke(ctx, cs, name, at, pki.LeafValidity); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := ta.run(ctx, ta.args([]string{"node", "prune-revoked", "--via", "n1"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := ta.stdout.String(), "dropped 1 node from the revoked nodes, which nothing lets back in: w1\nthe revoked nodes fill 0% of their room\n"; got != want {
+		t.Errorf("stdout = %q, want %q", got, want)
+	}
+	if list, _ := revoked.Load(ctx, cs); len(list) != 1 || !list["w2"].Equal(future) {
+		t.Errorf("revoked nodes %v, want w2 alone", list)
+	}
+	if err := ta.run(ctx, ta.args([]string{"node", "prune-revoked", "w2", "--via", "n1"}, addr)); !errors.Is(err, cli.ErrUsage) {
+		t.Errorf("with a node named: %v, want the usage", err)
+	}
+}
+
+// node prune-revoked reads the secrets file from standard input once, though it reads the
+// rotation and reaches the control plane with it.
+func TestNodePruneRevokedSecretsFromStdin(t *testing.T) {
+	ta := newTestApp(t)
+	addr, _ := revokeNode(t, ta)
+	data, err := os.ReadFile(filepath.Join(ta.dir, "secrets.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ta.stdin = bytes.NewReader(data)
+	if err := ta.run(context.Background(), ta.args([]string{"node", "prune-revoked", "--via", "n1", "--secrets", "-"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if got := ta.stdout.String(); !strings.HasPrefix(got, "dropped no node from the revoked nodes\n") {
+		t.Errorf("stdout = %q", got)
+	}
+}
+
+// node prune-revoked refuses while the secrets file records a rotation of the OS CA or the
+// Kubernetes CAs: a node that has not applied its finish yet may trust the old CA.
+func TestNodePruneRevokedRefusesDuringACARotation(t *testing.T) {
+	ta := newTestApp(t)
+	addr, cs := revokeNode(t, ta)
+	ctx := context.Background()
+	path := filepath.Join(ta.dir, "secrets.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for kind, refused := range map[clustersecrets.RotationKind]bool{
+		clustersecrets.RotateOSCA:          true,
+		clustersecrets.RotateKubernetesCA:  true,
+		clustersecrets.RotateEncryptionKey: false,
+	} {
+		// A prune the rotation does not refuse drops w1, so each kind starts with it listed.
+		if _, err := revoked.Revoke(ctx, cs, "w1", time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC), pki.LeafValidity); err != nil {
+			t.Fatal(err)
+		}
+		s, err := clustersecrets.Read(data, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.BeginRotation(kind, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		rotating, err := s.Encode()
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, path, string(rotating))
+		err = ta.run(ctx, ta.args([]string{"node", "prune-revoked", "--via", "n1"}, addr))
+		if !refused {
+			if err != nil {
+				t.Errorf("during a rotation of the %s: %v", kind.Name(), err)
+			}
+			continue
+		}
+		if err == nil || !strings.Contains(err.Error(), "records the rotation of the "+kind.Name()) || !strings.Contains(err.Error(), "chalkctl rotate "+string(kind)+" --finish") {
+			t.Errorf("during a rotation of the %s: %v, want a refusal", kind.Name(), err)
+		}
+		if list, _ := revoked.Load(ctx, cs); len(list) != 1 {
+			t.Errorf("the refusal pruned: %v", list)
+		}
+	}
+}
+
+// node revoke --refresh lists a revoked node as revoked now, and refuses a node not revoked.
+func TestNodeRevokeRefresh(t *testing.T) {
+	ta := newTestApp(t)
+	addr, cs := revokeNode(t, ta)
+	ctx := context.Background()
+	if _, err := revoked.Revoke(ctx, cs, "w1", revokedAt, pki.LeafValidity); err != nil {
+		t.Fatal(err)
+	}
+	if err := ta.run(ctx, ta.args([]string{"node", "revoke", "w1", "--via", "n1", "--refresh"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	list, _ := revoked.Load(ctx, cs)
+	if !list["w1"].After(revokedAt) {
+		t.Errorf("revoked nodes %v, want w1 refreshed", list)
+	}
+	if got, want := ta.stdout.String(), "refreshed the revocation of w1: revoked since "+list["w1"].Format(time.RFC3339)+"\n"; got != want {
+		t.Errorf("stdout = %q, want %q", got, want)
+	}
+	err := ta.run(ctx, ta.args([]string{"node", "revoke", "w2", "--via", "n1", "--refresh"}, addr))
+	if err == nil || !strings.Contains(err.Error(), "node w2 is not revoked") {
+		t.Errorf("refreshing w2, not revoked: %v", err)
+	}
+	if list, _ := revoked.Load(ctx, cs); len(list) != 1 {
+		t.Errorf("revoked nodes %v, want w1 alone", list)
+	}
+
+	// A control plane refreshes its own revocation without --allow-control-plane, as the
+	// refresh after --ignore-revoked asks it last: it is revoked already.
+	if _, err := revoked.Revoke(ctx, cs, "n1", revokedAt, pki.LeafValidity); err != nil {
+		t.Fatal(err)
+	}
+	if err := ta.run(ctx, ta.args([]string{"node", "revoke", "n1", "--via", "n1", "--refresh"}, addr)); err != nil {
+		t.Fatalf("refreshing n1 through itself: %v", err)
+	}
+	if list, _ := revoked.Load(ctx, cs); !list["n1"].After(revokedAt) {
+		t.Errorf("revoked nodes %v, want n1 refreshed", list)
+	}
+}
+
+// node renew and config apply --kubernetes-share with --ignore-revoked refresh the revocation of
+// the revoked node they handed certificates, once they did, also when the delivery failed. A
+// failed refresh fails the command, names the command that refreshes it, and is recorded in the
+// secrets file, until a later refresh succeeds.
+func TestIgnoreRevokedRefreshes(t *testing.T) {
+	for _, cmd := range [][]string{{"node", "renew", "n1", "--ignore-revoked"}, {"config", "apply", "n1", "--kubernetes-share", "--ignore-revoked"}} {
+		t.Run(cmd[0], func(t *testing.T) {
+			ta := newTestApp(t)
+			addr, cs := revokeNode(t, ta)
+			ctx := context.Background()
+			// relist lists n1 with its old time again, so a refresh writes the list.
+			relist := func() {
+				t.Helper()
+				if _, _, err := revoked.Unrevoke(ctx, cs, "n1", nil); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := revoked.Revoke(ctx, cs, "n1", revokedAt, pki.LeafValidity); err != nil {
+					t.Fatal(err)
+				}
+			}
+			refreshed := func() bool {
+				t.Helper()
+				list, err := revoked.Load(ctx, cs)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return list["n1"].After(revokedAt)
+			}
+			if _, err := revoked.Revoke(ctx, cs, "n1", revokedAt, pki.LeafValidity); err != nil {
+				t.Fatal(err)
+			}
+			if err := ta.run(ctx, ta.args(cmd, addr)); err != nil {
+				t.Fatal(err)
+			}
+			list, _ := revoked.Load(ctx, cs)
+			if !refreshed() {
+				t.Errorf("revoked nodes %v, want n1 refreshed", list)
+			}
+			out := ta.stdout.String()
+			if want := "refreshed the revocation of n1: revoked since " + list["n1"].Format(time.RFC3339) + "\n"; !strings.HasSuffix(out, want) {
+				t.Errorf("stdout = %q, want it to end with %q", out, want)
+			}
+
+			// The delivery fails, yet what it sent may have reached the node.
+			relist()
+			ta.setWrap(func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.URL.Path == nodev1connect.NodeServiceApplyConfigProcedure {
+						http.Error(w, "the connection broke", http.StatusServiceUnavailable)
+						return
+					}
+					next.ServeHTTP(w, r)
+				})
+			})
+			if err := ta.run(ctx, ta.args(cmd, addr)); err == nil {
+				t.Error("the delivery failing: no error")
+			}
+			if !refreshed() {
+				t.Error("the delivery failing: n1 was not refreshed")
+			}
+			ta.setWrap(nil)
+
+			relist()
+			failing := true
+			cs.PrependReactor("update", "configmaps", func(k8stesting.Action) (bool, runtime.Object, error) {
+				return failing, nil, errors.New("connection refused")
+			})
+			err := ta.run(ctx, ta.args(cmd, addr))
+			if err == nil || !strings.Contains(err.Error(), "the revocation of n1, which was handed certificates while revoked, was not refreshed") ||
+				!strings.Contains(err.Error(), "connection refused") || !strings.Contains(err.Error(), "chalkctl node revoke n1 --refresh") ||
+				!strings.Contains(err.Error(), "the secrets file records the revocations not refreshed") {
+				t.Errorf("with the refresh failing: %v", err)
+			}
+			want := []clustersecrets.Unrefreshed{{Layer: "kubernetes", Node: "n1", Listed: true}}
+			if got := ta.secretsFile(t).Unrefreshed; !slices.Equal(unstamped(got), want) {
+				t.Errorf("the secrets file records %v, want %v", got, want)
+			}
+			failing = false
+			if err := ta.run(ctx, ta.args(cmd, addr)); err != nil {
+				t.Fatal(err)
+			}
+			if got := ta.secretsFile(t).Unrefreshed; got != nil {
+				t.Errorf("after a refresh the secrets file still records %v", got)
+			}
+		})
+	}
+}
+
+// config apply --dry-run hands the node nothing: it takes no payload flag, so it refreshes no
+// revocation.
+func TestDryRunRefreshesNothing(t *testing.T) {
+	ta := newTestApp(t)
+	addr, cs := revokeNode(t, ta)
+	ctx := context.Background()
+	if _, err := revoked.Revoke(ctx, cs, "n1", revokedAt, pki.LeafValidity); err != nil {
+		t.Fatal(err)
+	}
+	if err := ta.run(ctx, ta.args([]string{"config", "apply", "n1", "--kubernetes-share", "--ignore-revoked", "--dry-run"}, addr)); err == nil || !strings.Contains(err.Error(), "dry-run") {
+		t.Errorf("--dry-run --kubernetes-share: %v, want them refused together", err)
+	}
+	if list, _ := revoked.Load(ctx, cs); !list["n1"].Equal(revokedAt) {
+		t.Errorf("revoked nodes %v, want n1 left as it was", list)
+	}
+	if out := ta.stdout.String(); strings.Contains(out, "refreshed the revocation") {
+		t.Errorf("stdout = %q", out)
+	}
+}
+
+// node revoke --refresh and node unrevoke drop the node from the revocations the secrets file
+// records as not refreshed.
+func TestRefreshAndUnrevokeClearTheRecord(t *testing.T) {
+	ta := newTestApp(t)
+	addr, cs := revokeNode(t, ta)
+	ctx := context.Background()
+	for _, name := range []string{"w1", "w2"} {
+		if _, err := revoked.Revoke(ctx, cs, name, revokedAt, pki.LeafValidity); err != nil {
+			t.Fatal(err)
+		}
+	}
+	recorded := time.Date(2026, 11, 1, 8, 0, 0, 0, time.UTC)
+	ta.recordUnrefreshed(t, []clustersecrets.Unrefreshed{{Layer: "kubernetes", Node: "w1", Listed: true, Recorded: recorded}, {Layer: "kubernetes", Node: "w2", Listed: true, Recorded: recorded}})
+	if err := ta.run(ctx, ta.args([]string{"node", "revoke", "w1", "--via", "n1", "--refresh"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := ta.secretsFile(t).Unrefreshed, []clustersecrets.Unrefreshed{{Layer: "kubernetes", Node: "w2", Listed: true, Recorded: recorded}}; !slices.Equal(got, want) {
+		t.Errorf("after the refresh of w1 the secrets file records %v, want %v", got, want)
+	}
+	if err := ta.run(ctx, ta.args([]string{"node", "unrevoke", "w2", "--via", "n1", "--allow-old-ca"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if got := ta.secretsFile(t).Unrefreshed; got != nil {
+		t.Errorf("after the unrevoke of w2 the secrets file records %v", got)
+	}
+}
+
+// node unrevoke warns when the secrets file may still record the node's revocation as not
+// refreshed, which would revoke it again: the secrets file from standard input cannot be written
+// back, and a client file cannot read it. With the secrets file, unrevoking the node, though no
+// longer listed, clears the record.
+func TestUnrevokeWarnsOfTheRecordItLeaves(t *testing.T) {
+	ta := newTestApp(t)
+	addr, cs := revokeNode(t, ta)
+	ctx := context.Background()
+	still := "the next refresh revokes it again; run chalkctl node unrevoke w1 with the secrets file"
+	record := []clustersecrets.Unrefreshed{{Layer: "kubernetes", Node: "w1", Listed: true}}
+	ta.recordUnrefreshed(t, record)
+	data, err := os.ReadFile(filepath.Join(ta.dir, "secrets.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := revoked.Revoke(ctx, cs, "w1", revokedAt, pki.LeafValidity); err != nil {
+		t.Fatal(err)
+	}
+	ta.stdin = bytes.NewReader(data)
+	if err := ta.run(ctx, ta.args([]string{"node", "unrevoke", "w1", "--via", "n1", "--allow-old-ca", "--secrets", "-"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if got := ta.stderr.String(); !strings.Contains(got, "the secrets file still records w1; "+still) {
+		t.Errorf("with --secrets -: stderr = %q", got)
+	}
+
+	ta.stderr.Reset()
+	if _, err := revoked.Revoke(ctx, cs, "w1", revokedAt, pki.LeafValidity); err != nil {
+		t.Fatal(err)
+	}
+	admin := ta.writeConfig(t, "alice", pki.RoleAdmin, 24*time.Hour, time.Now())
+	if err := ta.run(ctx, ta.args([]string{"node", "unrevoke", "w1", "--via", "n1", "--allow-old-ca", "--config", admin}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if got := ta.stderr.String(); !strings.Contains(got, "a client file cannot clear the secrets file's record of the revocations not refreshed: if it records w1, "+still) {
+		t.Errorf("with a client file: stderr = %q", got)
+	}
+	if got := ta.secretsFile(t).Unrefreshed; !slices.Equal(got, record) {
+		t.Fatalf("the secrets file records %v, want %v", got, record)
+	}
+
+	// w1 is no longer listed; only the record would revoke it again.
+	ta.stdout.Reset()
+	if err := ta.run(ctx, ta.args([]string{"node", "unrevoke", "w1", "--via", "n1"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := ta.stdout.String(), "node w1 is not revoked; dropped it from the revocations the secrets file records as not refreshed, so no refresh revokes it again\n"; got != want {
+		t.Errorf("stdout = %q, want %q", got, want)
+	}
+	if got := ta.secretsFile(t).Unrefreshed; got != nil {
+		t.Errorf("the secrets file still records %v", got)
+	}
+	if err := ta.run(ctx, ta.args([]string{"node", "unrevoke", "w1", "--via", "n1"}, addr)); err == nil || !strings.Contains(err.Error(), "node w1 is not revoked") {
+		t.Errorf("unrevoking w1 without a record: %v", err)
+	}
+}
+
+// node renew refuses a node whose revocation the secrets file records as not refreshed, as the
+// revoked nodes may have dropped it by its expiry, unless --ignore-revoked; node revoke --refresh
+// lists such a node again and clears the record.
+func TestAdmitRefusesARecordedNode(t *testing.T) {
+	ta := newTestApp(t)
+	addr, cs := revokeNode(t, ta)
+	ctx := context.Background()
+	ta.recordUnrefreshed(t, []clustersecrets.Unrefreshed{{Layer: "kubernetes", Node: "n1"}})
+	err := ta.run(ctx, ta.args([]string{"node", "renew", "n1"}, addr))
+	if err == nil || !strings.Contains(err.Error(), "the secrets file records the revocation of n1 as not refreshed") ||
+		!strings.Contains(err.Error(), "chalkctl node revoke n1 --refresh") || !strings.Contains(err.Error(), "chalkctl node unrevoke n1 with the secrets file") ||
+		!strings.Contains(err.Error(), "--ignore-revoked") {
+		t.Errorf("renewing n1: %v, want the record named", err)
+	}
+	// The retry after the renewal reads that n1 is not revoked, and clears the record.
+	if err := ta.run(ctx, ta.args([]string{"node", "renew", "n1", "--ignore-revoked"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if got := ta.secretsFile(t).Unrefreshed; got != nil {
+		t.Errorf("the secrets file still records %v", got)
+	}
+
+	// w1 was listed when it was handed certificates, then dropped.
+	ta.recordUnrefreshed(t, []clustersecrets.Unrefreshed{{Layer: "kubernetes", Node: "w1", Listed: true}})
+	ta.stdout.Reset()
+	if err := ta.run(ctx, ta.args([]string{"node", "revoke", "w1", "--via", "n1", "--refresh"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if list, _ := revoked.Load(ctx, cs); list["w1"].IsZero() {
+		t.Errorf("revoked nodes %v, want w1 listed again", list)
+	}
+	if got := ta.stdout.String(); !strings.HasPrefix(got, "revoked node w1 again") {
+		t.Errorf("stdout = %q", got)
+	}
+	if got := ta.secretsFile(t).Unrefreshed; got != nil {
+		t.Errorf("the secrets file still records %v", got)
+	}
+}
+
+// A refresh with the secrets file from standard input says that the record it cannot write back
+// still holds the revocations it refreshed.
+func TestRefreshFromStdinNotesTheRecord(t *testing.T) {
+	ta := newTestApp(t)
+	addr, cs := revokeNode(t, ta)
+	ctx := context.Background()
+	if _, err := revoked.Revoke(ctx, cs, "w1", revokedAt, pki.LeafValidity); err != nil {
+		t.Fatal(err)
+	}
+	ta.recordUnrefreshed(t, []clustersecrets.Unrefreshed{{Layer: "kubernetes", Node: "w1", Listed: true}})
+	data, err := os.ReadFile(filepath.Join(ta.dir, "secrets.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ta.stdin = bytes.NewReader(data)
+	if err := ta.run(ctx, ta.args([]string{"node", "revoke", "w1", "--via", "n1", "--refresh", "--secrets", "-"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if list, _ := revoked.Load(ctx, cs); !list["w1"].After(revokedAt) {
+		t.Errorf("revoked nodes %v, want w1 refreshed", list)
+	}
+	want := "chalkctl: warning: the secrets file from standard input cannot be written back, so its record of the revocations not refreshed still holds w1; a refresh retried with the secrets file clears the record\n"
+	if got := ta.stderr.String(); got != want {
+		t.Errorf("stderr = %q, want %q", got, want)
+	}
+}
+
+// secretsFile reads the test cluster's secrets file.
+func (ta *testApp) secretsFile(t *testing.T) clustersecrets.Secrets {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(ta.dir, "secrets.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := clustersecrets.Read(data, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+// recordUnrefreshed writes the revocations into the test cluster's secrets file as not refreshed.
+func (ta *testApp) recordUnrefreshed(t *testing.T, unrefreshed []clustersecrets.Unrefreshed) {
+	t.Helper()
+	s := ta.secretsFile(t)
+	s.Unrefreshed = unrefreshed
+	data, err := s.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(ta.dir, "secrets.json"), string(data))
+}
+
+// encryptedToProtectedKey age-encrypts the lab's secrets to an SSH key whose passphrase is
+// hunter2, written as the identity file it returns.
+func encryptedToProtectedKey(t *testing.T, ta *testApp) ([]byte, string) {
+	t.Helper()
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sshPub, err := ssh.NewPublicKey(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, err := ssh.MarshalPrivateKeyWithPassphrase(priv, "", []byte("hunter2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity := filepath.Join(ta.dir, "id_ed25519")
+	writeFile(t, identity, string(pem.EncodeToMemory(block)))
+	writeFile(t, identity+".pub", string(ssh.MarshalAuthorizedKey(sshPub)))
+	authorized := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPub)))
+	recipient, err := clustersecrets.ParseRecipient(authorized, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The file records its recipient, as one chalkctl encrypted does.
+	s := ta.secrets
+	s.Recipients = []string{authorized}
+	encrypted, err := s.Encrypt(recipient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return encrypted, identity
+}
+
+// An age-encrypted secrets file on standard input is decrypted once, though node prune-revoked
+// reads it twice: the key's passphrase is asked for once.
+func TestEncryptedSecretsFromStdinDecryptedOnce(t *testing.T) {
+	ta := newTestApp(t)
+	addr, _ := revokeNode(t, ta)
+	encrypted, identity := encryptedToProtectedKey(t, ta)
+	ta.stdin, ta.answers = bytes.NewReader(encrypted), []string{"hunter2", "hunter2"}
+	if err := ta.run(context.Background(), ta.args([]string{"node", "prune-revoked", "--via", "n1", "--secrets", "-", "--identity", identity}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if len(ta.prompts) != 1 {
+		t.Errorf("prompts = %q, want the passphrase asked once", ta.prompts)
+	}
+}
+
+// rotate reads an age-encrypted secrets file from standard input, decrypting it once, and writes
+// the changed secrets with --out, encrypted to the recipients inside.
+func TestRotateEncryptedSecretsFromStdin(t *testing.T) {
+	l := newRotationLab(t)
+	encrypted, identity := encryptedToProtectedKey(t, l.ta)
+	l.ta.stdin, l.ta.answers = bytes.NewReader(encrypted), []string{"hunter2", "hunter2"}
+	out := filepath.Join(l.ta.dir, "rotated.age")
+	if err := l.rotate("os-ca", "--secrets", "-", "--identity", identity, "--out", out, "--public-out", filepath.Join(l.ta.dir, "rotated.pub.json")); err != nil {
+		t.Fatal(err)
+	}
+	if len(l.ta.prompts) != 1 {
+		t.Errorf("prompts = %q, want the passphrase asked once", l.ta.prompts)
+	}
+	if data, err := os.ReadFile(out); err != nil || !bytes.HasPrefix(data, []byte("age-encryption.org/")) {
+		t.Errorf("%s = %.20q, %v; want it age-encrypted", out, data, err)
+	}
+}
+
+// A refresh drops from the record only what it read there before it refreshed: a failure
+// another command records for the node while the refresh runs stays recorded.
+func TestRefreshKeepsAFailureRecordedMeanwhile(t *testing.T) {
+	ta := newTestApp(t)
+	addr, cs := revokeNode(t, ta)
+	ctx := context.Background()
+	if _, err := revoked.Revoke(ctx, cs, "w1", revokedAt, pki.LeafValidity); err != nil {
+		t.Fatal(err)
+	}
+	first := time.Date(2026, 11, 1, 8, 0, 0, 0, time.UTC)
+	ta.recordUnrefreshed(t, []clustersecrets.Unrefreshed{{Layer: "kubernetes", Node: "w1", Listed: true, Recorded: first}})
+	again := []clustersecrets.Unrefreshed{{Layer: "kubernetes", Node: "w1", Listed: true, Recorded: first.Add(time.Hour)}}
+	cs.PrependReactor("update", "configmaps", func(k8stesting.Action) (bool, runtime.Object, error) {
+		ta.recordUnrefreshed(t, again)
+		return false, nil, nil
+	})
+	if err := ta.run(ctx, ta.args([]string{"node", "revoke", "w1", "--via", "n1", "--refresh"}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if got := ta.secretsFile(t).Unrefreshed; !slices.Equal(got, again) {
+		t.Errorf("the secrets file records %v, want the failure recorded meanwhile, %v", got, again)
+	}
+}
+
+// unstamped is the record without the times its failures were recorded at.
+func unstamped(record []clustersecrets.Unrefreshed) []clustersecrets.Unrefreshed {
+	var out []clustersecrets.Unrefreshed
+	for _, u := range record {
+		u.Recorded = time.Time{}
+		out = append(out, u)
+	}
+	return out
+}

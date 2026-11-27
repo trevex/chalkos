@@ -208,6 +208,7 @@ nav = [
           { "Overview" = "reference/cli/chalkctl_node.md" },
           { "activate" = "reference/cli/chalkctl_node_activate.md" },
           { "diag" = "reference/cli/chalkctl_node_diag.md" },
+          { "prune-revoked" = "reference/cli/chalkctl_node_prune-revoked.md" },
           { "reboot" = "reference/cli/chalkctl_node_reboot.md" },
           { "renew" = "reference/cli/chalkctl_node_renew.md" },
           { "revoke" = "reference/cli/chalkctl_node_revoke.md" },

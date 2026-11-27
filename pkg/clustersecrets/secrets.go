@@ -38,6 +38,9 @@ type Secrets struct {
 	Accepted Accepted `json:"accepted,omitzero"`
 	// Rotation records the rotation that runs, if one does.
 	Rotation *Rotation `json:"rotation,omitempty"`
+	// Unrefreshed are the revocations a command run with --ignore-revoked did not refresh, in
+	// layer and node order. They outlast a rotation, as commands outside one refresh too.
+	Unrefreshed []Unrefreshed `json:"unrefreshedRevocations,omitempty"`
 	// Recipients are the age recipients an encrypted secrets file is encrypted to. They are kept
 	// inside it, where nobody without its key can change them, so a command that changes the
 	// file encrypts it to them again.
