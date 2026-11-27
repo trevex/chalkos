@@ -18,8 +18,10 @@ import (
 
 	"connectrpc.com/connect/v2"
 
+	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
+	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/internal/testwait"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
@@ -131,8 +133,9 @@ func TestJoin(t *testing.T) {
 	}
 	// The node is a member now; it is never bootstrapped.
 	_, err = kubernetestest.Bootstrap(context.Background(), s)
-	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "bootstrapped already") {
-		t.Errorf("bootstrap after the join: %v", err)
+	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "bootstrapped already") ||
+		client.Reason(err) != nodev1.ErrorReason_ERROR_REASON_BOOTSTRAPPED_ALREADY {
+		t.Errorf("bootstrap after the join: %v, want FailedPrecondition with the reason BOOTSTRAPPED_ALREADY", err)
 	}
 }
 

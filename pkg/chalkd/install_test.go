@@ -34,6 +34,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkd/chalkdtest"
 	kubernetesplugin "github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes"
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
+	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/imagecheck"
@@ -121,8 +122,8 @@ func TestInstallInPlace(t *testing.T) {
 		t.Fatal("the node did not reboot after installing")
 	}
 	err := sendInstall(t, s, header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}), nil)
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
-		t.Errorf("second install: %v", err)
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || client.Reason(err) != nodev1.ErrorReason_ERROR_REASON_INSTALLED_AND_REBOOTS {
+		t.Errorf("second install: %v, want FailedPrecondition with the reason INSTALLED_AND_REBOOTS", err)
 	}
 }
 

@@ -26,10 +26,12 @@ import (
 	"k8s.io/client-go/rest"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
+	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	"github.com/trevex/chalkos/pkg/chalkd/renewal"
 	"github.com/trevex/chalkos/pkg/chalkd/renewal/renewaltest"
+	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/internal/testwait"
@@ -66,8 +68,9 @@ func TestBootstrap(t *testing.T) {
 		t.Errorf("pin = %v, %v, want the node's address", pin, err)
 	}
 	_, err = kubernetestest.Bootstrap(context.Background(), s)
-	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "bootstrapped already") {
-		t.Errorf("second bootstrap: %v", err)
+	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "bootstrapped already") ||
+		client.Reason(err) != nodev1.ErrorReason_ERROR_REASON_BOOTSTRAPPED_ALREADY {
+		t.Errorf("second bootstrap: %v, want FailedPrecondition with the reason BOOTSTRAPPED_ALREADY", err)
 	}
 }
 

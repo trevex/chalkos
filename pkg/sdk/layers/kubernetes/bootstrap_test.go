@@ -42,7 +42,10 @@ func TestBootstrapTwiceIsRefused(t *testing.T) {
 		t.Errorf("status after the bootstrap: %v, %v", st, err)
 	}
 	_, err = Bootstrap(context.Background(), conn)
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "bootstrapped already") {
-		t.Errorf("second bootstrap: %v", err)
+	if !BootstrappedAlready(err) || !strings.Contains(err.Error(), "bootstrapped already") {
+		t.Errorf("second bootstrap: %v, want the reason BOOTSTRAPPED_ALREADY", err)
+	}
+	if BootstrappedAlready(connect.NewError(connect.CodeFailedPrecondition, "the node is bootstrapped already")) {
+		t.Error("a message without the reason counts as bootstrapped already")
 	}
 }

@@ -410,6 +410,19 @@ const (
 	// The code is INVALID_ARGUMENT for a set the schemas or translation refuse and
 	// FAILED_PRECONDITION otherwise.
 	ErrorReason_ERROR_REASON_CONFIG_REFUSED ErrorReason = 3
+	// The revoked nodes' list has no room for another node: the admission policy's map of revoked
+	// nodes would grow longer than the API server compiles. RevokeNode refuses so with
+	// FAILED_PRECONDITION. Control planes drop the nodes whose certificates have all expired or
+	// chain only to CAs made after their revocation, so rotating the OS CA and the Kubernetes CA
+	// makes room.
+	ErrorReason_ERROR_REASON_REVOKED_LIST_FULL ErrorReason = 4
+	// The node is an etcd member of a cluster already: it bootstrapped the cluster or joined it.
+	// Bootstrap refuses so with FAILED_PRECONDITION; a caller that bootstraps the first control
+	// plane once treats the refusal as done.
+	ErrorReason_ERROR_REASON_BOOTSTRAPPED_ALREADY ErrorReason = 5
+	// The node accepted an install and reboots into it. Install and EnrollSecureBoot refuse so with
+	// FAILED_PRECONDITION until the node answers from the installed image.
+	ErrorReason_ERROR_REASON_INSTALLED_AND_REBOOTS ErrorReason = 6
 )
 
 // Enum value maps for ErrorReason.
@@ -419,12 +432,18 @@ var (
 		1: "ERROR_REASON_TRIAL_RECORD_UNREADABLE",
 		2: "ERROR_REASON_NO_FALLBACK_SECRET",
 		3: "ERROR_REASON_CONFIG_REFUSED",
+		4: "ERROR_REASON_REVOKED_LIST_FULL",
+		5: "ERROR_REASON_BOOTSTRAPPED_ALREADY",
+		6: "ERROR_REASON_INSTALLED_AND_REBOOTS",
 	}
 	ErrorReason_value = map[string]int32{
 		"ERROR_REASON_UNSPECIFIED":             0,
 		"ERROR_REASON_TRIAL_RECORD_UNREADABLE": 1,
 		"ERROR_REASON_NO_FALLBACK_SECRET":      2,
 		"ERROR_REASON_CONFIG_REFUSED":          3,
+		"ERROR_REASON_REVOKED_LIST_FULL":       4,
+		"ERROR_REASON_BOOTSTRAPPED_ALREADY":    5,
+		"ERROR_REASON_INSTALLED_AND_REBOOTS":   6,
 	}
 )
 
@@ -6750,12 +6769,15 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x1cACTIVATION_STATE_IN_PROGRESS\x10\x03\x12 \n" +
 	"\x1cACTIVATION_STATE_INTERRUPTED\x10\x04\x12\x1b\n" +
 	"\x17ACTIVATION_STATE_FAILED\x10\x05\x12\x1d\n" +
-	"\x19ACTIVATION_STATE_COMPLETE\x10\x06*\x9b\x01\n" +
+	"\x19ACTIVATION_STATE_COMPLETE\x10\x06*\x8e\x02\n" +
 	"\vErrorReason\x12\x1c\n" +
 	"\x18ERROR_REASON_UNSPECIFIED\x10\x00\x12(\n" +
 	"$ERROR_REASON_TRIAL_RECORD_UNREADABLE\x10\x01\x12#\n" +
 	"\x1fERROR_REASON_NO_FALLBACK_SECRET\x10\x02\x12\x1f\n" +
-	"\x1bERROR_REASON_CONFIG_REFUSED\x10\x032\xd5\r\n" +
+	"\x1bERROR_REASON_CONFIG_REFUSED\x10\x03\x12\"\n" +
+	"\x1eERROR_REASON_REVOKED_LIST_FULL\x10\x04\x12%\n" +
+	"!ERROR_REASON_BOOTSTRAPPED_ALREADY\x10\x05\x12&\n" +
+	"\"ERROR_REASON_INSTALLED_AND_REBOOTS\x10\x062\xd5\r\n" +
 	"\vNodeService\x12C\n" +
 	"\x04Info\x12\x1c.chalkos.node.v1.InfoRequest\x1a\x1d.chalkos.node.v1.InfoResponse\x12F\n" +
 	"\x05Disks\x12\x1d.chalkos.node.v1.DisksRequest\x1a\x1e.chalkos.node.v1.DisksResponse\x12O\n" +
