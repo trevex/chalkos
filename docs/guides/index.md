@@ -52,7 +52,7 @@ of a router and three Kubernetes nodes on an IPv6 fabric with BGP.
 
     ---
 
-    Turn four machines and a switch into a router and a three-node Kubernetes cluster on an IPv6 fabric
+    Run a router and up to three Kubernetes nodes on an IPv6 fabric as libvirt VMs, then on real machines
 
 </div>
 <!-- end docgen cards -->

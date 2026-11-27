@@ -36,9 +36,9 @@ You need:
   of the home lab set it up. Run every command of this page in that shell, in the repository;
 - some Nix: NixOS modules, options and `let` bindings;
 - for the last part, a node of the home lab, which [Try it on a node](#try-it-on-a-node) moves to
-  `node-bird-metal`. [Build a home lab](home-lab.md) installs three. The extension needs a BGP
-  neighbour on an IPv6 network, which the quick start's lab of virtual machines lacks, so that lab
-  can run the steps up to the node but not the sessions.
+  `node-bird-metal`. [Build a home lab](home-lab.md) installs up to three, as VMs or on
+  machines. The extension needs a BGP neighbour on an IPv6 network, which the quick start's lab of
+  virtual machines lacks, so that lab can run the steps up to the node but not the sessions.
 
 The steps up to [Try it on a node](#try-it-on-a-node) need no node: they run in the Nix sandbox.
 
@@ -181,23 +181,24 @@ cp nodes/node1.yaml nodes/node1-bird.yaml
 
 In `nodes/node1-bird.yaml`, replace the `BGPSpeaker` document with the `Speaker` above, and add
 the ports' `Network` documents of `bgp/fabric.yaml` and a `Peer` for the router. bird runs a
-session on each interface of the `Peer`, both to the router's first address. The file's header
+session on each interface of the `Peer`, both to the router's first address. The file keeps
+node1's `Link` documents, which name its ports `fabric-a` and `fabric-b`. The file's header
 comment and the comment above the `Speaker` speak of FRR, `BGPPeer` documents and
 `bgp/fabric.yaml`: adapt them to bird and to the documents the file now holds.
 
 ```yaml
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network
-metadata: {name: 20-enp1s0}
+metadata: {name: 20-fabric-a}
 spec:
-  match: {name: enp1s0}
+  match: {name: fabric-a}
   network: {ipv6AcceptRA: true}
 ---
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network
-metadata: {name: 20-enp2s0}
+metadata: {name: 20-fabric-b}
 spec:
-  match: {name: enp2s0}
+  match: {name: fabric-b}
   network: {ipv6AcceptRA: true}
 ---
 apiVersion: bgp.example.org/v1alpha1
@@ -206,7 +207,7 @@ metadata: {name: router}
 spec:
   address: "fdc8:a1b2:c3d4:1::1"
   asn: 65000
-  interfaces: [enp1s0, enp2s0]
+  interfaces: [fabric-a, fabric-b]
   password: {secretRef: {name: bgp, key: password}}
 ```
 
@@ -226,7 +227,7 @@ spec:
     router: {imageName: router-metal, files: [router/*.yaml]}
     nodes: {imageName: node-metal, files: [cluster/*.yaml, bgp/fabric.yaml, bgp/secrets.yaml]}
   nodes:
-    router: {address: 192.168.1.2, groups: [router]}
+    router: {address: 192.168.246.2, groups: [router]}
     node1:
       address: "fdc8:a1b2:c3d4:ff::11"
       imageName: node-bird-metal
@@ -552,12 +553,12 @@ interface that no `Network` names:
 
 A section of a networkd document may be one object or a list of them, and a key one value or a
 list, so the program reads `name` from every `[Match]` section, and splits a value that holds
-several names. It compares the names as written. A glob such as `enp*` may or may not match an
-interface, so the program takes it for no name, and a `Peer` on such an interface is refused.
+several names. It compares the names as written. A glob such as `fabric-*` may or may not match
+an interface, so the program takes it for no name, and a `Peer` on such an interface is refused.
 
 The program also refuses `Peer` documents without a `Speaker`, as the template does. The
 validators run before the renderers, so the operator sees the validator's refusal.
-Test this one with a config whose `Peer` names a third interface, `enp3s0`, without a `Network`
+Test this one with a config whose `Peer` names a third interface, `fabric-c`, without a `Network`
 document:
 
 ```sh
@@ -573,7 +574,7 @@ chalkos.tests.bgp-unconfigured-peer-interface = {
       kind = "Peer";
       name = "router";
       path = "spec.interfaces[2]";
-      message = "enp3s0 has no Network document; bird binds the session to an interface the node configures";
+      message = "fabric-c has no Network document; bird binds the session to an interface the node configures";
     }
   ];
 };
@@ -583,7 +584,7 @@ chalkos.tests.bgp-unconfigured-peer-interface = {
 
 ```console
 $ cat result/bgp-unconfigured-peer-interface/refusals.json
-[{"kind":"Peer","name":"router","path":"spec.interfaces[2]","message":"enp3s0 has no Network document; bird binds the session to an interface the node configures"}]
+[{"kind":"Peer","name":"router","path":"spec.interfaces[2]","message":"fabric-c has no Network document; bird binds the session to an interface the node configures"}]
 ```
 
 `chalkctl validate` accepts this config, because chalkctl runs no validator of the image. The node
@@ -669,7 +670,7 @@ chalkctl config apply node1 --secrets=secrets.age --dry-run
 It prints the refusal a delivery would get, with the document and field, such as the validator's:
 
 ```text
-chalkctl: node1: the config is refused: Peer/router: spec.interfaces[2]: enp3s0 has no Network document; bird binds the session to an interface the node configures
+chalkctl: node1: the config is refused: Peer/router: spec.interfaces[2]: fabric-c has no Network document; bird binds the session to an interface the node configures
 ```
 
 Fix the file and check again. To find out why a config is refused, copy the node's documents into
@@ -713,16 +714,16 @@ The diagnostic shows bird's sessions, each named after its `Peer` and interface:
 ```console
 $ chalkctl node diag node1 bird-protocols
 ...
-Name           Proto      Table      State  Since         Info
+Name             Proto      Table      State  Since         Info
 ...
-router_enp1s0  BGP        ---        up     10:02:16.731  Established
-router_enp2s0  BGP        ---        up     10:02:16.902  Established
+router_fabric-a  BGP        ---        up     10:02:16.731  Established
+router_fabric-b  BGP        ---        up     10:02:16.902  Established
 ```
 
-A session in `Connect` or `Active` reaches no neighbour. `protocol=router_enp1s0` shows one session
-alone. The base diagnostics show the rest of the path: `addresses` that the ports and `node0` hold
-their addresses, `neighbours` that the router answers on the port, and `routes` that the node
-has a default route with protocol `ra`:
+A session in `Connect` or `Active` reaches no neighbour. `protocol=router_fabric-a` shows one
+session alone. The base diagnostics show the rest of the path: `addresses` that the ports and
+`node0` hold their addresses, `neighbours` that the router answers on the port, and `routes` that
+the node has a default route with protocol `ra`:
 
 ```sh
 chalkctl node diag node1 addresses

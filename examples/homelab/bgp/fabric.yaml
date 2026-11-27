@@ -4,44 +4,43 @@
 # session goes to an address of its own, bound to the port. Every node gets this file, and each
 # node's own file gives its BGPSpeaker. The password is a key of the Secret in bgp/secrets.yaml.
 #
-# The ports go by the names the kernel gives them, which follow from the PCI slot and are the same
-# on identical machines. Adapt the names to those the addresses diagnostic shows for your machines.
-# A node whose ports have other names, as on other hardware, or that peers differently leaves this
-# file out and takes a file of its own.
+# The ports go by the names fabric-a and fabric-b, which the Link documents in each node's own file
+# give them by MAC address, so this file fits every node whatever the kernel calls its ports. A
+# node that peers differently leaves this file out and takes a file of its own.
 #
 # Each port learns its IPv6 address, default gateway, resolver and NAT64 prefix from the
 # router's advertisements. The default gateway reaches the workstation and the internet
 # before BGP starts. The BGP sessions advertise the node's and API's addresses to the router.
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network
-metadata: {name: 20-enp1s0}
+metadata: {name: 20-fabric-a}
 spec:
-  match: {name: enp1s0}
+  match: {name: fabric-a}
   network: {ipv6AcceptRA: true}
 ---
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network
-metadata: {name: 20-enp2s0}
+metadata: {name: 20-fabric-b}
 spec:
-  match: {name: enp2s0}
+  match: {name: fabric-b}
   network: {ipv6AcceptRA: true}
 ---
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: BGPPeer
-metadata: {name: router-enp1s0}
+metadata: {name: router-fabric-a}
 spec:
   asn: 65000
   import: none
   address: "fdc8:a1b2:c3d4:1::1"
-  interfaces: [enp1s0]
+  interfaces: [fabric-a]
   password: {secretRef: {name: bgp, key: password}}
 ---
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: BGPPeer
-metadata: {name: router-enp2s0}
+metadata: {name: router-fabric-b}
 spec:
   asn: 65000
   import: none
   address: "fdc8:a1b2:c3d4:1::2"
-  interfaces: [enp2s0]
+  interfaces: [fabric-b]
   password: {secretRef: {name: bgp, key: password}}
