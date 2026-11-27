@@ -1724,7 +1724,13 @@ type RevokeNodeResponse struct {
 	// When the node was revoked: now, or at an earlier revocation.
 	RevokedAt *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=revoked_at,json=revokedAt,proto3" json:"revoked_at,omitempty"`
 	// Whether the call deleted the node's Node object; false when the cluster had none.
-	NodeDeleted   bool `protobuf:"varint,2,opt,name=node_deleted,json=nodeDeleted,proto3" json:"node_deleted,omitempty"`
+	NodeDeleted bool `protobuf:"varint,2,opt,name=node_deleted,json=nodeDeleted,proto3" json:"node_deleted,omitempty"`
+	// The length of the admission policy's map of revoked nodes after the call, in code points, as
+	// the API server counts an expression's length.
+	ListLength uint32 `protobuf:"varint,3,opt,name=list_length,json=listLength,proto3" json:"list_length,omitempty"`
+	// The length list_length may reach: RevokeNode refuses a new node, with the reason
+	// REVOKED_LIST_FULL, that would make the map longer.
+	ListCapacity  uint32 `protobuf:"varint,4,opt,name=list_capacity,json=listCapacity,proto3" json:"list_capacity,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1771,6 +1777,20 @@ func (x *RevokeNodeResponse) GetNodeDeleted() bool {
 		return x.NodeDeleted
 	}
 	return false
+}
+
+func (x *RevokeNodeResponse) GetListLength() uint32 {
+	if x != nil {
+		return x.ListLength
+	}
+	return 0
+}
+
+func (x *RevokeNodeResponse) GetListCapacity() uint32 {
+	if x != nil {
+		return x.ListCapacity
+	}
+	return 0
 }
 
 // The request of UnrevokeNode.
@@ -2076,11 +2096,14 @@ const file_chalkos_kubernetes_v1_kubernetes_proto_rawDesc = "" +
 	"uncordoned\x18\x01 \x01(\bR\n" +
 	"uncordoned\"'\n" +
 	"\x11RevokeNodeRequest\x12\x12\n" +
-	"\x04node\x18\x01 \x01(\tR\x04node\"r\n" +
+	"\x04node\x18\x01 \x01(\tR\x04node\"\xb8\x01\n" +
 	"\x12RevokeNodeResponse\x129\n" +
 	"\n" +
 	"revoked_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\trevokedAt\x12!\n" +
-	"\fnode_deleted\x18\x02 \x01(\bR\vnodeDeleted\"?\n" +
+	"\fnode_deleted\x18\x02 \x01(\bR\vnodeDeleted\x12\x1f\n" +
+	"\vlist_length\x18\x03 \x01(\rR\n" +
+	"listLength\x12#\n" +
+	"\rlist_capacity\x18\x04 \x01(\rR\flistCapacity\"?\n" +
 	"\x13UnrevokeNodeRequest\x12\x12\n" +
 	"\x04node\x18\x01 \x01(\tR\x04node\x12\x14\n" +
 	"\x05force\x18\x02 \x01(\bR\x05force\"n\n" +

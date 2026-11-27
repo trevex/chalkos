@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
+	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
 )
 
@@ -47,4 +48,11 @@ func etcdMemberRefusal(name string, members []*kubernetesv1.EtcdMember) error {
 		}
 	}
 	return nil
+}
+
+// RevokedListFull reports whether err is a control plane's refusal of RevokeNode because the
+// revoked nodes' list has no room, by the reason REVOKED_LIST_FULL. Rotating the OS CA and the
+// Kubernetes CA makes room: control planes then drop the nodes revoked before them.
+func RevokedListFull(err error) bool {
+	return client.Reason(err) == nodev1.ErrorReason_ERROR_REASON_REVOKED_LIST_FULL
 }

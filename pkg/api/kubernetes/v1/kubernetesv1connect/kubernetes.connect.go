@@ -209,8 +209,10 @@ type KubernetesServiceClient interface {
 	// chalkos-revoked-nodes, which then denies the node's writes, and deletes its Node object.
 	// Control planes then refuse to renew its node certificate. A node revoked already keeps the
 	// time of its first revocation. A call that fails after listing the node says so; calling again
-	// finishes it. A node not revoked yet is refused with FAILED_PRECONDITION while the policy's
-	// map of revoked nodes would grow too long for the API server to compile with it. It answers on
+	// finishes it. It first drops the nodes whose certificates have all expired or chain only to CAs
+	// made after their revocation. A node not revoked yet is refused with FAILED_PRECONDITION and
+	// the reason REVOKED_LIST_FULL while the policy's map of revoked nodes would grow too long for
+	// the API server to compile with it. It answers on
 	// bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
 	// Kubernetes layer.
 	RevokeNode(context.Context, *v1.RevokeNodeRequest) (*v1.RevokeNodeResponse, error)
@@ -290,8 +292,10 @@ type KubernetesServiceHandler interface {
 	// chalkos-revoked-nodes, which then denies the node's writes, and deletes its Node object.
 	// Control planes then refuse to renew its node certificate. A node revoked already keeps the
 	// time of its first revocation. A call that fails after listing the node says so; calling again
-	// finishes it. A node not revoked yet is refused with FAILED_PRECONDITION while the policy's
-	// map of revoked nodes would grow too long for the API server to compile with it. It answers on
+	// finishes it. It first drops the nodes whose certificates have all expired or chain only to CAs
+	// made after their revocation. A node not revoked yet is refused with FAILED_PRECONDITION and
+	// the reason REVOKED_LIST_FULL while the policy's map of revoked nodes would grow too long for
+	// the API server to compile with it. It answers on
 	// bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
 	// Kubernetes layer.
 	RevokeNode(context.Context, *v1.RevokeNodeRequest) (*v1.RevokeNodeResponse, error)

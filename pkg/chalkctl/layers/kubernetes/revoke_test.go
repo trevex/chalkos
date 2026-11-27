@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	sdkkubernetes "github.com/trevex/chalkos/pkg/sdk/layers/kubernetes"
 )
@@ -94,6 +96,28 @@ func TestEveryControlPlaneReadsRevoked(t *testing.T) {
 			if !strings.Contains(err.Error(), w) {
 				t.Errorf("%v: %v, want %q", tc.controlPlanes, err, w)
 			}
+		}
+	}
+}
+
+// The line after a revocation warns while the revoked nodes fill more than 80% of their room.
+func TestRevokedLine(t *testing.T) {
+	at := time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		resp *kubernetesv1.RevokeNodeResponse
+		want string
+	}{
+		{&kubernetesv1.RevokeNodeResponse{RevokedAt: timestamppb.New(at), NodeDeleted: true, ListLength: 100, ListCapacity: 90_000},
+			"revoked node w1 (since 2026-10-23T12:00:00Z); deleted its Node object"},
+		{&kubernetesv1.RevokeNodeResponse{RevokedAt: timestamppb.New(at), ListLength: 72_000, ListCapacity: 90_000},
+			"revoked node w1 (since 2026-10-23T12:00:00Z); it had no Node object to delete"},
+		{&kubernetesv1.RevokeNodeResponse{RevokedAt: timestamppb.New(at), NodeDeleted: true, ListLength: 80_000, ListCapacity: 90_000},
+			"revoked node w1 (since 2026-10-23T12:00:00Z); deleted its Node object\n" +
+				"the revoked nodes fill 88% of their room; rotate the CAs with chalkctl rotate os-ca and chalkctl rotate kubernetes-ca, " +
+				"each to its finish, so the control planes drop the nodes revoked before them"},
+	} {
+		if got := revokedLine("w1", tc.resp); got != tc.want {
+			t.Errorf("revokedLine(%v) = %q, want %q", tc.resp, got, tc.want)
 		}
 	}
 }

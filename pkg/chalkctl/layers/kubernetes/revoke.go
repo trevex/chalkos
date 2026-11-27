@@ -57,12 +57,23 @@ func nodeRevoke(h layer.Host, ctx context.Context, f revokeFlags, pos []string) 
 	if err != nil {
 		return err
 	}
+	fmt.Fprintln(h.Stdout(), revokedLine(name, resp))
+	return nil
+}
+
+// revokedLine says that the node is revoked and whether its Node was deleted, and warns while the
+// revoked nodes fill more than 80% of the room the admission policy leaves them.
+func revokedLine(name string, resp *kubernetesv1.RevokeNodeResponse) string {
 	deleted := "deleted its Node object"
 	if !resp.NodeDeleted {
 		deleted = "it had no Node object to delete"
 	}
-	fmt.Fprintf(h.Stdout(), "revoked node %s (since %s); %s\n", name, resp.RevokedAt.AsTime().UTC().Format(time.RFC3339), deleted)
-	return nil
+	line := fmt.Sprintf("revoked node %s (since %s); %s", name, resp.RevokedAt.AsTime().UTC().Format(time.RFC3339), deleted)
+	if c := uint64(resp.ListCapacity); c > 0 && uint64(resp.ListLength)*5 > c*4 {
+		line += fmt.Sprintf("\nthe revoked nodes fill %d%% of their room; rotate the CAs with chalkctl rotate os-ca and chalkctl rotate kubernetes-ca, "+
+			"each to its finish, so the control planes drop the nodes revoked before them", uint64(resp.ListLength)*100/c)
+	}
+	return line
 }
 
 // controlPlanesRead asks the control planes, but the node revoked, whether they read the revoked

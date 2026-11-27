@@ -3,9 +3,14 @@ package kubernetes
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connectproto"
+
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
+	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 )
 
 // A node that etcd lists as a member is revoked only when the caller allows a control plane; a
@@ -37,5 +42,22 @@ func TestEtcdMemberRefusal(t *testing.T) {
 		if e, ok := errors.AsType[*EtcdMemberError](err); err != nil && (!ok || e.Node != name) {
 			t.Errorf("%q: %v, want an EtcdMemberError for it", name, err)
 		}
+	}
+}
+
+// A full list is told by its reason, never by the message.
+func TestRevokedListFull(t *testing.T) {
+	t.Parallel()
+	full := connect.NewError(connect.CodeFailedPrecondition, "revoking w1 would make the admission policy's map of the revoked nodes too long")
+	if RevokedListFull(full) || RevokedListFull(nil) {
+		t.Error("a refusal without the reason is RevokedListFull")
+	}
+	detail, err := connectproto.NewErrorDetail(&nodev1.ReasonDetail{Reason: nodev1.ErrorReason_ERROR_REASON_REVOKED_LIST_FULL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	full = full.WithDetail(detail)
+	if !RevokedListFull(fmt.Errorf("revoke w1: %w", full)) {
+		t.Error("a refusal with the reason is not RevokedListFull")
 	}
 }

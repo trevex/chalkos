@@ -18,8 +18,10 @@ import (
 	k8stesting "k8s.io/client-go/testing"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
+	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
+	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/internal/testwait"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
@@ -113,6 +115,9 @@ func TestRevokeNode(t *testing.T) {
 		t.Fatal(err)
 	}
 	at := got.RevokedAt.AsTime()
+	if want := uint32(revoked.LiteralLength(revoked.List{"w1": at})); got.ListLength != want || got.ListCapacity != revoked.MaxLiteralLength {
+		t.Errorf("list %d of %d, want %d of %d", got.ListLength, got.ListCapacity, want, revoked.MaxLiteralLength)
+	}
 	if !got.NodeDeleted || at.Before(before) || at.After(time.Now()) {
 		t.Errorf("revoked at %v, Node deleted %v; want now and deleted", at, got.NodeDeleted)
 	}
@@ -388,8 +393,10 @@ func TestStatusReadsTheNodeWhileTheListHangs(t *testing.T) {
 // server compiles is refused before the node is listed; one already listed is revoked again.
 func TestRevokeNodeRefusesPastThePolicysLimit(t *testing.T) {
 	l := newRevokeLab(t)
+	// A Kubernetes CA older than the revocations keeps them from being pruned.
+	l.kubernetesCAs(t, time.Now().Add(-72*time.Hour))
 	data := map[string]string{}
-	at := time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC).Format(revoked.TimeFormat)
+	at := time.Now().Add(-48 * time.Hour).Format(revoked.TimeFormat)
 	for i := 0; revoked.LiteralLength(asList(data)) <= revoked.MaxLiteralLength-200; i++ {
 		data[fmt.Sprintf("node-%05d-%s", i, strings.Repeat("x", 40))] = at
 	}
@@ -402,8 +409,9 @@ func TestRevokeNodeRefusesPastThePolicysLimit(t *testing.T) {
 	// A name of 246 characters, whose entry alone takes the room left.
 	long := "w1." + strings.Repeat(strings.Repeat("x", 59)+".", 4) + "end"
 	_, err := l.revoke(long)
-	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "chalkctl rotate os-ca") || !strings.Contains(err.Error(), "chalkctl node unrevoke") {
-		t.Errorf("revoking %s: %v, want refused naming the rotations and unrevoke", long, err)
+	if layer.CodeOf(err) != connect.CodeFailedPrecondition || client.Reason(err) != nodev1.ErrorReason_ERROR_REASON_REVOKED_LIST_FULL ||
+		!strings.Contains(err.Error(), "chalkctl rotate os-ca") || !strings.Contains(err.Error(), "chalkctl rotate kubernetes-ca") {
+		t.Errorf("revoking %s: %v, want REVOKED_LIST_FULL naming the rotations", long, err)
 	}
 	if _, ok := l.list(t)[long]; ok {
 		t.Errorf("the refusal listed %s", long)
@@ -427,4 +435,87 @@ func asList(data map[string]string) revoked.List {
 		l[name] = at
 	}
 	return l
+}
+
+// A revocation first drops the entries whose certificates expired and those revoked before every
+// CA the control plane trusts, and applies the policy without them.
+func TestRevokeNodePrunes(t *testing.T) {
+	l := newRevokeLab(t)
+	now := time.Now()
+	// The OS CA is made as the tests start, backdated an hour; the Kubernetes CA predates w-old.
+	l.kubernetesCAs(t, now.Add(-72*time.Hour))
+	old := now.Add(-2 * time.Hour)
+	ancient := now.Add(-(pki.LeafValidity + revoked.ExpiryMargin + time.Hour))
+	for name, at := range map[string]time.Time{"w-old": old, "w-ancient": ancient} {
+		if _, err := revoked.Revoke(context.Background(), l.cs, name, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := l.revoke("w1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	list := l.list(t)
+	if _, ok := list["w-ancient"]; ok {
+		t.Error("an entry past its certificates' validity is kept")
+	}
+	if _, ok := list["w-old"]; !ok {
+		t.Error("an entry whose Kubernetes CA predates its revocation is dropped")
+	}
+	if want := uint32(revoked.LiteralLength(list)); got.ListLength != want {
+		t.Errorf("list length %d, want %d", got.ListLength, want)
+	}
+	if names := l.policyNames(t); strings.Contains(names, "w-ancient") || !strings.Contains(names, "w-old") {
+		t.Errorf("the policy names %s, want w-old and not w-ancient", names)
+	}
+}
+
+// Once both the OS CA and the Kubernetes CA were made after a revocation, the entry is dropped,
+// on a revocation and on an unrevocation.
+func TestRevokeNodePrunesAfterRotation(t *testing.T) {
+	for name, call := range map[string]func(*revokeLab) error{
+		"revoke": func(l *revokeLab) error { _, err := l.revoke("w1"); return err },
+		"unrevoke": func(l *revokeLab) error {
+			if _, err := revoked.Revoke(context.Background(), l.cs, "w1", time.Now()); err != nil {
+				return err
+			}
+			_, err := l.unrevoke("w1", true)
+			return err
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			l := newRevokeLab(t)
+			// newRevokeLab's CAs are made as the tests start, backdated an hour: w-rotated was
+			// revoked before them.
+			if _, err := revoked.Revoke(context.Background(), l.cs, "w-rotated", time.Now().Add(-48*time.Hour)); err != nil {
+				t.Fatal(err)
+			}
+			if err := call(l); err != nil {
+				t.Fatal(err)
+			}
+			if _, ok := l.list(t)["w-rotated"]; ok {
+				t.Error("an entry revoked before every trusted CA is kept")
+			}
+		})
+	}
+}
+
+// A cluster whose controller-manager signs kubelet certificates for longer than a node
+// certificate keeps entries for that long.
+func TestCertValidity(t *testing.T) {
+	for _, tc := range []struct {
+		flags map[string]string
+		want  time.Duration
+	}{
+		{nil, pki.LeafValidity},
+		{map[string]string{"cluster-signing-duration": "17520h"}, 17520 * time.Hour},
+		{map[string]string{"cluster_signing_duration": "17520h"}, 17520 * time.Hour},
+		{map[string]string{"cluster-signing-duration": "24h"}, pki.LeafValidity},
+		{map[string]string{"cluster-signing-duration": "forever"}, pki.LeafValidity},
+	} {
+		c := k8s.Cluster{ExtraArgs: map[string]map[string]string{"kube-controller-manager": tc.flags}}
+		if got := certValidity(c); got != tc.want {
+			t.Errorf("certValidity(%v) = %v, want %v", tc.flags, got, tc.want)
+		}
+	}
 }

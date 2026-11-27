@@ -1553,8 +1553,10 @@ kube-system/chalkos-revoked-nodes, applies the API server's admission policy
 chalkos-revoked-nodes, which then denies the node's writes, and deletes its Node object.
 Control planes then refuse to renew its node certificate. A node revoked already keeps the
 time of its first revocation. A call that fails after listing the node says so; calling again
-finishes it. A node not revoked yet is refused with FAILED_PRECONDITION while the policy's
-map of revoked nodes would grow too long for the API server to compile with it. It answers on
+finishes it. It first drops the nodes whose certificates have all expired or chain only to CAs
+made after their revocation. A node not revoked yet is refused with FAILED_PRECONDITION and
+the reason REVOKED_LIST_FULL while the policy's map of revoked nodes would grow too long for
+the API server to compile with it. It answers on
 bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
 Kubernetes layer.
 
@@ -1576,6 +1578,8 @@ The response of RevokeNode.
 | ----- | ---- | ----------- |
 | `revoked_at` | google.protobuf.Timestamp | When the node was revoked: now, or at an earlier revocation. |
 | `node_deleted` | bool | Whether the call deleted the node's Node object; false when the cluster had none. |
+| `list_length` | uint32 | The length of the admission policy's map of revoked nodes after the call, in code points, as the API server counts an expression's length. |
+| `list_capacity` | uint32 | The length list_length may reach: RevokeNode refuses a new node, with the reason REVOKED_LIST_FULL, that would make the map longer. |
 
 ### UnrevokeNode { #kubernetes-method-unrevokenode }
 

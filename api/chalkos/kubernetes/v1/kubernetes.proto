@@ -71,8 +71,10 @@ service KubernetesService {
   // chalkos-revoked-nodes, which then denies the node's writes, and deletes its Node object.
   // Control planes then refuse to renew its node certificate. A node revoked already keeps the
   // time of its first revocation. A call that fails after listing the node says so; calling again
-  // finishes it. A node not revoked yet is refused with FAILED_PRECONDITION while the policy's
-  // map of revoked nodes would grow too long for the API server to compile with it. It answers on
+  // finishes it. It first drops the nodes whose certificates have all expired or chain only to CAs
+  // made after their revocation. A node not revoked yet is refused with FAILED_PRECONDITION and
+  // the reason REVOKED_LIST_FULL while the policy's map of revoked nodes would grow too long for
+  // the API server to compile with it. It answers on
   // bootstrapped control-plane nodes. Available in normal mode to admins, on images with the
   // Kubernetes layer.
   rpc RevokeNode(RevokeNodeRequest) returns (RevokeNodeResponse);
@@ -408,6 +410,12 @@ message RevokeNodeResponse {
   google.protobuf.Timestamp revoked_at = 1;
   // Whether the call deleted the node's Node object; false when the cluster had none.
   bool node_deleted = 2;
+  // The length of the admission policy's map of revoked nodes after the call, in code points, as
+  // the API server counts an expression's length.
+  uint32 list_length = 3;
+  // The length list_length may reach: RevokeNode refuses a new node, with the reason
+  // REVOKED_LIST_FULL, that would make the map longer.
+  uint32 list_capacity = 4;
 }
 
 // The request of UnrevokeNode.
