@@ -15,13 +15,13 @@ metadata: {name: router}
 spec:
   address: "fdc8:a1b2:c3d4:1::1"
   asn: 65000
-  interfaces: [enp1s0, enp2s0]
+  interfaces: [fabric-a, fabric-b]
 ---
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network
 metadata: {name: 20-fabric}
 spec:
-  match: {name: [enp1s0, enp2s0]}
+  match: {name: [fabric-a, fabric-b]}
 ---
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network

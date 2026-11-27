@@ -2,15 +2,15 @@
 ---
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network
-metadata: {name: 20-enp1s0}
+metadata: {name: 20-fabric-a}
 spec:
-  match: {name: enp1s0}
+  match: {name: fabric-a}
 ---
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network
-metadata: {name: 20-enp2s0}
+metadata: {name: 20-fabric-b}
 spec:
-  match: {name: enp2s0}
+  match: {name: fabric-b}
 ---
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network

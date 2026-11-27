@@ -70,8 +70,8 @@ in
       interfaces = chalkosLib.mkOption {
         type = lib.types.nonEmptyListOf interfaceName;
         example = [
-          "enp1s0"
-          "enp2s0"
+          "fabric-a"
+          "fabric-b"
         ];
         unique = {
           across = "list";
@@ -227,7 +227,7 @@ in
         kind = "Peer";
         name = "router";
         path = "spec.interfaces[2]";
-        message = "enp3s0 ${unconfigured}";
+        message = "fabric-c ${unconfigured}";
       }
     ]
     // validatorTest "configured-interfaces" [ ]
@@ -238,7 +238,7 @@ in
         kind = "Peer";
         name = "router";
         path = "spec.interfaces[0]";
-        message = "enp1s0 ${unconfigured}";
+        message = "fabric-a ${unconfigured}";
       }
     ]
     // validatorTest "unconfigured-export" [
@@ -325,7 +325,7 @@ in
   # --8<-- [start:diagnostic]
   # chalkctl node diag <node> bird-protocols shows bird's sessions. birdc -r asks bird read-only,
   # on bird's socket, which bird makes writable for its group. bird names each session after its
-  # Peer and interface, such as router_enp1s0, in quotes, as a name with a hyphen needs them.
+  # Peer and interface, such as router_fabric-a, in quotes, as a name with a hyphen needs them.
   chalkos.diagnostics.bird-protocols = {
     description = "The protocols bird runs and the state of their BGP sessions.";
     command = [
@@ -339,7 +339,7 @@ in
       type = "pattern";
       regex = "^[A-Za-z0-9][A-Za-z0-9._-]*$";
       optional = true;
-      description = "Name of a protocol, such as router_enp1s0 for the session of the Peer router on enp1s0, which alone is shown; every protocol when left out.";
+      description = "Name of a protocol, such as router_fabric-a for the session of the Peer router on fabric-a, which alone is shown; every protocol when left out.";
     };
     role = "reader";
     timeout = "10s";

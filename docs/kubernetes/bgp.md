@@ -338,7 +338,7 @@ common refusals:
 | `the Node's nodeIP.addresses hold no IPv4 address, which FRR would take as its router ID; ...` | An IPv6-only node gives no router ID. |
 | `a node with BGPPeer documents needs a BGPSpeaker document, ...` | The node has peers but no speaker. |
 | `FRR binds a session to an address to one interface, ...` | A peer with an address names two interfaces. |
-| `BGPPeer/router-enp1s0, BGPPeer/router-enp2s0: spec.address "fdc8:a1b2:c3d4:1::1" is not unique; FRR runs one session per neighbour address; ...` | Two peers name one address. |
+| `BGPPeer/router-fabric-a, BGPPeer/router-fabric-b: spec.address "fdc8:a1b2:c3d4:1::1" is not unique; FRR runs one session per neighbour address; ...` | Two peers name one address. |
 | `fabric1 carries the unnumbered sessions of another BGPPeer too; ...` | Two peers run unnumbered sessions on one interface. |
 
 To change the node's AS number, deliver the config without the `BGPSpeaker` and its `BGPPeer`s,
