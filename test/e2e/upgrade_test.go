@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"net/http"
 	"net/url"
 	"os"
@@ -202,8 +203,22 @@ func TestUpgrade(t *testing.T) {
 		"state_tpm2":      "1",
 	})
 	waitForNode(t, m, "chalklab")
-	if out, err := chalkctl(t, m, "", "status", "chalklab", "--inventory", pullInventory); err != nil || !strings.Contains(out, "image "+nextHash[:12]+", booted from chalkos_2.efi\n") || !inventoryConfig.MatchString(out) {
-		t.Errorf("status after the install in place from the registry: %v\n%s", err, out)
+	// The node activated the pulled image as an upgrade does, with its boot counted, so its entry
+	// is not blessed right away; wait for the health check to find it healthy before status reads
+	// a plain chalkos_2.efi, as chalkctl upgrade and chalkctl node reboot wait for earlier in this
+	// test.
+	waitFor(t, 5*time.Minute, "the installed image's boot to be found healthy", func() error {
+		out, err = chalkctl(t, m, "", "status", "chalklab", "--inventory", pullInventory)
+		if err != nil {
+			return err
+		}
+		if !strings.Contains(out, "image "+nextHash[:12]+", booted from chalkos_2.efi\n") {
+			return errors.New("its boot was not found healthy yet")
+		}
+		return nil
+	})
+	if !inventoryConfig.MatchString(out) {
+		t.Errorf("status after the install in place from the registry: %s", out)
 	}
 	t.Logf("installed %s in place from the registry in %v", nextHash[:12], time.Since(placed).Round(time.Second))
 	t.Logf("the test took %v", time.Since(start).Round(time.Second))
