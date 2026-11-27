@@ -3,6 +3,9 @@ package chalkctl
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/pem"
 	"errors"
 	"os"
 	"path/filepath"
@@ -11,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/crypto/ssh"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -493,5 +497,72 @@ func TestIgnoreRevokedRefreshes(t *testing.T) {
 				t.Errorf("with the refresh failing: %v", err)
 			}
 		})
+	}
+}
+
+// encryptedToProtectedKey age-encrypts the lab's secrets to an SSH key whose passphrase is
+// hunter2, written as the identity file it returns.
+func encryptedToProtectedKey(t *testing.T, ta *testApp) ([]byte, string) {
+	t.Helper()
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sshPub, err := ssh.NewPublicKey(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, err := ssh.MarshalPrivateKeyWithPassphrase(priv, "", []byte("hunter2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity := filepath.Join(ta.dir, "id_ed25519")
+	writeFile(t, identity, string(pem.EncodeToMemory(block)))
+	writeFile(t, identity+".pub", string(ssh.MarshalAuthorizedKey(sshPub)))
+	authorized := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPub)))
+	recipient, err := clustersecrets.ParseRecipient(authorized, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The file records its recipient, as one chalkctl encrypted does.
+	s := ta.secrets
+	s.Recipients = []string{authorized}
+	encrypted, err := s.Encrypt(recipient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return encrypted, identity
+}
+
+// An age-encrypted secrets file on standard input is decrypted once, though node prune-revoked
+// reads it twice: the key's passphrase is asked for once.
+func TestEncryptedSecretsFromStdinDecryptedOnce(t *testing.T) {
+	ta := newTestApp(t)
+	addr, _ := revokeNode(t, ta)
+	encrypted, identity := encryptedToProtectedKey(t, ta)
+	ta.stdin, ta.answers = bytes.NewReader(encrypted), []string{"hunter2", "hunter2"}
+	if err := ta.run(context.Background(), ta.args([]string{"node", "prune-revoked", "--via", "n1", "--secrets", "-", "--identity", identity}, addr)); err != nil {
+		t.Fatal(err)
+	}
+	if len(ta.prompts) != 1 {
+		t.Errorf("prompts = %q, want the passphrase asked once", ta.prompts)
+	}
+}
+
+// rotate reads an age-encrypted secrets file from standard input, decrypting it once, and writes
+// the changed secrets with --out, encrypted to the recipients inside.
+func TestRotateEncryptedSecretsFromStdin(t *testing.T) {
+	l := newRotationLab(t)
+	encrypted, identity := encryptedToProtectedKey(t, l.ta)
+	l.ta.stdin, l.ta.answers = bytes.NewReader(encrypted), []string{"hunter2", "hunter2"}
+	out := filepath.Join(l.ta.dir, "rotated.age")
+	if err := l.rotate("os-ca", "--secrets", "-", "--identity", identity, "--out", out, "--public-out", filepath.Join(l.ta.dir, "rotated.pub.json")); err != nil {
+		t.Fatal(err)
+	}
+	if len(l.ta.prompts) != 1 {
+		t.Errorf("prompts = %q, want the passphrase asked once", l.ta.prompts)
+	}
+	if data, err := os.ReadFile(out); err != nil || !bytes.HasPrefix(data, []byte("age-encryption.org/")) {
+		t.Errorf("%s = %.20q, %v; want it age-encrypted", out, data, err)
 	}
 }

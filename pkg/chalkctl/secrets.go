@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -38,11 +37,11 @@ func (a *app) loadSecrets(ctx context.Context, s layer.SecretsFlags) (clustersec
 		return clustersecrets.Secrets{}, err
 	}
 	if path == "-" {
-		data, err := sourcesIn(ctx).stdin(a.stdin)
+		_, plain, err := sourcesIn(ctx).stdin(a.stdin, a.identities(ctx, s))
 		if err != nil {
 			return clustersecrets.Secrets{}, fmt.Errorf("read the secrets file: %w", err)
 		}
-		return a.decodeSecrets(ctx, s, path, data)
+		return a.decodeSecrets(ctx, s, path, plain)
 	}
 	sources := sourcesIn(ctx)
 	if sources == nil {
@@ -58,11 +57,16 @@ func (a *app) loadSecrets(ctx context.Context, s layer.SecretsFlags) (clustersec
 // decodeSecrets decodes data, the secrets file at path, with the age identities s names when it
 // is encrypted.
 func (a *app) decodeSecrets(ctx context.Context, s layer.SecretsFlags, path string, data []byte) (clustersecrets.Secrets, error) {
-	secrets, err := clustersecrets.Read(data, func() ([]age.Identity, error) { return a.ageIdentities(ctx, s.Identities) })
+	secrets, err := clustersecrets.Read(data, a.identities(ctx, s))
 	if err != nil {
 		return clustersecrets.Secrets{}, fmt.Errorf("%s: %w", path, err)
 	}
 	return secrets, nil
+}
+
+// identities reads the age identities s names, for a secrets file that is encrypted.
+func (a *app) identities(ctx context.Context, s layer.SecretsFlags) func() ([]age.Identity, error) {
+	return func() ([]age.Identity, error) { return a.ageIdentities(ctx, s.Identities) }
 }
 
 // secretsPath is the secrets file --secrets names, - for standard input. chalkctl looks for no
@@ -448,11 +452,12 @@ func (a *app) openSecrets(ctx context.Context, s layer.SecretsFlags, change chan
 		return nil, errors.New("the secrets file from standard input cannot be updated in place; pass --out")
 	}
 	if path == "-" {
-		data, err := io.ReadAll(a.stdin)
+		// A command that also loads the secrets file reads standard input once with it.
+		data, plain, err := sourcesIn(ctx).stdin(a.stdin, a.identities(ctx, s))
 		if err != nil {
 			return nil, fmt.Errorf("read the secrets file: %w", err)
 		}
-		return a.readSecretsFile(ctx, s, path, data, change)
+		return a.readSecretsFile(ctx, s, path, data, plain, change)
 	}
 	source, err := clusterSecretsSource(path)
 	if err != nil {
@@ -485,7 +490,7 @@ func (a *app) openSecrets(ctx context.Context, s layer.SecretsFlags, change chan
 		file.Close()
 		return nil, fmt.Errorf("%s: expected a %s secrets file", path, source.provider)
 	}
-	f, err := a.readSecretsFile(ctx, s, path, data, change)
+	f, err := a.readSecretsFile(ctx, s, path, data, data, change)
 	if err != nil {
 		file.Close()
 		return nil, err
@@ -494,13 +499,14 @@ func (a *app) openSecrets(ctx context.Context, s layer.SecretsFlags, change chan
 	return f, nil
 }
 
-// readSecretsFile is openSecrets once the file is read.
-func (a *app) readSecretsFile(ctx context.Context, s layer.SecretsFlags, path string, data []byte, c changeFlags) (*secretsFile, error) {
+// readSecretsFile is openSecrets once the file is read: data as read, which gives its format, and
+// plain, data or the same decrypted, which gives the secrets.
+func (a *app) readSecretsFile(ctx context.Context, s layer.SecretsFlags, path string, data, plain []byte, c changeFlags) (*secretsFile, error) {
 	format, err := clustersecrets.DetectFormat(data)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	secrets, err := a.decodeSecrets(ctx, s, path, data)
+	secrets, err := a.decodeSecrets(ctx, s, path, plain)
 	if err != nil {
 		return nil, err
 	}

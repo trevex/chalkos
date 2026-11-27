@@ -100,6 +100,8 @@ type secretSources struct {
 	identities []string
 	mu         sync.Mutex
 	files      map[secretSource][]byte
+	// stdinData is standard input as read, stdinPlain the same decrypted; nil until read.
+	stdinData, stdinPlain []byte
 }
 
 type secretSourcesKey struct{}
@@ -355,26 +357,38 @@ func (s *secretSources) resolve(nc *inventory.NodeConfig, placeholders bool) (_ 
 	return &resolved, encrypted, nil
 }
 
-// stdin reads in, standard input, once for the command: a command that reads the secrets file
-// from it twice, as to check the file and then to reach the nodes with it, gets the same bytes
-// again. Without secretSources it reads in each time.
-func (s *secretSources) stdin(in io.Reader) ([]byte, error) {
+// stdin reads in, standard input, once for the command and returns what it held, data, and that
+// as plaintext, decrypted with identities once when it is age-encrypted: a command that reads the
+// secrets file from it twice, as to check the file and then to reach the nodes with it, gets the
+// same bytes again and is asked for no key again. Without secretSources it reads and decrypts in
+// each time. A plaintext that is not age-encrypted is data, whatever it holds.
+func (s *secretSources) stdin(in io.Reader, identities func() ([]age.Identity, error)) (data, plain []byte, err error) {
 	if s == nil {
-		return io.ReadAll(in)
+		if data, err = io.ReadAll(in); err != nil {
+			return nil, nil, err
+		}
+		plain, err = plaintext(data, identities)
+		return data, plain, err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	key := secretSource{path: "-"}
-	if data, ok := s.files[key]; ok {
+	if s.stdinData == nil {
+		if s.stdinData, err = io.ReadAll(in); err != nil {
+			return nil, nil, err
+		}
+	}
+	if s.stdinPlain == nil {
+		if s.stdinPlain, err = plaintext(s.stdinData, identities); err != nil {
+			return nil, nil, err
+		}
+	}
+	return s.stdinData, s.stdinPlain, nil
+}
+
+// plaintext is data decrypted with identities when it is age-encrypted, else data itself.
+func plaintext(data []byte, identities func() ([]age.Identity, error)) ([]byte, error) {
+	if format, err := clustersecrets.DetectFormat(data); err != nil || format == clustersecrets.FormatJSON {
 		return data, nil
 	}
-	data, err := io.ReadAll(in)
-	if err != nil {
-		return nil, err
-	}
-	if s.files == nil {
-		s.files = make(map[secretSource][]byte)
-	}
-	s.files[key] = data
-	return data, nil
+	return clustersecrets.DecryptAge(data, identities)
 }
