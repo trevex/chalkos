@@ -121,7 +121,9 @@ func Expired(at, now time.Time, validity time.Duration) bool {
 }
 
 // Prune removes the nodes for which drop reports true from the list and returns their names in
-// order. It writes the ConfigMap only when it removes a node.
+// name order. It writes the ConfigMap only when it removes a node. Another control plane may
+// write the list in between: the prune then starts over from what that one wrote; drop may be
+// asked again for the same node.
 func Prune(ctx context.Context, cs kubernetes.Interface, drop func(name string, at time.Time) bool) ([]string, error) {
 	var removed []string
 	err := update(ctx, cs, func(cm *corev1.ConfigMap, l List) (bool, error) {

@@ -278,3 +278,48 @@ func TestPrune(t *testing.T) {
 		t.Errorf("a prune that drops nothing: %v, %v, %d writes; want none and no second write", removed, err, writes)
 	}
 }
+
+// TestPruneRetriesConflicts prunes again from what another control plane wrote since the list
+// was read: an entry it removed is not reported, and one it added is judged too.
+func TestPruneRetriesConflicts(t *testing.T) {
+	ctx := context.Background()
+	cs := fake.NewClientset()
+	for _, name := range []string{"w1", "w2", "w3"} {
+		at := second
+		if name != "w2" {
+			at = first
+		}
+		if _, err := Revoke(ctx, cs, name, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	conflicts := 0
+	cs.PrependReactor("update", "configmaps", func(k8stesting.Action) (bool, runtime.Object, error) {
+		if conflicts > 0 {
+			return false, nil, nil
+		}
+		conflicts++
+		// Another control plane revokes w4 and unrevokes w1 between this prune's read and its update.
+		cm, err := cs.Tracker().Get(corev1.SchemeGroupVersion.WithResource("configmaps"), Namespace, Name)
+		if err != nil {
+			return true, nil, err
+		}
+		other := cm.(*corev1.ConfigMap).DeepCopy()
+		other.Data["w4"] = second.Format(TimeFormat)
+		delete(other.Data, "w1")
+		if err := cs.Tracker().Update(corev1.SchemeGroupVersion.WithResource("configmaps"), other, Namespace); err != nil {
+			return true, nil, err
+		}
+		return true, nil, apierrors.NewConflict(schema.GroupResource{Resource: "configmaps"}, Name, nil)
+	})
+	removed, err := Prune(ctx, cs, func(_ string, at time.Time) bool { return at.Equal(first) })
+	if err != nil || !slices.Equal(removed, []string{"w3"}) {
+		t.Fatalf("Prune = %v, %v; want w3 alone", removed, err)
+	}
+	if conflicts != 1 {
+		t.Errorf("%d conflicts, want 1", conflicts)
+	}
+	if l := load(t, cs); len(l) != 2 || !l["w2"].Equal(second) || !l["w4"].Equal(second) {
+		t.Errorf("left %v; want w2 and w4", l)
+	}
+}
