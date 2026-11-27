@@ -1661,8 +1661,9 @@ A pod on the node that does not run.
 The error detail of a request that needs an etcd member, from a control-plane node that is
 none, as before it joined the cluster or after it left etcd. The request fails with FAILED_PRECONDITION, and another
 control-plane node may answer it. EtcdMembers, EtcdRemoveMember, RotationStep, DrainNode,
-UncordonNode, RevokeNode and UnrevokeNode give it; EtcdLeave gives it for a node that is no
-member or left etcd already.
+UncordonNode, RevokeNode and UnrevokeNode give it. EtcdLeave gives it for a node that is no
+member or left etcd already: there it means the node has nothing to leave, and asking another
+node does not help.
 
 No fields.
 

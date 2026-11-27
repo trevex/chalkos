@@ -509,8 +509,9 @@ func TestEtcdNeedsMember(t *testing.T) {
 			t.Errorf("leaving on %s: %v has the NotEtcdMember detail: %v, want %v", name, err, got, tc.want)
 		}
 	}
-	if err := leave(waiting, false); !strings.Contains(err.Error(), "the node is not an etcd member") {
-		t.Errorf("leaving on a node that is not bootstrapped: %v", err)
+	// EtcdLeave gives its own text, not the default that sends the client to another node.
+	if err := leave(waiting, false); err == nil || err.Error() != "the node is not an etcd member" {
+		t.Errorf("leaving on a node that is not bootstrapped: %v, want %q", err, "the node is not an etcd member")
 	}
 }
 
