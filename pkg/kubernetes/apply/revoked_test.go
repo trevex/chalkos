@@ -14,6 +14,7 @@ import (
 	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
+	"github.com/trevex/chalkos/pkg/pki"
 )
 
 // policyList is the map of revoked nodes the applied policy names.
@@ -45,7 +46,7 @@ func TestEnforceRevoked(t *testing.T) {
 	}
 	at := time.Date(2026, 10, 23, 10, 0, 0, 0, time.UTC)
 	for _, name := range []string{"w1", "w2"} {
-		if _, err := revoked.Revoke(ctx, cs, name, at); err != nil {
+		if _, err := revoked.Revoke(ctx, cs, name, at, pki.LeafValidity); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -73,7 +74,7 @@ func TestEnforceRevoked(t *testing.T) {
 func TestEnforceRevokedFollowsChanges(t *testing.T) {
 	ctx := context.Background()
 	cs := fake.NewClientset()
-	if _, err := revoked.Revoke(ctx, cs, "w1", time.Now()); err != nil {
+	if _, err := revoked.Revoke(ctx, cs, "w1", time.Now(), pki.LeafValidity); err != nil {
 		t.Fatal(err)
 	}
 	changed := false

@@ -35,16 +35,17 @@ func (p *Plugin) RevokeNode(ctx context.Context, req *kubernetesv1.RevokeNodeReq
 		return nil, err
 	}
 	// A bootstrapped control plane's API server keeps the revoked nodes.
-	cs, _, err := p.k.apiClient(p.k.etcdMember)
+	cs, cp, err := p.k.apiClient(p.k.etcdMember)
 	if err != nil {
 		return nil, err
 	}
+	validity := certValidity(cp.cluster)
 	var list revoked.List
 	var at time.Time
 	if req.Refresh {
-		at, list, err = refreshRevocation(ctx, cs, name)
+		at, list, err = refreshRevocation(ctx, cs, name, validity)
 	} else {
-		at, list, err = revokeNode(ctx, cs, name)
+		at, list, err = revokeNode(ctx, cs, name, validity)
 	}
 	if err != nil {
 		return nil, err
@@ -79,12 +80,12 @@ func (p *Plugin) RevokeNode(ctx context.Context, req *kubernetesv1.RevokeNodeReq
 
 // revokeNode lists the node as revoked, keeping the time of an earlier revocation, if the list has
 // room for it. It returns the time and the revoked nodes with it.
-func revokeNode(ctx context.Context, cs kubernetes.Interface, name string) (time.Time, revoked.List, error) {
+func revokeNode(ctx context.Context, cs kubernetes.Interface, name string, validity time.Duration) (time.Time, revoked.List, error) {
 	list, err := policyRoom(ctx, cs, name)
 	if err != nil {
 		return time.Time{}, nil, err
 	}
-	at, err := revoked.Revoke(ctx, cs, name, time.Now())
+	at, err := revoked.Revoke(ctx, cs, name, time.Now(), validity)
 	if err != nil {
 		return time.Time{}, nil, layer.Errorf(connect.CodeUnavailable, "%w", err)
 	}
@@ -94,8 +95,8 @@ func revokeNode(ctx context.Context, cs kubernetes.Interface, name string) (time
 
 // refreshRevocation lists the node, revoked already, as revoked now, and refuses a node not
 // revoked with NOT_FOUND. It returns the time and the revoked nodes as it left them.
-func refreshRevocation(ctx context.Context, cs kubernetes.Interface, name string) (time.Time, revoked.List, error) {
-	at, listed, err := revoked.Refresh(ctx, cs, name, time.Now())
+func refreshRevocation(ctx context.Context, cs kubernetes.Interface, name string, validity time.Duration) (time.Time, revoked.List, error) {
+	at, listed, err := revoked.Refresh(ctx, cs, name, time.Now(), validity)
 	if err != nil {
 		return time.Time{}, nil, layer.Errorf(connect.CodeUnavailable, "%w", err)
 	}
@@ -186,8 +187,9 @@ func policyRoom(ctx context.Context, cs kubernetes.Interface, name string) (revo
 // certValidity is how long a node's certificates are valid: chalkos's node certificates for
 // pki.LeafValidity, the kubelet's client certificates for the controller-manager's
 // cluster-signing-duration, a year unless the Cluster's extra flags set it longer. It reads the
-// Cluster as the control plane has it now, so lowering the flag lets entries expire earlier,
-// although certificates signed before still last as long as they were signed for.
+// Cluster as the control plane has it now. A revocation and a refresh store the expiry it gives
+// in the node's entry, which lowering the flag later does not shorten; PruneRevoked applies it only
+// to an entry stored without an expiry.
 func certValidity(c k8s.Cluster) time.Duration {
 	v := pki.LeafValidity
 	for name, value := range c.ExtraArgs["kube-controller-manager"] {
@@ -218,8 +220,8 @@ func (p *Plugin) PruneRevoked(ctx context.Context, _ *kubernetesv1.PruneRevokedR
 		return nil, layer.Errorf(connect.CodeInternal, "%w", err)
 	}
 	validity, now := certValidity(cp.cluster), time.Now()
-	removed, err := revoked.Prune(ctx, cs, func(_ string, at time.Time) bool {
-		return revoked.Expired(at, now, validity) || len(staleAt(osCAs, kubernetesCAs, at)) == 0
+	removed, err := revoked.Prune(ctx, cs, func(_ string, e revoked.Entry) bool {
+		return e.Expired(now, validity) || len(staleAt(osCAs, kubernetesCAs, e.At)) == 0
 	})
 	if err != nil {
 		return nil, layer.Errorf(connect.CodeUnavailable, "%w", err)

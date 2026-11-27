@@ -2,6 +2,7 @@ package kubernetes
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -259,7 +260,7 @@ func TestUnrevokeNode(t *testing.T) {
 			case tc.acceptedKubernetesCA:
 				l.kubernetesCAs(t, now, old)
 			}
-			if _, err := revoked.Revoke(context.Background(), l.cs, "w1", tc.revokedAt); err != nil {
+			if _, err := revoked.Revoke(context.Background(), l.cs, "w1", tc.revokedAt, pki.LeafValidity); err != nil {
 				t.Fatal(err)
 			}
 			at := tc.revokedAt.UTC().Truncate(time.Second)
@@ -338,9 +339,9 @@ func TestStatusListsRevokedNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := st.RevokedNodes
-	if len(got) != 2 || got[0].Name != "w1" || got[0].RevokedAt != nil || got[1].Name != "w2" || got[1].RevokedAt.AsTime().Format(revoked.TimeFormat) != cm.Data["w2"] || st.RevokedNodesError != "" {
-		t.Errorf("revoked nodes %v, error %q; want w1 at an unknown time and w2 at %s", got, st.RevokedNodesError, cm.Data["w2"])
+	got, w2 := st.RevokedNodes, l.list(t)["w2"]
+	if len(got) != 2 || got[0].Name != "w1" || got[0].RevokedAt != nil || got[1].Name != "w2" || !got[1].RevokedAt.AsTime().Equal(w2) || st.RevokedNodesError != "" {
+		t.Errorf("revoked nodes %v, error %q; want w1 at an unknown time and w2 at %v", got, st.RevokedNodesError, w2)
 	}
 	if want := uint32(revoked.LiteralLength(l.list(t))); st.RevokedListLength != want || st.RevokedListCapacity != revoked.MaxLiteralLength {
 		t.Errorf("status list %d of %d, want %d of %d", st.RevokedListLength, st.RevokedListCapacity, want, revoked.MaxLiteralLength)
@@ -509,7 +510,7 @@ func asList(data map[string]string) revoked.List {
 func (l *revokeLab) revokeAt(t *testing.T, nodes map[string]time.Time) {
 	t.Helper()
 	for name, at := range nodes {
-		if _, err := revoked.Revoke(context.Background(), l.cs, name, at); err != nil {
+		if _, err := revoked.Revoke(context.Background(), l.cs, name, at, pki.LeafValidity); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -527,7 +528,7 @@ func TestRevokeNodeKeepsExpired(t *testing.T) {
 	for name, call := range map[string]func(*revokeLab) error{
 		"revoke": func(l *revokeLab) error { _, err := l.revoke("w1"); return err },
 		"unrevoke": func(l *revokeLab) error {
-			if _, err := revoked.Revoke(context.Background(), l.cs, "w1", time.Now()); err != nil {
+			if _, err := revoked.Revoke(context.Background(), l.cs, "w1", time.Now(), pki.LeafValidity); err != nil {
 				return err
 			}
 			_, err := l.unrevoke("w1", true)
@@ -665,5 +666,83 @@ func TestCertValidity(t *testing.T) {
 		if got := certValidity(c); got != tc.want {
 			t.Errorf("certValidity(%v) = %v, want %v", tc.flags, got, tc.want)
 		}
+	}
+}
+
+// signFor makes the control plane's Cluster have the controller-manager sign kubelet
+// certificates for d.
+func (l *revokeLab) signFor(t *testing.T, d time.Duration) {
+	t.Helper()
+	c, err := l.s.k.cluster()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.ExtraArgs = map[string]map[string]string{"kube-controller-manager": {"cluster-signing-duration": d.String()}}
+	data, err := json.Marshal(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, l.s.k.state.Cluster, string(data))
+}
+
+// A revocation and a refresh store when the node's entry expires, by the cluster's signing
+// duration as they run.
+func TestRevokeNodeStoresTheExpiry(t *testing.T) {
+	l := newRevokeLab(t)
+	l.signFor(t, 2*pki.LeafValidity)
+	check := func(what string) {
+		t.Helper()
+		cm, err := l.cs.CoreV1().ConfigMaps(revoked.Namespace).Get(context.Background(), revoked.Name, metav1.GetOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		at, expires, _ := strings.Cut(cm.Data["w1"], "/")
+		a, _ := time.Parse(revoked.TimeFormat, at)
+		e, err := time.Parse(revoked.TimeFormat, expires)
+		if err != nil || e.Sub(a) <= 2*pki.LeafValidity {
+			t.Errorf("%s: w1 stored as %q, want an expiry past two years after its time", what, cm.Data["w1"])
+		}
+	}
+	if _, err := l.revoke("w1"); err != nil {
+		t.Fatal(err)
+	}
+	check("revoked")
+	l.signFor(t, pki.LeafValidity)
+	if _, err := l.s.RevokeNode(context.Background(), &kubernetesv1.RevokeNodeRequest{Node: "w1", Refresh: true}); err != nil {
+		t.Fatal(err)
+	}
+	check("refreshed after the duration was lowered")
+}
+
+// PruneRevoked drops an entry by the expiry stored with it, which lowering
+// cluster-signing-duration since does not shorten, and an entry stored without one by the
+// duration the cluster sets now.
+func TestPruneRevokedByTheStoredExpiry(t *testing.T) {
+	l := newRevokeLab(t)
+	// CAs older than every entry keep the entries from being dropped for the CAs.
+	old := time.Now().Add(-3 * pki.LeafValidity)
+	l.trustOSCAs(t, old)
+	l.kubernetesCAs(t, old)
+	ctx := context.Background()
+	at := time.Now().Add(-pki.LeafValidity - 48*time.Hour)
+	for name, validity := range map[string]time.Duration{"w-long": 2 * pki.LeafValidity, "w-short": pki.LeafValidity} {
+		if _, err := revoked.Revoke(ctx, l.cs, name, at, validity); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cm, err := l.cs.CoreV1().ConfigMaps(revoked.Namespace).Get(ctx, revoked.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cm.Data["w-bare"] = at.UTC().Format(revoked.TimeFormat)
+	if _, err := l.cs.CoreV1().ConfigMaps(revoked.Namespace).Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := l.s.PruneRevoked(ctx, &kubernetesv1.PruneRevokedRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"w-bare", "w-short"}; !slices.Equal(got.Pruned, want) {
+		t.Errorf("pruned %q, want %q", got.Pruned, want)
 	}
 }

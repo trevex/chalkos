@@ -94,7 +94,7 @@ func TestNodeUnrevoke(t *testing.T) {
 	old := time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)
 	future := time.Now().Add(2 * time.Hour).UTC().Truncate(time.Second)
 	for name, at := range map[string]time.Time{"w1": old, "w2": future} {
-		if _, err := revoked.Revoke(ctx, cs, name, at); err != nil {
+		if _, err := revoked.Revoke(ctx, cs, name, at, pki.LeafValidity); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -134,7 +134,7 @@ func TestStatusListsRevokedNodes(t *testing.T) {
 	ta := newTestApp(t)
 	addr, cs := revokeNode(t, ta)
 	at := revokedAt
-	if _, err := revoked.Revoke(context.Background(), cs, "w1", at); err != nil {
+	if _, err := revoked.Revoke(context.Background(), cs, "w1", at, pki.LeafValidity); err != nil {
 		t.Fatal(err)
 	}
 	cm, _ := cs.CoreV1().ConfigMaps(revoked.Namespace).Get(context.Background(), revoked.Name, metav1.GetOptions{})
@@ -157,7 +157,7 @@ func TestCertificatesRefusedToRevokedNodes(t *testing.T) {
 	ta := newTestApp(t)
 	addr, cs := revokeNode(t, ta)
 	ctx := context.Background()
-	if _, err := revoked.Revoke(ctx, cs, "n1", revokedAt); err != nil {
+	if _, err := revoked.Revoke(ctx, cs, "n1", revokedAt, pki.LeafValidity); err != nil {
 		t.Fatal(err)
 	}
 	for _, cmd := range [][]string{{"node", "renew", "n1"}, {"config", "apply", "n1", "--kubernetes-share"}} {
@@ -410,7 +410,7 @@ func TestNodePruneRevoked(t *testing.T) {
 	// The cluster's CAs were made now: after w1's revocation, before w2's.
 	future := time.Now().Add(2 * time.Hour).UTC().Truncate(time.Second)
 	for name, at := range map[string]time.Time{"w1": time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC), "w2": future} {
-		if _, err := revoked.Revoke(ctx, cs, name, at); err != nil {
+		if _, err := revoked.Revoke(ctx, cs, name, at, pki.LeafValidity); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -463,7 +463,7 @@ func TestNodePruneRevokedRefusesDuringACARotation(t *testing.T) {
 		clustersecrets.RotateEncryptionKey: false,
 	} {
 		// A prune the rotation does not refuse drops w1, so each kind starts with it listed.
-		if _, err := revoked.Revoke(ctx, cs, "w1", time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)); err != nil {
+		if _, err := revoked.Revoke(ctx, cs, "w1", time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC), pki.LeafValidity); err != nil {
 			t.Fatal(err)
 		}
 		s, err := clustersecrets.Read(data, nil)
@@ -499,7 +499,7 @@ func TestNodeRevokeRefresh(t *testing.T) {
 	ta := newTestApp(t)
 	addr, cs := revokeNode(t, ta)
 	ctx := context.Background()
-	if _, err := revoked.Revoke(ctx, cs, "w1", revokedAt); err != nil {
+	if _, err := revoked.Revoke(ctx, cs, "w1", revokedAt, pki.LeafValidity); err != nil {
 		t.Fatal(err)
 	}
 	if err := ta.run(ctx, ta.args([]string{"node", "revoke", "w1", "--via", "n1", "--refresh"}, addr)); err != nil {
@@ -522,7 +522,7 @@ func TestNodeRevokeRefresh(t *testing.T) {
 
 	// A control plane refreshes its own revocation without --allow-control-plane, as the
 	// refresh after --ignore-revoked asks it last: it is revoked already.
-	if _, err := revoked.Revoke(ctx, cs, "n1", revokedAt); err != nil {
+	if _, err := revoked.Revoke(ctx, cs, "n1", revokedAt, pki.LeafValidity); err != nil {
 		t.Fatal(err)
 	}
 	if err := ta.run(ctx, ta.args([]string{"node", "revoke", "n1", "--via", "n1", "--refresh"}, addr)); err != nil {
@@ -549,7 +549,7 @@ func TestIgnoreRevokedRefreshes(t *testing.T) {
 				if _, _, err := revoked.Unrevoke(ctx, cs, "n1", nil); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := revoked.Revoke(ctx, cs, "n1", revokedAt); err != nil {
+				if _, err := revoked.Revoke(ctx, cs, "n1", revokedAt, pki.LeafValidity); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -561,7 +561,7 @@ func TestIgnoreRevokedRefreshes(t *testing.T) {
 				}
 				return list["n1"].After(revokedAt)
 			}
-			if _, err := revoked.Revoke(ctx, cs, "n1", revokedAt); err != nil {
+			if _, err := revoked.Revoke(ctx, cs, "n1", revokedAt, pki.LeafValidity); err != nil {
 				t.Fatal(err)
 			}
 			if err := ta.run(ctx, ta.args(cmd, addr)); err != nil {
@@ -627,7 +627,7 @@ func TestDryRunRefreshesNothing(t *testing.T) {
 	ta := newTestApp(t)
 	addr, cs := revokeNode(t, ta)
 	ctx := context.Background()
-	if _, err := revoked.Revoke(ctx, cs, "n1", revokedAt); err != nil {
+	if _, err := revoked.Revoke(ctx, cs, "n1", revokedAt, pki.LeafValidity); err != nil {
 		t.Fatal(err)
 	}
 	if err := ta.run(ctx, ta.args([]string{"config", "apply", "n1", "--kubernetes-share", "--ignore-revoked", "--dry-run"}, addr)); err == nil || !strings.Contains(err.Error(), "dry-run") {
@@ -648,7 +648,7 @@ func TestRefreshAndUnrevokeClearTheRecord(t *testing.T) {
 	addr, cs := revokeNode(t, ta)
 	ctx := context.Background()
 	for _, name := range []string{"w1", "w2"} {
-		if _, err := revoked.Revoke(ctx, cs, name, revokedAt); err != nil {
+		if _, err := revoked.Revoke(ctx, cs, name, revokedAt, pki.LeafValidity); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -683,7 +683,7 @@ func TestUnrevokeWarnsOfTheRecordItLeaves(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := revoked.Revoke(ctx, cs, "w1", revokedAt); err != nil {
+	if _, err := revoked.Revoke(ctx, cs, "w1", revokedAt, pki.LeafValidity); err != nil {
 		t.Fatal(err)
 	}
 	ta.stdin = bytes.NewReader(data)
@@ -695,7 +695,7 @@ func TestUnrevokeWarnsOfTheRecordItLeaves(t *testing.T) {
 	}
 
 	ta.stderr.Reset()
-	if _, err := revoked.Revoke(ctx, cs, "w1", revokedAt); err != nil {
+	if _, err := revoked.Revoke(ctx, cs, "w1", revokedAt, pki.LeafValidity); err != nil {
 		t.Fatal(err)
 	}
 	admin := ta.writeConfig(t, "alice", pki.RoleAdmin, 24*time.Hour, time.Now())
@@ -770,7 +770,7 @@ func TestRefreshFromStdinNotesTheRecord(t *testing.T) {
 	ta := newTestApp(t)
 	addr, cs := revokeNode(t, ta)
 	ctx := context.Background()
-	if _, err := revoked.Revoke(ctx, cs, "w1", revokedAt); err != nil {
+	if _, err := revoked.Revoke(ctx, cs, "w1", revokedAt, pki.LeafValidity); err != nil {
 		t.Fatal(err)
 	}
 	ta.recordUnrefreshed(t, []clustersecrets.Unrefreshed{{Layer: "kubernetes", Node: "w1", Listed: true}})
