@@ -286,6 +286,9 @@ func TestStatusListsRevokedNodes(t *testing.T) {
 	if len(got) != 2 || got[0].Name != "w1" || got[0].RevokedAt != nil || got[1].Name != "w2" || got[1].RevokedAt.AsTime().Format(revoked.TimeFormat) != cm.Data["w2"] || st.RevokedNodesError != "" {
 		t.Errorf("revoked nodes %v, error %q; want w1 at an unknown time and w2 at %s", got, st.RevokedNodesError, cm.Data["w2"])
 	}
+	if want := uint32(revoked.LiteralLength(l.list(t))); st.RevokedListLength != want || st.RevokedListCapacity != revoked.MaxLiteralLength {
+		t.Errorf("status list %d of %d, want %d of %d", st.RevokedListLength, st.RevokedListCapacity, want, revoked.MaxLiteralLength)
+	}
 
 	l.s.k.hooks.APIClient = func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) {
 		return nil, errors.New("connection refused")
@@ -296,9 +299,12 @@ func TestStatusListsRevokedNodes(t *testing.T) {
 	if len(st.RevokedNodes) != 0 || !strings.Contains(st.RevokedNodesError, "connection refused") || !strings.HasPrefix(st.State, "bootstrapped") {
 		t.Errorf("without the API server: revoked nodes %v, error %q, state %q", st.RevokedNodes, st.RevokedNodesError, st.State)
 	}
+	if st.RevokedListLength != 0 || st.RevokedListCapacity != revoked.MaxLiteralLength {
+		t.Errorf("without the API server: list %d of %d, want 0 of %d", st.RevokedListLength, st.RevokedListCapacity, revoked.MaxLiteralLength)
+	}
 
 	worker, _ := kubernetesNode(t, k8s.KindWorker, true)
-	if st, err := worker.k.status(context.Background()); err != nil || st.RevokedNodes != nil || st.RevokedNodesError != "" {
+	if st, err := worker.k.status(context.Background()); err != nil || st.RevokedNodes != nil || st.RevokedNodesError != "" || st.RevokedListCapacity != 0 {
 		t.Errorf("a worker's status: %v, %v", st, err)
 	}
 }

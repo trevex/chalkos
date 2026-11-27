@@ -179,6 +179,13 @@ message StatusResponse {
   // applied them. It stays true through a reload for a changed share or config, also before the
   // loop applied the changed objects, and when the loop fails later. False on other nodes.
   bool addons_applied = 19;
+  // On a bootstrapped control-plane node: the length of the admission policy's map of the revoked
+  // nodes, in code points, as RevokeNodeResponse.list_length counts it; 0 when they could not be
+  // read.
+  uint32 revoked_list_length = 20;
+  // On a bootstrapped control-plane node: the length revoked_list_length may reach before
+  // RevokeNode refuses new nodes, with the reason REVOKED_LIST_FULL. 0 on other nodes.
+  uint32 revoked_list_capacity = 21;
 }
 
 // The request of BGPStatus.

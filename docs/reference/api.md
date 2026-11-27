@@ -1305,6 +1305,8 @@ The response of Status: the state of the node's Kubernetes.
 | `pods_error` | string | Why the node's pods could not be read; empty when they were. |
 | `pods_not_running_total` | uint32 | How many pods on the node do not run, of which pods_not_running lists the first 20. |
 | `addons_applied` | bool | On a bootstrapped control-plane node: whether the control plane's loop applied chalkos's add-ons and the objects of the Addon documents since the loop started. The loop starts when chalkd starts and when the loops restart, as after a change to the cluster's settings; the field is false from then until the loop, or one stopped while a bootstrap waited for it, applied them. It stays true through a reload for a changed share or config, also before the loop applied the changed objects, and when the loop fails later. False on other nodes. |
+| `revoked_list_length` | uint32 | On a bootstrapped control-plane node: the length of the admission policy's map of the revoked nodes, in code points, as RevokeNodeResponse.list_length counts it; 0 when they could not be read. |
+| `revoked_list_capacity` | uint32 | On a bootstrapped control-plane node: the length revoked_list_length may reach before RevokeNode refuses new nodes, with the reason REVOKED_LIST_FULL. 0 on other nodes. |
 
 Field types: [Phase](#kubernetes-enum-phase), [RevokedNode](#kubernetes-message-revokednode), [NodePod](#kubernetes-message-nodepod).
 

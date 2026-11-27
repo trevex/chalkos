@@ -299,8 +299,15 @@ type StatusResponse struct {
 	// applied them. It stays true through a reload for a changed share or config, also before the
 	// loop applied the changed objects, and when the loop fails later. False on other nodes.
 	AddonsApplied bool `protobuf:"varint,19,opt,name=addons_applied,json=addonsApplied,proto3" json:"addons_applied,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// On a bootstrapped control-plane node: the length of the admission policy's map of the revoked
+	// nodes, in code points, as RevokeNodeResponse.list_length counts it; 0 when they could not be
+	// read.
+	RevokedListLength uint32 `protobuf:"varint,20,opt,name=revoked_list_length,json=revokedListLength,proto3" json:"revoked_list_length,omitempty"`
+	// On a bootstrapped control-plane node: the length revoked_list_length may reach before
+	// RevokeNode refuses new nodes, with the reason REVOKED_LIST_FULL. 0 on other nodes.
+	RevokedListCapacity uint32 `protobuf:"varint,21,opt,name=revoked_list_capacity,json=revokedListCapacity,proto3" json:"revoked_list_capacity,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *StatusResponse) Reset() {
@@ -464,6 +471,20 @@ func (x *StatusResponse) GetAddonsApplied() bool {
 		return x.AddonsApplied
 	}
 	return false
+}
+
+func (x *StatusResponse) GetRevokedListLength() uint32 {
+	if x != nil {
+		return x.RevokedListLength
+	}
+	return 0
+}
+
+func (x *StatusResponse) GetRevokedListCapacity() uint32 {
+	if x != nil {
+		return x.RevokedListCapacity
+	}
+	return 0
 }
 
 // The request of BGPStatus.
@@ -2110,7 +2131,7 @@ var File_chalkos_kubernetes_v1_kubernetes_proto protoreflect.FileDescriptor
 const file_chalkos_kubernetes_v1_kubernetes_proto_rawDesc = "" +
 	"\n" +
 	"&chalkos/kubernetes/v1/kubernetes.proto\x12\x15chalkos.kubernetes.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1achalkos/node/v1/node.proto\"\x0f\n" +
-	"\rStatusRequest\"\xd2\x06\n" +
+	"\rStatusRequest\"\xb6\a\n" +
 	"\x0eStatusResponse\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x122\n" +
@@ -2133,7 +2154,9 @@ const file_chalkos_kubernetes_v1_kubernetes_proto_rawDesc = "" +
 	"\n" +
 	"pods_error\x18\x11 \x01(\tR\tpodsError\x123\n" +
 	"\x16pods_not_running_total\x18\x12 \x01(\rR\x13podsNotRunningTotal\x12%\n" +
-	"\x0eaddons_applied\x18\x13 \x01(\bR\raddonsApplied\"\x12\n" +
+	"\x0eaddons_applied\x18\x13 \x01(\bR\raddonsApplied\x12.\n" +
+	"\x13revoked_list_length\x18\x14 \x01(\rR\x11revokedListLength\x122\n" +
+	"\x15revoked_list_capacity\x18\x15 \x01(\rR\x13revokedListCapacity\"\x12\n" +
 	"\x10BGPStatusRequest\"A\n" +
 	"\x11BGPStatusResponse\x12,\n" +
 	"\x03bgp\x18\x01 \x01(\v2\x1a.chalkos.node.v1.BGPStatusR\x03bgp\"\\\n" +

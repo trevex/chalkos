@@ -104,6 +104,9 @@ func revokedLines(k *kubernetesv1.StatusResponse) []string {
 	for _, n := range k.RevokedNodes {
 		lines = append(lines, "  "+n.Name+"\t"+RevokedSince(n))
 	}
+	if p, warn := RevokedFill(k.RevokedListLength, k.RevokedListCapacity); warn {
+		lines = append(lines, fmt.Sprintf("  the list is %d%% full; %s", p, MakeRevokedRoom))
+	}
 	return lines
 }
 
@@ -126,6 +129,21 @@ func podLines(k *kubernetesv1.StatusResponse) []string {
 	return lines
 }
 
+// MakeRevokedRoom says how to make room in a control plane's list of revoked nodes.
+const MakeRevokedRoom = "rotate the CAs with chalkctl rotate os-ca and chalkctl rotate kubernetes-ca, " +
+	"each to its finish, which drops the nodes revoked before both"
+
+// RevokedFill is how full a control plane's list of revoked nodes is at that length of a
+// capacity, in whole percent, and whether it is more than 80% full, which chalkctl warns about.
+// A capacity of 0, as on a node that keeps no list, is never full.
+func RevokedFill(length, capacity uint32) (percent int, warn bool) {
+	c, n := uint64(capacity), uint64(length)
+	if c == 0 {
+		return 0, false
+	}
+	return int(n * 100 / c), n*5 > c*4
+}
+
 // RevokedSince says when a node was revoked.
 func RevokedSince(n *kubernetesv1.RevokedNode) string {
 	if n.RevokedAt == nil {
@@ -137,7 +155,7 @@ func RevokedSince(n *kubernetesv1.RevokedNode) string {
 // Problems are what the node's Kubernetes status shows wrong, each in a few words, for the summary
 // of its status: a failed preparation, a control plane whose etcd data is missing, a Node that is not Ready, a control plane that does not
 // serve the node's certificates, control-plane pods behind the config, pods that do not run, and
-// lists that could not be read.
+// lists that could not be read, and a list of revoked nodes more than 80% full.
 func Problems(k *kubernetesv1.StatusResponse) []string {
 	var p []string
 	switch k.GetPhase() {
@@ -165,6 +183,9 @@ func Problems(k *kubernetesv1.StatusResponse) []string {
 	}
 	if k.GetRevokedNodesError() != "" {
 		p = append(p, "revoked nodes unknown")
+	}
+	if pct, warn := RevokedFill(k.GetRevokedListLength(), k.GetRevokedListCapacity()); warn {
+		p = append(p, fmt.Sprintf("revoked nodes list %d%% full", pct))
 	}
 	return p
 }

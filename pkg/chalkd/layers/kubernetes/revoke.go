@@ -311,9 +311,10 @@ func (k *side) loadRevoked(ctx context.Context) (revoked.List, error) {
 	return revoked.Load(ctx, cs)
 }
 
-// revokedStatus lists the revoked nodes in a bootstrapped control plane's status, or why they
-// could not be read.
+// revokedStatus lists the revoked nodes in a bootstrapped control plane's status, with how full
+// their list is, or why they could not be read.
 func (k *side) revokedStatus(ctx context.Context, st *kubernetesv1.StatusResponse) {
+	st.RevokedListCapacity = revoked.MaxLiteralLength
 	list, err := k.loadRevoked(ctx)
 	if err != nil {
 		st.RevokedNodesError = err.Error()
@@ -326,6 +327,7 @@ func (k *side) revokedStatus(ctx context.Context, st *kubernetesv1.StatusRespons
 		}
 		st.RevokedNodes = append(st.RevokedNodes, n)
 	}
+	st.RevokedListLength = uint32(revoked.LiteralLength(list))
 }
 
 // trustedCAs are the OS CAs the node trusts and the Kubernetes CAs of the share: the one that
