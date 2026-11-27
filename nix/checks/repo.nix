@@ -525,15 +525,16 @@ in
       '';
 
   # No path of the repository holds a character golang.org/x/mod/zip refuses when it builds this
-  # module's zip for `go get`: a backslash, a colon, a quote, a backtick, an angle bracket, a
-  # question mark, an asterisk or a pipe, none of which golang.org/x/mod/module.CheckFilePath
-  # allows in a file path. Two testdata fixtures of cmd/chalkos-storage need a systemd-escaped
-  # name, which holds a backslash; they keep that name out of their own path, in
-  # cmd/chalkos-storage/testdata/generate/escaped, which cmd/chalkos-storage/generate_test.go maps
-  # back to the name runGenerate writes.
+  # module's zip for `go get`. golang.org/x/mod/module.CheckFilePath allows a letter, a digit, a
+  # space, the path separator / and !#$%&()+,-.=@[]^_{}~, plus any other Unicode letter; this
+  # check allows the same ASCII set and refuses every other ASCII character and, since a Nix
+  # regex cannot ask whether a rune is a Unicode letter, every non-ASCII byte too. Two testdata
+  # fixtures of cmd/chalkos-storage need a systemd-escaped name, which holds a backslash; they
+  # keep that name out of their own path, in cmd/chalkos-storage/testdata/generate/escaped, which
+  # cmd/chalkos-storage/generate_test.go maps back to the name runGenerate writes.
   module-paths =
     let
-      bad = lib.filter (p: builtins.match ".*[\"'*<>?`|:\\\\].*" p != null) repoFiles;
+      bad = lib.filter (p: builtins.match ".*[^]!#$%&()+,.=@^_{}~ /A-Za-z0-9-].*" p != null) repoFiles;
     in
     pkgs.runCommand "chalkos-module-paths" { bad = lib.concatLines bad; } ''
       if [ -n "$bad" ]; then
