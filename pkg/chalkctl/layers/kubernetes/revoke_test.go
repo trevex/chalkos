@@ -12,6 +12,7 @@ import (
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	sdkkubernetes "github.com/trevex/chalkos/pkg/sdk/layers/kubernetes"
+	kubernetesview "github.com/trevex/chalkos/pkg/statusview/layers/kubernetes"
 )
 
 func TestUnrevokedLine(t *testing.T) {
@@ -118,6 +119,26 @@ func TestRevokedLine(t *testing.T) {
 	} {
 		if got := revokedLine("w1", tc.resp); got != tc.want {
 			t.Errorf("revokedLine(%v) = %q, want %q", tc.resp, got, tc.want)
+		}
+	}
+}
+
+// The lines after a prune name the nodes dropped and say how full the list is, with how to make
+// room past 80%.
+func TestPrunedLines(t *testing.T) {
+	for _, tc := range []struct {
+		resp *kubernetesv1.PruneRevokedResponse
+		want string
+	}{
+		{&kubernetesv1.PruneRevokedResponse{ListLength: 2, ListCapacity: 90_000},
+			"dropped no node from the revoked nodes\nthe revoked nodes fill 0% of their room"},
+		{&kubernetesv1.PruneRevokedResponse{Pruned: []string{"w1", "w2"}, ListLength: 45_000, ListCapacity: 90_000},
+			"dropped 2 nodes from the revoked nodes, which nothing lets back in: w1, w2\nthe revoked nodes fill 50% of their room"},
+		{&kubernetesv1.PruneRevokedResponse{Pruned: []string{"w1"}, ListLength: 81_000, ListCapacity: 90_000},
+			"dropped 1 node from the revoked nodes, which nothing lets back in: w1\nthe revoked nodes fill 90% of their room; " + kubernetesview.MakeRevokedRoom},
+	} {
+		if got := prunedLines(tc.resp); got != tc.want {
+			t.Errorf("prunedLines(%v) = %q, want %q", tc.resp, got, tc.want)
 		}
 	}
 }

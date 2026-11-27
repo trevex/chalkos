@@ -188,6 +188,13 @@ func (r *rotation) finish(ctx context.Context, kind clustersecrets.RotationKind,
 // run applies the phase the secrets file records and the ones after it, up to the kind's pause
 // or the end of the finish.
 func (r *rotation) run(ctx context.Context) error {
+	// A revoked node in the inventory gets what a phase run with --ignore-revoked hands out, so
+	// the finish keeps the revoked nodes of a rotation that ever ran one.
+	if r.ignoreRevoked && !r.file.secrets.Rotation.IgnoredRevoked {
+		if err := r.save(func(s *clustersecrets.Secrets) error { s.Rotation.IgnoredRevoked = true; return nil }); err != nil {
+			return err
+		}
+	}
 	// rotate read the revoked nodes before the first phase; a node revoked while a phase ran is
 	// left out of the phases after it.
 	first := true
@@ -237,7 +244,7 @@ func (r *rotation) run(ctx context.Context) error {
 			if advice != "" {
 				r.Say("%s", advice)
 			}
-			r.pruneRevoked(ctx, rot.Kind)
+			r.pruneRevoked(ctx, rot)
 			return nil
 		}
 		if err != nil {
@@ -318,13 +325,12 @@ func (r *rotation) skipRevoked(ctx context.Context) error {
 	return nil
 }
 
-// pruneRevoked has every layer drop the revoked nodes the finished rotation of kind left nothing
-// to let back in. A layer that fails to is warned of: the rotation is finished, and its revoked
-// nodes stay listed until their certificates expire or the next finish drops them.
-func (r *rotation) pruneRevoked(ctx context.Context, kind clustersecrets.RotationKind) {
+// pruneRevoked has every layer drop the revoked nodes the finished rotation left nothing to let
+// back in. A layer that fails to is warned of: the rotation is finished all the same.
+func (r *rotation) pruneRevoked(ctx context.Context, rot clustersecrets.Rotation) {
 	for _, p := range compiled[layer.RotationNodes]() {
-		if err := p.PruneRevoked(ctx, r, kind); err != nil {
-			fmt.Fprintf(r.a.stderr, "chalkctl: warning: the revoked nodes were not pruned: %v; they stay listed until their certificates expire or the next rotation's finish drops them\n", err)
+		if err := p.PruneRevoked(ctx, r, rot); err != nil {
+			fmt.Fprintf(r.a.stderr, "chalkctl: warning: the revoked nodes were not pruned: %v\n", err)
 		}
 	}
 }

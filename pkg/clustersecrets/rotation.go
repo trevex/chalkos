@@ -122,6 +122,10 @@ type Rotation struct {
 	// phase; their certificates and public keys are among the accepted values meanwhile. A new
 	// encryption key is accepted with its key and needs nothing here.
 	New *NewValues `json:"new,omitempty"`
+	// IgnoredRevoked is set once a phase ran with chalkctl rotate --ignore-revoked, which hands
+	// revoked nodes left in the inventory the new values too: the finish then drops no revoked node,
+	// which those values would let back in.
+	IgnoredRevoked bool `json:"ignoredRevoked,omitempty"`
 }
 
 // String names the rotation and its phase.
@@ -607,7 +611,7 @@ func (s *Secrets) SwitchRotation() error {
 		k.Accepted.EncryptionKeys = []EncryptionKey{{Name: k.EncryptionKeyName, Key: k.EncryptionKey}}
 		k.EncryptionKey, k.EncryptionKeyName = next.Key, next.Name
 	}
-	s.Rotation = &Rotation{Kind: r.Kind, Phase: PhaseSwitch}
+	s.Rotation = &Rotation{Kind: r.Kind, Phase: PhaseSwitch, IgnoredRevoked: r.IgnoredRevoked}
 	return s.Validate()
 }
 

@@ -361,7 +361,7 @@ func TestRotateFinishPrunesRevoked(t *testing.T) {
 			if events[len(events)-1] != "cp1 prune revoked" {
 				t.Errorf("events %v: want the prune after every node applied the finish", events)
 			}
-			if want := "dropped 2 nodes from the revoked nodes, which nothing lets back in: w-old, w-older"; !strings.Contains(l.ta.stdout.String(), want) {
+			if want := "dropped 2 nodes from the revoked nodes, which nothing lets back in: w-old, w-older\nthe revoked nodes fill 0% of their room\n"; !strings.Contains(l.ta.stdout.String(), want) {
 				t.Errorf("the finish does not say %q: %s", want, l.ta.stdout)
 			}
 		})
@@ -386,5 +386,30 @@ func TestRotateFinishSurvivesAFailedPrune(t *testing.T) {
 	}
 	if got := l.ta.stderr.String(); !strings.Contains(got, "warning") || !strings.Contains(got, "the API server does not answer") {
 		t.Errorf("stderr = %q, want a warning with the prune's error", got)
+	}
+}
+
+// TestRotateIgnoreRevokedKeepsRevoked checks that a rotation of which one phase ran with
+// --ignore-revoked drops no revoked node at its finish: a revoked node left in the inventory got
+// the new CA's certificates, which pruning would let back in.
+func TestRotateIgnoreRevokedKeepsRevoked(t *testing.T) {
+	l := newRotationLab(t)
+	l.pruned = []string{"w-old"}
+	if err := l.rotate("os-ca", "--ignore-revoked"); err != nil {
+		t.Fatal(err)
+	}
+	if !l.secrets().Rotation.IgnoredRevoked {
+		t.Fatal("the secrets file does not record that the rotation ignored the revoked nodes")
+	}
+	for _, args := range [][]string{{"os-ca", "--resume"}, {"os-ca", "--finish"}} {
+		if err := l.rotate(args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if events := l.takeEvents(); slices.Contains(events, "cp1 prune revoked") {
+		t.Errorf("events %v: the finish pruned", events)
+	}
+	if want := "kept the revoked nodes: a phase of the rotation ran with --ignore-revoked"; !strings.Contains(l.ta.stdout.String(), want) {
+		t.Errorf("the finish does not say %q: %s", want, l.ta.stdout)
 	}
 }

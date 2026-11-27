@@ -46,10 +46,11 @@ type RotationNodes interface {
 	// NodeCAHolders are the nodes that hold the node CA and renew node certificates with it, in
 	// name order.
 	NodeCAHolders(c Cluster) ([]string, error)
-	// PruneRevoked drops from the layer's revoked nodes those the finished rotation of kind left
-	// nothing to let back in, once every node confirmed its finish, and says what it dropped. chalkctl
-	// warns of its error: the rotation is finished all the same.
-	PruneRevoked(ctx context.Context, r Rotating, kind clustersecrets.RotationKind) error
+	// PruneRevoked drops from the layer's revoked nodes those the finished rotation rot left
+	// nothing to let back in, once every node confirmed its finish. It says what it dropped, or why
+	// it dropped none, through r.Say, and returns only what failed, which chalkctl warns of: the
+	// rotation is finished all the same.
+	PruneRevoked(ctx context.Context, r Rotating, rot clustersecrets.Rotation) error
 }
 
 // Rotating is a run of chalkctl rotate, as a plugin's rotations use it.

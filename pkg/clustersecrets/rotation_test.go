@@ -549,3 +549,26 @@ func TestClientsIssueFromTheNewCAOnceAccepted(t *testing.T) {
 		t.Error("once every node accepts the new Kubernetes CA, kubeconfigs do not come from it alone")
 	}
 }
+
+// A rotation that ignored the revoked nodes in one phase records it through its other phases.
+func TestRotationKeepsIgnoredRevoked(t *testing.T) {
+	s := generate(t)
+	if err := s.BeginRotation(RotateOSCA, now); err != nil {
+		t.Fatal(err)
+	}
+	s.Rotation.IgnoredRevoked = true
+	steps := []func() error{
+		func() error { return s.RecordApplied(now) }, s.SwitchRotation,
+		func() error { return s.RecordApplied(now) }, s.RefreshRotation,
+		func() error { return s.RecordApplied(now) }, s.FinishRotation,
+	}
+	for i, step := range steps {
+		if err := step(); err != nil {
+			t.Fatal(err)
+		}
+		s = roundTrip(t, s)
+		if !s.Rotation.IgnoredRevoked {
+			t.Fatalf("after step %d the rotation %v forgot that it ignored the revoked nodes", i, s.Rotation)
+		}
+	}
+}

@@ -13,6 +13,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/internal/cli"
+	"github.com/trevex/chalkos/pkg/internal/strs"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	sdkkubernetes "github.com/trevex/chalkos/pkg/sdk/layers/kubernetes"
 	kubernetesview "github.com/trevex/chalkos/pkg/statusview/layers/kubernetes"
@@ -70,10 +71,31 @@ func revokedLine(name string, resp *kubernetesv1.RevokeNodeResponse) string {
 		deleted = "it had no Node object to delete"
 	}
 	line := fmt.Sprintf("revoked node %s (since %s); %s", name, resp.RevokedAt.AsTime().UTC().Format(time.RFC3339), deleted)
-	if p, warn := kubernetesview.RevokedFill(resp.ListLength, resp.ListCapacity); warn {
-		line += fmt.Sprintf("\nthe revoked nodes fill %d%% of their room; %s", p, kubernetesview.MakeRevokedRoom)
+	if _, warn := kubernetesview.RevokedFill(resp.ListLength, resp.ListCapacity); warn {
+		line += "\n" + fillLine(resp.ListLength, resp.ListCapacity)
 	}
 	return line
+}
+
+// fillLine says how full the revoked nodes' list is, as a share of the room the admission policy
+// leaves it, and past 80% how to make room.
+func fillLine(length, capacity uint32) string {
+	p, warn := kubernetesview.RevokedFill(length, capacity)
+	line := fmt.Sprintf("the revoked nodes fill %d%% of their room", p)
+	if warn {
+		line += "; " + kubernetesview.MakeRevokedRoom
+	}
+	return line
+}
+
+// prunedLines say which nodes a prune dropped from the revoked nodes, and how full their list is
+// after it.
+func prunedLines(resp *kubernetesv1.PruneRevokedResponse) string {
+	dropped := "dropped no node from the revoked nodes"
+	if len(resp.Pruned) > 0 {
+		dropped = fmt.Sprintf("dropped %s from the revoked nodes, which nothing lets back in: %s", strs.Count(len(resp.Pruned), "node"), strings.Join(resp.Pruned, ", "))
+	}
+	return dropped + "\n" + fillLine(resp.ListLength, resp.ListCapacity)
 }
 
 // controlPlanesRead asks the control planes, but the node revoked, whether they read the revoked
