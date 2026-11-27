@@ -5,3 +5,6 @@ result-*
 site/
 # Image directories linked into the e2e fixtures to validate them by hand.
 test/fixtures/clusters/*/images/
+
+# Core dumps, such as sfdisk's in TestDiskLockedElsewhere where the core size is unlimited.
+core.[0-9]*
