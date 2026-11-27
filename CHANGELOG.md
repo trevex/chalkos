@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/trevex/chalkos/compare/v0.9.0...v0.10.0) (2026-11-27)
+
+
+### Features
+
+* **kubernetes:** revoked nodes expire, prune after rotations and report the list's fill ([#179](https://github.com/trevex/chalkos/issues/179)) ([5efca4e](https://github.com/trevex/chalkos/commit/5efca4e3d16c9956e7952c0d73a78bda1f1894e0))
+
 ## [0.9.0](https://github.com/trevex/chalkos/compare/v0.8.0...v0.9.0) (2026-11-27)
 
 
