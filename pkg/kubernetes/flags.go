@@ -85,9 +85,9 @@ var protectedKubeletFlags = []string{
 	"rotate-certificates", "tls-cert-file", "tls-private-key-file",
 }
 
-// flagName is a flag's name as the Kubernetes components read it: they take _ for -, so
+// FlagName is a flag's name as the Kubernetes components read it: they take _ for -, so
 // anonymous_auth sets --anonymous-auth.
-func flagName(name string) string { return strings.ReplaceAll(name, "_", "-") }
+func FlagName(name string) string { return strings.ReplaceAll(name, "_", "-") }
 
 // flagNamePattern is what a flag's name may be. Flags reach the components as --name=value, so
 // a name holding = or whitespace, or starting with -, would set another flag than it names.
@@ -122,12 +122,12 @@ func ValidateFlags(component string, flags map[string]string) error {
 		if !flagNamePattern.MatchString(name) {
 			return fmt.Errorf("flag %q: a flag's name is letters, digits, _, . and -, without the leading dashes", name)
 		}
-		if p := protected[component]; p != nil && p(flagName(name)) {
+		if p := protected[component]; p != nil && p(FlagName(name)) {
 			err := fmt.Errorf("--%s is set by chalkos and cannot be overridden", name)
-			if component == "kubelet" && (flagName(name) == "node-labels" || flagName(name) == "register-with-taints") {
+			if component == "kubelet" && (FlagName(name) == "node-labels" || FlagName(name) == "register-with-taints") {
 				err = fmt.Errorf("%w; give the node's labels and taints in the Node document's labels and taints", err)
 			}
-			if component == "kubelet" && flagName(name) == "provider-id" {
+			if component == "kubelet" && FlagName(name) == "provider-id" {
 				err = fmt.Errorf("%w; give the node's provider ID in the Node document's providerID", err)
 			}
 			return err
@@ -138,10 +138,10 @@ func ValidateFlags(component string, flags map[string]string) error {
 			}
 			continue
 		}
-		if conflict, ok := conflictingAPIServerFlags[flagName(name)]; ok {
+		if conflict, ok := conflictingAPIServerFlags[FlagName(name)]; ok {
 			return fmt.Errorf("--%s conflicts with --%s: %s", name, conflict.flag, conflict.reason)
 		}
-		if flagName(name) == "disable-admission-plugins" {
+		if FlagName(name) == "disable-admission-plugins" {
 			for _, p := range plugins(flags[name]) {
 				if slices.Contains(requiredAdmissionPlugins, p) {
 					return fmt.Errorf("--%s names %s, which chalkos needs", name, p)
@@ -168,7 +168,7 @@ func MergeFlags(component string, base, extra map[string]string) map[string]stri
 	merged := maps.Clone(base)
 	for _, name := range slices.Sorted(maps.Keys(extra)) {
 		const admission = "enable-admission-plugins"
-		if component != "kube-apiserver" || flagName(name) != admission {
+		if component != "kube-apiserver" || FlagName(name) != admission {
 			merged[name] = extra[name]
 			continue
 		}
