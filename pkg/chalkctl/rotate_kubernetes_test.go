@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect/v2"
+
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 )
@@ -320,5 +322,69 @@ func (l *rotationLab) switchedAgo(d time.Duration) {
 	}
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		l.t.Fatal(err)
+	}
+}
+
+// TestRotateFinishPrunesRevoked checks that the finish of a rotation of the OS CA or the
+// Kubernetes CA has a control plane drop the revoked nodes once every node confirmed it, and says
+// how many it dropped; the other kinds prune nothing.
+func TestRotateFinishPrunesRevoked(t *testing.T) {
+	for kind, prunes := range map[clustersecrets.RotationKind]bool{
+		clustersecrets.RotateOSCA:          true,
+		clustersecrets.RotateKubernetesCA:  true,
+		clustersecrets.RotateNodeCA:        false,
+		clustersecrets.RotateEncryptionKey: false,
+	} {
+		t.Run(string(kind), func(t *testing.T) {
+			l := newRotationLab(t)
+			l.pruned = []string{"w-old", "w-older"}
+			for _, args := range [][]string{{string(kind)}, {string(kind), "--resume"}} {
+				if l.secrets().Rotation == nil && len(args) > 1 {
+					break
+				}
+				if err := l.rotate(args...); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if l.secrets().Rotation != nil {
+				if err := l.rotate(string(kind), "--finish"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			events := l.takeEvents()
+			if got := slices.Contains(events, "cp1 prune revoked"); got != prunes {
+				t.Fatalf("events %v: pruned %v, want %v", events, got, prunes)
+			}
+			if !prunes {
+				return
+			}
+			if events[len(events)-1] != "cp1 prune revoked" {
+				t.Errorf("events %v: want the prune after every node applied the finish", events)
+			}
+			if want := "dropped 2 nodes from the revoked nodes, which nothing lets back in: w-old, w-older"; !strings.Contains(l.ta.stdout.String(), want) {
+				t.Errorf("the finish does not say %q: %s", want, l.ta.stdout)
+			}
+		})
+	}
+}
+
+// TestRotateFinishSurvivesAFailedPrune checks that a prune that fails is a warning: the rotation
+// is finished all the same.
+func TestRotateFinishSurvivesAFailedPrune(t *testing.T) {
+	l := newRotationLab(t)
+	for _, args := range [][]string{{"os-ca"}, {"os-ca", "--resume"}} {
+		if err := l.rotate(args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	l.pruneErr = connect.NewError(connect.CodeUnavailable, "the API server does not answer")
+	if err := l.rotate("os-ca", "--finish"); err != nil {
+		t.Fatalf("finish with the prune failing: %v", err)
+	}
+	if l.secrets().Rotation != nil {
+		t.Error("the secrets file still records the rotation")
+	}
+	if got := l.ta.stderr.String(); !strings.Contains(got, "warning") || !strings.Contains(got, "the API server does not answer") {
+		t.Errorf("stderr = %q, want a warning with the prune's error", got)
 	}
 }

@@ -71,6 +71,30 @@ func (p *Plugin) RevokedNodes(ctx context.Context, r layer.Rotating) (map[string
 	return since, nil
 }
 
+// PruneRevoked has the first control plane that answers drop the revoked nodes revoked before both
+// the OS CA and the Kubernetes CA it trusts, or whose certificates expired, once every node
+// confirmed the finish of a rotation of either CA: from then on, no node trusts a CA the dropped
+// nodes' certificates chain to. Other rotations and a cluster without control planes prune nothing.
+func (p *Plugin) PruneRevoked(ctx context.Context, r layer.Rotating, kind clustersecrets.RotationKind) error {
+	if kind != clustersecrets.RotateOSCA && kind != clustersecrets.RotateKubernetesCA || len(rotatingNodesOf(r, k8s.KindControlPlane)) == 0 {
+		return nil
+	}
+	var resp *kubernetesv1.PruneRevokedResponse
+	if err := rotationThroughControlPlane(ctx, r, func(ctx context.Context, conn *client.Conn) error {
+		var err error
+		resp, err = sdkkubernetes.PruneRevoked(ctx, conn)
+		return err
+	}); err != nil {
+		return err
+	}
+	if len(resp.Pruned) == 0 {
+		r.Say("dropped no node from the revoked nodes")
+		return nil
+	}
+	r.Say("dropped %s from the revoked nodes, which nothing lets back in: %s", strs.Count(len(resp.Pruned), "node"), strings.Join(resp.Pruned, ", "))
+	return nil
+}
+
 // NodeCAHolders are the control planes.
 func (p *Plugin) NodeCAHolders(c layer.Cluster) ([]string, error) {
 	return nodesOf(c, k8s.KindControlPlane, "")

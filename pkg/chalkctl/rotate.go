@@ -237,6 +237,7 @@ func (r *rotation) run(ctx context.Context) error {
 			if advice != "" {
 				r.Say("%s", advice)
 			}
+			r.pruneRevoked(ctx, rot.Kind)
 			return nil
 		}
 		if err != nil {
@@ -315,6 +316,17 @@ func (r *rotation) skipRevoked(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// pruneRevoked has every layer drop the revoked nodes the finished rotation of kind left nothing
+// to let back in. A layer that fails to is warned of: the rotation is finished, and its revoked
+// nodes stay listed until their certificates expire or the next finish drops them.
+func (r *rotation) pruneRevoked(ctx context.Context, kind clustersecrets.RotationKind) {
+	for _, p := range compiled[layer.RotationNodes]() {
+		if err := p.PruneRevoked(ctx, r, kind); err != nil {
+			fmt.Fprintf(r.a.stderr, "chalkctl: warning: the revoked nodes were not pruned: %v; they stay listed until their certificates expire or the next rotation's finish drops them\n", err)
+		}
+	}
 }
 
 // NodeNames lists the cluster's nodes in name order, but the revoked ones.

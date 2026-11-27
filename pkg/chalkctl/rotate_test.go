@@ -233,6 +233,19 @@ func (n fakeKubernetes) EtcdMembers(ctx context.Context, _ *kubernetesv1.EtcdMem
 	return &kubernetesv1.EtcdMembersResponse{Members: members}, nil
 }
 
+func (n fakeKubernetes) PruneRevoked(context.Context, *kubernetesv1.PruneRevokedRequest) (*kubernetesv1.PruneRevokedResponse, error) {
+	if err := n.refuse(); err != nil {
+		return nil, err
+	}
+	n.lab.record(n.name + " prune revoked")
+	n.lab.mu.Lock()
+	defer n.lab.mu.Unlock()
+	if n.lab.pruneErr != nil {
+		return nil, n.lab.pruneErr
+	}
+	return &kubernetesv1.PruneRevokedResponse{Pruned: n.lab.pruned, ListLength: 2, ListCapacity: 90_000}, nil
+}
+
 func (n fakeKubernetes) RotationStep(ctx context.Context, req *kubernetesv1.RotationStepRequest) (*kubernetesv1.RotationStepResponse, error) {
 	if err := n.refuse(); err != nil {
 		return nil, err
@@ -330,6 +343,9 @@ type rotationLab struct {
 	revokedErr map[string]string
 	// states makes control planes report a Kubernetes state other than bootstrapped.
 	states map[string]string
+	// pruned are the nodes PruneRevoked drops; pruneErr, when set, is its error.
+	pruned   []string
+	pruneErr error
 }
 
 func (l *rotationLab) record(event string) {

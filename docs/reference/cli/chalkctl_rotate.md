@@ -26,7 +26,9 @@ say which nodes are revoked, as when no Kubernetes control plane answers, unless
 bootstrapped yet. --ignore-revoked rotates without the lists, and every node of the inventory
 takes part, so remove revoked nodes from the inventory first. --finish refuses while a kind asks
 to wait, as the service-account key does within the hour after its switch; --finish --now
-finishes all the same.
+finishes all the same. Once every node confirmed the finish of a rotation of the OS CA or the
+Kubernetes CA, a Kubernetes control plane drops the nodes revoked before both CAs from the revoked
+nodes; rotate warns if it cannot.
 
 The command needs the secrets file.
 
