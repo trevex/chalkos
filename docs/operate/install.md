@@ -262,7 +262,8 @@ too. It refuses a node that is installed already, with
     It also refuses while control planes were bootstrapped and none says which nodes are revoked.
     A control plane that does not answer as an installed node, such as one in maintenance mode or
     switched off, counts as not installed yet, so the cluster's first nodes install while the
-    others wait. `--ignore-revoked` installs without asking.
+    others wait. `--ignore-revoked` installs without asking, then refreshes the revocation of a
+    revoked name.
     [Reuse a removed node's name](add-remove-nodes.md#reuse-a-removed-nodes-name) frees the name.
 
 The installer gets the image as well. For an image in a registry it pulls the image itself, as the

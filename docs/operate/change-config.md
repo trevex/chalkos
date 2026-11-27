@@ -333,7 +333,7 @@ unreachable. A later rollback runs its own readiness checks normally.
 
 `--ignore-readiness` goes with config alone. A delivery with `--kubernetes-share` runs the
 readiness checks as usual, and its own `--ignore-revoked` delivers the share without asking whether the
-node is revoked.
+node is revoked, then refreshes the revocation of a revoked node.
 
 ## If it fails
 

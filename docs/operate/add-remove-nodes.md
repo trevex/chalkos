@@ -206,7 +206,8 @@ From then on:
   again nor renew its kubelet client certificate.
 - `chalkctl rotate` skips the node, and `chalkctl node renew`,
   `chalkctl config apply --kubernetes-share` and `chalkctl install` refuse it unless `--ignore-revoked` is
-  given.
+  given. With `--ignore-revoked`, they and rotate refresh the node's revocation once they have
+  handed it certificates.
 
 The command needs an admin client file or the secrets file. It goes through a control plane:
 the one `--via` names, or the first other one that answers. The removed node does not have to run,
@@ -306,12 +307,13 @@ because the other CA still predates the revocation. Without the rotations, a con
 the name by itself once the old node's certificates have expired, a year and a day after the
 revocation by default.
 
-Do not rotate with `--ignore-revoked` while the revoked node is still in the inventory. Such a
-rotation gives the old node certificates of the new CA, so its finish keeps the revoked nodes
-and says `kept the revoked nodes: a phase of the rotation ran with --ignore-revoked, ...`. The
-next prune would drop the name and let the old node back in, whether it comes from
-`chalkctl node prune-revoked`, the finish of a later rotation or the name's expiry. Remove the node
-from the inventory, then rotate that CA again without `--ignore-revoked`.
+Remove the revoked node from the inventory before you rotate with `--ignore-revoked`. Such a
+rotation gives every node of the inventory certificates of the new CA, the old node too. After
+each phase it refreshes the old node's revocation, so the name stays listed: the new CA predates
+the refresh, and the expiry counts from it. Freeing the name then takes the two rotations
+above again, each to its finish. When a refresh fails, rotate fails and names
+`chalkctl node revoke <node> --refresh`; run it once a control plane answers, before anything
+prunes the revoked nodes.
 [Pruning drops entries that keep no node out](../how-it-works/kubernetes/certificates.md#pruning-drops-entries-that-keep-no-node-out)
 explains the rules.
 
