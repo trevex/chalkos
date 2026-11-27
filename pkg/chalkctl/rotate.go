@@ -248,7 +248,7 @@ func (r *rotation) phases(ctx context.Context) error {
 			if advice != "" {
 				r.Say("%s", advice)
 			}
-			r.pruneRevoked(ctx, rot)
+			r.pruneRevoked(ctx, rot.Kind)
 			return nil
 		}
 		if err != nil {
@@ -344,17 +344,17 @@ func (r *rotation) refreshRevoked(ctx context.Context) {
 	r.unrefreshed = err
 }
 
-// pruneRevoked has every layer drop the revoked nodes the finished rotation left nothing to let
-// back in. A layer that fails to is warned of: the rotation is finished all the same. While the
-// last refresh of the revocations failed, nothing is pruned: the revoked nodes it did not refresh
-// hold what the rotation handed out.
-func (r *rotation) pruneRevoked(ctx context.Context, rot clustersecrets.Rotation) {
+// pruneRevoked has every layer drop the revoked nodes the finished rotation of kind left nothing
+// to let back in. A layer that fails to is warned of: the rotation is finished all the same.
+// While the last refresh of the revocations failed, nothing is pruned: the revoked nodes it did
+// not refresh hold what the rotation handed out.
+func (r *rotation) pruneRevoked(ctx context.Context, kind clustersecrets.RotationKind) {
 	if r.unrefreshed != nil {
 		fmt.Fprintln(r.a.stderr, "chalkctl: warning: the revoked nodes were not pruned: their revocations were not refreshed, and pruning could drop those that hold what the rotation handed out")
 		return
 	}
 	for _, p := range compiled[layer.RotationNodes]() {
-		if err := p.PruneRevoked(ctx, r, rot); err != nil {
+		if err := p.PruneRevoked(ctx, r, kind); err != nil {
 			fmt.Fprintf(r.a.stderr, "chalkctl: warning: the revoked nodes were not pruned: %v\n", err)
 		}
 	}

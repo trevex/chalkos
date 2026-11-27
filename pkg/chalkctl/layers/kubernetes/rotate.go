@@ -77,8 +77,8 @@ func (p *Plugin) RevokedNodes(ctx context.Context, r layer.Rotating) (map[string
 // nodes' certificates chain to. Other rotations and a cluster without control planes prune nothing.
 // A revoked node a phase run with --ignore-revoked handed certificates of the new CA had its
 // revocation refreshed after it, so it was revoked after the new CA was made and stays listed.
-func (p *Plugin) PruneRevoked(ctx context.Context, r layer.Rotating, rot clustersecrets.Rotation) error {
-	if rot.Kind != clustersecrets.RotateOSCA && rot.Kind != clustersecrets.RotateKubernetesCA || len(rotatingNodesOf(r, k8s.KindControlPlane)) == 0 {
+func (p *Plugin) PruneRevoked(ctx context.Context, r layer.Rotating, kind clustersecrets.RotationKind) error {
+	if kind != clustersecrets.RotateOSCA && kind != clustersecrets.RotateKubernetesCA || len(rotatingNodesOf(r, k8s.KindControlPlane)) == 0 {
 		return nil
 	}
 	var resp *kubernetesv1.PruneRevokedResponse
