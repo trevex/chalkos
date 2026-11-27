@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"log"
-	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -115,8 +114,9 @@ func TestPruneRevokedEvery(t *testing.T) {
 		}
 		s.k.timing.Poll, s.k.timing.PruneRevoked = time.Second, 5*time.Second
 		var logs lockedBuffer
+		prev := log.Writer()
 		log.SetOutput(&logs)
-		t.Cleanup(func() { log.SetOutput(os.Stderr) })
+		t.Cleanup(func() { log.SetOutput(prev) })
 		start := time.Now()
 		var mu sync.Mutex
 		var at []time.Duration

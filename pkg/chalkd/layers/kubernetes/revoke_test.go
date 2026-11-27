@@ -673,3 +673,33 @@ func TestCertValidity(t *testing.T) {
 		}
 	}
 }
+
+// The pruning loop's errors say once that pruning failed, whether reaching the API server,
+// reading the list or applying the admission policy did.
+func TestPruneExpiredErrors(t *testing.T) {
+	l := newRevokeLab(t)
+	l.revokeAt(t, map[string]time.Time{"w-ancient": expiredAt()})
+	lab := l.s.k
+	k := newSide(Options{Paths: lab.state.Paths, ImageFile: lab.o.ImageFile, ClusterFile: lab.o.ClusterFile, Hooks: Hooks{
+		APIClient: func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) {
+			return nil, errors.New("no route to host")
+		},
+	}})
+	check := func(what, want string) {
+		t.Helper()
+		err := k.hooks.PruneRevoked(context.Background())
+		if err == nil || !strings.HasPrefix(err.Error(), "prune the revoked nodes: ") || strings.Count(err.Error(), "prune the revoked nodes") != 1 || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: %v, want the prefix once and %q", what, err, want)
+		}
+	}
+	check("API server not reached", "no route to host")
+	k.hooks.APIClient = lab.hooks.APIClient
+	l.cs.PrependReactor("patch", "validatingadmissionpolicies", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("connection reset")
+	})
+	check("policy not applied", "connection reset")
+	l.cs.PrependReactor("get", "configmaps", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("connection refused")
+	})
+	check("list not read", "connection refused")
+}

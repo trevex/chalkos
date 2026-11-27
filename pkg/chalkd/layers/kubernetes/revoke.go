@@ -164,7 +164,7 @@ func certValidity(c k8s.Cluster) time.Duration {
 
 // dropExpired drops the revoked nodes whose certificates have all expired by now, when the
 // cluster c signs them for certValidity, and applies the admission policy again when it dropped
-// one.
+// one. Its errors start with "prune the revoked nodes: ".
 //
 // Each control plane drops expired nodes by itself, through its own API server: when it revokes
 // or unrevokes a node, and every Timing.PruneRevoked. That rule depends on the entry alone. Nodes
@@ -181,7 +181,10 @@ func dropExpired(ctx context.Context, cs kubernetes.Interface, c k8s.Cluster) er
 		return err
 	}
 	log.Printf("kubernetes: dropped the revoked nodes %s: their certificates expired", strings.Join(removed, ", "))
-	return kapply.EnforceRevoked(ctx, cs)
+	if err := kapply.EnforceRevoked(ctx, cs); err != nil {
+		return fmt.Errorf("prune the revoked nodes: %w", err)
+	}
+	return nil
 }
 
 // pruneExpired drops, through the node's own API server, the revoked nodes whose certificates
@@ -189,7 +192,7 @@ func dropExpired(ctx context.Context, cs kubernetes.Interface, c k8s.Cluster) er
 func (k *side) pruneExpired(ctx context.Context) error {
 	cs, cp, err := k.apiClient(k.etcdMember)
 	if err != nil {
-		return err
+		return fmt.Errorf("prune the revoked nodes: %w", err)
 	}
 	return dropExpired(ctx, cs, cp.cluster)
 }
