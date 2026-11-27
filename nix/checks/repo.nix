@@ -534,7 +534,7 @@ in
   # cmd/chalkos-storage/generate_test.go maps back to the name runGenerate writes.
   module-paths =
     let
-      bad = lib.filter (p: builtins.match ".*[^]!#$%&()+,.=@^_{}~ /A-Za-z0-9-].*" p != null) repoFiles;
+      bad = lib.filter (p: builtins.match ".*[^][!#$%&()+,.=@^_{}~ /A-Za-z0-9-].*" p != null) repoFiles;
     in
     pkgs.runCommand "chalkos-module-paths" { bad = lib.concatLines bad; } ''
       if [ -n "$bad" ]; then
