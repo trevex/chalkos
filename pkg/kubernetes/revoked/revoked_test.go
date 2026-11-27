@@ -136,7 +136,7 @@ func TestRevoke(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := cm.Data["w1"]; got != "2026-10-23T08:00:00Z/2027-10-24T08:00:00Z" {
+	if got := cm.Data["w1"]; got != "2026-10-23T08:00:00Z/2027-10-25T08:00:00Z" {
 		t.Errorf("w1 stored as %q, want its time and expiry in RFC 3339", got)
 	}
 }

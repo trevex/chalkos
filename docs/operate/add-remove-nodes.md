@@ -236,7 +236,7 @@ revoked nodes:
 The list has room for about 2,000 short names, because the API server compiles the admission
 policy only up to a length. Control planes drop no revoked node by themselves.
 [`chalkctl node prune-revoked`](../reference/cli/chalkctl_node_prune-revoked.md) drops each node
-whose certificates have all expired, a year and a day after the revocation by default. The
+whose certificates have all expired, a year and two days after the revocation by default. The
 finishes of `chalkctl rotate os-ca` and `chalkctl rotate kubernetes-ca` drop those too, and every
 node revoked before both rotations, as [Reuse a removed node's name](#reuse-a-removed-nodes-name)
 describes.
@@ -305,9 +305,9 @@ The finish of the second rotation drops the name from the revoked nodes:
    describes. It joins as usual.
 
 The two rotations may run in either order. The finish of the first one drops no node for its CA,
-because the other CA still predates the revocation. Without the rotations, a control plane drops
-the name by itself once the old node's certificates have expired, a year and a day after the
-revocation by default.
+because the other CA still predates the revocation. Without the rotations, `chalkctl node prune-revoked` drops
+the name once the old node's certificates have expired, a year and two days after the revocation
+by default.
 
 Remove the revoked node from the inventory before you rotate with `--ignore-revoked`. Such a
 rotation gives every node of the inventory certificates of the new CA, the old node too. After

@@ -21,7 +21,7 @@ import (
 
 // The ConfigMap's data maps each revoked node's name to its revocation time in TimeFormat and,
 // after a slash, the time its entry expires, as an ISO 8601 interval:
-// 2026-10-23T08:00:00Z/2027-10-24T08:00:00Z. An entry stored with its time alone has no stored
+// 2026-10-23T08:00:00Z/2027-10-25T08:00:00Z. An entry stored with its time alone has no stored
 // expiry.
 const (
 	Namespace  = metav1.NamespaceSystem
@@ -169,9 +169,11 @@ func Unrevoke(ctx context.Context, cs kubernetes.Interface, name string, allow f
 	return at, listed, nil
 }
 
-// expiryMargin is how long after its certificates' validity a revoked node's entry is kept: a
-// renewal in flight when the node was revoked may have issued a certificate a moment later.
-const expiryMargin = 24 * time.Hour
+// expiryMargin is how long after its certificates' validity a revoked node's entry is kept. A
+// CSR approved before the revocation may still be signed later: the controller-manager deletes an
+// approved CSR without a certificate 24 hours after approval and checks hourly, so a certificate
+// can be issued about 25 hours after the revocation. Two days cover that with room to spare.
+const expiryMargin = 48 * time.Hour
 
 // Expiry is the time every certificate of a node revoked at has expired, when they are valid for
 // validity: a revoked node renews none, so its last was issued at the revocation at the latest,

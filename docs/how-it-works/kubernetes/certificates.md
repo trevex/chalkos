@@ -242,8 +242,9 @@ drops an entry in two cases:
   certificates for a year, and the controller-manager signs kubelet client certificates for its
   `cluster-signing-duration`, a year unless the Cluster's extra flags set it longer. When a
   control plane revokes a node or refreshes its entry, it stores the entry's expiry in the entry:
-  the longer of the two validities after the entry's time, plus a day for a renewal in flight at
-  that moment. With the defaults, an entry expires a year and a day after the revocation. A later
+  the longer of the two validities after the entry's time, plus two days for a certificate signing request
+  approved before that moment and signed later. With the defaults, an entry expires a year and two
+  days after the revocation. A later
   revocation or refresh moves the expiry later, never earlier, so lowering the flag shortens no
   stored expiry. An entry without a stored expiry, such as one written by hand, expires by the
   flag that the control plane reads when it prunes.
@@ -368,8 +369,9 @@ lists for every node, it leaves these:
 - An entry's expiry follows `cluster-signing-duration` as the control plane reads it when it
   revokes or refreshes. A kubelet client certificate signed before the flag was lowered keeps its
   longer validity, so a node revoked while it holds one can outlast its entry. After lowering the
-  flag, wait out the old validity before you prune, or rotate the Kubernetes CA, whose finish
-  leaves such a certificate chaining to no trusted CA.
+  flag, wait out the old validity before you prune. That includes the prune that `chalkctl rotate
+  os-ca --finish` runs. Otherwise, rotate the Kubernetes CA, whose finish leaves such a certificate
+  chaining to no trusted CA.
 - Every rotation skips a revoked node left in the inventory, and other commands still reach it
   until it is removed from the inventory.
 - The cluster registry checks no revocation list, so a revoked node's certificate still pulls
