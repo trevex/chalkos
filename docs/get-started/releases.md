@@ -186,14 +186,21 @@ spec:
           dataVolume: {name: w1-system}
 ```
 
-The volume must hold at least the disk's virtual size, about 7.5 GiB with chalkos's default
-partition sizes. A persistent TPM and EFI variable store keep the node's sealed disk keys and its
-boot entries across restarts.
+The disk holds the ESP and the store's slot A, and a node's first boot adds slot B and STATE
+behind them, so the disk's virtual size is the whole system region: 7,920,943,104 bytes
+(7554 MiB) for the release images. That is 1 MiB for the partition table, the 1 GiB ESP, two
+slots of a 3 GiB store and its 128 MiB hash tree, the 128 MiB STATE and 1 MiB for the backup
+partition table. The persistent volume must be at least that large. CDI grows the disk to the
+volume's size, and VAR, which holds etcd, containerd's images and the logs, takes the space
+behind the system region, so the example's 20 GiB leaves VAR about 12.6 GiB.
+[Size VAR](../operate/storage-volumes.md#size-var) covers how much VAR a node needs. A persistent
+TPM and EFI variable store keep the node's sealed disk keys and its boot entries across restarts.
 
-A `containerDisk` volume, `{name: system, containerDisk: {image: "ghcr.io/trevex/chalkos/kubernetes-1.37-kvm-disk@sha256:<digest>"}}`,
-boots the disk without CDI. KubeVirt discards the volume's writes when the virtual machine stops,
-so the node loses its config and secrets on every restart. It suits a test that throws its
-machines away.
+A `containerDisk` volume,
+`{name: system, containerDisk: {image: "ghcr.io/trevex/chalkos/kubernetes-1.37-kvm-disk@sha256:<digest>"}}`,
+boots the disk without CDI, at its own size. That leaves no room for VAR, and KubeVirt discards
+the volume's writes when the virtual machine stops, so the node loses its config and secrets on
+every restart. Use a DataVolume for a node.
 
 ## Download chalkctl and the installer
 

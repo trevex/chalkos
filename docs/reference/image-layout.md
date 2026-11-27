@@ -342,7 +342,14 @@ image of another platform has none.
 | Part | Media type | Content |
 | --- | --- | --- |
 | config | `application/vnd.oci.image.config.v1+json` | An image config with the image's architecture, such as `amd64`, the OS `linux` and the layer's digest as its one diff ID. |
-| layer | `application/vnd.oci.image.layer.v1.tar` | An uncompressed tar of `disk/` and `disk/chalkos.qcow2`, the raw disk converted to qcow2, owned by 107:107, the qemu user KubeVirt runs the virtual machine as. |
+| layer | `application/vnd.oci.image.layer.v1.tar` | An uncompressed tar of `disk/` and `disk/chalkos.qcow2`, the raw disk converted to qcow2 and grown to the system region's size, owned by 107:107, the qemu user KubeVirt runs the virtual machine as. |
+
+The raw disk holds the ESP and slot A, and a first boot adds slot B and STATE behind them, so the
+qcow2's virtual size is the whole system region: 1 MiB for the partition table, the ESP, two store
+slots, STATE and 1 MiB for the backup partition table, at the sizes of the image's
+[`chalkos.disk`](image-options.md#chalkosdiskstoresize) options. An image whose store sizes are
+null leaves room for a slot B as large as slot A. The qcow2 stores no data for the room it adds,
+so the layer is no larger for it.
 
 The tar's entries are in name order with the modification time 0, so the same image always makes
 the same layer and the same manifest. The manifest's annotations are the image's, as

@@ -122,6 +122,7 @@ let
         inherit image;
         inherit (cfg) name;
         raw = system.config.image.fileName;
+        size = system.config.chalkos.disk.systemRegionSize;
       };
     };
 

@@ -30,6 +30,7 @@ final: _: {
         inherit (final)
           gnutar
           jq
+          lib
           qemu-utils
           runCommand
           stdenv

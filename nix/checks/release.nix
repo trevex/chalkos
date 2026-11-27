@@ -48,6 +48,7 @@ in
         nativeBuildInputs = sbom.validateInputs;
         expected = builtins.toJSON image.nixos.config.chalkos.imageDirectory.annotations;
         disk = image.containerDisk or "";
+        systemRegion = toString image.nixos.config.chalkos.disk.systemRegionSize;
       }
       ''
         l=${image.oci}
@@ -59,8 +60,8 @@ in
         validate-spdx ${image.sbom}
 
         # A KVM image's containerDisk: a valid layout of one manifest whose blobs match their
-        # digests, with one layer holding disk/chalkos.qcow2 alone, owned by 107:107, and the
-        # image's annotations, its name and the root hash of its header.
+        # digests, with one layer holding disk/chalkos.qcow2 alone, owned by 107:107 and as large as
+        # the system region, and the image's annotations, its name and the root hash of its header.
         if [ -n "$disk" ]; then
           rootHash=$(jq -r .rootHash "$(blob "$(jq -r .config.digest $m)")")
           l=$disk
@@ -82,10 +83,26 @@ in
             echo "the containerDisk's layer holds, by owner and name: $entries"
             exit 1
           }
-          [ "$(tar -xOf "$(blob "$layer")" disk/chalkos.qcow2 | head -c 4 | od -An -tx1 | tr -d ' ')" = 514649fb ] || {
+          # The qcow2's header: its magic, and its virtual size at offset 24, which is the system
+          # region's size, as chalkos.disk sizes it and as the built image lays out ESP and slot A,
+          # with room for slot B and STATE behind them.
+          # tar stops on the broken pipe once head has the header.
+          (tar -xOf "$(blob "$layer")" disk/chalkos.qcow2 || true) | head -c 32 >header
+          [ "$(od -An -N4 -tx1 header | tr -d ' \n')" = 514649fb ] || {
             echo "the containerDisk's disk/chalkos.qcow2 is no qcow2 image"
             exit 1
           }
+          virtual=$((16#$(od -An -j24 -N8 -tx1 header | tr -d ' \n')))
+          state=$(numfmt --from=iec "$(sed -n 's/^SizeMinBytes=//p' ${image}/repart.d/50-state.conf)")
+          layout=$(jq --argjson state "$state" \
+            '([.[] | .offset + .raw_size] | max) + ([.[] | select(.roothash != null) | .raw_size] | add) + $state + 1048576' \
+            ${image}/repart-output.json)
+          for want in "$layout" ''${systemRegion:-$layout}; do
+            [ "$virtual" = "$want" ] || {
+              echo "the containerDisk's disk is $virtual bytes, not the system region's $want (laid out: $layout, chalkos.disk: ''${systemRegion:-null})"
+              exit 1
+            }
+          done
         fi
         touch $out
       ''
