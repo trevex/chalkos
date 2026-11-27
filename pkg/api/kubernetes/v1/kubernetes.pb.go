@@ -1699,7 +1699,12 @@ func (x *UncordonNodeResponse) GetUncordoned() bool {
 type RevokeNodeRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The node's name in Kubernetes, which its node certificate carries too.
-	Node          string `protobuf:"bytes,1,opt,name=node,proto3" json:"node,omitempty"`
+	Node string `protobuf:"bytes,1,opt,name=node,proto3" json:"node,omitempty"`
+	// Whether the node, revoked already, is listed as revoked now in place of its earlier time, as
+	// after it was handed certificates while revoked: its entry then lasts until those expire too.
+	// A node not revoked is refused with NOT_FOUND and stays unlisted. The call drops no expired
+	// node first.
+	Refresh       bool `protobuf:"varint,2,opt,name=refresh,proto3" json:"refresh,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1739,6 +1744,13 @@ func (x *RevokeNodeRequest) GetNode() string {
 		return x.Node
 	}
 	return ""
+}
+
+func (x *RevokeNodeRequest) GetRefresh() bool {
+	if x != nil {
+		return x.Refresh
+	}
+	return false
 }
 
 // The response of RevokeNode.
@@ -2222,9 +2234,10 @@ const file_chalkos_kubernetes_v1_kubernetes_proto_rawDesc = "" +
 	"\x14UncordonNodeResponse\x12\x1e\n" +
 	"\n" +
 	"uncordoned\x18\x01 \x01(\bR\n" +
-	"uncordoned\"'\n" +
+	"uncordoned\"A\n" +
 	"\x11RevokeNodeRequest\x12\x12\n" +
-	"\x04node\x18\x01 \x01(\tR\x04node\"\xb8\x01\n" +
+	"\x04node\x18\x01 \x01(\tR\x04node\x12\x18\n" +
+	"\arefresh\x18\x02 \x01(\bR\arefresh\"\xb8\x01\n" +
 	"\x12RevokeNodeResponse\x129\n" +
 	"\n" +
 	"revoked_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\trevokedAt\x12!\n" +

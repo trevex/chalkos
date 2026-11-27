@@ -1554,8 +1554,9 @@ RevokeNode cuts a node off the cluster by name: it lists the node in the ConfigM
 kube-system/chalkos-revoked-nodes, applies the API server's admission policy
 chalkos-revoked-nodes, which then denies the node's writes, and deletes its Node object.
 Control planes then refuse to renew its node certificate. A node revoked already keeps the
-time of its first revocation. A call that fails after listing the node says so; calling again
-finishes it. It first drops the nodes whose certificates have all expired. A node not revoked
+time of its first revocation, unless refresh lists it as revoked now. A call that fails after
+listing the node says so; calling again finishes it. Without refresh, it first drops the
+nodes whose certificates have all expired. A node not revoked
 yet is refused with FAILED_PRECONDITION and the reason REVOKED_LIST_FULL while the policy's
 map of revoked nodes would grow too long for the API server to compile with it; PruneRevoked
 after rotations of the OS CA and the Kubernetes CA makes room. It answers on bootstrapped
@@ -1570,6 +1571,7 @@ The request of RevokeNode.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `node` | string | The node's name in Kubernetes, which its node certificate carries too. |
+| `refresh` | bool | Whether the node, revoked already, is listed as revoked now in place of its earlier time, as after it was handed certificates while revoked: its entry then lasts until those expire too. A node not revoked is refused with NOT_FOUND and stays unlisted. The call drops no expired node first. |
 
 #### RevokeNodeResponse { #kubernetes-message-revokenoderesponse }
 

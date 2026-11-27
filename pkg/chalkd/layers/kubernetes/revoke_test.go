@@ -145,6 +145,42 @@ func TestRevokeNode(t *testing.T) {
 	}
 }
 
+// TestRevokeNodeRefresh lists a revoked node as revoked now, applies the policy with the new time
+// and keeps an expired entry it refreshes; a node not revoked is refused and stays unlisted.
+func TestRevokeNodeRefresh(t *testing.T) {
+	l := newRevokeLab(t)
+	l.revokeAt(t, map[string]time.Time{"w1": expiredAt(), "w-ancient": expiredAt()})
+	before := time.Now().Add(-time.Second)
+	got, err := l.s.RevokeNode(context.Background(), &kubernetesv1.RevokeNodeRequest{Node: "w1", Refresh: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := got.RevokedAt.AsTime()
+	if at.Before(before) || at.After(time.Now()) || !got.NodeDeleted {
+		t.Errorf("refreshed at %v, Node deleted %v; want now and deleted", at, got.NodeDeleted)
+	}
+	list := l.list(t)
+	if !list["w1"].Equal(at) {
+		t.Errorf("revoked nodes %v, want w1 at %v", list, at)
+	}
+	if _, ok := list["w-ancient"]; !ok {
+		t.Error("a refresh dropped an expired entry")
+	}
+	if want := uint32(revoked.LiteralLength(list)); got.ListLength != want || got.ListCapacity != revoked.MaxLiteralLength {
+		t.Errorf("list %d of %d, want %d of %d", got.ListLength, got.ListCapacity, want, revoked.MaxLiteralLength)
+	}
+	if policy := l.policyNames(t); !strings.Contains(policy, at.UTC().Format(revoked.TimeFormat)) {
+		t.Errorf("the policy %s does not name w1's new time", policy)
+	}
+	_, err = l.s.RevokeNode(context.Background(), &kubernetesv1.RevokeNodeRequest{Node: "w2", Refresh: true})
+	if layer.CodeOf(err) != connect.CodeNotFound {
+		t.Errorf("refreshing w2, not revoked: %v, want NotFound", err)
+	}
+	if _, ok := l.list(t)["w2"]; ok {
+		t.Error("refreshing w2, not revoked, lists it")
+	}
+}
+
 // TestRevokeNodeOnControlPlanesOnly refuses the calls on the revoked nodes where no list is kept.
 func TestRevokeNodeOnControlPlanesOnly(t *testing.T) {
 	worker, _ := kubernetesNode(t, k8s.KindWorker, true)

@@ -138,6 +138,36 @@ func TestRevoke(t *testing.T) {
 	}
 }
 
+// TestRefresh lists a revoked node with the later of its time and now, and leaves a node not
+// revoked unlisted.
+func TestRefresh(t *testing.T) {
+	cs := fake.NewClientset()
+	ctx := context.Background()
+	if _, listed, err := Refresh(ctx, cs, "w1", second); err != nil || listed {
+		t.Fatalf("refresh without a list: listed %v, %v", listed, err)
+	}
+	if _, ok := load(t, cs)["w1"]; ok {
+		t.Fatal("refreshing a node not revoked lists it")
+	}
+	for _, name := range []string{"w1", "w2"} {
+		if _, err := Revoke(ctx, cs, name, first); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if at, listed, err := Refresh(ctx, cs, "w1", second.Add(time.Millisecond)); err != nil || !listed || !at.Equal(second) {
+		t.Fatalf("refresh w1: %v, listed %v, %v; want %v", at, listed, err, second)
+	}
+	if at, listed, err := Refresh(ctx, cs, "w1", first); err != nil || !listed || !at.Equal(second) {
+		t.Fatalf("refresh w1 with an earlier time: %v, listed %v, %v; want %v kept", at, listed, err, second)
+	}
+	if _, listed, err := Refresh(ctx, cs, "w3", second); err != nil || listed {
+		t.Fatalf("refresh an unknown name: listed %v, %v", listed, err)
+	}
+	if l := load(t, cs); len(l) != 2 || !l["w1"].Equal(second) || !l["w2"].Equal(first) {
+		t.Errorf("list %v, want w1 at %v and w2 at %v", l, second, first)
+	}
+}
+
 func TestUnrevoke(t *testing.T) {
 	cs := fake.NewClientset()
 	ctx := context.Background()

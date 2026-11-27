@@ -31,6 +31,21 @@ func TestRevokeNodeRefusesAnEtcdMember(t *testing.T) {
 	}
 }
 
+// A control plane refuses to refresh the revocation of a node not revoked, the etcd member n1
+// too, which NotRevoked tells; the lab's API server lists no revoked node.
+func TestRefreshRevocation(t *testing.T) {
+	t.Parallel()
+	conn, _ := etcdMember(t)
+	for _, name := range []string{"w1", "n1"} {
+		if _, err := RefreshRevocation(context.Background(), conn, name); !NotRevoked(err) {
+			t.Errorf("refreshing %s, not revoked: %v, want NotRevoked", name, err)
+		}
+	}
+	if NotRevoked(nil) || NotRevoked(connect.NewError(connect.CodeNotFound, "local")) {
+		t.Error("NotRevoked holds for another error than a node's NOT_FOUND")
+	}
+}
+
 // A node etcd lists by name, a voter or a learner, is refused; an empty name matches no member
 // that has not started.
 func TestEtcdMemberRefusal(t *testing.T) {

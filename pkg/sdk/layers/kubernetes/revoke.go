@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"connectrpc.com/connect/v2"
+
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
@@ -37,6 +39,21 @@ func RevokeNode(ctx context.Context, via *client.Conn, node string, allowControl
 		}
 	}
 	return Client(via).RevokeNode(ctx, &kubernetesv1.RevokeNodeRequest{Node: node})
+}
+
+// RefreshRevocation has the control plane via list the node, revoked already, as revoked now, as
+// after it was handed certificates while revoked: its entry then lasts until those expire too,
+// and a CA made before them does not let it be dropped. Call it once the certificates are handed
+// out. A control plane does not refresh a node that is not revoked, which NotRevoked tells. An
+// etcd member is refreshed like any other node: it is revoked already.
+func RefreshRevocation(ctx context.Context, via *client.Conn, node string) (*kubernetesv1.RevokeNodeResponse, error) {
+	return Client(via).RevokeNode(ctx, &kubernetesv1.RevokeNodeRequest{Node: node, Refresh: true})
+}
+
+// NotRevoked reports whether err is a control plane's refusal of RefreshRevocation because the
+// node is not revoked.
+func NotRevoked(err error) bool {
+	return client.FromNode(err) && connect.CodeOf(err) == connect.CodeNotFound
 }
 
 // etcdMemberRefusal refuses to revoke a node that is still an etcd member, a control plane. A

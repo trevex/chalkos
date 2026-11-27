@@ -79,6 +79,31 @@ func Revoke(ctx context.Context, cs kubernetes.Interface, name string, now time.
 	return at, nil
 }
 
+// Refresh lists a node revoked already as revoked at now, or keeps its time if that is later, as
+// another control plane's clock may set it; it returns the time the node is listed with and
+// whether it was listed at all. A node not listed stays unlisted. A node handed certificates while
+// revoked stays listed, refreshed after them, until they expire too.
+func Refresh(ctx context.Context, cs kubernetes.Interface, name string, now time.Time) (time.Time, bool, error) {
+	var at time.Time
+	var listed bool
+	err := update(ctx, cs, func(cm *corev1.ConfigMap, l List) (bool, error) {
+		var earlier time.Time
+		if earlier, listed = l[name]; !listed {
+			return false, nil
+		}
+		if at = now.UTC().Truncate(time.Second); !earlier.Before(at) {
+			at = earlier
+			return false, nil
+		}
+		cm.Data[name] = at.Format(TimeFormat)
+		return true, nil
+	})
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("refresh the revocation of %s: %w", name, err)
+	}
+	return at, listed, nil
+}
+
 // Unrevoke removes the node from the list if allow, unless nil, accepts the time it is listed
 // with when it is removed; allow's error is returned as it is. Unrevoke returns that time and
 // whether the node was listed at all.

@@ -218,8 +218,9 @@ type KubernetesServiceClient interface {
 	// kube-system/chalkos-revoked-nodes, applies the API server's admission policy
 	// chalkos-revoked-nodes, which then denies the node's writes, and deletes its Node object.
 	// Control planes then refuse to renew its node certificate. A node revoked already keeps the
-	// time of its first revocation. A call that fails after listing the node says so; calling again
-	// finishes it. It first drops the nodes whose certificates have all expired. A node not revoked
+	// time of its first revocation, unless refresh lists it as revoked now. A call that fails after
+	// listing the node says so; calling again finishes it. Without refresh, it first drops the
+	// nodes whose certificates have all expired. A node not revoked
 	// yet is refused with FAILED_PRECONDITION and the reason REVOKED_LIST_FULL while the policy's
 	// map of revoked nodes would grow too long for the API server to compile with it; PruneRevoked
 	// after rotations of the OS CA and the Kubernetes CA makes room. It answers on bootstrapped
@@ -310,8 +311,9 @@ type KubernetesServiceHandler interface {
 	// kube-system/chalkos-revoked-nodes, applies the API server's admission policy
 	// chalkos-revoked-nodes, which then denies the node's writes, and deletes its Node object.
 	// Control planes then refuse to renew its node certificate. A node revoked already keeps the
-	// time of its first revocation. A call that fails after listing the node says so; calling again
-	// finishes it. It first drops the nodes whose certificates have all expired. A node not revoked
+	// time of its first revocation, unless refresh lists it as revoked now. A call that fails after
+	// listing the node says so; calling again finishes it. Without refresh, it first drops the
+	// nodes whose certificates have all expired. A node not revoked
 	// yet is refused with FAILED_PRECONDITION and the reason REVOKED_LIST_FULL while the policy's
 	// map of revoked nodes would grow too long for the API server to compile with it; PruneRevoked
 	// after rotations of the OS CA and the Kubernetes CA makes room. It answers on bootstrapped

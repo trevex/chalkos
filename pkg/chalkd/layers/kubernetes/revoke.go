@@ -40,15 +40,17 @@ func (p *Plugin) RevokeNode(ctx context.Context, req *kubernetesv1.RevokeNodeReq
 	if err != nil {
 		return nil, err
 	}
-	// Dropping the expired nodes first makes room for the node.
-	pruneExpiredLogged(ctx, cs, cp.cluster)
-	list, err := policyRoom(ctx, cs, name)
+	var list revoked.List
+	var at time.Time
+	if req.Refresh {
+		// A refresh keeps the node revoked, so it prunes nothing: the node's entry may have expired
+		// although it holds new certificates.
+		at, list, err = refreshRevocation(ctx, cs, name)
+	} else {
+		at, list, err = revokeNode(ctx, cs, cp.cluster, name)
+	}
 	if err != nil {
 		return nil, err
-	}
-	at, err := revoked.Revoke(ctx, cs, name, time.Now())
-	if err != nil {
-		return nil, layer.Errorf(connect.CodeUnavailable, "%w", err)
 	}
 	if err := kapply.EnforceRevoked(ctx, cs); err != nil {
 		return nil, layer.Errorf(connect.CodeUnavailable, "%s is revoked, but the API server's admission policy was not updated: %w; revoking it again applies it", name, err)
@@ -60,14 +62,50 @@ func (p *Plugin) RevokeNode(ctx context.Context, req *kubernetesv1.RevokeNodeReq
 	case err != nil:
 		return nil, layer.Errorf(connect.CodeUnavailable, "%s is revoked, but deleting its Node failed: %w; revoking it again deletes it", name, err)
 	}
-	log.Printf("kubernetes: revoked node %s", name)
-	list[name] = at
+	if req.Refresh {
+		log.Printf("kubernetes: refreshed the revocation of node %s", name)
+	} else {
+		log.Printf("kubernetes: revoked node %s", name)
+	}
 	return &kubernetesv1.RevokeNodeResponse{
 		RevokedAt:    timestamppb.New(at),
 		NodeDeleted:  deleted,
 		ListLength:   uint32(revoked.LiteralLength(list)),
 		ListCapacity: revoked.MaxLiteralLength,
 	}, nil
+}
+
+// revokeNode lists the node as revoked, keeping the time of an earlier revocation, once the
+// expired nodes are dropped to make room for it. It returns the time and the revoked nodes with it.
+func revokeNode(ctx context.Context, cs kubernetes.Interface, c k8s.Cluster, name string) (time.Time, revoked.List, error) {
+	pruneExpiredLogged(ctx, cs, c)
+	list, err := policyRoom(ctx, cs, name)
+	if err != nil {
+		return time.Time{}, nil, err
+	}
+	at, err := revoked.Revoke(ctx, cs, name, time.Now())
+	if err != nil {
+		return time.Time{}, nil, layer.Errorf(connect.CodeUnavailable, "%w", err)
+	}
+	list[name] = at
+	return at, list, nil
+}
+
+// refreshRevocation lists the node, revoked already, as revoked now, and refuses a node not
+// revoked with NOT_FOUND. It returns the time and the revoked nodes as it left them.
+func refreshRevocation(ctx context.Context, cs kubernetes.Interface, name string) (time.Time, revoked.List, error) {
+	at, listed, err := revoked.Refresh(ctx, cs, name, time.Now())
+	if err != nil {
+		return time.Time{}, nil, layer.Errorf(connect.CodeUnavailable, "%w", err)
+	}
+	if !listed {
+		return time.Time{}, nil, layer.Errorf(connect.CodeNotFound, "node %s is not revoked, so its revocation is not refreshed", name)
+	}
+	list, err := revoked.Load(ctx, cs)
+	if err != nil {
+		return time.Time{}, nil, layer.Errorf(connect.CodeUnavailable, "%w", err)
+	}
+	return at, list, nil
 }
 
 func (p *Plugin) UnrevokeNode(ctx context.Context, req *kubernetesv1.UnrevokeNodeRequest) (*kubernetesv1.UnrevokeNodeResponse, error) {
