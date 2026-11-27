@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"maps"
+	"slices"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -104,6 +106,38 @@ func Unrevoke(ctx context.Context, cs kubernetes.Interface, name string, allow f
 		return time.Time{}, false, fmt.Errorf("unrevoke %s: %w", name, err)
 	}
 	return at, listed, nil
+}
+
+// ExpiryMargin is how long after its certificates' validity a revoked node's entry is kept: a
+// renewal in flight when the node was revoked may have issued a certificate a moment later.
+const ExpiryMargin = 24 * time.Hour
+
+// Expired reports whether every certificate of a node revoked at has expired by now, when the
+// node's certificates are valid for validity: a revoked node renews none, so its last was issued
+// at the revocation at the latest, give or take ExpiryMargin. A node revoked at an unknown time,
+// the zero time, never expires.
+func Expired(at, now time.Time, validity time.Duration) bool {
+	return !at.IsZero() && now.After(at.Add(validity+ExpiryMargin))
+}
+
+// Prune removes the nodes for which drop reports true from the list and returns their names in
+// order. It writes the ConfigMap only when it removes a node.
+func Prune(ctx context.Context, cs kubernetes.Interface, drop func(name string, at time.Time) bool) ([]string, error) {
+	var removed []string
+	err := update(ctx, cs, func(cm *corev1.ConfigMap, l List) (bool, error) {
+		removed = nil
+		for _, name := range slices.Sorted(maps.Keys(l)) {
+			if drop(name, l[name]) {
+				delete(cm.Data, name)
+				removed = append(removed, name)
+			}
+		}
+		return len(removed) > 0, nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("prune the revoked nodes: %w", err)
+	}
+	return removed, nil
 }
 
 // update reads the ConfigMap, lets change change it, and writes it back if change reports a

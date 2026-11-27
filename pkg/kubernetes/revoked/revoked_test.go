@@ -3,6 +3,7 @@ package revoked
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -221,5 +222,59 @@ func TestRevokeRetriesACreateRace(t *testing.T) {
 	}
 	if l := load(t, cs); len(l) != 2 {
 		t.Errorf("list %v, want w1 and w3", l)
+	}
+}
+
+// TestExpired expires a node's entry once its certificates, valid for validity, and the margin
+// have passed; one revoked at an unknown time never expires.
+func TestExpired(t *testing.T) {
+	year := 365 * 24 * time.Hour
+	for name, tc := range map[string]struct {
+		at, now  time.Time
+		validity time.Duration
+		want     bool
+	}{
+		"within the validity":        {first, first.Add(year), year, false},
+		"within the margin":          {first, first.Add(year + ExpiryMargin), year, false},
+		"past validity and margin":   {first, first.Add(year + ExpiryMargin + time.Second), year, true},
+		"a longer validity":          {first, first.Add(year + ExpiryMargin + time.Second), 2 * year, false},
+		"revoked at an unknown time": {time.Time{}, first.Add(100 * year), year, false},
+	} {
+		if got := Expired(tc.at, tc.now, tc.validity); got != tc.want {
+			t.Errorf("%s: Expired = %v, want %v", name, got, tc.want)
+		}
+	}
+}
+
+// TestPrune removes the entries drop names, in name order, and keeps the others; a list without
+// such entries, or without a ConfigMap, is not written.
+func TestPrune(t *testing.T) {
+	ctx := context.Background()
+	cs := fake.NewClientset()
+	if removed, err := Prune(ctx, cs, func(string, time.Time) bool { return true }); err != nil || len(removed) != 0 {
+		t.Fatalf("prune without a ConfigMap: %v, %v", removed, err)
+	}
+	if _, err := cs.CoreV1().ConfigMaps(Namespace).Get(ctx, Name, metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("prune without a ConfigMap created one: %v", err)
+	}
+	for _, name := range []string{"w3", "w1", "w2"} {
+		if _, err := Revoke(ctx, cs, name, first); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writes := 0
+	cs.PrependReactor("update", "configmaps", func(k8stesting.Action) (bool, runtime.Object, error) {
+		writes++
+		return false, nil, nil
+	})
+	removed, err := Prune(ctx, cs, func(name string, at time.Time) bool { return name != "w2" && at.Equal(first) })
+	if err != nil || !slices.Equal(removed, []string{"w1", "w3"}) {
+		t.Fatalf("Prune = %v, %v; want w1 and w3", removed, err)
+	}
+	if l := load(t, cs); len(l) != 1 || !l["w2"].Equal(first) {
+		t.Errorf("left %v; want w2 alone", l)
+	}
+	if removed, err := Prune(ctx, cs, func(name string, _ time.Time) bool { return name == "w9" }); err != nil || len(removed) != 0 || writes != 1 {
+		t.Errorf("a prune that drops nothing: %v, %v, %d writes; want none and no second write", removed, err, writes)
 	}
 }
