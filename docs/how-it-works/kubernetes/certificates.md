@@ -252,12 +252,14 @@ An entry revoked at an unknown time, such as one whose time was broken by a hand
 neither case and stays until it is unrevoked.
 
 Each control plane drops expired entries by itself, through its own API server: when it revokes
-or unrevokes a node, when its loops start and once a day after that. It drops entries for rotated
-CAs only when PruneRevoked asks it to. The nodes apply the finish of a rotation one after
-another, and until every node has, one may still trust the old CA that a revoked node's
-certificates chain to. `chalkctl rotate os-ca --finish` and `chalkctl rotate kubernetes-ca --finish`
-call PruneRevoked through a control plane once every node confirmed the finish, and print what it
-dropped:
+or unrevokes a node, when its loops start and once a day after that. This expiry prune drops
+entries that the secrets file records as not refreshed too, as
+[A command with --ignore-revoked refreshes the revocation](#a-command-with-ignore-revoked-refreshes-the-revocation)
+explains. It drops entries for rotated CAs only when PruneRevoked asks it to. The nodes apply the
+finish of a rotation one after another, and until every node has, one may still trust the old CA
+that a revoked node's certificates chain to. `chalkctl rotate os-ca --finish` and
+`chalkctl rotate kubernetes-ca --finish` call PruneRevoked through a control plane once every
+node confirmed the finish, and print what it dropped:
 
 ```text
 dropped 1 node from the revoked nodes, which nothing lets back in: w1
@@ -304,11 +306,22 @@ under `unrefreshedRevocations`, so the record outlasts the run:
   later command run with `--ignore-revoked`, and drop those refreshed from the record.
 - While the record holds a node, rotate's finish prunes nothing and
   `chalkctl node prune-revoked` refuses.
-- `chalkctl node revoke <node> --refresh` and `chalkctl node unrevoke <node>` drop the node from
-  the record. A node recorded as listed that a later refresh finds unlisted is revoked again, so
-  unrevoke such a node with the secrets file.
+- The record does not hold back chalkd's daily expiry prune, which knows nothing of the secrets
+  file. A recorded node whose entry expires drops from the list. The record notes whether the node
+  was listed when it was handed certificates, and the next chalkctl command that retries the
+  refresh revokes a node noted as listed again. Until then, `chalkctl node renew`,
+  `chalkctl install` and `chalkctl config apply --kubernetes-share` refuse any recorded name,
+  unless run with `--ignore-revoked`.
+- `chalkctl node revoke <node> --refresh` retries the node's recorded refresh: it refreshes the
+  entry, or revokes the node again when the list dropped it, and clears the record.
+- `chalkctl node unrevoke <node>` drops the node from the record, also when the list dropped it
+  already, so that no retry revokes it again. Unrevoke a recorded node with the secrets file: with
+  the secrets file from standard input, which chalkctl cannot write back, or with a client file,
+  which holds no record, the command warns that the record may still hold the node.
 
-A refresh never lists a node it did not find revoked.
+The secrets file from standard input records nothing: a refresh that succeeds for a recorded node
+warns that the record still holds it, and the next refresh retried with the secrets file clears
+it. A refresh never lists a node it did not find revoked.
 
 A revoked node that got certificates of a new CA this way stays listed after the rotation's
 finish, as the CA predates the refresh. Removing revoked nodes from the inventory before such a

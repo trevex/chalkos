@@ -75,8 +75,9 @@ certificate without asking the control planes. It then reads the revoked nodes t
 node's revocation if the node is revoked, so during the outage it renews the certificate but
 fails with `whether w1 is revoked is unknown, ...`, and the secrets file records w1's revocation
 as not refreshed. Once the API server answers, `chalkctl node prune-revoked`, rotate and the next
-command with `--ignore-revoked` refresh it first; `chalkctl node revoke w1 --refresh` refreshes a
-revoked node by hand.
+command with `--ignore-revoked` refresh it first; `chalkctl node revoke w1 --refresh` retries it
+by hand. While the record holds w1, `chalkctl node renew w1` refuses it without
+`--ignore-revoked`, as the daily expiry prune may have dropped it from the revoked nodes.
 
 A node whose image runs no Kubernetes has no control plane to ask. Renew its certificate with
 `chalkctl node renew` once a year, before it expires:
