@@ -172,9 +172,9 @@ Both nodes are `Ready` in Kubernetes again:
 
 ```console
 $ kubectl get nodes
-NAME   STATUS   ROLES    AGE     VERSION
-cp1    Ready    <none>   5m30s   v1.37.2
-w1     Ready    <none>   5m23s   v1.37.2
+NAME   STATUS   ROLES           AGE     VERSION
+cp1    Ready    control-plane   5m30s   v1.37.2
+w1     Ready    <none>          5m23s   v1.37.2
 ```
 
 The new image has the debugging tools, so a debugging pod can run the node's own `cat` on its

@@ -169,8 +169,9 @@ keys, with which it can issue itself new certificates. A cluster without Kuberne
 of revoked nodes. `chalkctl rotate node-ca` cuts off no node, because chalkd trusts every node CA
 the OS CA signed.
 
-A revoked name stays blocked until `chalkctl node unrevoke` lets it back in. Reusing the name
-takes both rotations first.
+A revoked name stays blocked until the finishes of both rotations drop it from the revoked nodes,
+until the old node's certificates have expired, or until `chalkctl node unrevoke` lets it back in.
+Reusing the name takes both rotations first.
 [Add and remove nodes](add-remove-nodes.md#revoke-a-removed-node) shows both commands, and
 [Kubernetes certificates](../how-it-works/kubernetes/certificates.md#revoking-a-node-cuts-off-its-writes-and-renewals)
 lists what a revoked node can still do.
@@ -267,7 +268,9 @@ chalkctl rotate os-ca --finish --secrets=secrets.age
 
 The finish ends with
 `the rotation of the OS CA is finished: every node trusts the new value alone`, followed by where
-the files went and the reminder to issue the client files again.
+the files went and the reminder to issue the client files again. With the Kubernetes layer, a
+control plane then drops the revoked nodes that nothing lets back in, and chalkctl names them, as
+[Reuse a removed node's name](add-remove-nodes.md#reuse-a-removed-nodes-name) shows.
 
 A config or image rollback restores no trust: the OS CAs are the node's own, kept apart from its
 config and its image. A node rolled back after the finish still trusts the new OS CA alone, so it
@@ -307,7 +310,9 @@ certificate's expiry, and a problem beside it when one needs doing, such as a re
   or the control planes run a chalkd from before node revocation. Fix that, or rotate with
   `--ignore-revoked`, which reads no list and rotates every node of the inventory. A revoked node
   still in the inventory then receives the new CA and its certificates, so remove revoked nodes
-  from the inventory first. chalkctl warns of this at each run.
+  from the inventory first. chalkctl warns of this at each run. The finish of such a rotation
+  keeps every revoked node listed and says
+  `kept the revoked nodes: a phase of the rotation ran with --ignore-revoked, ...`.
 - A node unrevoked while a rotation is paused takes part from the next run on, but it missed the
   earlier phases, and the rotation may stop at it. Unrevoke nodes before or after a rotation.
 

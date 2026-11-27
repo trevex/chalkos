@@ -315,9 +315,9 @@ $ export KUBECONFIG=~/.local/state/chalklab/lab/kubeconfig
 $ export CHALKOSCONFIG=~/.local/state/chalklab/lab/chalkctl.json
 $ export CHALKOSINVENTORY=~/.local/state/chalklab/lab/chalkos.yaml
 $ kubectl get nodes
-NAME   STATUS   ROLES    AGE   VERSION
-cp1    Ready    <none>   21s   v1.37.2
-w1     Ready    <none>   12s   v1.37.2
+NAME   STATUS   ROLES           AGE   VERSION
+cp1    Ready    control-plane   21s   v1.37.2
+w1     Ready    <none>          12s   v1.37.2
 ```
 
 The nodes may show `NotReady` for the first minute, until flannel, the network plugin, runs on
@@ -483,9 +483,9 @@ Both nodes are `Ready`, and `chalkctl status` shows that w1 now takes its time f
 
 ```console
 $ kubectl get nodes
-NAME   STATUS   ROLES    AGE     VERSION
-cp1    Ready    <none>   5m30s   v1.37.2
-w1     Ready    <none>   5m23s   v1.37.2
+NAME   STATUS   ROLES           AGE     VERSION
+cp1    Ready    control-plane   5m30s   v1.37.2
+w1     Ready    <none>          5m23s   v1.37.2
 $ chalkctl status w1
 ...
 time: synchronised to 162.159.200.1, offset +0.000000 s

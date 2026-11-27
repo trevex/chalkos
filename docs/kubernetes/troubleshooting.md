@@ -243,8 +243,8 @@ nodes "w1" is forbidden: ValidatingAdmissionPolicy 'chalkos-revoked-nodes' with 
 The name `w1` is in the cluster's revoked nodes, which `chalkctl status cp1` lists under
 `revoked nodes:`. Every machine of that name is shut out, a node installed afresh included.
 
-- A new node that reuses the name joins once the name is unrevoked. Rotate `os-ca` and
-  `kubernetes-ca`, then run `chalkctl node unrevoke w1`, as
+- A new node that reuses the name joins once the name is off the list. Rotate `os-ca` and
+  `kubernetes-ca`: the finish of the second drops the name, as
   [Reuse a removed node's name](../operate/add-remove-nodes.md#reuse-a-removed-nodes-name)
   describes.
 - A node revoked by mistake comes back with `chalkctl node unrevoke w1 --allow-old-ca`, which lets its

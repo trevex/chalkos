@@ -225,16 +225,29 @@ chalkctl: not every control-plane node reads the revoked nodes (cp2: cannot read
 Repair that control plane, then revoke again. `--skip-read-check` revokes the node at once; the API server
 denies its writes all the same.
 
-A control plane also refuses a revocation that would make the list too long for the API server to
-compile the admission policy, at about 2,000 short names. Unrevoke names whose CAs were rotated
-since, as [Reuse a removed node's name](#reuse-a-removed-nodes-name) describes, to make room.
-
 `chalkctl status` on a control plane lists the revoked nodes:
 
 ```text
 revoked nodes:
   w1  since 2026-10-23T22:42:25Z
 ```
+
+The list has room for about 2,000 short names, because the API server compiles the admission
+policy only up to a length. A control plane drops a revoked node from the list by itself once
+the node's certificates have all expired, a year and a day after the revocation by default. The
+finishes of `chalkctl rotate os-ca` and `chalkctl rotate kubernetes-ca` drop every node revoked
+before both rotations, as [Reuse a removed node's name](#reuse-a-removed-nodes-name) describes.
+Once the list is more than 80% full, `chalkctl status` adds a line under `revoked nodes:`:
+
+```text
+  the list is 83% full; rotate the CAs with chalkctl rotate os-ca and chalkctl rotate kubernetes-ca, each to its finish, which drops the nodes revoked before both
+```
+
+The status summary counts it as the problem `revoked nodes list 83% full`, and
+`chalkctl node revoke` prints `the revoked nodes fill 83% of their room;` with the same advice
+after the revocation. Rotate the OS CA and the Kubernetes CA to make room. A control plane refuses
+a revocation that would overfill the list, with the same advice and the reason
+`REVOKED_LIST_FULL`.
 
 The revoked node keeps its certificates until they expire, and the API server still answers its
 kubelet's reads. [What revoking a node cuts off](../how-it-works/kubernetes/certificates.md#revoking-a-node-cuts-off-its-writes-and-renewals)
@@ -259,30 +272,56 @@ renews its node certificate, within a year, or at once with `chalkctl rotate os-
 ## Reuse a removed node's name
 
 A revoked name stays blocked for every machine, so a node installed afresh as `w1` is shut out as
-well. To give the name to a new node, first rotate the two CAs the old node's certificates chain
-to. Then remove the name from the revoked nodes:
+well. To give the name to a new node, rotate the two CAs the old node's certificates chain to.
+The finish of the second rotation drops the name from the revoked nodes:
 
-1. Rotate the OS CA with `chalkctl rotate os-ca`, to its finish, as
+1. Remove the revoked node from the inventory, if it is still there.
+2. Rotate the OS CA with `chalkctl rotate os-ca`, to its finish, as
    [Rotate the OS CA](access.md#rotate-the-os-ca) describes.
-2. Rotate the Kubernetes CA with `chalkctl rotate kubernetes-ca`, to its finish, as
-   [Rotate the Kubernetes CAs and keys](../kubernetes/rotate-kubernetes-cas.md) describes.
-3. Unrevoke the name:
+3. Rotate the Kubernetes CA with `chalkctl rotate kubernetes-ca`, to its finish, as
+   [Rotate the Kubernetes CAs and keys](../kubernetes/rotate-kubernetes-cas.md) describes. Once
+   every node confirmed the finish, a control plane drops the nodes revoked before both rotations,
+   and chalkctl names them:
 
-    ```console
-    $ chalkctl node unrevoke w1 --secrets=secrets.age
-    unrevoked node w1; the certificates it held before <time> are no longer trusted
+    ```text
+    dropped 1 node from the revoked nodes, which nothing lets back in: w1
+    the revoked nodes fill 0% of their room
     ```
 
-    `<time>` is when the node was revoked.
+    When this prune fails, the rotation is finished all the same, and chalkctl warns
+    `the revoked nodes were not pruned: ...; once that is fixed, prune them with chalkctl node prune-revoked`.
+    Fix what it names, then prune:
+
+    ```console
+    $ chalkctl node prune-revoked
+    dropped 1 node from the revoked nodes, which nothing lets back in: w1
+    the revoked nodes fill 0% of their room
+    ```
 
 4. Add the node to the inventory and install it, as [Install the new node](#install-the-new-node)
    describes. It joins as usual.
 
-Unrevoke a name once the rotations are done, even when no new node takes it. The list holds
-about 2,000 short names at most, and after the rotations the old node's certificates no longer
-work anyway. Unrevoke before or after a rotation, not while one is paused: a node unrevoked
-between two runs of `chalkctl rotate` missed the phases it was skipped in, and the rotation may
-stop at it.
+The two rotations may run in either order. The finish of the first one drops no node for its CA,
+because the other CA still predates the revocation. Without the rotations, a control plane drops
+the name by itself once the old node's certificates have expired, a year and a day after the
+revocation by default.
+
+Do not rotate with `--ignore-revoked` while the revoked node is still in the inventory. Such a
+rotation gives the old node certificates of the new CA, so its finish keeps the revoked nodes
+and says `kept the revoked nodes: a phase of the rotation ran with --ignore-revoked, ...`. The
+next prune would drop the name and let the old node back in, whether it comes from
+`chalkctl node prune-revoked`, the finish of a later rotation or the name's expiry. Remove the node
+from the inventory, then rotate that CA again without `--ignore-revoked`.
+[Pruning drops entries that keep no node out](../how-it-works/kubernetes/certificates.md#pruning-drops-entries-that-keep-no-node-out)
+explains the rules.
+
+`chalkctl node prune-revoked` refuses while the secrets file records a rotation of the OS CA or
+the Kubernetes CAs, because a node that has not applied the finish may still trust the old CA.
+With a client file, the command cannot see a running rotation, so run it only when none runs.
+
+`chalkctl node unrevoke` removes a name from the list without waiting for a prune. Unrevoke
+before or after a rotation, not while one is paused: a node unrevoked between two runs of
+`chalkctl rotate` missed the phases it was skipped in, and the rotation may stop at it.
 
 The control plane checks that the OS CA and the Kubernetes CA it trusts were all made after the
 revocation. While one of them predates it, the old node's certificates would work again, so

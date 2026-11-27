@@ -184,8 +184,12 @@ node w1: invalid Kubernetes settings:
 - Node: label "node-role.kubernetes.io/storage": the kubelet sets labels in the kubernetes.io and k8s.io namespaces on its own node only under kubelet.kubernetes.io/ and node.kubernetes.io/ or from the list kubernetes.io/hostname, topology.kubernetes.io/zone, topology.kubernetes.io/region, failure-domain.beta.kubernetes.io/zone, failure-domain.beta.kubernetes.io/region, beta.kubernetes.io/instance-type, node.kubernetes.io/instance-type, kubernetes.io/os, kubernetes.io/arch, beta.kubernetes.io/os, beta.kubernetes.io/arch
 ```
 
+chalkd labels a control plane's node `node-role.kubernetes.io/control-plane` itself, through the
+API server, so `kubectl get nodes` shows the role.
+
 The kubelet applies the labels and taints when it registers its node, the first time the node
-joins, and chalkd never changes the Kubernetes node after that. So `labels` and `taints` are fixed
+joins, and chalkd changes the Kubernetes node after that only to keep a control plane's
+`node-role.kubernetes.io/control-plane` label. So `labels` and `taints` are fixed
 once the node holds a Kubernetes share, and a node refuses a delivery that changes them:
 
 ```text
