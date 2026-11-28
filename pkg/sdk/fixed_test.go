@@ -11,8 +11,9 @@ import (
 
 // The fixture kinds of the group fixed.example.org: Net, of which a node holds several, whose
 // spec.outer.domain, spec.ranges, spec.mode (default safe), the map spec.labels, the nullable
-// spec.alias and spec.group.zone inside the nullable spec.group every node of a cluster holds
-// alike and whose notes are free; Site, of which a node holds one, whose spec.host is held alike;
+// spec.alias, the nullable spec.tier (default gold), spec.group.zone (default z) inside the
+// nullable spec.group and spec.pair.key, which both branches of spec.pair's anyOf mark, every node
+// of a cluster holds alike and whose notes are free; Site, of which a node holds one, whose spec.host is held alike;
 // and Free, which marks nothing.
 const (
 	netSchema = `{
@@ -36,10 +37,17 @@ const (
         "alias": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null, "x-chalkos-fixed": "cluster"},
         "group": {
           "anyOf": [
-            {"type": "object", "properties": {"zone": {"type": "string", "x-chalkos-fixed": "cluster"}, "note": {"type": "string"}}},
+            {"type": "object", "properties": {"zone": {"type": "string", "default": "z", "x-chalkos-fixed": "cluster"}, "note": {"type": "string"}}},
             {"type": "null"}
           ],
           "default": null
+        },
+        "tier": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": "gold", "x-chalkos-fixed": "cluster"},
+        "pair": {
+          "anyOf": [
+            {"type": "object", "properties": {"key": {"type": "string", "x-chalkos-fixed": "cluster"}}, "required": ["key"]},
+            {"type": "object", "properties": {"key": {"type": "string", "x-chalkos-fixed": "cluster"}, "note": {"type": "string"}}, "required": ["note"]}
+          ]
         },
         "note": {"type": "string"}
       }
@@ -156,6 +164,68 @@ func TestFixedChangesOfMapsAndNullables(t *testing.T) {
 			[]sdk.FixedChange{{Kind: "Net", Name: "a", Path: "spec.group.zone", Old: "z1", New: nil}}},
 	} {
 		got, err := sdk.FixedChanges(c, old, tc.next)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s: FixedChanges =\n%#v\nwant\n%#v", name, got, tc.want)
+		}
+	}
+}
+
+// Defaults fill a field left out, also inside a group a document holds empty, but not one written
+// as null; a nullable group left out and one written as null are alike.
+func TestFixedChangesOfDefaults(t *testing.T) {
+	c := fixedContract(t)
+	net := func(spec string) []config.Document { return fixedDocs(t, [3]string{"Net", "a", spec}) }
+	for name, tc := range map[string]struct {
+		old, next []config.Document
+		want      []sdk.FixedChange
+	}{
+		"an empty group takes its defaults": {net("{}"), net("{group: {}}"),
+			[]sdk.FixedChange{{Kind: "Net", Name: "a", Path: "spec.group.zone", Old: nil, New: "z"}}},
+		"a default written out": {net("{group: {}}"), net("{group: {zone: z}}"), nil},
+		"a null group and none": {net("{group: null}"), net("{}"), nil},
+		"a group that comes": {net("{}"), net("{group: {zone: z2}}"),
+			[]sdk.FixedChange{{Kind: "Net", Name: "a", Path: "spec.group.zone", Old: nil, New: "z2"}}},
+		"null against a default": {net("{}"), net("{tier: null}"),
+			[]sdk.FixedChange{{Kind: "Net", Name: "a", Path: "spec.tier", Old: "gold", New: nil}}},
+		"null where the default is null": {net("{}"), net("{alias: null}"), nil},
+	} {
+		got, err := sdk.FixedChanges(c, tc.old, tc.next)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s: FixedChanges =\n%#v\nwant\n%#v", name, got, tc.want)
+		}
+	}
+}
+
+// The changes of one document come depth first with the fields of each level in name order, and
+// a field that two branches of an anyOf mark changes once.
+func TestFixedChangesOrderAndBranches(t *testing.T) {
+	c := fixedContract(t)
+	net := func(spec string) []config.Document { return fixedDocs(t, [3]string{"Net", "a", spec}) }
+	for name, tc := range map[string]struct {
+		old, next []config.Document
+		want      []sdk.FixedChange
+	}{
+		"several in one document": {
+			net("{alias: one, outer: {domain: lab.local}, ranges: [10.0.0.0/8], mode: safe, group: {zone: z1}}"),
+			net("{alias: two, outer: {domain: example.org}, ranges: [11.0.0.0/8], mode: fast, group: {zone: z2}}"),
+			[]sdk.FixedChange{
+				{Kind: "Net", Name: "a", Path: "spec.alias", Old: "one", New: "two"},
+				{Kind: "Net", Name: "a", Path: "spec.group.zone", Old: "z1", New: "z2"},
+				{Kind: "Net", Name: "a", Path: "spec.mode", Old: "safe", New: "fast"},
+				{Kind: "Net", Name: "a", Path: "spec.outer.domain", Old: "lab.local", New: "example.org"},
+				{Kind: "Net", Name: "a", Path: "spec.ranges", Old: []any{"10.0.0.0/8"}, New: []any{"11.0.0.0/8"}},
+			},
+		},
+		"two branches mark one field": {net("{pair: {key: a}}"), net("{pair: {key: b, note: x}}"),
+			[]sdk.FixedChange{{Kind: "Net", Name: "a", Path: "spec.pair.key", Old: "a", New: "b"}}},
+	} {
+		got, err := sdk.FixedChanges(c, tc.old, tc.next)
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}

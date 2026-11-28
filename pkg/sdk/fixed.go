@@ -13,8 +13,8 @@ import (
 // FixedChange is a change of a field that every node of a cluster holds alike, as an image's
 // schema marks it with x-chalkos-fixed: the document's kind and name, the field's path below the
 // document, such as spec.domain, and its old and new values. The values are JSON values with the
-// image's defaults filled in; nil stands for a value the document leaves out and the schema gives
-// no default for.
+// image's defaults filled in; nil stands for no value: left out without a default, written as
+// null, or below a group that is null or left out.
 type FixedChange struct {
 	Kind, Name, Path string
 	Old, New         any
@@ -26,26 +26,27 @@ type FixedChange struct {
 // name order. A document of next is compared with old's document of the same kind and name, or,
 // for a kind a node holds once, with old's one document of the kind whatever its name. A document
 // that only one side holds is no change: the kinds' own rules cover documents that come and go. A
-// list or a map compares as a whole, and a kind the contract does not declare marks nothing.
+// list or a map compares as a whole, and a kind the contract does not declare marks nothing. The
+// kinds' generator puts no mark below a union of types other than a nullable one, so a marked
+// field holds its value in whichever branch the document takes.
 //
-// The documents must be valid against the contract's schemas, since FixedChanges does not validate
-// them: it compares their values with the defaults filled in, so a field written as null differs
-// from one left out where the schema gives it a default, and a number that is not an integer
-// compares by its spelling, 0.5 differing from 5e-1.
+// The documents must come from config.Parse, whose numbers are json.Numbers, and be valid against
+// the contract's schemas, since FixedChanges does not validate them: it compares their values with
+// the defaults filled in, so a field written as null differs from one left out where the schema
+// gives it a default, an integer compares by its value and any other number by its spelling, 0.5
+// differing from 5e-1.
 func FixedChanges(c Contract, old, next []config.Document) ([]FixedChange, error) {
 	if c.Image == nil || c.Image.Schemas == nil {
 		return nil, errors.New("the contract holds no schemas, so it marks no field that every node holds alike")
 	}
 	s := c.Image.Schemas
-	kinds := s.Kinds()
 	marks := map[schema.Kind][][]string{}
 	var out []FixedChange
 	for _, d := range next {
-		i := slices.IndexFunc(kinds, func(k schema.Kind) bool { return k.APIVersion == d.APIVersion && k.Kind == d.Kind })
-		if i < 0 {
+		k, ok := s.Kind(d.APIVersion, d.Kind)
+		if !ok {
 			continue
 		}
-		k := kinds[i]
 		paths, ok := marks[k]
 		if !ok {
 			paths = fixedPaths(s, k.APIVersion, k.Kind)

@@ -143,6 +143,25 @@ func TestLoadSchemasReadsWithheld(t *testing.T) {
 	}
 }
 
+// Kind finds a kind the schemas declare by apiVersion and name, and no other.
+func TestSchemasKind(t *testing.T) {
+	dir := t.TempDir()
+	writeSchema(t, dir, "a.example.org_v1_Thing.json",
+		`{"group": "a.example.org", "version": "v1", "kind": "Thing", "multiple": true}`)
+	ss, err := LoadSchemas(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if k, ok := ss.Kind("a.example.org/v1", "Thing"); !ok || k != (Kind{APIVersion: "a.example.org/v1", Kind: "Thing", Multiple: true}) {
+		t.Errorf("Kind(a.example.org/v1, Thing) = %+v, %v", k, ok)
+	}
+	for _, c := range [][2]string{{"b.example.org/v1", "Thing"}, {"a.example.org/v1", "Other"}} {
+		if k, ok := ss.Kind(c[0], c[1]); ok {
+			t.Errorf("Kind(%s, %s) = %+v, want none", c[0], c[1], k)
+		}
+	}
+}
+
 func TestLoadSchemasRejectsDuplicateKind(t *testing.T) {
 	dir := t.TempDir()
 	writeSchema(t, dir, "a.example.org_v1_Thing.json",

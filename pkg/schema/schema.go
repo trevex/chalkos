@@ -216,11 +216,20 @@ func (s *Schemas) Kinds() []Kind {
 // The caller must not change them.
 func (s *Schemas) Files() map[string][]byte { return s.files }
 
+// Kind is the kind of that apiVersion and name, and whether the schemas declare it.
+func (s *Schemas) Kind(apiVersion, kind string) (Kind, bool) {
+	i := slices.IndexFunc(s.kinds, func(k Kind) bool { return k.APIVersion == apiVersion && k.Kind == kind })
+	if i < 0 {
+		return Kind{}, false
+	}
+	return s.kinds[i], true
+}
+
 // Withheld tells whether the schemas declare the kind of that apiVersion and name withheld from
 // the node's services. A kind they do not declare is not withheld.
 func (s *Schemas) Withheld(apiVersion, kind string) bool {
-	i := slices.IndexFunc(s.kinds, func(k Kind) bool { return k.APIVersion == apiVersion && k.Kind == kind })
-	return i >= 0 && s.kinds[i].Withheld
+	k, _ := s.Kind(apiVersion, kind)
+	return k.Withheld
 }
 
 // Validate checks a document against the schema of its apiVersion and kind. The document is
