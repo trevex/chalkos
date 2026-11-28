@@ -39,7 +39,9 @@ The command needs the secrets file.
 chalkctl checks the config with the image's change rules that read no facts. When the image's
 rules refuse a change, the node refuses the whole config and names the remedy. chalkctl prints the
 changes and the units it restarts, and warns of each image reference in the config that names a
-tag but no digest, and delivers the config all the same. See
+tag but no digest, and delivers the config all the same. With an inventory, chalkctl refuses a
+config that holds a field the image marks as held alike by every node of a cluster with another
+value than another node of the inventory. See
 [Change rules decide which changes a node accepts](../../how-it-works/node/config.md#change-rules-decide-which-changes-a-node-accepts).
 
 With several nodes, config apply stops at the first that fails; a node named twice gets the config

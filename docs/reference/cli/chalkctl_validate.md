@@ -14,7 +14,8 @@ check it on its image: the set the inventory gives the node, every document agai
 the node's image in the inventory, and the set's translation. The image's change rules that read no
 facts and compare with no running value run too, and so does the validator router of a router
 image, which chalkctl links. Every node whose files hold a Kubernetes Cluster document must hold
-the same Cluster spec, and the same Flannel spec or none. See
+the same Cluster spec, and the same Flannel spec or none. A field that a node's image marks as held
+alike by every node of a cluster must have the same value on every node of the inventory. See
 [chalkctl and chalkd both check the config](../../how-it-works/node/config.md#chalkctl-and-chalkd-both-check-the-config).
 
 The command prints a line for each node whose config is valid, with the digest of an image in a

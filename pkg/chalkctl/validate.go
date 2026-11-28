@@ -41,7 +41,9 @@ func (a *app) validateCommand() *cobra.Command {
 // validate checks the config of the nodes named, or of every node, and names each invalid one. The
 // compiled layers check the nodes together first, as every command does on loading the inventory. A
 // config that leaves the node's secrets unencrypted draws a warning, and so does what a compiled
-// layer warns about the nodes together.
+// layer warns about the nodes together. A valid node whose config holds a field that every node of
+// a cluster holds alike, as its image marks it, with another value than another node of the
+// inventory is refused, naming the first such node; each pair of nodes is named once.
 func (a *app) validate(ctx context.Context, f validateFlags, names []string) error {
 	path := cmp.Or(f.cluster.Path(), inventory.DefaultFile)
 	c, err := readInventory(ctx, path)
@@ -70,13 +72,17 @@ func (a *app) validate(ctx context.Context, f validateFlags, names []string) err
 	}
 	var failed failures
 	out := validation{Nodes: []nodeValidation{}, Warnings: []string{}}
+	contracts := map[string]sdk.Contract{}
+	invalid := map[string]bool{}
 	for _, name := range nodes {
-		v, err := validateNode(ctx, c, name)
+		v, ct, err := validateNode(ctx, c, name)
 		if err != nil {
 			failed.add(name, err)
+			invalid[name] = true
 			out.Nodes = append(out.Nodes, nodeValidation{Node: name, Error: err.Error(), Warnings: []string{}})
 			continue
 		}
+		contracts[name] = ct
 		out.Nodes = append(out.Nodes, v)
 		if f.output.JSON() {
 			continue
@@ -86,6 +92,7 @@ func (a *app) validate(ctx context.Context, f validateFlags, names []string) err
 			fmt.Fprintln(a.stderr, "warning: "+w)
 		}
 	}
+	disagree := disagreements(c, nodes, contracts, invalid)
 	for _, p := range compiled[layer.InventoryWarnings]() {
 		out.Warnings = append(out.Warnings, p.InventoryWarnings(c)...)
 	}
@@ -98,10 +105,42 @@ func (a *app) validate(ctx context.Context, f validateFlags, names []string) err
 			fmt.Fprintln(a.stderr, "warning: "+w)
 		}
 	}
+	var msgs []string
 	if failed.nodes > 0 {
-		return errors.New("the config of " + strs.Count(failed.nodes, "node") + " is invalid:\n" + failed.String())
+		msgs = append(msgs, "the config of "+strs.Count(failed.nodes, "node")+" is invalid:\n"+failed.String())
+	}
+	msgs = append(msgs, disagree...)
+	if len(msgs) > 0 {
+		return errors.New(strings.Join(msgs, "\n"))
 	}
 	return nil
+}
+
+// disagreements are the errors of the valid nodes among nodes, each compared with its own
+// contract, whose config disagrees with another node of the inventory on a field every node of a
+// cluster holds alike: per node the first other node it disagrees with, and each pair of nodes
+// once, under whichever of the two is compared first. The invalid nodes, whose errors validate
+// names already, are compared with none.
+func disagreements(c *cluster, nodes []string, contracts map[string]sdk.Contract, invalid map[string]bool) []string {
+	var msgs []string
+	named := map[[2]string]bool{}
+	for _, name := range nodes {
+		ct, ok := contracts[name]
+		if !ok {
+			continue
+		}
+		for _, other := range c.NodeNames() {
+			if invalid[other] || named[[2]string{other, name}] {
+				continue
+			}
+			if err := c.disagreement(ct, name, other); err != nil {
+				named[[2]string{name, other}] = true
+				msgs = append(msgs, err.Error())
+				break
+			}
+		}
+	}
+	return msgs
 }
 
 // failures are the errors of the nodes whose config is invalid, each once with the nodes it is
@@ -193,23 +232,24 @@ func (v nodeValidation) line() string {
 }
 
 // validateNode checks a node's config against the image the inventory names for it, as the node
-// would, with what a valid config warrants a warning for. Its errors and warnings name the node.
-func validateNode(ctx context.Context, cl *cluster, name string) (nodeValidation, error) {
+// would, with what a valid config warrants a warning for, and the contract of the image it checked
+// against. Its errors and warnings name the node.
+func validateNode(ctx context.Context, cl *cluster, name string) (nodeValidation, sdk.Contract, error) {
 	_, md, err := cl.image(name)
 	if err != nil {
-		return nodeValidation{}, err
+		return nodeValidation{}, sdk.Contract{}, err
 	}
 	nc, encrypted, err := cl.checkedConfig(name)
 	if err != nil {
-		return nodeValidation{}, err
+		return nodeValidation{}, sdk.Contract{}, err
 	}
 	c, err := inventoryContract(nc, md.Platform)
 	if err != nil {
-		return nodeValidation{}, fmt.Errorf("node %s: %w", name, err)
+		return nodeValidation{}, sdk.Contract{}, fmt.Errorf("node %s: %w", name, err)
 	}
 	d, err := sdk.Check(ctx, c, nc.Name, nc.Documents)
 	if err != nil {
-		return nodeValidation{}, fmt.Errorf("node %s: %w", name, err)
+		return nodeValidation{}, sdk.Contract{}, fmt.Errorf("node %s: %w", name, err)
 	}
 	v := nodeValidation{
 		Node: name, Valid: true, Image: nc.ImageName, ImageName: md.Name, Platform: md.Platform, RootHash: md.RootHash,
@@ -225,7 +265,7 @@ func validateNode(ctx context.Context, cl *cluster, name string) (nodeValidation
 	if nc.ImageOCI != "" {
 		a, err := nc.Artifact()
 		if err != nil {
-			return nodeValidation{}, err
+			return nodeValidation{}, sdk.Contract{}, err
 		}
 		v.ImageReference = a.Reference
 	}
@@ -234,5 +274,5 @@ func validateNode(ctx context.Context, cl *cluster, name string) (nodeValidation
 		v.ConfigVersion = ""
 		v.Warnings = append(v.Warnings, fmt.Sprintf("node %s: used placeholders for %s, as validate decrypts no sops or age source; chalkctl config apply --dry-run %s reads their sources", name, strs.And(encrypted), name))
 	}
-	return v, nil
+	return v, c, nil
 }

@@ -315,6 +315,11 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 	if err := sdk.CheckRules(c, d.Redacted, baseline, t.name); err != nil {
 		return &layer.NodeError{Node: t.name, Err: err, Refused: true}
 	}
+	// The node holds the fields that every node of a cluster holds alike, as the image marks them,
+	// with the values the inventory gives every other node, whichever nodes the command names.
+	if err := t.cluster.fixedAcross(c, t.name, t.cluster.NodeNames()); err != nil {
+		return &layer.NodeError{Node: t.name, Err: err, Refused: true}
+	}
 	// A pending config carries no fallback secret; the upgrade that adds an encrypted volume brings
 	// it. If the staged image is gone by now, the node holds the config pending and refuses the
 	// secret; a rerun succeeds.
