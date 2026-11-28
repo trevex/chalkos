@@ -38,7 +38,8 @@ rules refuse a change, the node refuses the whole config and names the remedy. c
 changes and the units it restarts, and warns of each image reference in the config that names a
 tag but no digest, and delivers the config all the same. With an inventory, chalkctl refuses a
 config that disagrees with another node of the inventory on a field that the image or the other
-node's image marks as held alike by every node of a cluster. See
+node's image marks as held alike by every node of a cluster; it does not compare a node whose
+config cannot be read. See
 [Change rules decide which changes a node accepts](../../how-it-works/node/config.md#change-rules-decide-which-changes-a-node-accepts).
 
 With several nodes, config apply stops at the first that fails; a node named twice gets the config
