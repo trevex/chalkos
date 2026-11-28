@@ -31,9 +31,15 @@ func TestIntegral(t *testing.T) {
 		{"nested", map[string]any{"a": []any{n("1e2"), map[string]any{"b": n("2.0"), "c": "3.0"}}, "d": true},
 			map[string]any{"a": []any{n("100"), map[string]any{"b": n("2"), "c": "3.0"}}, "d": true}},
 	} {
-		if got := integral(c.in); !reflect.DeepEqual(got, c.want) {
-			t.Errorf("%s: integral(%v) = %#v, want %#v", c.name, c.in, got, c.want)
+		if got := Integral(c.in); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s: Integral(%v) = %#v, want %#v", c.name, c.in, got, c.want)
 		}
+	}
+	// Integral copies, so the value it is given, such as a schema's default, stays as written.
+	in := map[string]any{"a": []any{n("1e2")}}
+	Integral(in)
+	if want := (map[string]any{"a": []any{n("1e2")}}); !reflect.DeepEqual(in, want) {
+		t.Errorf("Integral changed its argument to %v", in)
 	}
 }
 

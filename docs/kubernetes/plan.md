@@ -132,7 +132,7 @@ the certificates, etcd and the ranges the control plane allocated were made for 
 holds a Kubernetes share refuses a config that changes them, with a message such as:
 
 ```text
-the config changes the cluster's podCIDRs from ipv4 10.244.0.0/16 to ipv4 10.245.0.0/16; they are fixed once the cluster exists, so keep them, or reinstall the node into a new cluster
+the config changes the cluster's podCIDRs from ipv4 10.244.0.0/16 to ipv4 10.245.0.0/16; they are fixed once the node holds a Kubernetes share, so keep them, or reinstall the node into a new cluster
 ```
 
 A different choice later means a new cluster. Pick ranges that overlap none of your networks,

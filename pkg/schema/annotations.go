@@ -33,11 +33,17 @@ const (
 	rulesKeyword = "x-chalkos-rules"
 	// kubernetesObjectKeyword marks an embedded Kubernetes object, whose fields are its own.
 	kubernetesObjectKeyword = "x-chalkos-kubernetes-object"
+	// fixedKeyword marks a field that every node of a cluster holds alike: FixedCluster.
+	fixedKeyword = "x-chalkos-fixed"
 	// networkdSectionKeyword and networkdKeyKeyword are a networkd unit's section and key as
 	// systemd spells them, on the spec field of the section and on the section's field of the key.
 	networkdSectionKeyword = networkdschema.SectionKeyword
 	networkdKeyKeyword     = networkdschema.KeyKeyword
 )
+
+// FixedCluster is the value of x-chalkos-fixed: the field holds one value on every node of a
+// cluster, such as a Kubernetes cluster's domain.
+const FixedCluster = "cluster"
 
 // Annotations are the x-chalkos-* keywords of a schema node, decoded. The zero value is a node
 // without any.
@@ -53,6 +59,9 @@ type Annotations struct {
 	Rules []Rule
 	// KubernetesObject tells that the node is an embedded Kubernetes object.
 	KubernetesObject bool
+	// Fixed is FixedCluster for a field that every node of a cluster holds alike, from
+	// x-chalkos-fixed; empty for any other.
+	Fixed string
 	// NetworkdSection and NetworkdKey are the systemd names of a networkd section and key.
 	NetworkdSection, NetworkdKey string
 }
@@ -232,6 +241,11 @@ func decodeAnnotations(obj map[string]any, root bool) (Annotations, error) {
 				err = errors.New("is not true")
 			}
 			a.KubernetesObject = true
+		case fixedKeyword:
+			if v != FixedCluster {
+				err = fmt.Errorf("is not %q", FixedCluster)
+			}
+			a.Fixed = FixedCluster
 		case networkdSectionKeyword:
 			a.NetworkdSection, err = nonEmptyString(v)
 		case networkdKeyKeyword:

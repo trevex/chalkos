@@ -25,7 +25,9 @@ type cluster struct {
 	inv  *inventory.Inventory
 	// configs holds each node's config, once read from the inventory.
 	configs map[string]*inventory.NodeConfig
-	sources *secretSources
+	// contracts holds the contract of each node's image, once read from the inventory.
+	contracts map[string]sdk.Contract
+	sources   *secretSources
 }
 
 // Partial reports whether the cluster comes without an inventory.
@@ -68,7 +70,7 @@ func readInventory(ctx context.Context, path string) (*cluster, error) {
 		return nil, err
 	}
 	inv.SetContext(ctx)
-	return &cluster{name: inv.Name, inv: inv, configs: map[string]*inventory.NodeConfig{}, sources: sourcesIn(ctx)}, nil
+	return &cluster{name: inv.Name, inv: inv, configs: map[string]*inventory.NodeConfig{}, contracts: map[string]sdk.Contract{}, sources: sourcesIn(ctx)}, nil
 }
 
 // check refuses the inventory's nodes when a compiled layer refuses them together.

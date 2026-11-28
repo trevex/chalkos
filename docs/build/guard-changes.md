@@ -195,6 +195,94 @@ fact is null while its file is missing, and facts can be null at an install too:
 [Null means the node does not know](../how-it-works/node/config-pipeline.md#null-means-the-node-does-not-know)
 lists every case.
 
+## Keep a field once the node holds state, and alike on every node
+
+Some values work only while they stay the same. A Kubernetes cluster's domain is part of every
+service's name and of the API server's certificate, so a node keeps it once it joined the cluster,
+and every node of the cluster holds the same domain. `chalkosLib.mkOption`'s `fixed` declares such
+a field without a hand-written rule. The kind's `state` names the fact that is null until the node
+holds the state the field depends on:
+
+```nix
+chalkos.facts.deployed.file = "/var/lib/myapp/deployed.json";
+chalkos.kinds.Site.state = {
+  fact = "deployed";
+  description = "the site is deployed";
+  remedy = "add a Site of another name";
+};
+chalkos.kinds.Site.spec.hostname = chalkosLib.mkOption {
+  type = lib.types.nonEmptyStr;
+  description = "Name the site answers to.";
+  fixed = [ "node" "cluster" ];
+};
+```
+
+`fixed` takes `"node"`, `"cluster"` or both in a list. The two usually go together.
+
+`fixed = "node"` gives the field the rule `facts.deployed == null || self == oldSelf`: once the
+fact that `state` names is set, the node refuses a change of the field. A kind with a field marked
+`"node"` needs `state`, and the image builds only when it declares the fact. The refusal
+names the field by its path below `spec`, such as `hostname` or `podCIDRs.ipv4`, and, for a
+string or a list of strings, both values. It ends with `description` and `remedy`:
+
+```text
+the config is refused: Site/shop: spec.hostname: the config changes hostname from shop.example.org to store.example.org; it is fixed once the site is deployed, so keep it, or add a Site of another name
+```
+
+`remedy` defaults to `reinstall the node`. A field of another type, or one whose old or new
+value is null, gets the message without the values. `description` and `remedy` may contain no
+quotes, backslashes or line breaks.
+
+The rule runs only where the delivered config holds the field, so a config that leaves the field
+out would drop its value without the rule seeing it. The build therefore fails on
+`fixed = "node"` for a field that a valid config may leave without a value: a field below a
+nullable group, which a config may set to null, and a field whose schema neither gives it a
+default nor requires it, such as one whose default is a function, or a required field below an
+option with a default. A nullable field with a default, null included, is allowed: every config
+holds it once its defaults are filled in, and the rule sees null.
+
+`fixed = "cluster"` adds no rule. It marks the field in the kind's schema with
+`x-chalkos-fixed: cluster`; on a nullable field the mark sits on the field's `anyOf`. chalkctl
+compares the nodes of an inventory on the marked fields. Two nodes disagree when a field that
+either node's image marks holds different values on them, each with its own image's defaults
+filled in. A value left to its default equals the default written out, and two nodes that both
+leave a field out disagree when their images default it apart. A document of one node is compared
+with the other node's document of the same kind and name, or, for a kind a node holds once, with
+its one document of the kind. A document that only one of the nodes holds is no disagreement.
+
+- `chalkctl validate` names each pair of nodes that disagree once, and lists them in `-o json`
+  under `disagreements`. A node whose own config is invalid is compared with no other node.
+- `chalkctl config apply` refuses to deliver to a node that disagrees with any other node of the
+  inventory, whichever nodes the command names. It does not compare a node whose config cannot be
+  read; `chalkctl validate` of every node names that node as invalid.
+- An inventory may name a node whose image is not at hand, such as one that is not built on this
+  machine. When the contract of another node's image cannot be read, chalkctl cannot tell which
+  fields that image marks, so it compares the two nodes only on the fields the image of the node
+  it checks marks, with that image's defaults on both sides. `chalkctl config apply` and
+  `chalkctl validate` of a node compared with it warn and name that node; a disagreement on those
+  fields is still refused. `chalkctl validate` of that node itself names it as invalid.
+- When the images of two nodes declare a kind differently, one holding a single document of the
+  kind per node and the other several, chalkctl cannot pair their documents. It refuses the pair
+  and names both nodes and the kind.
+- Without an inventory, chalkctl compares nothing.
+
+The refusal names both nodes and both values, as JSON:
+
+```text
+the nodes node1 and node2 disagree on fields every node of the cluster holds alike: Site shop: spec.hostname is "shop.example.org" on node1 and "store.example.org" on node2; give every node of the inventory the same value
+```
+
+A list or a map compares as a whole. The evaluation fails on a mark inside a list's items or a
+map's values; mark the list or the map instead. `sdk.FixedChanges` of the Go SDK finds the changes
+of marked fields between two sets of documents, and `sdk.FixedChangesBetween` does so with each
+side's own image contract, so other tools can run the same comparison.
+
+The Kubernetes `Cluster` marks `endpoint`, `podCIDRs`, `serviceCIDRs` and `dnsIPs` with
+`"cluster"`, and `domain` and `ipFamilies` with both. Its `state` names the fact `share`, with the
+remedy `reinstall the node into a new cluster`. The per-family rules that keep `podCIDRs`,
+`serviceCIDRs` and `dnsIPs` once the node holds a share are kind rules of their own, since they
+compare only the families both configs have.
+
 ## Check that it worked
 
 Build the image, which compiles every rule and checks the fields each reads against the kind's

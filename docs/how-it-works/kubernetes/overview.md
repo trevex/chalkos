@@ -179,7 +179,7 @@ ranges the control plane allocated were made for them. On a node that holds a Ku
 `chalkctl config apply` is refused when it changes them:
 
 ```text
-the config changes the cluster's podCIDRs from ipv4 10.244.0.0/16 to ipv4 10.245.0.0/16; they are fixed once the cluster exists, so keep them, or reinstall the node into a new cluster
+the config changes the cluster's podCIDRs from ipv4 10.244.0.0/16 to ipv4 10.245.0.0/16; they are fixed once the node holds a Kubernetes share, so keep them, or reinstall the node into a new cluster
 ```
 
 The [change rules](../../build/guard-changes.md) of the `Cluster` kind decide this.

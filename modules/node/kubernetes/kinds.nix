@@ -42,14 +42,15 @@ let
       description,
       ipv4,
       ipv6,
+      fixed ? null,
     }:
     {
-      ipv4 = mkOption {
-        inherit type description;
+      ipv4 = chalkosLib.mkOption {
+        inherit type description fixed;
         default = ipv4;
       };
-      ipv6 = mkOption {
-        inherit type description;
+      ipv6 = chalkosLib.mkOption {
+        inherit type description fixed;
         default = ipv6;
       };
     };
@@ -81,8 +82,16 @@ let
       };
     };
   };
-  # The end of the message of a rule that keeps a setting the cluster was created with.
-  fixed = "they are fixed once the cluster exists, so keep them, or reinstall the node into a new cluster";
+  # The Kubernetes layer's state on a node: the share it holds once it bootstrapped or joined a
+  # cluster, from which the fields marked fixed = "node" keep their value.
+  kubernetesState = {
+    fact = "share";
+    description = "the node holds a Kubernetes share";
+    remedy = "reinstall the node into a new cluster";
+  };
+  # The end of the message of a rule that keeps per-family settings while the node holds a share,
+  # in the words of the rules generated from the kind's state.
+  fixedTail = "they are fixed once ${kubernetesState.description}, so keep them, or ${kubernetesState.remedy}";
   # A rule that keeps a setting the node registers with once it holds a Kubernetes share. The
   # message names `what` the config changes and suggests `instead`.
   # The kubelet applies the node's labels and taints, the control-plane taint among them, only when
@@ -123,7 +132,7 @@ let
         cel.bind(families, was.ipFamilies.filter(f, f in gets.ipFamilies),
           "the config changes the cluster's ${field} from "
           + families.map(f, f + " " + string(${value "was" "f"})).join(", ") + " to "
-          + families.map(f, f + " " + string(${value "gets" "f"})).join(", ") + "; ${fixed}")
+          + families.map(f, f + " " + string(${value "gets" "f"})).join(", ") + "; ${fixedTail}")
       '';
     };
 
@@ -235,6 +244,7 @@ in
       };
       Cluster = builtin groups.kubernetes // {
         description = "The Kubernetes cluster the node belongs to: its API server's endpoint, its address families and ranges, its VIP, the images of its components and the flags of its control-plane components.";
+        state = kubernetesState;
         rules = [
           (fixedRule {
             description = "The pod range of each family both configs have stays once the node holds a Kubernetes share.";
@@ -253,9 +263,10 @@ in
           })
         ];
         spec = {
-          endpoint = mkOption {
+          endpoint = chalkosLib.mkOption {
             type = types.strMatching "https://.+";
             description = "URL of the cluster's Kubernetes API server, which every node of the cluster names alike.";
+            fixed = "cluster";
           };
           domain = chalkosLib.mkOption {
             # CoreDNS's Corefile, the service account issuer and the API server's certificate
@@ -264,12 +275,9 @@ in
             default = "cluster.local";
             description = "DNS domain of the cluster, a lower-case DNS name without a trailing dot; it is fixed once the node holds a Kubernetes share.";
             # The service account issuer and every service's name follow the domain.
-            rules = [
-              {
-                description = "The cluster's domain stays once the node holds a Kubernetes share.";
-                rule = "facts.share == null || self == oldSelf";
-                messageExpression = ''"the config changes the cluster's domain from " + oldSelf + " to " + self + "; it is fixed once the cluster exists, so keep it, or reinstall the node into a new cluster"'';
-              }
+            fixed = [
+              "node"
+              "cluster"
             ];
           };
           allowSchedulingOnControlPlanes = chalkosLib.mkOption {
@@ -300,12 +308,9 @@ in
               across = "list";
               hint = "name each family once";
             };
-            rules = [
-              {
-                description = "The cluster's address families stay once the node holds a Kubernetes share.";
-                rule = "facts.share == null || self == oldSelf";
-                messageExpression = ''"the config changes the cluster's ipFamilies from " + oldSelf.join(", ") + " to " + self.join(", ") + "; ${fixed}"'';
-              }
+            fixed = [
+              "node"
+              "cluster"
             ];
           };
           podCIDRs = perFamily {
@@ -313,18 +318,21 @@ in
             description = "Address range of the family's pods; each node gets a part of it.";
             ipv4 = "10.244.0.0/16";
             ipv6 = "fd00:10:244::/56";
+            fixed = "cluster";
           };
           serviceCIDRs = perFamily {
             type = prefix;
             description = "Address range of the family's services, at most 2^20 addresses.";
             ipv4 = "10.96.0.0/12";
             ipv6 = "fd00:10:96::/112";
+            fixed = "cluster";
           };
           dnsIPs = perFamily {
             type = types.nullOr address;
             description = "Service address of the cluster DNS in the family's service range; null is its 10th address. Pods use the primary family's.";
             ipv4 = null;
             ipv6 = null;
+            fixed = "cluster";
           };
           nodeCIDRMaskSizes = perFamily {
             type = types.ints.between 1 128;

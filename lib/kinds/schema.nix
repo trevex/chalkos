@@ -93,8 +93,13 @@ let
     };
   };
 
+  # ctx is { kind; state; inItem; inNullable; inOptional; }: the kind's name and state, whether
+  # the type is that of a list's items or a map's values, where no field may be fixed, whether it
+  # is below a nullable group, which a config may set to null, and whether it is below an option
+  # with a default, which a config may leave out, so that only the fields with defaults of their
+  # own are filled in.
   typeSchema =
-    at: t:
+    ctx: at: t:
     let
       n = t.name;
     in
@@ -211,14 +216,14 @@ let
     else if n == "nullOr" then
       {
         anyOf = [
-          (typeSchema at t.nestedTypes.elemType)
+          (typeSchema (ctx // { inNullable = true; }) at t.nestedTypes.elemType)
           { type = "null"; }
         ];
       }
     else if n == "listOf" then
       {
         type = "array";
-        items = typeSchema "${at}.*" t.nestedTypes.elemType;
+        items = typeSchema (ctx // { inItem = true; }) "${at}.*" t.nestedTypes.elemType;
       }
       # nonEmptyListOf keeps the name "listOf": it is addCheck'd onto it rather than a type of its
       # own, and marks itself only in its description. Other addCheck'd types (nonEmptyStr among
@@ -229,10 +234,10 @@ let
     else if n == "attrsOf" || n == "lazyAttrsOf" then
       {
         type = "object";
-        additionalProperties = typeSchema "${at}.<name>" t.nestedTypes.elemType;
+        additionalProperties = typeSchema (ctx // { inItem = true; }) "${at}.<name>" t.nestedTypes.elemType;
       }
     else if n == "submodule" then
-      groupSchema at (t.getSubOptions [ ])
+      groupSchema ctx at (t.getSubOptions [ ])
     else
       throw ''
         ${at}: the option type ${t.description} has no JSON Schema mapping. Kinds accept str,
@@ -470,10 +475,101 @@ let
     in
     if refusal != null then throw refusal else uniqueDeclarations at of s unique;
 
-  optionSchema =
-    at: opt:
+  # Why a field's fixed f at `at`, as chalkosLib.mkOption puts it under x-chalkos-fixed, is none
+  # chalkd can keep, or null: f is "node", "cluster" or both in a list; fixed = "node" needs the
+  # kind's state, ctx.state; and a field of a list's items or a map's values has no value of its
+  # own to keep. The rule of fixed = "node" runs only where the delivered config holds the field,
+  # so it needs a field that every valid config holds once its defaults are filled in: none below
+  # a nullable group, and none that ctx.optional says a config may leave out.
+  fixedRefusal =
+    ctx: at: f:
     let
-      s = typeSchema at (opt.type or (throw "${at} declares no type"));
+      scopes = lib.toList f;
+    in
+    if ctx.inItem then
+      "${at}: a field of a list's items or a map's values is compared as part of the list or map; mark the list or the map itself"
+    else if
+      scopes == [ ]
+      || lib.any (
+        s:
+        !lib.elem s [
+          "node"
+          "cluster"
+        ]
+      ) scopes
+    then
+      "${at}: ${builtins.toJSON f} is none of \"node\", \"cluster\" and [ \"node\" \"cluster\" ]"
+    else if lib.elem "node" scopes && ctx.state == null then
+      "${at}: \"node\" keeps the field once the node holds its layer's state, and chalkos.kinds.${ctx.kind}.state names none; set it to the fact that is null until then"
+    else if lib.elem "node" scopes && ctx.inNullable then
+      "${at}: \"node\" keeps the field once the node holds its layer's state, and a group above the field is nullable: a config that sets the group to null drops the field's value without its rule seeing it; mark the field \"cluster\" alone, or make the group not nullable"
+    else if lib.elem "node" scopes && ctx.optional then
+      "${at}: \"node\" keeps the field once the node holds its layer's state, and a config may leave the field out, as the schema neither gives it a default nor requires it: the node would drop the field's value without its rule seeing it; give the field a plain default, or make it required, with no default on it or on any option above it"
+    else
+      null;
+
+  # The rule that fixed = "node" gives the field at `at`, whose schema is s: it keeps the field's
+  # value once the node holds the state of the field's kind, ctx.state. Its message names the
+  # field by its path below the spec, with the old and new values of a string or a list of
+  # strings, and ends with the state's remedy; the static message stands for other types, and
+  # when the messageExpression fails on a null value.
+  fixedNodeRule =
+    ctx: at: s:
+    let
+      field = lib.removePrefix "chalkos.kinds.${ctx.kind}.spec." at;
+      t = nonNull s;
+      inherit (ctx) state;
+      tail = "; it is fixed once ${state.description}, so keep it, or ${state.remedy}";
+      shown =
+        if isStringBranch t then
+          {
+            old = "oldSelf";
+            new = "self";
+          }
+        else if (t.type or null) == "array" && isStringBranch (nonNull t.items) then
+          {
+            old = ''oldSelf.join(", ")'';
+            new = ''self.join(", ")'';
+          }
+        else
+          null;
+    in
+    {
+      description = "The field ${field} stays once ${state.description}.";
+      rule = "facts.${state.fact} == null || self == oldSelf";
+      message = "the config changes ${field}${tail}";
+    }
+    // lib.optionalAttrs (shown != null) {
+      messageExpression = ''"the config changes ${field} from " + ${shown.old} + " to " + ${shown.new} + "${tail}"'';
+    };
+
+  optionSchema =
+    ctx: at: opt:
+    let
+      # The default the schema carries; one it cannot carry, such as a function, it leaves out.
+      schemaDefault = opt ? default && isPlain opt.default && !leaksNamePlaceholder opt.default;
+      # A config that leaves out an option with a default leaves out the fields below it, but for
+      # those whose own defaults fill them in.
+      below = ctx // {
+        inOptional = ctx.inOptional || opt ? default;
+      };
+      s = typeSchema below at (opt.type or (throw "${at} declares no type"));
+      fixed = opt."x-chalkos-fixed" or [ ];
+      # A config may leave the field out when the schema gives it no default and it has one in
+      # the module system, which keeps it from being required, or an option above it has one.
+      optional = !schemaDefault && (opt ? default || ctx.inOptional);
+      refusal = fixedRefusal (ctx // { inherit optional; }) "${at}.fixed" fixed;
+      scopes =
+        if !(opt ? "x-chalkos-fixed") then
+          [ ]
+        else if refusal != null then
+          throw refusal
+        else
+          lib.toList fixed;
+      # A field's change rules, which chalkosLib.mkOption puts under x-chalkos-rules, and the
+      # rule of fixed = "node".
+      rules =
+        (opt."x-chalkos-rules" or [ ]) ++ lib.optional (lib.elem "node" scopes) (fixedNodeRule ctx at s);
     in
     s
     // lib.optionalAttrs (opt ? "x-chalkos-unique") {
@@ -493,16 +589,17 @@ let
           n;
     }
     // lib.optionalAttrs (lib.isString (opt.description or null)) { inherit (opt) description; }
-    // lib.optionalAttrs (opt ? default && isPlain opt.default && !leaksNamePlaceholder opt.default) {
+    // lib.optionalAttrs schemaDefault {
       inherit (opt) default;
     }
     // lib.optionalAttrs (opt ? example && isPlain opt.example && !leaksNamePlaceholder opt.example) {
       examples = [ opt.example ];
     }
-    # A field's change rules, which chalkosLib.mkOption puts under x-chalkos-rules.
-    // lib.optionalAttrs (opt ? "x-chalkos-rules") {
-      "x-chalkos-rules" = rulesSchema "${at}.rules" opt."x-chalkos-rules";
-    };
+    // lib.optionalAttrs (rules != [ ]) {
+      "x-chalkos-rules" = rulesSchema "${at}.rules" rules;
+    }
+    # A field that every node of a cluster holds alike.
+    // lib.optionalAttrs (lib.elem "cluster" scopes) { "x-chalkos-fixed" = "cluster"; };
 
   # Why v at `at`, which is no option declaration, is no group of them either, or null: a type,
   # such as lib.types.int, is an attribute set too, and a common slip for an option of that type.
@@ -528,7 +625,7 @@ let
   # An attribute set of option declarations, nested as in a module's options, is an object that
   # accepts its options alone.
   groupSchema =
-    at: tree:
+    ctx: at: tree:
     if groupRefusal at tree != null then
       throw (groupRefusal at tree)
     else
@@ -539,14 +636,20 @@ let
       {
         type = "object";
         properties = lib.mapAttrs (
-          name: v: if lib.isOption v then optionSchema "${at}.${name}" v else groupSchema "${at}.${name}" v
+          name: v:
+          if lib.isOption v then optionSchema ctx "${at}.${name}" v else groupSchema ctx "${at}.${name}" v
         ) options;
         additionalProperties = false;
       }
       // lib.optionalAttrs (required != [ ]) { inherit required; };
 in
 rec {
-  inherit uniqueRefusal ruleRefusal groupRefusal;
+  inherit
+    uniqueRefusal
+    ruleRefusal
+    groupRefusal
+    fixedRefusal
+    ;
 
   # The schema of a whole document of a kind, around the schema of its spec. The kind's rules
   # over its documents go into x-chalkos-kind, where a kind without rules has none, and its
@@ -603,7 +706,9 @@ rec {
   # The schema of a kind whose spec is declared with options. The kind's unique, tuples of its
   # spec's fields that no two documents share, marks the spec, as a field's marks the field, and
   # so do its specRules, the rules of each document's spec, as a field's rules mark the field: the
-  # rules engine binds self to the spec of one document at a time.
+  # rules engine binds self to the spec of one document at a time. Its state, { fact; description;
+  # remedy; } or null, is what the fields marked fixed = "node" keep their
+  # value from, and the remedy ends the messages of their rules.
   kindSchema =
     {
       kind,
@@ -616,10 +721,16 @@ rec {
       unique ? [ ],
       description ? null,
       withheld ? false,
+      state ? null,
     }:
     let
       at = "chalkos.kinds.${kind}";
-      specSchema = groupSchema "${at}.spec" spec;
+      specSchema = groupSchema {
+        inherit kind state;
+        inItem = false;
+        inNullable = false;
+        inOptional = false;
+      } "${at}.spec" spec;
     in
     # The services see the documents of a kind that is not withheld with Secret objects in them
     # hidden only as redaction hides them, by content; a kind that embeds Kubernetes objects keeps

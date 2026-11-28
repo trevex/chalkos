@@ -154,6 +154,37 @@ let
           internal = true;
           description = "Whether the node withholds the kind's documents from its services: they stay in the node's stored config, readable by root alone, for a layer's code in chalkd to read, and no unit, output, validator or effect reads them. The kind's schema declares it as `withheld` in its `x-chalkos-kind`.";
         };
+        state = lib.mkOption {
+          type = lib.types.nullOr (
+            lib.types.submodule {
+              options = {
+                fact = lib.mkOption {
+                  type = lib.types.strMatching "[a-z][A-Za-z0-9]*";
+                  example = "share";
+                  description = "Fact of `chalkos.facts` that is null until the node holds the state of the kind's layer, such as the cluster it joined.";
+                };
+                description = lib.mkOption {
+                  type = lib.types.strMatching "[^\"\\\\[:cntrl:]]+";
+                  example = "the node holds a Kubernetes share";
+                  description = "What holding the state means, as the generated rules' messages say it after \"fixed once\"; without quotes, backslashes or line breaks.";
+                };
+                remedy = lib.mkOption {
+                  type = lib.types.strMatching "[^\"\\\\[:cntrl:]]+";
+                  default = "reinstall the node";
+                  example = "reinstall the node into a new cluster";
+                  description = "What the user does instead of keeping the value, as the generated rules' messages say it after \"so keep it, or\"; without quotes, backslashes or line breaks.";
+                };
+              };
+            }
+          );
+          default = null;
+          description = ''
+            State of the kind's layer on a node, from which the fields that
+            `chalkosLib.mkOption` marks `fixed = "node"` keep their value: each such field gets the
+            rule `facts.<fact> == null || self == oldSelf`, whose message names the field. A field
+            marked `fixed = "node"` in a kind without a state fails the evaluation.
+          '';
+        };
         spec = lib.mkOption {
           type = lib.types.attrsOf lib.types.raw;
           default = { };
@@ -305,6 +336,7 @@ let
         unique
         description
         withheld
+        state
         ;
     }) cfg
   );

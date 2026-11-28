@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -660,5 +661,269 @@ func TestInventoryFromEnvironment(t *testing.T) {
 	}
 	if err := ta.run(ctx, []string{"validate", "--inventory", path}); err != nil {
 		t.Errorf("validate with --inventory over $%s: %v", inventory.Env, err)
+	}
+}
+
+// demoSchema is the Demo kind's schema with the fields of its spec named, such as mode, which
+// defaults to safe, or token, which defaults to null, marked as held alike by every node of a
+// cluster.
+func demoSchema(t *testing.T, fixed ...string) string {
+	t.Helper()
+	data, err := os.ReadFile(schematest.Path(t, filepath.Join(schematest.Image, "demo.example.org_v1alpha1_Demo.json")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var s map[string]any
+	if err := json.Unmarshal(data, &s); err != nil {
+		t.Fatal(err)
+	}
+	props := s["properties"].(map[string]any)["spec"].(map[string]any)["properties"].(map[string]any)
+	for _, f := range fixed {
+		props[f].(map[string]any)["x-chalkos-fixed"] = "cluster"
+	}
+	if data, err = json.Marshal(s); err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+// writeDemoSchema writes the Demo kind into the image directory dir, as demoSchema gives it.
+func writeDemoSchema(t *testing.T, dir string, fixed ...string) {
+	t.Helper()
+	writeFile(t, filepath.Join(dir, "schemas", "demo.example.org_v1alpha1_Demo.json"), demoSchema(t, fixed...))
+}
+
+// writeDemoNode writes the node's file in dir as writeNodes writes that of the i-th node, plus a
+// Demo document d of the spec and the documents extra.
+func writeDemoNode(t *testing.T, dir, node string, i int, spec string, extra ...string) {
+	t.Helper()
+	docs := append([]string{
+		n1SystemDisk,
+		fmt.Sprintf("apiVersion: networkd.chalkos.dev/v1alpha1\nkind: Network\nmetadata: {name: 10-uplink}\nspec: {network: {address: [10.0.0.%d/24]}}\n", 11+i),
+		"apiVersion: demo.example.org/v1alpha1\nkind: Demo\nmetadata: {name: d}\nspec: " + spec + "\n",
+	}, extra...)
+	writeFile(t, filepath.Join(dir, "nodes", node+".yaml"), strings.Join(docs, "---\n"))
+}
+
+// demoSecret is the Secret demo, which a Demo's token names.
+const demoSecret = "apiVersion: chalkos.dev/v1alpha1\nkind: Secret\nmetadata: {name: demo}\nspec: {data: {token: s3cret}}\n"
+
+// validate refuses an inventory whose nodes hold different values of fields every node of a
+// cluster holds alike, naming both nodes, the document, every such field and both values, each
+// pair of nodes once; a value left to its default equals the default written out. An invalid node
+// is compared with none.
+func TestValidateRefusesNodesThatDisagreeOnAFixedField(t *testing.T) {
+	ta := newTestApp(t)
+	ta.withoutSecrets(t)
+	path := writeNodes(t, ta.dir, []testNode{{"n1", "", "test-metal"}, {"n2", "", "test-metal"}, {"n3", "", "test-metal"}, {"n4", "", "test-metal"}}, nil)
+	image := filepath.Join(ta.dir, "images", "test-metal")
+	writeImageDir(t, image, "test-metal", "metal", testRootHash, false)
+	writeDemoSchema(t, image, "mode", "token")
+	writeDemoNode(t, ta.dir, "n1", 0, "{name: one, mode: safe}")
+	writeDemoNode(t, ta.dir, "n2", 1, "{name: two}")
+	writeDemoNode(t, ta.dir, "n3", 2, "{name: three}")
+	writeDemoNode(t, ta.dir, "n4", 3, "{name: four}")
+	if err := ta.run(context.Background(), []string{"validate", "--inventory", path}); err != nil {
+		t.Fatalf("validate of nodes that agree by the default: %v", err)
+	}
+	writeDemoNode(t, ta.dir, "n1", 0, "{name: one, mode: fast, token: {secretRef: {name: demo, key: token}}}", demoSecret)
+	writeDemoNode(t, ta.dir, "n4", 3, "{name: four, mode: slow}")
+	want := []string{
+		`the nodes n1 and n2 disagree on fields every node of the cluster holds alike: Demo d: spec.mode is "fast" on n1 and "safe" on n2; Demo d: spec.token is {"secretRef":{"key":"token","name":"demo"}} on n1 and unset on n2; give every node of the inventory the same value`,
+		`the nodes n1 and n3 disagree on fields every node of the cluster holds alike: Demo d: spec.mode is "fast" on n1 and "safe" on n3; Demo d: spec.token is {"secretRef":{"key":"token","name":"demo"}} on n1 and unset on n3; give every node of the inventory the same value`,
+	}
+	err := ta.run(context.Background(), []string{"validate", "--inventory", path})
+	if err == nil || !strings.HasPrefix(err.Error(), "the config of 1 node is invalid:\nnode n4: ") || !strings.HasSuffix(err.Error(), "\n"+strings.Join(want, "\n")) || strings.Count(err.Error(), "disagree") != 2 {
+		t.Errorf("validate = %v, want n4 invalid and %q", err, want)
+	}
+	// validate -o json names the pairs apart from the nodes, whose own checks pass.
+	ta.stdout.Reset()
+	if err := ta.run(context.Background(), []string{"validate", "-o", "json", "--inventory", path}); err == nil {
+		t.Error("validate -o json of nodes that disagree passed")
+	}
+	var out validation
+	if err := json.Unmarshal(ta.stdout.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(out.Disagreements, want) || !out.Nodes[0].Valid || out.Nodes[3].Valid {
+		t.Errorf("validate -o json = %+v, want the disagreements %q", out, want)
+	}
+	// A node named alone is compared with every other node.
+	if err := ta.run(context.Background(), []string{"validate", "n2", "--inventory", path}); err == nil || !strings.Contains(err.Error(), `the nodes n2 and n1 disagree on fields every node of the cluster holds alike: Demo d: spec.mode is "safe" on n2 and "fast" on n1`) {
+		t.Errorf("validate n2 = %v", err)
+	}
+	// config apply compares the node it delivers to with every other node of the inventory, with
+	// the same function; without an inventory it compares nothing.
+	c, err := loadInventory(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ct, err := c.imageContractOf("n2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.fixedAcross(ct, "n2", c.NodeNames()); err == nil || !strings.Contains(err.Error(), `Demo d: spec.mode is "safe" on n2 and "fast" on n1`) {
+		t.Errorf("fixedAcross = %v", err)
+	}
+	if _, err := (&cluster{}).fixedAcross(ct, "n2", nil); err != nil {
+		t.Errorf("fixedAcross on a partial cluster = %v", err)
+	}
+}
+
+// Two nodes that both leave a marked field out disagree when their images default it apart: each
+// node's config takes its own image's defaults.
+func TestValidateComparesWithEachNodesDefaults(t *testing.T) {
+	ta := newTestApp(t)
+	ta.withoutSecrets(t)
+	path := writeNodes(t, ta.dir, []testNode{{"n1", "", "safe"}, {"n2", "", "fast"}}, nil)
+	writeImageDir(t, filepath.Join(ta.dir, "images", "safe"), "safe", "metal", testRootHash, false)
+	writeDemoSchema(t, filepath.Join(ta.dir, "images", "safe"), "mode")
+	writeImageDir(t, filepath.Join(ta.dir, "images", "fast"), "fast", "metal", testRootHash, false)
+	writeFile(t, filepath.Join(ta.dir, "images", "fast", "schemas", "demo.example.org_v1alpha1_Demo.json"),
+		strings.Replace(demoSchema(t, "mode"), `"default":"safe"`, `"default":"fast"`, 1))
+	writeDemoNode(t, ta.dir, "n1", 0, "{name: one}")
+	writeDemoNode(t, ta.dir, "n2", 1, "{name: two}")
+	want := `the nodes n1 and n2 disagree on fields every node of the cluster holds alike: Demo d: spec.mode is "safe" on n1 and "fast" on n2; give every node of the inventory the same value`
+	if err := ta.run(context.Background(), []string{"validate", "--inventory", path}); err == nil || err.Error() != want {
+		t.Errorf("validate = %v, want %q", err, want)
+	}
+}
+
+// Two nodes disagree when either node's image marks a field they hold apart: validate names the
+// pair once, whichever node it checks.
+func TestValidateComparesByEitherNodesImage(t *testing.T) {
+	ta := newTestApp(t)
+	ta.withoutSecrets(t)
+	path := writeNodes(t, ta.dir, []testNode{{"n1", "", "marked"}, {"n2", "", "unmarked"}}, nil)
+	writeImageDir(t, filepath.Join(ta.dir, "images", "marked"), "marked", "metal", testRootHash, false)
+	writeDemoSchema(t, filepath.Join(ta.dir, "images", "marked"), "mode")
+	writeImageDir(t, filepath.Join(ta.dir, "images", "unmarked"), "unmarked", "metal", testRootHash, false)
+	writeDemoSchema(t, filepath.Join(ta.dir, "images", "unmarked"))
+	writeDemoNode(t, ta.dir, "n1", 0, "{name: one, mode: fast}")
+	writeDemoNode(t, ta.dir, "n2", 1, "{name: two}")
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{nil, `the nodes n1 and n2 disagree on fields every node of the cluster holds alike: Demo d: spec.mode is "fast" on n1 and "safe" on n2; give every node of the inventory the same value`},
+		{[]string{"n2"}, `the nodes n2 and n1 disagree on fields every node of the cluster holds alike: Demo d: spec.mode is "safe" on n2 and "fast" on n1; give every node of the inventory the same value`},
+	} {
+		err := ta.run(context.Background(), append(append([]string{"validate"}, tc.args...), "--inventory", path))
+		if err == nil || err.Error() != tc.want {
+			t.Errorf("validate %v = %v, want %q", tc.args, err, tc.want)
+		}
+	}
+}
+
+// An inventory may name a node whose image is not at hand: a node whose image's contract cannot be
+// read, or whose image directory is missing, is compared on the fields the checked node's image
+// marks, with a warning that names it. validate of that node names it invalid alone. A field that
+// only the unreadable image could mark is not compared; one the checked node's image marks still
+// refuses.
+func TestFixedFieldsWarnOfAnUnreadableContract(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		fixed  []string
+		refuse string
+	}{
+		{"unmarked", nil, ""},
+		{"marked", []string{"mode"}, `the nodes n1 and n2 disagree on fields every node of the cluster holds alike: Demo d: spec.mode is "safe" on n1 and "fast" on n2; give every node of the inventory the same value`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ta := newTestApp(t)
+			ta.withoutSecrets(t)
+			path := writeNodes(t, ta.dir, []testNode{{"n1", "", "test-metal"}, {"n2", "", "broken"}, {"n3", "", "absent"}}, nil)
+			writeImageDir(t, filepath.Join(ta.dir, "images", "test-metal"), "test-metal", "metal", testRootHash, false)
+			writeDemoSchema(t, filepath.Join(ta.dir, "images", "test-metal"), tc.fixed...)
+			writeImageDir(t, filepath.Join(ta.dir, "images", "broken"), "broken", "metal", testRootHash, false)
+			writeFile(t, filepath.Join(ta.dir, "images", "broken", "schemas", "demo.example.org_v1alpha1_Demo.json"), "{")
+			writeDemoNode(t, ta.dir, "n1", 0, "{name: one, mode: safe}")
+			writeDemoNode(t, ta.dir, "n2", 1, "{name: two, mode: fast}")
+			writeDemoNode(t, ta.dir, "n3", 2, "{name: three, mode: safe}")
+			warns := []string{
+				"the image of node n2 cannot be read, so chalkctl compared node n1 with it only on the fields n1's image marks: ",
+				"the image of node n3 cannot be read, so chalkctl compared node n1 with it only on the fields n1's image marks: ",
+			}
+			c, err := loadInventory(context.Background(), path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ct, err := c.imageContractOf("n1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			warnings, err := c.fixedAcross(ct, "n1", c.NodeNames())
+			if tc.refuse == "" && err != nil || tc.refuse != "" && (err == nil || err.Error() != tc.refuse) {
+				t.Errorf("fixedAcross = %v, want %q", err, tc.refuse)
+			}
+			// The refusal stops at n2, so only its warning comes before it.
+			want := warns
+			if tc.refuse != "" {
+				want = warns[:1]
+			}
+			if len(warnings) != len(want) {
+				t.Fatalf("fixedAcross warnings = %q, want %d starting %q", warnings, len(want), want)
+			}
+			for i, w := range want {
+				if !strings.HasPrefix(warnings[i], w) {
+					t.Errorf("fixedAcross warning %d = %q, want %q...", i, warnings[i], w)
+				}
+			}
+
+			err = ta.run(context.Background(), []string{"validate", "--inventory", path})
+			if err == nil || !strings.HasPrefix(err.Error(), "the config of 2 nodes is invalid:\n") {
+				t.Errorf("validate = %v, want n2 and n3 invalid", err)
+			}
+			ta.stdout.Reset()
+			ta.stderr.Reset()
+			err = ta.run(context.Background(), []string{"validate", "n1", "--inventory", path})
+			if tc.refuse == "" && err != nil || tc.refuse != "" && (err == nil || err.Error() != tc.refuse) {
+				t.Errorf("validate n1 = %v, want %q", err, tc.refuse)
+			}
+			for _, w := range warns {
+				if !strings.Contains(ta.stderr.String(), "warning: node n1: "+w) {
+					t.Errorf("validate n1 printed %q, want the warning %q", ta.stderr.String(), w)
+				}
+			}
+			ta.stdout.Reset()
+			_ = ta.run(context.Background(), []string{"validate", "n1", "-o", "json", "--inventory", path})
+			var out validation
+			if err := json.Unmarshal(ta.stdout.Bytes(), &out); err != nil {
+				t.Fatal(err)
+			}
+			if len(out.Warnings) < 2 || !strings.HasPrefix(out.Warnings[0], "node n1: "+warns[0]) || !strings.HasPrefix(out.Warnings[1], "node n1: "+warns[1]) {
+				t.Errorf("validate n1 -o json warnings = %q, want first %q", out.Warnings, warns)
+			}
+		})
+	}
+}
+
+// Two nodes whose images declare a kind with a different count per node are not compared: validate
+// and config apply's comparison refuse the pair, naming both nodes and the kind, in either order.
+func TestFixedFieldsRefuseAKindDeclaredApart(t *testing.T) {
+	ta := newTestApp(t)
+	ta.withoutSecrets(t)
+	path := writeNodes(t, ta.dir, []testNode{{"n1", "", "many"}, {"n2", "", "one"}}, nil)
+	writeImageDir(t, filepath.Join(ta.dir, "images", "many"), "many", "metal", testRootHash, false)
+	writeDemoSchema(t, filepath.Join(ta.dir, "images", "many"), "mode")
+	writeImageDir(t, filepath.Join(ta.dir, "images", "one"), "one", "metal", testRootHash, false)
+	writeFile(t, filepath.Join(ta.dir, "images", "one", "schemas", "demo.example.org_v1alpha1_Demo.json"),
+		strings.Replace(demoSchema(t, "mode"), `"multiple":true`, `"multiple":false`, 1))
+	writeDemoNode(t, ta.dir, "n1", 0, "{name: one}")
+	writeDemoNode(t, ta.dir, "n2", 1, "{name: two}")
+	kind := ": the images declare Demo (demo.example.org/v1alpha1) differently: one holds several per node, the other one"
+	if err := ta.run(context.Background(), []string{"validate", "--inventory", path}); err == nil || err.Error() != "the nodes n1 and n2"+kind {
+		t.Errorf("validate = %v, want the nodes n1 and n2%s", err, kind)
+	}
+	c, err := loadInventory(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ct, err := c.imageContractOf("n2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.fixedAcross(ct, "n2", c.NodeNames()); err == nil || err.Error() != "the nodes n2 and n1"+kind {
+		t.Errorf("fixedAcross = %v, want the nodes n2 and n1%s", err, kind)
 	}
 }

@@ -2226,7 +2226,8 @@ func (l *upgradeLab) applyConfig(name string, args ...string) error {
 func TestApplyConfigStaged(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	img := testUpgradeImage(t, "w-metal", "0.2.0")
-	l.useInventory(t, map[string]string{"w-metal": img})
+	// The other nodes' images are built too, so the delivery warns of nothing.
+	l.useInventory(t, map[string]string{"cp-metal": testUpgradeImage(t, "cp-metal", "0.1.0"), "plain-metal": testUpgradeImage(t, "plain-metal", "0.1.0"), "w-metal": img})
 	n := l.nodes["w1"]
 	n.staged, n.stagedRoot, n.stagedConfig = "0.2.0", rootOf(t, img), "{}"
 	if err := l.applyConfig("w1", "--staged"); err != nil {
@@ -2374,6 +2375,11 @@ func TestApplyConfigPrintsWhatItChanges(t *testing.T) {
 	}
 	if want := "w1: config 4 added, 0 removed, 0 changed\n"; !strings.Contains(l.ta.stdout.String(), want) {
 		t.Errorf("stdout = %q, want %q", l.ta.stdout, want)
+	}
+	// The inventory's other nodes name images that are not built here: config apply delivers all
+	// the same and warns of each.
+	if want := "chalkctl: warning: w1: the image of node cp1 cannot be read, so chalkctl compared node w1 with it only on the fields w1's image marks: "; !strings.Contains(l.ta.stderr.String(), want) {
+		t.Errorf("stderr = %q, want %q", l.ta.stderr, want)
 	}
 	l.takeEvents()
 	n.config = strings.Replace(n.config, "10.0.0.13/24", "10.0.0.99/24", 1) + "---\n" + `{"apiVersion":"storage.chalkos.dev/v1alpha1","kind":"Volume","metadata":{"name":"old"},"spec":{}}` + "\n"
