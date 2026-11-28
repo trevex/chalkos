@@ -1,7 +1,7 @@
 {
   description = "A chalkos Kubernetes cluster of three control planes on real machines";
 
-  inputs.chalkos.url = "github:trevex/chalkos/v0.10.0"; # x-release-please-version
+  inputs.chalkos.url = "github:trevex/chalkos/v0.11.0"; # x-release-please-version
 
   outputs =
     { self, chalkos, ... }:

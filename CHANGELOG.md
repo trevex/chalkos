@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/trevex/chalkos/compare/v0.10.0...v0.11.0) (2026-11-28)
+
+
+### Features
+
+* mark kind fields fixed per node and held alike across a cluster ([#181](https://github.com/trevex/chalkos/issues/181)) ([1c418eb](https://github.com/trevex/chalkos/commit/1c418eb9fab774390de109af603ad81bd894ec59))
+
 ## [0.10.0](https://github.com/trevex/chalkos/compare/v0.9.0...v0.10.0) (2026-11-27)
 
 
