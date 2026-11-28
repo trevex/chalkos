@@ -259,6 +259,9 @@ its one document of the kind. A document that only one of the nodes holds is no 
   that image marks. `chalkctl config apply` refuses the delivery and names that node, and so does
   `chalkctl validate` of a node compared with it. `chalkctl validate` of that node itself names
   it as invalid.
+- When the images of two nodes declare a kind differently, one holding a single document of the
+  kind per node and the other several, chalkctl cannot pair their documents. It refuses the pair
+  and names both nodes and the kind.
 - Without an inventory, chalkctl compares nothing.
 
 The refusal names both nodes and both values, as JSON:

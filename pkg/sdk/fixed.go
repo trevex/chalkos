@@ -39,7 +39,9 @@ func FixedChanges(c Contract, old, next []config.Document) ([]FixedChange, error
 // nothing; one that only one contract declares has that contract's marks, and the side whose
 // contract does not declare it compares without defaults. The kinds' generator puts no mark below
 // a union of types other than a nullable one, so a marked field holds its value in whichever
-// branch the document takes.
+// branch the document takes. Contracts that declare a kind both, one of which a node holds once
+// and the other several of, pair its documents by different rules, so FixedChangesBetween refuses
+// them, naming the kind, whether or not the documents hold it.
 //
 // The documents must come from config.Parse, whose numbers are json.Numbers, and each side must
 // be valid against its contract's schemas, since FixedChangesBetween does not validate them: it
@@ -51,6 +53,11 @@ func FixedChangesBetween(oldC, nextC Contract, old, next []config.Document) ([]F
 		return nil, errors.New("the contract holds no schemas, so it marks no field that every node holds alike")
 	}
 	oldS, nextS := oldC.Image.Schemas, nextC.Image.Schemas
+	for _, kOld := range oldS.Kinds() {
+		if k, ok := nextS.Kind(kOld.APIVersion, kOld.Kind); ok && k.Multiple != kOld.Multiple {
+			return nil, fmt.Errorf("the images declare %s (%s) differently: one holds several per node, the other one", k.Kind, k.APIVersion)
+		}
+	}
 	marks := map[schema.Kind][][]string{}
 	var out []FixedChange
 	for _, d := range next {

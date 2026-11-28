@@ -305,3 +305,27 @@ func TestFixedChangesBetween(t *testing.T) {
 		}
 	}
 }
+
+// Two contracts that declare a kind with a different count per node pair its documents by
+// different rules, so FixedChangesBetween refuses them, naming the kind, in either order and
+// whether or not the documents hold the kind.
+func TestFixedChangesBetweenRefusesAKindDeclaredApart(t *testing.T) {
+	single := contractOf(t, map[string]string{
+		"fixed.example.org_v1_Net.json":  strings.Replace(netSchema, `"multiple": true`, `"multiple": false`, 1),
+		"fixed.example.org_v1_Site.json": siteSchema,
+	})
+	want := "the images declare Net (fixed.example.org/v1) differently: one holds several per node, the other one"
+	docs := fixedDocs(t, [3]string{"Net", "a", "{mode: fast}"})
+	for _, tc := range []struct {
+		oldC, nextC sdk.Contract
+		docs        []config.Document
+	}{
+		{fixedContract(t), single, docs},
+		{single, fixedContract(t), docs},
+		{fixedContract(t), single, fixedDocs(t, [3]string{"Site", "one", "{host: a.example}"})},
+	} {
+		if _, err := sdk.FixedChangesBetween(tc.oldC, tc.nextC, tc.docs, tc.docs); err == nil || err.Error() != want {
+			t.Errorf("FixedChangesBetween = %v, want %q", err, want)
+		}
+	}
+}

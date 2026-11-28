@@ -848,3 +848,33 @@ func TestFixedFieldsRefuseAnUnreadableContract(t *testing.T) {
 		t.Errorf("fixedAcross = %v, want %q", err, want)
 	}
 }
+
+// Two nodes whose images declare a kind with a different count per node are not compared: validate
+// and config apply's comparison refuse the pair, naming both nodes and the kind, in either order.
+func TestFixedFieldsRefuseAKindDeclaredApart(t *testing.T) {
+	ta := newTestApp(t)
+	ta.withoutSecrets(t)
+	path := writeNodes(t, ta.dir, []testNode{{"n1", "", "many"}, {"n2", "", "one"}}, nil)
+	writeImageDir(t, filepath.Join(ta.dir, "images", "many"), "many", "metal", testRootHash, false)
+	writeDemoSchema(t, filepath.Join(ta.dir, "images", "many"), "mode")
+	writeImageDir(t, filepath.Join(ta.dir, "images", "one"), "one", "metal", testRootHash, false)
+	writeFile(t, filepath.Join(ta.dir, "images", "one", "schemas", "demo.example.org_v1alpha1_Demo.json"),
+		strings.Replace(demoSchema(t, "mode"), `"multiple":true`, `"multiple":false`, 1))
+	writeDemoNode(t, ta.dir, "n1", 0, "{name: one}")
+	writeDemoNode(t, ta.dir, "n2", 1, "{name: two}")
+	kind := ": the images declare Demo (demo.example.org/v1alpha1) differently: one holds several per node, the other one"
+	if err := ta.run(context.Background(), []string{"validate", "--inventory", path}); err == nil || err.Error() != "the nodes n1 and n2"+kind {
+		t.Errorf("validate = %v, want the nodes n1 and n2%s", err, kind)
+	}
+	c, err := loadInventory(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ct, err := c.imageContractOf("n2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.fixedAcross(ct, "n2", c.NodeNames()); err == nil || err.Error() != "the nodes n2 and n1"+kind {
+		t.Errorf("fixedAcross = %v, want the nodes n2 and n1%s", err, kind)
+	}
+}

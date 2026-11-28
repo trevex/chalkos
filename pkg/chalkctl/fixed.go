@@ -45,7 +45,7 @@ func (c *cluster) disagreement(ct sdk.Contract, name, other string) error {
 	}
 	changes, err := sdk.FixedChangesBetween(oct, ct, theirs, docs)
 	if err != nil {
-		return fmt.Errorf("node %s: %w", name, err)
+		return fmt.Errorf("the nodes %s and %s: %w", name, other, err)
 	}
 	if len(changes) == 0 {
 		return nil
