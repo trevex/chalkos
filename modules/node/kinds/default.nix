@@ -168,6 +168,12 @@ let
                   example = "the node holds a Kubernetes share";
                   description = "What holding the state means, as the generated rules' messages say it after \"fixed once\"; without quotes or backslashes.";
                 };
+                remedy = lib.mkOption {
+                  type = lib.types.strMatching "[^\"\\\\]+";
+                  default = "reinstall the node";
+                  example = "reinstall the node into a new cluster";
+                  description = "What the user does instead of keeping the value, as the generated rules' messages say it after \"so keep it, or\"; without quotes or backslashes.";
+                };
               };
             }
           );

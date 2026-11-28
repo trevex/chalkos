@@ -87,6 +87,7 @@ let
   kubernetesState = {
     fact = "share";
     description = "the node holds a Kubernetes share";
+    remedy = "reinstall the node into a new cluster";
   };
   # The end of the message of a rule that keeps a setting the cluster was created with.
   fixedTail = "they are fixed once the cluster exists, so keep them, or reinstall the node into a new cluster";

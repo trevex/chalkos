@@ -339,13 +339,13 @@ cel.bind(was, oldDocuments.map(o, oldDocuments[o].spec)[0], cel.bind(gets, docum
 Message of rule 5:
 
 ```text
-"the config changes domain from " + oldSelf + " to " + self + "; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node"
+"the config changes domain from " + oldSelf + " to " + self + "; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node into a new cluster"
 ```
 
 Message of rule 6:
 
 ```text
-"the config changes ipFamilies from " + oldSelf.join(", ") + " to " + self.join(", ") + "; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node"
+"the config changes ipFamilies from " + oldSelf.join(", ") + " to " + self.join(", ") + "; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node into a new cluster"
 ```
 
 #### ClusterRegistry { #rules-clusterregistry }

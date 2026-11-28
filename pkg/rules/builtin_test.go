@@ -108,7 +108,7 @@ func TestFixedNodeRules(t *testing.T) {
 			`"podCIDRs": {"ipv4": "10.244.0.0/16", "ipv6": "fd00:10:244::/56"}, "serviceCIDRs": {"ipv4": "10.96.0.0/12", "ipv6": "fd00:10:96::/112"}, `+
 			`"dnsIPs": {"ipv4": null, "ipv6": null}, "allowSchedulingOnControlPlanes": false}`)}
 	}
-	const tail = "; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node"
+	const tail = "; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node into a new cluster"
 	old := cluster(`["ipv4"]`, "cluster.local")
 	for _, tc := range []struct {
 		name string

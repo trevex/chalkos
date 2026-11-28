@@ -959,6 +959,25 @@ in
         [ list ]
       ];
   };
+  # A state's remedy replaces "reinstall the node" at the end of the generated rule's messages.
+  testFixedNodeRuleRemedy = {
+    expr =
+      (stateKindOf (shareState // { remedy = "reinstall the node into a new cluster"; }) {
+        x = chalkosLib.mkOption {
+          type = types.str;
+          fixed = "node";
+        };
+      }).properties.spec.properties.x."x-chalkos-rules";
+    expected = [
+      {
+        description = "The field x stays once the node holds a Kubernetes share.";
+        rule = "facts.share == null || self == oldSelf";
+        message = "the config changes x; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node into a new cluster";
+        messageExpression = ''"the config changes x from " + oldSelf + " to " + self + "; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node into a new cluster"'';
+        takes = "refuse";
+      }
+    ];
+  };
   # The generated rule follows the field's own rules and names a nested field by its path below
   # the spec.
   testFixedNodeRuleFollowsFieldRules = {

@@ -81,8 +81,8 @@
           "x-chalkos-rules": [
             {
               "description": "The field domain stays once the node holds a Kubernetes share.",
-              "message": "the config changes domain; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node",
-              "messageExpression": "\"the config changes domain from \" + oldSelf + \" to \" + self + \"; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node\"",
+              "message": "the config changes domain; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node into a new cluster",
+              "messageExpression": "\"the config changes domain from \" + oldSelf + \" to \" + self + \"; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node into a new cluster\"",
               "rule": "facts.share == null || self == oldSelf",
               "takes": "refuse"
             }
@@ -229,8 +229,8 @@
           "x-chalkos-rules": [
             {
               "description": "The field ipFamilies stays once the node holds a Kubernetes share.",
-              "message": "the config changes ipFamilies; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node",
-              "messageExpression": "\"the config changes ipFamilies from \" + oldSelf.join(\", \") + \" to \" + self.join(\", \") + \"; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node\"",
+              "message": "the config changes ipFamilies; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node into a new cluster",
+              "messageExpression": "\"the config changes ipFamilies from \" + oldSelf.join(\", \") + \" to \" + self.join(\", \") + \"; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node into a new cluster\"",
               "rule": "facts.share == null || self == oldSelf",
               "takes": "refuse"
             }
