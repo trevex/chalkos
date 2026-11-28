@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -663,63 +664,89 @@ func TestInventoryFromEnvironment(t *testing.T) {
 	}
 }
 
-// writeDemoSchema writes the Demo kind into the image directory dir; with fixed its spec.mode,
-// which defaults to safe, is marked as a field every node of a cluster holds alike.
-func writeDemoSchema(t *testing.T, dir string, fixed bool) {
+// demoSchema is the Demo kind's schema with the fields of its spec named, such as mode, which
+// defaults to safe, or token, which defaults to null, marked as held alike by every node of a
+// cluster.
+func demoSchema(t *testing.T, fixed ...string) string {
 	t.Helper()
 	data, err := os.ReadFile(schematest.Path(t, filepath.Join(schematest.Image, "demo.example.org_v1alpha1_Demo.json")))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fixed {
-		var s map[string]any
-		if err := json.Unmarshal(data, &s); err != nil {
-			t.Fatal(err)
-		}
-		spec := s["properties"].(map[string]any)["spec"].(map[string]any)
-		spec["properties"].(map[string]any)["mode"].(map[string]any)["x-chalkos-fixed"] = "cluster"
-		if data, err = json.Marshal(s); err != nil {
-			t.Fatal(err)
-		}
+	var s map[string]any
+	if err := json.Unmarshal(data, &s); err != nil {
+		t.Fatal(err)
 	}
-	writeFile(t, filepath.Join(dir, "schemas", "demo.example.org_v1alpha1_Demo.json"), string(data))
+	props := s["properties"].(map[string]any)["spec"].(map[string]any)["properties"].(map[string]any)
+	for _, f := range fixed {
+		props[f].(map[string]any)["x-chalkos-fixed"] = "cluster"
+	}
+	if data, err = json.Marshal(s); err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+// writeDemoSchema writes the Demo kind into the image directory dir, as demoSchema gives it.
+func writeDemoSchema(t *testing.T, dir string, fixed ...string) {
+	t.Helper()
+	writeFile(t, filepath.Join(dir, "schemas", "demo.example.org_v1alpha1_Demo.json"), demoSchema(t, fixed...))
 }
 
 // writeDemoNode writes the node's file in dir as writeNodes writes that of the i-th node, plus a
-// Demo document d of the spec.
-func writeDemoNode(t *testing.T, dir, node string, i int, spec string) {
+// Demo document d of the spec and the documents extra.
+func writeDemoNode(t *testing.T, dir, node string, i int, spec string, extra ...string) {
 	t.Helper()
-	writeFile(t, filepath.Join(dir, "nodes", node+".yaml"), strings.Join([]string{
+	docs := append([]string{
 		n1SystemDisk,
 		fmt.Sprintf("apiVersion: networkd.chalkos.dev/v1alpha1\nkind: Network\nmetadata: {name: 10-uplink}\nspec: {network: {address: [10.0.0.%d/24]}}\n", 11+i),
 		"apiVersion: demo.example.org/v1alpha1\nkind: Demo\nmetadata: {name: d}\nspec: " + spec + "\n",
-	}, "---\n"))
+	}, extra...)
+	writeFile(t, filepath.Join(dir, "nodes", node+".yaml"), strings.Join(docs, "---\n"))
 }
 
-// validate refuses an inventory whose nodes hold different values of a field every node of a
-// cluster holds alike, naming both nodes, the document, the field and both values, each pair of
-// nodes once; a value left to its default equals the default written out.
+// demoSecret is the Secret demo, which a Demo's token names.
+const demoSecret = "apiVersion: chalkos.dev/v1alpha1\nkind: Secret\nmetadata: {name: demo}\nspec: {data: {token: s3cret}}\n"
+
+// validate refuses an inventory whose nodes hold different values of fields every node of a
+// cluster holds alike, naming both nodes, the document, every such field and both values, each
+// pair of nodes once; a value left to its default equals the default written out. An invalid node
+// is compared with none.
 func TestValidateRefusesNodesThatDisagreeOnAFixedField(t *testing.T) {
 	ta := newTestApp(t)
 	ta.withoutSecrets(t)
-	path := writeNodes(t, ta.dir, []testNode{{"n1", "", "test-metal"}, {"n2", "", "test-metal"}, {"n3", "", "test-metal"}}, nil)
+	path := writeNodes(t, ta.dir, []testNode{{"n1", "", "test-metal"}, {"n2", "", "test-metal"}, {"n3", "", "test-metal"}, {"n4", "", "test-metal"}}, nil)
 	image := filepath.Join(ta.dir, "images", "test-metal")
 	writeImageDir(t, image, "test-metal", "metal", testRootHash, false)
-	writeDemoSchema(t, image, true)
+	writeDemoSchema(t, image, "mode", "token")
 	writeDemoNode(t, ta.dir, "n1", 0, "{name: one, mode: safe}")
 	writeDemoNode(t, ta.dir, "n2", 1, "{name: two}")
 	writeDemoNode(t, ta.dir, "n3", 2, "{name: three}")
+	writeDemoNode(t, ta.dir, "n4", 3, "{name: four}")
 	if err := ta.run(context.Background(), []string{"validate", "--inventory", path}); err != nil {
 		t.Fatalf("validate of nodes that agree by the default: %v", err)
 	}
-	writeDemoNode(t, ta.dir, "n1", 0, "{name: one, mode: fast}")
-	err := ta.run(context.Background(), []string{"validate", "--inventory", path})
+	writeDemoNode(t, ta.dir, "n1", 0, "{name: one, mode: fast, token: {secretRef: {name: demo, key: token}}}", demoSecret)
+	writeDemoNode(t, ta.dir, "n4", 3, "{name: four, mode: slow}")
 	want := []string{
-		`the nodes n1 and n2 disagree on fields every node of the cluster holds alike: Demo d: spec.mode is "fast" on n1 and "safe" on n2`,
-		`the nodes n3 and n1 disagree on fields every node of the cluster holds alike: Demo d: spec.mode is "safe" on n3 and "fast" on n1`,
+		`the nodes n1 and n2 disagree on fields every node of the cluster holds alike: Demo d: spec.mode is "fast" on n1 and "safe" on n2; Demo d: spec.token is {"secretRef":{"key":"token","name":"demo"}} on n1 and unset on n2; give every node of the inventory the same value`,
+		`the nodes n1 and n3 disagree on fields every node of the cluster holds alike: Demo d: spec.mode is "fast" on n1 and "safe" on n3; Demo d: spec.token is {"secretRef":{"key":"token","name":"demo"}} on n1 and unset on n3; give every node of the inventory the same value`,
 	}
-	if err == nil || !strings.HasSuffix(err.Error(), strings.Join(want, "\n")) || strings.Count(err.Error(), "disagree") != 2 {
-		t.Errorf("validate = %v, want %q", err, want)
+	err := ta.run(context.Background(), []string{"validate", "--inventory", path})
+	if err == nil || !strings.HasPrefix(err.Error(), "the config of 1 node is invalid:\nnode n4: ") || !strings.HasSuffix(err.Error(), "\n"+strings.Join(want, "\n")) || strings.Count(err.Error(), "disagree") != 2 {
+		t.Errorf("validate = %v, want n4 invalid and %q", err, want)
+	}
+	// validate -o json names the pairs apart from the nodes, whose own checks pass.
+	ta.stdout.Reset()
+	if err := ta.run(context.Background(), []string{"validate", "-o", "json", "--inventory", path}); err == nil {
+		t.Error("validate -o json of nodes that disagree passed")
+	}
+	var out validation
+	if err := json.Unmarshal(ta.stdout.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(out.Disagreements, want) || !out.Nodes[0].Valid || out.Nodes[3].Valid {
+		t.Errorf("validate -o json = %+v, want the disagreements %q", out, want)
 	}
 	// A node named alone is compared with every other node.
 	if err := ta.run(context.Background(), []string{"validate", "n2", "--inventory", path}); err == nil || !strings.Contains(err.Error(), `the nodes n2 and n1 disagree on fields every node of the cluster holds alike: Demo d: spec.mode is "safe" on n2 and "fast" on n1`) {
@@ -743,24 +770,28 @@ func TestValidateRefusesNodesThatDisagreeOnAFixedField(t *testing.T) {
 	}
 }
 
-// Each node is compared with the others by the marks of its own image: a node whose image does
-// not mark a field holds it apart from the others, whose image does mark it.
-func TestValidateComparesByTheImageOfTheNodeChecked(t *testing.T) {
+// Two nodes disagree when either node's image marks a field they hold apart: validate names the
+// pair once, whichever node it checks.
+func TestValidateComparesByEitherNodesImage(t *testing.T) {
 	ta := newTestApp(t)
 	ta.withoutSecrets(t)
 	path := writeNodes(t, ta.dir, []testNode{{"n1", "", "marked"}, {"n2", "", "unmarked"}}, nil)
-	for _, name := range []string{"marked", "unmarked"} {
-		image := filepath.Join(ta.dir, "images", name)
-		writeImageDir(t, image, name, "metal", testRootHash, false)
-		writeDemoSchema(t, image, name == "marked")
-	}
+	writeImageDir(t, filepath.Join(ta.dir, "images", "marked"), "marked", "metal", testRootHash, false)
+	writeDemoSchema(t, filepath.Join(ta.dir, "images", "marked"), "mode")
+	writeImageDir(t, filepath.Join(ta.dir, "images", "unmarked"), "unmarked", "metal", testRootHash, false)
+	writeDemoSchema(t, filepath.Join(ta.dir, "images", "unmarked"))
 	writeDemoNode(t, ta.dir, "n1", 0, "{name: one, mode: fast}")
 	writeDemoNode(t, ta.dir, "n2", 1, "{name: two}")
-	want := `the nodes n1 and n2 disagree on fields every node of the cluster holds alike: Demo d: spec.mode is "fast" on n1 and "safe" on n2`
-	if err := ta.run(context.Background(), []string{"validate", "--inventory", path}); err == nil || !strings.HasSuffix(err.Error(), want) || strings.Count(err.Error(), "disagree") != 1 {
-		t.Errorf("validate = %v, want %q", err, want)
-	}
-	if err := ta.run(context.Background(), []string{"validate", "n2", "--inventory", path}); err != nil {
-		t.Errorf("validate n2, whose image marks nothing: %v", err)
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{nil, `the nodes n1 and n2 disagree on fields every node of the cluster holds alike: Demo d: spec.mode is "fast" on n1 and "safe" on n2; give every node of the inventory the same value`},
+		{[]string{"n2"}, `the nodes n2 and n1 disagree on fields every node of the cluster holds alike: Demo d: spec.mode is "safe" on n2 and "fast" on n1; give every node of the inventory the same value`},
+	} {
+		err := ta.run(context.Background(), append(append([]string{"validate"}, tc.args...), "--inventory", path))
+		if err == nil || err.Error() != tc.want {
+			t.Errorf("validate %v = %v, want %q", tc.args, err, tc.want)
+		}
 	}
 }

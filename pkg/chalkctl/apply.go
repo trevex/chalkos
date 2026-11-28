@@ -315,8 +315,9 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 	if err := sdk.CheckRules(c, d.Redacted, baseline, t.name); err != nil {
 		return &layer.NodeError{Node: t.name, Err: err, Refused: true}
 	}
-	// The node holds the fields that every node of a cluster holds alike, as the image marks them,
-	// with the values the inventory gives every other node, whichever nodes the command names.
+	// The node holds the fields that every node of a cluster holds alike, as its image or another
+	// node's marks them, with the values the inventory gives every other node, whichever nodes the
+	// command names.
 	if err := t.cluster.fixedAcross(c, t.name, t.cluster.NodeNames()); err != nil {
 		return &layer.NodeError{Node: t.name, Err: err, Refused: true}
 	}

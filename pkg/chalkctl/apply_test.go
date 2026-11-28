@@ -101,6 +101,40 @@ func TestApplyConfigNamesTheRemedy(t *testing.T) {
 	}
 }
 
+// config apply refuses a config that disagrees with another node of the inventory on a field
+// every node of a cluster holds alike, before the node gets anything: by the node's image, and
+// with --staged by the inventory's image for it.
+func TestApplyConfigRefusesNodesThatDisagreeOnAFixedField(t *testing.T) {
+	ta := newTestApp(t)
+	s, r := installedNode(t, ta, []byte(`{}`))
+	sdktest.WriteContract(t, s, filepath.Join(imagecontract.SchemasDir, "demo.example.org_v1alpha1_Demo.json"), demoSchema(t, "mode"))
+	writeNodes(t, ta.dir, []testNode{{"n1", "", "test-metal"}, {"n2", "", "test-metal"}}, nil)
+	image := filepath.Join(ta.dir, "images", "test-metal")
+	writeImageDir(t, image, "test-metal", "metal", testRootHash, false)
+	writeDemoSchema(t, image, "mode")
+	writeDemoNode(t, ta.dir, "n1", 0, "{name: one, mode: safe}")
+	writeDemoNode(t, ta.dir, "n2", 1, "{name: two}")
+	addr := ta.startNode(t, s)
+	for _, flags := range [][]string{{"--dry-run"}, {"--dry-run", "--staged"}} {
+		args := ta.args(append([]string{"config", "apply", "n1"}, flags...), addr)
+		writeDemoNode(t, ta.dir, "n1", 0, "{name: one, mode: safe}")
+		if err := ta.run(context.Background(), args); err != nil {
+			t.Fatalf("config apply %v of nodes that agree: %v", flags, err)
+		}
+		writeDemoNode(t, ta.dir, "n1", 0, "{name: one, mode: fast}")
+		r.calls = nil
+		err := ta.run(context.Background(), args)
+		want := `the nodes n1 and n2 disagree on fields every node of the cluster holds alike: Demo d: spec.mode is "fast" on n1 and "safe" on n2; give every node of the inventory the same value`
+		if err == nil || !strings.Contains(err.Error(), want) || !refusesConfig(err) {
+			t.Errorf("config apply %v = %v, want the refusal %q", flags, err, want)
+		}
+		for _, c := range r.calls {
+			if strings.HasPrefix(c, "systemctl restart") {
+				t.Errorf("node ran %s", c)
+			}
+		}
+	}
+}
 func TestApplyConfigAsksForPasswordOnlyForNewEncryptedVolumes(t *testing.T) {
 	ta := newTestApp(t)
 	ta.writeNode(t, passwordSystemDisk, n1Network)

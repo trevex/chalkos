@@ -41,9 +41,9 @@ func (a *app) validateCommand() *cobra.Command {
 // validate checks the config of the nodes named, or of every node, and names each invalid one. The
 // compiled layers check the nodes together first, as every command does on loading the inventory. A
 // config that leaves the node's secrets unencrypted draws a warning, and so does what a compiled
-// layer warns about the nodes together. A valid node whose config holds a field that every node of
-// a cluster holds alike, as its image marks it, with another value than another node of the
-// inventory is refused, naming the first such node; each pair of nodes is named once.
+// layer warns about the nodes together. A valid node is refused too when its config disagrees with
+// another valid node of the inventory, or one not checked, on a field either node's image marks as
+// held alike by every node of a cluster; each pair of nodes is named once.
 func (a *app) validate(ctx context.Context, f validateFlags, names []string) error {
 	path := cmp.Or(f.cluster.Path(), inventory.DefaultFile)
 	c, err := readInventory(ctx, path)
@@ -71,7 +71,7 @@ func (a *app) validate(ctx context.Context, f validateFlags, names []string) err
 		return fmt.Errorf("%s: %w", path, err)
 	}
 	var failed failures
-	out := validation{Nodes: []nodeValidation{}, Warnings: []string{}}
+	out := validation{Nodes: []nodeValidation{}, Warnings: []string{}, Disagreements: []string{}}
 	contracts := map[string]sdk.Contract{}
 	invalid := map[string]bool{}
 	for _, name := range nodes {
@@ -92,7 +92,7 @@ func (a *app) validate(ctx context.Context, f validateFlags, names []string) err
 			fmt.Fprintln(a.stderr, "warning: "+w)
 		}
 	}
-	disagree := disagreements(c, nodes, contracts, invalid)
+	out.Disagreements = disagreements(c, nodes, contracts, invalid)
 	for _, p := range compiled[layer.InventoryWarnings]() {
 		out.Warnings = append(out.Warnings, p.InventoryWarnings(c)...)
 	}
@@ -109,34 +109,31 @@ func (a *app) validate(ctx context.Context, f validateFlags, names []string) err
 	if failed.nodes > 0 {
 		msgs = append(msgs, "the config of "+strs.Count(failed.nodes, "node")+" is invalid:\n"+failed.String())
 	}
-	msgs = append(msgs, disagree...)
+	msgs = append(msgs, out.Disagreements...)
 	if len(msgs) > 0 {
 		return errors.New(strings.Join(msgs, "\n"))
 	}
 	return nil
 }
 
-// disagreements are the errors of the valid nodes among nodes, each compared with its own
-// contract, whose config disagrees with another node of the inventory on a field every node of a
-// cluster holds alike: per node the first other node it disagrees with, and each pair of nodes
-// once, under whichever of the two is compared first. The invalid nodes, whose errors validate
-// names already, are compared with none.
+// disagreements are the errors of the pairs of nodes that disagree on a field every node of a
+// cluster holds alike, each pair once: every valid node among nodes, compared with its contract,
+// and every other node of the inventory but the invalid ones, whose errors validate names already.
 func disagreements(c *cluster, nodes []string, contracts map[string]sdk.Contract, invalid map[string]bool) []string {
-	var msgs []string
-	named := map[[2]string]bool{}
+	msgs := []string{}
+	compared := map[[2]string]bool{}
 	for _, name := range nodes {
 		ct, ok := contracts[name]
 		if !ok {
 			continue
 		}
 		for _, other := range c.NodeNames() {
-			if invalid[other] || named[[2]string{other, name}] {
+			if invalid[other] || compared[[2]string{other, name}] {
 				continue
 			}
+			compared[[2]string{name, other}] = true
 			if err := c.disagreement(ct, name, other); err != nil {
-				named[[2]string{name, other}] = true
 				msgs = append(msgs, err.Error())
-				break
 			}
 		}
 	}
@@ -194,6 +191,9 @@ type validation struct {
 	Nodes []nodeValidation `json:"nodes"`
 	// Warnings are what the layers warn of the nodes' config together.
 	Warnings []string `json:"warnings"`
+	// Disagreements are the errors of the pairs of nodes whose config disagrees on a field every
+	// node of a cluster holds alike, which the nodes' own checks pass.
+	Disagreements []string `json:"disagreements"`
 }
 
 // nodeValidation is the result of checking a node's config, as validate -o json prints it.
