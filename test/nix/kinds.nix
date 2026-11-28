@@ -226,6 +226,7 @@ let
         unique
         description
         withheld
+        state
         ;
     };
 
@@ -259,6 +260,32 @@ let
   # The schema of a field of the type given, declared with maxItems.
   maxItemsOf =
     type: maxItems: (specOf { x = chalkosLib.mkOption { inherit type maxItems; }; }).properties.x;
+  # The schema of a kind T of the state given, null or { fact; description; }, whose spec has the
+  # option declarations given.
+  stateKindOf =
+    state: spec:
+    schema.kindSchema {
+      kind = "T";
+      group = "t.example.org";
+      version = "v1";
+      multiple = false;
+      inherit state spec;
+    };
+  # The state of a node that holds a Kubernetes share, as the Kubernetes layer names it.
+  shareState = {
+    fact = "share";
+    description = "the node holds a Kubernetes share";
+  };
+  # The rule fixed = "node" generates for the field x, with messageExpression when given.
+  fixedNodeRuleOf =
+    messageExpression:
+    {
+      description = "The field x stays once the node holds a Kubernetes share.";
+      rule = "facts.share == null || self == oldSelf";
+      message = "the config changes x; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node";
+      takes = "refuse";
+    }
+    // lib.optionalAttrs (messageExpression != null) { inherit messageExpression; };
   # A list item with fields of each shape a key may and may not hold.
   reservation = types.submodule {
     options = {
@@ -875,6 +902,204 @@ in
       }
     ];
     expected = [
+      true
+      true
+      true
+    ];
+  };
+  # fixed = "node" generates the rule that keeps the field once the node holds its kind's state,
+  # with the old and new values in the message of a string or a list of strings.
+  testFixedNodeRule = {
+    expr =
+      map
+        (
+          type:
+          (stateKindOf shareState {
+            x = chalkosLib.mkOption {
+              inherit type;
+              fixed = "node";
+            };
+          }).properties.spec.properties.x."x-chalkos-rules"
+        )
+        [
+          types.str
+          (types.listOf types.str)
+          types.int
+        ];
+    expected = [
+      [
+        (fixedNodeRuleOf ''"the config changes x from " + oldSelf + " to " + self + "; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node"'')
+      ]
+      [
+        (fixedNodeRuleOf ''"the config changes x from " + oldSelf.join(", ") + " to " + self.join(", ") + "; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node"'')
+      ]
+      [ (fixedNodeRuleOf null) ]
+    ];
+  };
+  # The generated rule follows the field's own rules and names a nested field by its path below
+  # the spec.
+  testFixedNodeRuleFollowsFieldRules = {
+    expr =
+      map (r: r.description or null)
+        (stateKindOf shareState {
+          net.x = chalkosLib.mkOption {
+            type = types.int;
+            fixed = "node";
+            rules = [
+              {
+                rule = "self > 0";
+                message = "x is positive";
+              }
+            ];
+          };
+        }).properties.spec.properties.net.properties.x."x-chalkos-rules";
+    expected = [
+      null
+      "The field net.x stays once the node holds a Kubernetes share."
+    ];
+  };
+  # fixed = "cluster" marks the field itself with x-chalkos-fixed, and nothing else: it adds no
+  # rule, the groups above the field stay unmarked, and so does an unmarked field.
+  testFixedCluster = {
+    expr =
+      let
+        s = stateKindOf null {
+          net.domain = chalkosLib.mkOption {
+            type = types.str;
+            fixed = "cluster";
+          };
+          free = mkOption { type = types.str; };
+        };
+        spec = s.properties.spec;
+        marked = v: lib.any (k: lib.hasPrefix "x-chalkos-fixed" k) (lib.attrNames v);
+      in
+      {
+        root = marked s;
+        spec = marked spec;
+        net = marked spec.properties.net;
+        domain = spec.properties.net.properties.domain."x-chalkos-fixed" or null;
+        rules = spec.properties.net.properties.domain ? "x-chalkos-rules";
+        free = marked spec.properties.free;
+      };
+    expected = {
+      root = false;
+      spec = false;
+      net = false;
+      domain = "cluster";
+      rules = false;
+      free = false;
+    };
+  };
+  # Both marks together: the rule and x-chalkos-fixed.
+  testFixedBoth = {
+    expr =
+      let
+        x =
+          (stateKindOf shareState {
+            x = chalkosLib.mkOption {
+              type = types.int;
+              fixed = [
+                "node"
+                "cluster"
+              ];
+            };
+          }).properties.spec.properties.x;
+      in
+      {
+        fixed = x."x-chalkos-fixed";
+        rules = x."x-chalkos-rules";
+      };
+    expected = {
+      fixed = "cluster";
+      rules = [ (fixedNodeRuleOf null) ];
+    };
+  };
+  # A marked field inside a nullable group carries x-chalkos-fixed on its own node, below the
+  # group's anyOf, and a nullable marked field on the node that holds the anyOf.
+  testFixedInsideANullableGroup = {
+    expr =
+      let
+        spec =
+          (stateKindOf null {
+            x = mkOption {
+              type = types.nullOr (
+                types.submodule {
+                  options.y = chalkosLib.mkOption {
+                    type = types.str;
+                    fixed = "cluster";
+                  };
+                }
+              );
+              default = null;
+            };
+            z = chalkosLib.mkOption {
+              type = types.nullOr types.str;
+              default = null;
+              fixed = "cluster";
+            };
+          }).properties.spec;
+      in
+      {
+        outer = spec.properties.x ? "x-chalkos-fixed";
+        y = (lib.head spec.properties.x.anyOf).properties.y."x-chalkos-fixed" or null;
+        z = spec.properties.z."x-chalkos-fixed" or null;
+      };
+    expected = {
+      outer = false;
+      y = "cluster";
+      z = "cluster";
+    };
+  };
+  # fixed = "node" without the kind's state, a value that is none of node and cluster, an empty
+  # list, and a mark inside a list's items or a map's values fail the evaluation.
+  testFixedRefusals = {
+    expr = map fails [
+      (stateKindOf null {
+        x = chalkosLib.mkOption {
+          type = types.str;
+          fixed = "node";
+        };
+      })
+      (stateKindOf shareState {
+        x = chalkosLib.mkOption {
+          type = types.str;
+          fixed = "kind";
+        };
+      })
+      (stateKindOf shareState {
+        x = chalkosLib.mkOption {
+          type = types.str;
+          fixed = [ ];
+        };
+      })
+      (stateKindOf shareState {
+        xs = mkOption {
+          type = types.listOf (
+            types.submodule {
+              options.y = chalkosLib.mkOption {
+                type = types.str;
+                fixed = "cluster";
+              };
+            }
+          );
+        };
+      })
+      (stateKindOf shareState {
+        xs = mkOption {
+          type = types.attrsOf (
+            types.submodule {
+              options.y = chalkosLib.mkOption {
+                type = types.str;
+                fixed = "node";
+              };
+            }
+          );
+        };
+      })
+    ];
+    expected = [
+      true
+      true
       true
       true
       true

@@ -97,13 +97,17 @@ in
   # messageExpression; takes ? "refuse"; description ? null; }, as a kind's rules are; and the
   # values that must not repeat: true, or one or a list of { across ? "kind" or "list"; by ? [
   # field or { field; as ? null; } ]; as ? null; hint ? null; }; and maxItems, the most items a
-  # list holds, which bounds what a rule that loops over the list costs. The schema converter
-  # checks unique and maxItems against the field's type.
+  # list holds, which bounds what a rule that loops over the list costs; and fixed, "node",
+  # "cluster" or both in a list: "node" keeps the field's value once the node holds the state of
+  # the field's kind, through a generated rule, and "cluster" marks the field as one that every
+  # node of a cluster holds alike, which chalkctl and the Cluster API providers compare. The
+  # schema converter checks unique, maxItems and fixed against the field's type and place.
   mkOption =
     {
       rules ? [ ],
       unique ? false,
       maxItems ? null,
+      fixed ? null,
       ...
     }@args:
     lib.mkOption (
@@ -111,11 +115,13 @@ in
         "rules"
         "unique"
         "maxItems"
+        "fixed"
       ]
     )
     // lib.optionalAttrs (rules != [ ]) { "x-chalkos-rules" = rules; }
     // lib.optionalAttrs (unique != false) { "x-chalkos-unique" = unique; }
-    // lib.optionalAttrs (maxItems != null) { "x-chalkos-maxItems" = maxItems; };
+    // lib.optionalAttrs (maxItems != null) { "x-chalkos-maxItems" = maxItems; }
+    // lib.optionalAttrs (fixed != null) { "x-chalkos-fixed" = fixed; };
 
   render = {
     # A Go text/template, which writes the file named as the template less .tmpl; a missing or
