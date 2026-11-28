@@ -244,7 +244,8 @@ its one document of the kind. A document that only one of the nodes holds is no 
 - `chalkctl validate` names each pair of nodes that disagree once, and lists them in `-o json`
   under `disagreements`. A node whose own config is invalid is compared with no other node.
 - `chalkctl config apply` refuses to deliver to a node that disagrees with any other node of the
-  inventory, whichever nodes the command names.
+  inventory, whichever nodes the command names. It does not compare a node whose config cannot be
+  read; `chalkctl validate` of every node names that node as invalid.
 - Without an inventory, chalkctl compares nothing.
 
 The refusal names both nodes and both values, as JSON:

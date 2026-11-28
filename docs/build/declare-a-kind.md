@@ -239,8 +239,8 @@ of a cluster, as
 shows. `lib.mkOption` takes none of them. Use `lib.mkOption` for a field without them, as every
 field of `Hardware` does, and `chalkosLib.mkOption` for a field with them, as `location` of
 `Rack` does. Both produce the same schema apart from `x-chalkos-rules`, `x-chalkos-unique`,
-`x-chalkos-fixed` and `maxItems`. The build fails on a `maxItems` on a field that is no list, or one that is no
-positive integer.
+`x-chalkos-fixed` and `maxItems`. The build fails on a `maxItems` on a field that is no list, or
+one that is no positive integer.
 
 A change rule is a CEL expression that every config the node accepts makes true. In the rule,
 `self` is the field's new value and `oldSelf` its value in the config the node runs. A rule

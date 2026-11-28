@@ -57,13 +57,21 @@ func (c *cluster) deliveryFor(ctx context.Context, name string, ct sdk.Contract)
 	return d, nc.Documents, nil
 }
 
-// imageContractOf is the contract of the node's image in the inventory.
+// imageContractOf is the contract of the node's image in the inventory, read once.
 func (c *cluster) imageContractOf(name string) (sdk.Contract, error) {
+	if ct, ok := c.contracts[name]; ok {
+		return ct, nil
+	}
 	nc, md, err := c.image(name)
 	if err != nil {
 		return sdk.Contract{}, err
 	}
-	return inventoryContract(nc, md.Platform)
+	ct, err := inventoryContract(nc, md.Platform)
+	if err != nil {
+		return sdk.Contract{}, err
+	}
+	c.contracts[name] = ct
+	return ct, nil
 }
 
 // inventoryContract is the contract of a node's image in the inventory, built for platform: that

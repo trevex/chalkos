@@ -243,7 +243,7 @@ func validateNode(ctx context.Context, cl *cluster, name string) (nodeValidation
 	if err != nil {
 		return nodeValidation{}, sdk.Contract{}, err
 	}
-	c, err := inventoryContract(nc, md.Platform)
+	c, err := cl.imageContractOf(name)
 	if err != nil {
 		return nodeValidation{}, sdk.Contract{}, fmt.Errorf("node %s: %w", name, err)
 	}
