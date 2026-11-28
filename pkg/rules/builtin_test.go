@@ -98,6 +98,35 @@ func TestRegistrationRules(t *testing.T) {
 	}
 }
 
+// A node that holds a Kubernetes share keeps its Cluster's domain and address families, refused
+// with the generated message that names the field and both values; a node without a share takes
+// any.
+func TestFixedNodeRules(t *testing.T) {
+	set := builtinRules(t)
+	cluster := func(families, domain string) []config.Document {
+		return []config.Document{builtinDoc(t, translate.API, "Cluster", "default", `{"endpoint": "https://10.0.0.11:6443", "ipFamilies": `+families+`, "domain": "`+domain+`", `+
+			`"podCIDRs": {"ipv4": "10.244.0.0/16", "ipv6": "fd00:10:244::/56"}, "serviceCIDRs": {"ipv4": "10.96.0.0/12", "ipv6": "fd00:10:96::/112"}, `+
+			`"dnsIPs": {"ipv4": null, "ipv6": null}, "allowSchedulingOnControlPlanes": false}`)}
+	}
+	const tail = "; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node"
+	old := cluster(`["ipv4"]`, "cluster.local")
+	for _, tc := range []struct {
+		name string
+		docs []config.Document
+		want []string
+	}{
+		{"unchanged", old, nil},
+		{"domain", cluster(`["ipv4"]`, "example.org"), []string{"Cluster/default: spec.domain: the config changes domain from cluster.local to example.org" + tail}},
+		{"families", cluster(`["ipv4", "ipv6"]`, "cluster.local"), []string{"Cluster/default: spec.ipFamilies: the config changes ipFamilies from ipv4 to ipv4, ipv6" + tail}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			share := storageFacts{"share": map[string]any{"kind": "controlplane"}}
+			wantFailures(t, set, Input{Documents: config.Redact(tc.docs), Old: config.Redact(old), Facts: share, Node: "n1"}, tc.want)
+			wantFailures(t, set, Input{Documents: config.Redact(tc.docs), Old: config.Redact(old), Facts: storageFacts{"share": nil}, Node: "n1"}, nil)
+		})
+	}
+}
+
 // A routed VIP goes on the interface each control plane names, so a control plane without one is
 // refused; a worker, an l2 VIP, a cluster without VIPs and a config without a Cluster need none.
 func TestRoutedVIPRules(t *testing.T) {

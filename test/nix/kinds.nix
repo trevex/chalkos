@@ -209,6 +209,18 @@ let
   kindNames = config: map (k: k.kind) (kindsOf config);
   builtinFixture =
     file: builtins.fromJSON (builtins.readFile (../fixtures/kinds/builtin + "/${file}"));
+  # The paths of the fields a kind's schema s marks with x-chalkos-fixed, in name order: the walk
+  # descends into properties and into the branches of an anyOf that have properties, and stops at
+  # a marked node, a nullable field's anyOf among them, and at list items and map values.
+  fixedPathsOf =
+    prefix: s:
+    if s ? "x-chalkos-fixed" then
+      [ (lib.removeSuffix "." prefix) ]
+    else
+      lib.concatLists (
+        lib.mapAttrsToList (name: fixedPathsOf "${prefix}${name}.") (s.properties or { })
+        ++ map (fixedPathsOf prefix) (lib.filter (b: b ? properties) (s.anyOf or [ ]))
+      );
   builtinSchema =
     kind:
     let
@@ -1666,6 +1678,22 @@ in
       "a b" = false;
       "a}" = false;
     };
+  };
+  # Every node of a Kubernetes cluster holds its endpoint, domain, families and ranges alike; the
+  # images, the components' flags and the nodes' parts of the pod ranges may differ.
+  testClusterFixedFields = {
+    expr = lib.unique (fixedPathsOf "" (builtinSchema "Cluster"));
+    expected = [
+      "spec.dnsIPs.ipv4"
+      "spec.dnsIPs.ipv6"
+      "spec.domain"
+      "spec.endpoint"
+      "spec.ipFamilies"
+      "spec.podCIDRs.ipv4"
+      "spec.podCIDRs.ipv6"
+      "spec.serviceCIDRs.ipv4"
+      "spec.serviceCIDRs.ipv6"
+    ];
   };
   testBuiltinSchemasMatchFixtures = {
     expr = map builtinSchema [

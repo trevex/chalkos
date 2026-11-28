@@ -285,8 +285,8 @@ cel.bind(names, cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in config && "N
 | 2 | — | The service range of each family both configs have stays once the node holds a Kubernetes share. | `refuse` | after the table | after the table |
 | 3 | — | The cluster DNS's address of each family both configs have, by default the 10th of its service range, stays once the node holds a Kubernetes share. | `refuse` | after the table | after the table |
 | 4 | `spec.allowSchedulingOnControlPlanes` | Whether workloads run on control planes stays once the node holds a Kubernetes share. | `refuse` | <code>facts&#46;share &#61;&#61; null &#124;&#124; self &#61;&#61; oldSelf</code> | the config changes allowSchedulingOnControlPlanes; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; add or remove the node-role.kubernetes.io/control-plane:NoSchedule taint with kubectl taint instead, or reinstall the node |
-| 5 | `spec.domain` | The cluster's domain stays once the node holds a Kubernetes share. | `refuse` | <code>facts&#46;share &#61;&#61; null &#124;&#124; self &#61;&#61; oldSelf</code> | after the table |
-| 6 | `spec.ipFamilies` | The cluster's address families stay once the node holds a Kubernetes share. | `refuse` | <code>facts&#46;share &#61;&#61; null &#124;&#124; self &#61;&#61; oldSelf</code> | after the table |
+| 5 | `spec.domain` | The field domain stays once the node holds a Kubernetes share. | `refuse` | <code>facts&#46;share &#61;&#61; null &#124;&#124; self &#61;&#61; oldSelf</code> | after the table |
+| 6 | `spec.ipFamilies` | The field ipFamilies stays once the node holds a Kubernetes share. | `refuse` | <code>facts&#46;share &#61;&#61; null &#124;&#124; self &#61;&#61; oldSelf</code> | after the table |
 
 Expression of rule 1:
 
@@ -339,13 +339,13 @@ cel.bind(was, oldDocuments.map(o, oldDocuments[o].spec)[0], cel.bind(gets, docum
 Message of rule 5:
 
 ```text
-"the config changes the cluster's domain from " + oldSelf + " to " + self + "; it is fixed once the cluster exists, so keep it, or reinstall the node into a new cluster"
+"the config changes domain from " + oldSelf + " to " + self + "; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node"
 ```
 
 Message of rule 6:
 
 ```text
-"the config changes the cluster's ipFamilies from " + oldSelf.join(", ") + " to " + self.join(", ") + "; they are fixed once the cluster exists, so keep them, or reinstall the node into a new cluster"
+"the config changes ipFamilies from " + oldSelf.join(", ") + " to " + self.join(", ") + "; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node"
 ```
 
 #### ClusterRegistry { #rules-clusterregistry }

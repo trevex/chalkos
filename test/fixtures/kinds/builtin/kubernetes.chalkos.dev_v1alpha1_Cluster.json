@@ -52,7 +52,8 @@
                 }
               ],
               "default": null,
-              "description": "Service address of the cluster DNS in the family's service range; null is its 10th address. Pods use the primary family's."
+              "description": "Service address of the cluster DNS in the family's service range; null is its 10th address. Pods use the primary family's.",
+              "x-chalkos-fixed": "cluster"
             },
             "ipv6": {
               "anyOf": [
@@ -65,7 +66,8 @@
                 }
               ],
               "default": null,
-              "description": "Service address of the cluster DNS in the family's service range; null is its 10th address. Pods use the primary family's."
+              "description": "Service address of the cluster DNS in the family's service range; null is its 10th address. Pods use the primary family's.",
+              "x-chalkos-fixed": "cluster"
             }
           },
           "type": "object"
@@ -75,10 +77,12 @@
           "description": "DNS domain of the cluster, a lower-case DNS name without a trailing dot; it is fixed once the node holds a Kubernetes share.",
           "pattern": "^(?:([a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?[.])*[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?)$",
           "type": "string",
+          "x-chalkos-fixed": "cluster",
           "x-chalkos-rules": [
             {
-              "description": "The cluster's domain stays once the node holds a Kubernetes share.",
-              "messageExpression": "\"the config changes the cluster's domain from \" + oldSelf + \" to \" + self + \"; it is fixed once the cluster exists, so keep it, or reinstall the node into a new cluster\"",
+              "description": "The field domain stays once the node holds a Kubernetes share.",
+              "message": "the config changes domain; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node",
+              "messageExpression": "\"the config changes domain from \" + oldSelf + \" to \" + self + \"; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node\"",
               "rule": "facts.share == null || self == oldSelf",
               "takes": "refuse"
             }
@@ -87,7 +91,8 @@
         "endpoint": {
           "description": "URL of the cluster's Kubernetes API server, which every node of the cluster names alike.",
           "pattern": "^(?:https://.+)$",
-          "type": "string"
+          "type": "string",
+          "x-chalkos-fixed": "cluster"
         },
         "extraArgs": {
           "additionalProperties": false,
@@ -220,10 +225,12 @@
           },
           "minItems": 1,
           "type": "array",
+          "x-chalkos-fixed": "cluster",
           "x-chalkos-rules": [
             {
-              "description": "The cluster's address families stay once the node holds a Kubernetes share.",
-              "messageExpression": "\"the config changes the cluster's ipFamilies from \" + oldSelf.join(\", \") + \" to \" + self.join(\", \") + \"; they are fixed once the cluster exists, so keep them, or reinstall the node into a new cluster\"",
+              "description": "The field ipFamilies stays once the node holds a Kubernetes share.",
+              "message": "the config changes ipFamilies; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node",
+              "messageExpression": "\"the config changes ipFamilies from \" + oldSelf.join(\", \") + \" to \" + self.join(\", \") + \"; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node\"",
               "rule": "facts.share == null || self == oldSelf",
               "takes": "refuse"
             }
@@ -283,13 +290,15 @@
               "default": "10.244.0.0/16",
               "description": "Address range of the family's pods; each node gets a part of it.",
               "format": "cidr",
-              "type": "string"
+              "type": "string",
+              "x-chalkos-fixed": "cluster"
             },
             "ipv6": {
               "default": "fd00:10:244::/56",
               "description": "Address range of the family's pods; each node gets a part of it.",
               "format": "cidr",
-              "type": "string"
+              "type": "string",
+              "x-chalkos-fixed": "cluster"
             }
           },
           "type": "object"
@@ -301,13 +310,15 @@
               "default": "10.96.0.0/12",
               "description": "Address range of the family's services, at most 2^20 addresses.",
               "format": "cidr",
-              "type": "string"
+              "type": "string",
+              "x-chalkos-fixed": "cluster"
             },
             "ipv6": {
               "default": "fd00:10:96::/112",
               "description": "Address range of the family's services, at most 2^20 addresses.",
               "format": "cidr",
-              "type": "string"
+              "type": "string",
+              "x-chalkos-fixed": "cluster"
             }
           },
           "type": "object"

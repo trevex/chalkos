@@ -809,7 +809,7 @@ func TestApplyConfigRefusesChangedFixedSettings(t *testing.T) {
 			}
 			r.Calls = nil
 			_, err := sendConfig(s, withClusterSpec(spec))
-			if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "cluster's "+field+" from") {
+			if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), field+" from") {
 				t.Fatalf("err = %v", err)
 			}
 			if len(r.Calls) != 0 {
