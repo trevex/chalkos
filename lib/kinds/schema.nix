@@ -510,8 +510,7 @@ let
       field = lib.removePrefix "chalkos.kinds.${ctx.kind}.spec." at;
       t = nonNull s;
       inherit (ctx) state;
-      remedy = state.remedy or "reinstall the node";
-      tail = "; it is fixed once ${state.description}, so keep it, or ${remedy}";
+      tail = "; it is fixed once ${state.description}, so keep it, or ${state.remedy}";
       shown =
         if isStringBranch t then
           {
@@ -689,7 +688,7 @@ rec {
   # spec's fields that no two documents share, marks the spec, as a field's marks the field, and
   # so do its specRules, the rules of each document's spec, as a field's rules mark the field: the
   # rules engine binds self to the spec of one document at a time. Its state, { fact; description;
-  # remedy ? "reinstall the node"; } or null, is what the fields marked fixed = "node" keep their
+  # remedy; } or null, is what the fields marked fixed = "node" keep their
   # value from, and the remedy ends the messages of their rules.
   kindSchema =
     {

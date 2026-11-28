@@ -272,7 +272,7 @@ let
   # The schema of a field of the type given, declared with maxItems.
   maxItemsOf =
     type: maxItems: (specOf { x = chalkosLib.mkOption { inherit type maxItems; }; }).properties.x;
-  # The schema of a kind T of the state given, null or { fact; description; }, whose spec has the
+  # The schema of a kind T of the state given, null or { fact; description; remedy; }, whose spec has the
   # option declarations given.
   stateKindOf =
     state: spec:
@@ -287,6 +287,7 @@ let
   shareState = {
     fact = "share";
     description = "the node holds a Kubernetes share";
+    remedy = "reinstall the node";
   };
   # The rule fixed = "node" generates for the field x, with messageExpression when given.
   fixedNodeRuleOf =
@@ -466,6 +467,32 @@ in
               group = "zone.example.org";
               version = "v1";
               spec.lane = lib.mkOption { type = chalkosLib.types.ref "Lane"; };
+            };
+          }
+        )
+      ])
+    );
+    expected = true;
+  };
+  # A state's description sits in a CEL string literal, so a line break in it fails the
+  # evaluation.
+  testStateDescriptionWithALineBreakFails = {
+    expr = fails (
+      schemasOf (worker [
+        (
+          { chalkosLib, ... }:
+          {
+            chalkos.kinds.Zone = {
+              group = "zone.example.org";
+              version = "v1";
+              state = {
+                fact = "share";
+                description = "the node holds\na Kubernetes share";
+              };
+              spec.name = chalkosLib.mkOption {
+                type = types.str;
+                fixed = "node";
+              };
             };
           }
         )
@@ -1701,7 +1728,7 @@ in
   # Every node of a Kubernetes cluster holds its endpoint, domain, families and ranges alike; the
   # images, the components' flags and the nodes' parts of the pod ranges may differ.
   testClusterFixedFields = {
-    expr = lib.unique (fixedPathsOf "" (builtinSchema "Cluster"));
+    expr = fixedPathsOf "" (builtinSchema "Cluster");
     expected = [
       "spec.dnsIPs.ipv4"
       "spec.dnsIPs.ipv6"
