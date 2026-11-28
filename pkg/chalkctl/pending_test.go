@@ -18,7 +18,7 @@ var pendingSince = time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
 // says first, and config discard drops it, needing no inventory.
 func TestApplyConfigStagedHoldsPending(t *testing.T) {
 	l := newUpgradeLab(t, 1)
-	l.useInventory(t, map[string]string{"w-metal": testUpgradeImage(t, "w-metal", "0.2.0")})
+	l.useInventory(t, map[string]string{"cp-metal": testUpgradeImage(t, "cp-metal", "0.1.0"), "plain-metal": testUpgradeImage(t, "plain-metal", "0.1.0"), "w-metal": testUpgradeImage(t, "w-metal", "0.2.0")})
 	n := l.nodes["w1"]
 	if err := l.applyConfig("w1", "--staged"); err != nil {
 		t.Fatal(err)
@@ -71,7 +71,7 @@ func TestApplyConfigStagedHoldsPending(t *testing.T) {
 // pending and keeps nothing.
 func TestApplyConfigStagedDryRunHoldsNothing(t *testing.T) {
 	l := newUpgradeLab(t, 1)
-	l.useInventory(t, map[string]string{"w-metal": testUpgradeImage(t, "w-metal", "0.2.0")})
+	l.useInventory(t, map[string]string{"cp-metal": testUpgradeImage(t, "cp-metal", "0.1.0"), "plain-metal": testUpgradeImage(t, "plain-metal", "0.1.0"), "w-metal": testUpgradeImage(t, "w-metal", "0.2.0")})
 	if err := l.applyConfig("w1", "--staged", "--dry-run"); err != nil {
 		t.Fatal(err)
 	}

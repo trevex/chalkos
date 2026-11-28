@@ -2226,7 +2226,7 @@ func (l *upgradeLab) applyConfig(name string, args ...string) error {
 func TestApplyConfigStaged(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	img := testUpgradeImage(t, "w-metal", "0.2.0")
-	l.useInventory(t, map[string]string{"w-metal": img})
+	l.useInventory(t, map[string]string{"cp-metal": testUpgradeImage(t, "cp-metal", "0.1.0"), "plain-metal": testUpgradeImage(t, "plain-metal", "0.1.0"), "w-metal": img})
 	n := l.nodes["w1"]
 	n.staged, n.stagedRoot, n.stagedConfig = "0.2.0", rootOf(t, img), "{}"
 	if err := l.applyConfig("w1", "--staged"); err != nil {
@@ -2268,7 +2268,7 @@ func TestApplyConfigStaged(t *testing.T) {
 func TestApplyConfigStagedDryRun(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	img := testUpgradeImage(t, "w-metal", "0.2.0")
-	l.useInventory(t, map[string]string{"w-metal": img})
+	l.useInventory(t, map[string]string{"cp-metal": testUpgradeImage(t, "cp-metal", "0.1.0"), "plain-metal": testUpgradeImage(t, "plain-metal", "0.1.0"), "w-metal": img})
 	n := l.nodes["w1"]
 	n.staged, n.stagedRoot, n.stagedConfig = "0.2.0", rootOf(t, img), "{}"
 	if err := l.applyConfig("w1", "--staged", "--dry-run"); err != nil {
@@ -2367,7 +2367,7 @@ func (n *upgradeFake) GetConfig(ctx context.Context, req *nodev1.GetConfigReques
 // delivered, and with --diff the whole diff, delivering nothing.
 func TestApplyConfigPrintsWhatItChanges(t *testing.T) {
 	l := newUpgradeLab(t, 1)
-	l.useInventory(t, map[string]string{"w-metal": testUpgradeImage(t, "w-metal", "0.2.0")})
+	l.useInventory(t, map[string]string{"cp-metal": testUpgradeImage(t, "cp-metal", "0.1.0"), "plain-metal": testUpgradeImage(t, "plain-metal", "0.1.0"), "w-metal": testUpgradeImage(t, "w-metal", "0.2.0")})
 	n := l.nodes["w1"]
 	if err := l.applyConfig("w1"); err != nil {
 		t.Fatal(err)

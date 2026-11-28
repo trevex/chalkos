@@ -24,8 +24,9 @@ func (c *cluster) fixedAcross(ct sdk.Contract, name string, others []string) err
 // they hold a field that either node's image marks as held alike by every node of a cluster with
 // different values, naming every such field once. The node name's config takes the marks and
 // defaults of ct, the contract it is checked against; the other node's those of its image in the
-// inventory, or of ct too when that cannot be read. A node compared with itself agrees, and so
-// does an other node whose config cannot be read: each command that reads its config refuses it.
+// inventory. An other node whose image's contract cannot be read is refused, naming it, since its
+// image may mark a field that ct does not. A node compared with itself agrees, and so does an
+// other node whose config cannot be read: each command that reads its config refuses it.
 func (c *cluster) disagreement(ct sdk.Contract, name, other string) error {
 	if other == name {
 		return nil
@@ -40,7 +41,7 @@ func (c *cluster) disagreement(ct sdk.Contract, name, other string) error {
 	}
 	oct, err := c.imageContractOf(other)
 	if err != nil {
-		oct = ct
+		return fmt.Errorf("node %s: its image's contract cannot be read, so chalkctl cannot compare the fields every node of the cluster holds alike: %w", other, err)
 	}
 	changes, err := sdk.FixedChangesBetween(oct, ct, theirs, docs)
 	if err != nil {

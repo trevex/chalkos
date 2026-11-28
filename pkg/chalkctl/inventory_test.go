@@ -814,3 +814,37 @@ func TestValidateComparesByEitherNodesImage(t *testing.T) {
 		}
 	}
 }
+
+// A node whose image's contract cannot be read is not compared with the contract of the node
+// checked in its place: validate of that node names it invalid alone, validate of another node and
+// config apply's comparison refuse the pair, naming it.
+func TestFixedFieldsRefuseAnUnreadableContract(t *testing.T) {
+	ta := newTestApp(t)
+	ta.withoutSecrets(t)
+	path := writeNodes(t, ta.dir, []testNode{{"n1", "", "test-metal"}, {"n2", "", "broken"}}, nil)
+	writeImageDir(t, filepath.Join(ta.dir, "images", "test-metal"), "test-metal", "metal", testRootHash, false)
+	writeDemoSchema(t, filepath.Join(ta.dir, "images", "test-metal"))
+	writeImageDir(t, filepath.Join(ta.dir, "images", "broken"), "broken", "metal", testRootHash, false)
+	writeFile(t, filepath.Join(ta.dir, "images", "broken", "schemas", "demo.example.org_v1alpha1_Demo.json"), "{")
+	writeDemoNode(t, ta.dir, "n1", 0, "{name: one, mode: safe}")
+	writeDemoNode(t, ta.dir, "n2", 1, "{name: two, mode: fast}")
+	err := ta.run(context.Background(), []string{"validate", "--inventory", path})
+	if err == nil || !strings.HasPrefix(err.Error(), "the config of 1 node is invalid:\nnode n2: ") || strings.Contains(err.Error(), "compare") {
+		t.Errorf("validate = %v, want n2 invalid alone", err)
+	}
+	want := "node n2: its image's contract cannot be read, so chalkctl cannot compare the fields every node of the cluster holds alike: "
+	if err := ta.run(context.Background(), []string{"validate", "n1", "--inventory", path}); err == nil || !strings.HasPrefix(err.Error(), want) {
+		t.Errorf("validate n1 = %v, want %q", err, want)
+	}
+	c, err := loadInventory(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ct, err := c.imageContractOf("n1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.fixedAcross(ct, "n1", c.NodeNames()); err == nil || !strings.HasPrefix(err.Error(), want) {
+		t.Errorf("fixedAcross = %v, want %q", err, want)
+	}
+}

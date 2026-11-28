@@ -255,6 +255,10 @@ its one document of the kind. A document that only one of the nodes holds is no 
 - `chalkctl config apply` refuses to deliver to a node that disagrees with any other node of the
   inventory, whichever nodes the command names. It does not compare a node whose config cannot be
   read; `chalkctl validate` of every node names that node as invalid.
+- When the contract of another node's image cannot be read, chalkctl cannot tell which fields
+  that image marks. `chalkctl config apply` refuses the delivery and names that node, and so does
+  `chalkctl validate` of a node compared with it. `chalkctl validate` of that node itself names
+  it as invalid.
 - Without an inventory, chalkctl compares nothing.
 
 The refusal names both nodes and both values, as JSON:
