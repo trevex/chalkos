@@ -1146,6 +1146,28 @@ in
         inherit (x) refusal;
       }) cases;
     };
+  # A mark in one branch of a types.either fails the evaluation, since kinds accept no either:
+  # sdk.FixedChanges could not follow a value written as another branch. Should the converter
+  # learn types.either, fixedRefusal must refuse such a mark.
+  testFixedBelowEitherFails = {
+    expr = fails (
+      stateKindOf shareState {
+        x = mkOption {
+          type =
+            let
+              group = types.submodule {
+                options.y = chalkosLib.mkOption {
+                  type = types.str;
+                  fixed = "cluster";
+                };
+              };
+            in
+            types.either group (types.listOf group);
+        };
+      }
+    );
+    expected = true;
+  };
   # A field's rules come raw from chalkosLib.mkOption: an attribute a rule does not have, a takes
   # that is none, and a missing or empty rule fail the evaluation with the rule's option path, as
   # the typed rules of a kind do.
