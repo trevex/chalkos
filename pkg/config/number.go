@@ -5,29 +5,26 @@ import (
 	"math/big"
 	"strconv"
 	"strings"
+
+	"github.com/trevex/chalkos/pkg/schema"
 )
 
-// maxExponent bounds the exponent of a number integral rewrites, so 1e999999 does not become a
+// maxExponent bounds the exponent of a number Integral rewrites, so 1e999999 does not become a
 // million digits; such a number stays as written, which no integer field takes anyway.
 const maxExponent = 1000
 
-// integral rewrites, in place, each json.Number in v of an integer value into plain digits, such
-// as 100.0 and 1e2 into 100, and returns v. JSON Schema's integer type accepts those spellings,
-// while encoding/json refuses them for an integer field and CEL reads them as doubles.
-func integral(v any) any {
-	switch v := v.(type) {
-	case map[string]any:
-		for k, x := range v {
-			v[k] = integral(x)
+// Integral is a copy of the decoded JSON value v with each json.Number of an integer value in
+// plain digits, such as 100.0 and 1e2 as 100. JSON Schema's integer type accepts those spellings,
+// while encoding/json refuses them for an integer field and CEL reads them as doubles. Every
+// document passes through it in FromObject; a schema's defaults keep the schema's spelling, so
+// a value filled in from one, such as 1.0, compares with a config's value once through Integral.
+func Integral(v any) any {
+	return schema.MapJSON(v, func(x any) any {
+		if n, ok := x.(json.Number); ok {
+			return integerSpelling(n)
 		}
-	case []any:
-		for i, x := range v {
-			v[i] = integral(x)
-		}
-	case json.Number:
-		return integerSpelling(v)
-	}
-	return v
+		return x
+	})
 }
 
 // integerSpelling is n in plain digits when n is an integer, else n as it is.

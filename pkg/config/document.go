@@ -214,11 +214,11 @@ func (d Document) DecodeSpec(v any) error {
 
 func (d Document) String() string { return fmt.Sprintf("%s %q", d.Kind, d.Name) }
 
-// FromObject is the document an object decoded from YAML or JSON holds. It rewrites integral
-// numbers in m into plain digits; every document passes through here, so every reader of it sees
-// 100 where the config wrote 100.0.
+// FromObject is the document an object decoded from YAML or JSON holds, with integral numbers
+// in plain digits as Integral writes them; every document passes through here, so every reader
+// of it sees 100 where the config wrote 100.0.
 func FromObject(m map[string]any) Document {
-	integral(m)
+	m, _ = Integral(m).(map[string]any)
 	d := Document{Object: m}
 	d.APIVersion, _ = m["apiVersion"].(string)
 	d.Kind, _ = m["kind"].(string)

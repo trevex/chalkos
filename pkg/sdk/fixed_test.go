@@ -1,6 +1,7 @@
 package sdk_test
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -12,9 +13,10 @@ import (
 // The fixture kinds of the group fixed.example.org: Net, of which a node holds several, whose
 // spec.outer.domain, spec.ranges, spec.mode (default safe), the map spec.labels, the nullable
 // spec.alias, the nullable spec.tier (default gold), spec.group.zone (default z) inside the
-// nullable spec.group and spec.pair.key, which both branches of spec.pair's anyOf mark, every node
-// of a cluster holds alike and whose notes are free; Site, of which a node holds one, whose spec.host is held alike;
-// and Free, which marks nothing.
+// nullable spec.group, spec.pair.key, which both branches of spec.pair's anyOf mark, and the
+// integer spec.port, whose default the schema spells 1.0, every node of a cluster holds alike and
+// whose notes are free; Site, of which a node holds one, whose spec.host is held alike; and Free,
+// which marks nothing.
 const (
 	netSchema = `{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -49,6 +51,7 @@ const (
             {"type": "object", "properties": {"key": {"type": "string", "x-chalkos-fixed": "cluster"}, "note": {"type": "string"}}, "required": ["note"]}
           ]
         },
+        "port": {"type": "integer", "default": 1.0, "x-chalkos-fixed": "cluster"},
         "note": {"type": "string"}
       }
     }
@@ -81,11 +84,21 @@ const (
 // fixedContract is the contract of the fixture kinds.
 func fixedContract(t *testing.T) sdk.Contract {
 	t.Helper()
-	c, err := sdk.SchemaContract(nil, map[string][]byte{
-		"fixed.example.org_v1_Net.json":  []byte(netSchema),
-		"fixed.example.org_v1_Site.json": []byte(siteSchema),
-		"fixed.example.org_v1_Free.json": []byte(freeSchema),
-	}, nil)
+	return contractOf(t, map[string]string{
+		"fixed.example.org_v1_Net.json":  netSchema,
+		"fixed.example.org_v1_Site.json": siteSchema,
+		"fixed.example.org_v1_Free.json": freeSchema,
+	})
+}
+
+// contractOf is the contract of the schema files given by name.
+func contractOf(t *testing.T, files map[string]string) sdk.Contract {
+	t.Helper()
+	data := map[string][]byte{}
+	for name, s := range files {
+		data[name] = []byte(s)
+	}
+	c, err := sdk.SchemaContract(nil, data, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +203,10 @@ func TestFixedChangesOfDefaults(t *testing.T) {
 			[]sdk.FixedChange{{Kind: "Net", Name: "a", Path: "spec.group.zone", Old: nil, New: "z2"}}},
 		"null against a default": {net("{}"), net("{tier: null}"),
 			[]sdk.FixedChange{{Kind: "Net", Name: "a", Path: "spec.tier", Old: "gold", New: nil}}},
-		"null where the default is null": {net("{}"), net("{alias: null}"), nil},
+		"null where the default is null":  {net("{}"), net("{alias: null}"), nil},
+		"an integral default written out": {net("{}"), net("{port: 1}"), nil},
+		"off an integral default": {net("{}"), net("{port: 2}"),
+			[]sdk.FixedChange{{Kind: "Net", Name: "a", Path: "spec.port", Old: json.Number("1"), New: json.Number("2")}}},
 	} {
 		got, err := sdk.FixedChanges(c, tc.old, tc.next)
 		if err != nil {

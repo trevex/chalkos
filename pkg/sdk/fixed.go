@@ -13,8 +13,8 @@ import (
 // FixedChange is a change of a field that every node of a cluster holds alike, as an image's
 // schema marks it with x-chalkos-fixed: the document's kind and name, the field's path below the
 // document, such as spec.domain, and its old and new values. The values are JSON values with the
-// image's defaults filled in; nil stands for no value: left out without a default, written as
-// null, or below a group that is null or left out.
+// image's defaults filled in and integers in plain digits; nil stands for no value: left out
+// without a default, written as null, or below a group that is null or left out.
 type FixedChange struct {
 	Kind, Name, Path string
 	Old, New         any
@@ -33,8 +33,8 @@ type FixedChange struct {
 // The documents must come from config.Parse, whose numbers are json.Numbers, and be valid against
 // the contract's schemas, since FixedChanges does not validate them: it compares their values with
 // the defaults filled in, so a field written as null differs from one left out where the schema
-// gives it a default, an integer compares by its value and any other number by its spelling, 0.5
-// differing from 5e-1.
+// gives it a default, an integer compares by its value, one that a default spells 1.0 too, and any
+// other number by its spelling, 0.5 differing from 5e-1.
 func FixedChanges(c Contract, old, next []config.Document) ([]FixedChange, error) {
 	if c.Image == nil || c.Image.Schemas == nil {
 		return nil, errors.New("the contract holds no schemas, so it marks no field that every node holds alike")
@@ -68,7 +68,7 @@ func FixedChanges(c Contract, old, next []config.Document) ([]FixedChange, error
 			return nil, fmt.Errorf("%s %s: %w", d.Kind, d.Name, err)
 		}
 		for _, p := range paths {
-			was, is := valueAt(before, p), valueAt(after, p)
+			was, is := config.Integral(valueAt(before, p)), config.Integral(valueAt(after, p))
 			if !reflect.DeepEqual(was, is) {
 				out = append(out, FixedChange{Kind: d.Kind, Name: d.Name, Path: schema.FieldPath(p), Old: was, New: is})
 			}
