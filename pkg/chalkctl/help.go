@@ -246,9 +246,9 @@ rules refuse a change, the node refuses the whole config and names the remedy. c
 changes and the units it restarts, and warns of each image reference in the config that names a
 tag but no digest, and delivers the config all the same. With an inventory, chalkctl refuses a
 config that disagrees with another node of the inventory on a field that the image or the other
-node's image marks as held alike by every node of a cluster, and one that it cannot compare with
-another node because that node's image's contract cannot be read; it does not compare a node whose
-config cannot be read. See
+node's image marks as held alike by every node of a cluster; it does not compare a node whose
+config cannot be read. When another node's image cannot be read, chalkctl compares the config with
+that node only on the fields the config's own image marks, and warns of it. See
 https://trevex.github.io/chalkos/how-it-works/node/config/#change-rules-decide-which-changes-a-node-accepts.
 
 With several nodes, config apply stops at the first that fails; a node named twice gets the config
@@ -606,7 +606,9 @@ facts and compare with no running value run too, and so does the validator route
 image, which chalkctl links. Every node whose files hold a Kubernetes Cluster document must hold
 the same Cluster spec, and the same Flannel spec or none. A valid node is also refused when its
 config disagrees with another node of the inventory on a field that either node's image marks as
-held alike by every node of a cluster; a node whose config is invalid is compared with none. See
+held alike by every node of a cluster; a node whose config is invalid is compared with none. A node
+is compared with another node whose image cannot be read only on the fields its own image marks,
+with a warning. See
 https://trevex.github.io/chalkos/how-it-works/node/config/#chalkctl-and-chalkd-both-check-the-config.
 
 The command prints a line for each node whose config is valid, with the digest of an image in a
@@ -629,7 +631,8 @@ changes nothing.
 
 -o json prints the result as an object: nodes holds each node's node, valid, error when it is not,
 the image it was checked against as image, imageReference, imageName, platform and rootHash, its
-configVersion and its warnings; warnings holds the layers' warnings. It exits as the lines do.`
+configVersion and its warnings; warnings holds the layers' warnings and those of the nodes compared
+with a node whose image cannot be read. It exits as the lines do.`
 
 const validateExample = `  # Check every node of chalkos.yaml.
   chalkctl validate

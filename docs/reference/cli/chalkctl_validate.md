@@ -16,7 +16,9 @@ facts and compare with no running value run too, and so does the validator route
 image, which chalkctl links. Every node whose files hold a Kubernetes Cluster document must hold
 the same Cluster spec, and the same Flannel spec or none. A valid node is also refused when its
 config disagrees with another node of the inventory on a field that either node's image marks as
-held alike by every node of a cluster; a node whose config is invalid is compared with none. See
+held alike by every node of a cluster; a node whose config is invalid is compared with none. A node
+is compared with another node whose image cannot be read only on the fields its own image marks,
+with a warning. See
 [chalkctl and chalkd both check the config](../../how-it-works/node/config.md#chalkctl-and-chalkd-both-check-the-config).
 
 The command prints a line for each node whose config is valid, with the digest of an image in a
@@ -39,7 +41,8 @@ changes nothing.
 
 -o json prints the result as an object: nodes holds each node's node, valid, error when it is not,
 the image it was checked against as image, imageReference, imageName, platform and rootHash, its
-configVersion and its warnings; warnings holds the layers' warnings. It exits as the lines do.
+configVersion and its warnings; warnings holds the layers' warnings and those of the nodes compared
+with a node whose image cannot be read. It exits as the lines do.
 
 The command needs no secrets file or client file.
 

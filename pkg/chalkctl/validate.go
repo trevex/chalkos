@@ -92,7 +92,7 @@ func (a *app) validate(ctx context.Context, f validateFlags, names []string) err
 			fmt.Fprintln(a.stderr, "warning: "+w)
 		}
 	}
-	out.Disagreements = disagreements(c, nodes, contracts, invalid)
+	out.Disagreements, out.Warnings = disagreements(c, nodes, contracts, invalid)
 	for _, p := range compiled[layer.InventoryWarnings]() {
 		out.Warnings = append(out.Warnings, p.InventoryWarnings(c)...)
 	}
@@ -119,8 +119,10 @@ func (a *app) validate(ctx context.Context, f validateFlags, names []string) err
 // disagreements are the errors of the pairs of nodes that disagree on a field every node of a
 // cluster holds alike, each pair once: every valid node among nodes, compared with its contract,
 // and every other node of the inventory but the invalid ones, whose errors validate names already.
-func disagreements(c *cluster, nodes []string, contracts map[string]sdk.Contract, invalid map[string]bool) []string {
-	msgs := []string{}
+// The warnings name each node compared whose image cannot be read, as disagreement warns of it; a
+// node among nodes whose image cannot be read is invalid already.
+func disagreements(c *cluster, nodes []string, contracts map[string]sdk.Contract, invalid map[string]bool) (msgs, warnings []string) {
+	msgs, warnings = []string{}, []string{}
 	compared := map[[2]string]bool{}
 	for _, name := range nodes {
 		ct, ok := contracts[name]
@@ -132,12 +134,16 @@ func disagreements(c *cluster, nodes []string, contracts map[string]sdk.Contract
 				continue
 			}
 			compared[[2]string{name, other}] = true
-			if err := c.disagreement(ct, name, other); err != nil {
+			w, err := c.disagreement(ct, name, other)
+			if w != "" {
+				warnings = append(warnings, "node "+name+": "+w)
+			}
+			if err != nil {
 				msgs = append(msgs, err.Error())
 			}
 		}
 	}
-	return msgs
+	return msgs, warnings
 }
 
 // failures are the errors of the nodes whose config is invalid, each once with the nodes it is
@@ -189,7 +195,8 @@ func (f failures) String() string {
 type validation struct {
 	// Nodes are the nodes checked, in the order checked.
 	Nodes []nodeValidation `json:"nodes"`
-	// Warnings are what the layers warn of the nodes' config together.
+	// Warnings are what the layers warn of the nodes' config together, and the nodes compared
+	// with another node whose image cannot be read.
 	Warnings []string `json:"warnings"`
 	// Disagreements are the errors of the pairs of nodes whose config disagrees on a field every
 	// node of a cluster holds alike, which the nodes' own checks pass.

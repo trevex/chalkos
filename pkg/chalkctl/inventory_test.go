@@ -762,10 +762,10 @@ func TestValidateRefusesNodesThatDisagreeOnAFixedField(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.fixedAcross(ct, "n2", c.NodeNames()); err == nil || !strings.Contains(err.Error(), `Demo d: spec.mode is "safe" on n2 and "fast" on n1`) {
+	if _, err := c.fixedAcross(ct, "n2", c.NodeNames()); err == nil || !strings.Contains(err.Error(), `Demo d: spec.mode is "safe" on n2 and "fast" on n1`) {
 		t.Errorf("fixedAcross = %v", err)
 	}
-	if err := (&cluster{}).fixedAcross(ct, "n2", nil); err != nil {
+	if _, err := (&cluster{}).fixedAcross(ct, "n2", nil); err != nil {
 		t.Errorf("fixedAcross on a partial cluster = %v", err)
 	}
 }
@@ -815,37 +815,86 @@ func TestValidateComparesByEitherNodesImage(t *testing.T) {
 	}
 }
 
-// A node whose image's contract cannot be read is not compared with the contract of the node
-// checked in its place: validate of that node names it invalid alone, validate of another node and
-// config apply's comparison refuse the pair, naming it.
-func TestFixedFieldsRefuseAnUnreadableContract(t *testing.T) {
-	ta := newTestApp(t)
-	ta.withoutSecrets(t)
-	path := writeNodes(t, ta.dir, []testNode{{"n1", "", "test-metal"}, {"n2", "", "broken"}}, nil)
-	writeImageDir(t, filepath.Join(ta.dir, "images", "test-metal"), "test-metal", "metal", testRootHash, false)
-	writeDemoSchema(t, filepath.Join(ta.dir, "images", "test-metal"))
-	writeImageDir(t, filepath.Join(ta.dir, "images", "broken"), "broken", "metal", testRootHash, false)
-	writeFile(t, filepath.Join(ta.dir, "images", "broken", "schemas", "demo.example.org_v1alpha1_Demo.json"), "{")
-	writeDemoNode(t, ta.dir, "n1", 0, "{name: one, mode: safe}")
-	writeDemoNode(t, ta.dir, "n2", 1, "{name: two, mode: fast}")
-	err := ta.run(context.Background(), []string{"validate", "--inventory", path})
-	if err == nil || !strings.HasPrefix(err.Error(), "the config of 1 node is invalid:\nnode n2: ") || strings.Contains(err.Error(), "compare") {
-		t.Errorf("validate = %v, want n2 invalid alone", err)
-	}
-	want := "node n2: its image's contract cannot be read, so chalkctl cannot compare the fields every node of the cluster holds alike: "
-	if err := ta.run(context.Background(), []string{"validate", "n1", "--inventory", path}); err == nil || !strings.HasPrefix(err.Error(), want) {
-		t.Errorf("validate n1 = %v, want %q", err, want)
-	}
-	c, err := loadInventory(context.Background(), path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ct, err := c.imageContractOf("n1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := c.fixedAcross(ct, "n1", c.NodeNames()); err == nil || !strings.HasPrefix(err.Error(), want) {
-		t.Errorf("fixedAcross = %v, want %q", err, want)
+// An inventory may name a node whose image is not at hand: a node whose image's contract cannot be
+// read, or whose image directory is missing, is compared on the fields the checked node's image
+// marks, with a warning that names it. validate of that node names it invalid alone. A field that
+// only the unreadable image could mark is not compared; one the checked node's image marks still
+// refuses.
+func TestFixedFieldsWarnOfAnUnreadableContract(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		fixed  []string
+		refuse string
+	}{
+		{"unmarked", nil, ""},
+		{"marked", []string{"mode"}, `the nodes n1 and n2 disagree on fields every node of the cluster holds alike: Demo d: spec.mode is "safe" on n1 and "fast" on n2; give every node of the inventory the same value`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ta := newTestApp(t)
+			ta.withoutSecrets(t)
+			path := writeNodes(t, ta.dir, []testNode{{"n1", "", "test-metal"}, {"n2", "", "broken"}, {"n3", "", "absent"}}, nil)
+			writeImageDir(t, filepath.Join(ta.dir, "images", "test-metal"), "test-metal", "metal", testRootHash, false)
+			writeDemoSchema(t, filepath.Join(ta.dir, "images", "test-metal"), tc.fixed...)
+			writeImageDir(t, filepath.Join(ta.dir, "images", "broken"), "broken", "metal", testRootHash, false)
+			writeFile(t, filepath.Join(ta.dir, "images", "broken", "schemas", "demo.example.org_v1alpha1_Demo.json"), "{")
+			writeDemoNode(t, ta.dir, "n1", 0, "{name: one, mode: safe}")
+			writeDemoNode(t, ta.dir, "n2", 1, "{name: two, mode: fast}")
+			writeDemoNode(t, ta.dir, "n3", 2, "{name: three, mode: safe}")
+			warns := []string{
+				"the image of node n2 cannot be read, so chalkctl compared node n1 with it only on the fields n1's image marks: ",
+				"the image of node n3 cannot be read, so chalkctl compared node n1 with it only on the fields n1's image marks: ",
+			}
+			c, err := loadInventory(context.Background(), path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ct, err := c.imageContractOf("n1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			warnings, err := c.fixedAcross(ct, "n1", c.NodeNames())
+			if tc.refuse == "" && err != nil || tc.refuse != "" && (err == nil || err.Error() != tc.refuse) {
+				t.Errorf("fixedAcross = %v, want %q", err, tc.refuse)
+			}
+			// The refusal stops at n2, so only its warning comes before it.
+			want := warns
+			if tc.refuse != "" {
+				want = warns[:1]
+			}
+			if len(warnings) != len(want) {
+				t.Fatalf("fixedAcross warnings = %q, want %d starting %q", warnings, len(want), want)
+			}
+			for i, w := range want {
+				if !strings.HasPrefix(warnings[i], w) {
+					t.Errorf("fixedAcross warning %d = %q, want %q...", i, warnings[i], w)
+				}
+			}
+
+			err = ta.run(context.Background(), []string{"validate", "--inventory", path})
+			if err == nil || !strings.HasPrefix(err.Error(), "the config of 2 nodes is invalid:\n") {
+				t.Errorf("validate = %v, want n2 and n3 invalid", err)
+			}
+			ta.stdout.Reset()
+			ta.stderr.Reset()
+			err = ta.run(context.Background(), []string{"validate", "n1", "--inventory", path})
+			if tc.refuse == "" && err != nil || tc.refuse != "" && (err == nil || err.Error() != tc.refuse) {
+				t.Errorf("validate n1 = %v, want %q", err, tc.refuse)
+			}
+			for _, w := range warns {
+				if !strings.Contains(ta.stderr.String(), "warning: node n1: "+w) {
+					t.Errorf("validate n1 printed %q, want the warning %q", ta.stderr.String(), w)
+				}
+			}
+			ta.stdout.Reset()
+			_ = ta.run(context.Background(), []string{"validate", "n1", "-o", "json", "--inventory", path})
+			var out validation
+			if err := json.Unmarshal(ta.stdout.Bytes(), &out); err != nil {
+				t.Fatal(err)
+			}
+			if len(out.Warnings) < 2 || !strings.HasPrefix(out.Warnings[0], "node n1: "+warns[0]) || !strings.HasPrefix(out.Warnings[1], "node n1: "+warns[1]) {
+				t.Errorf("validate n1 -o json warnings = %q, want first %q", out.Warnings, warns)
+			}
+		})
 	}
 }
 
@@ -874,7 +923,7 @@ func TestFixedFieldsRefuseAKindDeclaredApart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.fixedAcross(ct, "n2", c.NodeNames()); err == nil || err.Error() != "the nodes n2 and n1"+kind {
+	if _, err := c.fixedAcross(ct, "n2", c.NodeNames()); err == nil || err.Error() != "the nodes n2 and n1"+kind {
 		t.Errorf("fixedAcross = %v, want the nodes n2 and n1%s", err, kind)
 	}
 }

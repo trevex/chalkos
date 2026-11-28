@@ -318,7 +318,11 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 	// The node holds the fields that every node of a cluster holds alike, as its image or another
 	// node's marks them, with the values the inventory gives every other node, whichever nodes the
 	// command names.
-	if err := t.cluster.fixedAcross(c, t.name, t.cluster.NodeNames()); err != nil {
+	warnings, err := t.cluster.fixedAcross(c, t.name, t.cluster.NodeNames())
+	for _, w := range warnings {
+		fmt.Fprintf(a.stderr, "chalkctl: warning: %s: %s\n", t.name, w)
+	}
+	if err != nil {
 		return &layer.NodeError{Node: t.name, Err: err, Refused: true}
 	}
 	// A pending config carries no fallback secret; the upgrade that adds an encrypted volume brings
