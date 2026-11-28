@@ -300,7 +300,7 @@ Message of rule 1:
 cel.bind(was, oldDocuments.map(o, oldDocuments[o].spec)[0], cel.bind(gets, documents.map(n, documents[n].spec)[0], cel.bind(families, was.ipFamilies.filter(f, f in gets.ipFamilies),
   "the config changes the cluster's podCIDRs from "
   + families.map(f, f + " " + string(cidr(was.podCIDRs[f]))).join(", ") + " to "
-  + families.map(f, f + " " + string(cidr(gets.podCIDRs[f]))).join(", ") + "; they are fixed once the cluster exists, so keep them, or reinstall the node into a new cluster")
+  + families.map(f, f + " " + string(cidr(gets.podCIDRs[f]))).join(", ") + "; they are fixed once the node holds a Kubernetes share, so keep them, or reinstall the node into a new cluster")
 ))
 ```
 
@@ -316,7 +316,7 @@ Message of rule 2:
 cel.bind(was, oldDocuments.map(o, oldDocuments[o].spec)[0], cel.bind(gets, documents.map(n, documents[n].spec)[0], cel.bind(families, was.ipFamilies.filter(f, f in gets.ipFamilies),
   "the config changes the cluster's serviceCIDRs from "
   + families.map(f, f + " " + string(cidr(was.serviceCIDRs[f]))).join(", ") + " to "
-  + families.map(f, f + " " + string(cidr(gets.serviceCIDRs[f]))).join(", ") + "; they are fixed once the cluster exists, so keep them, or reinstall the node into a new cluster")
+  + families.map(f, f + " " + string(cidr(gets.serviceCIDRs[f]))).join(", ") + "; they are fixed once the node holds a Kubernetes share, so keep them, or reinstall the node into a new cluster")
 ))
 ```
 
@@ -332,7 +332,7 @@ Message of rule 3:
 cel.bind(was, oldDocuments.map(o, oldDocuments[o].spec)[0], cel.bind(gets, documents.map(n, documents[n].spec)[0], cel.bind(families, was.ipFamilies.filter(f, f in gets.ipFamilies),
   "the config changes the cluster's dnsIPs from "
   + families.map(f, f + " " + string((was.dnsIPs[f] != null ? ip(was.dnsIPs[f]) : cidr(was.serviceCIDRs[f]).ip(10)))).join(", ") + " to "
-  + families.map(f, f + " " + string((gets.dnsIPs[f] != null ? ip(gets.dnsIPs[f]) : cidr(gets.serviceCIDRs[f]).ip(10)))).join(", ") + "; they are fixed once the cluster exists, so keep them, or reinstall the node into a new cluster")
+  + families.map(f, f + " " + string((gets.dnsIPs[f] != null ? ip(gets.dnsIPs[f]) : cidr(gets.serviceCIDRs[f]).ip(10)))).join(", ") + "; they are fixed once the node holds a Kubernetes share, so keep them, or reinstall the node into a new cluster")
 ))
 ```
 

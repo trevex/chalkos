@@ -89,8 +89,9 @@ let
     description = "the node holds a Kubernetes share";
     remedy = "reinstall the node into a new cluster";
   };
-  # The end of the message of a rule that keeps a setting the cluster was created with.
-  fixedTail = "they are fixed once the cluster exists, so keep them, or reinstall the node into a new cluster";
+  # The end of the message of a rule that keeps per-family settings while the node holds a share,
+  # in the words of the rules generated from the kind's state.
+  fixedTail = "they are fixed once ${kubernetesState.description}, so keep them, or ${kubernetesState.remedy}";
   # A rule that keeps a setting the node registers with once it holds a Kubernetes share. The
   # message names `what` the config changes and suggests `instead`.
   # The kubelet applies the node's labels and taints, the control-plane taint among them, only when
