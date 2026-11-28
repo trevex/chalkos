@@ -770,6 +770,25 @@ func TestValidateRefusesNodesThatDisagreeOnAFixedField(t *testing.T) {
 	}
 }
 
+// Two nodes that both leave a marked field out disagree when their images default it apart: each
+// node's config takes its own image's defaults.
+func TestValidateComparesWithEachNodesDefaults(t *testing.T) {
+	ta := newTestApp(t)
+	ta.withoutSecrets(t)
+	path := writeNodes(t, ta.dir, []testNode{{"n1", "", "safe"}, {"n2", "", "fast"}}, nil)
+	writeImageDir(t, filepath.Join(ta.dir, "images", "safe"), "safe", "metal", testRootHash, false)
+	writeDemoSchema(t, filepath.Join(ta.dir, "images", "safe"), "mode")
+	writeImageDir(t, filepath.Join(ta.dir, "images", "fast"), "fast", "metal", testRootHash, false)
+	writeFile(t, filepath.Join(ta.dir, "images", "fast", "schemas", "demo.example.org_v1alpha1_Demo.json"),
+		strings.Replace(demoSchema(t, "mode"), `"default":"safe"`, `"default":"fast"`, 1))
+	writeDemoNode(t, ta.dir, "n1", 0, "{name: one}")
+	writeDemoNode(t, ta.dir, "n2", 1, "{name: two}")
+	want := `the nodes n1 and n2 disagree on fields every node of the cluster holds alike: Demo d: spec.mode is "safe" on n1 and "fast" on n2; give every node of the inventory the same value`
+	if err := ta.run(context.Background(), []string{"validate", "--inventory", path}); err == nil || err.Error() != want {
+		t.Errorf("validate = %v, want %q", err, want)
+	}
+}
+
 // Two nodes disagree when either node's image marks a field they hold apart: validate names the
 // pair once, whichever node it checks.
 func TestValidateComparesByEitherNodesImage(t *testing.T) {

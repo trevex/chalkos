@@ -244,8 +244,9 @@ holds it once its defaults are filled in, and the rule sees null.
 `fixed = "cluster"` adds no rule. It marks the field in the kind's schema with
 `x-chalkos-fixed: cluster`; on a nullable field the mark sits on the field's `anyOf`. chalkctl
 compares the nodes of an inventory on the marked fields. Two nodes disagree when a field that
-either node's image marks holds different values on them, with the defaults filled in, so
-a value left to its default equals the default written out. A document of one node is compared
+either node's image marks holds different values on them, each with its own image's defaults
+filled in. A value left to its default equals the default written out, and two nodes that both
+leave a field out disagree when their images default it apart. A document of one node is compared
 with the other node's document of the same kind and name, or, for a kind a node holds once, with
 its one document of the kind. A document that only one of the nodes holds is no disagreement.
 
@@ -264,7 +265,8 @@ the nodes node1 and node2 disagree on fields every node of the cluster holds ali
 
 A list or a map compares as a whole. The evaluation fails on a mark inside a list's items or a
 map's values; mark the list or the map instead. `sdk.FixedChanges` of the Go SDK finds the changes
-of marked fields between two sets of documents, so other tools can run the same comparison.
+of marked fields between two sets of documents, and `sdk.FixedChangesBetween` does so with each
+side's own image contract, so other tools can run the same comparison.
 
 The Kubernetes `Cluster` marks `endpoint`, `podCIDRs`, `serviceCIDRs` and `dnsIPs` with
 `"cluster"`, and `domain` and `ipFamilies` with both. Its `state` names the fact `share`, with the

@@ -266,4 +266,42 @@ func TestFixedChangesWithoutSchemas(t *testing.T) {
 	if _, err := sdk.FixedChanges(sdk.Contract{}, nil, nil); err == nil {
 		t.Error("FixedChanges of a contract without schemas passed")
 	}
+	if _, err := sdk.FixedChangesBetween(fixedContract(t), sdk.Contract{}, nil, nil); err == nil {
+		t.Error("FixedChangesBetween with a contract without schemas passed")
+	}
+}
+
+// Between two contracts each side takes its own contract's defaults, so two nodes that both
+// leave a field out differ where their images default it apart; the marks of either contract
+// count, and a kind that only one contract declares keeps that contract's marks.
+func TestFixedChangesBetween(t *testing.T) {
+	// other is the fixture with mode defaulting to fast, spec.extra marked, and no Site.
+	other := contractOf(t, map[string]string{
+		"fixed.example.org_v1_Net.json": strings.NewReplacer(
+			`"default": "safe"`, `"default": "fast"`,
+			`"tier":`, `"extra": {"type": "string", "x-chalkos-fixed": "cluster"}, "tier":`,
+		).Replace(netSchema),
+	})
+	net := func(spec string) [3]string { return [3]string{"Net", "a", spec} }
+	for name, tc := range map[string]struct {
+		old, next []config.Document
+		want      []sdk.FixedChange
+	}{
+		"defaults apart": {fixedDocs(t, net("{}")), fixedDocs(t, net("{}")),
+			[]sdk.FixedChange{{Kind: "Net", Name: "a", Path: "spec.mode", Old: "safe", New: "fast"}}},
+		"a default written out": {fixedDocs(t, net("{mode: fast}")), fixedDocs(t, net("{}")), nil},
+		"a mark of the other contract": {fixedDocs(t, net("{mode: fast, extra: x}")), fixedDocs(t, net("{extra: y}")),
+			[]sdk.FixedChange{{Kind: "Net", Name: "a", Path: "spec.extra", Old: "x", New: "y"}}},
+		"a kind one contract declares": {fixedDocs(t, net("{mode: fast}"), [3]string{"Site", "one", "{host: a.example}"}),
+			fixedDocs(t, net("{}"), [3]string{"Site", "two", "{host: b.example}"}),
+			[]sdk.FixedChange{{Kind: "Site", Name: "two", Path: "spec.host", Old: "a.example", New: "b.example"}}},
+	} {
+		got, err := sdk.FixedChangesBetween(fixedContract(t), other, tc.old, tc.next)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s: FixedChangesBetween =\n%#v\nwant\n%#v", name, got, tc.want)
+		}
+	}
 }

@@ -3,7 +3,6 @@ package chalkctl
 import (
 	"encoding/json"
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/sdk"
@@ -23,10 +22,10 @@ func (c *cluster) fixedAcross(ct sdk.Contract, name string, others []string) err
 
 // disagreement refuses the configs of the nodes name and other, as the inventory gives them, when
 // they hold a field that either node's image marks as held alike by every node of a cluster with
-// different values, naming every such field once. The node name's marks are those of ct, the
-// contract its config is checked against; the other node's those of its image in the inventory,
-// or none when that cannot be read. A node compared with itself agrees, and so does an other node
-// whose config cannot be read: each command that reads its config refuses it.
+// different values, naming every such field once. The node name's config takes the marks and
+// defaults of ct, the contract it is checked against; the other node's those of its image in the
+// inventory, or of ct too when that cannot be read. A node compared with itself agrees, and so
+// does an other node whose config cannot be read: each command that reads its config refuses it.
 func (c *cluster) disagreement(ct sdk.Contract, name, other string) error {
 	if other == name {
 		return nil
@@ -39,19 +38,13 @@ func (c *cluster) disagreement(ct sdk.Contract, name, other string) error {
 	if err != nil {
 		return nil
 	}
-	changes, err := sdk.FixedChanges(ct, theirs, docs)
+	oct, err := c.imageContractOf(other)
+	if err != nil {
+		oct = ct
+	}
+	changes, err := sdk.FixedChangesBetween(oct, ct, theirs, docs)
 	if err != nil {
 		return fmt.Errorf("node %s: %w", name, err)
-	}
-	if oct, err := c.imageContractOf(other); err == nil {
-		more, _ := sdk.FixedChanges(oct, theirs, docs)
-		for _, ch := range more {
-			if !slices.ContainsFunc(changes, func(o sdk.FixedChange) bool {
-				return o.Kind == ch.Kind && o.Name == ch.Name && o.Path == ch.Path
-			}) {
-				changes = append(changes, ch)
-			}
-		}
 	}
 	if len(changes) == 0 {
 		return nil
