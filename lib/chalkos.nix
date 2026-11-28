@@ -100,7 +100,7 @@ in
   # list holds, which bounds what a rule that loops over the list costs; and fixed, "node",
   # "cluster" or both in a list: "node" keeps the field's value once the node holds the state of
   # the field's kind, through a generated rule, and "cluster" marks the field as one that every
-  # node of a cluster holds alike, which chalkctl and the Cluster API providers compare. The
+  # node of a cluster holds alike, which chalkctl compares across an inventory. The
   # schema converter checks unique, maxItems and fixed against the field's type and place.
   mkOption =
     {

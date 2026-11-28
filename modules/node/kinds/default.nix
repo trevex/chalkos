@@ -164,12 +164,12 @@ let
                   description = "Fact of `chalkos.facts` that is null until the node holds the state of the kind's layer, such as the cluster it joined.";
                 };
                 description = lib.mkOption {
-                  type = lib.types.strMatching "[^\"\\\\\n]+";
+                  type = lib.types.strMatching "[^\"\\\\[:cntrl:]]+";
                   example = "the node holds a Kubernetes share";
                   description = "What holding the state means, as the generated rules' messages say it after \"fixed once\"; without quotes, backslashes or line breaks.";
                 };
                 remedy = lib.mkOption {
-                  type = lib.types.strMatching "[^\"\\\\\n]+";
+                  type = lib.types.strMatching "[^\"\\\\[:cntrl:]]+";
                   default = "reinstall the node";
                   example = "reinstall the node into a new cluster";
                   description = "What the user does instead of keeping the value, as the generated rules' messages say it after \"so keep it, or\"; without quotes, backslashes or line breaks.";
