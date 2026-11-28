@@ -154,6 +154,8 @@ Each part of the schema comes from the options:
 - Each option type becomes a schema, as [Field types](../reference/extension-runtime.md#field-types)
   lists: `nonEmptyStr` becomes a `string` with `minLength: 1`.
 - `unique` becomes `x-chalkos-unique`, which chalkctl and chalkd check.
+- `fixed = "cluster"` becomes `x-chalkos-fixed: cluster`, which chalkctl compares across the
+  nodes of an inventory; `fixed = "node"` adds a rule to `x-chalkos-rules`.
 - The kind's `description`, and its fields' `description`, `default` and `example`, carry
   over, the example as `examples`.
 - `x-chalkos-rules` holds the field's change rules, and `x-chalkos-kind` holds the kind's group,
@@ -228,13 +230,16 @@ the second.
 
 ## Add rules with chalkosLib.mkOption
 
-`chalkosLib.mkOption` is `lib.mkOption` with three more arguments: `rules`, a list of change
+`chalkosLib.mkOption` is `lib.mkOption` with four more arguments: `rules`, a list of change
 rules; `unique`, which [Make a field's values unique](#make-a-fields-values-unique)
-describes; and `maxItems`, the most items a list field holds, which the schema checks.
-`lib.mkOption` takes none of them. Use `lib.mkOption` for a field without them, as every field
-of `Hardware` does, and `chalkosLib.mkOption` for a field with them, as `location` of `Rack`
-does. Both produce the same schema apart from `x-chalkos-rules`, `x-chalkos-unique` and
-`maxItems`. The build fails on a `maxItems` on a field that is no list, or one that is no
+describes; `maxItems`, the most items a list field holds, which the schema checks; and `fixed`,
+which keeps a field once the node holds its kind's state, or marks it as held alike by every node
+of a cluster, as
+[Keep a field once the node holds state, and alike on every node](guard-changes.md#keep-a-field-once-the-node-holds-state-and-alike-on-every-node)
+shows. `lib.mkOption` takes none of them. Use `lib.mkOption` for a field without them, as every
+field of `Hardware` does, and `chalkosLib.mkOption` for a field with them, as `location` of
+`Rack` does. Both produce the same schema apart from `x-chalkos-rules`, `x-chalkos-unique`,
+`x-chalkos-fixed` and `maxItems`. The build fails on a `maxItems` on a field that is no list, or one that is no
 positive integer.
 
 A change rule is a CEL expression that every config the node accepts makes true. In the rule,
@@ -245,7 +250,7 @@ document into `chalkos.kinds.<Kind>.specRules`.
 [Guard changes with rules and facts](guard-changes.md) covers all three, and the facts a rule
 reads about the node, such as the rack survey that `location`'s rule reads.
 
-The `rules`, `unique` and `maxItems` arguments exist only on `chalkosLib`, which every image
+The `rules`, `unique`, `maxItems` and `fixed` arguments exist only on `chalkosLib`, which every image
 module gets as a module argument. The types of `chalkosLib.types` come from the same place.
 
 ## Name a document of another kind

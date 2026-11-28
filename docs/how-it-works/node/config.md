@@ -198,7 +198,12 @@ does not fit its disk, an extra flag that would override one chalkos sets.
 
     Each node builds the cluster from its own documents, so chalkctl refuses an inventory whose
     nodes hold different `Cluster`, `Flannel` or `ClusterRegistry` specs, naming the first field
-    that differs.
+    that differs. Beyond a layer's own comparison, chalkctl refuses nodes that hold different
+    values of a field that either node's image marks with `x-chalkos-fixed`: `chalkctl validate`
+    compares each node whose config is valid with the inventory's other nodes, and `chalkctl config apply` checks the node it
+    delivers to against every other node, as
+    [Keep a field once the node holds state, and alike on every node](../../build/guard-changes.md#keep-a-field-once-the-node-holds-state-and-alike-on-every-node)
+    describes.
     [Every node holds the same cluster documents](../kubernetes/overview.md#every-node-holds-the-same-cluster-documents)
     explains the comparison.
 
