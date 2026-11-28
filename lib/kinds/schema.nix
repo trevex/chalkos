@@ -93,8 +93,11 @@ let
     };
   };
 
-  # ctx is { kind; state; inItem; }: the kind's name and state, and whether the type is that of a
-  # list's items or a map's values, where no field may be fixed.
+  # ctx is { kind; state; inItem; inNullable; inOptional; }: the kind's name and state, whether
+  # the type is that of a list's items or a map's values, where no field may be fixed, whether it
+  # is below a nullable group, which a config may set to null, and whether it is below an option
+  # with a default, which a config may leave out, so that only the fields with defaults of their
+  # own are filled in.
   typeSchema =
     ctx: at: t:
     let
@@ -213,7 +216,7 @@ let
     else if n == "nullOr" then
       {
         anyOf = [
-          (typeSchema ctx at t.nestedTypes.elemType)
+          (typeSchema (ctx // { inNullable = true; }) at t.nestedTypes.elemType)
           { type = "null"; }
         ];
       }
@@ -475,7 +478,9 @@ let
   # Why a field's fixed f at `at`, as chalkosLib.mkOption puts it under x-chalkos-fixed, is none
   # chalkd can keep, or null: f is "node", "cluster" or both in a list; fixed = "node" needs the
   # kind's state, ctx.state; and a field of a list's items or a map's values has no value of its
-  # own to keep.
+  # own to keep. The rule of fixed = "node" runs only where the delivered config holds the field,
+  # so it needs a field that every valid config holds once its defaults are filled in: none below
+  # a nullable group, and none that ctx.optional says a config may leave out.
   fixedRefusal =
     ctx: at: f:
     let
@@ -496,6 +501,10 @@ let
       "${at}: ${builtins.toJSON f} is none of \"node\", \"cluster\" and [ \"node\" \"cluster\" ]"
     else if lib.elem "node" scopes && ctx.state == null then
       "${at}: \"node\" keeps the field once the node holds its layer's state, and chalkos.kinds.${ctx.kind}.state names none; set it to the fact that is null until then"
+    else if lib.elem "node" scopes && ctx.inNullable then
+      "${at}: \"node\" keeps the field once the node holds its layer's state, and a group above the field is nullable: a config that sets the group to null drops the field's value without its rule seeing it; mark the field \"cluster\" alone, or make the group not nullable"
+    else if lib.elem "node" scopes && ctx.optional then
+      "${at}: \"node\" keeps the field once the node holds its layer's state, and a config may leave the field out, as the schema neither gives it a default nor requires it: the node would drop the field's value without its rule seeing it; give the field a plain default, or make it required, with no default on it or on any option above it"
     else
       null;
 
@@ -537,9 +546,19 @@ let
   optionSchema =
     ctx: at: opt:
     let
-      s = typeSchema ctx at (opt.type or (throw "${at} declares no type"));
+      # The default the schema carries; one it cannot carry, such as a function, it leaves out.
+      schemaDefault = opt ? default && isPlain opt.default && !leaksNamePlaceholder opt.default;
+      # A config that leaves out an option with a default leaves out the fields below it, but for
+      # those whose own defaults fill them in.
+      below = ctx // {
+        inOptional = ctx.inOptional || opt ? default;
+      };
+      s = typeSchema below at (opt.type or (throw "${at} declares no type"));
       fixed = opt."x-chalkos-fixed" or [ ];
-      refusal = fixedRefusal ctx "${at}.fixed" fixed;
+      # A config may leave the field out when the schema gives it no default and it has one in
+      # the module system, which keeps it from being required, or an option above it has one.
+      optional = !schemaDefault && (opt ? default || ctx.inOptional);
+      refusal = fixedRefusal (ctx // { inherit optional; }) "${at}.fixed" fixed;
       scopes =
         if !(opt ? "x-chalkos-fixed") then
           [ ]
@@ -570,7 +589,7 @@ let
           n;
     }
     // lib.optionalAttrs (lib.isString (opt.description or null)) { inherit (opt) description; }
-    // lib.optionalAttrs (opt ? default && isPlain opt.default && !leaksNamePlaceholder opt.default) {
+    // lib.optionalAttrs schemaDefault {
       inherit (opt) default;
     }
     // lib.optionalAttrs (opt ? example && isPlain opt.example && !leaksNamePlaceholder opt.example) {
@@ -709,6 +728,8 @@ rec {
       specSchema = groupSchema {
         inherit kind state;
         inItem = false;
+        inNullable = false;
+        inOptional = false;
       } "${at}.spec" spec;
     in
     # The services see the documents of a kind that is not withheld with Secret objects in them

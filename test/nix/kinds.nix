@@ -1083,9 +1083,9 @@ in
       rules = [ (fixedNodeRuleOf null) ];
     };
   };
-  # A marked field inside a nullable group carries x-chalkos-fixed on its own node, below the
-  # group's anyOf, and a nullable marked field on the node that holds the anyOf. The rule of
-  # fixed = "node" lands below the anyOf too, and names the field by its path, x.y.
+  # A field inside a nullable group marked fixed = "cluster" carries x-chalkos-fixed on its own
+  # node, below the group's anyOf, and a nullable marked field on the node that holds the anyOf.
+  # Neither gets a rule.
   testFixedInsideANullableGroup = {
     expr =
       let
@@ -1096,10 +1096,7 @@ in
                 types.submodule {
                   options.y = chalkosLib.mkOption {
                     type = types.str;
-                    fixed = [
-                      "node"
-                      "cluster"
-                    ];
+                    fixed = "cluster";
                   };
                 }
               );
@@ -1115,30 +1112,69 @@ in
       {
         outer = spec.properties.x ? "x-chalkos-fixed";
         y = (lib.head spec.properties.x.anyOf).properties.y."x-chalkos-fixed" or null;
-        rules = map (r: { inherit (r) description message; }) (
-          (lib.head spec.properties.x.anyOf).properties.y."x-chalkos-rules" or [ ]
-        );
+        rules = (lib.head spec.properties.x.anyOf).properties.y."x-chalkos-rules" or [ ];
         z = spec.properties.z."x-chalkos-fixed" or null;
       };
     expected = {
       outer = false;
       y = "cluster";
-      rules = [
-        {
-          description = "The field x.y stays once the node holds a Kubernetes share.";
-          message = "the config changes x.y; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node";
-        }
-      ];
+      rules = [ ];
       z = "cluster";
     };
   };
+  # fixed = "node" stays allowed on a field that every config holds once its defaults are filled
+  # in: a nullable field with a null default, whose rule sees null, and a field with a default
+  # below a group that a config may leave out, which the defaults then fill in.
+  testFixedNodeOnFieldsAlwaysPresent = {
+    expr =
+      let
+        spec =
+          (stateKindOf shareState {
+            x = chalkosLib.mkOption {
+              type = types.nullOr types.str;
+              default = null;
+              fixed = "node";
+            };
+            g = mkOption {
+              type = types.submodule {
+                options.y = chalkosLib.mkOption {
+                  type = types.str;
+                  default = "a";
+                  fixed = "node";
+                };
+              };
+              default = lib.mkDefault { };
+            };
+          }).properties.spec;
+      in
+      map (r: r.rule) (
+        spec.properties.x."x-chalkos-rules" ++ spec.properties.g.properties.y."x-chalkos-rules"
+      );
+    expected = [
+      "facts.share == null || self == oldSelf"
+      "facts.share == null || self == oldSelf"
+    ];
+  };
   # fixed = "node" without the kind's state, a value that is none of node and cluster, an empty
-  # list, and a mark inside a list's items or a map's values fail the evaluation, each by its own
-  # refusal.
+  # list, a mark inside a list's items or a map's values, and fixed = "node" on a field that a
+  # valid config may leave without a value fail the evaluation, each by its own refusal.
   testFixedRefusals =
     let
       none = ''is none of "node", "cluster" and [ "node" "cluster" ]'';
       item = "a field of a list's items or a map's values is compared as part of the list or map; mark the list or the map itself";
+      nullable = ''"node" keeps the field once the node holds its layer's state, and a group above the field is nullable: a config that sets the group to null drops the field's value without its rule seeing it; mark the field "cluster" alone, or make the group not nullable'';
+      optional = ''"node" keeps the field once the node holds its layer's state, and a config may leave the field out, as the schema neither gives it a default nor requires it: the node would drop the field's value without its rule seeing it; give the field a plain default, or make it required, with no default on it or on any option above it'';
+      # A field y in the group of the type given.
+      inGroup =
+        of: fixed:
+        of (
+          types.submodule {
+            options.y = chalkosLib.mkOption {
+              type = types.str;
+              inherit fixed;
+            };
+          }
+        );
       # A field y in the items of the list or map of the type given.
       inItems =
         of: fixed:
@@ -1176,8 +1212,40 @@ in
           inItem = true;
           refusal = "x.fixed: ${item}";
         }
+        {
+          fixed = "node";
+          type = inGroup types.nullOr;
+          inNullable = true;
+          refusal = "x.fixed: ${nullable}";
+        }
+        {
+          fixed = [
+            "node"
+            "cluster"
+          ];
+          type = inGroup types.nullOr;
+          inNullable = true;
+          refusal = "x.fixed: ${nullable}";
+        }
+        # A default the schema cannot carry leaves the field neither defaulted nor required.
+        {
+          fixed = "node";
+          default = lib.mkDefault "a";
+          optional = true;
+          refusal = "x.fixed: ${optional}";
+        }
+        # A required field below a group that has a default: a config that leaves the group out
+        # gets the group's default, without the field.
+        {
+          fixed = "node";
+          type = inGroup lib.id;
+          default = { };
+          optional = true;
+          refusal = "x.fixed: ${optional}";
+        }
       ];
       stateOf = x: x.state or shareState;
+      defaultOf = x: lib.optionalAttrs (x ? default) { inherit (x) default; };
     in
     {
       expr = map (x: {
@@ -1185,18 +1253,23 @@ in
           stateKindOf (stateOf x) {
             x =
               if x ? type then
-                mkOption { type = x.type x.fixed; }
+                mkOption ({ type = x.type x.fixed; } // defaultOf x)
               else
-                chalkosLib.mkOption {
-                  type = types.str;
-                  inherit (x) fixed;
-                };
+                chalkosLib.mkOption (
+                  {
+                    type = types.str;
+                    inherit (x) fixed;
+                  }
+                  // defaultOf x
+                );
           }
         );
         refusal = schema.fixedRefusal {
           kind = "T";
           state = stateOf x;
           inItem = x.inItem or false;
+          inNullable = x.inNullable or false;
+          optional = x.optional or false;
         } "x.fixed" x.fixed;
       }) cases;
       expected = map (x: {

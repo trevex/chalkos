@@ -233,6 +233,14 @@ the config is refused: Site/shop: spec.hostname: the config changes hostname fro
 value is null, gets the message without the values. `description` and `remedy` may contain no
 quotes, backslashes or line breaks.
 
+The rule runs only where the delivered config holds the field, so a config that leaves the field
+out would drop its value without the rule seeing it. The build therefore fails on
+`fixed = "node"` for a field that a valid config may leave without a value: a field below a
+nullable group, which a config may set to null, and a field whose schema neither gives it a
+default nor requires it, such as one whose default is a function, or a required field below an
+option with a default. A nullable field with a default, null included, is allowed: every config
+holds it once its defaults are filled in, and the rule sees null.
+
 `fixed = "cluster"` adds no rule. It marks the field in the kind's schema with
 `x-chalkos-fixed: cluster`; on a nullable field the mark sits on the field's `anyOf`. chalkctl
 compares the nodes of an inventory on the marked fields. Two nodes disagree when a field that
