@@ -472,16 +472,19 @@ let
     in
     if refusal != null then throw refusal else uniqueDeclarations at of s unique;
 
-  # The scopes of a field's fixed, as chalkosLib.mkOption puts it under x-chalkos-fixed: "node",
-  # "cluster" or both in a list.
-  fixedScopes =
-    at: f:
+  # Why a field's fixed f at `at`, as chalkosLib.mkOption puts it under x-chalkos-fixed, is none
+  # chalkd can keep, or null: f is "node", "cluster" or both in a list; fixed = "node" needs the
+  # kind's state, ctx.state; and a field of a list's items or a map's values has no value of its
+  # own to keep.
+  fixedRefusal =
+    ctx: at: f:
     let
       scopes = lib.toList f;
     in
-    if
-      !(lib.isString f || lib.isList f)
-      || scopes == [ ]
+    if ctx.inItem then
+      "${at}: a field of a list's items or a map's values is compared as part of the list or map; mark the list or the map itself"
+    else if
+      scopes == [ ]
       || lib.any (
         s:
         !lib.elem s [
@@ -490,9 +493,11 @@ let
         ]
       ) scopes
     then
-      throw "${at}: ${builtins.toJSON f} is none of \"node\", \"cluster\" and [ \"node\" \"cluster\" ]"
+      "${at}: ${builtins.toJSON f} is none of \"node\", \"cluster\" and [ \"node\" \"cluster\" ]"
+    else if lib.elem "node" scopes && ctx.state == null then
+      "${at}: \"node\" keeps the field once the node holds its layer's state, and chalkos.kinds.${ctx.kind}.state names none; set it to the fact that is null until then"
     else
-      scopes;
+      null;
 
   # The rule that fixed = "node" gives the field at `at`, whose schema is s: it keeps the field's
   # value once the node holds the state of the field's kind, ctx.state. Its message names the
@@ -504,11 +509,7 @@ let
     let
       field = lib.removePrefix "chalkos.kinds.${ctx.kind}.spec." at;
       t = nonNull s;
-      state =
-        if ctx.state == null then
-          throw "${at}.fixed: \"node\" keeps the field once the node holds its layer's state, and chalkos.kinds.${ctx.kind}.state names none; set it to the fact that is null until then"
-        else
-          ctx.state;
+      inherit (ctx) state;
       tail = "; it is fixed once ${state.description}, so keep it, or reinstall the node";
       shown =
         if isStringBranch t then
@@ -537,13 +538,15 @@ let
     ctx: at: opt:
     let
       s = typeSchema ctx at (opt.type or (throw "${at} declares no type"));
+      fixed = opt."x-chalkos-fixed" or [ ];
+      refusal = fixedRefusal ctx "${at}.fixed" fixed;
       scopes =
         if !(opt ? "x-chalkos-fixed") then
           [ ]
-        else if ctx.inItem then
-          throw "${at}.fixed: a field of a list's items or a map's values is compared as part of the list or map; mark the list or the map itself"
+        else if refusal != null then
+          throw refusal
         else
-          fixedScopes "${at}.fixed" opt."x-chalkos-fixed";
+          lib.toList fixed;
       # A field's change rules, which chalkosLib.mkOption puts under x-chalkos-rules, and the
       # rule of fixed = "node".
       rules =
@@ -622,7 +625,12 @@ let
       // lib.optionalAttrs (required != [ ]) { inherit required; };
 in
 rec {
-  inherit uniqueRefusal ruleRefusal groupRefusal;
+  inherit
+    uniqueRefusal
+    ruleRefusal
+    groupRefusal
+    fixedRefusal
+    ;
 
   # The schema of a whole document of a kind, around the schema of its spec. The kind's rules
   # over its documents go into x-chalkos-kind, where a kind without rules has none, and its

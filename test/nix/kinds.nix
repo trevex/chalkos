@@ -925,16 +925,27 @@ in
           types.str
           (types.listOf types.str)
           types.int
+          # The messageExpression fails on null, and chalkd shows the static message instead.
+          (types.nullOr types.str)
+          (types.listOf (
+            types.enum [
+              "IPv4"
+              "IPv6"
+            ]
+          ))
         ];
-    expected = [
+    expected =
+      let
+        str = fixedNodeRuleOf ''"the config changes x from " + oldSelf + " to " + self + "; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node"'';
+        list = fixedNodeRuleOf ''"the config changes x from " + oldSelf.join(", ") + " to " + self.join(", ") + "; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node"'';
+      in
       [
-        (fixedNodeRuleOf ''"the config changes x from " + oldSelf + " to " + self + "; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node"'')
-      ]
-      [
-        (fixedNodeRuleOf ''"the config changes x from " + oldSelf.join(", ") + " to " + self.join(", ") + "; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node"'')
-      ]
-      [ (fixedNodeRuleOf null) ]
-    ];
+        [ str ]
+        [ list ]
+        [ (fixedNodeRuleOf null) ]
+        [ str ]
+        [ list ]
+      ];
   };
   # The generated rule follows the field's own rules and names a nested field by its path below
   # the spec.
@@ -1015,18 +1026,22 @@ in
     };
   };
   # A marked field inside a nullable group carries x-chalkos-fixed on its own node, below the
-  # group's anyOf, and a nullable marked field on the node that holds the anyOf.
+  # group's anyOf, and a nullable marked field on the node that holds the anyOf. The rule of
+  # fixed = "node" lands below the anyOf too, and names the field by its path, x.y.
   testFixedInsideANullableGroup = {
     expr =
       let
         spec =
-          (stateKindOf null {
+          (stateKindOf shareState {
             x = mkOption {
               type = types.nullOr (
                 types.submodule {
                   options.y = chalkosLib.mkOption {
                     type = types.str;
-                    fixed = "cluster";
+                    fixed = [
+                      "node"
+                      "cluster"
+                    ];
                   };
                 }
               );
@@ -1042,69 +1057,95 @@ in
       {
         outer = spec.properties.x ? "x-chalkos-fixed";
         y = (lib.head spec.properties.x.anyOf).properties.y."x-chalkos-fixed" or null;
+        rules = map (r: { inherit (r) description message; }) (
+          (lib.head spec.properties.x.anyOf).properties.y."x-chalkos-rules" or [ ]
+        );
         z = spec.properties.z."x-chalkos-fixed" or null;
       };
     expected = {
       outer = false;
       y = "cluster";
+      rules = [
+        {
+          description = "The field x.y stays once the node holds a Kubernetes share.";
+          message = "the config changes x.y; it is fixed once the node holds a Kubernetes share, so keep it, or reinstall the node";
+        }
+      ];
       z = "cluster";
     };
   };
   # fixed = "node" without the kind's state, a value that is none of node and cluster, an empty
-  # list, and a mark inside a list's items or a map's values fail the evaluation.
-  testFixedRefusals = {
-    expr = map fails [
-      (stateKindOf null {
-        x = chalkosLib.mkOption {
-          type = types.str;
+  # list, and a mark inside a list's items or a map's values fail the evaluation, each by its own
+  # refusal.
+  testFixedRefusals =
+    let
+      none = ''is none of "node", "cluster" and [ "node" "cluster" ]'';
+      item = "a field of a list's items or a map's values is compared as part of the list or map; mark the list or the map itself";
+      # A field y in the items of the list or map of the type given.
+      inItems =
+        of: fixed:
+        of (
+          types.submodule {
+            options.y = chalkosLib.mkOption {
+              type = types.str;
+              inherit fixed;
+            };
+          }
+        );
+      cases = [
+        {
+          state = null;
           fixed = "node";
-        };
-      })
-      (stateKindOf shareState {
-        x = chalkosLib.mkOption {
-          type = types.str;
+          refusal = ''x.fixed: "node" keeps the field once the node holds its layer's state, and chalkos.kinds.T.state names none; set it to the fact that is null until then'';
+        }
+        {
           fixed = "kind";
-        };
-      })
-      (stateKindOf shareState {
-        x = chalkosLib.mkOption {
-          type = types.str;
+          refusal = ''x.fixed: "kind" ${none}'';
+        }
+        {
           fixed = [ ];
-        };
-      })
-      (stateKindOf shareState {
-        xs = mkOption {
-          type = types.listOf (
-            types.submodule {
-              options.y = chalkosLib.mkOption {
-                type = types.str;
-                fixed = "cluster";
-              };
-            }
-          );
-        };
-      })
-      (stateKindOf shareState {
-        xs = mkOption {
-          type = types.attrsOf (
-            types.submodule {
-              options.y = chalkosLib.mkOption {
-                type = types.str;
-                fixed = "node";
-              };
-            }
-          );
-        };
-      })
-    ];
-    expected = [
-      true
-      true
-      true
-      true
-      true
-    ];
-  };
+          refusal = "x.fixed: [] ${none}";
+        }
+        {
+          fixed = "cluster";
+          type = inItems types.listOf;
+          inItem = true;
+          refusal = "x.fixed: ${item}";
+        }
+        {
+          fixed = "node";
+          type = inItems types.attrsOf;
+          inItem = true;
+          refusal = "x.fixed: ${item}";
+        }
+      ];
+      stateOf = x: x.state or shareState;
+    in
+    {
+      expr = map (x: {
+        fails = fails (
+          stateKindOf (stateOf x) {
+            x =
+              if x ? type then
+                mkOption { type = x.type x.fixed; }
+              else
+                chalkosLib.mkOption {
+                  type = types.str;
+                  inherit (x) fixed;
+                };
+          }
+        );
+        refusal = schema.fixedRefusal {
+          kind = "T";
+          state = stateOf x;
+          inItem = x.inItem or false;
+        } "x.fixed" x.fixed;
+      }) cases;
+      expected = map (x: {
+        fails = true;
+        inherit (x) refusal;
+      }) cases;
+    };
   # A field's rules come raw from chalkosLib.mkOption: an attribute a rule does not have, a takes
   # that is none, and a missing or empty rule fail the evaluation with the rule's option path, as
   # the typed rules of a kind do.
