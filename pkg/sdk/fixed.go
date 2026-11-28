@@ -22,23 +22,39 @@ type FixedChange struct {
 
 // FixedChanges are the changes from old to next, the documents of one node at two times or of two
 // nodes, of the fields that the contract's schemas mark as held alike by every node of a cluster,
-// in the order of next's documents and of the fields' paths. A document of next is compared with
-// old's document of the same kind and name, or, for a kind a node holds once, with old's one
-// document of the kind whatever its name. A document that only one side holds is no change: the
-// kinds' own rules cover documents that come and go. A list or a map compares as a whole, and a
-// kind the contract does not declare marks nothing.
+// in the order of next's documents and, per document, depth first with the fields of each level in
+// name order. A document of next is compared with old's document of the same kind and name, or,
+// for a kind a node holds once, with old's one document of the kind whatever its name. A document
+// that only one side holds is no change: the kinds' own rules cover documents that come and go. A
+// list or a map compares as a whole, and a kind the contract does not declare marks nothing.
+//
+// The documents must be valid against the contract's schemas, since FixedChanges does not validate
+// them: it compares their values with the defaults filled in, so a field written as null differs
+// from one left out where the schema gives it a default, and a number that is not an integer
+// compares by its spelling, 0.5 differing from 5e-1.
 func FixedChanges(c Contract, old, next []config.Document) ([]FixedChange, error) {
 	if c.Image == nil || c.Image.Schemas == nil {
 		return nil, errors.New("the contract holds no schemas, so it marks no field that every node holds alike")
 	}
 	s := c.Image.Schemas
+	kinds := s.Kinds()
+	marks := map[schema.Kind][][]string{}
 	var out []FixedChange
 	for _, d := range next {
-		paths := fixedPaths(s, d.APIVersion, d.Kind)
+		i := slices.IndexFunc(kinds, func(k schema.Kind) bool { return k.APIVersion == d.APIVersion && k.Kind == d.Kind })
+		if i < 0 {
+			continue
+		}
+		k := kinds[i]
+		paths, ok := marks[k]
+		if !ok {
+			paths = fixedPaths(s, k.APIVersion, k.Kind)
+			marks[k] = paths
+		}
 		if len(paths) == 0 {
 			continue
 		}
-		o, ok := counterpart(s, old, d)
+		o, ok := counterpart(k, old, d)
 		if !ok {
 			continue
 		}
@@ -61,8 +77,11 @@ func FixedChanges(c Contract, old, next []config.Document) ([]FixedChange, error
 }
 
 // fixedPaths are the fields of the kind that x-chalkos-fixed marks, each a property's name per
-// level, in name order. The walk descends only where x-chalkos-fixed-within says a marked field
-// lies below, and never into a list's items or a map's values, which the marks leave alone.
+// level, depth first in name order. The walk covers the whole schema, every branch of an anyOf
+// too, since a nullable field carries its mark on its anyOf and a field inside a nullable group
+// on its own node below one; it stops at a marked field and never descends into a list's items or
+// a map's values, which compare as a whole. The branches of an anyOf share their Field, so a path
+// is kept once.
 func fixedPaths(s *schema.Schemas, apiVersion, kind string) [][]string {
 	var paths [][]string
 	s.WalkSchema(apiVersion, kind, func(n schema.Node) bool {
@@ -71,23 +90,21 @@ func fixedPaths(s *schema.Schemas, apiVersion, kind string) [][]string {
 				return false
 			}
 		}
-		a := n.Annotations()
-		if a.Fixed == schema.FixedCluster {
-			if !slices.ContainsFunc(paths, func(p []string) bool { return slices.Equal(p, n.Field) }) {
-				paths = append(paths, slices.Clone(n.Field))
-			}
-			return false
+		if n.Annotations().Fixed != schema.FixedCluster {
+			return true
 		}
-		return a.FixedWithin
+		if !slices.ContainsFunc(paths, func(p []string) bool { return slices.Equal(p, n.Field) }) {
+			paths = append(paths, slices.Clone(n.Field))
+		}
+		return false
 	})
 	return paths
 }
 
-// counterpart is old's document that d is compared with: of the same kind and name, or old's one
-// document of a kind that a node holds once.
-func counterpart(s *schema.Schemas, old []config.Document, d config.Document) (config.Document, bool) {
-	kinds := s.Kinds()
-	if i := slices.IndexFunc(kinds, func(k schema.Kind) bool { return k.APIVersion == d.APIVersion && k.Kind == d.Kind }); i >= 0 && !kinds[i].Multiple {
+// counterpart is old's document that d, a document of the kind k, is compared with: of the same
+// kind and name, or old's one document of a kind that a node holds once.
+func counterpart(k schema.Kind, old []config.Document, d config.Document) (config.Document, bool) {
+	if !k.Multiple {
 		return config.Documents(old).Single(d.APIVersion, d.Kind)
 	}
 	i := slices.IndexFunc(old, func(o config.Document) bool {

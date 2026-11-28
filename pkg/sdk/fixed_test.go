@@ -10,7 +10,8 @@ import (
 )
 
 // The fixture kinds of the group fixed.example.org: Net, of which a node holds several, whose
-// spec.outer.domain, spec.ranges and spec.mode (default safe) every node of a cluster holds
+// spec.outer.domain, spec.ranges, spec.mode (default safe), the map spec.labels, the nullable
+// spec.alias and spec.group.zone inside the nullable spec.group every node of a cluster holds
 // alike and whose notes are free; Site, of which a node holds one, whose spec.host is held alike;
 // and Free, which marks nothing.
 const (
@@ -18,22 +19,28 @@ const (
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "x-chalkos-kind": {"group": "fixed.example.org", "version": "v1", "kind": "Net", "multiple": true},
-  "x-chalkos-fixed-within": true,
   "properties": {
     "apiVersion": {"const": "fixed.example.org/v1"},
     "kind": {"const": "Net"},
     "metadata": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]},
     "spec": {
       "type": "object",
-      "x-chalkos-fixed-within": true,
       "properties": {
         "outer": {
           "type": "object",
-          "x-chalkos-fixed-within": true,
           "properties": {"domain": {"type": "string", "x-chalkos-fixed": "cluster"}, "note": {"type": "string"}}
         },
         "ranges": {"type": "array", "items": {"type": "string"}, "x-chalkos-fixed": "cluster"},
         "mode": {"enum": ["fast", "safe"], "default": "safe", "x-chalkos-fixed": "cluster"},
+        "labels": {"type": "object", "additionalProperties": {"type": "string"}, "x-chalkos-fixed": "cluster"},
+        "alias": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null, "x-chalkos-fixed": "cluster"},
+        "group": {
+          "anyOf": [
+            {"type": "object", "properties": {"zone": {"type": "string", "x-chalkos-fixed": "cluster"}, "note": {"type": "string"}}},
+            {"type": "null"}
+          ],
+          "default": null
+        },
         "note": {"type": "string"}
       }
     }
@@ -43,12 +50,11 @@ const (
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "x-chalkos-kind": {"group": "fixed.example.org", "version": "v1", "kind": "Site", "multiple": false},
-  "x-chalkos-fixed-within": true,
   "properties": {
     "apiVersion": {"const": "fixed.example.org/v1"},
     "kind": {"const": "Site"},
     "metadata": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]},
-    "spec": {"type": "object", "x-chalkos-fixed-within": true, "properties": {"host": {"type": "string", "x-chalkos-fixed": "cluster"}}}
+    "spec": {"type": "object", "properties": {"host": {"type": "string", "x-chalkos-fixed": "cluster"}}}
   }
 }`
 	freeSchema = `{
@@ -125,6 +131,47 @@ func TestFixedChanges(t *testing.T) {
 		if !reflect.DeepEqual(got, tc.want) {
 			t.Errorf("%s: FixedChanges =\n%#v\nwant\n%#v", name, got, tc.want)
 		}
+	}
+}
+
+// A map compares as a whole, and the walk finds the marks of a nullable field, on its anyOf, and
+// of a field inside a nullable group, below the anyOf, as chalkosLib.mkOption puts them.
+func TestFixedChangesOfMapsAndNullables(t *testing.T) {
+	c := fixedContract(t)
+	net := func(spec string) []config.Document { return fixedDocs(t, [3]string{"Net", "a", spec}) }
+	old := net("{labels: {a: x}, alias: one, group: {zone: z1, note: x}}")
+	for name, tc := range map[string]struct {
+		next []config.Document
+		want []sdk.FixedChange
+	}{
+		"unchanged":           {old, nil},
+		"a free field inside": {net("{labels: {a: x}, alias: one, group: {zone: z1, note: y}}"), nil},
+		"a map as a whole": {net("{labels: {a: x, b: y}, alias: one, group: {zone: z1, note: x}}"),
+			[]sdk.FixedChange{{Kind: "Net", Name: "a", Path: "spec.labels", Old: map[string]any{"a": "x"}, New: map[string]any{"a": "x", "b": "y"}}}},
+		"a nullable field": {net("{labels: {a: x}, group: {zone: z1, note: x}}"),
+			[]sdk.FixedChange{{Kind: "Net", Name: "a", Path: "spec.alias", Old: "one", New: nil}}},
+		"inside a nullable group": {net("{labels: {a: x}, alias: one, group: {zone: z2, note: x}}"),
+			[]sdk.FixedChange{{Kind: "Net", Name: "a", Path: "spec.group.zone", Old: "z1", New: "z2"}}},
+		"a nullable group that goes": {net("{labels: {a: x}, alias: one}"),
+			[]sdk.FixedChange{{Kind: "Net", Name: "a", Path: "spec.group.zone", Old: "z1", New: nil}}},
+	} {
+		got, err := sdk.FixedChanges(c, old, tc.next)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s: FixedChanges =\n%#v\nwant\n%#v", name, got, tc.want)
+		}
+	}
+}
+
+// A kind the contract does not declare marks nothing, even on both sides.
+func TestFixedChangesOfAnUndeclaredKind(t *testing.T) {
+	old := fixedDocs(t, [3]string{"Other", "a", "{host: a.example}"})
+	next := fixedDocs(t, [3]string{"Other", "a", "{host: b.example}"})
+	got, err := sdk.FixedChanges(fixedContract(t), old, next)
+	if err != nil || got != nil {
+		t.Errorf("FixedChanges = %v, %v; want none", got, err)
 	}
 }
 

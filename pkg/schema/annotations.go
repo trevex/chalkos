@@ -35,9 +35,6 @@ const (
 	kubernetesObjectKeyword = "x-chalkos-kubernetes-object"
 	// fixedKeyword marks a field that every node of a cluster holds alike: FixedCluster.
 	fixedKeyword = "x-chalkos-fixed"
-	// fixedWithinKeyword marks a node above a field that fixedKeyword marks, so a walk for such
-	// fields skips the subtrees without it.
-	fixedWithinKeyword = "x-chalkos-fixed-within"
 	// networkdSectionKeyword and networkdKeyKeyword are a networkd unit's section and key as
 	// systemd spells them, on the spec field of the section and on the section's field of the key.
 	networkdSectionKeyword = networkdschema.SectionKeyword
@@ -65,8 +62,6 @@ type Annotations struct {
 	// Fixed is FixedCluster for a field that every node of a cluster holds alike, from
 	// x-chalkos-fixed; empty for any other.
 	Fixed string
-	// FixedWithin tells that a field below the node is Fixed, from x-chalkos-fixed-within.
-	FixedWithin bool
 	// NetworkdSection and NetworkdKey are the systemd names of a networkd section and key.
 	NetworkdSection, NetworkdKey string
 }
@@ -251,11 +246,6 @@ func decodeAnnotations(obj map[string]any, root bool) (Annotations, error) {
 				err = fmt.Errorf("is not %q", FixedCluster)
 			}
 			a.Fixed = FixedCluster
-		case fixedWithinKeyword:
-			if v != true {
-				err = errors.New("is not true")
-			}
-			a.FixedWithin = true
 		case networkdSectionKeyword:
 			a.NetworkdSection, err = nonEmptyString(v)
 		case networkdKeyKeyword:

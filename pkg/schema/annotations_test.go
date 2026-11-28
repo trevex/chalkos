@@ -68,12 +68,11 @@ func TestAnnotationsAreDecodedOnTheirNodes(t *testing.T) {
 	}
 }
 
-// x-chalkos-fixed marks a field that every node of a cluster holds alike, and
-// x-chalkos-fixed-within a node above such a field; both decode onto their nodes.
+// x-chalkos-fixed marks a field that every node of a cluster holds alike and decodes onto its
+// node.
 func TestFixedAnnotations(t *testing.T) {
 	for keyword, want := range map[string]Annotations{
-		`"x-chalkos-fixed": "cluster"`:   {Fixed: FixedCluster},
-		`"x-chalkos-fixed-within": true`: {FixedWithin: true},
+		`"x-chalkos-fixed": "cluster"`: {Fixed: FixedCluster},
 	} {
 		s, err := loadPool(t, keyword)
 		if err != nil {
@@ -104,7 +103,7 @@ func TestLoadRefusesAMalformedAnnotation(t *testing.T) {
 		{`"x-chalkos-rules": [{"rule": "true", "mesage": "m"}]`, `unknown field "mesage"`},
 		{`"x-chalkos-rules": [{"rule": "true", "reason": "LATER"}]`, `reason "LATER" is none of NO_FALLBACK_SECRET`},
 		{`"x-chalkos-fixed": "node"`, `x-chalkos-fixed: is not "cluster"`},
-		{`"x-chalkos-fixed-within": false`, `x-chalkos-fixed-within: is not true`},
+		{`"x-chalkos-fixed-within": true`, `x-chalkos-fixed-within: is no keyword of chalkos's`},
 		{`"x-chalkos-ref": {"kind": "VRF"}`, `names no apiVersion or no kind`},
 		{`"x-chalkos-kubernetes-object": false`, `is not true`},
 		{`"x-chalkos-networkd-key": ""`, `is not a non-empty string`},
